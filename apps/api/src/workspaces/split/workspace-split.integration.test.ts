@@ -560,6 +560,11 @@ withDb('workspace split', () => {
     const reopened = (await runFor(MOVED))!;
     expect([reopened.runId, reopened.phase, reopened.toAccountId, reopened.attempts]).toEqual([first.runId, 'planned', null, 0]);
     expect(reopened.plan.reversed_to_account_ids).toEqual([first.toAccountId]);
+    // The reversed move's billing record names the dormant account: the reopen
+    // drops it, so the billing retry and the owner-email gate wait for the new one.
+    expect(first.plan.billing).toBeDefined();
+    expect(reopened.plan.billing).toBeUndefined();
+    expect(reopened.plan.billing_attempts).toBeUndefined();
     // The worker plans before it applies: a plan pass keeps the reopen record.
     resetWorkspaceSplitPlanClock();
     await planWorkspaceSplits({ accountIds: [LEGACY] });

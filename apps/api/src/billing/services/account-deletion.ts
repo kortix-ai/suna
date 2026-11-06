@@ -46,25 +46,49 @@ const DELETION_ALREADY_RUNNING = 'Account deletion is already running and can no
  * Revoke every credential of an account: workspace and personal tokens in it,
  * API keys, gateway keys, OAuth codes and tokens, SCIM tokens, and its
  * service accounts. Runs inside the caller's transaction (`withDbTransaction`
- * routes `db` to it): an account deletion request and a workspace close
- * (`workspaces/lifecycle.ts`, K2) both call it in the transaction that opens
- * the request.
+ * routes `db` to it). `requestAccountDeletion` (the person deletes the
+ * account) calls it in the transaction that opens the request.
+ *
+ * `scope: 'workspace'` is the workspace close (`workspaces/lifecycle.ts`, K2):
+ * it revokes only what belongs to the workspace — keys bound to it
+ * (`project_id` set), OAuth grants whose consent named it, API and gateway
+ * keys, SCIM tokens and service accounts. A personal key (`project_id` null)
+ * and an unbound OAuth grant act as their person in every workspace; closing
+ * one workspace never ends them (design.md §3.2 C4a).
  */
-export async function revokeAccountCredentials(accountId: string, actorUserId: string): Promise<void> {
+export async function revokeAccountCredentials(
+  accountId: string,
+  actorUserId: string,
+  scope: 'account' | 'workspace' = 'account',
+): Promise<void> {
+  const workspaceOnly = scope === 'workspace';
   await db.update(accountTokens)
     .set({ status: 'revoked', revokedAt: new Date() })
-    .where(and(eq(accountTokens.accountId, accountId), eq(accountTokens.status, 'active')));
+    .where(and(
+      eq(accountTokens.accountId, accountId),
+      eq(accountTokens.status, 'active'),
+      workspaceOnly ? isNotNull(accountTokens.projectId) : undefined,
+    ));
   await db.update(kortixApiKeys)
     .set({ status: 'revoked' })
     .where(and(eq(kortixApiKeys.accountId, accountId), eq(kortixApiKeys.status, 'active')));
   await db.update(gatewayApiKeys)
     .set({ status: 'revoked', revokedAt: new Date() })
     .where(and(eq(gatewayApiKeys.accountId, accountId), eq(gatewayApiKeys.status, 'active')));
-  await db.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.accountId, accountId));
+  await db.delete(oauthAuthorizationCodes).where(and(
+    eq(oauthAuthorizationCodes.accountId, accountId),
+    workspaceOnly ? isNotNull(oauthAuthorizationCodes.boundWorkspaceId) : undefined,
+  ));
   await db.update(oauthAccessTokens).set({ revokedAt: new Date() })
-    .where(eq(oauthAccessTokens.accountId, accountId));
+    .where(and(
+      eq(oauthAccessTokens.accountId, accountId),
+      workspaceOnly ? isNotNull(oauthAccessTokens.boundWorkspaceId) : undefined,
+    ));
   await db.update(oauthRefreshTokens).set({ revokedAt: new Date() })
-    .where(eq(oauthRefreshTokens.accountId, accountId));
+    .where(and(
+      eq(oauthRefreshTokens.accountId, accountId),
+      workspaceOnly ? isNotNull(oauthRefreshTokens.boundWorkspaceId) : undefined,
+    ));
   await db.update(scimTokens).set({ revokedAt: new Date() })
     .where(eq(scimTokens.accountId, accountId));
   await db.update(serviceAccounts)

@@ -100,22 +100,39 @@ async function workspaceSplitPending(workspaceId: string): Promise<boolean> {
 
 /**
  * The workspace ids a `reach: 'param'` request names: `account_id`,
- * `workspace_id` and `project_id` in the query string and in a JSON body.
- * `c.req.json()` caches the parsed body, so the handler reads it again.
+ * `workspace_id` and `project_id` in the query string and in the body.
+ *
+ * The body is read whatever the Content-Type says. Handlers call
+ * `c.req.json()`, and Hono parses that for `text/plain`, a form type or no
+ * header at all; a fence that read only `application/json` let a bound
+ * credential name another workspace by changing one header. The raw text is
+ * cached by Hono, so the handler reads the same body again. A body that is
+ * not JSON is read as form fields.
  */
-async function requestWorkspaceParams(c: Context): Promise<string[]> {
+export async function requestWorkspaceParams(c: Context): Promise<string[]> {
   const ids: string[] = [];
   for (const name of WORKSPACE_PARAM_NAMES) {
     for (const value of c.req.queries(name) ?? []) if (value) ids.push(value);
   }
-  const contentType = c.req.header('content-type') ?? '';
-  if (c.req.method !== 'GET' && c.req.method !== 'HEAD' && contentType.includes('application/json')) {
-    const body = await c.req.json().catch(() => null);
-    if (body && typeof body === 'object' && !Array.isArray(body)) {
-      for (const name of WORKSPACE_PARAM_NAMES) {
-        const value = (body as Record<string, unknown>)[name];
-        if (typeof value === 'string' && value) ids.push(value);
-      }
+  if (c.req.method === 'GET' || c.req.method === 'HEAD') return ids;
+  const text = await c.req.text().catch(() => '');
+  if (!text) return ids;
+  let fields: Record<string, unknown> | null = null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) fields = parsed as Record<string, unknown>;
+  } catch {
+    const form = new URLSearchParams(text);
+    fields = {};
+    for (const name of WORKSPACE_PARAM_NAMES) {
+      const values = form.getAll(name).filter(Boolean);
+      for (const value of values) ids.push(value);
+    }
+  }
+  if (fields) {
+    for (const name of WORKSPACE_PARAM_NAMES) {
+      const value = fields[name];
+      if (typeof value === 'string' && value) ids.push(value);
     }
   }
   return ids;

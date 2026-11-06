@@ -61,6 +61,14 @@ export async function buildActor(c: Context, accountIdOverride?: string): Promis
     };
   }
 
+  // An OAuth access token whose consent named one workspace
+  // (middleware/auth-oauth.ts sets `tokenProjectId`): the engine confines it
+  // like a workspace key, so the route fence is not its only wall.
+  if (authType === 'oauth') {
+    const boundWorkspaceId = c.get('tokenProjectId') as string | undefined;
+    if (boundWorkspaceId) return { userId, accountId, credential: { kind: 'jwt', boundWorkspaceId }, ctx };
+  }
+
   return { userId, accountId, credential: { kind: 'jwt' }, ctx };
 }
 

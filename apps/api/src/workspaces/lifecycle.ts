@@ -185,7 +185,9 @@ export async function closeWorkspace(input: { workspaceId: WorkspaceId; actorUse
         .returning({ id: accountDeletionRequests.id });
       if (record.projectId) await archiveProjectRow(record.projectId, record.accountId);
       const { revokeAccountCredentials } = await import('../billing/services/account-deletion');
-      await revokeAccountCredentials(record.accountId, input.actorUserId);
+      // Workspace credentials only: a personal key and an unbound OAuth grant
+      // act as their person in every other workspace (revokeAccountCredentials).
+      await revokeAccountCredentials(record.accountId, input.actorUserId, 'workspace');
       // Stop automations. `automations_paused_at` = the request's
       // `requested_at` marks a pause the close made, so restore resumes only that.
       await db

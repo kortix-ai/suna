@@ -59,9 +59,8 @@ import { buildDenialError } from './denial-message';
 import type { WorkspaceRole } from './roles';
 import {
   actingPrincipal,
-  actingTokenId,
+  actingTokenBinding,
   isAgentSessionToken,
-  loadTokenBinding,
   type Actor,
   type PrincipalRef,
 } from './actor';
@@ -264,8 +263,7 @@ async function authorizeDecision(actor: Actor, action: string, obj: EvalObj): Pr
   // its binding says it is a session, so the binding is read first.
   // 2. The acting token's binding: project confinement, agent grant, standing
   // identity — one memoized read, skipped entirely for browser requests.
-  const tokenId = actingTokenId(actor);
-  const binding = tokenId ? await loadTokenBinding(tokenId) : null;
+  const { tokenId, binding } = await actingTokenBinding(actor);
   if (isHumanOnlyAction(action) && isAgentSessionToken(actor, binding)) {
     return deny('agent_human_only_action');
   }
@@ -480,8 +478,7 @@ async function listAccessibleProjectsUntimed(actor: Actor, action: string): Prom
     return { mode: 'none', reason: 'impersonation' };
   }
 
-  const tokenId = actingTokenId(actor);
-  const binding = tokenId ? await loadTokenBinding(tokenId) : null;
+  const { tokenId, binding } = await actingTokenBinding(actor);
   const principal = actingPrincipal(actor);
   const [rec, facts] = await Promise.all([
     resolvePrincipal(principal, actor.accountId),

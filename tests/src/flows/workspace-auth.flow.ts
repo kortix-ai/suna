@@ -772,6 +772,9 @@ flow(
       'POST /v1/oauth/token',
       'GET /v1/workspaces/:workspaceId/members',
       'GET /v1/workspaces',
+      'POST /v1/billing/plan/preview',
+      'GET /v1/projects',
+      'GET /v1/drives/usage',
     ],
   },
   async (ctx) => {
@@ -840,10 +843,76 @@ flow(
       expectFence(await members(next, b.id), 'cross-workspace', 'B with a refreshed token bound to A');
     });
 
+    await ctx.step("a token bound to A names B by a param: a text/plain billing body → 403, the project list and the Drive usage of B's account show nothing of B", async () => {
+      const pair = await redeem({ request_id: await authorize(), approved: true, workspace_id: a.id });
+      const bearer = { Authorization: `Bearer ${pair.access_token}` };
+      // Handlers parse the body whatever the Content-Type says, so the fence must too.
+      for (const contentType of ['text/plain', 'application/x-www-form-urlencoded']) {
+        const res = await fetch(`${ctx.env.apiUrl}/billing/plan/preview`, {
+          method: 'POST',
+          headers: { ...bearer, 'content-type': contentType },
+          body: JSON.stringify({ account_id: bTeam.id, monthly_usd: 50 }),
+        });
+        const text = await res.text();
+        if (res.status !== 403) throw new Error(`${contentType} body naming B: expected 403, got ${res.status} ${text.slice(0, 200)}`);
+        if (JSON.parse(text).code !== FENCE) throw new Error(`${contentType} body naming B: expected ${FENCE}, got ${text.slice(0, 200)}`);
+      }
+      const listed = await ctx.client.as(ctx.P.ANON).get('/v1/projects', { query: { account_id: bTeam.id }, headers: bearer });
+      if (listed.statusCode === 200 && listed.text().includes(b.id)) throw new Error(`a token bound to A listed B's project: ${listed.text().slice(0, 200)}`);
+      if (listed.statusCode !== 200 && listed.statusCode !== 403) throw new Error(`GET /projects?account_id=B → ${listed.statusCode}`);
+      const usage = await ctx.client.as(ctx.P.ANON).get('/v1/drives/usage', { query: { account_id: bTeam.id }, headers: bearer });
+      if (usage.statusCode !== 403) throw new Error(`GET /drives/usage?account_id=B: expected 403, got ${usage.statusCode} ${usage.text().slice(0, 200)}`);
+      // The same token still reads its own account's usage.
+      (await ctx.client.as(ctx.P.ANON).get('/v1/drives/usage', { headers: bearer })).status([200, 404]);
+    });
+
     await ctx.step('a consent that names no workspace (an older consent screen) stays unbound: A and B → 200', async () => {
       const pair = await redeem({ request_id: await authorize(), approved: true });
       (await members(pair.access_token, a.id)).status(200);
       (await members(pair.access_token, b.id)).status(200);
+    });
+  },
+);
+
+// ── WS-AUTH-14 — closing one workspace never ends the person's own keys ──────
+flow(
+  'WS-AUTH-14',
+  {
+    domain: 'workspaces',
+    routes: [
+      'POST /v1/accounts/tokens',
+      'POST /v1/workspaces/:workspaceId/tokens',
+      'GET /v1/workspaces/:workspaceId/members',
+      'DELETE /v1/workspaces/:workspaceId',
+      'POST /v1/workspaces/:workspaceId/restore',
+    ],
+  },
+  async (ctx) => {
+    const aTeam = await ctx.fixtures.team();
+    const a = await aTeam.project();
+    const b = await (await ctx.fixtures.team()).project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+
+    // A personal key anchored at A's account (the case the close used to revoke).
+    const minted = await owner.post('/v1/accounts/tokens', {
+      name: 'wsa14-personal',
+      account_id: aTeam.id,
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    minted.status(201).body().has('$.project_id', null);
+    const personal = keyPrincipal(ctx.P.OWNER, minted.json<{ secret_key: string }>().secret_key, 'WSA14_PERSONAL');
+    const keyOfA = keyPrincipal(ctx.P.OWNER, await mintWorkspaceKey(ctx, ctx.P.OWNER, a.id, 'wsa14-a'), 'WSA14_A');
+
+    await ctx.step('the owner deletes A → 200; the personal key anchored at A still reaches B → 200; the key bound to A → 401', async () => {
+      (await owner.del('/v1/workspaces/:workspaceId', { params: { workspaceId: a.id } })).status(200).body().has('$.deleted', true);
+      (await ctx.client.as(personal).get(`/v1/workspaces/${b.id}/members`)).status(200);
+      (await ctx.client.as(keyOfA).get(`/v1/workspaces/${b.id}/members`)).status(401);
+    });
+
+    await ctx.step('the owner restores A → 200; the personal key reaches A and B again', async () => {
+      (await owner.post('/v1/workspaces/:workspaceId/restore', {}, { params: { workspaceId: a.id } })).status(200).body().has('$.state', 'active');
+      (await ctx.client.as(personal).get(`/v1/workspaces/${a.id}/members`)).status(200);
+      (await ctx.client.as(personal).get(`/v1/workspaces/${b.id}/members`)).status(200);
     });
   },
 );

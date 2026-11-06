@@ -582,7 +582,9 @@ export async function reopenWorkspaceSplitRun(runId: string): Promise<void> {
     UPDATE kortix.workspace_split_runs
        SET phase = 'planned', mode = 'dry_run', to_account_id = NULL, copied_ids = '{}'::jsonb, attempts = 0,
            heartbeat_at = NULL, error = NULL, completed_at = NULL, updated_at = now(),
-           plan = plan || jsonb_build_object('reversed_to_account_ids',
+           -- The reversed move's billing record names the dormant account: drop it,
+           -- so the billing retry and the owner-email gate wait for the new one.
+           plan = (plan - 'billing' - 'billing_attempts') || jsonb_build_object('reversed_to_account_ids',
              COALESCE(plan->'reversed_to_account_ids', '[]'::jsonb) || to_jsonb(ARRAY[to_account_id::text]))
      WHERE run_id = ${runId} AND phase = 'reversed'
     RETURNING run_id`);

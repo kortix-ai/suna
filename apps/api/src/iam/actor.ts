@@ -52,9 +52,12 @@ export function pendingPrincipalId(email: string): string {
  * `middleware/auth.ts` — there is no sixth way into the API.
  */
 export type Credential =
-  /** Supabase JWT (browser / dashboard). No token scope, no agent grant; the
-   *  only credential the account-MFA gate applies to. */
-  | { kind: 'jwt' }
+  /** Supabase JWT (browser / dashboard), or an OAuth access token acting as
+   *  its person. No agent grant; the only credential the account-MFA gate
+   *  applies to. `boundWorkspaceId`: the OAuth consent named one workspace,
+   *  and the engine confines the token to it like a workspace key
+   *  ({@link actingTokenBinding}). */
+  | { kind: 'jwt'; boundWorkspaceId?: string }
   /** A human's CLI Personal Access Token. `projectId` non-null = bound to one
    *  project and refused everywhere else. */
   | { kind: 'pat'; tokenId: string; projectId: string | null }
@@ -144,6 +147,26 @@ export function actingPrincipal(actor: Actor): PrincipalRef {
 }
 
 /** The acting token id, when a token is acting. Undefined for jwt/sandbox. */
+/**
+ * The acting token and its binding, for the engine's token rules (steps 1c, 2
+ * and 4 of `authorize`, and the project listing). A workspace-bound OAuth
+ * token has no `account_tokens` row: its binding is the consent's workspace,
+ * with no key scope and no agent grant, so a bound OAuth token is refused on
+ * every other workspace exactly like a workspace key.
+ */
+export async function actingTokenBinding(actor: Actor): Promise<{ tokenId: string | undefined; binding: TokenBinding | null }> {
+  const tokenId = actingTokenId(actor);
+  if (tokenId) return { tokenId, binding: await loadTokenBinding(tokenId) };
+  const c = actor.credential;
+  if (c.kind === 'jwt' && c.boundWorkspaceId) {
+    return {
+      tokenId: `oauth-workspace:${c.boundWorkspaceId}`,
+      binding: { projectId: c.boundWorkspaceId, agentGrant: null, serviceAccountId: null, sessionId: null, scopes: null },
+    };
+  }
+  return { tokenId: undefined, binding: null };
+}
+
 export function actingTokenId(actor: Actor): string | undefined {
   const c = actor.credential;
   if (c.kind === 'pat' || c.kind === 'agent_session') return c.tokenId;
