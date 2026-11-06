@@ -5,7 +5,7 @@ import { errorToast } from '../../primitives/toast';
 import { useTranslations } from '../../i18n';
 import { AgentFace, AgentStatus } from './agent-surface';
 import { peerHandleLabel } from '@kortix/shared';
-import type { PeerMessage } from '@kortix/sdk';
+import { heldMessages, type PeerMessage } from '@kortix/sdk';
 import { usePeerMessages } from '@kortix/sdk/react';
 
 /**
@@ -15,14 +15,6 @@ import { usePeerMessages } from '@kortix/sdk/react';
  * the agent strip. "Approve message" delivers it, "Deny" drops it. A message
  * nobody decides expires after 5 minutes on the server.
  */
-
-/** The preview line: the sender's summary, else the message's first line. */
-export function heldPreview(message: Pick<PeerMessage, 'summary' | 'message'>): string {
-  const summary = message.summary?.trim();
-  if (summary) return summary;
-  const first = message.message.trim().split('\n')[0] ?? '';
-  return first.length > 200 ? `${first.slice(0, 200)}…` : first;
-}
 
 export interface HeldMessageCardProps {
   message: PeerMessage;
@@ -106,13 +98,6 @@ export function HeldMessageList({
       ))}
     </div>
   );
-}
-
-/** The messages that wait for the person, oldest first (the order they arrived). */
-export function heldMessages(messages: readonly PeerMessage[] | undefined): PeerMessage[] {
-  return (messages ?? [])
-    .filter((message) => message.status === 'held')
-    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
 }
 
 /** A session's held messages, read on their own (for a host without the agent strip). */

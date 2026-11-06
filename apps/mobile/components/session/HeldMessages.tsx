@@ -7,12 +7,11 @@
 
 import { ScrollView, View } from 'react-native';
 import { peerHandleLabel } from '@kortix/shared';
-import type { PeerMessage } from '@kortix/sdk';
+import { heldMessages, type PeerMessage } from '@kortix/sdk';
 import { usePeerMessages } from '@kortix/sdk/react';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { useToast } from '@/components/kortix/toast-provider';
-import { heldMessages } from '@/lib/session/multi-agent';
 import { webSpace } from '@/lib/session/user-message';
 import { AgentCard } from '@/components/session/tool/shared/agent-surface';
 import { SessionStatusMark } from '@/components/session/SessionStatusMark';
