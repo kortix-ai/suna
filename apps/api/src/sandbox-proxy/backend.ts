@@ -22,7 +22,6 @@
 
 import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { transitionSandbox, transitionSession } from '../projects/surface';
 import { timeUpstream } from '../middleware/upstream-timing';
 import {
   getProvider,
@@ -474,6 +473,9 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
     // is never revived. The session write only refreshes a session that
     // already reads `running` (`touch`): traffic never undoes a park, a
     // failure, a provisioning claim, or a tombstone.
+    // Loaded on first use: this module is on the hot proxy path and keeps the
+    // projects surface out of its import graph.
+    const { transitionSandbox, transitionSession } = await import('../projects/surface');
     let boxIsRunning = !['error', 'stopped'].includes(row.status);
     if (['error', 'stopped'].includes(row.status)) {
       const healed = await transitionSandbox('heal', row.sandboxId, {
@@ -506,6 +508,7 @@ export async function markSandboxErrored(externalId: string): Promise<void> {
       .orderBy(...preferredSandboxOrder())
       .limit(1);
     if (!row) return;
+    const { transitionSandbox } = await import('../projects/surface');
     const errored = await transitionSandbox('proxyError', row.sandboxId);
     if (!errored) return;
     console.warn(`[PREVIEW] Auto-marked session sandbox ${row.sandboxId} (external: ${externalId}) as error after all retries failed`);

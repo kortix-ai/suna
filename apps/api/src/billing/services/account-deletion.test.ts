@@ -268,9 +268,14 @@ mock.module('../../projects/sandbox-reaper', () => ({
 
 mock.module('../../shared/stripe', () => ({
   getStripe: () => ({
-    subscriptions: { cancel: async () => undefined },
+    subscriptions: { cancel: async () => undefined, list: async () => ({ data: [], has_more: false }) },
   }),
 }));
+
+// Account closure ends the account's Enterprise contract and lists its Stripe
+// customers: neither is what this file pins.
+mock.module('./enterprise-contracts', () => ({ endContractForClosedAccount: async () => undefined }));
+mock.module('../repositories/customers', () => ({ listStripeCustomerIdsByAccountId: async () => [] }));
 
 mock.module('../repositories/credit-accounts', () => ({
   getCreditAccount: async () => creditAccount,
@@ -289,6 +294,7 @@ mock.module('../repositories/account-deletion', () => ({
   countOverdueBacklog: async () => 0,
   getScheduledDeletions: async () => scheduledRequests,
   claimDeletionRequest: async (id: string) => scheduledRequests.find((r: { id: string }) => r.id === id) ?? null,
+  claimDeletionRequestNow: async (id: string) => (activeRequest && activeRequest.id === id ? activeRequest : null),
   releaseDeletionRequest: async () => undefined,
 }));
 
