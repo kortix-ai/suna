@@ -50,6 +50,7 @@ flow(
       'GET /v1/workspaces',
       'GET /v1/workspaces/:projectId',
       'DELETE /v1/workspaces/:projectId',
+      'POST /v1/workspaces/:workspaceId/restore',
     ],
   },
   async (ctx) => {
@@ -96,22 +97,31 @@ flow(
         }
       });
 
-      await ctx.step('kortix projects rm deletes the project through the real DELETE route and reports the BYO repo note', async () => {
+      await ctx.step('kortix projects rm deletes the workspace through the real DELETE route and says what happens next', async () => {
         const result = await sandbox.run(['projects', 'rm', project.id, '--yes']);
         requireExit(result, 0, 'kortix projects rm');
         if (!/Deleted/.test(result.stdout)) throw new Error(`projects rm output: ${result.stdout}`);
         if (/Archived/.test(result.stdout)) throw new Error(`projects rm output: ${result.stdout}`);
-        // A local-profile project is user-connected (a bare repository), so the
-        // API answers `repo_deleted: false` and the CLI explains it. Deleting
-        // a Kortix-managed repo end to end needs the managed git backend,
-        // which the local profile excludes.
+        const owner = ctx.client.as(ctx.P.OWNER);
+        const params = { projectId: project.id };
+        const restoreLine = new RegExp(
+          `an owner can restore it until \\d{4}-\\d{2}-\\d{2}T[^ ]+ \\(POST /v1/workspaces/${project.id}/restore\\)`,
+        );
+        if (restoreLine.test(result.stdout)) {
+          // The project was its account's only one: the delete closed the
+          // workspace (K2). Its owner still reads it as deleting and restores it
+          // (which also leaves the run's owner account usable for cleanup).
+          (await owner.get('/v1/workspaces/:projectId', { params })).status(200).body().has('$.state', 'deleting');
+          (await owner.post('/v1/workspaces/:projectId/restore', {}, { params })).status(200).body().has('$.state', 'active');
+          return;
+        }
+        // The run's owner account holds other projects (split_pending): the old
+        // delete. A local-profile project is user-connected (a bare repository),
+        // so the API answers `repo_deleted: false` and the CLI explains it.
         if (!/no managed repo to delete \(bring-your-own repos are left untouched\)/.test(result.stdout)) {
           throw new Error(`projects rm output: ${result.stdout}`);
         }
-        // The delete is still terminal: the detail route answers 404 after it.
-        (await ctx.client
-          .as(ctx.P.OWNER)
-          .get('/v1/workspaces/:projectId', { params: { projectId: project.id } })).status(404);
+        (await owner.get('/v1/workspaces/:projectId', { params })).status(404);
       });
     } finally {
       sandbox.dispose();
