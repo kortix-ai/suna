@@ -1,8 +1,8 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { releaseProjectEventSubscriptions } from '../trigger-events/subscriptions';
 import { releaseProjectChannels } from '../../channels/install-store';
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, authorize } from '../../iam';
-import { actorFor } from '../../iam/actor';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { actorFor, actorOf } from '../../iam/actor';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isUuid } from '../../shared/validate';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -308,6 +308,10 @@ export function registerProjectSettingsRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
     if (!loaded.row.splitPending) {
+      // Deleting a workspace closes its account: billing, members, keys. That is
+      // the owner's alone (account.delete), like Slack; an admin or a manager
+      // holds project.delete but not this.
+      await assertAuthorized(await actorOf(c, loaded.row.accountId), ACCOUNT_ACTIONS.ACCOUNT_DELETE);
       const closed = await closeWorkspace({ workspaceId: asWorkspaceId(projectId), actorUserId: loaded.userId });
       return c.json({
         ok: true,

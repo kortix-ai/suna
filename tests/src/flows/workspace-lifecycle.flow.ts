@@ -103,6 +103,7 @@ flow(
     requires: ['database'],
     routes: [
       'DELETE /v1/workspaces/:workspaceId',
+      'PATCH /v1/workspaces/:workspaceId/members/:userId',
       'POST /v1/workspaces/:workspaceId/restore',
       'GET /v1/workspaces/:workspaceId',
       'GET /v1/workspaces',
@@ -116,6 +117,15 @@ flow(
     const asOwner = ctx.client.as(ctx.P.OWNER);
     const params = { workspaceId: p.id };
 
+    await ctx.step('only an owner deletes: the admin and a manager → 403, the workspace stays active', async () => {
+      const manager = await team.addMember('member');
+      (await asOwner.patch('/v1/workspaces/:workspaceId/members/:userId', { role: 'manager' }, { params: { ...params, userId: manager.userId! } })).status(200);
+      for (const who of [admin, manager]) {
+        (await ctx.client.as(who).del('/v1/workspaces/:workspaceId', { params })).status(403);
+      }
+      const row = await lifecycleOf(ctx, p.id);
+      if (row?.lifecycle !== 'active') throw new Error(`workspace row ${JSON.stringify(row)}`);
+    });
     await ctx.step('an owner restores nothing while the workspace is live → 409 workspace_not_deleting', async () => {
       (await asOwner.post('/v1/workspaces/:workspaceId/restore', {}, { params })).status(409).body().has('$.code', 'workspace_not_deleting');
     });

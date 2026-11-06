@@ -28,6 +28,7 @@ import { PROJECT_LANDING_PATH } from '../../../internal/lib/onboarding/landing-d
 import { forgetLastProjectId } from '../../../internal/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCans } from '../../../internal/lib/use-project-can';
+import { useCan } from '../../../internal/lib/use-permission';
 import { useSettingsPanelStore } from '../../../internal/stores/settings-panel-store';
 import { useLeaveWorkspace } from '../../../workspace/settings/use-leave-workspace';
 import { SplitNoticeBanner } from '../../../workspace/settings/split-notice-banner';
@@ -603,7 +604,11 @@ export function GeneralTab({
   // `manager` role label instead would have hidden Delete from a custom role
   // that holds `project.delete`, and shown it to one that does not.
   const caps = useProjectCans(projectId, GENERAL_TAB_ACTIONS);
-  const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true;
+  // Deleting a workspace closes its account (billing, members, keys): the API
+  // also asks for the owner-only `account.delete`. Show Delete only to a
+  // person who holds both.
+  const closeAccount = useCan({ accountId: project?.account_id ?? undefined }, 'account.delete');
+  const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true && closeAccount.allowed === true;
   const canEdit = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed === true;
   const canEditEffort = canEdit;
 
