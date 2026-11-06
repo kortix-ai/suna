@@ -330,6 +330,24 @@ async function nameSourceAfterKeeper(tx: TransferTx, accountId: string): Promise
 }
 
 /**
+ * The inverse of `nameSourceAfterKeeper`: a source that holds 2+ projects
+ * again after a reverse is a legacy account, so it gets back the name the
+ * split replaced. Only when the name is still the one the split wrote; the
+ * backup row goes, so a later split backs the name up again.
+ */
+async function restoreSourceName(tx: TransferTx, accountId: string): Promise<void> {
+  await tx.execute(sql`
+    WITH restored AS (
+      DELETE FROM kortix.workspace_name_backups b
+       USING kortix.accounts a
+       WHERE b.account_id = ${accountId} AND a.account_id = b.account_id AND a.name = b.new_name
+         AND (SELECT count(*) FROM kortix.projects p WHERE p.account_id = ${accountId} AND p.status = 'active') > 1
+      RETURNING b.account_id, b.old_name)
+    UPDATE kortix.accounts a SET name = restored.old_name, updated_at = now()
+      FROM restored WHERE a.account_id = restored.account_id`);
+}
+
+/**
  * Split `projectId` out of `fromAccountId` into the new account `toAccountId`,
  * inside the caller's transaction. Refuses unless the source still holds 2+
  * active projects (`not_legacy`). The caller copied the project's site blobs
@@ -427,6 +445,7 @@ export async function reverseProjectSplit(
   }
 
   await moveProjectInTransaction(tx, { projectId, fromAccountId: toAccountId, toAccountId: fromAccountId }, { split: { groups, roles } });
+  await restoreSourceName(tx, fromAccountId);
 
   const list = (values: string[]) => JSON.stringify(values);
   await tx.execute(sql`DELETE FROM kortix.account_invitations WHERE invite_id::text IN (SELECT jsonb_array_elements_text(${list(copied.invites.map((i) => i.inviteId))}::jsonb))`);

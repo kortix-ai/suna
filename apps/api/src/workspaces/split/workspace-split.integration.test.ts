@@ -42,6 +42,7 @@ import {
   confirmWorkspaceSplitKeeper,
   planWorkspaceSplits,
   processWorkspaceSplits,
+  reopenWorkspaceSplitRun,
   resetWorkspaceSplitPlanClock,
   reverseWorkspaceSplitRun,
 } from './split-runner';
@@ -338,6 +339,9 @@ withDb('workspace split', () => {
       const [row] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM kortix.${sql.raw(table)} WHERE account_id = ${target}`);
       expect([table, row?.n]).toEqual([table, 0]);
     }
+    // The source is a legacy account again: it gets its own name back.
+    const [source] = await db.select({ name: accounts.name }).from(accounts).where(eq(accounts.accountId, LEGACY));
+    expect(source?.name).toBe('Synthetic legacy');
     expect((await runFor(MOVED))?.phase).toBe('reversed');
     // A reversed project is not planned again.
     resetWorkspaceSplitPlanClock();
@@ -345,6 +349,28 @@ withDb('workspace split', () => {
     expect((await runFor(MOVED))?.phase).toBe('reversed');
     const report = await checkWorkspaceInvariants();
     expect([report.I1.violations, report.I4.violations, report.I6.violations]).toEqual([0, 0, 0]);
+  });
+
+  test('an operator reopens a reversed run and the project splits again into a fresh account', async () => {
+    await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage } });
+    const first = (await runFor(MOVED))!;
+    await reverseWorkspaceSplitRun(first.runId);
+    // Only a reversed run reopens.
+    await expect(reopenWorkspaceSplitRun((await runFor(OLDEST))!.runId)).rejects.toThrow(/not reversed/);
+
+    await reopenWorkspaceSplitRun(first.runId);
+    const reopened = (await runFor(MOVED))!;
+    expect([reopened.runId, reopened.phase, reopened.toAccountId, reopened.attempts]).toEqual([first.runId, 'planned', null, 0]);
+    expect(reopened.plan.reversed_to_account_ids).toEqual([first.toAccountId]);
+
+    expect(await applyWorkspaceSplitRun(first.runId, { siteStorage: storage })).toBe('done');
+    const again = (await runFor(MOVED))!;
+    expect(again.toAccountId).not.toBe(first.toAccountId);
+    expect((await accountOfProject(MOVED))).toEqual({ accountId: again.toAccountId!, splitPending: false });
+    const [source] = await db.select({ name: accounts.name }).from(accounts).where(eq(accounts.accountId, LEGACY));
+    expect(source?.name).toBe('Keeper');
+    const report = await checkWorkspaceInvariants();
+    expect(Object.entries(report).filter(([, r]) => !r.ok).map(([id]) => id)).toEqual([]);
   });
 
   test('an owner confirming the keeper releases a held account', async () => {

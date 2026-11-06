@@ -10,6 +10,7 @@
  *   plan [--account <account_id>]        the dry-run plan pass (moves nothing)
  *   apply <run_id>                       apply one planned run now
  *   reverse <run_id>                     undo one done run
+ *   reopen <run_id>                      plan a reversed run again (the next apply splits it into a fresh account)
  *   confirm-keeper <account_id> <project_id>
  *                                        an owner's keeper choice; releases a held account
  *
@@ -23,6 +24,7 @@ import {
   applyWorkspaceSplitRun,
   confirmWorkspaceSplitKeeper,
   planWorkspaceSplits,
+  reopenWorkspaceSplitRun,
   reverseWorkspaceSplitRun,
 } from '../src/workspaces/split/split-runner';
 
@@ -50,13 +52,18 @@ async function main(): Promise<number> {
       await reverseWorkspaceSplitRun(args[0]);
       console.log('reversed');
       return 0;
+    case 'reopen':
+      if (!args[0]) break;
+      await reopenWorkspaceSplitRun(args[0]);
+      console.log('reopened');
+      return 0;
     case 'confirm-keeper':
       if (!args[0] || !args[1]) break;
       await confirmWorkspaceSplitKeeper(args[0], args[1]);
       console.log('confirmed');
       return 0;
   }
-  console.error('usage: workspace-split.ts status | plan [--account <id>] | apply <run_id> | reverse <run_id> | confirm-keeper <account_id> <project_id>');
+  console.error('usage: workspace-split.ts status | plan [--account <id>] | apply <run_id> | reverse <run_id> | reopen <run_id> | confirm-keeper <account_id> <project_id>');
   return 2;
 }
 

@@ -92,12 +92,17 @@ dotenvx run -q -- bun scripts/workspace-split.ts plan
 dotenvx run -q -- bun scripts/workspace-split.ts apply <run_id>
 dotenvx run -q -- bun scripts/workspace-invariants.ts            # exit 1 on any violation
 dotenvx run -q -- bun scripts/workspace-split.ts reverse <run_id>
+dotenvx run -q -- bun scripts/workspace-split.ts reopen <run_id>   # plan a reversed run again
 ```
 
 Reverse is refused when the new account took money or holds another project.
 It deletes exactly the copies in `copied_ids`; the account row stays as a
-dormant record with no members. A reversed project is not planned again
-while its `reversed` row exists.
+dormant record with no members. A source that holds 2+ projects again gets
+back the name the split replaced (from `workspace_name_backups`). A reversed
+project is not planned again while its `reversed` row exists: `reopen
+<run_id>` turns it back into `planned` with no target, and the next apply
+splits it into a fresh account (the dormant one is listed in
+`plan.reversed_to_account_ids`).
 
 ## Before `apply` in prod
 

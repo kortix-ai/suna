@@ -273,6 +273,25 @@ export async function reverseWorkspaceSplitRun(runId: string): Promise<void> {
 }
 
 /**
+ * An operator's second try after a reverse: the `reversed` run becomes
+ * `planned` again, with no target account, so the next apply splits the
+ * project into a fresh account. The account of the reversed move stays a
+ * dormant record; its id is kept in `plan.reversed_to_account_ids`.
+ * `reverse` alone never re-plans a project (the planner skips `reversed`).
+ */
+export async function reopenWorkspaceSplitRun(runId: string): Promise<void> {
+  const [reopened] = await db.execute<{ run_id: string }>(sql`
+    UPDATE kortix.workspace_split_runs
+       SET phase = 'planned', mode = 'dry_run', to_account_id = NULL, copied_ids = '{}'::jsonb, attempts = 0,
+           heartbeat_at = NULL, error = NULL, completed_at = NULL, updated_at = now(),
+           plan = plan || jsonb_build_object('reversed_to_account_ids',
+             COALESCE(plan->'reversed_to_account_ids', '[]'::jsonb) || to_jsonb(ARRAY[to_account_id::text]))
+     WHERE run_id = ${runId} AND phase = 'reversed'
+    RETURNING run_id`);
+  if (!reopened) throw new ProjectSplitError('reverse_refused', 'Split run is not reversed');
+}
+
+/**
  * An owner's choice of the project that keeps the account and its billing.
  * Releases a `held` account: its other projects become `planned`.
  */
