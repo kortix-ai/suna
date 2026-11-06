@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 
 import type { VcsFileDiff } from '../../core/runtime/runtime-types';
 
-import { getClient } from '../../core/runtime/client';
 import {
   activeRuntimeAction,
   runtimeActionError,
@@ -14,7 +13,6 @@ import {
 } from '../../core/session/runtime-actions';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap } from './shared';
 
 // Re-exported so a host reads the diff shape from `@kortix/sdk`, never from
 // `@opencode-ai/sdk` (see AGENTS.md — hosts never import the opencode SDK).
@@ -55,15 +53,9 @@ export function useRuntimeVcsDiff(
     queryKey: runtimeKeys.vcsDiff(mode, serverId),
     queryFn: async () => {
       const read = await activeRuntimeAction('GET', runtimeActionPaths.workspaceDiff(mode));
-      if (read) {
-        if (!read.ok) throw await runtimeActionError(read, 'Reading the changes failed');
-        const body = (await read.json()) as { files?: RuntimeWorkspaceFileDiff[] };
-        return (Array.isArray(body.files) ? body.files : []).map(({ path, ...diff }) => ({ file: path, ...diff }));
-      }
-      const client = getClient();
-      const result = await client.vcs.diff({ mode });
-      const data = unwrap(result);
-      return Array.isArray(data) ? data : [];
+      if (!read.ok) throw await runtimeActionError(read, 'Reading the changes failed');
+      const body = (await read.json()) as { files?: RuntimeWorkspaceFileDiff[] };
+      return (Array.isArray(body.files) ? body.files : []).map(({ path, ...diff }) => ({ file: path, ...diff }));
     },
     enabled: runtimeReady && options?.enabled !== false,
     // Agent edits arrive as SSE events that invalidate `vcsDiffAll()`, so the
@@ -85,13 +77,8 @@ export function useRuntimeWorkspace() {
     queryKey: runtimeKeys.workspace(),
     queryFn: async () => {
       const read = await activeRuntimeAction('GET', runtimeActionPaths.workspace);
-      if (read) {
-        if (!read.ok) throw await runtimeActionError(read, 'Reading the workspace failed');
-        return (await read.json()) as RuntimeWorkspaceInfo;
-      }
-      const client = getClient();
-      const [path, project] = await Promise.all([client.path.get().then(unwrap), client.project.current().then(unwrap)]);
-      return { directory: path.directory, home: path.home, vcs: project.vcs === 'git' ? 'git' : null, default_branch: null };
+      if (!read.ok) throw await runtimeActionError(read, 'Reading the workspace failed');
+      return (await read.json()) as RuntimeWorkspaceInfo;
     },
     enabled: runtimeReady,
     staleTime: Infinity,
@@ -99,6 +86,3 @@ export function useRuntimeWorkspace() {
   });
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimeVcsDiff`. Removed in the next major. */
-export const useOpenCodeVcsDiff = useRuntimeVcsDiff;

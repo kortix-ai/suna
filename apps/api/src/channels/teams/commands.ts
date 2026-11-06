@@ -301,7 +301,7 @@ async function buildStatusCard(
     rows: [
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
-      { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session?.opencodeModel ?? null) },
+      { label: 'Model', value: statusModel(selection?.sessionModel ?? null, session?.sessionModel ?? null) },
       { label: 'Policy', value: conversationPolicyLabel(normalizeConversationPolicy(selection?.conversationPolicy ?? null)) },
       // The run itself. `/status` was the one place a user looks to answer
       // "what is this conversation doing", and it answered everything except

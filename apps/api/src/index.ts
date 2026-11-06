@@ -1,5 +1,8 @@
 // Expand the aggregate ECS secret before any module reads process.env.
 import './environment-secret';
+// zod 4 gives `.openapi()` only to schemas built after this import, and
+// `@kortix/api-contract` builds its schemas at load. Load it before any of them.
+import '@hono/zod-openapi';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';
@@ -15,6 +18,7 @@ import { bootServices, markSchemaReady, prepareProcess, shutdown } from './boots
 import { appWsHandlers } from './apps/ws-proxy';
 import { wsHandlers as tunnelWsHandlers } from './tunnel';
 import { chromeWsHandlers } from './chrome/ws';
+import { artifactLiveWsHandlers } from './artifacts/live-hub';
 import { previewWsHandlers } from './sandbox-proxy/ws-proxy';
 
 // The assembled app; the server entry below only serves it.
@@ -153,6 +157,10 @@ export default {
         appWsHandlers.open(ws as any);
         return;
       }
+      if (ws.data?.type === 'artifact-live') {
+        artifactLiveWsHandlers.open(ws as any);
+        return;
+      }
       // No other WS upgrades are accepted.
       try {
         ws.close(1011, 'unsupported websocket upgrade');
@@ -179,6 +187,10 @@ export default {
         appWsHandlers.message(ws as any, message);
         return;
       }
+      if (ws.data?.type === 'artifact-live') {
+        artifactLiveWsHandlers.message(ws as any, message);
+        return;
+      }
     },
 
     close(ws: { data: any }) {
@@ -196,6 +208,10 @@ export default {
       }
       if (ws.data?.type === 'app-ws') {
         appWsHandlers.close(ws as any);
+        return;
+      }
+      if (ws.data?.type === 'artifact-live') {
+        artifactLiveWsHandlers.close(ws as any);
         return;
       }
     },

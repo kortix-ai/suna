@@ -114,6 +114,7 @@ import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, hostSlashActions, localizedSlashActions, slashActionShown, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
+import { promptHistoryEntries, stepPromptHistory } from './prompt-history';
 import { QuoteList } from './quote-list';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
@@ -198,6 +199,8 @@ export interface SessionChatInputProps {
    * `composer-agent-access.ts`.
    */
   noAccessibleAgents?: boolean;
+  /** The agent is fixed (a DM): the picker names it and offers no other. Pass no `onAgentChange` with it. */
+  agentLocked?: boolean;
   commands?: Command[];
   /**
    * Whether the live command list has EVER resolved — the hook's `data`
@@ -244,6 +247,13 @@ export interface SessionChatInputProps {
   selectedModel?: { providerID: string; modelID: string } | null;
   onModelChange?: (model: { providerID: string; modelID: string } | null) => void;
   modelDefaultControls?: ModelDefaultControls;
+  /**
+   * The model the selected agent runs on when nothing overrides it
+   * (`inheritedModelFor` in `chat-input/chat-input-summary.ts`). Read only by
+   * the `chat_input` control: its model row says "Auto (from <agent>)" while
+   * `selectedModel` is this one, and "Reset to auto" picks it.
+   */
+  inheritedModel?: { providerID: string; modelID: string } | null;
   variants?: string[];
   selectedVariant?: string | null;
   onVariantChange?: (variant: string | null | undefined) => void;
@@ -821,9 +831,22 @@ function ComposerImpl(props: SessionChatInputProps) {
    * any document change clears them, and undo is the editor's again.
    */
   const pasteUndoRef = useRef<string[]>([]);
+  /**
+   * The recalled prompt on screen (`prompt-history.ts`), `null` for the draft.
+   * Any document change history did not make itself — typing, a send, a
+   * prefill — ends the walk, and Up/Down are caret keys again.
+   */
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const historyIndexRef = useRef<number | null>(null);
+  const applyingHistoryRef = useRef(false);
+  const historyEntries = useMemo(() => promptHistoryEntries(messages), [messages]);
   const handleEditorDocChange = useCallback(
     (doc: JSONContent, isEmpty: boolean) => {
       pasteUndoRef.current = [];
+      if (!applyingHistoryRef.current && historyIndexRef.current !== null) {
+        historyIndexRef.current = null;
+        setHistoryIndex(null);
+      }
       handleDocChange(doc, isEmpty);
     },
     [handleDocChange],
@@ -2005,10 +2028,45 @@ function ComposerImpl(props: SessionChatInputProps) {
     handleSubmitRef.current();
   }, [submitWhenReady, prefillId, landedPrefillId, submitDisabled, modelsLoading, entitlementsPending]);
 
+  /**
+   * Up/Down through prompt history. Only from an empty composer, or while a
+   * recalled prompt is still on screen untouched. Returns whether it acted.
+   */
+  const stepHistory = useCallback(
+    (direction: 'up' | 'down') => {
+      const editor = editorRef.current;
+      const current = historyIndexRef.current;
+      if (!editor || (current === null && !editor.isEmpty())) return false;
+      const next = stepPromptHistory(current, direction, historyEntries.length);
+      if (next === undefined) return false;
+      if (next === current) return true;
+      historyIndexRef.current = next;
+      setHistoryIndex(next);
+      applyingHistoryRef.current = true;
+      try {
+        if (next === null) editor.clear();
+        // The caret lands on the edge the walk is heading to, so a repeat
+        // press steps again; the other arrow still moves through the lines.
+        else editor.setContent(historyEntries[next], direction === 'up' ? 'start' : 'end');
+      } finally {
+        applyingHistoryRef.current = false;
+      }
+      return true;
+    },
+    [historyEntries],
+  );
+
   // A question lock owns the editor: Up there is a caret move, never a take-back.
-  const handleArrowUpAtStart = useCallback(
-    () => (lockForQuestion ? false : (onArrowUpAtStart?.() ?? false)),
-    [lockForQuestion, onArrowUpAtStart],
+  // A queued message to take back outranks history.
+  const handleArrowUpAtStart = useCallback(() => {
+    if (lockForQuestion) return false;
+    if (historyIndexRef.current === null && onArrowUpAtStart?.()) return true;
+    return stepHistory('up');
+  }, [lockForQuestion, onArrowUpAtStart, stepHistory]);
+
+  const handleArrowDownAtEnd = useCallback(
+    () => (lockForQuestion ? false : stepHistory('down')),
+    [lockForQuestion, stepHistory],
   );
 
   const editorPlaceholder = resolveEditorPlaceholder({
@@ -2062,6 +2120,9 @@ function ComposerImpl(props: SessionChatInputProps) {
     animatePlaceholder,
     handleSubmit,
     handleArrowUpAtStart,
+    handleArrowDownAtEnd,
+    historyPosition:
+      historyIndex === null ? null : { index: historyIndex + 1, total: historyEntries.length },
     setIsEmpty,
     handleDocChange: handleEditorDocChange,
     allSessions,

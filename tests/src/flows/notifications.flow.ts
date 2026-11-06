@@ -463,7 +463,7 @@ flow(
         (await read({ all: true }, ctx.client.as(ctx.P.ANON))).status(401);
       });
 
-      await ctx.step('GET preferences → the documented defaults for all eleven kinds, and email_available', async () => {
+      await ctx.step('GET preferences → the documented defaults for all ten kinds, and email_available', async () => {
         const r = await asReader.get('/v1/notifications/preferences');
         r.status(200);
         const prefs = r.json<{ kinds: Record<string, { push: boolean; email: boolean }>; email_available: unknown }>();
@@ -477,7 +477,7 @@ flow(
           automation_recovered: { push: true, email: false },
           capture_device_down: { push: true, email: true },
           capture_device_recovered: { push: true, email: false },
-          message: { push: true, email: true },
+          // `message` (a Room post) left with Rooms (#11712): a retired kind is never served.
           artifact_comment: { push: true, email: true },
         };
         if (JSON.stringify(prefs.kinds) !== JSON.stringify(defaults)) throw new Error(`defaults ${JSON.stringify(prefs.kinds)}`);

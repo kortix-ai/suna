@@ -385,6 +385,25 @@ export class ClaudeSessions {
     this.armIdle(entry)
   }
 
+  /**
+   * Stop every process that is not inside a step (memory pressure): its Claude session resumes
+   * on the thread's next step, as after an idle stop. A parked turn's tool calls are answered
+   * by that next step from pi's context. Resolves how many processes stopped.
+   */
+  async recycleIdle(): Promise<number> {
+    const stopped = await Promise.all([...this.entries.values()].map((entry) => {
+      if (entry.active || !entry.process) return false
+      return this.locked(entry, async () => {
+        if (entry.active || !entry.process) return false
+        if (entry.idle) clearTimeout(entry.idle)
+        entry.idle = undefined
+        await this.stop(entry)
+        return true
+      })
+    }))
+    return stopped.filter(Boolean).length
+  }
+
   /** Stop every process (daemon stop, login change). */
   async stopAll(): Promise<void> {
     await Promise.all([...this.entries.values()].map((entry) => {

@@ -133,15 +133,9 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     onSteerRead: ({ rootId, messageId }) => {
       void relaySteerRead(rootId, messageId)
     },
-    onQuestionAsked: (request, answer) => {
-      void relayQuestion(request).then((answers) => {
-        if (answers) answer(answers)
-      })
-    },
-    // Report only: apps/api pushes "needs your approval"; the request stays open for the user.
-    onPermissionAsked: (request) => {
-      void relayPermission(request)
-    },
+    // apps/api stores each ask and says how long it waits live before it parks (interactions.ts).
+    onQuestionAsked: (request, ask) => relayQuestion(request, ask),
+    onPermissionAsked: (request, call) => relayPermission(request, call),
     onFrame: (frame) => {
       // A child session or a new title: apps/api lists the tree from the pushed projection.
       if (sessionTreeChanged(frame)) scheduleRuntimeProjectionPush(frame.type)
@@ -254,6 +248,9 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
   const runtime = harness.runtime()!
+  // A restore at boot means this box did not hold the conversation: on a volume session that is a new
+  // computer, so the model hears that programs from before are not running (TEMPORARY_COMPUTER).
+  if (cfg.workspaceVolume && logBoot && logBoot.cursors.length > 0) runtime.markNewComputer()
   logger.info('[boot] proxy up; pi runtime ready', { servicePort: cfg.servicePort, rootId: runtime.rootId })
   convergeAfterReady(harness)
   // The reconcile floor: every 60 s the box re-checks its release and its

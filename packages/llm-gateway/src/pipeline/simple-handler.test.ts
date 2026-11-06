@@ -62,6 +62,26 @@ describe('simple gateway pipeline', () => {
     expect(calls).toEqual(['account']);
   });
 
+  test('the request log names the session message the call comes from', async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions({
+      hooks: hooks([], traces),
+      logger: { info() {}, warn() {}, error() {} },
+      fetchImpl: async () => new Response(JSON.stringify({ choices: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    }, {
+      authorization: 'Bearer token',
+      rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }),
+      origin: { messageId: 'msg_reply', turnId: 'msg_prompt' },
+    });
+    expect(response.status).toBe(200);
+    await Bun.sleep(0);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]!.metadata).toMatchObject({ messageId: 'msg_reply', turnId: 'msg_prompt' });
+  });
+
   test('HTTP pool exhaustion returns the earliest bounded cooldown', async () => {
     const keys: string[] = [];
     const upstream = Bun.serve({ port: 0, fetch: (request) => {
@@ -600,6 +620,45 @@ describe('simple gateway pipeline', () => {
     expect(usage[0]!.finalCost).toBeGreaterThan(0);
     // The client left: traced as 499, not as a provider failure.
     expect(traces[0]?.status).toBe(499);
+  });
+
+  test('a client that closes right after [DONE] is a served request, and an answer without a usage frame still bills its prompt', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const client = new AbortController();
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks(usage, traces),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                // An empty answer, no usage chunk, then [DONE]; the upstream's own end of body comes later.
+                controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+              },
+            }),
+            { headers: { 'content-type': 'text/event-stream' } },
+          ),
+      },
+      {
+        authorization: 'Bearer token',
+        signal: client.signal,
+        rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'p'.repeat(40_000) }] }),
+      },
+    );
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let seen = '';
+    while (!seen.includes('[DONE]')) seen += decoder.decode((await reader.read()).value);
+    // The OpenAI SDK closes on [DONE].
+    await reader.cancel();
+    client.abort();
+
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(10_000);
+    expect(traces[0]).toMatchObject({ status: 200, ok: true });
   });
 
   test('a stream stopped during prefill, before any output, settles the prompt', async () => {

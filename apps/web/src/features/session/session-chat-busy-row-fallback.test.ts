@@ -142,9 +142,11 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
  * wired, so the two halves cannot drift apart.
  */
 describe('waiting on the user is not the agent working', () => {
-  test('one fact, read from both pending lists', () => {
+  test('one fact, read from both live ask lists', () => {
+    // Live asks only (#11797): a question or permission parked in Review no
+    // longer holds the turn, so it is not the runtime waiting on the user.
     expect(chat).toContain(
-      'const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;',
+      'const awaitingUserInput = liveQuestions.length > 0 || livePermissions.length > 0;',
     );
   });
 

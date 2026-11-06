@@ -11,7 +11,7 @@ import { promisify } from 'node:util';
 import { loadProjectConfig } from './config';
 import { listManagedSkills } from '../../skills/catalog';
 import { getStarterFiles } from '@kortix/starter';
-import { isSelectableAgent } from '@kortix/sdk/projects-client';
+import { isSelectableAgent } from '@kortix/sdk';
 import { projectConfigAgentsToRuntimeAgents } from '@kortix/sdk';
 import type { GitBackedProject } from './types';
 

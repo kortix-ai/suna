@@ -23,7 +23,7 @@ export const AuditEventSchema = z
     account_id: z.string().uuid().nullable(),
     project_id: z.string().uuid().nullable(),
     session_id: z.string().nullable(),
-    opencode_session_id: z.string().nullable(),
+    runtime_session_id: z.string().nullable(),
     turn_id: z.string().nullable(),
     message_id: z.string().nullable(),
     tool_call_id: z.string().nullable(),
@@ -63,8 +63,8 @@ export const AuditEventSchema = z
     source_ledger: z.string().nullable(),
     source_record_id: z.string().nullable(),
     source_revision: z.string().nullable(),
-    input_summary: z.record(z.unknown()).nullable(),
-    output_summary: z.record(z.unknown()).nullable(),
+    input_summary: z.record(z.string(), z.unknown()).nullable(),
+    output_summary: z.record(z.string(), z.unknown()).nullable(),
     input_sha256: z.string().nullable(),
     output_sha256: z.string().nullable(),
     error_code: z.string().nullable(),
@@ -74,11 +74,11 @@ export const AuditEventSchema = z
       .nullable()
       .describe('Deprecated. The hash chain left ingestion in 2026-10; null for newer rows.'),
     integrity_hash: z.string().nullable().describe('Deprecated. Null for rows written since 2026-10.'),
-    before: z.record(z.unknown()).nullable(),
-    after: z.record(z.unknown()).nullable(),
+    before: z.record(z.string(), z.unknown()).nullable(),
+    after: z.record(z.string(), z.unknown()).nullable(),
     ip: z.string().nullable(),
     user_agent: z.string().nullable(),
-    metadata: z.record(z.unknown()),
+    metadata: z.record(z.string(), z.unknown()),
   })
   .openapi('AuditEvent');
 

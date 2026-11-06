@@ -179,8 +179,3 @@ export function useRuntimeReady() {
   return connectedHealthy && hasUrl;
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `runtimeKeys`. Removed in the next major. */
-export const opencodeKeys = runtimeKeys;
-/** @deprecated Renamed to `useRuntimeReady`. Removed in the next major. */
-export const useOpenCodeRuntimeReady = useRuntimeReady;

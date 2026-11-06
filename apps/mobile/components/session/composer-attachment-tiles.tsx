@@ -16,7 +16,7 @@
  */
 
 import * as React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView } from 'react-native';
 import type { PastedContent } from '@kortix/shared';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';

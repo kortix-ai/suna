@@ -28,7 +28,8 @@ import {
   ArrowUpIcon,
   CaretRightIcon,
   DotsThreeIcon,
-  FolderSimpleIcon,
+  FolderIcon,
+  FolderOpenIcon,
   PencilSimpleIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
@@ -64,7 +65,7 @@ import {
   SESSION_ROW_HEIGHT_CLASS,
   SIDEBAR_PAGE_SIZE,
   ShowMoreButton,
-} from './session-list-chrome';
+} from '../../session/list/session-list-chrome';
 
 /** A dragged session row carries its id under this type. */
 const SESSION_DRAG_TYPE = 'application/x-kortix-session';
@@ -367,7 +368,11 @@ function SessionGroupSection({
               draggingGroupId = null;
             }}
             className={cn(
-              'group/section-header text-muted-foreground relative flex items-center gap-1 rounded-md px-2 text-sm font-medium',
+              // A group is a folder, not a section label: it takes a session
+              // row's geometry (px-2, gap-2, 16px icon, regular weight) so its
+              // icon and name sit on the same axes as the rows it holds, while
+              // Pinned and the date headers stay the only labels.
+              'group/section-header text-muted-foreground hover:bg-sidebar-row hover:text-sidebar-foreground relative flex cursor-pointer items-center gap-2 rounded-md px-2 text-sm',
               SESSION_ROW_HEIGHT_CLASS,
               drop.over === 'session' && 'bg-sidebar-row text-sidebar-foreground',
               // A group dropped here takes this place: a line marks the side it
@@ -378,8 +383,12 @@ function SessionGroupSection({
                 (groupIds.indexOf(draggingGroupId ?? '') < index ? 'before:bottom-0' : 'before:top-0'),
             )}
           >
-            <FolderSimpleIcon aria-hidden className="size-3.5 shrink-0" />
-            <span className="truncate">{group.name}</span>
+            {open ? (
+              <FolderOpenIcon aria-hidden className="size-4 shrink-0" />
+            ) : (
+              <FolderIcon aria-hidden className="size-4 shrink-0" />
+            )}
+            <span className="min-w-0 truncate">{group.name}</span>
             <CaretRightIcon
               aria-hidden
               className="duration-normal size-3 shrink-0 opacity-0 transition-transform ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
@@ -397,7 +406,11 @@ function SessionGroupSection({
         <DisclosureContent contentClassName="space-y-px">
           {rows.map(renderNode)}
           {query.data !== undefined && rows.length === 0 && !query.hasNextPage ? (
-            <p className="text-muted-foreground px-2 py-1 text-xs">{tGroups('empty')}</p>
+            // Indented to the name's x (px-2 + 16px icon + gap-2), one row tall,
+            // so the empty group reads as a folder with nothing in it yet.
+            <p className="text-muted-foreground flex h-8 items-center pr-2 pl-8 text-xs">
+              <span className="truncate">{tGroups('empty')}</span>
+            </p>
           ) : null}
           {query.hasNextPage && (
             <ShowMoreButton

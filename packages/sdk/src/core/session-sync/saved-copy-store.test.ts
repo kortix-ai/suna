@@ -46,7 +46,7 @@ function envelope(overrides: Partial<SessionTranscriptSyncEnvelope> = {}): Sessi
     source: 'mirror',
     complete: false,
     captured_at: '2026-09-26T11:59:00.000Z',
-    opencode_session_id: 'ses_root',
+    runtime_session_id: 'ses_root',
     message_count: 1,
     messages: [
       {
@@ -81,7 +81,7 @@ describe('a saved copy paints the next open', () => {
 
     const read = instance.read('p1', 's1');
     expect(read).toBeInstanceOf(Promise);
-    expect((await read)?.opencode_session_id).toBe('ses_root');
+    expect((await read)?.runtime_session_id).toBe('ses_root');
   });
 
   test('an unknown session reads null', () => {
@@ -95,7 +95,7 @@ describe('only a copy the server vouches for is kept', () => {
     ['unavailable', { available: false }],
     ['not from the mirror', { source: 'none' }],
     ['empty', { messages: [], message_count: 0 }],
-    ['without its OpenCode root', { opencode_session_id: null }],
+    ['without its OpenCode root', { runtime_session_id: null }],
   ])('%s: not kept, and it replaces an older copy', async (_label, overrides) => {
     const storage = memoryStorage();
     const { instance } = store(storage);
@@ -156,7 +156,7 @@ describe('an oversized copy keeps its newest messages', () => {
     expect(read.complete).toBe(false);
     expect(read.total).toBe(5);
     // Nothing else of the envelope changes: its root is what the paint checks.
-    expect(read.opencode_session_id).toBe('ses_root');
+    expect(read.runtime_session_id).toBe('ses_root');
     expect(read.captured_at).toBe('2026-09-26T11:59:00.000Z');
   });
 

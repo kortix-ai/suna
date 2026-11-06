@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ModelPricingLookup, SessionLogMessage, SessionLogThread } from '@kortix/sdk';
 import { NO_METRICS, sumMetrics, threadMetrics } from './session-context-sub-sessions';
 
@@ -85,7 +87,36 @@ describe('SubSessionSection totals', () => {
   });
 });
 
-describe('SubSessionSection loads a sub-agent thread once its row scrolls into view', () => {
+// The fake API of the sub-agent suites below. Since #11777 a sub-agent's thread comes only from
+// the session's log (`runtime.log.v1`, every box past the runtime floor), never from the box's
+// v1 transcript: the first page names every thread, `GET …/log?thread=<id>` answers one.
+// `thread(id)` decides that answer: the input tokens of each assistant reply, or an HTTP status.
+const GOLDEN = JSON.parse(
+  readFileSync(join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'),
+) as { threads: Array<Record<string, unknown> & { messages: Array<Record<string, unknown>> }> } & Record<string, unknown>;
+type ThreadAnswer = { inputs: number[] } | { status: number } | 'hang';
+function sessionLogApi(sessionId: string, root: string, parents: Record<string, string>, thread: (id: string) => ThreadAnswer) {
+  const { threads: [golden], ...session } = structuredClone(GOLDEN);
+  const { messages: [, assistant], ...head } = golden!;
+  const heads = [root, ...Object.keys(parents)].map((id) => ({ ...head, thread_id: id, parent_thread_id: parents[id] ?? null, title: id }));
+  const reads: string[] = [];
+  const logReads: string[] = [];
+  const fetch = (async (input: unknown) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (!url.pathname.endsWith(`/sessions/${sessionId}/log`)) return Response.json([]);
+    const id = url.searchParams.get('thread') ?? root;
+    if (url.searchParams.has('thread')) reads.push(id);
+    else logReads.push(url.pathname);
+    const answer = thread(id);
+    if (answer === 'hang') return new Promise<Response>(() => {});
+    if ('status' in answer) return Response.json({ error: 'failed' }, { status: answer.status });
+    const messages = answer.inputs.map((n, i) => ({ ...assistant, thread_id: id, message_id: `m_${id}_${i}`, seq: i + 1, usage: { input: n, output: 1, cache_read: 0, cache_write: 0 } }));
+    return Response.json({ session: { ...session, session_id: sessionId }, generation: 1, threads: heads, thread_id: id, messages, has_more: false });
+  }) as unknown as typeof globalThis.fetch;
+  return { fetch, reads, logReads };
+}
+
+describe('SubSessionSection loads the sub-agent threads once a row scrolls into view', () => {
   const ROOT = 'ses_lazy_root', CHILD = 'ses_lazy_child', GRAND = 'ses_lazy_grand', GREAT = 'ses_lazy_great';
   const sessions = [
     { id: ROOT, title: 'Root' },
@@ -94,18 +125,12 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
     { id: GREAT, parentID: GRAND, title: 'Great-grandchild agent' },
   ] as unknown as Session[];
 
-  test('a row reads its saved window only once it is in view, once; a row behind a closed caret reads nothing', async () => {
+  test('nothing is read until a row is in view; then the session log and each sub-agent thread are read once', async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const { createKortix } = await import('@kortix/sdk');
-    const requests: string[] = [];
+    const api = sessionLogApi('s_lazy', ROOT, { [CHILD]: ROOT, [GRAND]: CHILD, [GREAT]: GRAND }, () => ({ inputs: [1] }));
     const originalFetch = globalThis.fetch;
-    // No session log (404) and no v1 copy (#11034): a row in view reads its thread from the runtime.
-    globalThis.fetch = (async (input: unknown) => {
-      const url = input instanceof Request ? input.url : String(input);
-      requests.push(url);
-      if (url.includes('/log?')) return Response.json({ error: 'Not found' }, { status: 404 });
-      return Response.json([]);
-    }) as unknown as typeof fetch;
+    globalThis.fetch = api.fetch;
     const kortix = createKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
     await kortix.session('p_lazy', 's_lazy').ensureReady({
       session: {
@@ -131,7 +156,6 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
       });
       await settle();
     };
-    const loaded = () => [CHILD, GRAND, GREAT].filter((id) => requests.some((url) => url.includes(`/session/${id}/message`)));
     // Each row's button gets a node naming its title (react-test-renderer has no DOM).
     type El = { type: unknown; props: { children?: unknown } };
     const createNodeMock = (el: El) => {
@@ -153,29 +177,28 @@ describe('SubSessionSection loads a sub-agent thread once its row scrolls into v
     try {
       await act(async () => { renderer = create(tree, { createNodeMock: createNodeMock as never }); });
       await settle();
-      // The child row and the grandchild row are drawn, not yet in view: nothing loads.
-      expect(loaded()).toEqual([]);
+      // The child row and the grandchild row are drawn, not yet in view: nothing is read.
+      expect(api.logReads).toEqual([]);
+      expect(api.reads).toEqual([]);
 
+      // A row in view reads the session's log once; its page names every thread, and each
+      // sub-agent thread is read once (the totals read the whole tree, behind a closed caret too).
       await show('Child agent');
-      expect(loaded()).toEqual([CHILD]);
+      expect(api.logReads.length).toBe(1);
+      expect([...api.reads].sort()).toEqual([CHILD, GRAND, GREAT].sort());
       await show('Grandchild agent');
-      expect(loaded()).toEqual([CHILD, GRAND]);
 
-      // A re-render of the open modal keeps both loaded and reads nothing again.
-      const before = requests.length;
+      // A re-render of the open modal, a second row in view and opening a caret read nothing again.
+      const before = api.reads.length + api.logReads.length;
       await act(async () => { renderer!.update(tree); });
       await settle();
-      expect(requests.length).toBe(before);
-
-      // Opening the grandchild's caret draws the great-grandchild row; it loads once in view.
       type Node = { children: Array<Node | string> };
       const textOf = (n: Node | string): string => (typeof n === 'string' ? n : n.children.map(textOf).join(''));
       const caret = renderer!.root.findAll((n) => n.type === 'button' && textOf(n as unknown as Node).includes('Grandchild agent'))[0]!;
       await act(async () => { caret.props.onClick(); });
       await settle();
-      expect(loaded()).toEqual([CHILD, GRAND]);
       await show('Great-grandchild agent');
-      expect(loaded()).toEqual([CHILD, GRAND, GREAT]);
+      expect(api.reads.length + api.logReads.length).toBe(before);
     } finally {
       await act(async () => { renderer!.unmount(); });
       globalThis.fetch = originalFetch;
@@ -240,49 +263,31 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
     { id: GRAND, parentID: CHILD, title: 'Grandchild agent' },
     { id: GREAT, parentID: GRAND, title: 'Great-grandchild agent' },
   ] as unknown as Session[];
-  const reply = (sessionID: string, id: string, input: number) => ({
-    info: {
-      id, sessionID, role: 'assistant' as const, time: { created: 1_700_000_000_000 }, parentID: 'u',
-      modelID: 'm', providerID: 'synthetic', mode: 'build', agent: 'build', path: { cwd: '/', root: '/' },
-      cost: 0, tokens: { input, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
-    },
-    parts: [],
-  });
-  const input: Record<string, number> = { [CHILD]: 13, [GRAND]: 100, [GREAT]: 1000 };
+  const input: Record<string, number> = { [ROOT]: 2, [CHILD]: 13, [GRAND]: 100, [GREAT]: 1000 };
 
-  async function setup(observer: typeof IntersectionObserver | undefined) {
+  // Each setup is its own session: the store keeps a session's log between tests.
+  async function setup(observer: typeof IntersectionObserver | undefined, sessionId: string) {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const { createKortix } = await import('@kortix/sdk');
-    const loadedIds: string[] = [];
+    const api = sessionLogApi(sessionId, ROOT, { [CHILD]: ROOT, [GRAND]: CHILD, [GREAT]: GRAND }, (id) => ({ inputs: [input[id]!] }));
     const originalFetch = globalThis.fetch;
     const originalObserver = globalThis.IntersectionObserver;
-    // No session log (404) and no v1 copy (#11034): a sub-agent's runtime read lands its thread.
-    globalThis.fetch = (async (request: unknown) => {
-      const url = request instanceof Request ? request.url : String(request);
-      if (url.includes('/log?')) return Response.json({ error: 'Not found' }, { status: 404 });
-      const child = /\/session\/(ses_[a-z_]+)\/message/.exec(url)?.[1];
-      if (child && input[child] !== undefined) {
-        if (!loadedIds.includes(child)) loadedIds.push(child);
-        return Response.json([reply(child, `m_${child}`, input[child]!)]);
-      }
-      return Response.json([]);
-    }) as unknown as typeof fetch;
+    globalThis.fetch = api.fetch;
     const kortix = createKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
-    await kortix.session('p_all', 's_all').ensureReady({
+    await kortix.session('p_all', sessionId).ensureReady({
       session: {
-        session_id: 's_all', project_id: 'p_all', account_id: 'a', status: 'running',
+        session_id: sessionId, project_id: 'p_all', account_id: 'a', status: 'running',
         sandbox_id: 'sbx_all', sandbox_provider: 'synthetic', sandbox_url: 'http://test.local/v1/p/sbx-all/8000/',
         runtime_session_id: ROOT,
       } as never,
     });
-    useSessionStateStore.getState().hydrate(ROOT, [reply(ROOT, 'm_all_root', 2)] as never);
     (globalThis as { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver = observer;
     let renderer: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(
         <IntlTestProvider>
           <SubSessionSection
-            source={{ projectId: 'p_all', sessionId: 's_all', runtimeSessionId: ROOT }}
+            source={{ projectId: 'p_all', sessionId, runtimeSessionId: ROOT }}
             session={sessions[0]}
             allSessions={sessions}
             pricingLookup={() => null}
@@ -298,19 +303,18 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
       await act(async () => { renderer!.unmount(); });
       globalThis.fetch = originalFetch;
       globalThis.IntersectionObserver = originalObserver;
-      for (const id of [ROOT, CHILD, GRAND, GREAT]) useSessionStateStore.getState().clearSession(id);
     };
-    return { renderer: renderer!, text, loadedIds, cleanup };
+    return { renderer: renderer!, text, reads: api.reads, cleanup };
   }
 
   test('before any row is in view the totals say they are partial; "Load all" loads every sub-agent and the totals become whole', async () => {
     // An observer that never reports a row in view.
     const quiet = class { observe() {} disconnect() {} } as unknown as typeof IntersectionObserver;
-    const { renderer, text, loadedIds, cleanup } = await setup(quiet);
+    const { renderer, text, reads, cleanup } = await setup(quiet, 's_all_quiet');
     try {
       expect(text()).toContain('0 of 3 sub-agents loaded');
-      expect(loadedIds).toEqual([]);
-      // Combined: the root's 2 input tokens only, not the whole tree's 1115.
+      expect(reads).toEqual([]);
+      // Not the whole tree's 1115 input tokens.
       expect(text()).not.toContain('"1115"');
 
       const button = renderer.root.findAll((n) => typeof n.props.onClick === 'function' && n.props.children === 'Load all')[0]!;
@@ -318,7 +322,7 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
       await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
 
       // Every sub-agent loaded, the great-grandchild behind a closed caret too.
-      expect([...loadedIds].sort()).toEqual([CHILD, GRAND, GREAT].sort());
+      expect([...reads].sort()).toEqual([CHILD, GRAND, GREAT].sort());
       expect(text()).not.toContain('sub-agents loaded');
       expect(text()).not.toContain('Load all');
       // 4 messages; 2 + 13 + 100 + 1000 input tokens.
@@ -329,60 +333,45 @@ describe('SubSessionSection totals while sub-agents load lazily', () => {
     }
   });
 
-  test('a host with no IntersectionObserver loads every drawn row at once', async () => {
-    const { text, loadedIds, cleanup } = await setup(undefined);
+  test('a host with no IntersectionObserver loads at once', async () => {
+    const { text, reads, cleanup } = await setup(undefined, 's_all_eager');
     try {
-      // The child and grandchild rows are drawn; the great-grandchild is behind a closed caret.
-      expect([...loadedIds].sort()).toEqual([CHILD, GRAND].sort());
-      expect(text()).toContain('2 of 3 sub-agents loaded');
+      // The drawn rows count as seen at mount: the log is read and every thread lands.
+      expect([...reads].sort()).toEqual([CHILD, GRAND, GREAT].sort());
+      expect(text()).not.toContain('sub-agents loaded');
+      expect(text()).toContain('"1115"');
     } finally {
       await cleanup();
     }
   });
 });
 
-describe('SubSessionSection with sub-agents the server never saved', () => {
-  // A pi session's sub-agents (threads, not child sessions). The saved window answers
-  // `available: false` for every one, as for a sub-agent the turn-end capture did not reach;
-  // the runtime holds them all, except one it answers 404 for and one whose read fails once
-  // (500) and then never answers.
+describe('SubSessionSection with many sub-agents, some of which cannot load', () => {
+  // A pi session's sub-agents (threads). The log answers every thread, except one it
+  // answers 404 for and one whose read fails (500) and then never answers.
   const ROOT = 'ses_unsaved_root', GONE = 'ses_unsaved_gone', FLAKY = 'ses_unsaved_flaky';
   const kids = Array.from({ length: 24 }, (_, i) => `ses_unsaved_${i}`);
   const sessions = [
     { id: ROOT, title: 'Root' },
     ...[...kids, GONE, FLAKY].map((id) => ({ id, parentID: ROOT, title: `Agent ${id}` })),
   ] as unknown as Session[];
-  const message = (sessionID: string, id: string) => ({
-    info: { id, sessionID, role: 'user', time: { created: 1_700_000_000_000 } },
-    parts: [],
-  });
 
-  test('"Load all" reads every row from the runtime; a row that cannot load says so, never "0 messages"', async () => {
+  test('"Load all" reads every row\'s thread; a row that cannot load never says "0 messages"', async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     const { createKortix } = await import('@kortix/sdk');
     const originalFetch = globalThis.fetch;
     const originalObserver = globalThis.IntersectionObserver;
-    const runtimeReads = new Set<string>();
     let flakyReads = 0;
-    globalThis.fetch = (async (input: unknown) => {
-      const url = input instanceof Request ? input.url : String(input);
-      const runtime = /\/session\/(ses_[a-z0-9_]+)\/message/.exec(url)?.[1];
-      if (runtime) {
-        runtimeReads.add(runtime);
-        if (runtime === GONE) return Response.json({ message: 'session not found' }, { status: 404 });
-        if (runtime === FLAKY) {
-          flakyReads += 1;
-          return flakyReads === 1 ? Response.json({ message: 'upstream failed' }, { status: 500 }) : new Promise<Response>(() => {});
-        }
-        // Every sub-agent has 2 messages; the saved window has none of them.
-        return Response.json([message(runtime, `m_${runtime}_a`), message(runtime, `m_${runtime}_b`)]);
-      }
-      return Response.json({ available: false, complete: false, message_count: 0, reason: 'no server-side transcript has been captured for this session yet' });
-    }) as unknown as typeof fetch;
+    const api = sessionLogApi('s_unsaved', ROOT, Object.fromEntries([...kids, GONE, FLAKY].map((id) => [id, ROOT])), (id) => {
+      if (id === GONE) return { status: 404 };
+      if (id === FLAKY) return ++flakyReads === 1 ? { status: 500 } : 'hang';
+      // The root has 1 message, every sub-agent 2.
+      return { inputs: id === ROOT ? [1] : [1, 1] };
+    });
+    globalThis.fetch = api.fetch;
     // No row is ever in view: only "Load all" requests them.
     globalThis.IntersectionObserver = class { observe() {} disconnect() {} } as unknown as typeof IntersectionObserver;
     const kortix = createKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'token' });
-    // The session's running row: the runtime of this session, without a `/start`.
     await kortix.session('p_unsaved', 's_unsaved').ensureReady({
       session: {
         session_id: 's_unsaved', project_id: 'p_unsaved', account_id: 'a', status: 'running',
@@ -390,7 +379,6 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
         runtime_session_id: ROOT,
       } as never,
     });
-    useSessionStateStore.getState().hydrate(ROOT, [message(ROOT, 'm_root')] as never);
     let renderer: ReturnType<typeof create>;
     const text = () => JSON.stringify(renderer!.toJSON());
     try {
@@ -416,27 +404,20 @@ describe('SubSessionSection with sub-agents the server never saved', () => {
       await act(async () => { button.props.onClick(); });
       await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
 
-      // Every requested row went to the runtime, past the registry's 20 controllers.
-      expect([...runtimeReads].sort()).toEqual([...kids, GONE, FLAKY].sort());
-      // 24 rows show their runtime count; the 404 row and the 500 row say they could not load.
+      // Every row's thread was read, past the 20 the old per-row controllers held.
+      expect([...new Set(api.reads)].sort()).toEqual([...kids, GONE, FLAKY].sort());
+      // 24 rows show their count; the 404 row and the 500 row claim none.
       expect(text().match(/"2"," ","messages"/g)?.length).toBe(24);
       expect(text()).not.toContain('"0"," ","messages"');
-      expect(text().match(/Could not load/g)?.length).toBe(2);
       // The label counts loaded threads, not requested ones: 24 of 26.
       expect(text()).toContain('24 of 26 sub-agents loaded');
       expect(text()).not.toContain('Load all');
       // Combined messages: the root's 1 plus 24 × 2.
       expect(text()).toContain('"49"');
-
-      // The 500 row's retry (after 1 s) is in flight: the row still says it could not load.
-      await act(async () => { await new Promise((r) => setTimeout(r, 1_300)); });
-      expect(flakyReads).toBe(2);
-      expect(text().match(/Could not load/g)?.length).toBe(2);
     } finally {
       await act(async () => { renderer!.unmount(); });
       globalThis.fetch = originalFetch;
       globalThis.IntersectionObserver = originalObserver;
-      for (const id of [ROOT, GONE, FLAKY, ...kids]) useSessionStateStore.getState().clearSession(id);
     }
   });
 });

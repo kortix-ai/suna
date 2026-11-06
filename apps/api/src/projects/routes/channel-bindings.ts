@@ -194,7 +194,7 @@ async function serializeBinding(
     projectDefault: projectDefaultAgent,
   });
   const effectiveModel = await resolveBindingEffectiveModel(
-    row.opencodeModel,
+    row.sessionModel,
     effectiveAgent.agent,
     modelCtx,
     oneToOneConversation(row),
@@ -212,7 +212,7 @@ async function serializeBinding(
     // is its own binding named `Team › Channel`; this tells them apart.
     threadTitle,
     agentName: row.agentName,
-    opencodeModel: row.opencodeModel,
+    model: row.sessionModel,
     conversationPolicy: row.conversationPolicy,
     installedAt: row.installedAt.toISOString(),
     effectiveAgent,
@@ -223,7 +223,7 @@ async function serializeBinding(
 const ChannelBindingPatchBody = z.object({
   // null resets the override to the project default; omit to leave unchanged.
   agentName: z.string().max(128).nullable().optional(),
-  opencodeModel: z.string().max(256).nullable().optional(),
+  model: z.string().max(256).nullable().optional(),
   conversationPolicy: z.enum(CONVERSATION_POLICIES).optional(),
 });
 
@@ -376,7 +376,7 @@ export function registerChannelBindingsRoutes(): void {
       const body = parsed.data;
       if (
         body.agentName === undefined &&
-        body.opencodeModel === undefined &&
+        body.model === undefined &&
         body.conversationPolicy === undefined
       ) {
         return c.json({ error: "No fields to update", code: "empty_patch" }, 400);
@@ -424,10 +424,10 @@ export function registerChannelBindingsRoutes(): void {
         }
       }
 
-      if (body.opencodeModel !== undefined) {
+      if (body.model !== undefined) {
         let stored: string | null = null;
-        if (body.opencodeModel !== null) {
-          const trimmed = body.opencodeModel.trim();
+        if (body.model !== null) {
+          const trimmed = body.model.trim();
           if (!trimmed || /\s/.test(trimmed)) {
             return c.json(
               { error: `"${trimmed}" doesn't look like a model id`, code: "invalid_model" },

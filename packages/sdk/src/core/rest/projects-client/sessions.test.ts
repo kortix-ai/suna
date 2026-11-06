@@ -233,19 +233,19 @@ test('listProjectSessions throws when the response is unsuccessful', async () =>
 test('setProjectSessionModel PUTs the pin as `model`, with the pre-W4 key for an older API', async () => {
   nextResponse = {
     status: 200,
-    body: { model: 'kortix/glm', opencode_model: 'kortix/glm', applied_live: true },
+    body: { model: 'kortix/glm', applied_live: true },
   };
   const result = await setProjectSessionModel('P1', 'S 1', 'kortix/glm');
   expect(last().url).toContain('/projects/P1/sessions/S%201/model');
   expect(last().method).toBe('PUT');
-  expect(last().body).toEqual({ model: 'kortix/glm', opencode_model: 'kortix/glm' });
+  expect(last().body).toEqual({ model: 'kortix/glm' });
   expect(result.model).toBe('kortix/glm');
 });
 
 test('sessionModelPin reads the stored model pin, trimmed, or null', () => {
-  expect(sessionModelPin({ metadata: { opencode_model: ' kortix/glm ' } })).toBe('kortix/glm');
-  expect(sessionModelPin({ metadata: { opencode_model: '  ' } })).toBeNull();
-  expect(sessionModelPin({ metadata: { opencode_model: 7 } })).toBeNull();
+  expect(sessionModelPin({ metadata: { model: ' kortix/glm ' } })).toBe('kortix/glm');
+  expect(sessionModelPin({ metadata: { model: '  ' } })).toBeNull();
+  expect(sessionModelPin({ metadata: { model: 7 } })).toBeNull();
   expect(sessionModelPin({ metadata: null })).toBeNull();
   expect(sessionModelPin({})).toBeNull();
 });
@@ -512,6 +512,13 @@ test('createProjectSession files the session into a space and reads space_id and
   expect(session.first_prompt).toBe('Draft the launch post');
 });
 
+test('createProjectSession sends space_id null to file the session in no space', async () => {
+  nextResponse = { status: 201, body: { session_id: 'NEW-NS', space_id: null, first_prompt: null } };
+  const session = await createProjectSession('P1', { space_id: null, initial_prompt: 'hi' });
+  expect(last().body).toEqual({ space_id: null, initial_prompt: 'hi' });
+  expect(session.space_id).toBeNull();
+});
+
 test('listProjectSessions sends spaceId as the space_id query parameter', async () => {
   nextResponse = { status: 200, body: [] };
   await listProjectSessions('P1', { spaceId: 'SPACE-1', parent: 'root' });
@@ -577,7 +584,7 @@ test('getSessionTranscript builds the query string from limit/chars options', as
     body: {
       available: true,
       reason: null,
-      opencode_session_id: 'ocs-1',
+      runtime_session_id: 'ocs-1',
       message_count: 0,
       messages: [],
     },
@@ -600,7 +607,7 @@ test('getSessionTranscriptSync pages older windows with the previous window curs
       source: 'mirror',
       complete: false,
       captured_at: '2026-09-21T00:00:00.000Z',
-      opencode_session_id: 'ocs-1',
+      runtime_session_id: 'ocs-1',
       message_count: 40,
       total: 242,
       next_cursor: 'msg_older',
@@ -628,7 +635,7 @@ test("getSessionTranscriptSync reads a sub-agent's own window with `child`", asy
       source: 'none',
       complete: false,
       captured_at: null,
-      opencode_session_id: 'ses_sub',
+      runtime_session_id: 'ses_sub',
       message_count: 0,
       messages: [],
     },
@@ -648,7 +655,7 @@ test('getSessionTranscriptSync omits the cursor on a first window', async () => 
       source: 'none',
       complete: false,
       captured_at: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       message_count: 0,
       messages: [],
     },
@@ -675,7 +682,7 @@ test('getSessionTurn returns a live turn verbatim', async () => {
     turn_token: 't1',
     state: 'active',
     message_id: 'msg_1',
-    opencode_session_id: 'ses_root',
+    runtime_session_id: 'ses_root',
     started_at: '2026-08-17T00:00:00.000Z',
     accepted_at: '2026-08-17T00:00:01.000Z',
   };
@@ -694,7 +701,7 @@ test('getSessionTurn carries every concurrent turn through', async () => {
       turn_token: 't-web',
       state: 'delivering',
       message_id: 'msg_B',
-      opencode_session_id: null,
+      runtime_session_id: null,
       started_at: '2026-08-17T12:00:02.000Z',
       accepted_at: null,
     },
@@ -702,7 +709,7 @@ test('getSessionTurn carries every concurrent turn through', async () => {
       turn_token: 't-trigger',
       state: 'active',
       message_id: 'msg_A',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       started_at: '2026-08-17T12:00:00.000Z',
       accepted_at: '2026-08-17T12:00:00.400Z',
     },

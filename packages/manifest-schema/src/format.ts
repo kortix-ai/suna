@@ -40,7 +40,27 @@ export class ManifestSyntaxError extends Error {
  * appends: "Map keys must be unique at line 54, column 3".
  */
 export function yamlErrorSummary(message: string): string {
-  return (message.split('\n')[0] ?? message).trim().replace(/:$/, '');
+  const lines = message.split('\n');
+  const summary = (lines[0] ?? message).trim().replace(/:$/, '');
+  return summary + (bareStarHint(lines) ?? '');
+}
+
+/**
+ * The fix for a bare `*`, which YAML reads as an alias with no name
+ * ("Alias cannot be an empty string"): the excerpt line with the `*` quoted,
+ * e.g. ': YAML reads a bare `*` as an alias. Quote it: `tools: "*"`'. Null for
+ * any other error. The file is never repaired silently.
+ */
+function bareStarHint(lines: string[]): string | null {
+  if (!lines[0]?.startsWith('Alias cannot be an empty string')) return null;
+  // The parser's excerpt: the source line, then a caret line under the column.
+  const caret = lines.findIndex((line) => /^\s*\^+\s*$/.test(line));
+  const source = caret > 0 ? lines[caret - 1]! : undefined;
+  const column = caret > 0 ? lines[caret]!.indexOf('^') : -1;
+  if (source === undefined || source[column] !== '*') return null;
+  // The line is file content: no control character reaches a terminal, and a long line is cut.
+  const fixed = `${source.slice(0, column)}"*"${source.slice(column + 1)}`.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
+  return `: YAML reads a bare \`*\` as an alias. Quote it: \`${fixed.length > 120 ? `${fixed.slice(0, 119)}…` : fixed}\``;
 }
 
 /** The `path` of the issue `validateManifest` reports for text that is not YAML. */

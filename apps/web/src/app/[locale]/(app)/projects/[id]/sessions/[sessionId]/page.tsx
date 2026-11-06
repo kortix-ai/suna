@@ -122,7 +122,7 @@ import { useWebNotificationStore } from '@kortix/ui/internal/stores/web-notifica
 import {
   clearSessionFresh,
   formatRuntimeError,
-  getProjectDetail,
+  getProject,
   isRepositoryDisconnectedError,
   isSessionFresh,
   sessionStartKey,
@@ -228,16 +228,17 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // forever. It gates the poll, never the transcript: reading what you already
   // wrote does not need a sandbox, let alone an entitlement re-check.
   // Scope to the account that OWNS this project (team account), not the viewer's.
-  const { data: projectDetail } = useQuery({
-    queryKey: qk.project.detail(projectId),
+  // The project row (one database read): the detail reads the repository.
+  const { data: projectRow } = useQuery({
+    queryKey: qk.project.summary(projectId),
     queryFn: () => {
       if (!projectId) throw new Error('Missing project id');
-      return getProjectDetail(projectId);
+      return getProject(projectId);
     },
     enabled: !!projectId,
     ...contract('config'),
   });
-  const projectAccountId = projectDetail?.project?.account_id ?? undefined;
+  const projectAccountId = projectRow?.account_id ?? undefined;
   const { data: accountState } = useAccountState({
     accountId: projectAccountId,
   });
@@ -308,7 +309,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // like any other. What is still true is that its clone came from the old
   // repository — which is what the notice below is for.
   const usesPreviousRepository = sessionUsesPreviousRepository(
-    projectDetail?.project.metadata,
+    projectRow?.metadata,
     currentProjectSession?.metadata,
   );
   const sandbox = session.sandbox;

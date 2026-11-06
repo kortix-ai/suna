@@ -8,6 +8,7 @@
  * (every Kortix prefix is written by a schema-2 engine); unknown fields are
  * ignored.
  */
+import { cleanOsVersion } from './diagnostics';
 import { z } from 'zod';
 import {
   CAPTURE_EXCLUSION_GROUPS,
@@ -300,10 +301,12 @@ const unique = <T>(items: T[]): T[] => [...new Set(items)];
 const normalized = (rule: (input: string) => string | null, message: string) =>
   z.string().transform((value, ctx) => rule(value) ?? (ctx.addIssue({ code: z.ZodIssueCode.custom, message }), z.NEVER));
 
+// `.prefault()`, not `.default()`: zod 4 returns a `.default()` value as is, while a prefault is
+// parsed, so the nested defaults (privacy, recording, experimental) still fill in.
 export const PolicySchema = z.object({
   layers: z
     .object(Object.fromEntries(CAPTURE_LAYERS.map((layer) => [layer, z.boolean()])) as Record<CaptureLayer, z.ZodBoolean>)
-    .default({ screen: true, actions: true, audio: false }),
+    .prefault({ screen: true, actions: true, audio: false }),
   privacy: z
     .object({
       redact_pii: z.boolean().default(false),
@@ -324,13 +327,13 @@ export const PolicySchema = z.object({
       member_inclusions: z.boolean().default(true),
     })
     .passthrough()
-    .default({}),
+    .prefault({}),
   retention: z
     .object({
       local_hours: z.number().int().min(0).max(CAPTURE_RETENTION_LIMITS.localHours),
       remote_days: z.number().int().min(0).max(CAPTURE_RETENTION_LIMITS.remoteDays),
     })
-    .default({ local_hours: 0, remote_days: 90 }),
+    .prefault({ local_hours: 0, remote_days: 90 }),
   // `interval_ms` and `max_height` SET the device's capture rate and size (null: the device
   // default); the engine applies them over the person's own settings.
   recording: z
@@ -350,11 +353,11 @@ export const PolicySchema = z.object({
         .nullable()
         .default(null),
     })
-    .default({ paused: false, paused_until_ms: null }),
+    .prefault({ paused: false, paused_until_ms: null }),
   notice: z.string().max(2000).default(''),
   // Experimental surfaces. `privacy_controls` shows the exclusions and masking in Kortix and in
   // the app; hiding them never changes what applies.
-  experimental: z.object({ privacy_controls: z.boolean().default(false) }).default({}),
+  experimental: z.object({ privacy_controls: z.boolean().default(false) }).prefault({}),
 });
 export type CapturePolicy = z.infer<typeof PolicySchema>;
 
@@ -395,7 +398,7 @@ export function deviceFields(raw: Record<string, unknown>): {
   return {
     name: clip(raw.computer_name) ?? clip(raw.hostname),
     os: clip(raw.os),
-    osVersion: clip(raw.os_version),
+    osVersion: cleanOsVersion(clip(raw.os_version)),
     arch: clip(raw.arch),
     appVersion: clip(raw.app_version),
   };

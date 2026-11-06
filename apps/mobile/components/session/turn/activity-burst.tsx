@@ -23,7 +23,7 @@
  */
 
 import { memo, useCallback, useEffect, useMemo } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable } from 'react-native';
 import { sessionLogBurstWorkLabel, type SessionLogBlock } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { TextShimmer } from '@/components/kortix/text-shimmer';

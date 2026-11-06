@@ -4,7 +4,6 @@
  * artwork is gone (Jay, 2026-09-23): no account shows those names any more.
  */
 
-import * as React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { THEME } from '@/lib/utils/theme';

@@ -19,6 +19,17 @@ The file's header lists the two preconditions for dropping them and the tests
 to update in the same PR. Earliest: the release after the one that ships
 `20260925013304428`.
 
+## PARKED — `20261104040701000_drop_rooms.sql.pending`
+
+The contract half of removing Rooms (2026-11): drops `kortix.rooms`,
+`room_messages`, `room_members`, `session_idle_watches`, the
+`notifications.room_id` / `room_thread_seq` columns and the
+`project.room.read` / `project.room.write` catalog rows. The release that
+removed every reader still ships these tables in `kortix.ts` (no code reads
+them), because the API images before it read them ungated. The file's header
+lists the three preconditions and the edits that go in the same PR. Earliest:
+the release after the one that removed Rooms.
+
 ---
 
 ## APPLIED — the cutover shipped

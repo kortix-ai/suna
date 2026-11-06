@@ -24,19 +24,19 @@ describe('channelSettingsPatch', () => {
 
   test('a gateway model goes out as its bare wire id', () => {
     const next = { ...bound, model: { providerID: 'kortix', modelID: 'deepseek-v4.1' } };
-    expect(channelSettingsPatch(bound, next)).toEqual({ opencodeModel: 'deepseek-v4.1' });
+    expect(channelSettingsPatch(bound, next)).toEqual({ model: 'deepseek-v4.1' });
   });
 
   test('back to the defaults sends null, which resets the override', () => {
     const pinned = { ...bound, agentName: 'reviewer' };
     expect(channelSettingsPatch(pinned, { ...pinned, agentName: null, model: null })).toEqual({
       agentName: null,
-      opencodeModel: null,
+      model: null,
     });
   });
 
   test('picking a model on an unpinned conversation pins it', () => {
     const unpinned = { ...bound, model: null };
-    expect(channelSettingsPatch(unpinned, bound)).toEqual({ opencodeModel: 'codex/gpt-6-sol' });
+    expect(channelSettingsPatch(unpinned, bound)).toEqual({ model: 'codex/gpt-6-sol' });
   });
 });

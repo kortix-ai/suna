@@ -85,7 +85,7 @@ describe('modelChangeResult — a half-applied change must never read as done', 
       needsPush: true,
       push: { applied: true },
     });
-    expect(result).toEqual({ model: 'kortix/claude-sonnet-4.6', opencode_model: 'kortix/claude-sonnet-4.6', applied_live: true });
+    expect(result).toEqual({ model: 'kortix/claude-sonnet-4.6', applied_live: true });
   });
 
   test('a live push that FAILED is flagged, with the upstream reason', () => {
@@ -96,7 +96,6 @@ describe('modelChangeResult — a half-applied change must never read as done', 
     });
     expect(result).toEqual({
       model: 'kortix/deepseek-v4-flash',
-      opencode_model: 'kortix/deepseek-v4-flash',
       applied_live: false,
       push_failed: true,
       detail: 'stored, but not pushed: 502 upstream-closed-before-headers',
@@ -121,7 +120,6 @@ describe('modelChangeResult — a half-applied change must never read as done', 
     });
     expect(result).toEqual({
       model: 'kortix/claude-opus-4.8',
-      opencode_model: 'kortix/claude-opus-4.8',
       applied_live: false,
       detail: 'stored — applies when the sandbox next starts',
     });
@@ -136,7 +134,6 @@ describe('modelChangeResult — a half-applied change must never read as done', 
     });
     expect(result).toEqual({
       model: 'kortix/claude-opus-4.8',
-      opencode_model: 'kortix/claude-opus-4.8',
       applied_live: false,
       detail: 'already set to this model',
     });

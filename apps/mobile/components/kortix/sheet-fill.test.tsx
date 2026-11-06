@@ -181,7 +181,11 @@ mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('expo-clipboard', () => ({ setStringAsync: async () => {} }));
 mock.module('@/lib/haptics', () => ({ haptics: { success: () => {} } }));
 mock.module('@/lib/icons', () => ({ CheckIcon: 'check', CopyIcon: 'copy', XIcon: 'x' }));
-mock.module('@/components/kortix/liquid-glass-capsule', () => ({ LIQUID_GLASS_AVAILABLE: false, LiquidGlassCapsule: () => null }));
+mock.module('@/components/kortix/liquid-glass', () => ({
+  LIQUID_GLASS_AVAILABLE: false,
+  LiquidGlass: ({ children }: { children: React.ReactNode }) => children,
+  GlassButtons: ({ children }: { children: React.ReactNode }) => children,
+}));
 
 let mod: typeof import('./sheet');
 let bar: typeof import('./pinned-bar');

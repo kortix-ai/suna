@@ -32,7 +32,7 @@ export function sessionChannelEnvFromMetadata(metadata: unknown): Record<string,
 }
 
 /**
- * The channel or DM a thread belongs to (`project_channels`), for the agent:
+ * The channel or DM a thread belongs to (`chat`), for the agent:
  * `KORTIX_SPACE_SLUG` is the channel's slug, or the agent's name in a DM.
  * Its folders are named in /drives/README.md.
  */

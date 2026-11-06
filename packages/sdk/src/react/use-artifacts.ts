@@ -43,6 +43,9 @@ import {
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
+/** The mutation key of every comment write on one Artifact. `useArtifactLive` reads it to defer a refetch. */
+export const artifactCommentWriteKey = (projectId: string, artifactId: string) => ['artifact-comment-write', projectId, artifactId];
+
 function commentScope(projectId: string | null | undefined, artifactId: string | null | undefined): [string, string] {
   if (!projectId || !artifactId) throw new Error('An Artifact comment needs a project and Artifact id');
   return [projectId, artifactId];
@@ -167,7 +170,8 @@ export function useArtifactCommentScreenshot(
  * `can_delete` false, and a placeholder author (`user_id: ''`, `name: ''`):
  * render the viewer as its author, and allow no action on it until it is
  * confirmed. Each write that reached the server refreshes the Comments and
- * Activity reads once the last concurrent write settles. Historical
+ * Activity reads, the Artifacts list and the current Artifact (their
+ * `open_thread_count`) once the last concurrent write settles. Historical
  * (`version`) lists are read-only and never change optimistically.
  */
 export function useArtifactComments(
@@ -186,9 +190,12 @@ export function useArtifactComments(
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
   });
+  // The gallery and the current Artifact carry `open_thread_count`. A historical version is left alone.
   const refresh = () => Promise.all([
     client.invalidateQueries({ queryKey: qk.project.artifactComments(projectId ?? '', artifactId ?? '') }),
     client.invalidateQueries({ queryKey: qk.project.artifactActivity(projectId ?? '', artifactId ?? '') }),
+    client.invalidateQueries({ queryKey: [...qk.project.artifacts(projectId ?? ''), 'list'] }),
+    client.invalidateQueries({ queryKey: qk.project.artifact(projectId ?? '', artifactId ?? '', 'current'), exact: true }),
   ]);
   const writeScope = (): [string, string] => {
     if (options.version) throw new ApiError('Historical Artifact comments are read-only', { status: 403, code: 'artifact_comments_read_only' });
@@ -202,7 +209,7 @@ export function useArtifactComments(
     predicate: (entry: { queryKey: readonly unknown[] }) =>
       entry.queryKey.length === scopeKey.length + 1 && THREAD_LIST_FILTERS.has(String(entry.queryKey[scopeKey.length])),
   };
-  const writeKey = ['artifact-comment-write', projectId ?? '', artifactId ?? ''];
+  const writeKey = artifactCommentWriteKey(projectId ?? '', artifactId ?? '');
   const optimisticWrites = !options.version && !!projectId && !!artifactId;
   const patchLists = (update: (threads: ThreadEntry[], filter: string) => ThreadEntry[]) => {
     for (const [key, threads] of client.getQueriesData<ThreadEntry[]>(lists)) {

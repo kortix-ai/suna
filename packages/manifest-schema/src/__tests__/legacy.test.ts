@@ -112,14 +112,14 @@ describe('a kortix_version 2 project', () => {
       prompt_file: 'agents/lead.md',
       permission: { bash: 'ask' },
       tools: { exclude: OFF },
-      skills: 'all',
-      subagents: 'all',
+      skills: '*',
+      subagents: '*',
       commands: ['standup'],
       extensions: ['pi-web-access'],
       codemode: 'only',
-      connectors: 'all',
+      connectors: '*',
       secrets: ['HELPDESK_TOKEN'],
-      kortix_permissions: 'all',
+      kortix_permissions: '*',
       // v2 cloned the repository when the key was omitted.
       workspace: { project_repository: true },
     });
@@ -166,7 +166,7 @@ describe('a kortix_version 2 project', () => {
     const files = { ...FILES, 'harnesses/opencode/agents/helper.md': '---\ndescription: Helps the lead.\nmode: subagent\nmodel: kortix/glm-5.3-flash\npermission: allow\n---\nYou help.\n' };
     const { raw, overlay, changes } = convertLegacyManifest(parseManifestText(V2), 2, 'kortix.yaml', repo(files));
     const agents = raw.agents as Record<string, Record<string, unknown>>;
-    expect(agents.helper).toMatchObject({ description: 'Helps the lead.', mode: 'subagent', prompt_file: 'agents/helper.md', skills: 'all' });
+    expect(agents.helper).toMatchObject({ description: 'Helps the lead.', mode: 'subagent', prompt_file: 'agents/helper.md', skills: '*' });
     expect(overlay['agents/helper.md']).toBe('You help.\n');
     expect(changes.some((c) => c.action === 'delete' && c.path === 'harnesses/opencode/agents/helper.md')).toBe(true);
   });
@@ -226,8 +226,12 @@ describe('a kortix.toml (kortix_version = 1) project', () => {
     expect(validateManifest(raw).issues.filter((i) => i.severity === 'error')).toEqual([]);
     expect(raw.default_agent).toBe('ops');
     const agents = raw.agents as Record<string, Record<string, unknown>>;
-    expect(agents.ops).toMatchObject({ mode: 'primary', description: 'Runs ops.', permission: { bash: 'ask' }, connectors: 'none', secrets: ['HELPDESK_TOKEN'], kortix_permissions: 'all', skills: 'all', workspace: { project_repository: true } });
-    expect(agents.helper).toMatchObject({ mode: 'subagent', connectors: 'all', secrets: 'all', kortix_permissions: 'all', skills: 'all' });
+    expect(agents.ops).toMatchObject({ mode: 'primary', description: 'Runs ops.', permission: { bash: 'ask' }, connectors: 'none', secrets: ['HELPDESK_TOKEN'], kortix_permissions: '*', skills: '*', workspace: { project_repository: true } });
+    expect(agents.helper).toMatchObject({ mode: 'subagent', connectors: '*', secrets: '*', kortix_permissions: '*', skills: '*', tools: '*' });
+    // The written kortix.yaml spells "every" as a double-quoted "*".
+    const written = changes.find((c) => c.path === 'kortix.yaml')!.content!;
+    expect(written).toContain('tools: "*"');
+    expect(written).not.toMatch(/: all$/m);
     expect(overlay[agents.ops!.prompt_file as string]).toBe('You run ops.\n');
     expect(changes[0]).toMatchObject({ path: 'kortix.yaml', action: 'rewrite' });
     expect(changes.some((c) => c.action === 'delete' && c.path === 'kortix.toml')).toBe(true);

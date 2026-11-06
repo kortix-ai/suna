@@ -697,7 +697,7 @@ export function agentGrantActionLabel(plan: AgentGrantPlan, selected: string | n
 export function agentGrantCandidateHint(candidate: AgentGrantCandidate): string | null {
   if (candidate.alreadyGranted) return 'Already lists this secret.';
   if (candidate.currentSecrets === 'all') {
-    return 'Runs on "secrets: all". The grant expands that to an explicit list of the project secrets.';
+    return 'Runs on every secret ("*"). The grant expands that to an explicit list of the project secrets.';
   }
   return null;
 }

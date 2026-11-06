@@ -12,7 +12,6 @@
 import {
 	createRuntimeRestClient,
 	type RuntimeClient,
-	type RuntimeClientConfig,
 } from "./runtime-rest-client";
 
 // The types a host reads runtime data with: the Kortix transcript
@@ -32,12 +31,6 @@ export type {
 	RuntimeResult,
 } from "./runtime-rest-client";
 export type { createRuntimeRestClient as createRuntimeClient };
-/** @deprecated Renamed to `RuntimeClient`. Removed in the next major. */
-export type OpencodeClient = RuntimeClient;
-/** @deprecated Renamed to `RuntimeClientConfig`. Removed in the next major. */
-export type OpencodeClientConfig = RuntimeClientConfig;
-/** @deprecated Renamed to `createRuntimeClient`. Removed in the next major. */
-export type createOpencodeClient = typeof createRuntimeRestClient;
 
 import { authenticatedFetch } from "../http/auth";
 import { isConfigured } from "../http/config";
@@ -66,8 +59,8 @@ export {
 	type KortixPty,
 	type PtyCloseAction,
 } from "./pty";
+import { RuntimeNotReadyError } from './runtime-not-ready-error';
 export * from "./kortix-master";
-
 
 /**
  * Per-URL client cache. Unlike `getClient()` (which tracks only the single
@@ -81,20 +74,7 @@ const clientsByUrl = new Map<string, RuntimeClient>();
  *  recreated on its next `getClientForUrl`. */
 const MAX_CLIENTS_BY_URL = 256;
 
-/**
- * Thrown when the active runtime's sandbox URL hasn't resolved yet (e.g. a
- * cloud sandbox is still provisioning). Distinct from a plain `Error` so
- * callers (`classifySendError` in `../react/use-session`) can classify this
- * specific "try again in a moment" condition with `instanceof` instead of
- * string-matching the message. The message text is unchanged for any
- * remaining string-match fallback.
- */
-export class RuntimeNotReadyError extends Error {
-	constructor(message = '[kortix-runtime] Server URL not ready — sandbox is still loading') {
-		super(message);
-		this.name = 'RuntimeNotReadyError';
-	}
-}
+export { RuntimeNotReadyError } from './runtime-not-ready-error';
 
 /**
  * Get (or create) the SDK client for the current active server.

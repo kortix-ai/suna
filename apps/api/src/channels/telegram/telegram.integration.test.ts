@@ -37,6 +37,7 @@ import { deleteFromView, insertIntoView } from '../../__tests__/helpers/compat-v
 import { projectsApp } from '../../projects/surface';
 import * as projectSurface from '../../projects/surface';
 import { registerTurnQuestionsRoutes } from '../../projects/routes/turn-questions';
+import { ASK_LIVE_WAIT_MS } from '../../projects/lib/session-asks';
 import { questionReleaseSentinel } from '../question-release';
 import { relayTurnQuestion } from '../turn-relay';
 import { ensureDefaultConnection } from '../../connectors/credentials';
@@ -1339,15 +1340,15 @@ describe('POST /turn-question for a Telegram session — migrated PostgreSQL', (
 
     const member = await request({ userId: OWNER, authType: 'jwt' }, body('que_member'));
     expect(member.status).toBe(200);
-    expect(await member.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed' });
+    expect(await member.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed', live_wait_ms: ASK_LIVE_WAIT_MS });
     // No runtime request id: the shared `q-<session>` row names no single question.
     const unnamed = await request(sandbox, body(), tokens.get(sessionId));
-    expect(await unnamed.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed' });
+    expect(await unnamed.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed', live_wait_ms: ASK_LIVE_WAIT_MS });
     expect(calls).toEqual([]);
 
     const posted = await request(sandbox, body('que_sandbox'), tokens.get(sessionId));
     expect(posted.status).toBe(200);
-    expect(await posted.json()).toEqual({ ok: true, persisted: true, answers: POSTED });
+    expect(await posted.json()).toEqual({ ok: true, persisted: true, answers: POSTED, live_wait_ms: ASK_LIVE_WAIT_MS });
     const stored = await db
       .select({ id: sessionPendingQuestions.id, requestId: sessionPendingQuestions.requestId })
       .from(sessionPendingQuestions)
@@ -2021,6 +2022,20 @@ describe('Telegram files — migrated PostgreSQL', () => {
     expect(delivered.filter((d) => 'overrides' in d)).toEqual([]);
   });
 
+  test('with voice calls on, a voice note points the agent at its voice_transcribe tool, not an install', async () => {
+    await db.update(projects).set({ metadata: { telegram: { allowedUserIds: [ALLOWED] }, experimental: { voice_call: true } } }).where(eq(projects.projectId, PROJECT));
+    try {
+      await bindChat(6044);
+      stored.set('voice-2', { bytes: new Uint8Array([0x4f, 0x67, 0x67, 0x53]) });
+      await handleTelegramEvent(mediaUpdate({ voice: { file_id: 'voice-2', mime_type: 'audio/ogg; codecs=opus', duration: 4 } }, { chat: 6044 }));
+      expect(delivered[0]!.parts[1]).toMatchObject({ type: 'file', mime: 'audio/ogg', filename: 'voice_message.ogg' });
+      expect(delivered[0]!.text).toContain('transcribe it with your voice_transcribe tool');
+      expect(delivered[0]!.text).not.toContain('No speech-to-text tool is preinstalled');
+    } finally {
+      await allowSender();
+    }
+  });
+
   test('a declared size over 8 MiB is not fetched: the agent is told, and the text goes', async () => {
     await bindChat(6005);
     await handleTelegramEvent(mediaUpdate(
@@ -2211,7 +2226,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
     try {
       await handleTelegramEvent(update('first task', ALLOWED, 7012));
       expect(created).toHaveLength(1);
-      expect(created[0]!.body).toMatchObject({ agent_name: 'default', opencode_model: 'cmd-c1' });
+      expect(created[0]!.body).toMatchObject({ agent_name: 'default', model: 'cmd-c1' });
       expect(created[0]!.postCreate[1]).not.toHaveProperty('overrides');
     } finally {
       for (const spy of spies) spy.mockRestore();
@@ -2236,7 +2251,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
 
   test("with no choice, a follow-up carries the session's own model, so an earlier turn's model does not stick", async () => {
     const sessionId = await bindChat(7014);
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'cmd-p1' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'cmd-p1' } }).where(eq(projectSessions.sessionId, sessionId));
     const spies = servable(true);
     try {
       await handleTelegramEvent(update('carry on', ALLOWED, 7014));
@@ -2248,7 +2263,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
 
   test("a button's answer carries the session's model too", async () => {
     const sessionId = await bindChat(7016);
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'cmd-p2' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'cmd-p2' } }).where(eq(projectSessions.sessionId, sessionId));
     const spies = servable(true);
     try {
       await handleTelegramPress(press(`kq:${await pending(sessionId)}:0`, { chat: 7016 }));
@@ -2411,7 +2426,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     }
     // A session pinned to a model the shared keys cannot run: its follow-ups run a replacement, and /status names it.
     const sessionId = await chatSession(7048, 'running');
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/codex/pin-s' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/codex/pin-s' } }).where(eq(projectSessions.sessionId, sessionId));
     spies = [
       spyOn(defaultModel, 'isModelServableForAccount').mockImplementation(async ({ model }) => model === 'repl-s'),
       catalog({ 'repl-s': { name: 'Repl S', provider: 'kortix', enabled: true } }),
@@ -2645,7 +2660,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     const deleted = await chatSession(7054, 'running', 'telegram');
     await db
       .update(projectSessions)
-      .set({ metadata: { deletedAt: new Date().toISOString(), opencode_model: 'cmd-deleted-pin' } })
+      .set({ metadata: { deletedAt: new Date().toISOString(), model: 'cmd-deleted-pin' } })
       .where(eq(projectSessions.sessionId, deleted));
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),

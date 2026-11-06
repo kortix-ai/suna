@@ -138,7 +138,7 @@ describe('the starter manifest is the one kortix.yaml format', () => {
     const manifest = manifestFor();
     expect(manifest).not.toContain('harness-reflector');
     expect(manifest).not.toContain('session-reviewer');
-    expect(manifest).toContain('tools: all');
+    expect(manifest).toContain('tools: "*"');
   });
 });
 

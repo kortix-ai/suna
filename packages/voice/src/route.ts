@@ -8,7 +8,8 @@ import { metered } from './cost'
 import { hedged } from './hedge'
 import { norm } from './lang'
 import { threadSnapshot, type ThreadSnapshot } from './thread'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
+import * as places from './cards' // placeKnown read off it: a stand-in card source (the proofs') may have only card()
 
 export type Card = { type: 'weather'; place: string; horizon?: 'next_week' } | { type: 'version'; product: string } | { type: 'price'; asset: string } | { type: 'fx'; from: string; to: string } | { type: 'f1' }
 export type Route = { need: 'web' | 'code' | 'none' | 'clarify'; query: string; card?: Card; locationEvidence?: string; heard?: string } // heard: what they most likely said, when speech-to-text misheard it
@@ -25,7 +26,9 @@ const system = (workspace: string, contextual: boolean) =>
   (contextual
     ? '"none": self-contained social chat, opinions, jokes, simple math, or stable common knowledge the assistant can answer by itself, even when it is a fact (definitions, well-known facts such as capitals, authors, science, unit conversions); not a reference to an earlier lookup or a reply supplying its missing detail. Anything that can change over time (news, weather, prices, versions, results, current office holders, populations, statistics) is "web". '
     : '"none": chat, opinions, jokes, simple math, what the assistant can answer by itself, or unclear words. ') +
-  '"clarify": a lookup needs a location or other required detail the user has not supplied. Never invent that detail or adopt a location mentioned only by the assistant; ask instead. A choice the user hands back to the assistant (no preference, leaves it to it, does not know the options) is never "clarify": the assistant chooses, so it is "none".\n' +
+  '"clarify": a lookup needs a location or other required detail the user has not supplied. ' +
+  (workspace ? 'Their project and its files are this workspace ("code"), never a "clarify". ' : '') +
+  'What they told the assistant in earlier conversations is "none", never a "clarify": the assistant remembers it. Never invent that detail or adopt a location mentioned only by the assistant; ask instead. A choice the user hands back to the assistant (no preference, leaves it to it, does not know the options) is never "clarify": the assistant chooses, so it is "none".\n' +
   '- query: a short standalone search query in English; resolve pronouns and ellipsis from the conversation. For local business searches, preserve and quote the COMPLETE city name and include its country to disambiguate it. For "clarify", query is one short question asking only for the missing detail.\n' +
   '- card, whenever the turn asks for one of these AND the required details are established, else null: {"type":"weather","place":"<city in English>"} | {"type":"version","product":"<software>"} | ' +
   '{"type":"price","asset":"<cryptocurrency id, e.g. bitcoin>"} | {"type":"fx","from":"<ISO 4217>","to":"<ISO 4217>"} | {"type":"f1"} (the latest Formula 1 race). ' +
@@ -63,6 +66,10 @@ const cache = new Map<string, Promise<Route | undefined>>()
 const SCREEN_RULE = '\nA question the shared screen answers (the "Shared screen" line: the assistant sees it) is "none", with no card.'
 // Only while a clarification is pending (the context's "Pending clarification" line), so every other turn's prompt stays
 // as it was: "You decide." after "What is Unisite?" was routed "web: what is Unisite" (bench/misheard-proof.ts).
+// Only while the assistant's own question is the last thing it said (the context's "Agent: ...?" line): the same choice
+// handed back answers it. "You decide." after "What do you need it to do?" (python code) was asked again in about half of
+// the runs once the clarify rule grew (bench/misheard-proof.ts), and no pending clarification carried the rule then.
+const ASKED_RULE = '\nA reply that hands the choice back to the assistant ("you decide", "whatever you think", "I don\'t know") answers the assistant\'s question: "none", never a "clarify" asking it again or a lookup of a word in it.'
 const PENDING_RULE = '\nA reply that hands the choice back to the assistant ("you decide", "whatever you think", "I don\'t know") answers the pending clarification: "none", never a lookup of the pending question.'
 // The router's question checked against the call by a stronger model (the fast lane's): needed (a forecast or a place
 // nearby with no city), or about a word speech-to-text most likely misheard ("I don't know Unisite" after "What do you
@@ -131,7 +138,7 @@ const said = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, '
 export function route(text: string, context = '', workspace = '', ms = 1200): Promise<Route | undefined> {
   const key = `${context}\n${said(text)}`
   if (cache.has(key)) return cache.get(key)!
-  if (!process.env.GROQ_API_KEY || process.env.VOICE_ROUTE === '0') return Promise.resolve(undefined)
+  if (!fastOn() || process.env.VOICE_ROUTE === '0') return Promise.resolve(undefined)
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), ms)
   const users = [...context.matchAll(/^User: (.*)$/gm)].map((match) => match[1]!)
@@ -165,7 +172,7 @@ export function route(text: string, context = '', workspace = '', ms = 1200): Pr
       reasoning_effort: MODEL.includes('gpt-oss') ? 'low' : undefined,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: system(workspace, !!context) + (context ? '\nFor an entity-only or date-only continuation, replace the previous question\'s entity/date with the one in Turn. The query must target the new entity/date, not just repeat the previous question or answer both.' + THREAD_RULES : '') + (/^Shared screen: /m.test(input) ? SCREEN_RULE : '') + (/^Pending clarification: /m.test(input) ? PENDING_RULE : '') },
+        { role: 'system', content: system(workspace, !!context) + (context ? '\nFor an entity-only or date-only continuation, replace the previous question\'s entity/date with the one in Turn. The query must target the new entity/date, not just repeat the previous question or answer both.' + THREAD_RULES : '') + (/^Shared screen: /m.test(input) ? SCREEN_RULE : '') + (/^Pending clarification: /m.test(input) ? PENDING_RULE : /^Agent: .*\?\s*$/m.test(input) ? ASKED_RULE : '') },
         { role: 'user', content: `${input ? `Conversation context:\n${input}\n\n` : ''}Turn: ${text}` },
       ],
     }),
@@ -241,7 +248,12 @@ export function route(text: string, context = '', workspace = '', ms = 1200): Pr
     .then(async (found) => {
       // The router searching its own pending question ("You decide." after "What is Unisite?" became "web: What is
       // Unisite?") is that question put again: it goes to the same check.
-      const asks = found?.need === 'clarify' ? found.query : found?.need === 'web' && memory?.pending && said(found.query) === said(memory.pending.question) ? found.query : ''
+      // A forecast for a place that is nowhere (the geocoder knows no such name) is a word speech-to-text most likely
+      // misheard: "I don't know Unisite" (Whisper's "I don't know, you decide") went to "weather in Unisite" on a Kortix
+      // box, and the search found a company. It goes to the same check. A real place waits only for the lookup its card
+      // makes anyway (cached for the card, often already in from the words), at most 800 ms.
+      const nowhere = found?.need === 'web' && found.card?.type === 'weather' && (await places.placeKnown?.(found.card.place)) === false
+      const asks = nowhere && found.card?.type === 'weather' ? `Which place is "${found.card.place}"?` : found?.need === 'clarify' ? found.query : found?.need === 'web' && memory?.pending && said(found.query) === said(memory.pending.question) ? found.query : ''
       if (!found || !asks || asks === CITY_Q || REROUTED.has(text)) return found // the city question is the provenance rule's own: never second-guessed
       const v = await needed(text, context, asks)
       if (!v || v.needed) return found

@@ -776,7 +776,7 @@ export function FilesNavPage({
                     </Button>
                   ) : null}
                 </View>
-              ) : null
+              ) : undefined
             }
             ListFooterComponent={
               moreEntries && !listLoading && !emptyLabel ? (
@@ -807,7 +807,7 @@ export function FilesNavPage({
                     {`Showing the first ${visible.length} items`}
                   </Text>
                 </View>
-              ) : null
+              ) : undefined
             }
           />
           <TopFade style={scrollFade.topFadeStyle} />

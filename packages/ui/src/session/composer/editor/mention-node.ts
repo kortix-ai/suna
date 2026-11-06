@@ -96,6 +96,7 @@ export const MentionNode = Node.create({
    */
   renderText({ node }) {
     if (node.attrs.kind === 'command') return '';
+    if (node.attrs.kind === 'person' || node.attrs.kind === 'agent') return `@${node.attrs.value || node.attrs.label}`;
     return `@${node.attrs.label}`;
   },
 });

@@ -1,0 +1,13 @@
+// Runs inside the kortix-api container (`kortix self-host admin add`). Creates a
+// confirmed account through the auth admin API with the service key, which the
+// container already holds. The address and one-time password arrive on stdin.
+// Prints one JSON line: the HTTP status and the auth service's error, if any.
+const input = JSON.parse(await Bun.stdin.text());
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const res = await fetch(`${process.env.SUPABASE_URL}/auth/v1/admin/users`, {
+  method: 'POST',
+  headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: input.email, password: input.password, email_confirm: true }),
+});
+const body = await res.json().catch(() => ({}));
+console.log(JSON.stringify({ status: res.status, code: body.error_code ?? body.code ?? '', message: body.msg ?? body.message ?? '' }));

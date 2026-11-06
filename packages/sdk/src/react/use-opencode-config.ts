@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { getClient } from '../core/runtime/client';
 import type { Config } from '../core/runtime/runtime-types';
 import { useRuntimeReady } from './use-opencode-sessions/keys';
@@ -50,57 +50,3 @@ export function useRuntimeConfig() {
   });
 }
 
-/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-export function useUpdateRuntimeConfig() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (config: Partial<Config>) => {
-      const client = getClient();
-      // The SDK's `update` param type wants a full `Config`, but the server
-      // accepts (and this hook always sends) a partial merge patch.
-      const result = await client.global.config.update({ config: config as Config });
-      return unwrap(result) as Config;
-    },
-    onMutate: async (config) => {
-      // Cancel in-flight refetches so they don't overwrite optimistic update
-      await queryClient.cancelQueries({ queryKey: configKeys.all });
-      const previous = queryClient.getQueryData<Config>(configKeys.all);
-      if (previous) {
-        // Optimistically merge the draft into the cached config
-        queryClient.setQueryData<Config>(configKeys.all, {
-          ...previous,
-          ...config,
-          permission: typeof config.permission !== 'undefined'
-            ? config.permission
-            : previous.permission,
-        } as Config);
-      }
-      return { previous };
-    },
-    onError: (_err, _config, context) => {
-      // Roll back to previous cache on failure
-      if (context?.previous) {
-        queryClient.setQueryData(configKeys.all, context.previous);
-      }
-    },
-    onSettled: () => {
-      // Refetch to get the authoritative server state — only if mounted
-      queryClient.refetchQueries({ queryKey: configKeys.all, type: 'active' });
-    },
-  });
-}
-
-/**
- * @deprecated No longer needed — server persists config correctly.
- * Kept as no-op for existing call sites.
- */
-export function clearConfigOverrides(): void {
-  // no-op — localStorage overrides removed
-}
-
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimeConfig`. Removed in the next major. */
-export const useOpenCodeConfig = useRuntimeConfig;
-/** @deprecated Renamed to `useUpdateRuntimeConfig`. Removed in the next major. */
-export const useUpdateOpenCodeConfig = useUpdateRuntimeConfig;

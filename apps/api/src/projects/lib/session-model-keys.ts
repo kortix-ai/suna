@@ -138,7 +138,7 @@ export async function admitSessionSharingChange(input: {
   /** The session's creator: its turns run as this user. */
   owner: string;
   freeModelsOnly: boolean;
-  /** The model the session runs (`opencode_model`); null when the gateway picks one. */
+  /** The model the session runs (`model`); null when the gateway picks one. */
   model: string | null;
   /** The visibility the change stores. */
   visibility: PersonalSessionVisibility;

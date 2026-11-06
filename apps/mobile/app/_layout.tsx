@@ -44,6 +44,7 @@ import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { IN_APP_BROWSER_OPTIONS } from '@/lib/utils/link-target';
+import { createDeepLinkScope } from '@/lib/auth/deep-link-scope';
 import { resolveShareLinkUrl } from '@/lib/share-link';
 import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
@@ -231,9 +232,14 @@ export default function RootLayout() {
   }, [colorScheme]);
 
   useEffect(() => {
+    const scope = createDeepLinkScope();
     let isHandlingDeepLink = false;
+    const replace = (href: Parameters<typeof router.replace>[0]) => {
+      if (scope.active) router.replace(href);
+    };
 
     const handleDeepLink = async (event: { url: string }) => {
+      if (!scope.active) return;
       if (isHandlingDeepLink) {
         log.log('⏸️ Already handling deep link, skipping...');
         return;
@@ -292,7 +298,7 @@ export default function RootLayout() {
 
                   // Navigate to auth screen - user can try again there
                   log.log('⚠️ Link expired, redirecting to auth');
-                  router.replace('/auth');
+                  replace('/auth');
                   isHandlingDeepLink = false;
                   return;
                 }
@@ -300,7 +306,7 @@ export default function RootLayout() {
                 // Other errors - just redirect to auth
                 log.error('❌ Auth callback error:', error);
                 isHandlingDeepLink = false;
-                router.replace('/auth');
+                replace('/auth');
                 return;
               }
             } catch (hashParseError) {
@@ -313,7 +319,7 @@ export default function RootLayout() {
           if (errorParam) {
             log.error('❌ Auth callback error in query params:', errorParam);
             isHandlingDeepLink = false;
-            router.replace('/auth');
+            replace('/auth');
             return;
           }
 
@@ -380,7 +386,7 @@ export default function RootLayout() {
             if (!stateOk) {
               log.warn('⚠️ Auth callback rejected: missing or invalid state');
               isHandlingDeepLink = false;
-              router.replace('/auth');
+              replace('/auth');
               return;
             }
 
@@ -413,7 +419,7 @@ export default function RootLayout() {
               await clearWebRegistrationHandoff();
               log.error('❌ Failed to establish session:', sessionError);
               isHandlingDeepLink = false;
-              router.replace('/auth');
+              replace('/auth');
               return;
             }
 
@@ -442,27 +448,27 @@ export default function RootLayout() {
             }
 
             // Small delay to ensure auth state propagates
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            if (!(await scope.pause(100))) return;
 
             // Always navigate to splash screen - it will determine the correct destination
             // This ensures smooth transition with loader while checking account state
             log.log('🚀 Navigating to splash screen to determine next step...');
-            router.replace('/');
+            replace('/');
 
-            setTimeout(() => {
+            scope.schedule(() => {
               isHandlingDeepLink = false;
             }, 1000);
           } else {
             // No tokens found - could be an error we didn't catch or a malformed URL
             log.warn('⚠️ No tokens found in URL - redirecting to auth');
             isHandlingDeepLink = false;
-            router.replace('/auth');
+            replace('/auth');
           }
         } catch (err) {
           await clearWebRegistrationHandoff();
           log.error('❌ Error handling auth callback:', err);
           isHandlingDeepLink = false;
-          router.replace('/auth');
+          replace('/auth');
         }
       } else if (shareUrl) {
         // No in-app share screen: open the web share page in the in-app
@@ -488,13 +494,14 @@ export default function RootLayout() {
       if (url) {
         log.log('🔗 Initial URL found');
         // Small delay to ensure app is ready
-        setTimeout(() => {
+        scope.schedule(() => {
           handleDeepLink({ url });
         }, 500);
       }
     });
 
     return () => {
+      scope.dispose();
       subscription.remove();
     };
   }, [router]);

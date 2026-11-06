@@ -70,7 +70,7 @@ async function markDelivered(row: SessionLifecycleCommandRow, payload: QueuedCon
   // A prompt that joined a live turn started none: the runtime queues it
   // behind that turn's question, which still waits. The turn end closes it.
   if (!joinedLiveTurn) {
-    await clearOpenQuestions(row.sessionId!, { askedBefore: row.createdAt }).catch((err) =>
+    await clearOpenQuestions(row.sessionId!, { askedBefore: row.createdAt, keepParked: true }).catch((err) =>
       logger.warn('[session-lifecycle] open questions not closed after a delivered prompt', {
         session_id: row.sessionId, command_id: row.commandId, error: err instanceof Error ? err.message : String(err),
       }),

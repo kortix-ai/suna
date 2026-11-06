@@ -32,6 +32,7 @@ import {
 } from './session-open-readiness';
 import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './session-open-recovery';
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
+import { holdBelowRuntimeFloor } from './runtime-floor';
 import {
   keepStoppedRefusesWake,
   liveStopClaimAtMs,
@@ -161,7 +162,7 @@ async function runOpenSession(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason: 'retired_row_wake',
     };
   }
@@ -203,7 +204,7 @@ async function runOpenSession(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason: 'runtime_stopping',
     };
   }
@@ -256,7 +257,7 @@ function keptStoppedAnswer(agentName: string | null): SessionStartResult {
     agent_name: agentName ?? 'default',
     retriable: false,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     failure: null,
   };
 }
@@ -276,6 +277,19 @@ async function stageRunningOpen(
 
   const readiness = await observeOpenCodeReadiness(args, log, synced.row, synced.runningExternalId);
   await stampUnreachableDiagnostics(synced.row, readiness.ensured, synced.runningExternalId);
+
+  // A box below the runtime floor is held until it runs the current daemon, or
+  // refused (runtime-floor-policy.ts). Before every other check: none of them
+  // may read an old daemon's routes, and no serving answer may hand over a box
+  // that restarts onto its new daemon.
+  const held = await holdBelowRuntimeFloor(
+    args,
+    synced.row,
+    synced.runningExternalId,
+    readiness.capabilities,
+    readiness.booting,
+  );
+  if (held) return held;
 
   const parked = await judgeBootBudget(
     args,
@@ -312,7 +326,7 @@ async function stageRunningOpen(
     agent_name: args.visible.row.agentName ?? 'default',
     retriable: readiness.booting,
     sandbox: serializeSandboxRow(synced.row),
-    opencode_session_id: readiness.ensured.pin,
+    runtime_session_id: readiness.ensured.pin,
     runtime_url: sessionRuntimeUrlPath(synced.runningExternalId),
     reason: readiness.ensured.reason,
     ...(readiness.capabilities ? { capabilities: readiness.capabilities } : {}),

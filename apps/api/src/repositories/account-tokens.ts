@@ -39,6 +39,8 @@ export interface AccountTokenValidationResult {
    *  else null. Read with the rest of the row so the IAM actor does not read
    *  the same `account_tokens` row a second time (see `iam/actor.ts`). */
   serviceAccountId?: string | null;
+  /** When the token expires, or null for a token without an expiry. */
+  expiresAt?: Date | null;
   error?: string;
   /** True = the credential itself can never come back (missing, revoked,
    *  expired, or its sandbox lease closed). The auth middleware turns this
@@ -857,6 +859,7 @@ async function validateAccountTokenMatching(
       agentGrant: readStoredAgentGrant(row.agentGrant),
       onBehalfOfUserId: row.onBehalfOfUserId ?? null,
       serviceAccountId: row.serviceAccountId ?? null,
+      expiresAt: row.expiresAt ?? null,
     };
   } catch (err) {
     console.error('Account token validation error:', err);

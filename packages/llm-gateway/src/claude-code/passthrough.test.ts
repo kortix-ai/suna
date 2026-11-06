@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setSystemTime, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import type { AuthedPrincipal } from '../domain/principal';
 import { createClaudeCodePassthrough, type ClaudeCodeHooks, type ClaudeCodeRequest } from './passthrough';
@@ -15,7 +15,7 @@ function harness(options: {
   principal?: AuthedPrincipal | null;
 }) {
   const seen: Seen[] = [];
-  const calls = { authenticate: [] as string[], credentials: [] as Array<string | null>, rateLimits: [] as Array<[string, number]>, refused: [] as Array<[string, string]> };
+  const calls = { authenticate: [] as string[], credentials: [] as Array<string | null>, rateLimits: [] as Array<[string, number]>, refused: [] as Array<[string, string]>, usage: [] as Array<[string, number | undefined, boolean]> };
   const hooks: ClaudeCodeHooks = {
     authenticate: async (token) => {
       calls.authenticate.push(token);
@@ -27,6 +27,9 @@ function harness(options: {
     },
     notePoolRateLimit: async (_principal, secretId, seconds) => {
       calls.rateLimits.push([secretId, seconds]);
+    },
+    notePoolUsage: async (_principal, secretId, usage) => {
+      calls.usage.push([secretId, usage.windows[0]?.used_percent, usage.limited]);
     },
     claudeRefused: async (_principal, secretId, failedKeySha256) => {
       calls.refused.push([secretId, failedKeySha256]);
@@ -114,6 +117,34 @@ describe('Claude Code passthrough', () => {
     expect(seen.map((entry) => entry.headers.authorization)).toEqual(['Bearer sk-ant-oat01-first', 'Bearer sk-ant-oat01-second']);
   });
 
+  test('every answer reports its account plan usage: the refused account limited, the next one at its percent', async () => {
+    const { handle, calls } = harness({
+      upstream: (attempt) => attempt === 1
+        ? new Response('{"type":"error"}', { status: 429, headers: { 'anthropic-ratelimit-unified-status': 'rejected', 'anthropic-ratelimit-unified-5h-utilization': '1' } })
+        : new Response('{"id":"msg"}', { headers: { 'anthropic-ratelimit-unified-5h-utilization': '0.25' } }),
+    });
+    expect((await handle(request())).status).toBe(200);
+    expect(calls.usage).toEqual([['acc-1', 100, true], ['acc-2', 25, false]]);
+  });
+
+  // The usage read runs after the upstream answered, and here with no catch
+  // around it: an unrepresentable reset once threw RangeError out of the whole
+  // request instead of relaying the served answer.
+  test('a served answer with an unrepresentable reset time is relayed unchanged', async () => {
+    const { handle, calls, seen } = harness({
+      credentials: { credentials: [{ secretId: 'acc-1', apiKey: 'sk-ant-oat01-first' }] },
+      upstream: () => new Response('{"id":"msg"}', {
+        headers: {
+          'anthropic-ratelimit-unified-5h-utilization': '0.25',
+          'anthropic-ratelimit-unified-5h-reset': '1e15',
+        },
+      }),
+    });
+    expect((await handle(request())).status).toBe(200);
+    expect(seen).toHaveLength(1);
+    expect(calls.usage).toEqual([['acc-1', 25, false]]);
+  });
+
   test('a 429 without retry-after rests the account 60 s; the last account answers the 429', async () => {
     const { handle, calls } = harness({
       credentials: { credentials: [{ secretId: 'acc-1', apiKey: 'sk-ant-oat01-first' }] },
@@ -139,6 +170,45 @@ describe('Claude Code passthrough', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ type: 'error', error: { type: 'invalid_request_error', message: 'Connect Claude to use this model. Sign in with Claude.' } });
     expect(seen).toHaveLength(0);
+  });
+
+  test('every account at its usage limit: a 429 Claude Code reads as a usage limit, with the reset time', async () => {
+    setSystemTime(new Date('2026-11-04T14:00:00Z'));
+    try {
+      const { handle, seen } = harness({
+        credentials: { error: {
+          status: 429, code: 'provider_pool_rate_limited',
+          message: 'All Claude accounts shared with this project reached their usage limit. The first resets in 33 hours.',
+          suggestion: 'Choose another model, or connect another Claude account.', restSeconds: 33 * 3600,
+        } },
+      });
+      const res = await handle(request());
+      expect(res.status).toBe(429);
+      // Claude Code prints its own usage-limit text ("You've hit your usage limit · resets …")
+      // only when these headers are present; without them it says "not your usage limit".
+      expect(res.headers.get('anthropic-ratelimit-unified-status')).toBe('rejected');
+      expect(res.headers.get('anthropic-ratelimit-unified-representative-claim')).toBe('kortix_claude_accounts');
+      expect(res.headers.get('anthropic-ratelimit-unified-reset')).toBe(String(Date.parse('2026-11-05T23:00:00Z') / 1000));
+      expect(res.headers.get('retry-after')).toBe(String(33 * 3600));
+      expect(await res.json()).toEqual({ type: 'error', error: { type: 'rate_limit_error', message: 'All Claude accounts shared with this project reached their usage limit. The first resets in 33 hours. Choose another model, or connect another Claude account.' } });
+      expect(seen).toHaveLength(0);
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test('accounts cooling down for a minute or less: a plain 429 a client retries', async () => {
+    const { handle } = harness({
+      credentials: { error: {
+        status: 429, code: 'provider_pool_rate_limited', message: 'All Claude accounts shared with this project are cooling down.',
+        suggestion: 'Retry after the cooldown, or connect another Claude account.', retryAfterSeconds: 30, restSeconds: 30,
+      } },
+    });
+    const res = await handle(request());
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBe('30');
+    expect(res.headers.get('anthropic-ratelimit-unified-status')).toBeNull();
+    expect(res.headers.get('anthropic-ratelimit-unified-representative-claim')).toBeNull();
   });
 
   test('a missing or unknown token answers 401 before any account lookup', async () => {

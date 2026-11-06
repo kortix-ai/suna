@@ -218,7 +218,7 @@ describe('PATCH /:projectId — explicit null clears exactly one key', () => {
 
 describe('PATCH /:projectId — malformed value is NOT a clear', () => {
   test('a malformed glyph writes NO metadata, so the stored value survives', async () => {
-    const res = await patch({ icon_glyph: { name: 'Skull', color: 'red' } });
+    const res = await patch({ icon_glyph: { name: 'NoSuchGlyph', color: 'red' } });
 
     expect(res.status).toBe(200);
     expect('metadata' in lastSet()).toBe(false);
@@ -266,7 +266,7 @@ describe('PATCH /:projectId — both keys present, the glyph wins', () => {
     // NO metadata at all — a silent lost write, and a disagreement with
     // /provision, /create-repo, and /link-repository, which all resolve this
     // exact body to `{ icon }` via `iconGlyph ? … : icon ? { icon } : {}`.
-    const res = await patch({ icon: '🚀', icon_glyph: { name: 'Skull', color: 'red' } });
+    const res = await patch({ icon: '🚀', icon_glyph: { name: 'NoSuchGlyph', color: 'red' } });
 
     expect(res.status).toBe(200);
     const { params } = metadataQuery();

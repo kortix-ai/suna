@@ -27,7 +27,6 @@ import type { FlowContext } from "../core/types";
 import { flow } from "../core/flow";
 import { CliSandbox, throwIfCliInfraFailure } from "../fixtures/cli";
 import { createDatabaseSession } from "../fixtures/database-project";
-import { setFeatureAsOperator } from "../fixtures/feature-flags";
 import { seedSessionTranscript } from "../fixtures/session-transcript";
 
 const JOURNAL = "/v1/projects/:projectId/sessions/:sessionId/log/journal";
@@ -414,7 +413,7 @@ flow(
   {
     domain: "sessions",
     requires: ["database"],
-    routes: ["POST /v1/accounts/tokens", `POST ${JOURNAL}`, "PUT /v1/admin/api/projects/:id/features", `POST ${PREFLIGHT}`],
+    routes: ["POST /v1/accounts/tokens", `POST ${JOURNAL}`, `POST ${PREFLIGHT}`],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
@@ -464,16 +463,7 @@ flow(
         ...["session.rewind", "session.fork", "session.mcp", "session.todo", "session.shell", "session.attach", "session.config", "session.messaging", "session.team_tasks", "session.context_record"].map((feature) => ({ feature, status: "lost" })),
       ];
 
-      await ctx.step("disable restore: preflight to pi → 200 available without a restore, and the whole history (4 live messages) is the first loss", async () => {
-        await setFeatureAsOperator(ctx, project.id, "session_log_restore", false);
-        (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
-          session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: false,
-          losses: [{ feature: "history", used: 4, status: "lost" }, ...losses], unsupported,
-        });
-      });
-
-      await ctx.step("restore on: preflight to pi → 200 available; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
-        await setFeatureAsOperator(ctx, project.id, "session_log_restore", true);
+      await ctx.step("preflight to pi → 200 available, the history restores; losses: the PDF, the todos, the rewind, the MCP tool (the sub-agent is native on pi); unsupported adds what was never used (fork, shell, attach, config)", async () => {
         (await preflight("pi")).status(200).body().schema(SessionLogSwitchPreflightSchema).has("$", {
           session_id: sessionId, from: "opencode", to: "pi", available: true, reason: null, restores: true, losses, unsupported,
         });
@@ -518,7 +508,6 @@ flow(
         (await preflight("pi", ctx.client.as(ctx.P.NONMEMBER))).status(403);
       });
     } finally {
-      await setFeatureAsOperator(ctx, project.id, "session_log_restore", null).catch(() => {});
       await close();
     }
   },

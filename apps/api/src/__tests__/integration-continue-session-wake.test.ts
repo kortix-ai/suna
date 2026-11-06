@@ -107,7 +107,7 @@ describe('the pre-delivery wake', () => {
     let statusDuringOpen = null as string | null;
     openSessionImpl = async (id) => {
       statusDuringOpen = (await statuses(id)).session;
-      return { stage: 'failed', sandbox: null, opencode_session_id: null };
+      return { stage: 'failed', sandbox: null, runtime_session_id: null };
     };
     expect(await deliver(sessionId)).toBe('unreachable');
     // The wake itself still happens: the open ran against a `running` session.
@@ -119,14 +119,14 @@ describe('the pre-delivery wake', () => {
     const sessionId = await fixture('stopped');
     // Since #11144 only explicit env overrides sync before delivery. A ready
     // runtime without a sandbox cannot sync the override, so no POST occurs.
-    openSessionImpl = async () => ({ stage: 'ready', sandbox: null, opencode_session_id: null });
+    openSessionImpl = async () => ({ stage: 'ready', sandbox: null, runtime_session_id: null });
     expect(await deliver(sessionId, { WAKE_TEST: 'override' })).toBe('pending');
     expect((await statuses(sessionId)).session).toBe('stopped');
   });
 
   test('a completed session goes back to completed', async () => {
     const sessionId = await fixture('completed');
-    openSessionImpl = async () => ({ stage: 'failed', sandbox: null, opencode_session_id: null });
+    openSessionImpl = async () => ({ stage: 'failed', sandbox: null, runtime_session_id: null });
     expect(await deliver(sessionId)).toBe('unreachable');
     expect((await statuses(sessionId)).session).toBe('completed');
   });
@@ -139,7 +139,7 @@ describe('the pre-delivery wake', () => {
       await db.execute(
         sql`update kortix.session_sandboxes set status = 'active' where sandbox_id = ${id}::uuid`,
       );
-      return { stage: 'ready', sandbox: null, opencode_session_id: null };
+      return { stage: 'ready', sandbox: null, runtime_session_id: null };
     };
     expect(await deliver(sessionId, { WAKE_TEST: 'override' })).toBe('pending');
     expect(await statuses(sessionId)).toEqual({ session: 'running', sandbox: 'active' });
@@ -152,7 +152,7 @@ describe('the pre-delivery wake', () => {
     let opened = false;
     openSessionImpl = async () => {
       opened = true;
-      return { stage: 'ready', sandbox: null, opencode_session_id: null };
+      return { stage: 'ready', sandbox: null, runtime_session_id: null };
     };
     expect(await deliver(sessionId)).toBe('no-session');
     expect(opened).toBe(false);

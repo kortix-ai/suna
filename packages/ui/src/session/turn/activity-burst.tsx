@@ -36,7 +36,7 @@ import { burstSummaryLabel } from '@kortix/sdk';
 import { BurstSummaryTrigger } from './burst-summary-trigger';
 import { samePartsList } from './same-parts';
 import { ThoughtChainStep } from './thought-chain-step';
-import { WorkFoldContext } from './turn-work-accordion';
+import { WorkFoldContext, WorkTouchContext } from './turn-work-accordion';
 export { ActivityGroupStep, sameActivityGroupStepProps } from './activity-group-step';
 
 /**
@@ -102,8 +102,8 @@ function ActivityBurstImpl({
    * 'normal' — the burst opens itself while it runs: steps and streaming
    * thinking appear live. 'minimal' — the live view is the one-line summary
    * ("Working · N steps"); nothing auto-expands, including the thought rows
-   * a bare burst pins open. A finished turn renders identically in both
-   * modes (both auto-collapse to one row), and a click always wins.
+   * a bare burst pins open. A history turn renders identically in both
+   * modes on initial load; a live burst stays open, and a click always wins.
    */
   density?: ConversationDensity;
 }) {
@@ -112,13 +112,15 @@ function ActivityBurstImpl({
   const [open, setOpen] = useState(autoExpand && running);
   const userToggled = useRef(false);
 
-  // Auto-collapse the moment the burst settles — unless the user has taken
-  // control, in which case their choice wins permanently. Under minimal
-  // density the burst never opens itself in the first place.
+  // Open while the burst runs, close when the next text closes it: a long
+  // turn streams as a list of one-line bursts, not a wall of open chains. A
+  // burst the reader touched (its own line, or any row inside it) keeps the
+  // reader's state. Minimal density never auto-opens.
   useEffect(() => {
     if (userToggled.current) return;
     setOpen(autoExpand && running);
   }, [running, autoExpand]);
+  const markTouched = useContext(WorkTouchContext);
 
   const steps = useMemo(() => sessionLogBurstSteps(blocks), [blocks]);
   const summary = useMemo(() => sessionLogBurstSummary(blocks), [blocks]);
@@ -142,6 +144,7 @@ function ActivityBurstImpl({
       open={bare || open}
       onOpenChange={(next) => {
         userToggled.current = true;
+        markTouched?.();
         setOpen(next);
       }}
       className="group/burst flex-row"
@@ -161,8 +164,14 @@ function ActivityBurstImpl({
 				*/}
         <ToolActivateContext.Provider value={null}>
           {/* `mt-3` is the gap under the summary line. Bare has no summary
-					    line, so it has no gap to open. */}
-          <div className={bare ? undefined : 'mt-3'}>
+					    line, so it has no gap to open. A click on a row inside counts
+					    as the reader's choice: the burst then stays as they left it. */}
+          <div
+            className={bare ? undefined : 'mt-3'}
+            onClickCapture={(event) => {
+              if ((event.target as Element | null)?.closest?.('[aria-expanded]')) userToggled.current = true;
+            }}
+          >
             <ChainOfThought>
               {/* A thought row IS a `ChainOfThoughtStep` — it owns the step's
 							    open state so it can open itself while the model thinks. */}

@@ -31,6 +31,8 @@ export async function applyOAuthAccessTokenPrincipal(c: Context, token: string):
   c.set('authType', 'oauth');
   if (result.accountId) c.set('accountId', result.accountId);
   c.set('oauthClientId', result.clientId);
+  // The token's row: an Artifact live socket re-checks it while it is open.
+  if (result.tokenId) c.set('oauthTokenId', result.tokenId);
   c.set('oauthScopes', scopes);
   // No iamTokenId: the token acts AS the user (role-only), like an unscoped PAT.
   c.set('agentGrant', null);

@@ -116,7 +116,7 @@ export async function reconcileAuditEvents(
         SET checked_at = EXCLUDED.checked_at, full_scan_at = EXCLUDED.full_scan_at
     ), inserted AS (
     INSERT INTO kortix.audit_events(
-      account_id, project_id, session_id, opencode_session_id, actor_user_id, actor_type,
+      account_id, project_id, session_id, runtime_session_id, actor_user_id, actor_type,
       agent_name, initiator_actor_type, initiator_actor_id, delegation_depth,
       authoritative_source, client_reported_source, outcome, action, phase,
       resource_type, resource_id,
@@ -124,7 +124,7 @@ export async function reconcileAuditEvents(
       source_revision, input_summary, input_sha256, output_summary, output_sha256,
       duration_ms, occurred_at
     )
-    SELECT account_id, project_id, session_id, opencode_session_id, actor_user_id, actor_type,
+    SELECT account_id, project_id, session_id, runtime_session_id, actor_user_id, actor_type,
            agent_name, initiator_actor_type, initiator_actor_id, delegation_depth,
            authoritative_source, client_reported_source, outcome, action, phase,
            resource_type, resource_id,
@@ -203,7 +203,7 @@ function newerWindowSql(from: string, until: string | null) {
 function auditCandidatesSql(accountId: string, newer: (...columns: string[]) => SQL) {
   return sql`
       SELECT c.account_id, c.project_id, c.session_id::text AS session_id,
-             NULL::text AS opencode_session_id, c.acting_user_id AS actor_user_id,
+             NULL::text AS runtime_session_id, c.acting_user_id AS actor_user_id,
              CASE WHEN c.session_id IS NULL THEN 'human' ELSE 'agent' END AS actor_type,
              NULL::text AS agent_name, NULL::text AS initiator_actor_type,
              NULL::text AS initiator_actor_id, 0::integer AS delegation_depth,
@@ -234,7 +234,7 @@ function auditCandidatesSql(accountId: string, newer: (...columns: string[]) => 
         FROM kortix.connector_calls c WHERE c.account_id = ${accountId}::uuid
          ${newer('c.created_at', 'c.resolved_at')}
       UNION ALL
-      SELECT s.account_id, s.project_id, s.session_id, s.opencode_session_id, s.created_by,
+      SELECT s.account_id, s.project_id, s.session_id, s.runtime_session_id, s.created_by,
              COALESCE(
                NULLIF(s.metadata #>> '{audit_v2,actor_type}', ''),
                CASE s.origin::text WHEN 'trigger' THEN 'system' WHEN 'schedule' THEN 'system'

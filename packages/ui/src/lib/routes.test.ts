@@ -37,9 +37,11 @@ test('a route the host maps to null hides its row; the customize pages keep thei
 });
 
 test('review and reminders links follow the host customize route', () => {
-  expect(reviewHref('p')).toBe('/projects/p/customize/review');
+  // Review is its own page by default; a host that routes its own customize pages serves it there.
+  expect(reviewHref('p')).toBe('/projects/p/review');
   setUiRoutes({ customize: (p, path) => `/w/${p}/setup/${path ?? ''}` });
   expect(remindersHref('p')).toBe('/w/p/setup/triggers');
+  expect(reviewHref('p')).toBe('/w/p/setup/review');
 });
 
 test('the open session and project are read through the host routes', () => {

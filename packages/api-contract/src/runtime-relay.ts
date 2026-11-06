@@ -4,12 +4,7 @@
  * its `GET /kortix/health` serves.
  *
  * kortixd bundles this file into the guest binary, so it imports nothing but
- * zod. Every name here is harness-neutral: an OpenCode box and a pi box send
- * the same fields.
- *
- * `normalizeRuntimeRelayBody` accepts the pre-W3 spellings a daemon built
- * before these names existed still sends (`opencode_session_id`, turn-stream
- * kind `opencode_session`). Remove it when no such daemon runs.
+ * zod. Every name here is harness-neutral.
  */
 import { z } from 'zod';
 
@@ -71,8 +66,28 @@ export const TurnQuestionRelayBodySchema = z.object({
   request_id: z.string(),
   runtime_session_id: z.string().optional(),
   questions: z.array(z.unknown()),
+  /**
+   * The runtime parks this question instead of dismissing it when nobody
+   * answers live: apps/api keeps it open past the turn. Omitted (a daemon
+   * built before parking): false.
+   */
+  parkable: z.boolean().optional(),
 });
 export type TurnQuestionRelayBody = z.infer<typeof TurnQuestionRelayBodySchema>;
+
+/**
+ * What apps/api answers a `turn-question` or `turn-permission` relay with,
+ * beside its older fields. A daemon built before parking ignores it.
+ */
+export const AskRelayResponseSchema = z.object({
+  /** How long the call waits for a live answer before it parks. 0: park at once (an unattended session). */
+  live_wait_ms: z.number().int().nonnegative().optional(),
+  /** Permission: a person approved this exact call (`args_hash`) while it was parked; it runs now. */
+  approved: z.boolean().optional(),
+  /** Permission: the capability the approval granted for the session (an "always" reply). */
+  grant: z.string().optional(),
+});
+export type AskRelayResponse = z.infer<typeof AskRelayResponseSchema>;
 
 /** `POST /v1/projects/:projectId/turn-permission`. apps/api reads `session_id` and `request_id`. */
 export const TurnPermissionRelayBodySchema = z.object({
@@ -81,7 +96,14 @@ export const TurnPermissionRelayBodySchema = z.object({
   runtime_session_id: z.string().optional(),
   permission: z.string(),
   patterns: z.array(z.string()),
+  /** The tool the call runs. Omitted by a daemon built before parking. */
+  tool: z.string().optional(),
+  /** sha256 of the tool and its canonical arguments: an approval matches the agent's re-run of the same call. */
+  args_hash: z.string().optional(),
+  /** The call's arguments, at most `PERMISSION_ARGS_RELAY_MAX_BYTES` of JSON; larger ones arrive as `{ truncated: true, preview }`. */
+  args: z.unknown().optional(),
 });
+export const PERMISSION_ARGS_RELAY_MAX_BYTES = 16_384;
 export type TurnPermissionRelayBody = z.infer<typeof TurnPermissionRelayBodySchema>;
 
 /** `POST /v1/platform/runtime-projection` (gzip). `projection` is the `/kortix/runtime/state` document. */
@@ -176,24 +198,6 @@ export const DAEMON_FILE_IMPORT_TIMEOUT_MS = 120_000;
 export const BLOCKING_TURN_VERBS = ['message', 'command', 'summarize'] as const;
 
 /**
- * Rewrite the pre-W3 names an older daemon sends to the names above: the
- * `opencode_session_id` field and the `opencode_session` turn-stream kind.
- * Returns a copy; the neutral name wins when a body carries both.
- * @deprecated Pre-W3 OpenCode names (opencode_session_id, kind opencode_session) from older daemons; new daemons send runtime_session_id / runtime_session.
- */
-export function normalizeRuntimeRelayBody<T extends Record<string, unknown>>(
-  body: T,
-): T & { runtime_session_id?: string } {
-  const { opencode_session_id: legacyId, ...rest } = body as Record<string, unknown>;
-  const out = rest as Record<string, unknown>;
-  if (out.runtime_session_id === undefined && typeof legacyId === 'string') {
-    out.runtime_session_id = legacyId;
-  }
-  if (out.kind === 'opencode_session') out.kind = 'runtime_session';
-  return out as T & { runtime_session_id?: string };
-}
-
-/**
  * `code` on the daemon's 503 while the session runtime cannot take a request:
  * the repo is not on disk, the workspace is installing, or the harness is still
  * starting. A client renders it as "starting" and retries. The `error` text
@@ -276,7 +280,7 @@ export type PlatformExtensionId = (typeof PLATFORM_EXTENSION_IDS)[number];
 
 /**
  * The daemon serves the Kortix turn verbs: `POST /kortix/runtime/sessions/:id/prompt`,
- * `POST /kortix/runtime/sessions/:id/abort`, `GET|DELETE /kortix/runtime/messages/:id/:messageId`
+ * `POST /kortix/runtime/sessions/:id/abort`, `GET /kortix/runtime/messages/:id`
  * and `GET /kortix/runtime/agents`. Listed in `capabilities` beside the runtime's own.
  */
 export const RUNTIME_TURNS_CAPABILITY = 'runtime.turns.v1' as const;

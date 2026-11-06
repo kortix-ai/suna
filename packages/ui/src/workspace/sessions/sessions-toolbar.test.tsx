@@ -21,8 +21,8 @@ import type { ProjectSession } from '@kortix/sdk';
 import { SessionsToolbar } from './sessions-toolbar';
 
 const SESSIONS = [
-  { session_id: 's1', project_id: 'p1', status: 'running', metadata: {}, opencode_sessions: [] },
-  { session_id: 's2', project_id: 'p1', status: 'completed', metadata: {}, opencode_sessions: [] },
+  { session_id: 's1', project_id: 'p1', status: 'running', metadata: {}, runtime_sessions: [] },
+  { session_id: 's2', project_id: 'p1', status: 'completed', metadata: {}, runtime_sessions: [] },
 ] as unknown as ProjectSession[];
 
 function render(overrides: Partial<Parameters<typeof SessionsToolbar>[0]> = {}) {

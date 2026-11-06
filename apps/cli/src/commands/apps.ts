@@ -15,6 +15,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
+import { eventsCommand } from './apps-events.ts';
 import { addAppBlocks } from './apps-launch-yaml.ts';
 import { authEnvCommand, execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
 import { connectCommand, deployOrder, deployableBlocks, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
@@ -71,8 +72,12 @@ Subcommands:
   launch --template <name>          Add a ready-made App to kortix.yaml and deploy it.
                                     Templates: convex (a self-hosted
                                     Convex backend: data on a volume, the client and
-                                    HTTP-action services, an admins-only dashboard).
-    --name <slug>                   Default: the template's default (convex: backend).
+                                    HTTP-action services, an admins-only dashboard);
+                                    watcher (a 24/7 watcher: Kortix calls its check
+                                    on a schedule; it posts App events only on a
+                                    change; edit apps/<slug>/watch.js).
+    --name <slug>                   Default: the template's default (convex: backend,
+                                    watcher: watcher).
     --no-deploy                     Write kortix.yaml only.
   deploy [path]                     Deploy a directory or .tar.gz archive. With no
                                     path and a kortix.yaml of several apps,
@@ -133,6 +138,15 @@ Subcommands:
   show <id|slug>                    Show an App: capabilities, links and
                                     deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
+  events <id|slug>                  The App's events (30 days) and what came of each:
+                                    fired → session, skipped → why, unmatched → no
+                                    trigger listens. --status <s> --trigger <slug>
+                                    --id <event-id> --limit N --cursor <c> --json.
+  events emit <id|slug> <name>      Send a test event on the real path (id test-…).
+                                    --data <json|@file> --id <id> --wait[=<s>]: wait
+                                    for the outcome; exit 0 only when a trigger fired.
+  events credentials <id|slug>      KORTIX_APP_EVENTS_URL and KORTIX_APP_TOKEN, for code
+                                    that runs outside the App. Project admins.
   start <id|slug>                   Permit requests and start the App.
   stop <id|slug>                    Suspend now. The next authorized request wakes it.
   rollback <id|slug> <id|vN>        Roll back: a NEW release from that release's artifact
@@ -288,6 +302,8 @@ export async function runApps(argv: string[]): Promise<number> {
       case 'show':
       case 'get':
         return await showCommand(rest, common.options, common.json);
+      case 'events':
+        return await eventsCommand(rest, common.options, common.json);
       case 'logs':
         return await logsCommand(rest, common.options, common.json);
       case 'start':

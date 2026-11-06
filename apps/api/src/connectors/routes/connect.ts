@@ -6,6 +6,8 @@ import { parseConnectorConnectOwner } from '../../projects/lib/connection-access
 import { reconcileEventSubscriptionsFromCatalog } from '../../projects/surface';
 import type { ConnectorRouterDeps } from '../router';
 import { OkSchema, OpaqueSchema, ProjectSlugParam, featureNotSupportedResponse } from './shared';
+import { analyticsSource, isPersonSource } from '../../middleware/analytics-source';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 /**
  * Connecting an account the whole project uses is a person's choice, and the
@@ -141,6 +143,21 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
       }
       const result = await finalize(projectId, slug, admin.userId, selector, owner);
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
+      const source = analyticsSource(c);
+      if ((result as { connected?: boolean }).connected && isPersonSource(source)) {
+        captureProductEvent({
+          userId: admin.userId,
+          accountId: admin.accountId,
+          event: 'connector_connected',
+          properties: {
+            project_id: projectId,
+            provider: (result as { provider?: string }).provider ?? null,
+            method: 'oauth',
+            owner,
+            source,
+          },
+        });
+      }
       // A new shared account may activate pending event triggers.
       await reconcileEventSubscriptionsFromCatalog(projectId, admin.accountId);
       return c.json(result);

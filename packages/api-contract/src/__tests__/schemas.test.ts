@@ -150,8 +150,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       volumes: false,
       drives: false,
       session_log_restore: false,
-      project_channels: false,
-      agent_rooms: false,
+      chat: false,
       shared_drives: false,
       goals: false,
       workspace_volume: false,
@@ -162,6 +161,8 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       chrome: false,
       agent_teams: false,
       voice_call: false,
+      chat_input: false,
+      chat_front: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -182,7 +183,6 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     sandbox_id: null,
     sandbox_url: null,
     runtime_session_id: 'ses_abc',
-    opencode_session_id: 'ses_abc',
     name: 'Fix the login bug',
     custom_name: null,
     labels: [],
@@ -191,7 +191,6 @@ function sessionFixture(overrides: Record<string, unknown> = {}) {
     error: null,
     metadata: { name: 'Fix the login bug' },
     runtime_sessions: [],
-    opencode_sessions: [],
     created_by: '99999999-8888-4777-8666-555555555555',
     owner_email: null,
     visibility: 'private',
@@ -509,7 +508,7 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
     });
     expect(parsed.runtime_url).toBeUndefined();
   });
@@ -520,7 +519,7 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: false,
       sandbox: sandboxFixture(),
-      opencode_session_id: 'ses_abc',
+      runtime_session_id: 'ses_abc',
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',
     });
@@ -533,7 +532,7 @@ describe('SessionStartResultSchema', () => {
       agent_name: 'default',
       retriable: false,
       sandbox: sandboxFixture({ status: 'error' }),
-      opencode_session_id: null,
+      runtime_session_id: null,
       failure: {
         category: 'provider-capacity',
         message: 'The sandbox provider is at capacity right now. Try again in a minute.',
@@ -550,7 +549,7 @@ describe('SessionStartResultSchema', () => {
         agent_name: 'default',
         retriable: true,
         sandbox: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
       }),
     ).toThrow();
   });
@@ -866,9 +865,7 @@ describe('envelopes', () => {
       'us_region',
       'event_triggers',
       'notification_center',
-      'session_log_restore',
-      'project_channels',
-      'agent_rooms',
+      'chat',
       'shared_drives',
       'goals',
       'workspace_volume',
@@ -879,6 +876,8 @@ describe('envelopes', () => {
       'chrome',
       'agent_teams',
       'voice_call',
+      'chat_input',
+      'chat_front',
     ]);
   });
 
@@ -1001,7 +1000,6 @@ describe('SessionCreateInputSchema runtime_context', () => {
         agentName: 'veyris',
         sandboxSlug: 'default',
         initialPrompt: 'hello',
-        opencodeModel: 'kortix/glm-5.3-flash',
         sessionId: '11111111-1111-4111-a111-111111111111',
         branchAlreadyCreated: true,
       }).success,

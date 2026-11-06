@@ -1,7 +1,7 @@
 import { estimateLlmValue, llmValueBasis } from '../../shared/llm-value';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import { createRoute, z } from '@hono/zod-openapi';
-import { gatewayRequestLogs } from '@kortix/db';
+import { gatewayRequestLogs, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { auth, errors, json, queryText } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam/actions';
@@ -14,6 +14,11 @@ import { classifyGatewayLogReference } from './gateway-log-reference';
 
 const LIST_LIMIT_DEFAULT = 50;
 const LIST_LIMIT_MAX = 100;
+const FACET_HOURS_DEFAULT = 24;
+/** A week: the facet read scans every request of the window. */
+const FACET_HOURS_MAX = 168;
+/** Values per facet, the most-used first. */
+const FACET_VALUES_MAX = 50;
 
 /** A query value of decimal digits as a number; `fallback` when absent; NaN for anything else. */
 function decimalQuery(raw: string | undefined, fallback: number): number {
@@ -46,6 +51,11 @@ const LIST_COLUMNS = {
   actorUserId: gatewayRequestLogs.actorUserId,
   keyId: gatewayRequestLogs.keyId,
   sessionId: gatewayRequestLogs.sessionId,
+  // The session message the call came from (`x-kortix-message-id` and friends,
+  // packages/llm-gateway request-origin.ts). Null on rows written before kortixd sent them.
+  messageId: sql<string | null>`${gatewayRequestLogs.metadata}->>'messageId'`,
+  turnId: sql<string | null>`${gatewayRequestLogs.metadata}->>'turnId'`,
+  threadId: sql<string | null>`${gatewayRequestLogs.metadata}->>'threadId'`,
   usageEstimated: sql<boolean>`coalesce(${gatewayRequestLogs.metadata}->>'usageEstimated', 'false') = 'true'`,
 };
 
@@ -103,7 +113,94 @@ function serializeLogRow(r: Record<string, any>) {
     actor_user_id: r.actorUserId,
     key_id: r.keyId,
     session_id: r.sessionId ?? null,
+    message_id: r.messageId ?? r.metadata?.messageId ?? null,
+    turn_id: r.turnId ?? r.metadata?.turnId ?? null,
+    thread_id: r.threadId ?? r.metadata?.threadId ?? null,
   };
+}
+
+/** `custom_name`, else the generated `name`; null when neither is set. */
+function sessionTitle(metadata: unknown): string | null {
+  const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
+  return [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
+}
+
+/** Titles of the sessions a page of logs names, in one read. A deleted session has none. */
+async function sessionTitles(projectId: string, sessionIds: (string | null | undefined)[]) {
+  const ids = [...new Set(sessionIds.filter((id): id is string => !!id))];
+  if (ids.length === 0) return new Map<string, string | null>();
+  const rows = await db
+    .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, ids)));
+  return new Map(rows.map((row) => [row.sessionId, sessionTitle(row.metadata)]));
+}
+
+/** `%` and `_` match themselves in an ILIKE pattern. */
+const likeEscape = (value: string) => value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+
+/** An ISO-8601 time as a Date; null when absent; `invalid` for anything else. */
+function timeQuery(raw: string | undefined): Date | null | 'invalid' {
+  const value = normalizeString(raw);
+  if (value == null) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'invalid' : date;
+}
+
+const FILTER_QUERY = {
+  ok: z.enum(['true', 'false']).optional(),
+  session_id: queryText('Only requests of this session.'),
+  model: queryText('Only requests that asked for or ran on this model id.'),
+  provider: queryText('Only requests served by this provider.'),
+  error_code: queryText('Only failed requests with this error code.'),
+  q: queryText(
+    'Search: a model, provider or error code containing the text, or a request, session or message id equal to it.',
+  ),
+  since: queryText('Only requests at or after this ISO-8601 time.'),
+  until: queryText('Only requests at or before this ISO-8601 time.'),
+};
+
+/**
+ * The list filters as SQL, or the 400 message for a bad one. Every filter is
+ * applied in the database, so a filter reaches every request, not only the
+ * page the client has loaded.
+ */
+function logFilters(query: (name: string) => string | undefined): { conds: SQL[] } | { error: string } {
+  const conds: SQL[] = [];
+  const ok = query('ok');
+  if (ok === 'true') conds.push(eq(gatewayRequestLogs.ok, true));
+  if (ok === 'false') conds.push(eq(gatewayRequestLogs.ok, false));
+  const sessionId = normalizeString(query('session_id'));
+  if (sessionId) conds.push(eq(gatewayRequestLogs.sessionId, sessionId));
+  const model = normalizeString(query('model'));
+  if (model) conds.push(or(eq(gatewayRequestLogs.requestedModel, model), eq(gatewayRequestLogs.resolvedModel, model))!);
+  const provider = normalizeString(query('provider'));
+  if (provider) conds.push(eq(gatewayRequestLogs.provider, provider));
+  const errorCode = normalizeString(query('error_code'));
+  if (errorCode) conds.push(eq(gatewayRequestLogs.errorCode, errorCode));
+  const since = timeQuery(query('since'));
+  const until = timeQuery(query('until'));
+  if (since === 'invalid' || until === 'invalid') return { error: 'since and until must be ISO-8601 times' };
+  if (since) conds.push(gte(gatewayRequestLogs.createdAt, since));
+  if (until) conds.push(lte(gatewayRequestLogs.createdAt, until));
+  const q = normalizeString(query('q'));
+  if (q) {
+    if (q.length > 200) return { error: 'q must be at most 200 characters' };
+    const like = `%${likeEscape(q)}%`;
+    conds.push(
+      or(
+        sql`${gatewayRequestLogs.requestedModel} ilike ${like}`,
+        sql`${gatewayRequestLogs.resolvedModel} ilike ${like}`,
+        sql`${gatewayRequestLogs.provider} ilike ${like}`,
+        sql`coalesce(${gatewayRequestLogs.errorCode}, '') ilike ${like}`,
+        eq(gatewayRequestLogs.requestId, q),
+        eq(gatewayRequestLogs.sessionId, q),
+        sql`${gatewayRequestLogs.metadata}->>'messageId' = ${q}`,
+        sql`${gatewayRequestLogs.metadata}->>'turnId' = ${q}`,
+      )!,
+    );
+  }
+  return { conds };
 }
 
 export function registerGatewayLogsRoutes(): void {
@@ -121,7 +218,7 @@ export function registerGatewayLogsRoutes(): void {
             `Logs per page, an integer from 1 to ${LIST_LIMIT_MAX}. Default ${LIST_LIMIT_DEFAULT}. Anything else is a 400.`,
           ),
           offset: queryText('Logs to skip: the `next_offset` of the previous page. A non-negative integer; anything else is a 400.'),
-          ok: z.enum(['true', 'false']).optional(),
+          ...FILTER_QUERY,
         }),
       },
       responses: { 200: json(z.any(), 'Gateway request logs'), ...errors(400, 404) },
@@ -146,14 +243,13 @@ export function registerGatewayLogsRoutes(): void {
       }
       const offset = decimalQuery(c.req.query('offset'), 0);
       if (!Number.isSafeInteger(offset)) return c.json({ error: 'offset must be a non-negative integer' }, 400);
-      const okFilter = c.req.query('ok');
+      const filters = logFilters((name) => c.req.query(name));
+      if ('error' in filters) return c.json({ error: filters.error }, 400);
 
       const view = await projectReadView(c, loaded);
-      const conds = [eq(gatewayRequestLogs.projectId, projectId)];
+      const conds = [eq(gatewayRequestLogs.projectId, projectId), ...filters.conds];
       const visible = view.where(gatewayRequestLogs.sessionId, gatewayRequestLogs.actorUserId);
       if (visible) conds.push(visible);
-      if (okFilter === 'true') conds.push(eq(gatewayRequestLogs.ok, true));
-      if (okFilter === 'false') conds.push(eq(gatewayRequestLogs.ok, false));
 
       const rows = await db
         .select(LIST_COLUMNS)
@@ -165,9 +261,104 @@ export function registerGatewayLogsRoutes(): void {
 
       const hasMore = rows.length > limit;
       const page = hasMore ? rows.slice(0, limit) : rows;
+      const titles = await sessionTitles(projectId, page.map((row) => row.sessionId));
       return c.json({
-        logs: page.map(serializeLogRow),
+        logs: page.map((row) => ({
+          ...serializeLogRow(row),
+          session_title: row.sessionId ? (titles.get(row.sessionId) ?? null) : null,
+        })),
         next_offset: hasMore ? offset + limit : null,
+      });
+    },
+  );
+
+  // Before `/logs/{logId}`: call order is dispatch order, and `facets` is not a log id.
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/gateway/logs/facets',
+      tags: ['gateway'],
+      summary: 'List the values the gateway log filters can take',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({
+          hours: queryText(`The window, an integer from 1 to ${FACET_HOURS_MAX} hours. Default ${FACET_HOURS_DEFAULT}.`),
+        }),
+      },
+      responses: { 200: json(z.any(), 'Gateway log filter values with request counts'), ...errors(400, 404) },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_GATEWAY_LOGS_READ,
+      );
+      const hours = decimalQuery(c.req.query('hours'), FACET_HOURS_DEFAULT);
+      if (!(hours >= 1 && hours <= FACET_HOURS_MAX)) {
+        return c.json({ error: `hours must be an integer from 1 to ${FACET_HOURS_MAX}` }, 400);
+      }
+
+      const view = await projectReadView(c, loaded);
+      const visible = view.where(gatewayRequestLogs.sessionId, gatewayRequestLogs.actorUserId);
+      const model = sql`coalesce(nullif(${gatewayRequestLogs.requestedModel}, ''), nullif(${gatewayRequestLogs.resolvedModel}, ''))`;
+      // One scan of the window, four groupings. `idx_gateway_logs_project_time`
+      // bounds it to the project and the window.
+      const rows = await db.execute<{
+        model: string | null;
+        provider: string | null;
+        error_code: string | null;
+        session_id: string | null;
+        g_model: number;
+        g_provider: number;
+        g_error: number;
+        count: number;
+        cost: string;
+      }>(sql`
+        select ${model} as model,
+               nullif(${gatewayRequestLogs.provider}, '') as provider,
+               ${gatewayRequestLogs.errorCode} as error_code,
+               ${gatewayRequestLogs.sessionId} as session_id,
+               grouping(${model}) as g_model,
+               grouping(nullif(${gatewayRequestLogs.provider}, '')) as g_provider,
+               grouping(${gatewayRequestLogs.errorCode}) as g_error,
+               count(*)::int as count,
+               coalesce(sum(${gatewayRequestLogs.finalCost}), 0)::text as cost
+          from ${gatewayRequestLogs}
+         where ${gatewayRequestLogs.projectId} = ${projectId}
+           and ${gatewayRequestLogs.createdAt} >= now() - make_interval(hours => ${hours})
+           ${visible ? sql`and ${visible}` : sql``}
+         group by grouping sets ((${model}), (nullif(${gatewayRequestLogs.provider}, '')), (${gatewayRequestLogs.errorCode}), (${gatewayRequestLogs.sessionId}))
+      `);
+      const list = Array.isArray(rows) ? rows : ((rows as { rows?: typeof rows }).rows ?? []);
+      const top = <T,>(items: T[], count: (item: T) => number) =>
+        items.sort((a, b) => count(b) - count(a)).slice(0, FACET_VALUES_MAX);
+      // `grouping()` is 0 for the column a row is grouped by.
+      const values = (pick: (row: (typeof list)[number]) => string | null, grouped: (row: (typeof list)[number]) => boolean) =>
+        top(
+          list.filter((row) => grouped(row) && pick(row)).map((row) => ({ value: pick(row)!, count: Number(row.count) })),
+          (item) => item.count,
+        );
+      const sessionRows = top(
+        list.filter((row) => row.g_model === 1 && row.g_provider === 1 && row.g_error === 1 && row.session_id),
+        (row) => Number(row.count),
+      );
+      const titles = await sessionTitles(projectId, sessionRows.map((row) => row.session_id));
+      return c.json({
+        window_hours: hours,
+        models: values((row) => row.model, (row) => row.g_model === 0),
+        providers: values((row) => row.provider, (row) => row.g_provider === 0),
+        error_codes: values((row) => row.error_code, (row) => row.g_error === 0),
+        sessions: sessionRows.map((row) => ({
+          session_id: row.session_id!,
+          title: titles.get(row.session_id!) ?? null,
+          count: Number(row.count),
+        })),
       });
     },
   );
@@ -221,8 +412,10 @@ export function registerGatewayLogsRoutes(): void {
         return c.json({ error: 'Not found' }, 404);
       }
 
+      const titles = await sessionTitles(projectId, [row.sessionId]);
       return c.json({
         ...serializeLogRow(row),
+        session_title: row.sessionId ? (titles.get(row.sessionId) ?? null) : null,
         candidates_tried: row.candidatesTried ?? [],
         request: row.request ?? null,
         response: row.response ?? null,

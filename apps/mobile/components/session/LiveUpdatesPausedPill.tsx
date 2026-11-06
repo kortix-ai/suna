@@ -11,7 +11,6 @@
  * the SDK's `notifyHostSignal('retry')`), past any backoff or park.
  */
 
-import * as React from 'react';
 
 import { ArrowClockwiseIcon } from '@/lib/icons';
 import { haptics } from '@/lib/haptics';

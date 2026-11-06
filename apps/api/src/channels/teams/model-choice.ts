@@ -66,7 +66,7 @@ export async function buildTeamsModelsCard(activity: TeamsActivity, tenantId: st
   const scope = await teamsModelScope(activity, tenantId, conversationId);
   if (!scope) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
   const selection = await currentChannelSelection(ctx);
-  const current = selection?.opencodeModel ?? null;
+  const current = selection?.sessionModel ?? null;
   const { models, defaultModel } = await listChannelModels(scope);
   const currentWire = current ? toWireModel(current) : null;
   const keys = currentWire ? await channelKeySelection(scope, currentWire) : null;
@@ -126,8 +126,8 @@ export async function applyTeamsModelChoice(
     // The live session goes back to the model it started with, which the
     // project default may no longer be.
     return buildNoticeCard(
-      live?.opencodeModel
-        ? `Model reset to the project default for new sessions. This chat's session keeps ${labelForModelRef(live.opencodeModel)}; send /new to start on the default.`
+      live?.sessionModel
+        ? `Model reset to the project default for new sessions. This chat's session keeps ${labelForModelRef(live.sessionModel)}; send /new to start on the default.`
         : 'Model reset to the project default.',
       '✅',
     );

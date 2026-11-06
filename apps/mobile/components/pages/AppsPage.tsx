@@ -20,8 +20,8 @@ import { useAppAccess } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 import { useIsFocused } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AppState, Pressable, View, type ViewToken } from 'react-native';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { AppState, Pressable, View, type ListViewToken } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 import { KortixLoader } from '@/components/kortix/kortix-loader';
@@ -90,7 +90,7 @@ export function AppsPage({ page, projectId, onOpenDrawer }: AppsPageProps) {
   const [slots] = useState(createPreviewSlots);
   const [visible, setVisible] = useState<ReadonlySet<string>>(() => new Set());
   // FlatList refuses a changed `onViewableItemsChanged`: keep one function.
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ListViewToken[] }) => {
     setVisible(new Set(viewableItems.map((item) => item.key)));
   }).current;
 

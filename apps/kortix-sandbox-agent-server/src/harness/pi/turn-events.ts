@@ -140,6 +140,8 @@ export function assistantMessageError(
 export class PiTurnEvents {
   private readonly now: () => number
   private currentMessageId = ''
+  /** The id the next assistant message takes, minted when its model request leaves (`reserveMessageId`). */
+  private reservedMessageId: string | null = null
   private currentParentId: string | null = null
   private currentCreatedAt = 0
   private partCount = 0
@@ -181,6 +183,15 @@ export class PiTurnEvents {
     return this.currentMessageId
   }
 
+  /**
+   * The id of the assistant message the next model request produces, known before the request
+   * leaves so the gateway can log it (`x-kortix-message-id`). The next `message_start` takes it.
+   * A request that never starts a message leaves it for the next one: one id, never two messages.
+   */
+  reserveMessageId(): string {
+    return (this.reservedMessageId ??= this.opts.mintMessageId())
+  }
+
   translate(event: AgentEvent): TurnEventEmission[] {
     const sessionID = this.opts.sessionID
     switch (event.type) {
@@ -200,7 +211,8 @@ export class PiTurnEvents {
         this.accum.clear()
         this.partStartedAt.clear()
         this.partCount = 0
-        this.currentMessageId = this.opts.mintMessageId()
+        this.currentMessageId = this.reservedMessageId ?? this.opts.mintMessageId()
+        this.reservedMessageId = null
         this.currentParentId = this.opts.parentMessageId()
         this.currentCreatedAt = this.now()
         return [{ type: 'message.updated', properties: { sessionID, info: this.assistantInfo(event.message) } }]

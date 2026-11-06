@@ -26,8 +26,6 @@ export type SessionInvocationSource =
   | 'system:secret-submitted'
   | 'system:connector-connected'
   | 'system:artifact-comment'
-  /** A message another participant posted in a room the session joined (`projects/rooms`). */
-  | 'system:room-message'
   /** A background subagent finished a turn: its report, delivered into the parent (`projects/subagent-notice.ts`). */
   | 'system:subagent-finished'
   /** A cross-session message (`send_message`) or its idle notice (`projects/peer-messages`). */
@@ -37,6 +35,8 @@ export type SessionInvocationSource =
    *  initial prompt, or an unattended session's row that could not be requeued
    *  (`sandbox-state-sync.ts` `enqueueTurnContinuation`). */
   | 'system:auto-recovery'
+  /** Kortix started a thread in the person's chat (`projects/routes/chat-threads.ts`, flag `chat`). */
+  | 'system:chat-post'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';

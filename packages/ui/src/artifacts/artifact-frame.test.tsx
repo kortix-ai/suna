@@ -58,6 +58,8 @@ test('frame claims expose the actual iframe without reclaiming when callback ide
   expect(first).toHaveLength(1);
   expect(first[0]?.tagName).toBe('IFRAME');
   expect(first[0]?.src).toBe(props.src);
+  // The page learns its host's origin (the bridge's pointer gate), never the path with project ids.
+  expect(first[0]?.referrerPolicy).toBe('strict-origin');
   await act(async () =>
     root.render(
       createElement(ArtifactFrame, { ...props, onFrame: (frame) => second.push(frame) }),

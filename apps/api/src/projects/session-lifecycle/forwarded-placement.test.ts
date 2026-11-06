@@ -7,7 +7,6 @@ import {
   tipIsBusy,
   mintLivePlacement,
   noteBoxClockSample,
-  parsePlacementTip,
   remintFloorTime,
   strandedPlacement,
 } from './forwarded-placement';
@@ -221,39 +220,6 @@ describe('isLaterTipMessage', () => {
   });
 });
 
-describe('parsePlacementTip', () => {
-  test('reads id, role, parentID and time.created', () => {
-    expect(
-      parsePlacementTip([
-        { info: { id: 'msg_a', role: 'user', time: { created: 5 } } },
-        { info: { id: 'msg_b', role: 'assistant', parentID: 'msg_a' } },
-        { info: { role: 'assistant' } },
-        null,
-      ]),
-    ).toEqual([
-      { id: 'msg_a', role: 'user', parentID: null, created: 5, completed: null, partIds: [] },
-      { id: 'msg_b', role: 'assistant', parentID: 'msg_a', created: null, completed: null, partIds: [] },
-    ]);
-    expect(parsePlacementTip({})).toBeNull();
-  });
-
-  test('marks a user message that holds an automatic compaction, and only that', () => {
-    const tip = parsePlacementTip([
-      { info: { id: 'msg_auto', role: 'user' }, parts: [{ id: 'prt_a', type: 'compaction', auto: true }] },
-      { info: { id: 'msg_manual', role: 'user' }, parts: [{ id: 'prt_m', type: 'compaction', auto: false }] },
-      { info: { id: 'msg_text', role: 'user' }, parts: [{ id: 'prt_t', type: 'text', text: 'hi', synthetic: true }] },
-    ]);
-    expect(tip?.map((message) => [message.id, message.autoCompaction === true])).toEqual([
-      ['msg_auto', true],
-      ['msg_manual', false],
-      ['msg_text', false],
-    ]);
-    expect(tip?.[0]?.partIds).toEqual(['prt_a']);
-  });
-});
-
-// Only the first case writes the process-wide skew registry, under its own
-// session key; the others pass the skew in.
 describe('box clock + live placement', () => {
 
   test('skew is a lower bound (created − ack) and expires', () => {

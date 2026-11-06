@@ -14,7 +14,7 @@ const config = {
 };
 let active: string | null = null;
 let param: string | null = null;
-// Spaces are Work in progress under `project_channels`.
+// Spaces are Work in progress under `chat`.
 let spacesOn = true;
 
 const sdkReact = await import('@kortix/sdk/react');

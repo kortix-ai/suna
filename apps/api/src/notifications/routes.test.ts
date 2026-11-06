@@ -362,7 +362,7 @@ function inboxApp() {
     emailAvailable: () => false,
     hiddenKinds: async (...args) => {
       record('hiddenKinds', args);
-      return ['message'];
+      return ['artifact_comment'];
     },
     vapidPublicKey: async () => 'BSyntheticPublicKey',
     validateWebPush: validateWebPushSubscriptionInput,
@@ -471,7 +471,7 @@ describe('GET and PUT /v1/notifications/preferences', () => {
     const h = inboxApp();
     const res = await h.send('GET', '/preferences', browser);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ kinds: DEFAULT_NOTIFICATION_PREFERENCES, email_available: false, hidden_kinds: ['message'] });
+    expect(await res.json()).toEqual({ kinds: DEFAULT_NOTIFICATION_PREFERENCES, email_available: false, hidden_kinds: ['artifact_comment'] });
     expect(h.named('loadPreferences')).toEqual([[USER_A]]);
     expect(h.named('hiddenKinds')).toEqual([[USER_A]]);
   });
@@ -482,6 +482,13 @@ describe('GET and PUT /v1/notifications/preferences', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).kinds.question).toEqual({ push: false, email: true });
     expect(h.named('updatePreferences')).toEqual([[USER_A, { kinds: { question: { push: false } } }]]);
+  });
+
+  test('PUT accepts the retired `message` kind that an older client may still send', async () => {
+    const h = inboxApp();
+    const res = await h.send('PUT', '/preferences', browser, { kinds: { message: { push: false } } });
+    expect(res.status).toBe(200);
+    expect((await res.json()).kinds).not.toHaveProperty('message');
   });
 
   const invalid: [string, unknown][] = [

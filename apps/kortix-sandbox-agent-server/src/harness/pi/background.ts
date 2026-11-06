@@ -10,6 +10,7 @@ import { relayMemoryGuardTurnEnd } from '../shared/turn-relay'
 import { startResourceMonitor, type ResourceMonitor } from '@/services/resources/resources'
 import type { Config } from '@/lib/config/config'
 import type { PiRuntime } from './runtime'
+import { claudeSessions } from './claude/provider'
 
 export function startPiBackground(runtime: () => PiRuntime | null, cfg: Config): ResourceMonitor {
   // Captured inside `abortTurn`, BEFORE it runs: aborting clears the active
@@ -19,11 +20,16 @@ export function startPiBackground(runtime: () => PiRuntime | null, cfg: Config):
   return startResourceMonitor({
     runtimePid: () => process.pid,
     runtimeState: () => runtime()?.getState() ?? 'down',
+    // A Claude Code turn runs in a `claude` child of the daemon: part of the runtime, never shed.
+    runtimeProcessNames: ['claude'],
     diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
     diskCleanup: { workspaceRoot: cfg.workspace },
     guard: {
       guardPct: Number(process.env.KORTIX_MEMORY_GUARD_PCT) || undefined,
       turnInFlight: async () => runtime()?.busy() ?? null,
+      // The daemon's memory follows its Claude Code processes (prod 2026-11-04: 3.1 GB, back to
+      // 270 MB each time one was replaced): stop the ones between steps before killing anything.
+      relieve: async () => (await claudeSessions()?.recycleIdle()) ?? 0,
       abortTurn: async (reason) => {
         const rt = runtime()
         if (!rt) return false

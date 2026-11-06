@@ -185,3 +185,36 @@
   p.is-editor-empty:first-child::before {
   color: var(--color-amber-400);
 }
+
+/* Enter motion for a floating card (the voice call card): the same fade-up
+   apps/web's globals.css gives its pages, shipped here so every host has it.
+   Reduced motion keeps the fade and drops the movement. */
+@keyframes kx-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes kx-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.kx-fade-up {
+  animation: kx-fade-up 300ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-fade-up {
+    animation-name: kx-fade;
+  }
+}

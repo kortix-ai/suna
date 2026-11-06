@@ -60,34 +60,6 @@ type Config = {
   refetchInterval?: unknown;
 };
 
-const RETIRED_HOOKS: Array<[name: string, hook: () => unknown]> = [
-  ['useCreateTunnelConnection', () => tunnel.useCreateTunnelConnection()],
-  ['useTunnelPermissions', () => tunnel.useTunnelPermissions('tunnel-1')],
-  ['useGrantTunnelPermission', () => tunnel.useGrantTunnelPermission()],
-  ['useRevokeTunnelPermission', () => tunnel.useRevokeTunnelPermission()],
-  ['useTunnelPermissionRequests', () => tunnel.useTunnelPermissionRequests()],
-  ['useApprovePermissionRequest', () => tunnel.useApprovePermissionRequest()],
-  ['useDenyPermissionRequest', () => tunnel.useDenyPermissionRequest()],
-  ['useTunnelAuditLogs', () => tunnel.useTunnelAuditLogs('tunnel-1')],
-];
-
-test.each(RETIRED_HOOKS)('%s fails with ENDPOINT_RETIRED and sends no request', async (name, hook) => {
-  const config = hook() as Config;
-  const run = config.queryFn ? config.queryFn() : config.mutationFn!({});
-  const error = await run.then(
-    () => null,
-    (e: unknown) => e,
-  );
-
-  expect((error as { code?: string } | null)?.code).toBe('ENDPOINT_RETIRED');
-  expect((error as Error).message).toContain(name);
-  expect(requests).toEqual([]);
-  if (config.queryFn) {
-    expect(config.retry).toBe(false);
-    expect(config.refetchInterval).toBeUndefined();
-  }
-});
-
 test('useTunnelConnections rethrows the API error with its status intact', async () => {
   // The web QueryClient's default retry guard reads `error.status` and stops
   // on 4xx. A re-thrown status-less `new Error(message)` defeats it: with a

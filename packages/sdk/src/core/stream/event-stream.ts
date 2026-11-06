@@ -467,9 +467,8 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
 }
 
 // The curated chat-event union built on top of this stream's `RuntimeEvent` —
-// re-exported here (additive only) so a host that imports the SSE primitive
-// from this subpath (`@kortix/sdk/event-stream`) can reach the chat-narrowing
-// helpers from the same import without a second subpath. Canonical definition
+// re-exported here (additive only) so the SSE primitive and the chat-narrowing
+// helpers come from the same module. Canonical definition
 // lives in `./chat-events.ts`.
 export {
   heartbeatGapEvent,
@@ -482,6 +481,7 @@ export {
   type KortixChatEventPartRemoved,
   type KortixChatEventPartUpdated,
   type KortixChatEventPermissionAsked,
+  type KortixChatEventPermissionParked,
   type KortixChatEventPermissionReplied,
   type KortixChatEventQuestionAnswered,
   type KortixChatEventQuestionAsked,
@@ -494,6 +494,3 @@ export {
   type KortixChatToolRef,
 } from './chat-events';
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `RuntimeEvent`. Removed in the next major. */
-export type OpenCodeEvent = RuntimeEvent;

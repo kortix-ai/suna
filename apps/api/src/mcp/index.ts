@@ -751,14 +751,26 @@ export function listSessionRow(s: any) {
 }
 
 /** The project's own skills (`skills/<slug>/SKILL.md`, or the legacy dir) from the same /detail route the web app reads; it honors the caller's per-skill grants. */
-async function projectSkills(ctx: ToolContext, projectId: string): Promise<{ slug: string; name: string; description: string | null; path: string; files: string[] }[] | Error> {
+async function projectSkills(ctx: ToolContext, projectId: string): Promise<{ slug: string; name: string; description: string | null; path: string }[] | Error> {
   const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/detail`);
   if (r.status >= 400) return new ToolInputError(`HTTP ${r.status} reading project ${projectId}: ${r.body.slice(0, 200)}`);
-  const detail = JSON.parse(r.body) as { config?: { skills?: { name: string; path: string; description: string | null }[] }; files?: { path: string }[] };
+  const detail = JSON.parse(r.body) as { config?: { skills?: { name: string; path: string; description: string | null }[] } };
   return (detail.config?.skills ?? []).map((s) => {
     const dir = s.path.slice(0, s.path.lastIndexOf('/') + 1);
-    return { ...s, slug: dir.split('/').at(-2) ?? s.name, files: (detail.files ?? []).map((f) => f.path).filter((p) => p.startsWith(dir)) };
+    return { ...s, slug: dir.split('/').at(-2) ?? s.name };
   });
+}
+
+/**
+ * The files in one skill's directory, from the file listing route (it honors
+ * project.file.read and the per-resource grants). The detail's `files` was
+ * cut at 300 paths, so on a large repository a skill listed no references.
+ * A caller without file.read gets none, as before.
+ */
+async function skillDirectoryFiles(ctx: ToolContext, projectId: string, dir: string): Promise<string[]> {
+  const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files`, { query: { path: dir.replace(/\/+$/, '') } });
+  if (r.status >= 400) return [];
+  return (JSON.parse(r.body) as { path: string }[]).map((f) => f.path).filter((path) => path.startsWith(dir));
 }
 
 export async function runTool(ctx: ToolContext, name: string, input: Record<string, unknown>): Promise<ToolResult> {
@@ -868,7 +880,7 @@ async function sendMessageTool(ctx: ToolContext, input: Record<string, unknown>)
   if (found.status >= 400) return apiResult(found);
   const session = JSON.parse(found.body);
   // The same body `kortix sessions chat --queue` sends (apps/cli/src/commands/sessions-queue.ts).
-  const model = typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : '';
+  const model = typeof session.metadata?.model === 'string' ? session.metadata.model : '';
   const slash = model.indexOf('/');
   const overrides = {
     ...(session.agent_name ? { agent: session.agent_name } : {}),
@@ -1033,7 +1045,7 @@ async function readSkillTool(ctx: ToolContext, input: Record<string, unknown>): 
     }
     const r = await callApi(ctx, 'GET', `/v1/projects/${projectId}/files/content`, { query: { path: mine.path } });
     if (r.status >= 400) return apiResult(r);
-    const refs = mine.files.filter((f) => f !== mine.path).map((f) => `- ${f.slice(dir.length)}`);
+    const refs = (await skillDirectoryFiles(ctx, projectArg(input), dir)).filter((f) => f !== mine.path).map((f) => `- ${f.slice(dir.length)}`);
     const body = JSON.parse(r.body).content as string;
     return text(refs.length ? `${body}\n\nReference files (read_skill with project_id, name and file):\n${refs.join('\n')}` : body);
   }

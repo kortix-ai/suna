@@ -54,6 +54,7 @@ import {
 } from './route-memory';
 import { relayStream, type StreamObservation } from './streaming';
 import { createTraceEmitter } from './trace';
+import type { RequestOrigin } from './request-origin';
 
 export interface ChatCompletionRequest {
   authorization: string | undefined;
@@ -71,6 +72,8 @@ export interface ChatCompletionRequest {
    * request could exceed the whole task's memory.
    */
   parsedBody?: Record<string, unknown>;
+  /** The session message the request comes from (`request-origin.ts`). */
+  origin?: RequestOrigin;
 }
 
 export interface GatewayDeps {
@@ -258,7 +261,7 @@ export async function handleChatCompletions(
   const id = requestId();
   const startedAt = new Date().toISOString();
   const startedMs = Date.now();
-  const emit = createTraceEmitter(hooks, logger, id, startedAt, startedMs);
+  const emit = createTraceEmitter(hooks, logger, id, startedAt, startedMs, req.origin);
 
   const token = bearer(req.authorization);
   if (!token) {
@@ -721,6 +724,9 @@ export async function handleChatCompletions(
       resolveCandidates: (model) => hooks.resolveUpstream(principal, model),
       notePoolRateLimit: hooks.notePoolRateLimit
         ? (secretId, seconds) => hooks.notePoolRateLimit!(principal, secretId, seconds)
+        : undefined,
+      notePoolUsage: hooks.notePoolUsage
+        ? (secretId, usage) => hooks.notePoolUsage!(principal, secretId, usage)
         : undefined,
       refreshCredential: hooks.refreshCredential
         ? (descriptor) => hooks.refreshCredential!(principal, descriptor)

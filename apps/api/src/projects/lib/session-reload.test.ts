@@ -193,7 +193,7 @@ describe('reloadDetail', () => {
     etag: 'bbbb',
     repo_refreshed: true,
     commit_sha: null,
-    opencode_reload: null,
+    runtime_reload: null,
     turn_ended: null,
   } as const;
 
@@ -252,7 +252,7 @@ describe('turn-ended notice', () => {
     etag: 'bbbb',
     repo_refreshed: true,
     commit_sha: null,
-    opencode_reload: 'restarted' as const,
+    runtime_reload: 'restarted' as const,
     agent_files: 'updated' as const,
   };
 

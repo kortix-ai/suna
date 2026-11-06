@@ -14,6 +14,7 @@ import { book, bookSoon, disclose } from './lang'
 import type { Model, Provider } from './model'
 import { realtime } from './realtime'
 import { inworldVoices } from './speech'
+import { speak, transcribe } from './speech-api'
 
 const providers: Record<string, Provider> = { gemini, cascade, xai: realtime('xai'), eleven: realtime('eleven'), openai: realtime('openai') }
 
@@ -71,8 +72,9 @@ async function open(ws: WS) {
   const provider = providers[q.get('provider') ?? process.env.PROVIDER ?? 'cascade']
   if (!provider) return emit({ type: 'closed', why: 'unknown provider' }), ws.close()
   const lang = (q.get('lang') ?? process.env.VOICE_LANG ?? 'en').toLowerCase().split('-')[0]!
-  // The assistant's name in this call (?agent=, the call page's persona), else this deployment's (VOICE_NAME).
-  const agent = q.get('agent')?.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 32) || NAME
+  // The assistant's name in this call: the call page's persona (?agent=), else the agent the session runs (a host binds it:
+  // a call placed from the engineering agent's page greeted as "Kortix"), else this deployment's (VOICE_NAME).
+  const agent = q.get('agent')?.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 32) || brain.nameOf?.(q.get('session')) || NAME
   let named = agent // her name in the lines she says (a persona change renames the ones after it)
   // In a meeting the disclosure (its exact words kept) says who it is, to everyone, and nothing more.
   const ROOM_HELLO: Record<string, string> = {
@@ -105,6 +107,9 @@ async function open(ws: WS) {
       lang,
       manual: (q.get('turns') ?? process.env.TURNS) === 'client',
       session: call.sid,
+      agentTools: brain.tools(call.sid),
+      // A meeting's trusted speakers (?trusted=Ana,Ben; empty: nobody): only their words reach the agent.
+      trusted: q.has('trusted') ? (q.get('trusted') ?? '').split(',').map((n) => n.trim()).filter(Boolean).slice(0, 20) : undefined,
       instructions: INSTRUCTIONS + (past.text && `\n\nRecent session history, oldest first:\n${past.text}`),
       thread: past.thread,
       tools,
@@ -182,6 +187,10 @@ export function serve(port = Number(process.env.PORT ?? 7860)) {
       if (path === '/stream')
         return server.upgrade(req, { data: { q: u.searchParams, call: { sid: '', log: [], playing: 0 } } }) ? undefined : new Response('websocket only', { status: 426 })
       // Text a caller never said, pushed into live calls: local only without a token, like /see, /persona and /call below.
+      // A page is not this machine: without a token, a request that carries Origin (a browser's, a DNS-rebinding page's
+      // too) is refused on every local-only route; the relay's own clients (tools, the meeting host, benches) send none.
+      if ((path === '/inject' || path === '/see' || path === '/persona' || path === '/call' || path === '/speech') && !token && req.headers.get('origin'))
+        return new Response('no cross-origin requests (set VOICE_TOKEN to allow others)', { status: 403 })
       if (path === '/inject' && !token && !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(server.requestIP(req)?.address ?? ''))
         return new Response('local only (set VOICE_TOKEN to allow others)', { status: 403 })
       if (path === '/inject' && req.method === 'POST') {
@@ -195,7 +204,7 @@ export function serve(port = Number(process.env.PORT ?? 7860)) {
       // The pipeline for other agents (the call's own agent while it works, or any tool): look at what a live call shares
       // for a question (GET /see?session=&q=), or change who the assistant is in it (POST /persona {session, ...}).
       // Without a token these two answer this machine only (a call's camera and screen, who she is: not for the network).
-      if ((path === '/see' || path === '/persona' || path === '/call') && !token && !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(server.requestIP(req)?.address ?? ''))
+      if ((path === '/see' || path === '/persona' || path === '/call' || path === '/speech') && !token && !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(server.requestIP(req)?.address ?? ''))
         return new Response('local only (set VOICE_TOKEN to allow others)', { status: 403 })
       if (path === '/see') {
         // The call named; with no session named and one call live, that one (never another call's for a session that ended).
@@ -214,6 +223,20 @@ export function serve(port = Number(process.env.PORT ?? 7860)) {
         if (!c?.model?.state) return Response.json({ error: 'no such call', calls: calls.size }, { status: 404 })
         if (req.method !== 'POST') return Response.json({ ...c.model.state(), costUsd: Math.round((c.spent ?? 0) * 1e6) / 1e6 })
         return Response.json(await inCall(c, () => c.model!.control!(body)))
+      }
+      // Speech with or without a call (src/speech-api.ts), for the voice_speak and voice_transcribe tools or anything else:
+      // POST /speech {session?, speak: {text, voice?, format?}} saves the agent's voice as a file (the session's call voice
+      // while it has one); {transcribe: {file, language?}} reads an audio file's words.
+      if (path === '/speech' && req.method === 'POST') {
+        // JSON only: a page may send text/plain without asking, never application/json (a preflight this relay never answers).
+        if (!/^application\/json\b/i.test(req.headers.get('content-type') ?? '')) return Response.json({ error: 'application/json only' }, { status: 415 })
+        const body = (await req.json().catch(() => ({}))) as { session?: unknown; speak?: Record<string, unknown>; transcribe?: Record<string, unknown> }
+        const session = typeof body.session === 'string' && body.session ? body.session : undefined
+        const live = session ? ([...calls].find((x) => x.sid === session)?.model?.state?.() as { persona?: { voice?: string } } | undefined)?.persona?.voice : undefined
+        const r = body.speak && typeof body.speak === 'object' ? await speak(body.speak, { session, voice: live, signal: req.signal })
+          : body.transcribe && typeof body.transcribe === 'object' ? await transcribe(body.transcribe, { signal: req.signal })
+          : { status: 400, body: { error: 'POST {speak: {text, voice?, format?}} or {transcribe: {file, language?}}' } }
+        return Response.json(r.body, { status: r.status })
       }
       if (path === '/persona' && req.method === 'POST') {
         const p = (await req.json()) as { session?: string; name?: string; voice?: string; look?: string; style?: string }

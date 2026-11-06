@@ -105,7 +105,8 @@ export interface KortixChatEventQuestionAnswered {
   type: 'question.answered';
   sessionID: string;
   requestID: string;
-  outcome: 'replied' | 'rejected';
+  /** `parked`: nobody answered live; the question waits in Review and its answer arrives as a new message. */
+  outcome: 'replied' | 'rejected' | 'parked';
   answers?: QuestionAnswer[];
 }
 
@@ -116,6 +117,13 @@ export interface KortixChatEventPermissionAsked {
   permission: string;
   patterns: string[];
   tool?: KortixChatToolRef;
+}
+
+/** Nobody answered the permission request live: the call did not run, and the ask waits in Review. */
+export interface KortixChatEventPermissionParked {
+  type: 'permission.parked';
+  sessionID: string;
+  requestID: string;
 }
 
 export interface KortixChatEventPermissionReplied {
@@ -156,6 +164,7 @@ export type KortixChatEvent =
   | KortixChatEventQuestionAnswered
   | KortixChatEventPermissionAsked
   | KortixChatEventPermissionReplied
+  | KortixChatEventPermissionParked
   | KortixChatEventTodoUpdated
   | KortixChatEventConnection
   | KortixChatEventHeartbeatGap;
@@ -246,6 +255,21 @@ export function narrowChatEvent(event: RuntimeEvent): KortixChatEvent | null {
         sessionID: event.properties.sessionID,
         requestID: event.properties.requestID,
         outcome: 'rejected',
+      };
+
+    case 'question.parked':
+      return {
+        type: 'question.answered',
+        sessionID: event.properties.sessionID,
+        requestID: event.properties.requestID,
+        outcome: 'parked',
+      };
+
+    case 'permission.parked':
+      return {
+        type: 'permission.parked',
+        sessionID: event.properties.sessionID,
+        requestID: event.properties.requestID,
       };
 
     case 'permission.asked':

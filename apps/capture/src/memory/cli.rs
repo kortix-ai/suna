@@ -1459,6 +1459,12 @@ pub fn summarize_device_status(
     json!({
         "recording": recording,
         "reason": reason,
+        // Why every capture fails, so Kortix shows the cause, not only `error`.
+        // A private capture's message is generic (engine.rs never echoes it).
+        "lastError": errored
+            .then(|| st.and_then(|s| s.last_error.as_deref()))
+            .flatten()
+            .map(|e| e.chars().take(300).collect::<String>()),
         "missingPermissions": missing,
         "pausedUntilMs": settings.paused_until_ms.filter(|t| *t > now),
         "audio": {
@@ -3124,6 +3130,13 @@ mod tests {
         assert_eq!(v["appVersion"], "v1");
         assert_eq!(v["audio"]["enabled"], false);
         assert_eq!(v["capture"], json!({"intervalMs": 2000, "maxHeight": 1440}));
+        assert_eq!(v["lastError"], Value::Null);
+
+        let mut failing = rec("error");
+        failing.last_error = Some("capture_failed: AcquireNextFrame".into());
+        let v = summarize_device_status(&s, Some(&failing), true, None, None, now, "v1", false);
+        assert_eq!((v["recording"].as_str(), v["reason"].as_str()), (Some("not_recording"), Some("error")));
+        assert_eq!(v["lastError"], "capture_failed: AcquireNextFrame");
 
         let mut idle = rec("inactive");
         idle.inactive_reason = Some("inactive".into());

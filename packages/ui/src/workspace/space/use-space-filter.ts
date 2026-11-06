@@ -15,7 +15,7 @@ import { useSpacesEnabled } from '../../internal/lib/space-scope';
  * still stored as active) is `ALL_SPACES`. `PROJECT_WIDE_SPACE` selects
  * the project-wide items. Choosing one makes it the active space and drops
  * the param, so the sidebar, the home and the page agree. With the spaces
- * flag off (`project_channels`) it is always `ALL_SPACES`.
+ * flag off (`chat`) it is always `ALL_SPACES`.
  */
 export function useSpaceFilter(projectId: string): [string, (value: string) => void] {
   const [active, setActive] = useActiveSpace(projectId);

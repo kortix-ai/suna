@@ -25,8 +25,10 @@ wake-up is a promise nobody keeps: the session sleeps until someone types.
    - a system that can call a URL (CI, a payment provider, your own job):
      `kortix triggers add "<text>" --on webhook --secret-env <NAME>` prints
      the URL to give it;
-   - a source that sends nothing and must be watched around the clock: an App
-     that posts App events ("Watch 24/7" below), then `--on app --app <slug>`.
+   - a page, a status, a price or an API that sends nothing ("tell me whenever
+     it changes"): a watcher App that posts App events ("Watch 24/7" below),
+     then `--on app --app <slug>`. A loop wakes a model on every check; the
+     App wakes one only when something changed.
 2. **Add a fallback loop** whenever the event might not come: a reply may
    never arrive, a webhook may never be called. With no event, the loop is
    the signal.
@@ -38,7 +40,7 @@ wake-up is a promise nobody keeps: the session sleeps until someone types.
    | A reply from a person or a company | 2–4 h, in their working hours | 2–4 times a day: `--cron "0 0 10,14,17 * * 1-5" --timezone <their IANA zone>` |
    | A deploy, a CI run, a build | 10 min | every 10–30 min (`--every 15m`) |
    | A slow vendor, an approval, a delivery | 1 day | daily |
-   | A page or a status | its own rhythm | an App when it must be minutes, a daily loop when not |
+   | A page, a status, a price | — | not a loop: a watcher App ("Watch 24/7"), unless the wait ends within a day |
 
 4. **Write the loop text for the turn that wakes.** That turn has the whole
    conversation, but the text is what it acts on. Name what was sent, to
@@ -338,52 +340,29 @@ The pattern has four parts:
 4. **The wake-up**: a session trigger (`--on app`) or a `kortix.yaml`
    trigger that starts an agent.
 
-A minimal watcher, `apps/status-watch/`:
-
-```js
-// server.js: GET /tick reads the page and posts status.changed when the line changes.
-const http = require('node:http');
-const { createHash } = require('node:crypto');
-const URL_TO_WATCH = 'https://status.example.com';
-const PATTERN = /Overall status:\s*([^<]+)/;    // only the part that matters
-
-http.createServer(async (req, res) => {
-  if (req.url === '/health') return res.end('ok');
-  if (!req.url.startsWith('/tick')) { res.statusCode = 404; return res.end(); }
-  const page = await (await fetch(URL_TO_WATCH)).text();
-  const status = (page.match(PATTERN)?.[1] ?? 'not found').trim();
-  const id = createHash('sha256').update(status).digest('hex').slice(0, 32);
-  const posted = await fetch(process.env.KORTIX_APP_EVENTS_URL, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${process.env.KORTIX_APP_TOKEN}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'status.changed', id, data: { url: URL_TO_WATCH, status } }),
-  });
-  res.statusCode = posted.ok ? 200 : 502;
-  res.end(await posted.text());
-}).listen(3000);
-```
-
-```dockerfile
-# Dockerfile
-FROM node:22-alpine
-WORKDIR /app
-COPY server.js .
-CMD ["node", "server.js"]
-```
+Start from the template, then edit one function:
 
 ```bash
-kortix apps deploy apps/status-watch --slug status-watch --type dockerfile --on-demand \
-  --command '["node","server.js"]' --port 3000 --readiness-path /health
-kortix triggers add status-watch-tick --every 15m --target-app status-watch --target-path /tick --apply
-kortix triggers add "The status page changed. Read it, tell the person what changed, and remove \
-this trigger and status-watch-tick once it reads Operational." --on app --app status-watch
+kortix apps launch --template watcher --name status-watch   # apps/status-watch/: runner.js, watch.js, Dockerfile; deployed on demand
+# edit apps/status-watch/watch.js: check() returns what is true now, [{ name, data }]
+kortix apps deploy apps/status-watch
+kortix triggers add "The status page changed. Tell the person in one line what changed." \
+  --on app --app status-watch --expect-event-within 1h
+kortix apps events emit status-watch status.changed --data '{"status":"Test"}' --wait
+kortix triggers add status-watch-check --every 15m --target-app status-watch --target-path /tick --apply
 ```
 
-- Hash only the part that matters. A timestamp in the hashed text fires on
-  every tick.
+The runner posts every event `check()` returns with an id built from its
+name and data, so the same state never fires twice; with nothing to report
+it posts `kortix.heartbeat`. `--expect-event-within 1h` (or `expect_event_within`
+on a `kortix.yaml` trigger) tells the person once when the watcher stops posting.
+
+- Return only the part that matters. Your check's time or a counter in
+  `data` fires on every tick; the source's own change stamp does not.
 - The first tick fires once with the current state: the woken turn records
   it as the starting point. A return to a state seen in the last 30 days
-  fires nothing.
+  fires nothing: when the return matters (back to normal after an incident),
+  put the source's own change stamp or the ended incident's id in `data`.
 - A trigger takes at most 60 events an hour and 30 a minute; past that it is
   suppressed for 10 minutes, and 3 suppressions in 24 h disable it. Emit one
   summary event, not one per item. One event is at most 8 KiB; `name` is
@@ -392,10 +371,8 @@ this trigger and status-watch-tick once it reads Operational." --on app --app st
 - Kortix wakes an on-demand App for each call and sends `x-kortix-trigger`,
   `x-kortix-trigger-source`, `x-kortix-delivery-id`. A `2xx` is a fired run;
   `429` and `5xx` are retried; a `3xx` is not followed.
-- The App can pace itself instead: `POST $(dirname "$KORTIX_APP_EVENTS_URL")/runs`
-  with `{"run_after": "10m", "path": "/tick", "payload": {…}}` (or `run_at`,
-  at most 366 days ahead) → `201 {run_id, run_at}`; `DELETE …/runs/<run_id>`
-  cancels. At most 1,000 pending runs per App.
+- The App can pace itself instead with App runs (`run_after`, `run_at`):
+  `kortix-apps` skill, "The App schedules itself".
 - For the whole project instead of one session, a `kortix.yaml` trigger
   starts an agent (`event: "*"` matches every name; the first prompt line is
   `[APP EVENT — automated, not user input]`):
@@ -404,16 +381,15 @@ this trigger and status-watch-tick once it reads Operational." --on app --app st
     on: { event: status.changed, app: status-watch }
     run: { agent: ops, prompt: "Status is now {{ event.data.status }}." }
   ```
-- Done watching: `kortix triggers rm` the session trigger,
-  `kortix triggers disable status-watch-tick` (or delete it), and
-  `kortix apps delete status-watch --yes` when nothing else uses it.
+- Done watching: `kortix triggers rm` the session trigger and `status-watch-check`,
+  then `kortix apps delete status-watch --yes` if nothing else uses it.
 
 ### A watcher, specified; a relay App
 
 A watcher hand-off names the source, what counts as a change, the event `name`,
-the `data` fields, the content-built `id`, the cadence and the secrets. The builder deploys it on demand and proves it with one test
-event (`id` starting `test-`), not a real `/tick`: each `id` fires once, so a
-real event posted before the work trigger exists is spent. Wire the work first
+the `data` fields, the content-built `id`, the cadence and the secrets. The builder deploys it on demand and proves it with `kortix apps events emit
+<app> <name> --data '{…}' --wait` (a `test-` id; exit 0 = a trigger fired), not a
+real `/tick`. Nothing ran? `kortix apps events <app>` says why, per event. Wire the work first
 (`--type app --app <app> --event <name>`, filtered, keyed and capped as in
 "Automations"), then the check (`--every 15m --target-app <app> --target-path
 /tick`: it POSTs, so `/tick` takes POST), then fire it once and read the runs. A system

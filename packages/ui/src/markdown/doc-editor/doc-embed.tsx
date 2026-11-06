@@ -8,11 +8,13 @@ import { Hint } from '../../primitives/hint';
 import { faviconUrlForUrl } from '../../lib/favicon';
 import { successToast } from '../../primitives/toast';
 import { ArrowSquareOutIcon, LinkSimpleIcon, TextTIcon, TrashIcon } from '@phosphor-icons/react';
-import { Node } from '@tiptap/core';
+import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import { useState } from 'react';
 
 import { useTranslations } from '../../i18n';
+import { attrString } from './doc-attrs';
+import { safeNodeView } from './doc-node-view';
 
 /**
  * A pasted link shown as a card: its title, its description and the address on
@@ -106,12 +108,28 @@ export async function fetchEmbed(href: string, read: (url: string) => Promise<Li
 
 const text = (el: HTMLElement, cls: string) => el.querySelector(`.${cls}`)?.textContent?.trim() ?? '';
 
+/**
+ * A card's attributes as the view and the HTML read them: strings only (a
+ * co-editing writer can set any JSON value), and a link only to an http(s)
+ * address, as `canEmbed` makes a card. Anything else shows no link.
+ */
+export function embedMeta(attrs: Record<string, unknown>): EmbedMeta {
+  const href = attrString(attrs.href);
+  const image = attrString(attrs.image);
+  return {
+    href: canEmbed(href) ? href : '',
+    title: attrString(attrs.title),
+    summary: attrString(attrs.summary),
+    image: canEmbed(image) ? image : '',
+  };
+}
+
 /** The card's markup: the same in the editor and in the stored HTML. */
 function CardBody({ href, title, summary, image, onClick }: EmbedMeta & { onClick?: (e: React.MouseEvent) => void }) {
   // An image that does not load (gone, blocked) leaves the card text only.
   const [broken, setBroken] = useState(false);
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" onClick={onClick}>
+    <a href={href || undefined} target="_blank" rel="noopener noreferrer" onClick={onClick}>
       <span className="kx-embed-text">
         <span className="kx-embed-title">{title}</span>
         {summary ? <span className="kx-embed-summary">{summary}</span> : null}
@@ -133,7 +151,7 @@ function CardBody({ href, title, summary, image, onClick }: EmbedMeta & { onClic
  */
 function LinkEmbedView({ node, editor, getPos, deleteNode }: ReactNodeViewProps) {
   const t = useTranslations('artifacts');
-  const meta = node.attrs as EmbedMeta;
+  const meta = embedMeta(node.attrs);
   const editable = editor.isEditable;
   const convert = () => {
     const at = getPos();
@@ -167,9 +185,9 @@ function LinkEmbedView({ node, editor, getPos, deleteNode }: ReactNodeViewProps)
         className="absolute top-2 right-2 opacity-0 transition-opacity group-focus-within/embed:opacity-100 group-hover/embed:opacity-100"
       >
         <ButtonGroup>
-          {action(t('embedOpen'), ArrowSquareOutIcon, () => window.open(meta.href, '_blank', 'noopener,noreferrer'))}
-          {editable ? action(t('embedConvert'), TextTIcon, convert) : null}
-          {action(t('embedCopy'), LinkSimpleIcon, () => void copy())}
+          {meta.href ? action(t('embedOpen'), ArrowSquareOutIcon, () => window.open(meta.href, '_blank', 'noopener,noreferrer')) : null}
+          {editable && meta.href ? action(t('embedConvert'), TextTIcon, convert) : null}
+          {meta.href ? action(t('embedCopy'), LinkSimpleIcon, () => void copy()) : null}
           {editable ? action(t('embedDelete'), TrashIcon, deleteNode) : null}
         </ButtonGroup>
       </div>
@@ -195,8 +213,8 @@ export const LinkEmbed = Node.create({
   parseHTML() {
     return [{ tag: 'div.kx-embed', priority: 60 }];
   },
-  renderHTML({ node }) {
-    const { href, title, summary, image } = node.attrs as EmbedMeta;
+  renderHTML({ node, HTMLAttributes }) {
+    const { href, title, summary, image } = embedMeta(node.attrs);
     const textParts: unknown[] = [['span', { class: 'kx-embed-title' }, title]];
     if (summary) textParts.push(['span', { class: 'kx-embed-summary' }, summary]);
     const favicon = image ? null : faviconUrlForUrl(href);
@@ -208,11 +226,12 @@ export const LinkEmbed = Node.create({
     ]);
     const body: unknown[] = [['span', { class: 'kx-embed-text' }, ...textParts]];
     if (image) body.push(['img', { class: 'kx-embed-image', src: image, alt: '', referrerpolicy: 'no-referrer' }]);
-    return ['div', { class: 'kx-embed' }, ['a', { href, target: '_blank', rel: 'noopener noreferrer' }, ...body]] as never;
+    // HTMLAttributes holds only the block's `md` (doc-fidelity.ts): the card's own attributes are not rendered.
+    return ['div', mergeAttributes(HTMLAttributes, { class: 'kx-embed' }), ['a', { href, target: '_blank', rel: 'noopener noreferrer' }, ...body]] as never;
   },
   addNodeView() {
     // The editor leaves the action buttons to themselves (see DocCodeBlock).
-    return ReactNodeViewRenderer(LinkEmbedView, {
+    return ReactNodeViewRenderer(safeNodeView(LinkEmbedView), {
       stopEvent: ({ event }) => !!(event.target as Element | null)?.closest?.('[data-embed-actions]'),
     });
   },

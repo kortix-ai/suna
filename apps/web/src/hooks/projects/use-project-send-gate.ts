@@ -13,7 +13,7 @@ import {
   resolveBillingState,
 } from '@kortix/ui/internal/lib/billing/billing-gate-state';
 import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
-import { getProjectDetail } from '@kortix/sdk';
+import { getProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -25,13 +25,15 @@ import { useQuery } from '@tanstack/react-query';
  */
 export function useProjectSendGate(projectId: string) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { data: projectDetail } = useQuery({
-    queryKey: qk.project.detail(projectId),
-    queryFn: () => getProjectDetail(projectId),
+  // The project row (one database read), the same entry `useProjectCanRun`
+  // reads: the detail reads the repository and must never hold a send.
+  const { data: project } = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
     enabled: !!projectId,
     ...contract('config'),
   });
-  const projectAccountId = projectDetail?.project?.account_id ?? undefined;
+  const projectAccountId = project?.account_id ?? undefined;
   const { isLoading: billingLoading } = useProjectCanRun(projectId);
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -46,7 +48,7 @@ export function useProjectSendGate(projectId: string) {
     // WAIT for the account's answer; never refuse over its absence. This
     // used to `throw new Error('Account access is still loading')`, which
     // the composer swallows into a draft restore — so an Enter pressed
-    // before `/projects/:id/detail` + `/billing/account-state` landed
+    // before the project + `/billing/account-state` reads landed
     // dropped the prompt silently and nothing retried. Project home paints
     // a focusable composer ~1.1s after navigation; on the staging release
     // gate those two calls still had 4.5s and 5.9s to run at that moment

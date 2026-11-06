@@ -47,6 +47,37 @@ the CLI cannot find the field, pass `--attach-path <a.b.c>`, or run
 `contentBytes`. Pass the body as a JSON object, never as a string. Never put
 base64 in args yourself.
 
+## Videos to YouTube
+
+A video in the session goes to YouTube in two steps, at any size. Never use
+`multipart_upload_video` for a file in the session: it needs a public URL and
+stops at 100 MB.
+
+```sh
+F=/workspace/output/video.mp4
+jq -n --arg file "$F" --argjson size "$(stat -c %s "$F")" \
+  '{title:"Launch demo", privacy_status:"private", file_path:$file, file_size:$size, mime_type:"video/mp4"}' \
+  > /tmp/yt-args.json
+kortix connectors call youtube upload_video @/tmp/yt-args.json --out /tmp/yt-upload.json
+bash -c "$(jq -r '.data.result.caller_only.upload_command' /tmp/yt-upload.json)"
+```
+
+Build the args with `jq --arg`, never by pasting a path into a JSON string: a
+quote in a file name would add fields. The `curl` prints the video JSON:
+`id` is the video, `https://youtu.be/<id>`. Upload as `private` unless the
+human chose otherwise. YouTube processes the video after the upload. If
+`curl` breaks, run `caller_only.resume_status_command`: HTTP 308 with
+`Range: bytes=0-N` means send the rest from byte N+1. The upload URL is a
+credential for this one video: never paste it into chat, a file or a commit.
+After an approval, the resume prompt carries `caller_only`.
+
+`upstream_429` with `rateLimitExceeded` means the Google app the account
+signed in with has used its uploads for today; Google counts uploads per app,
+not per channel. Retry once after `retry_after_seconds` (the reset at midnight
+Pacific time): every earlier retry fails. Tell the human the time, and that
+YouTube Studio uploads do not count against it. `uploadLimitExceeded` is the
+channel's own daily limit: retry in 24 hours.
+
 ## GraphQL field selection
 
 Put the selected fields in `args.__select`:

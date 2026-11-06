@@ -60,6 +60,15 @@ Subcommands:
                                     bedrock also needs --region <region>.
   rm <provider>                     Remove the OAuth credential and/or
                                     the matching API-key secret(s).
+  usage [<provider>] [--json]       Show the plan usage of each ChatGPT and
+                                    Claude login: the 5-hour and weekly
+                                    windows, the share used and when each
+                                    resets. Kortix asks the provider at most
+                                    once a minute per login; this spends no
+                                    plan quota. openai, chatgpt and codex
+                                    name ChatGPT; claude names Claude.
+                                    --account <id>. Includes the logins
+                                    stored on --project (default: linked).
   retry [<provider>]                End the rate-limit rest of the account's
                                     stored provider accounts now (e.g. after
                                     resetting ChatGPT usage). openai, chatgpt
@@ -242,6 +251,8 @@ export async function runProviders(argv: string[]): Promise<number> {
       return providersRm(rest[0], ctxOpts);
     case 'retry':
       return providersRetry(rest[0], accountFlag, ctxOpts, json);
+    case 'usage':
+      return providersUsage(rest[0], accountFlag, ctxOpts, json);
     case 'custom':
       return providersCustom(rest[0], rest[1], custom, ctxOpts, json);
     default:
@@ -294,6 +305,97 @@ async function providersRetry(provider: string | undefined, accountArg: string |
     return 0;
   }
   for (const row of cooling) process.stdout.write(`${status.ok(`${row.label} (${row.provider_id}) is usable again.`)}\n`);
+  return 0;
+}
+
+/** The plan usage a subscription login reports (`usage` on a listed secret resource). */
+export interface PlanUsage {
+  windows: Array<{ id: string; window_minutes: number | null; used_percent: number; resets_at: string | null }>;
+  limited: boolean;
+  observed_at: string;
+}
+
+/** Who a subscription login signs in as (`provider_account` on a listed secret resource). */
+export interface PlanAccount { email: string | null; plan: string | null }
+
+/** `person@example.test · Pro`, leaving out an email the label already shows; null when the provider says nothing. */
+export function planAccountText(account: PlanAccount | null | undefined, label: string): string | null {
+  if (!account) return null;
+  const email = account.email && !label.toLowerCase().includes(account.email.toLowerCase()) ? account.email : null;
+  const plan = account.plan ? `${account.plan[0]!.toUpperCase()}${account.plan.slice(1)}` : null;
+  return [email, plan].filter(Boolean).join(' · ') || null;
+}
+
+const USAGE_PROVIDERS: Record<string, string> = {
+  openai: 'codex', chatgpt: 'codex', codex: 'codex', claude: 'claude-agent', 'claude-agent': 'claude-agent',
+};
+const SUBSCRIPTION_PROVIDER_IDS = new Set(Object.values(USAGE_PROVIDERS));
+
+function usageWindowName(id: string): string {
+  if (id === 'five_hour') return '5-hour';
+  if (id === 'weekly') return 'Weekly';
+  const model = /^(?:seven_day|7d)_([a-z]+)$/.exec(id)?.[1];
+  return model ? `Weekly ${model[0]!.toUpperCase()}${model.slice(1)}` : id;
+}
+
+function usageResetText(iso: string, now: number): string {
+  const at = new Date(iso);
+  const sameDay = new Date(now).toDateString() === at.toDateString();
+  const options: Intl.DateTimeFormatOptions = sameDay ? { hour: '2-digit', minute: '2-digit' }
+    : at.getTime() - now < 6 * 86_400_000 ? { weekday: 'short', hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric' };
+  return new Intl.DateTimeFormat(undefined, options).format(at);
+}
+
+/** One line per plan window: name, a 10-cell bar, the share used, and the reset. */
+export function planUsageLines(usage: PlanUsage | null | undefined, now = Date.now()): string[] {
+  if (!usage?.windows.length) return ['  Usage appears after the first request.'];
+  return usage.windows.map((window) => {
+    const cells = Math.round(Math.min(100, window.used_percent) / 10);
+    const bar = `${'█'.repeat(cells)}${'░'.repeat(10 - cells)}`;
+    const full = window.used_percent >= 100 || (usage.limited && window.used_percent >= 90);
+    const reset = window.resets_at && Date.parse(window.resets_at) > now ? usageResetText(window.resets_at, now) : null;
+    const tail = full ? `limit reached${reset ? `, resets ${reset}` : ''}` : reset ? `resets ${reset}` : '';
+    return `  ${usageWindowName(window.id).padEnd(13)} ${bar} ${`${Math.round(window.used_percent)}%`.padStart(4)}  ${tail}`.trimEnd();
+  });
+}
+
+async function providersUsage(provider: string | undefined, accountArg: string | undefined, opts: CtxOpts, json: boolean): Promise<number> {
+  const want = provider ? USAGE_PROVIDERS[provider] : undefined;
+  if (provider && !want) return fail(`"${provider}" has no plan usage. Use openai, chatgpt, codex or claude.`);
+  const ctx = resolveAccountContext({ accountArg, hostArg: opts.hostArg });
+  if (!ctx) return 1;
+  const base = `/accounts/${encodeURIComponent(ctx.accountId)}/secret-resources`;
+  const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });
+  let rows: Array<StoredAccount & { usage?: PlanUsage | null; provider_account?: PlanAccount | null }>;
+  try {
+    rows = (await ctx.client.get<{ secrets: Array<StoredAccount & { usage?: PlanUsage | null; provider_account?: PlanAccount | null }> }>(`${base}${query({ project_id: projectId ?? undefined })}`)).secrets;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  const logins = rows.filter((row) => row.provider_id && SUBSCRIPTION_PROVIDER_IDS.has(row.provider_id) && (!want || row.provider_id === want));
+  const accounts = await Promise.all(logins.map(async (row) => {
+    // A refresh the server cannot make keeps the snapshot the list carried.
+    const fresh = await ctx.client.post<{ usage: PlanUsage | null; provider_account?: PlanAccount | null }>(`${base}/${encodeURIComponent(row.secret_id)}/usage`, {})
+      .catch(() => null);
+    return {
+      secret_id: row.secret_id, label: row.label, provider_id: row.provider_id,
+      provider_account: fresh?.provider_account ?? row.provider_account ?? null,
+      usage: fresh?.usage ?? row.usage ?? null,
+    };
+  }));
+  if (json) {
+    emitJson({ accounts });
+    return 0;
+  }
+  if (!accounts.length) {
+    process.stdout.write(`No ${provider ? `${provider} ` : 'ChatGPT or Claude '}login is connected. Run \`kortix providers login openai\` or \`kortix providers login claude\`.\n`);
+    return 0;
+  }
+  for (const account of accounts) {
+    const who = planAccountText(account.provider_account, account.label);
+    process.stdout.write(`${C.bold}${account.label}${C.reset} ${C.dim}(${[account.provider_id === 'codex' ? 'ChatGPT' : 'Claude', who].filter(Boolean).join(' · ')})${C.reset}\n`);
+    process.stdout.write(`${planUsageLines(account.usage).join('\n')}\n`);
+  }
   return 0;
 }
 

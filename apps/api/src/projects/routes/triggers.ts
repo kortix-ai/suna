@@ -58,7 +58,7 @@ import {
   triggerRunApiStatus,
   loadTriggerRunForReplay,
 } from '../trigger-runs';
-import { APP_EVENT_PROMPT_PREAMBLE } from '../lib/monitor-events';
+import { appEventPromptPreamble } from '../lib/monitor-events';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { annotateAuditEvent } from '../../shared/audit-scope';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
@@ -85,6 +85,7 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+import { capturePersonEvent } from './product-events';
 
 /**
  * The person who created or edited a trigger follows its alerts (KRTX-1742).
@@ -151,6 +152,7 @@ const TRIGGER_MANIFEST_KEYS = [
   'max_runs_per_hour',
   'max_runs_per_day',
   'max_lateness',
+  'expect_event_within',
   'overlap',
   'connector',
   'event_account',
@@ -394,7 +396,7 @@ export function registerTriggersRoutes(): void {
             run: z.string().optional().openapi({ description: 'Repo-relative command a monitor supervises. Required for a monitor.' }),
             mode: z.enum(['poll', 'stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
             interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
-            expect_event_within: z.string().optional().openapi({ description: 'Silence watchdog such as 1h. Monitors only.' }),
+            expect_event_within: z.string().optional().openapi({ description: 'App triggers only, 5m or more, such as 30m: no App event for this long tells the trigger\'s watchers once; the next event clears it.' }),
             app: z.string().optional().openapi({ description: 'Slug of the App whose events fire the trigger. Required for an app trigger.' }),
             target: z.object({ app: z.string(), path: z.string().optional(), method: z.enum(['POST', 'GET']).optional(), payload: z.record(z.string(), z.any()).optional() }).nullish().openapi({ description: 'Call an App instead of running an agent: each fire wakes the App and sends the payload to method path (default POST /). prompt_template is then optional.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
@@ -405,7 +407,7 @@ export function registerTriggersRoutes(): void {
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip holds a fire while the previous run is still active; in reuse, pinned and keyed mode, while its previous prompt still waits in the session queue. Omit for the default: skip for cron, allow for the other types.' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private; project when space_id is a channel.' }),
-            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to as threads (project_channels flag; ignored while it is off). A DM must be the caller\'s own and the trigger must run the DM\'s agent. A DM run is shared with the DM\'s member; like every trigger run, trigger managers and account owners and admins can also open it.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to as threads (chat flag; ignored while it is off). A DM must be the caller\'s own and the trigger must run the DM\'s agent. A DM run is shared with the DM\'s member; like every trigger run, trigger managers and account owners and admins can also open it.' }),
           }) } } },
       },
       responses: {
@@ -506,6 +508,7 @@ export function registerTriggersRoutes(): void {
         pinnedSessionId: draft.pinnedSessionId,
       });
       await followTrigger(c, loaded.row, projectId, draft.slug);
+      capturePersonEvent(c, loaded, projectId, 'trigger_created', { type: draft.type });
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row, { userId: loaded.userId, bound: callerKortixSessionId(c) }), 201);
     },
@@ -611,11 +614,12 @@ export function registerTriggersRoutes(): void {
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
             filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter: path to a value (equals) or one operator (not, in, exists, prefix, not_prefix). null or {} clears it.' }),
+            expect_event_within: z.string().nullish().openapi({ description: 'App triggers only: the silence alert, such as 30m; null removes it.' }),
             max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs per 60 minutes; null resets it to the default, 60.' }),
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip or allow; null resets it to the default (skip for cron, allow otherwise).' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
-            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to; null clears it (project_channels flag; ignored while it is off). It applies to later runs only; moving to a channel without session_access makes later threads project-visible.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to; null clears it (chat flag; ignored while it is off). It applies to later runs only; moving to a channel without session_access makes later threads project-visible.' }),
           }) } } },
       },
       responses: {
@@ -987,7 +991,7 @@ export function registerTriggersRoutes(): void {
       const template = renderPromptTemplate(target.spec.promptTemplate, run.payload);
       const renderedPrompt =
         source === 'event' ? `${eventPromptPreamble(target.spec, ((run.payload as { event?: { provider?: string } } | null)?.event?.provider) ?? null)}${template}`
-          : source === 'app' ? `${APP_EVENT_PROMPT_PREAMBLE}${template}`
+          : source === 'app' ? `${appEventPromptPreamble((run.payload as { event?: unknown } | null)?.event)}${template}`
             : template;
       return fireAndAnswer(c, target, {
         payload: run.payload,

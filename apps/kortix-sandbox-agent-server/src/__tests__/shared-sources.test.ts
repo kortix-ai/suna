@@ -19,7 +19,7 @@ const REPO = resolve(APP, '../..')
  * contract module that is a directory (`session-log/`) bundles every file in it.
  */
 function sharedFilesFor(specifier: string): string[] | null {
-  const shared = /^@kortix\/shared\/(ssrf-guard|peer-message-prompt|room-prompt)$/.exec(specifier)
+  const shared = /^@kortix\/shared\/(ssrf-guard|peer-message-prompt)$/.exec(specifier)
   if (shared) return [`packages/shared/src/${shared[1]}.ts`]
   if (specifier === '@kortix/sdk/wire-message-id') return ['packages/sdk/src/core/session/wire-message-id.ts']
   // The voice package bundles whole: its entry imports the rest of its src/.

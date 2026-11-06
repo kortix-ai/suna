@@ -99,8 +99,7 @@ const QUIT_ARM_MS = 2000;
 const COMMAND_FLAGS = [
   'drives',
   'artifacts',
-  'project_channels',
-  'agent_rooms',
+  'chat',
   'reminders',
   'goals',
   'agent_teams',
@@ -177,8 +176,7 @@ export function nextFocus(current: Focus, order: Focus[], step: 1 | -1): Focus {
 function useCommandFlags(projectId: string | null): Record<string, boolean> {
   const drives = useFeatureFlag(projectId, 'drives');
   const artifacts = useFeatureFlag(projectId, 'artifacts');
-  const channels = useFeatureFlag(projectId, 'project_channels');
-  const rooms = useFeatureFlag(projectId, 'agent_rooms');
+  const channels = useFeatureFlag(projectId, 'chat');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const goals = useFeatureFlag(projectId, 'goals');
   const teams = useFeatureFlag(projectId, 'agent_teams');
@@ -186,8 +184,7 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
     const states = {
       drives,
       artifacts,
-      project_channels: channels,
-      agent_rooms: rooms,
+      chat: channels,
       reminders,
       goals,
       agent_teams: teams,
@@ -195,7 +192,7 @@ function useCommandFlags(projectId: string | null): Record<string, boolean> {
     const known: Record<string, boolean> = {};
     for (const key of COMMAND_FLAGS) if (!states[key].isLoading) known[key] = states[key].enabled;
     return known;
-  }, [drives, artifacts, channels, rooms, reminders, goals, teams]);
+  }, [drives, artifacts, channels, reminders, goals, teams]);
 }
 
 export interface AppProps {
@@ -244,6 +241,14 @@ export function App({
   const renderer = useRenderer();
 
   const [route, setRoute] = useState<Route>('session');
+  /** What the open screen starts on: an artifact id, a file path, a provider id. */
+  const [screenTarget, setScreenTarget] = useState<string | null>(null);
+  /**
+   * The open screen holds Esc (`ScreenProps.onHoldsBack`). The screen clears it
+   * when it unmounts. Not reset on route change here: a parent effect runs after
+   * the child's, so it would erase what a screen reports on its first render.
+   */
+  const [screenHoldsBack, setScreenHoldsBack] = useState(false);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const bootTerminal = initialTerminalOpen && Boolean(initialSessionId);
   const [focus, setFocus] = useState<Focus>(bootTerminal ? 'terminal' : 'composer');
@@ -454,8 +459,9 @@ export function App({
     setFocus('composer');
   }, []);
 
-  const openScreen = useCallback((screen: ScreenRoute) => {
+  const openScreen = useCallback((screen: ScreenRoute, target: string | null = null) => {
     setPanel(null);
+    setScreenTarget(target);
     setRoute(screen);
     setFocus('screen');
   }, []);
@@ -627,14 +633,15 @@ export function App({
           return void act('Reload', () => reloadSession(kortix(), pid, sid));
         case 'copy':
         case 'export':
+        case 'shown':
           // Run inside the composer: they read the thread on screen.
           return;
         case 'link': {
           if (!pid || !sid) return;
           const url = sessionWebUrl(webDashboardUrl(host.backendUrl), pid, sid);
-          return void copyToClipboard(`${sid} ${url}`).then((result) =>
+          return void copyToClipboard(url).then((result) =>
             result.ok
-              ? pushToast(`Copied ${sid.slice(0, 8)} and its link.`)
+              ? pushToast(`Copied ${url}`)
               : pushToast(`Copy failed: ${result.error ?? 'no clipboard tool'}. ${url}`, 'error'),
           );
         }
@@ -729,15 +736,16 @@ export function App({
         case 'links':
           return setOverlay('links');
         case 'files':
+        case 'artifacts':
+          // `/artifacts <id>` opens on that artifact, `/files <path>` on that file.
+          return openScreen(command, args.trim() || null);
         case 'drive':
         case 'repo':
-        case 'artifacts':
         case 'inbox':
         case 'approvals':
         case 'goals':
         case 'memory':
         case 'spaces':
-        case 'rooms':
         case 'loops':
         case 'audit':
         case 'review':
@@ -745,6 +753,11 @@ export function App({
         case 'customize':
         case 'account':
           return openScreen(command);
+        case 'providers':
+          return openScreen('providers', args.trim().toLowerCase() || null);
+        case 'connectors':
+        case 'connect':
+          return openScreen(command, args.trim() || null);
         case 'life':
           return setLifeSignal((value) => value + 1);
         case 'help':
@@ -800,7 +813,7 @@ export function App({
   useKeyboard((key) => {
     // The decision is a pure function (`app-keys.ts`); this handler only
     // performs it. That is what makes the gating rules assertable.
-    const action = globalKeyAction(key, { focus, route, overlay, quitArmed, menuOpen });
+    const action = globalKeyAction(key, { focus, route, overlay, quitArmed, menuOpen, screenHoldsBack });
     if (!action) return;
     if (action.kind !== 'quit' && action.kind !== 'arm-quit') key.preventDefault();
     if (quitArmed && action.kind !== 'quit' && action.kind !== 'arm-quit') setQuitArmed(false);
@@ -1033,6 +1046,8 @@ export function App({
             minWidth={20}
           >
             <Screen
+              // A new target remounts the screen: it opens on what was asked for.
+              key={`${route}:${screenTarget ?? ''}`}
               route={route}
               projectId={projectId}
               accountId={accountId}
@@ -1041,12 +1056,15 @@ export function App({
               width={mainWidth - 2}
               height={contentHeight - 2}
               webBaseUrl={webDashboardUrl(host.backendUrl)}
+              target={screenTarget}
               onBack={() => {
                 setRoute('session');
                 setFocus('composer');
               }}
               onOpenSession={openSession}
               onToast={pushToast}
+              onHoldsBack={setScreenHoldsBack}
+              onOpenScreen={openScreen}
             />
           </Panel>
         ) : null}

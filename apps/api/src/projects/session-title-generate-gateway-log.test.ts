@@ -46,7 +46,7 @@ const row = {
   sessionId: 'sess-1',
   projectId: 'proj-1',
   accountId: 'acct-1',
-  metadata: { opencode_model: 'codex/gpt-6-sol' },
+  metadata: { model: 'codex/gpt-6-sol' },
 } as never;
 
 describe('title-generate gateway log fields', () => {

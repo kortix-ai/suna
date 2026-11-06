@@ -47,7 +47,15 @@ import { useTranslations } from '../../i18n';
 import { LLM_PROVIDERS, type LlmProviderEntry } from '../../internal/lib/llm-providers';
 import { cn } from '../../internal/lib/utils';
 import { PLATFORM_FEE_PERCENT } from '../../internal/billing/compute-pricing';
-import { getProjectDetail } from '@kortix/sdk';
+import {
+  FIRST_CLASS_PROVIDER_IDS,
+  PROVIDER_SUBSCRIPTIONS,
+  type ProviderConnectMethod,
+  type ProviderConnectedVia,
+  getProjectDetail,
+  providerConnectMethod,
+  providerConnectedVia,
+} from '@kortix/sdk';
 import {
   qk,
   useAccountSecretResources,
@@ -57,15 +65,13 @@ import {
 } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
-/**
- * The three providers JAY-510 makes first-class: "Anthropic (Claude), OpenAI
- * (ChatGPT), Google Gemini". They lead the Available group after Kortix; every
- * other provider follows in catalogue order.
- */
-export const FIRST_CLASS_PROVIDER_IDS = ['anthropic', 'openai', 'google'] as const;
+export {
+  FIRST_CLASS_PROVIDER_IDS,
+  supportsPooledProviderKey,
+} from '@kortix/sdk';
 
 /** Providers whose sheet offers a subscription sign-in beside the API key. */
-export const SUBSCRIPTION_PROVIDER_IDS: ReadonlySet<string> = new Set(['openai', 'opencode-go', 'anthropic']);
+export const SUBSCRIPTION_PROVIDER_IDS: ReadonlySet<string> = new Set(Object.keys(PROVIDER_SUBSCRIPTIONS));
 
 /**
  * How many Available providers render before `Show more`, and how many each
@@ -74,28 +80,11 @@ export const SUBSCRIPTION_PROVIDER_IDS: ReadonlySet<string> = new Set(['openai',
  */
 export const PROVIDER_PAGE_SIZE = 12;
 
-// Mirrors the gateway's base-URL fallbacks in provider-registry.ts. A provider
-// without an API host or one of these fallbacks cannot create a gateway key.
-const GATEWAY_BASE_URL_FALLBACK_IDS = new Set([
-  'anthropic', 'openai', 'google', 'groq', 'x-ai', 'xai', 'mistral', 'deepseek',
-  'perplexity', 'cerebras', 'vercel', 'v0', 'deepinfra', 'togetherai',
-]);
-
-export function supportsPooledProviderKey(entry: LlmProviderEntry | undefined): boolean {
-  return Boolean(entry && entry.envVars.length === 1 &&
-    (entry.apiHost || GATEWAY_BASE_URL_FALLBACK_IDS.has(entry.id)));
-}
-
 export type ProviderStatus = 'included' | 'connected' | 'none';
 
 /** How a provider is connected: the row's meta and the sheet's subtitle. */
-export type ProviderMethod = 'included' | 'key' | 'signIn' | 'signInOrKey';
-
-export function providerMethod(entry: Pick<LlmProviderEntry, 'id' | 'envVars' | 'managed'>): ProviderMethod {
-  if (entry.managed || entry.id === 'kortix') return 'included';
-  if (SUBSCRIPTION_PROVIDER_IDS.has(entry.id)) return 'signInOrKey';
-  return entry.envVars.length === 0 ? 'signIn' : 'key';
-}
+export type ProviderMethod = ProviderConnectMethod;
+export const providerMethod = providerConnectMethod;
 
 /** Everything one provider row needs. Plain data — the view holds no hooks. */
 export interface ProviderListRow {
@@ -154,18 +143,8 @@ export const SUBSCRIPTION_PLANS: Readonly<Record<string, string>> = {
 };
 
 /** How a connected two-way provider is connected. Undefined: not connected, or unknown. */
-export type ConnectedVia = 'signIn' | 'key' | 'both';
-
-/**
- * OpenAI's ChatGPT sign-in connects as provider `codex`, its API key as
- * `openai`, so the two can be told apart. Other providers report undefined.
- */
-export function connectedVia(providerId: string, connectedIds: ReadonlySet<string>): ConnectedVia | undefined {
-  if (providerId !== 'openai') return undefined;
-  const signIn = connectedIds.has('codex');
-  const key = connectedIds.has('openai');
-  return signIn && key ? 'both' : signIn ? 'signIn' : key ? 'key' : undefined;
-}
+export type ConnectedVia = ProviderConnectedVia;
+export const connectedVia = providerConnectedVia;
 
 /**
  * "API key · 14 models" — the same line under the row and the sheet title.

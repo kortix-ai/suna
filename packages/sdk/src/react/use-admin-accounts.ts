@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
-import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
 /**
  * Lifecycle of an admin-issued trial. `active` is the only status that grants
@@ -256,20 +255,6 @@ export interface AdminAccountUser {
   providers: string[] | null;
 }
 
-/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
-export interface AdminAccountSandbox {
-  sandboxId: string;
-  name: string | null;
-  provider: string | null;
-  externalId: string | null;
-  status: string | null;
-  baseUrl: string | null;
-  metadata: unknown;
-  createdAt: string;
-  updatedAt: string;
-  lastUsedAt: string | null;
-}
-
 export type AdminAccountsSortBy = 'balance' | 'members' | 'name' | 'created';
 export type AdminAccountsSortDir = 'asc' | 'desc';
 
@@ -511,40 +496,6 @@ export function useAdminRevokeTrial() {
 }
 
 /**
- * @deprecated The route is retired (410). Fails at once with `ENDPOINT_RETIRED`
- * and sends no request. Set the `managedModels` key with
- * {@link useAdminSetOverrides}. Removed in the next major.
- */
-export function useAdminSetManagedModels() {
-  return useRetiredMutation<
-    { ok: boolean; override: boolean | null },
-    { accountId: string; override: boolean | null }
-  >('useAdminSetManagedModels');
-}
-
-/**
- * @deprecated The Enterprise preview is retired (410). Fails at once with
- * `ENDPOINT_RETIRED` and sends no request. Grant an Enterprise trial with
- * {@link useAdminGrantTrial}. Removed in the next major.
- */
-export function useAdminSetEnterpriseDemo() {
-  return useRetiredMutation<{ ok: boolean; enabled: boolean }, { accountId: string; enabled: boolean }>(
-    'useAdminSetEnterpriseDemo',
-  );
-}
-
-/**
- * @deprecated The flag is retired (410). Fails at once with `ENDPOINT_RETIRED`
- * and sends no request. Enterprise is set by a contract:
- * {@link useAdminCreateEnterpriseContract}. Removed in the next major.
- */
-export function useAdminSetEnterpriseEntitled() {
-  return useRetiredMutation<{ ok: boolean; enabled: boolean }, { accountId: string; enabled: boolean }>(
-    'useAdminSetEnterpriseEntitled',
-  );
-}
-
-/**
  * Merge-patch an account's entitlement overrides — the ONE route behind every
  * override, and the only one that can express an expiry.
  *
@@ -652,11 +603,6 @@ export function useAdminAccountProjects(accountId: string | null) {
       return response.data!;
     },
   });
-}
-
-/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
-export function useAdminAccountSandboxes(accountId: string | null) {
-  return useRetiredQuery<{ sandboxes: AdminAccountSandbox[] }>('useAdminAccountSandboxes', ['admin', 'accounts', accountId, 'sandboxes'], !!accountId);
 }
 
 /**

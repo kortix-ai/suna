@@ -134,7 +134,7 @@ function envelope(): SessionTranscriptSyncEnvelope {
     source: 'mirror',
     complete: true,
     captured_at: '2026-10-06T00:00:00.000Z',
-    opencode_session_id: 'ses_root',
+    runtime_session_id: 'ses_root',
     message_count: 1,
     messages: [
       {

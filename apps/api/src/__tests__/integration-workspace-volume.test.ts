@@ -182,6 +182,23 @@ describe('workspace_volume', () => {
     expect(classifySandboxProvisioningFailure(down)).toMatchObject({ category: 'drives-unavailable', transient: true });
   }, 20_000);
 
+  test('a 429 rate limit is waited out as Platinum asks (retry-after) and the volume opens; one that never clears stops after 4 waits', async () => {
+    // Platinum's org write budget (20/s, `org_mutation`) answers 429 with a Retry-After in seconds.
+    // `retry-after: 0` keeps the test off the real clock; the wait itself is the header's value.
+    const sessionId = await newSession('own');
+    const limited = () => new Response(JSON.stringify({ error: 'too many write requests for this org (20/s sustained) — retry shortly', code: 'rate_limited', bucket: 'org_mutation' }), { status: 429, headers: { 'retry-after': '0' } });
+    let n = 0;
+    answer = () => (++n <= 2 ? limited() : Response.json({ region: 'eu-west' }));
+    expect(await resolveWorkspaceVolume(sessionId)).toMatchObject({ name: `kws-${sessionId}` });
+    expect(callLines()).toEqual(Array(3).fill(`PUT ${PT}/v1/volumes/kws-${sessionId}`));
+
+    calls = [];
+    answer = limited;
+    const stuck = await resolveWorkspaceVolume(sessionId).catch((e) => e);
+    expect(calls).toHaveLength(5);
+    expect(classifySandboxProvisioningFailure(stuck)).toMatchObject({ category: 'drives-unavailable', transient: true });
+  });
+
   test('the box create mounts the volume privately in its region, without backup or branch restore', () => {
     const create = {
       accountId: project.account_id,

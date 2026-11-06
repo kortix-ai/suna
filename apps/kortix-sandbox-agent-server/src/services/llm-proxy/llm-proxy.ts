@@ -1,4 +1,4 @@
-import { applyInlineImageWindow, imageWindowFromEnv, isChatRequestPath } from './llm-image-window'
+import { applyInlineImageWindow, applyInlineImageWindowToText, imageWindowFromEnv, isChatRequestPath } from './llm-image-window'
 import { logger } from '@/lib/log/logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,6 +35,17 @@ async function windowModelRequestBody(req: Request, pathname: string, name: stri
     text = await req.text()
   } catch {
     return null
+  }
+  // The raw-text window first: no parse, no re-serialization of a body that re-sends every
+  // screenshot. A body it cannot read is parsed as before.
+  const windowedText = applyInlineImageWindowToText(text, window)
+  if (windowedText) {
+    if (windowedText.dropped === 0) return text
+    logger.info(`[${name}-proxy] image window: kept ${windowedText.total - windowedText.dropped} of ${windowedText.total} inline images`, {
+      bytesBefore: Buffer.byteLength(text),
+      bytesAfter: Buffer.byteLength(windowedText.text),
+    })
+    return windowedText.text
   }
   let parsed: unknown
   try {

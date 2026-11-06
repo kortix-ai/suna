@@ -3,12 +3,15 @@ import type { ProjectSession } from '@kortix/sdk';
 
 import {
   buildSpaceTimeline,
+  messageMentionSegments,
+  postSegments,
+  rootPostAuthor,
   dayKind,
   gutterTime,
   lastReplyLabel,
   liveReplyCount,
+  replyRole,
   spaceRoster,
-  spaceTabFromParam,
   threadActivitySince,
   threadFiltersFromParams,
   threadIsWorking,
@@ -58,6 +61,37 @@ describe('liveReplyCount', () => {
     expect(liveReplyCount(['user', 'assistant', 'user', 'assistant'])).toBe(3);
     // A steer before the answer: two people messages, one answer.
     expect(liveReplyCount(['user', 'user', 'assistant'])).toBe(2);
+  });
+
+  test('a platform notice is no reply, the answer to it is one', () => {
+    // A router thread: "On it.", the worker's report, the relayed answer.
+    expect(liveReplyCount(['user', 'assistant', 'notice', 'assistant'])).toBe(2);
+    // A notice nobody answered yet.
+    expect(liveReplyCount(['user', 'assistant', 'notice'])).toBe(1);
+  });
+});
+
+describe('replyRole', () => {
+  test('a worker report the platform delivered reads as a notice', () => {
+    const report = [
+      'A background subagent you started has finished. This message is from the platform, not from the user.',
+      'task_id: 1294b06f-0000-0000-0000-000000000000',
+      'status: completed',
+      '',
+      '<kortix_system type="session-report" source="subagent">',
+      '<session-report>',
+      '<session-id>1294b06f-0000-0000-0000-000000000000</session-id>',
+      '<status>COMPLETE</status>',
+      '<project>worker</project>',
+      '<prompt>Poem</prompt>',
+      '<result>\n<task_result>\nA poem.\n</task_result>\n</result>',
+      '</session-report>',
+      '</kortix_system>',
+    ].join('\n');
+    expect(replyRole('user', [{ type: 'text', text: report }])).toBe('notice');
+    expect(replyRole('user', [{ type: 'text', text: 'Write a poem' }])).toBe('user');
+    expect(replyRole('assistant', [{ type: 'text', text: report }])).toBe('assistant');
+    expect(replyRole('user', undefined)).toBe('user');
   });
 });
 
@@ -130,16 +164,6 @@ describe('spaceRoster', () => {
   });
 });
 
-describe('spaceTabFromParam', () => {
-  test('reads a tab the space has, and falls back to Chat for anything else', () => {
-    expect(spaceTabFromParam('files', 'channel')).toBe('files');
-    expect(spaceTabFromParam('links', 'channel')).toBe('links');
-    expect(spaceTabFromParam('links', 'dm')).toBe('chat');
-    expect(spaceTabFromParam('nope', 'channel')).toBe('chat');
-    expect(spaceTabFromParam(null, 'dm')).toBe('chat');
-  });
-});
-
 describe('thread filters', () => {
   const params = (query: string) => new URLSearchParams(query);
   const USER = '0b6f3c1e-8a4d-4f2b-9c7e-1d2a3b4c5d6e';
@@ -177,5 +201,55 @@ describe('thread filters', () => {
     expect(threadStatus(thread('f', 'U', at(20, 9), { status: 'failed' }))).toBe('failed');
     expect(threadStatus(thread('d', 'U', at(20, 9), { status: 'stopped' }))).toBe('done');
     expect(threadStatus(thread('i', 'U', at(20, 9), { working: { state: 'idle' } } as Partial<ProjectSession>))).toBe('done');
+  });
+});
+
+describe('a space post’s mentions', () => {
+  const mentions = [
+    { token: 'ana', kind: 'person', label: 'Ana Lima', userId: 'u-ana' },
+    { token: 'researcher', kind: 'agent', label: 'researcher' },
+  ];
+
+  test('each resolved @token becomes a chip with the name and who it names; others stay text', () => {
+    expect(postSegments('Done. @Ana, @researcher has the notes; mail me@example.test or @bob.', mentions)).toEqual([
+      { text: 'Done. ' },
+      { text: '@Ana', mention: { kind: 'person', label: 'Ana Lima', userId: 'u-ana' } },
+      { text: ', ' },
+      { text: '@researcher', mention: { kind: 'agent', label: 'researcher', agent: 'researcher' } },
+      { text: ' has the notes; mail me@example.test or @bob.' },
+    ]);
+  });
+
+  test('no mentions, or a malformed list: one plain run', () => {
+    expect(postSegments('@ana hi', undefined)).toEqual([{ text: '@ana hi' }]);
+    expect(postSegments('@ana hi', [{ token: 1 }])).toEqual([{ text: '@ana hi' }]);
+  });
+
+  test('the post’s author is the agent that wrote it, when one is stored', () => {
+    expect(rootPostAuthor({ metadata: { chat_root_author: 'researcher' } } as never)).toBe('researcher');
+    expect(rootPostAuthor({ metadata: {} } as never)).toBeNull();
+  });
+});
+
+describe("a person's message mentions", () => {
+  const candidates = [
+    { token: 'ana@example.com', mention: { kind: 'person' as const, label: 'Ana Lima', userId: 'u-ana' } },
+    { token: 'Ana Lima', mention: { kind: 'person' as const, label: 'Ana Lima', userId: 'u-ana' } },
+    { token: 'worker', mention: { kind: 'agent' as const, label: 'Worker', agent: 'worker' } },
+  ];
+
+  test('email, a display name with a space, and an agent become chips; the longest token wins', () => {
+    expect(messageMentionSegments('@Ana Lima and @worker, ping @ana@example.com', candidates)).toEqual([
+      { text: '@Ana Lima', mention: { kind: 'person', label: 'Ana Lima', userId: 'u-ana' } },
+      { text: ' and ' },
+      { text: '@worker', mention: { kind: 'agent', label: 'Worker', agent: 'worker' } },
+      { text: ', ping ' },
+      { text: '@ana@example.com', mention: { kind: 'person', label: 'Ana Lima', userId: 'u-ana' } },
+    ]);
+  });
+
+  test('no match inside a word or past a word boundary; no candidates: one run', () => {
+    expect(messageMentionSegments('mail me@worker or @workers', candidates)).toEqual([{ text: 'mail me@worker or @workers' }]);
+    expect(messageMentionSegments('@worker hi', [])).toEqual([{ text: '@worker hi' }]);
   });
 });

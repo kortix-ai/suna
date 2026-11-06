@@ -10,6 +10,7 @@ import { prefetchArtifact, useArtifactMutations, useArtifacts, useProjectConfig 
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@kortix/ui/button';
 import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { CountBadge } from '@kortix/ui/count-badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +43,7 @@ import {
 } from '@kortix/ui/workspace';
 import {
   ArrowSquareOutIcon,
+  ChatCircleIcon,
   DotsThreeIcon,
   MagnifyingGlassIcon,
   PlusIcon,
@@ -111,7 +113,7 @@ export function ArtifactsGallery({ projectId }: { projectId: string }) {
   const list = paged && filtered ? server : all;
   const cards = list.data ?? [];
   // An artifact sits in its bound space, else its agent's space, else Project-wide.
-  // Spaces are Work in progress: with `project_channels` off every artifact is
+  // Spaces are Work in progress: with `chat` off every artifact is
   // project-wide, and the page shows no filter, chip or "Move to space".
   const config = useProjectConfig(projectId);
   const spacesOn = useSpacesEnabled(projectId);
@@ -352,6 +354,16 @@ const ArtifactCard = memo(function ArtifactCard({
               <TooltipContent>{t(`visibility.${artifact.visibility}`)}</TooltipContent>
             </Tooltip>
             {artifact.pinned ? <PushPinIcon weight="fill" className="size-3.5 shrink-0" aria-label={t('pinned')} /> : null}
+            {/* Below the card link on purpose: a click opens the Artifact, and the viewer opens its comments while threads are open. */}
+            {artifact.open_thread_count ? (
+              <CountBadge
+                count={artifact.open_thread_count}
+                tone="waiting"
+                icon={<ChatCircleIcon aria-hidden />}
+                role="img"
+                aria-label={t('openComments', { count: artifact.open_thread_count })}
+              />
+            ) : null}
           </span>
         </span>
         <DropdownMenu>

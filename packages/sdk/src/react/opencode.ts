@@ -41,7 +41,6 @@ export * from './use-opencode-local';
 export * from './use-model-defaults';
 export * from './use-model-enablement';
 export * from './use-session-model-selection';
-export * from './use-opencode-mcp';
 export * from './use-opencode-pty';
 export * from './use-opencode-config';
 export * from './use-model-store';
@@ -74,10 +73,7 @@ export * from './use-runtime-reconnect';
 // and PERMISSION requests here (keyed by request id, each carrying sessionID);
 // `useSessionSync` does NOT surface them, so a host that renders interactive
 // prompts must read them from this store.
-export {
-  useOpenCodePendingStore,
-  useRuntimePendingStore,
-} from '../browser/stores/opencode-pending-store';
+export { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 export {
   useSandboxConnectionStore,
   type SandboxConnectionStatus,
