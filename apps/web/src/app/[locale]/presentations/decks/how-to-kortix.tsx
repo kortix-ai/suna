@@ -34,7 +34,11 @@
  *     then stops. The notes say it wherever a slide holds a call.
  *  5. Goals (`kortix goals`) is off by default and marked work in progress.
  *     Keep it out until it graduates.
- *  6. No price on any slide.
+ *  6. No price on any slide. The FRONTIER code's amount stays off it too.
+ *  7. FRONTIER credits pay for compute on every plan. They do not unlock
+ *     managed models on Free (apps/api/src/billing/services/credit-codes.ts),
+ *     so the Free line about a model key stays next to the code. The code
+ *     works on kortix.com only after a person creates it on prod.
  *
  * English only, by design: one live event, presented in English. The i18n
  * audit lists this exact file in `ignoredPathParts`.
@@ -465,7 +469,7 @@ export function useSlides(): SlideDef[] {
       id: 'start',
       label: 'Start',
       notes:
-        'So: start with one loop. Install the CLI, log in, kortix init, kortix ship. On the free plan, connect your own model key or your ChatGPT subscription first.\n\nAnd inside a session, kortix loop prompts that same session again on a schedule. It never starts a new one. Use it for things like: is CI green yet.\n\nEverything I showed you is open source. Read it, fork it, audit it.\n\nKortix. Your CompanyOS.',
+        'So: start with one loop. Install the CLI, log in, kortix init, kortix ship.\n\nFor this hackathon, redeem the code FRONTIER at kortix.com slash redeem. The credits pay for your sandboxes. On the free plan, connect your own model key or your ChatGPT subscription for the model itself.\n\nAnd inside a session, kortix loop prompts that same session again on a schedule. It never starts a new one. Use it for things like: is CI green yet.\n\nEverything I showed you is open source. Read it, fork it, audit it.\n\nKortix. Your CompanyOS.',
       node: (
         <Slide>
           <Rise i={0}>
@@ -500,6 +504,10 @@ export function useSlides(): SlideDef[] {
           </div>
           <Rise i={3}>
             <div className="border-border mt-10 flex flex-col gap-2 border-t pt-6">
+              <p className="text-foreground text-base leading-relaxed">
+                Hackathon credits: <Mono>kortix.com/redeem?code=FRONTIER</Mono>. They pay for
+                compute.
+              </p>
               <p className="text-muted-foreground text-base leading-relaxed">
                 On Free, connect your own model key or a ChatGPT subscription first.
               </p>
