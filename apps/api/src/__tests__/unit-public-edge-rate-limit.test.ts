@@ -116,3 +116,42 @@ test('a validated sandbox token spends its own budget, not its host address; a f
   expect((await app.request('/v1/projects', { headers: from(userKey) })).status).toBe(429);
   resetTokenHashCache();
 });
+
+test('a route that answers with a raw Response still carries the rate-limit headers', async () => {
+  setSystemTime(new Date('2026-11-06T12:00:00Z'));
+  const app = new Hono();
+  app.use('*', createPublicEdgeRateLimitMiddleware());
+  // Proxies and streams return a Response they built, which drops headers set before next().
+  app.all('*', () => new Response('ok', { headers: { 'Content-Type': 'text/plain' } }));
+  const response = await app.request('/v1/projects', { headers: { 'X-Forwarded-For': '198.51.100.7' } });
+  expect(response.status).toBe(200);
+  expect(response.headers.get('X-RateLimit-Limit')).toBe('300');
+  expect(response.headers.get('X-RateLimit-Remaining')).toBe('299');
+  expect(response.headers.get('Content-Type')).toBe('text/plain');
+});
+
+test('an inner limiter keeps its own rate-limit headers on the response', async () => {
+  setSystemTime(new Date('2026-11-06T12:00:00Z'));
+  const app = new Hono();
+  app.use('*', createPublicEdgeRateLimitMiddleware());
+  app.all('*', (c) => {
+    c.header('X-RateLimit-Limit', '2');
+    c.header('X-RateLimit-Remaining', '0');
+    return c.json({ error: 'rate_limited' }, 429);
+  });
+  const response = await app.request('/v1/llm/x', { headers: { 'X-Forwarded-For': '198.51.100.9' } });
+  expect(response.status).toBe(429);
+  expect(response.headers.get('X-RateLimit-Limit')).toBe('2');
+  expect(response.headers.get('X-RateLimit-Remaining')).toBe('0');
+});
+
+test('an upgrade response is returned untouched', async () => {
+  setSystemTime(new Date('2026-11-06T12:00:00Z'));
+  const app = new Hono();
+  app.use('*', createPublicEdgeRateLimitMiddleware());
+  const upgrade = new Response(null, { status: 200 });
+  Object.defineProperty(upgrade, 'status', { value: 101 });
+  app.all('*', () => upgrade);
+  const response = await app.request('/v1/p/x/ws', { headers: { 'X-Forwarded-For': '198.51.100.8' } });
+  expect(response).toBe(upgrade);
+});
