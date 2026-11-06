@@ -74,6 +74,7 @@ import {
   viewerAuthor,
 } from '../turn/message-author';
 import { stopRefusalMessage } from '../status/stop-refusal';
+import { createStopLatch, runStopSequence, stopLeftTurnRunning } from './stop-sequence';
 import { QueuedPromptList } from '../composer/queued-prompt-list';
 import { ComposerAutoFocusContext } from '../composer/composer-focus-context';
 import { ChatQueueLines } from '../composer/chat-queue-lines';
@@ -898,9 +899,8 @@ export function SessionChat({
    */
   const issueSessionCancel = useCallback((): Promise<AbortSettlement> => {
     // The stop's own receipt, taken before the cancel goes out and settled
-    // when it is acknowledged. `applyOptimisticAbort` writes an idle status
-    // frame, which invalidates the `/turn` query — and the read that comes
-    // back still shows the turn, because the cancel needs ~1.6s to reach the
+    // when it is acknowledged. A `/turn` read issued inside the abort round
+    // trip still shows the turn, because the cancel needs ~1.6s to reach the
     // daemon. Without this the composer flipped Send back to Stop ~120ms after
     // the click and stayed there for the whole abort. See `AbortReceipt`.
     useSessionWorkingStore.getState().noteAbortReceipt(projectSessionId ?? '', Date.now());
@@ -1285,17 +1285,28 @@ export function SessionChat({
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
   // UI doesn't flicker between agentic steps. NOT a 2s debounce.
-  const [isBusy, setIsBusy] = useState(effectiveBusy);
+  const [debouncedBusy, setDebouncedBusy] = useState(effectiveBusy);
   const busyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (effectiveBusy) {
       clearTimeout(busyTimerRef.current);
-      setIsBusy(true);
+      setDebouncedBusy(true);
     } else {
-      busyTimerRef.current = setTimeout(() => setIsBusy(false), 300);
+      busyTimerRef.current = setTimeout(() => setDebouncedBusy(false), 300);
     }
     return () => clearTimeout(busyTimerRef.current);
   }, [effectiveBusy]);
+  // A Stop the server refused, or never confirmed (`timed-out`, `failed`).
+  // The abort receipt can hold `effectiveBusy` false for up to
+  // OPTIMISTIC_ABORT_MAX_MS while the turn runs, and Stop and Esc×3 are gated
+  // on `isBusy`. So the Stop control stays while the server still reports an
+  // open turn (`serverOpenTurnToken`), and clears when it reports none.
+  const [stopUnconfirmed, setStopUnconfirmed] = useState(false);
+  const serverHoldsTurn = working.serverOpenTurnToken !== null;
+  useEffect(() => {
+    if (stopUnconfirmed && !serverHoldsTurn) setStopUnconfirmed(false);
+  }, [stopUnconfirmed, serverHoldsTurn]);
+  const isBusy = debouncedBusy || (stopUnconfirmed && serverHoldsTurn);
 
   // Read by `handleSend` for its ANCHORING decision only (a send into a running
   // turn must not yank the viewport). Refs, not the values: `handleSend` is a stable callback
@@ -3397,83 +3408,56 @@ export function SessionChat({
     [sessionState, promptInbox.prompts, promptInbox.remove, handleSend, tHardcodedUi],
   );
 
+  // One Stop = one inbox hold + one abort. `runStopSequence` (stop-sequence.ts)
+  // owns the order: with `sessionState` the SDK's `cancel()` holds the inbox
+  // and aborts; without it the host holds, then aborts. `stopLatch` is the
+  // synchronous double-Stop guard: a click, then Esc×3, then a click sends one
+  // stop, not three. It stays closed until the abort settles.
+  const [stopLatch] = useState(createStopLatch);
   const handleStop = useCallback(async () => {
-    // Guard against rapid clicks — ignore if an abort is already in flight
-    if (abortSession.isPending) {
-      console.log(`[handleStop] Ignoring - abort already in flight for session ${sessionId}`);
-      return;
-    }
-    // Stop means stop: a held command would otherwise start a new turn the
-    // moment this one ends.
-    setHeldCommands([]);
-    console.log(`[handleStop] Stopping session ${sessionId}`);
-    // Optimistically mark the session idle + patch an abort error onto the
-    // last assistant message (so the turn reads as stopped instantly — no
-    // waiting for the SSE session.error round-trip, and no error row in the
-    // gap: `TurnErrorDisplay` renders nothing for an abort). Also clear the
-    // busy debounce timer to bypass the 2s delay.
-    applyOptimisticAbort(sessionId);
-    clearTimeout(busyTimerRef.current);
-    setIsBusy(false);
-    // Stop means the send this tab was still waiting on is over too.
-    clearSendReceipt();
-
-    // Stopping means stop doing things, and that includes the queue. Without
-    // this the interrupt is followed a beat later by exactly the message the
-    // user was trying to get ahead of.
-    //
-    // ONE hold, on the server, because the queue is not in this tab any more.
-    // Pausing a browser drain left every OTHER tab's view of the queue running
-    // and never reached the server at all.
-    //
-    // AWAITED, and BEFORE the abort. A prompt is now forwarded to OpenCode the
-    // moment it is admitted, so at stop time the session's queue can hold rows
-    // that OpenCode already has. The abort drops OpenCode's in-memory queue,
-    // and the reaper then sees those messages unanswered and hands them back —
-    // due now — unless the hold has already marked them stop-paused. Ordering
-    // the two calls makes "the hold precedes the abort" a fact instead of an
-    // argument about reaper cadence. The user sees no delay: the optimistic
-    // paint above already ran, so only the network abort moves one hop later.
-    //
-    // BOUNDED, because the abort is now sequenced behind a network call and
-    // `holdSessionPrompts` carries no client timeout of its own. A stalled
-    // socket can hang for minutes, and every one of those is the agent still
-    // running, still calling tools and still spending tokens under a UI that
-    // says it stopped. Past the bound the abort goes out anyway and the hold
-    // finishes on its own — the ordering is a preference, the abort is not.
-    let refusal = null as string | null;
-    await Promise.race([
-      promptInbox.hold(true).catch((error) => {
-        // The server refused the stop: this viewer did not start the run and
-        // does not own or manage the session. The abort would be refused for
-        // the same reason, so none goes out; the run goes on.
-        refusal = stopRefusalMessage(error);
-        if (refusal) return;
-        // Caught, never rethrown: a failed hold must not also cost the user
-        // their abort. The cost of that path is the one this ordering removes —
-        // a stopped prompt can still come back a reaper pass later.
-        //
-        // SURFACED, not swallowed. A failed hold means the queue is NOT paused,
-        // so a prompt the user pressed Stop to get ahead of can still be
-        // delivered a reaper pass later — silently. The user has to know the
-        // stop did not also pause the queue, and that pressing Stop again (or
-        // Resume/Send-now) is how they recover.
-        console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
-        errorToast(tHardcodedUi.raw('i18nComplete.text57a524b52549'), {
-          description: tHardcodedUi.raw('i18nComplete.text45eca4a01ff2'),
-        });
-      }),
-      new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
-    ]);
-
-    if (refusal) {
-      errorToast(refusal);
-      setIsBusy(isBusyRef.current);
-      return;
-    }
-    issueSessionCancel();
+    if (stopLatch.inFlight) return;
+    await stopLatch.run(async () => {
+      // Stop means stop: a held command would otherwise start a new turn the
+      // moment this one ends.
+      setHeldCommands([]);
+      // The composer reads idle at once; `stopUnconfirmed` brings Stop back
+      // if the server never confirms the abort.
+      clearTimeout(busyTimerRef.current);
+      setDebouncedBusy(false);
+      setStopUnconfirmed(false);
+      // Why the hold goes out before the abort, and why it is bounded: a
+      // prompt admitted mid-turn is already on the wire, the abort drops the
+      // runtime's queue, and the reaper redelivers it unless the hold marked
+      // it stop-paused first. A stalled hold must not delay the abort by more
+      // than STOP_HOLD_DEADLINE_MS.
+      const outcome = await runStopSequence({
+        ...(sessionState ? { sdkCancel: issueSessionCancel } : {}),
+        holdInbox: () => promptInbox.hold(true),
+        fallbackCancel: issueSessionCancel,
+        paintOptimisticAbort: () => {
+          // "Interrupted" on the newest assistant message, before the
+          // round trip. The SDK path paints it inside `cancel()`.
+          applyOptimisticAbort(sessionId);
+          clearSendReceipt();
+        },
+        refusalOf: stopRefusalMessage,
+        onHoldFailed: (error) => {
+          // The queue is NOT paused: a prompt the user stopped to get ahead
+          // of can still go out. Say so; Stop again or Resume recovers.
+          console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
+          errorToast(tHardcodedUi.raw('i18nComplete.text57a524b52549'), {
+            description: tHardcodedUi.raw('i18nComplete.text45eca4a01ff2'),
+          });
+        },
+        holdDeadlineMs: STOP_HOLD_DEADLINE_MS,
+      });
+      if (outcome.kind === 'refused') errorToast(outcome.message);
+      // A refused, failed or timed-out stop leaves the turn running: keep
+      // Stop and Esc×3 on screen while the server still holds the turn.
+      if (stopLeftTurnRunning(outcome)) setStopUnconfirmed(true);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, abortSession, issueSessionCancel, promptInbox.hold]);
+  }, [sessionId, sessionState, stopLatch, issueSessionCancel, promptInbox.hold]);
 
   // Release the Stop hold for the WHOLE queue at once. `hold(false)` un-pauses
   // every held row on the server (shared across tabs), and the hook clears the
