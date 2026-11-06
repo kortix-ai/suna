@@ -256,7 +256,10 @@ export function TokensTab({
   // listing or revoking it, and it is never minted here.
   const canCreatePersonal = usePermission(accountId, 'token.personal.create').allowed === true;
   const canRevokePersonal = usePermission(accountId, 'token.personal.revoke').allowed === true;
-  const canCreate = mode !== 'personal' && canCreatePersonal;
+  // The UI mints workspace keys only (design.md §3.2 C4a): a key acts in one
+  // workspace. A personal key comes from `kortix login`; the older account
+  // list (no workspace) lists and revokes, never mints.
+  const canCreate = mode === 'workspace' && canCreatePersonal;
   const canRevoke = mode === 'personal' || canRevokePersonal;
   const listKey = mode === 'personal' ? PERSONAL_TOKENS_KEY : MY_TOKENS_KEY(workspaceId ?? accountId ?? '');
 
