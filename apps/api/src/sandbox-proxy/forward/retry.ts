@@ -368,7 +368,11 @@ async function handleUpstreamFailureStatus(
     const edgeRefused = upstream.headers.has('x-pt-edge-verdict');
     if ((!nonReplayableWrite || edgeRefused) && attempt < MAX_RETRIES) {
       // Port not ready yet — sandbox is booting (container running, port down).
-      console.warn(
+      // Only the runtime's own ports are ours to flag: a user's dev server that
+      // is down answers 502 on every client poll, and the log sweep filed each
+      // retry as a new warn pattern (KRTX-4365). The give-up 502 still logs.
+      const logNotReady = portFailureHop(upstreamPort) === 'daemon' ? logger.warn : logger.info;
+      logNotReady(
         `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
       );
       invalidatePreviewLink(sandboxId, port);
