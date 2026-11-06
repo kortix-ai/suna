@@ -2,8 +2,8 @@
  * Managed-repo scaffold seed: verification, state recording, and self-heal.
  *
  * A brand-new managed project is only usable once its repo carries a real
- * commit on the default branch — the agents, skills, `kortix.yaml`, and every
- * OpenCode/Claude/Codex/Pi runtime profile live IN the repo, and every session
+ * commit on the default branch — the agents, skills, `kortix.yaml`, and the
+ * rest of the runtime config live IN the repo, and every session
  * branch forks off `refs/heads/<default_branch>`. A repo with no default
  * branch is therefore structurally dead: the file browser is empty, no agent
  * resolves, manifest detection falls back to v1, and a git read of the base

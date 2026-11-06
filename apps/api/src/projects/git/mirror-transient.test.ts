@@ -107,7 +107,7 @@ describe('isTransientGitMirrorError', () => {
     ['POSIX spawn starved (EMFILE)', 'fatal: cannot fork: EMFILE'],
   ])('classifies a process-limit failure as transient: %s', (_name, stderr) => {
     const err = classifyGitError({ stderr, code: 128, message: 'Command failed' }, CLONE_ARGS, 90_000);
-    // The cause text survives the classification so the log/OpenCode refusal
+    // The cause text survives the classification so the log/runtime refusal
     // still names what actually happened.
     expect(err.message).toContain('cannot fork');
     expect(isTransientGitMirrorError(err)).toBe(true);

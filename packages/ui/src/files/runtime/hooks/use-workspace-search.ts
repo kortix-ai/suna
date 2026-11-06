@@ -4,7 +4,7 @@
  * useWorkspaceSearch — Standalone file/folder/content search hook.
  *
  * Reusable across CMD+K palette, @-mention input, file browser, etc.
- * Uses the OpenCode find.files + find.text APIs.
+ * Uses the runtime's find.files + find.text APIs.
  *
  * Features:
  *   - Debounced async search (configurable delay)
@@ -66,7 +66,6 @@ export interface UseWorkspaceSearchOptions {
 /**
  * One-shot async file+folder search with ranking.
  * Returns plain `string[]` paths (dirs have trailing `/`).
- * Drop-in replacement for `findOpenCodeFiles`.
  */
 export async function searchWorkspaceFiles(query: string, limit = 50): Promise<string[]> {
   return searchWorkspaceFilePaths(query, { limit, apiLimit: Math.max(limit, 100) });

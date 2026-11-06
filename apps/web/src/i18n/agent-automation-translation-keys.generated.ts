@@ -118,16 +118,11 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'One image per project, or a named image per agent.': 'text0dc3abbcb173',
   'One machine per session': 'text6590dfdb580e',
   'One machine per session · Pre-configured · Nothing runs on your laptop': 'text7a04f383ef22',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
   'One switch pauses everything': 'textfb2ab460e464',
   'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.':
     'text1d9a8dde5629',
   'Open source, with support for any AI model. Use Kortix Cloud or run it on your own systems.':
     'text5b6a9e140d4b',
-  OpenCode: 'text3af0e55ccc96',
-  'OpenCode runs inside the machine as the agent harness, with your models, your tools and your secrets injected at runtime. The machine is ready. The agent begins.':
-    'textc72f8df372cb',
-  'OpenCode starts': 'textf3d82cf5fcc9',
   Overnight: 'texta6b86e26c48d',
   Parallelism: 'text69585fb8aa14',
   pinned: 'text3fab5c181bd2',

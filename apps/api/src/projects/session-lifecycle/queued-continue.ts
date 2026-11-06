@@ -98,7 +98,7 @@ async function endTurnForQueuedPrompt(row: SessionLifecycleCommandRow, turn: Bou
   if (!row.sessionId) return;
   try {
     await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
-      opencodeSessionId: turn.opencodeSessionId,
+      runtimeSessionId: turn.runtimeSessionId,
       messageId: turn.messageId,
     });
   } catch (err) {
@@ -110,7 +110,7 @@ async function endTurnForQueuedPrompt(row: SessionLifecycleCommandRow, turn: Bou
   const aborted = await abortRuntimeTurn(row.sessionId);
   logger.info('[session-lifecycle] queued prompt ended the turn its boundary interrupt never ended', {
     sessionId: row.sessionId, commandId: row.commandId, aborted,
-    runtimeSessionId: turn.opencodeSessionId,
+    runtimeSessionId: turn.runtimeSessionId,
   });
 }
 

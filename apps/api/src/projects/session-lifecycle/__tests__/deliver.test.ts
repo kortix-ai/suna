@@ -4,15 +4,15 @@ import { deliverWithRetry, type DeliveryTarget } from '../deliver';
 // Regression guard for "@Kortix replied 'Still waking this thread's session back
 // up — send that again' on a session that was already awake." The runtime was
 // ready; the prompt hand-off just had a transient post-wake hiccup (a rotated
-// opencode session 404, a daemon 5xx, a briefly-null externalId). The old path
+// runtime session 404, a daemon 5xx, a briefly-null externalId). The old path
 // bounced to 'pending' on the first miss and dropped the message. deliverWithRetry
 // must heal + retry through that window and only surface 'pending' if it truly
 // never lands.
 
-const ready = (externalId: string | null, opencodeSessionId: string | null): DeliveryTarget => ({
+const ready = (externalId: string | null, runtimeSessionId: string | null): DeliveryTarget => ({
   stage: 'ready',
   externalId,
-  opencodeSessionId,
+  runtimeSessionId,
 });
 
 const noSleep = async () => {};
@@ -71,7 +71,7 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
     let sends = 0;
     const outcome = await deliverWithRetry({
       opened: ready('ext-1', 'oc-1'),
-      reopen: async () => ready('ext-1', 'oc-2'), // rotated opencode session
+      reopen: async () => ready('ext-1', 'oc-2'), // rotated runtime session
       send: async (_ext, oc) => {
         sends++;
         return oc === 'oc-2'; // first id 404s, healed id is accepted
@@ -131,7 +131,7 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
   test('reopen reports a parked runtime → unreachable (stop retrying HERE, keep the prompt)', async () => {
     const outcome = await deliverWithRetry({
       opened: ready('ext-1', 'oc-1'),
-      reopen: async () => ({ stage: 'failed', externalId: null, opencodeSessionId: null }),
+      reopen: async () => ({ stage: 'failed', externalId: null, runtimeSessionId: null }),
       send: async () => false,
       now: stepNow(1000),
       sleepFn: noSleep,
@@ -142,7 +142,7 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
   test('reopen reports a hibernated box → unreachable, not failed', async () => {
     const outcome = await deliverWithRetry({
       opened: ready('ext-1', 'oc-1'),
-      reopen: async () => ({ stage: 'stopped', externalId: null, opencodeSessionId: null }),
+      reopen: async () => ({ stage: 'stopped', externalId: null, runtimeSessionId: null }),
       send: async () => false,
       now: stepNow(1000),
       sleepFn: noSleep,

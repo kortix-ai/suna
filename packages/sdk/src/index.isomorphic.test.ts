@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
  *      which `config-node.ts` needs for per-request config isolation. Not a
  *      blanket allowance for arbitrary Node built-ins creeping in.
  *   3. Browser-only stores (idb-sync-cache, server-store, sync-store,
- *      sandbox-connection-store, opencode-pending-store): these are zustand
+ *      sandbox-connection-store, runtime-pending-store): these are zustand
  *      stores (zustand is fine here, it's framework-glue-light and works
  *      outside React) meant to run in a browser — real `window`/
  *      `sessionStorage`/`localStorage`/`indexedDB` globals are expected and

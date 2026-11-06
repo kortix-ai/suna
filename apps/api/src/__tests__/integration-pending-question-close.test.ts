@@ -97,7 +97,7 @@ async function ask(requestId: string): Promise<void> {
     projectId: project.project_id,
     sessionId,
     requestId,
-    opencodeSessionId: RUNTIME_SESSION,
+    runtimeSessionId: RUNTIME_SESSION,
     questions: [{ question: 'Which region?', header: 'Region', options: [], multiple: false, custom: true }],
   });
   expect(stored?.inserted).toBe(true);

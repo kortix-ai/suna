@@ -12,7 +12,7 @@
  *
  * - KRTX-397 (second half): the daemon's own boot-phase 503
  *   (`runtime_not_ready`, `X-Kortix-Proxy-Hop: daemon`) on a proxied GET is
- *   the designed answer for an opencode runtime that is restarting behind a
+ *   the designed answer for a runtime that is restarting behind a
  *   live box — the proxy passes it through on purpose (no retry; the client
  *   re-polls) and the box recovers within seconds. Logging it counted the
  *   boot window as route 5xx on every hydrate read
@@ -103,7 +103,7 @@ describe('shouldSuppressRequestLog', () => {
   });
 
   test('the daemon boot-phase not-ready 503 on the session-abort verb is suppressed (KRTX-2277)', () => {
-    // A Stop pressed while the daemon's opencode restarts is the same designed
+    // A Stop pressed while the daemon's runtime restarts is the same designed
     // boot-window answer KRTX-397 suppresses on GETs — the abort is idempotent,
     // carries no data, and the client re-presses until it lands. Prod,
     // 2026-10-14: one wedged sandbox produced 22 such 503s in 40 minutes and

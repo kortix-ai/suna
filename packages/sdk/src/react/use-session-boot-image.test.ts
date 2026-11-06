@@ -6,7 +6,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { __getConfigResolver, __setConfigResolver } from '../core/http/config';
 import { sessionStartKey, type SessionStartImageStep, type SessionStartResult } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
-import { useSession } from './opencode';
+import { useSession } from './runtime-hooks';
 
 /**
  * While `/start` provisions a box, the server names the sandbox image step in

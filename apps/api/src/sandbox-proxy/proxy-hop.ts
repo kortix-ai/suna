@@ -9,7 +9,7 @@
  *                         silence.
  *   - `provider_ingress`— the sandbox provider's edge. We could not resolve or
  *                         reach an address for this box at all.
- *   - `daemon`          — the in-box agent / opencode. The box answers, the
+ *   - `daemon`          — the in-box daemon and its runtime. The box answers, the
  *                         runtime does not.
  *   - `upstream_port`   — the user's OWN process on an ordinary app port. Their
  *                         dev server is down; the runtime is fine.

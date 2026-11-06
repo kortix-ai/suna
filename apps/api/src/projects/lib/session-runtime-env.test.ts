@@ -58,7 +58,7 @@ describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
 
 describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
   test('every new box runs pi: KORTIX_HARNESS=pi, next to the same model and compiled config keys', () => {
-    // An unset KORTIX_HARNESS boots OpenCode in kortixd, so the key is never left out.
+    // An unset KORTIX_HARNESS marks a box OpenCode booted before the sunset, so the key is never left out.
     expect(buildSessionRuntimeEnv(BASE_INPUT).KORTIX_HARNESS).toBe('pi');
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
@@ -68,10 +68,9 @@ describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
     expect(env.KORTIX_HARNESS).toBe('pi');
     // D3: the harness-neutral name, plus the pre-W3 name for an older daemon.
     expect(env.KORTIX_MODEL).toBe('kortix/claude-sonnet-5');
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/claude-sonnet-5');
+    expect(env.KORTIX_MODEL).toBe('kortix/claude-sonnet-5');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toContain('"build"');
     expect(env.KORTIX_BOOTSTRAP_RUNTIME_SESSION).toBe('1');
-    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
   });
 });
 
@@ -131,14 +130,14 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 
-  test('coexists with KORTIX_OPENCODE_MODEL — the per-session override key is unaffected', () => {
+  test('coexists with KORTIX_MODEL — the per-session override key is unaffected', () => {
     const compiled = JSON.stringify({ agent: {} });
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       compiledAgentConfig: compiled,
       sessionModel: 'anthropic/claude-opus-4-8',
     });
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
+    expect(env.KORTIX_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
   });
 

@@ -167,7 +167,7 @@ describe('retireRefusedRuntime', () => {
     const serving = {
       ...RUNNING_ROW,
       metadata: {
-        activeTurns: { tok: { token: 'tok', state: 'active', opencodeSessionId: 'ses_1' } },
+        activeTurns: { tok: { token: 'tok', state: 'active', runtimeSessionId: 'ses_1' } },
       },
     };
 

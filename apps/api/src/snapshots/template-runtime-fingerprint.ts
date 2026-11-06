@@ -249,8 +249,8 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
 
 /** Every runtime input of the snapshot: the daemon binary's sources, then the rest. */
 export const RUNTIME_ARTIFACTS = [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS];
-// Both version strings fold in the layer/opencode/browser/sandbox constants — all
-// NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
+// Both version strings fold in the layer/pi/browser/sandbox constants — all
+// NON-agent inputs (bumped when the layer/pi/browser change, not the agent
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
 // actual files on every fresh deploy, so an agent-src change between deploys moves
 // the full fingerprint (drift) while leaving the non-agent fingerprint unchanged.
@@ -325,8 +325,8 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
 
 /**
  * Fingerprint of the runtime layer EXCLUDING the kortix-agent binary. Changes iff
- * a NON-agent runtime input moved — opencode/entrypoint/CLI/slack-cli/SDK/
- * starter source, or the layer/browser/sandbox version constants. The
+ * a NON-agent runtime input moved — entrypoint/CLI/slack-cli/SDK/starter
+ * source, or the layer/pi/browser/sandbox version constants. The
  * agent-swap fast path is sound ONLY when this is byte-identical between the
  * predecessor and the new identity (i.e. the agent binary is the SOLE runtime
  * delta). Folded into the template's swapKey so the builder can compare against the

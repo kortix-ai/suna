@@ -13,7 +13,7 @@ const KORTIX_PREFIX = 'kortix/';
 
 /**
  * The GATEWAY WIRE form of a model ref: a managed model is stored/served bare
- * (`glm-5.3-flash`), so strip the opencode-only `kortix/` namespace before it reaches
+ * (`glm-5.3-flash`), so strip the runtime's `kortix/` provider namespace before it reaches
  * the gateway (route resolution and managed-model lookup both expect the
  * bare id). BYOK (`provider/model`) and codex (`codex/<id>`) refs pass through.
  * This is what `account_model_preferences` stores and what servability checks.
@@ -24,7 +24,7 @@ export function toWireModel(ref: string): string {
 }
 
 /**
- * The OPENCODE ref form: every gateway model is registered under OpenCode's
+ * The SESSION ref form: every gateway model is registered under the runtime's
  * `kortix` provider. The remaining path is the gateway wire model, including
  * nested provider paths such as `codex/gpt-5.6-sol`.
  *

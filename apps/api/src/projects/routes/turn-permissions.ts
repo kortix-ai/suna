@@ -15,8 +15,8 @@ import { askExpiresAt, liveWaitMsFor, surfaceSessionIdOf } from '../lib/session-
 import { logger } from '../../lib/logger';
 
 // POST /v1/projects/:projectId/turn-permission
-// Sandbox-to-apps/api relay for a harness permission request, from OpenCode
-// and pi alike (apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts `relayPermission`).
+// Sandbox-to-apps/api relay for a harness permission request
+// (apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts `relayPermission`).
 // It stores the ask (lib/pending-permissions.ts), so it outlives the call that
 // parks and waits in Review, and sends one "needs your approval" notification
 // per request id to the person who prompted the running turn and the session's

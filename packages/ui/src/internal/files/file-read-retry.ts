@@ -46,7 +46,7 @@ function isPermanentFileReadFailure(error: unknown): boolean {
     msg.includes('403') ||
     msg.includes('400') ||
     msg.includes('bad request') ||
-    // A directory read (e.g. `.opencode`) returns 400 "Path is a directory" —
+    // A directory read (e.g. `.kortix`) returns 400 "Path is a directory" —
     // permanent, must not be retried on a loop.
     msg.includes('is a directory') ||
     msg.includes('eisdir') ||

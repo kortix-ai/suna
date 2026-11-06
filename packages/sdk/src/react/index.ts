@@ -19,10 +19,10 @@ export { useConnectorQuery, type ConnectorQueryOptions } from './use-connector-q
 // user signing in) to drop the SDK's per-user in-memory session state.
 export { resetIdentityState } from './reset-identity-state';
 
-// @kortix/sdk/react — the complete OpenCode React hook surface, relocated
-// verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
-// and type). This is the single source of truth the web UI binds to.
-export * from './opencode';
+// @kortix/sdk/react — the session runtime React hook surface (every runtime
+// hook, query-key factory, provider, and type). This is the single source of
+// truth the web UI binds to.
+export * from './runtime-hooks';
 export { useRuntimeSupports } from './use-runtime-supports';
 export { useHasSessionDesktop } from './use-has-session-desktop';
 // The session's one live connection (R5.3). `useSession` mounts it; a host that
@@ -31,7 +31,7 @@ export { useSessionStreamConnected, useSessionStreamEnded } from './use-session-
 export type { SessionStreamEnd, SessionStreamEndReason } from './use-session-stream';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
-// `./opencode`'s explicit barrel list, so re-exported directly here.
+// `./runtime-hooks`'s explicit barrel list, so re-exported directly here.
 export {
   answerQuestion,
   answerPermission,
@@ -56,7 +56,7 @@ export {
 } from '../core/http/api/errors';
 
 // The framework-free SSE event-stream primitive that `useRuntimeEventStream`
-// (exported above via `./opencode`) wraps. Re-exported here too so a host
+// (exported above via `./runtime-hooks`) wraps. Re-exported here too so a host
 // already importing from `@kortix/sdk/react` can build its own binding
 // (e.g. a non-QueryClient consumer) without a second import from `@kortix/sdk`.
 export {
@@ -78,7 +78,7 @@ export * from './use-kortix-master';
 
 // The send / stash-replay / error-recovery core extracted from apps/web's
 // `session-chat.tsx` — see `use-session-send.ts` for the full contract. Not
-// (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported
+// (yet) re-exported by `./runtime-hooks`'s explicit barrel list, so re-exported
 // directly here (same reasoning as the other direct re-exports above).
 export {
   useSessionSend,

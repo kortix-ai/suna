@@ -79,11 +79,11 @@ export function compactionExpiryAtMs(inputs: CompactionInputs): number | null {
  * design, since it is the runtime's own record, not a guess, and
  * {@link compactionExpiryAtMs} deliberately arms no timer for it. But the
  * only event that is SUPPOSED to clear that cached row
- * (`session.compacted`, handled in `use-opencode-events/handle-event.ts`) can
+ * (`session.compacted`, handled in `use-runtime-events/handle-event.ts`) can
  * be lost the exact same way any SSE frame can — a backgrounded tab, a
  * stream reconnect — and the targeted refetch that handler fires is its own
  * network call that can itself fail. `useRuntimeSession`
- * (`use-opencode-sessions/sessions.ts`) reads the row with
+ * (`use-runtime-sessions/sessions.ts`) reads the row with
  * `staleTime: Infinity` and nothing else ever refetches it, so without a
  * ceiling here "authoritative" becomes "wedged for the tab's lifetime" the
  * moment either of those is lost — reproducing the exact unbounded-latch

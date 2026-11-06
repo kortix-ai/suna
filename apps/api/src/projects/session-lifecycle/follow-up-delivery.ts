@@ -55,7 +55,6 @@ export async function deliverThroughQueue(
     idempotencyKey: command.idempotencyKey,
     ...(command.parts ? { parts: command.parts } : {}),
     ...(command.overrides ? { overrides: command.overrides } : {}),
-    ...(command.opencodeEnv ? { opencodeEnv: command.opencodeEnv } : {}),
     directFollowUp: true,
   });
   // `wait: false`: the row is durable now, so the caller answers at once and

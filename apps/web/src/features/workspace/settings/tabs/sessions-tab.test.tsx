@@ -86,7 +86,7 @@ const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> 
   soundsDescription: 'Звуци за догађаје сесије.',
   soundPacks: {
     off: { label: 'Искључено', description: 'Сви звуци су искључени' },
-    opencode: { label: 'Подразумевано', description: 'Подразумевани пакет' },
+    classic: { label: 'Подразумевано', description: 'Подразумевани пакет' },
     kortix: { label: 'Kortix пакет', description: 'Звиждук' },
   },
   volume: 'Јачина звука',
@@ -125,8 +125,8 @@ describe('SessionsTabView', () => {
       expect(out).toContain(label);
       expect(out).toContain(description);
     }
-    expect(out.indexOf(SERBIAN_COPY.soundPacks.off.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.opencode.label));
-    expect(out.indexOf(SERBIAN_COPY.soundPacks.opencode.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.kortix.label));
+    expect(out.indexOf(SERBIAN_COPY.soundPacks.off.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.classic.label));
+    expect(out.indexOf(SERBIAN_COPY.soundPacks.classic.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.kortix.label));
   });
 
   test('renders injected locale body copy instead of fixed English body labels', () => {
@@ -169,7 +169,7 @@ describe('SessionsTabView', () => {
 
   test('sounds are off by default, and the volume slider only shows with a pack on', () => {
     expect(html()).not.toContain('Volume');
-    const on = renderToStaticMarkup(<SessionsTabView soundPack="opencode" />);
+    const on = renderToStaticMarkup(<SessionsTabView soundPack="classic" />);
     expect(on).toContain('Volume');
     expect(on).toContain('Task Completion');
   });

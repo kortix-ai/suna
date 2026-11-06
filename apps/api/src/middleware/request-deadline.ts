@@ -94,8 +94,8 @@ const EXEMPT_FRAGMENTS = [
   // plus its GET .../updates drift-listing route
   '/snapshots', // sandbox template builds
   '/legacy-migration', // legacy VM → project migration runs
-  '/oauth/', // provider OAuth device flow — `start` spawns
-  // OpenCode + waits for the device challenge, which
+  '/oauth/', // provider OAuth device flow — `start` runs
+  // the provider's device grant + waits for the device challenge, which
   // can exceed the deadline on a cold replica
 ];
 

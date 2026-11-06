@@ -287,7 +287,7 @@ describe('resolveCandidates free-tier premium gate', () => {
 });
 
 // Every managed id the catalog serves and retired ids sessions still carry,
-// bare and with the opencode `kortix/` prefix: a new managed model or a
+// bare and with the runtime's `kortix/` prefix: a new managed model or a
 // retired id cannot open a path for Free (2026-10-19, see the learnings ledger).
 const RETIRED_SAMPLE = ['kimi-k3', 'morph-dsv41flash', 'deepseek-v4-flash-0731'];
 

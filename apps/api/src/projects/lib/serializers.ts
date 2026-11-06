@@ -40,7 +40,7 @@ import type { ProjectRole } from '../access';
 import type { ProjectConfigSummary } from '../git/types';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
-import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
+import { isPlaceholderSessionTitle, runtimeRootTitleFromSnapshot } from './session-title-placeholder';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { probeProjectSecret } from '../secrets/envelope';
@@ -169,15 +169,15 @@ export function serializeSession(
 ): ProjectSession {
   // Computed BEFORE the metadata-derived fields below, because name,
   // custom_name and runtime_sessions are all derived FROM metadata — redacting
-  // the metadata object alone would still have leaked the OpenCode-synced title
+  // the metadata object alone would still have leaked the runtime-synced title
   // (which summarises the conversation) and the conversation-tree snapshot.
   const canAccess = ctx?.canAccess ?? true;
-  const opencodeSessions = canAccess
+  const runtimeSessions = canAccess
     ? normalizeRuntimeSessionSnapshots(row.metadata?.runtime_sessions)
     : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
-  // over the auto title (metadata.name) mirrored from OpenCode server-side
+  // over the auto title (metadata.name) mirrored from the runtime server-side
   // during session reads. `name` is the resolved display value;
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.
@@ -188,12 +188,12 @@ export function serializeSession(
   // display chain instead of a junk title (heals old rows with no backfill).
   const rawAutoName =
     canAccess && typeof row.metadata?.name === 'string' ? row.metadata.name : null;
-  const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
+  const autoName = isPlaceholderSessionTitle(rawAutoName) ? null : rawAutoName;
   // The runtime's own root-conversation title (already access-gated: the
   // snapshot above is [] when canAccess is false). It outranks the generated
   // auto title so list reads resolve the SAME string the session header shows
   // live, but never a user rename.
-  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
+  const runtimeTitle = runtimeRootTitleFromSnapshot(runtimeSessions, row.runtimeSessionId);
   return {
     model: canAccess
       ? (ctx?.conversationModel ?? (typeof row.metadata?.model === 'string'
@@ -226,7 +226,7 @@ export function serializeSession(
         ? trimSessionMetadataForList(row.metadata ?? {})
         : (row.metadata ?? {})
       : {},
-    runtime_sessions: opencodeSessions,
+    runtime_sessions: runtimeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
@@ -497,15 +497,9 @@ function grantAdmits(list: string[], identifier: string): boolean {
  * identifier, never by the env-var `name` — several identifiers may share one
  * name.
  *
- * The tri-state forbids guessing, so read `agent_discovery` for what
- * `resolveConfigAgents` (../git/config.ts) actually means by it:
+ * The tri-state forbids guessing. `agent_discovery` is `declarative` for every
+ * project (`resolveConfigAgents`, ../git/config.ts), so the agents decide:
  *
- *   `opencode`   — the manifest yielded NO agent specs AND NO parse errors, i.e.
- *                  it declared no `agents:` at all (or there is no manifest).
- *                  `grantFromLoadedAgents` then resolves to a null grant, which
- *                  `resolveSecretDelivery` withholds. CERTAIN: no session can
- *                  ever receive this secret. A native `.opencode` agent does not
- *                  rescue it — grants come only from manifest specs.
  *   `declarative`, agents non-empty — the manifest parsed and its declarations
  *                  are the complete grant set. CERTAIN either way.
  *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached
@@ -525,8 +519,7 @@ export function secretDeliveryBlockedReason(
 ): SecretDeliveryBlockedReason | null {
   if (strategy !== 'egress' && strategy !== 'broker') return null;
   if (!config) return null;
-  if (config.agent_discovery === 'opencode') return 'no_agent_grant';
-  // Anything other than the two known modes is a config we do not understand —
+  // Anything other than `declarative` is a config we do not understand —
   // including a partial object from a caller that resolved only part of it.
   if (config.agent_discovery !== 'declarative') return null;
   const agents = config.agents;
@@ -655,7 +648,6 @@ export function buildSecretView(input: {
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
     agents: strategy === 'denied' ? []
       : !input.agentGrants ? null
-      : input.agentGrants.agent_discovery === 'opencode' ? (strategy === 'runtime' ? 'all' : [])
       : input.agentGrants.agent_discovery !== 'declarative' || !input.agentGrants.agents.length ? null
       : input.agentGrants.agents.filter((agent) => {
           if (agent.enabled === false) return false;

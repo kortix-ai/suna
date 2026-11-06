@@ -16,8 +16,6 @@ const SCRIPT = 'apps/web/scripts/generate-cli-commands-doc.mjs';
 
 /** In the table, never in the docs. */
 const UNDOCUMENTED = {
-  // Attaches the OpenCode TUI; a pi session has no `session.attach` and the command exits 1.
-  connect: 'OpenCode only',
   // Served only where KORTIX_CHROME_ENABLED is on (dev) until the Chrome Web Store listing is public.
   chrome: 'not launched',
 };

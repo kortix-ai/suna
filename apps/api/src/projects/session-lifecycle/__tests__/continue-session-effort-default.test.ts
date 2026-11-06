@@ -147,7 +147,7 @@ function awakeSession(extra: Record<string, unknown> = {}) {
     projectId: PROJECT_ID,
     status: 'running',
     metadata: {},
-    opencodeSessionId: OC_SESSION_ID,
+    runtimeSessionId: OC_SESSION_ID,
     ...extra,
   };
   // An open proved this box at the runtime floor (#11748): only then does a

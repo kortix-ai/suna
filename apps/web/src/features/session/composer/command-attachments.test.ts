@@ -258,7 +258,7 @@ describe('planUnresolvedCommandChip', () => {
   // and the prompt left with the attachment — composer emptied on the wire.
   test('a chip with attachments is refused while the command list has never resolved', () => {
     const plan = planUnresolvedCommandChip(
-      { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 1 },
+      { commandName: 'customize-agent', commandsResolved: false, attachmentCount: 1 },
       testUiTranslator,
     );
     expect(plan.kind).toBe('refuse');
@@ -266,7 +266,7 @@ describe('planUnresolvedCommandChip', () => {
 
   test('the refusal says nothing was sent and what stays', () => {
     const plan = planUnresolvedCommandChip(
-      { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 2 },
+      { commandName: 'customize-agent', commandsResolved: false, attachmentCount: 2 },
       testUiTranslator,
     );
     if (plan.kind !== 'refuse') throw new Error('expected a refusal');
@@ -292,7 +292,7 @@ describe('planUnresolvedCommandChip', () => {
     // behavior regardless of list state.
     expect(
       planUnresolvedCommandChip(
-        { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 0 },
+        { commandName: 'customize-agent', commandsResolved: false, attachmentCount: 0 },
         testUiTranslator,
       ).kind,
     ).toBe('dispatch');
@@ -310,7 +310,7 @@ describe('planUnresolvedCommandChip', () => {
   test('every locale reads the refusal from its catalog', () => {
     const locales = { de, en, es, fr, it, ja, pt, sr, zh };
     const enDescription = planUnresolvedCommandChip(
-      { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 1 },
+      { commandName: 'customize-agent', commandsResolved: false, attachmentCount: 1 },
       testUiTranslator,
     );
     if (enDescription.kind !== 'refuse') throw new Error('expected a refusal');
@@ -324,7 +324,7 @@ describe('planUnresolvedCommandChip', () => {
         },
       });
       const plan = planUnresolvedCommandChip(
-        { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 1 },
+        { commandName: 'customize-agent', commandsResolved: false, attachmentCount: 1 },
         t,
       );
       if (plan.kind !== 'refuse') throw new Error(`expected a refusal for ${locale}`);

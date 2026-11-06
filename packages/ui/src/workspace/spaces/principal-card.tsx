@@ -409,7 +409,7 @@ function AgentProfile({ projectId, name }: { projectId: string; name: string }) 
   const spaces = useProjectSpaces(projectId);
   const personalName = usePersonalSpaceName();
   const agent = config?.agents.find((item) => item.name === name);
-  const projectDefault = config?.default_agent ?? config?.open_code_default_agent ?? null;
+  const projectDefault = config?.default_agent ?? null;
   // The spaces it works in: channels that list it, and the person's own space for My Kortix.
   const memberOf = (spaces.data ?? []).filter(
     (space) => !space.archived_at && (space.kind === 'channel' ? !!space.agents?.includes(name) : isPersonalSpace(space) && isMyKortixAgentName(name)),

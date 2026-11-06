@@ -25,7 +25,7 @@ export interface SandboxTurnReading {
   /**
    * HOW the daemon says the turn ended, when `observation` is `terminal` and it
    * could tell. `null` is the ordinary answer for an agent build that predates
-   * `turn_end` and for an OpenCode state its messages cannot classify — the
+   * `turn_end` and for a runtime state its messages cannot classify — the
    * caller decides what to record, and must not invent a completion.
    */
   endReason: SessionTurnEndReason | null;
@@ -45,8 +45,8 @@ export interface SandboxTurnReading {
    *
    * Evidence about the prompt, not about the turn, and that distinction is the
    * whole point: a record is `delivering` for one upstream round trip only —
-   * OpenCode 200s the `prompt_async` and the acceptance write promotes it to
-   * `active` milliseconds later. An OpenCode killed after that and respawned
+   * the runtime 200s the `prompt_async` and the acceptance write promotes it to
+   * `active` milliseconds later. A runtime killed after that and respawned
    * keeps the persisted user message and loses its in-memory queue, so the
    * record says `active` while nothing is running and nothing ever will. The
    * record's state cannot see that; this can.

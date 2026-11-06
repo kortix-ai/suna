@@ -61,7 +61,7 @@ export const CONTROL_RING_IDLE_MS = 5 * 60_000;
  * subsystem's COMPLETE state.
  *
  * `kortix.control.*` rather than a bare name so a client's reducer can route on
- * the prefix and can never confuse one of these with an OpenCode event type
+ * the prefix and can never confuse one of these with a runtime event type
  * (which arrives verbatim on the runtime channel). The set and each member's
  * meaning live in `SESSION_CONTROL_FRAME_TYPES` (`@kortix/api-contract`).
  */

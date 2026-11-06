@@ -504,8 +504,8 @@ export async function buildSessionSandboxEnvVars(input: SessionSandboxEnvInput):
       frontendUrl: sandboxFrontendBaseUrl(),
       // Concrete session model after explicit → agent → project → account →
       // platform resolution — re-pointed above when the runtime lineup
-      // retired it. The sandbox uses it for the first OpenCode turn and as
-      // the session's OpenCode config default.
+      // retired it. The sandbox uses it for the first turn and as the
+      // runtime's default model.
       sessionModel,
       compiledAgentConfig,
       piPackages: manifestPackages,

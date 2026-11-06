@@ -15,7 +15,7 @@ import { describe, expect, afterAll, mock, test } from 'bun:test';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { sessionSandboxes } from '@kortix/db';
-import type { UnreachableCause } from '../opencode-mapping';
+import type { UnreachableCause } from '../runtime-session-mapping';
 
 // Render the written statement through drizzle's own dialect so a test can
 // assert WHICH metadata keys a poll merged, not just that a write happened.
@@ -37,6 +37,9 @@ console.warn = (...args: unknown[]) => {
 };
 
 mock.module('../../shared/db', () => ({
+  // Statically imported by modules this graph loads; no test path runs it.
+  withDbTransaction: async <T>(fn: () => Promise<T>) => fn(),
+  afterDbCommit: (fn: () => void) => fn(),
   db: {
     update: () => ({
       set: (patch: { metadata: unknown }) => ({
@@ -121,7 +124,7 @@ describe('stampUnreachableDiagnostics: the warn rides the spell clock', () => {
     const base = { runtimeUnreachableWaitStartedAt: new Date(Date.now() - 31_000).toISOString() };
     await poll(base, 'http_502');
     expect(warns).toHaveLength(1);
-    expect(warns[0][0]).toBe('[start] opencode session list unreachable');
+    expect(warns[0][0]).toBe('[start] runtime session list unreachable');
     const afterWarn = rowAfterLastWrite(base);
     expect(typeof afterWarn.runtimeUnreachableWarnedAt).toBe('string');
 

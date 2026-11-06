@@ -6,7 +6,7 @@
  * Why this file exists: several test suites register process-wide
  * `mock.module('../core/http/auth', …)` stubs (Bun's `mock.module` replaces a
  * specifier for the remainder of the process, for every importer — see the
- * note in `opencode/client.test.ts`). Any test that wants to exercise the real
+ * note in `core/runtime/client.test.ts`). Any test that wants to exercise the real
  * retry/timeout semantics therefore can't import them from `./auth` — on some
  * Bun versions/orderings it would receive a stub. Nothing mocks THIS module,
  * so `auth-core.test.ts` always tests the genuine article, and `auth.ts` stays
@@ -68,7 +68,7 @@ export const DEFAULT_FETCH_TIMEOUT_MS = 120_000;
 
 /**
  * The one long-lived streaming call reached through the auth fetch injection
- * point — `openEventStream` (`state/event-stream.ts`) drives the opencode
+ * point — `openEventStream` (`core/stream/event-stream.ts`) drives the opencode
  * client's `global.event(...)` SSE endpoint (`GET {runtimeUrl}/global/event`).
  * It manages its own lifecycle (heartbeat watchdog + explicit abort/reconnect
  * loop) and must stay open far longer than any request timeout.

@@ -8,7 +8,7 @@ import {
 
 // Adapts the AI SDK's provider-neutral stream/result back into the OpenAI
 // chat.completions SSE + JSON shapes the gateway pipeline (probe, relay, usage
-// extraction, billing, trace) and opencode both depend on. THIS is the contract
+// extraction, billing, trace) and the session runtime both depend on. THIS is the contract
 // boundary — the bytes produced here must be byte-compatible with what the native
 // openai-compat transport emits, so nothing downstream can tell the paths apart.
 

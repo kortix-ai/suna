@@ -30,12 +30,13 @@ import type { RuntimeClassification } from './legacy-runtime-bootstrap';
  * PURE. True when a pinned runtime can still answer a prompt, so the open
  * should proceed instead of refusing the session.
  *
- * `opencode === 'ok'` is the whole distinction: it is the daemon's own report
- * that OpenCode is up and serving. A pinned box whose OpenCode is starting,
- * failed or absent genuinely cannot run a turn, and that one keeps failing.
+ * `runtimeState === 'ok'` is the whole distinction: it is the daemon's own
+ * report that its runtime is up and serving. A pinned box whose runtime is
+ * starting, failed or absent genuinely cannot run a turn, and that one keeps
+ * failing.
  */
 export function pinnedRuntimeMayServe(
-  classification: Pick<RuntimeClassification, 'opencode'> | null | undefined,
+  classification: Pick<RuntimeClassification, 'runtimeState'> | null | undefined,
 ): boolean {
-  return classification?.opencode === 'ok';
+  return classification?.runtimeState === 'ok';
 }

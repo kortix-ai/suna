@@ -480,11 +480,6 @@ export interface CompiledCommand {
 
 /** A kortix.yaml v3 extension: one implementation per harness. */
 export interface CompiledExtension {
-  /**
-   * Repo-relative module path, loaded as an OpenCode plugin.
-   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  opencode?: string;
   /** `npm:<name>@<x.y.z>`, a repo-relative path, or pi's `{ source, extensions, skills, prompts, themes }` form. */
   pi?: string | { source: string; extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] };
 }
@@ -546,23 +541,23 @@ export function toolAllowed(tools: Record<string, boolean> | undefined, tool: st
 
 /** The agent settings a harness applies. A setting a harness does not list is ignored there. */
 export const AGENT_SETTING_HARNESSES = {
-  description: ['opencode', 'pi'],
-  mode: ['opencode', 'pi'],
-  model: ['opencode', 'pi'],
-  variant: ['opencode', 'pi'],
-  temperature: ['opencode', 'pi'],
-  top_p: ['opencode', 'pi'],
-  options: ['opencode'],
-  color: ['opencode'],
-  steps: ['opencode', 'pi'],
-  tools: ['opencode', 'pi'],
-  hidden: ['opencode', 'pi'],
-  permission: ['opencode', 'pi'],
-  disable: ['opencode', 'pi'],
-  prompt: ['opencode', 'pi'],
-  extensions: ['opencode', 'pi'],
+  description: ['pi'],
+  mode: ['pi'],
+  model: ['pi'],
+  variant: ['pi'],
+  temperature: ['pi'],
+  top_p: ['pi'],
+  options: [],
+  color: [],
+  steps: ['pi'],
+  tools: ['pi'],
+  hidden: ['pi'],
+  permission: ['pi'],
+  disable: ['pi'],
+  prompt: ['pi'],
+  extensions: ['pi'],
   codemode: ['pi'],
-} as const satisfies Record<keyof CompiledAgent, readonly ('opencode' | 'pi')[]>;
+} as const satisfies Record<keyof CompiledAgent, readonly 'pi'[]>;
 export type AgentSetting = keyof typeof AGENT_SETTING_HARNESSES;
 
 /** The agent settings `harness` ignores, in `AGENT_SETTING_HARNESSES` order. */
@@ -618,22 +613,11 @@ export function healthHarnessId(health: { harness?: unknown } | null | undefined
   return null;
 }
 
-/** The runtime process state a health body reports: the W3 `harness` block, or the pre-W3 `opencode` field. */
+/** The runtime process state a health body reports, from its `harness` block. */
 export function healthRuntimeState(health: Record<string, unknown> | null | undefined): string | null {
   const harness = health?.harness;
   if (harness && typeof harness === 'object' && typeof (harness as { state?: unknown }).state === 'string') {
     return (harness as { state: string }).state;
   }
-  return typeof health?.opencode === 'string' ? health.opencode : null;
-}
-
-/**
- * The port the runtime listens on (OpenCode's alternates on a verified reload): `harness.details.port`, or the pre-W3 `opencode_port`.
- * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
- */
-export function healthRuntimePort(health: Record<string, unknown> | null | undefined): number | null {
-  const harness = health?.harness;
-  const details = harness && typeof harness === 'object' ? (harness as { details?: unknown }).details : null;
-  const port = details && typeof details === 'object' ? (details as { port?: unknown }).port : health?.opencode_port;
-  return typeof port === 'number' && Number.isInteger(port) && port > 0 ? port : null;
+  return null;
 }

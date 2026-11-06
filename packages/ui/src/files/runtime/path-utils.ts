@@ -7,7 +7,7 @@
  *
  * A "real" extension is a dot that is NOT the leading dot of a dotfile or
  * dot-directory. So `file.ts` and `.eslintrc.json` have extensions, but
- * dot-directories like `.opencode`, `.github`, `.kortix` — and extensionless
+ * dot-directories like `.github`, `.kortix` — and extensionless
  * dotfiles like `.env` — do not. Those must still be probed (via listFiles)
  * for being a directory rather than blindly rendered as a file, otherwise a
  * dot-directory gets opened as a file and the server returns

@@ -8,7 +8,7 @@ import { jsonShape } from '../connector-gateway/result-spill';
 /**
  * A large connector result must reach the model as a path plus a summary.
  *
- * OpenCode truncates every tool output above 50 KB / 2000 lines and hands the
+ * The agent harness truncates every tool output above 50 KB / 2000 lines and hands the
  * model only the head ("...N bytes truncated..."). A Linear list query
  * returned ~93 KB, so the model saw a cut-off JSON document and improvised.
  * The MCP `call` tool now saves a result above SPILL_THRESHOLD_BYTES to a file
