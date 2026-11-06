@@ -124,7 +124,13 @@ that failed.
 
 ## Keeper and holds
 
-- Keeper = the most recently opened active project, then the newest created.
+- Keeper = the most active project (Marko, 2026-11-06): the most
+  `project_sessions` created in the last 30 days (`KEEPER_ACTIVITY_DAYS`);
+  a tie goes to the most recently opened (`last_opened_at DESC NULLS LAST`),
+  then the newest created, then `project_id`. Each plan row records
+  `recent_sessions` (its project) and `keeper_recent_sessions`.
+- Until it is frozen, every plan pass re-ranks the keeper: a project that
+  gains sessions can become the keeper before the first move starts.
 - Frozen once a move of the account started (`storage_copied`/`done`) or an
   owner confirmed it.
 - An account that pays (`kortix.account_is_paying`: a paid plan, bought

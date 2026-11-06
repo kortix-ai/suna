@@ -106,7 +106,7 @@ account in one transaction (44 tables). Gaps the split closes first:
 5. Invites: an account invite can carry grants for several projects; it is
    split per new account.
 6. Money stays: balance, Stripe subscription and history stay with the
-   account that keeps the most recently opened project. The others start on
+   account that keeps the most active project (most sessions in the last 30 days). The others start on
    Free (the 11 paying accounts choose first).
 
 ## Self-host

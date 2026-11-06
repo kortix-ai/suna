@@ -10,7 +10,8 @@
  *      named after the project, with the source's security settings and
  *      branding. It starts with no billing rows: the runner initializes Free
  *      with 0 credits after commit. Money (wallet, Stripe, contracts) stays
- *      with the source, which keeps the most recently opened project.
+ *      with the source, which keeps the most active project (the keeper rule in
+ *      `workspaces/split/split-runner.ts`).
  *   2. Copies the directory for the people who reach the project
  *      ({@link reachingUsersSql}): their memberships and account-scope
  *      grants, every group that reaches it with its members, every custom

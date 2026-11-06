@@ -29,7 +29,8 @@ never got a project.
 2. Split each extra project into its own workspace: a new account with a copy
    of the memberships and roles; the project row and every row that
    denormalizes its `account_id` move to the new account.
-3. The most recently opened project keeps the original account, its credits,
+3. The most active project (most sessions created in the last 30 days, then
+   the most recently opened; changed 2026-11-06) keeps the original account, its credits,
    Stripe customer and plan. The split workspaces start on the free plan.
 4. The 36 accounts that ever purchased credits are split only after their
    owner chooses the workspace that keeps billing. 0 have an enterprise
@@ -70,7 +71,8 @@ feasible in one release; the identity design must avoid it.
 **Defaults taken (Marko may veto).** Project name wins in the account-name
 backfill (old names kept in a backup table). The 401 multi-project accounts are
 split automatically: the most recently opened project keeps the account, its
-credits and subscription; every move is logged and reversible. The 40,618 empty
+credits and subscription (2026-11-06, Marko: the most active project instead, see
+`split-runbook.md` "Keeper and holds"); every move is logged and reversible. The 40,618 empty
 accounts stay as dormant records.
 
 ## 2026-11-06

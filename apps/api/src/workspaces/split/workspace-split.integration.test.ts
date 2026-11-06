@@ -308,6 +308,33 @@ withDb('workspace split', () => {
     expect(runs.every((run) => run.toAccountId === null)).toBe(true);
   });
 
+  test('the keeper is the most active project: most sessions created in the last 30 days, then most recently opened', async () => {
+    // OLDEST was never opened but holds the most recent sessions; MOVED's
+    // extra sessions are older than 30 days and do not count.
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
+    await db.insert(projectSessions).values([
+      { sessionId: 'split-test-active-1', accountId: LEGACY, projectId: OLDEST, branchName: 'active-1', createdBy: OWNER, createdAt: daysAgo(2) },
+      { sessionId: 'split-test-active-2', accountId: LEGACY, projectId: OLDEST, branchName: 'active-2', createdBy: OWNER, createdAt: daysAgo(29) },
+      ...[31, 45, 60].map((days) => (
+        { sessionId: `split-test-stale-${days}`, accountId: LEGACY, projectId: MOVED, branchName: `stale-${days}`, createdBy: OWNER, createdAt: daysAgo(days) })),
+    ]);
+    await planWorkspaceSplits();
+    expect((await runFor(KEEPER))?.plan.keeper_project_id).toBe(OLDEST);
+    expect((await runFor(MOVED))?.plan.keeper_project_id).toBe(OLDEST);
+    expect((await runFor(KEEPER))?.plan.recent_sessions).toBe(1);
+    expect(await runFor(OLDEST)).toBeUndefined();
+    // A tie on recent sessions falls to the most recently opened: PAYING_A
+    // (opened 5 min ago) over PAYING_B (50 min ago), both with none.
+    expect((await runFor(PAYING_B))?.plan.keeper_project_id).toBe(PAYING_A);
+    // A confirmed keeper stays, however the activity changes.
+    await confirmWorkspaceSplitKeeper(LEGACY, KEEPER);
+    await db.insert(projectSessions).values(
+      { sessionId: 'split-test-active-3', accountId: LEGACY, projectId: OLDEST, branchName: 'active-3', createdBy: OWNER, createdAt: daysAgo(1) });
+    await planWorkspaceSplits();
+    expect((await runFor(OLDEST))?.plan.keeper_project_id).toBe(KEEPER);
+    expect((await runFor(MOVED))?.plan.keeper_project_id).toBe(KEEPER);
+  });
+
   test('apply splits each non-keeper project into its own workspace with everything that reached it', async () => {
     const result = await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage } });
     expect(result.outcomes.done).toBe(2);

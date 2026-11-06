@@ -22,9 +22,12 @@
  *   reversed        undone by `reverseWorkspaceSplitRun`; the project is not
  *                   planned again while this row exists
  *
- * Keeper: the most recently opened active project (then newest created). It
- * keeps the account, its credits, plan and Stripe customer. The keeper is
- * frozen once a move of the account started, or once an owner confirmed it.
+ * Keeper: the most active project of the account: the most `project_sessions`
+ * created in the last KEEPER_ACTIVITY_DAYS days, then the most recently
+ * opened (`last_opened_at DESC NULLS LAST`), then the newest created, then
+ * `project_id`. It keeps the account, its credits, plan and Stripe customer.
+ * The keeper is frozen once a move of the account started, or once an owner
+ * confirmed it; until then each plan pass re-ranks it.
  *
  * Lease: a claim sets `heartbeat_at` and increments `attempts`; a run whose
  * heartbeat is older than LEASE_MS is reclaimable (a crash mid-run). The move
@@ -84,7 +87,10 @@ export async function workspaceSplitMode(): Promise<WorkspaceSplitMode> {
   return mode === 'off' || mode === 'dry_run' || mode === 'apply' ? mode : config.WORKSPACE_SPLIT_MODE;
 }
 
-type AccountProject = { project_id: string; last_opened_at: string | null; created_at: string };
+/** The activity window of the keeper rule: sessions created in the last 30 days. */
+export const KEEPER_ACTIVITY_DAYS = 30;
+
+type AccountProject = { project_id: string; last_opened_at: string | null; created_at: string; recent_sessions: number };
 
 async function keeperFor(accountId: string, projects: AccountProject[]): Promise<{ keeperId: string; confirmed: boolean; frozen: boolean }> {
   const active = new Set(projects.map((p) => p.project_id));
@@ -96,7 +102,7 @@ async function keeperFor(accountId: string, projects: AccountProject[]): Promise
      ORDER BY COALESCE((plan->>'keeper_confirmed')::boolean, false) DESC, updated_at DESC`);
   const kept = frozen.find((row) => row.keeper && active.has(row.keeper));
   if (kept) return { keeperId: kept.keeper, confirmed: kept.confirmed, frozen: true };
-  // `projects` arrives ordered most recently opened first.
+  // `projects` arrives ordered most active first (the keeper rule).
   return { keeperId: projects[0]!.project_id, confirmed: false, frozen: false };
 }
 
@@ -173,10 +179,16 @@ async function holdReasonFor(
 
 /** Plan one legacy account: upsert a ledger row per non-keeper project. */
 async function planAccount(accountId: string): Promise<{ planned: number; held: number; skipped: number }> {
+  // The keeper rule, most active first. idx_project_sessions_project serves
+  // the per-project count; a legacy account holds a handful of projects.
   const projects = await db.execute<AccountProject>(sql`
-    SELECT project_id::text, last_opened_at::text, created_at::text FROM kortix.projects
-     WHERE account_id = ${accountId} AND status = 'active'
-     ORDER BY last_opened_at DESC NULLS LAST, created_at DESC, project_id`);
+    SELECT p.project_id::text, p.last_opened_at::text, p.created_at::text,
+           (SELECT count(*)::int FROM kortix.project_sessions s
+             WHERE s.project_id = p.project_id
+               AND s.created_at > now() - make_interval(days => ${KEEPER_ACTIVITY_DAYS})) AS recent_sessions
+      FROM kortix.projects p
+     WHERE p.account_id = ${accountId} AND p.status = 'active'
+     ORDER BY recent_sessions DESC, p.last_opened_at DESC NULLS LAST, p.created_at DESC, p.project_id`);
   const counts = { planned: 0, held: 0, skipped: 0 };
   if (projects.length < 2) return counts;
   const { keeperId, confirmed, frozen } = await keeperFor(accountId, projects);
@@ -202,6 +214,8 @@ async function planAccount(accountId: string): Promise<{ planned: number; held: 
       keeper_confirmed: confirmed,
       keeper_frozen: frozen,
       last_opened_at: project.last_opened_at,
+      recent_sessions: project.recent_sessions,
+      keeper_recent_sessions: projects.find((p) => p.project_id === keeperId)?.recent_sessions ?? null,
       held_reason: holdReason,
       account: facts,
       project: await projectPlanFacts(project.project_id, accountId),

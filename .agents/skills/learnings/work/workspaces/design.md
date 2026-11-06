@@ -743,6 +743,16 @@ existed before.
   ctid tables, `split_pending` stays NULL, pause, lock-timeout rollback and
   resume).
 
+**Keeper rule (Marko, 2026-11-06).** The keeper of a legacy account is its
+most active project: the most `project_sessions` created in the last 30 days,
+then `last_opened_at DESC NULLS LAST`, then `created_at DESC`, then
+`project_id` (`planAccount` in `apps/api/src/workspaces/split/split-runner.ts`).
+"Most recently opened" alone let one stray click decide which project keeps the
+credits and the Stripe customer; session volume is the work. A confirmed or
+frozen keeper (an owner's choice, or a move already started) never changes.
+Proof: `workspace-split.integration.test.ts` "the keeper is the most active
+project".
+
 **Split holds (decided by the finisher, record for Marko):** an account with an
 `account_sso_providers` row or a live SCIM token is held
 (`held_reason: account_has_identity_provider`) whatever the keeper: the split
