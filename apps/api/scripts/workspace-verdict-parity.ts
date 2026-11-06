@@ -253,9 +253,12 @@ const FILLER = '00000000-0000-4000-8000-0000000000aa';
 
 /** A concrete request path for a manifest route pattern. */
 export function concretePath(pattern: string, ctx: ContextState): string {
+  // A legacy account-keyed path takes the account id, as an old client sends it.
+  // Only the canonical /v1/workspaces family takes the workspace id there.
+  const accountKeyed = /^\/(v1\/accounts|v1\/account-invites|scim\/v2\/accounts)\//.test(pattern);
   return pattern
     .replace(/\{[^}]*\}/g, '') // Hono param regexes: `:path{.+}`
-    .replace(/:(projectId|workspaceId)\b/g, ctx.workspaceId)
+    .replace(/:(projectId|workspaceId)\b/g, accountKeyed ? ctx.accountId : ctx.workspaceId)
     .replace(/:accountId\b/g, ctx.accountId)
     .replace(/:sandboxId\b/g, ctx.sandboxId)
     .replace(/:[A-Za-z_][A-Za-z0-9_]*/g, FILLER)
