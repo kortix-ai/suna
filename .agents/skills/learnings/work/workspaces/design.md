@@ -489,6 +489,32 @@ this table; a wave-2 stream adds the row for a route it adds).
   `account_creation_restricted` 403 · `credential_fence_refused` 403 · `no_workspace` 409
   (unchanged) · `session_token_revoked` 401.
 
+**Naming (2026-11-06, Marko: "in the api routes etc it's all workspaces, projects & accounts
+are just aliases").** Decided in the Naming stage:
+
+- Route aliases added: `POST /v1/workspaces/:id/transfer`, `POST /v1/workspaces/link-repository`,
+  `POST /v1/workspaces/create-repo`, `GET /v1/workspaces/:id/audit/events` (the project audit
+  slice; `/audit` stays the workspace log, so the slice takes the session's `audit/events`
+  name), `POST /v1/webhooks/workspaces/:id/:slug` (the `webhook_url` every trigger shows; no
+  kortix.yaml trigger has a creation time, so "new triggers only" is not knowable: every
+  trigger shows the workspace URL and the project URL answers forever).
+- No twin, on purpose: `/v1/projects/:id/sessions/warm[/claim]` and `/v1/projects/suna-migration/*`
+  answer 410 `ENDPOINT_RETIRED` (`routes/retired.ts`); a new name for a removed route is noise.
+  `/v1/projects/provision[-stream]` and `/quota` stay legacy-only: `POST /v1/workspaces` is the
+  managed create and has no quota.
+- Every legacy route with its own meaning (`WORKSPACE_LEGACY_REPLACEMENTS`) is `deprecated` in
+  `/v1/openapi.json` with `x-kortix-replaced-by`. `unit-workspace-route-aliases.test.ts` fails on a
+  new non-staff route with a `projects`/`accounts` segment that is none of alias, deprecated
+  legacy, retired or allowlisted.
+- SDK: every project-named export has a workspace twin (`src/workspace-names.test.ts`).
+- Open: the staff admin API (`/v1/admin/api/accounts|projects/*`, 23 routes, credits, tier,
+  contracts) has no `/v1/admin/api/workspaces/*` name yet. Plan: one middleware on
+  `/api/workspaces/:id/*` resolves a workspace id (or an account id, like every legacy path)
+  to the account and sets it for the handlers, which read it through one helper instead of
+  `c.req.param('id')`; `GET /api/workspaces` = the account list (1:1 after the split);
+  `GET /api/projects` stays until R3; the staff UI and `use-admin-*` hooks move to the new
+  paths; the admin audit labels follow.
+
 #### C6. Billing functions
 
 - `kortix.account_is_paying(account_id)` (SQL, created by identity in R1, semantics owned by
