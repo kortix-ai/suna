@@ -25061,7 +25061,7 @@
         "sent_to_agent": "a envoyé des commentaires à un agent"
       },
       "person": "Personne",
-      "deleteRootDescription": "Son texte est supprimé pour tout le monde et le fil passe en lecture seule. Cette action est irréversible.",
+      "deleteRootDescription": "Son texte est supprimé pour tout le monde, et le fil quitte la liste des commentaires. Cette action est irréversible.",
       "showPanel": "Afficher les commentaires",
       "hidePanel": "Masquer les commentaires",
       "panelTitle": "Commentaires et activité",
@@ -25104,7 +25104,14 @@
       "pagePinLabel": "Commentaire {number}",
       "showPanelCount": "Afficher les commentaires, {count} ouverts",
       "hidePanelCount": "Masquer les commentaires, {count} ouverts",
-      "commentSelectionHint": "Commenter la sélection"
+      "commentSelectionHint": "Commenter la sélection",
+      "threadReopened": "Fil rouvert",
+      "noCommentsReadOnlyHint": "Les commentaires sur cet artefact apparaissent ici.",
+      "commentTooLong": "Un commentaire peut compter jusqu’à {max} caractères. Retirez-en {over}.",
+      "discardDrawingTitle": "Abandonner ce dessin ?",
+      "discardDrawingHint": "Vos traits ne sont pas enregistrés. Cette action est irréversible.",
+      "discardDrawing": "Abandonner",
+      "keepDrawing": "Continuer à dessiner"
     },
     "moveTo": "Déplacer vers un espace",
     "projectWide": "À l’échelle du projet",
@@ -25133,13 +25140,24 @@
       "writing": "{name} rédige…"
     },
     "coedit": {
-      "offLarge": "L'édition en direct est désactivée : ce document dépasse 1 Mio. Les modifications s'enregistrent à la saisie.",
-      "offLineEndings": "L'édition en direct est désactivée : ce document mélange des fins de ligne CRLF et LF. Les modifications s'enregistrent à la saisie.",
-      "offShape": "L'édition en direct est désactivée : l'éditeur réécrirait une partie du Markdown. Les modifications s'enregistrent à la saisie.",
+      "offLarge": "L’édition en direct est désactivée : ce document est trop volumineux. Les modifications s’enregistrent à la saisie.",
+      "offLineEndings": "L’édition en direct est désactivée : ce document mélange deux types de sauts de ligne. Les modifications s’enregistrent à la saisie.",
+      "offShape": "L’édition en direct est désactivée : l’éditeur ne peut pas conserver une partie de ce document telle qu’elle est écrite. Les modifications s’enregistrent à la saisie.",
       "stoppedLarge": "L'édition en direct s'est arrêtée : une modification était trop volumineuse pour être partagée. Les modifications s'enregistrent à la saisie.",
       "stoppedFailed": "L'édition en direct s'est arrêtée : la connexion a échoué. Les modifications s'enregistrent à la saisie.",
-      "stoppedHistory": "L'édition en direct s'est arrêtée : l'historique des modifications de ce document est trop volumineux. Les modifications s'enregistrent à la saisie."
-    }
+      "stoppedHistory": "L'édition en direct s'est arrêtée : l'historique des modifications de ce document est trop volumineux. Les modifications s'enregistrent à la saisie.",
+      "offFailed": "L’édition en direct est désactivée : la connexion a échoué. Les modifications s’enregistrent à la saisie."
+    },
+    "conflictTitle": "Quelqu’un d’autre a modifié ce document",
+    "conflictReloadTitle": "Charger la version plus récente ?",
+    "conflictReloadHint": "Vos modifications depuis le dernier enregistrement sont abandonnées. Cette action est irréversible.",
+    "docLoadError": "Impossible de charger ce document.",
+    "openError": "Impossible d’ouvrir cet artefact.",
+    "viewOnly": "Lecture seule",
+    "viewingOldUndated": "Vous consultez une version antérieure.",
+    "exportWaiting": "Enregistrement de vos modifications, puis export…",
+    "exportBlocked": "Export arrêté : vos dernières modifications ne sont pas enregistrées.",
+    "clearFilters": "Effacer les filtres"
   },
   "emailConnect": {
     "homeTitle": "Où se trouve la boîte",

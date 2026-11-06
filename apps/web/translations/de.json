@@ -25061,7 +25061,7 @@
         "sent_to_agent": "hat Feedback an einen Agenten gesendet"
       },
       "person": "Person",
-      "deleteRootDescription": "Der Text wird für alle entfernt, und der Thread wird schreibgeschützt. Das lässt sich nicht rückgängig machen.",
+      "deleteRootDescription": "Sein Text wird für alle entfernt, und der Thread verschwindet aus der Kommentarliste. Das kann nicht rückgängig gemacht werden.",
       "showPanel": "Kommentare anzeigen",
       "hidePanel": "Kommentare ausblenden",
       "panelTitle": "Kommentare und Aktivität",
@@ -25104,7 +25104,14 @@
       "pagePinLabel": "Kommentar {number}",
       "showPanelCount": "Kommentare anzeigen, {count} offen",
       "hidePanelCount": "Kommentare ausblenden, {count} offen",
-      "commentSelectionHint": "Auswahl kommentieren"
+      "commentSelectionHint": "Auswahl kommentieren",
+      "threadReopened": "Thread wieder geöffnet",
+      "noCommentsReadOnlyHint": "Kommentare zu diesem Artefakt erscheinen hier.",
+      "commentTooLong": "Ein Kommentar darf höchstens {max} Zeichen haben. Entferne {over}.",
+      "discardDrawingTitle": "Diese Zeichnung verwerfen?",
+      "discardDrawingHint": "Deine Striche sind nicht gespeichert. Das kann nicht rückgängig gemacht werden.",
+      "discardDrawing": "Verwerfen",
+      "keepDrawing": "Weiterzeichnen"
     },
     "moveTo": "In Bereich verschieben",
     "projectWide": "Projektweit",
@@ -25133,13 +25140,24 @@
       "writing": "{name} schreibt…"
     },
     "coedit": {
-      "offLarge": "Live-Bearbeitung ist aus: Dieses Dokument ist größer als 1 MiB. Änderungen werden beim Tippen gespeichert.",
-      "offLineEndings": "Live-Bearbeitung ist aus: Dieses Dokument mischt CRLF- und LF-Zeilenenden. Änderungen werden beim Tippen gespeichert.",
-      "offShape": "Live-Bearbeitung ist aus: Der Editor würde einen Teil des Markdowns umschreiben. Änderungen werden beim Tippen gespeichert.",
+      "offLarge": "Live-Bearbeitung ist aus: Dieses Dokument ist zu groß. Änderungen werden beim Tippen gespeichert.",
+      "offLineEndings": "Live-Bearbeitung ist aus: Dieses Dokument mischt zwei Arten von Zeilenumbrüchen. Änderungen werden beim Tippen gespeichert.",
+      "offShape": "Live-Bearbeitung ist aus: Der Editor kann einen Teil dieses Dokuments nicht genau so behalten, wie er geschrieben ist. Änderungen werden beim Tippen gespeichert.",
       "stoppedLarge": "Live-Bearbeitung beendet: Eine Änderung war zu groß zum Teilen. Änderungen werden beim Tippen gespeichert.",
       "stoppedFailed": "Live-Bearbeitung beendet: Die Verbindung ist fehlgeschlagen. Änderungen werden beim Tippen gespeichert.",
-      "stoppedHistory": "Live-Bearbeitung beendet: Der Bearbeitungsverlauf dieses Dokuments ist zu groß. Änderungen werden beim Tippen gespeichert."
-    }
+      "stoppedHistory": "Live-Bearbeitung beendet: Der Bearbeitungsverlauf dieses Dokuments ist zu groß. Änderungen werden beim Tippen gespeichert.",
+      "offFailed": "Live-Bearbeitung ist aus: Es konnte keine Verbindung hergestellt werden. Änderungen werden beim Tippen gespeichert."
+    },
+    "conflictTitle": "Jemand anderes hat dieses Dokument geändert",
+    "conflictReloadTitle": "Die neuere Version laden?",
+    "conflictReloadHint": "Deine Änderungen seit dem letzten Speichern werden verworfen. Das kann nicht rückgängig gemacht werden.",
+    "docLoadError": "Dieses Dokument konnte nicht geladen werden.",
+    "openError": "Dieses Artefakt konnte nicht geöffnet werden.",
+    "viewOnly": "Nur ansehen",
+    "viewingOldUndated": "Du siehst eine frühere Version.",
+    "exportWaiting": "Deine Änderungen werden gespeichert, dann exportiert…",
+    "exportBlocked": "Export abgebrochen: Deine letzten Änderungen sind nicht gespeichert.",
+    "clearFilters": "Filter zurücksetzen"
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",

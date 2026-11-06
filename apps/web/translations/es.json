@@ -25061,7 +25061,7 @@
         "sent_to_agent": "envió comentarios a un agente"
       },
       "person": "Persona",
-      "deleteRootDescription": "Su texto se elimina para todos y el hilo pasa a ser de solo lectura. No se puede deshacer.",
+      "deleteRootDescription": "Su texto se elimina para todos y el hilo sale de la lista de comentarios. No se puede deshacer.",
       "showPanel": "Mostrar comentarios",
       "hidePanel": "Ocultar comentarios",
       "panelTitle": "Comentarios y actividad",
@@ -25104,7 +25104,14 @@
       "pagePinLabel": "Comentario {number}",
       "showPanelCount": "Mostrar comentarios, {count} abiertos",
       "hidePanelCount": "Ocultar comentarios, {count} abiertos",
-      "commentSelectionHint": "Comentar la selección"
+      "commentSelectionHint": "Comentar la selección",
+      "threadReopened": "Hilo reabierto",
+      "noCommentsReadOnlyHint": "Los comentarios sobre este artefacto aparecen aquí.",
+      "commentTooLong": "Un comentario puede tener hasta {max} caracteres. Quita {over}.",
+      "discardDrawingTitle": "¿Descartar este dibujo?",
+      "discardDrawingHint": "Tus trazos no están guardados. No se puede deshacer.",
+      "discardDrawing": "Descartar",
+      "keepDrawing": "Seguir dibujando"
     },
     "moveTo": "Mover a un espacio",
     "projectWide": "En todo el proyecto",
@@ -25133,13 +25140,24 @@
       "writing": "{name} está redactando…"
     },
     "coedit": {
-      "offLarge": "La edición en vivo está desactivada: este documento supera 1 MiB. Los cambios se guardan al escribir.",
-      "offLineEndings": "La edición en vivo está desactivada: este documento mezcla finales de línea CRLF y LF. Los cambios se guardan al escribir.",
-      "offShape": "La edición en vivo está desactivada: el editor reescribiría parte del Markdown. Los cambios se guardan al escribir.",
+      "offLarge": "La edición en vivo está desactivada: este documento es demasiado grande. Los cambios se guardan al escribir.",
+      "offLineEndings": "La edición en vivo está desactivada: este documento mezcla dos tipos de saltos de línea. Los cambios se guardan al escribir.",
+      "offShape": "La edición en vivo está desactivada: el editor no puede conservar parte de este documento tal como está escrito. Los cambios se guardan al escribir.",
       "stoppedLarge": "La edición en vivo se detuvo: un cambio era demasiado grande para compartirlo. Los cambios se guardan al escribir.",
       "stoppedFailed": "La edición en vivo se detuvo: la conexión falló. Los cambios se guardan al escribir.",
-      "stoppedHistory": "La edición en vivo se detuvo: el historial de ediciones de este documento es demasiado grande. Los cambios se guardan al escribir."
-    }
+      "stoppedHistory": "La edición en vivo se detuvo: el historial de ediciones de este documento es demasiado grande. Los cambios se guardan al escribir.",
+      "offFailed": "La edición en vivo está desactivada: no se pudo conectar. Los cambios se guardan al escribir."
+    },
+    "conflictTitle": "Otra persona cambió este documento",
+    "conflictReloadTitle": "¿Cargar la versión más reciente?",
+    "conflictReloadHint": "Se descartan tus cambios desde el último guardado. No se puede deshacer.",
+    "docLoadError": "No se pudo cargar este documento.",
+    "openError": "No se pudo abrir este artefacto.",
+    "viewOnly": "Solo lectura",
+    "viewingOldUndated": "Estás viendo una versión anterior.",
+    "exportWaiting": "Guardando tus cambios y luego exportando…",
+    "exportBlocked": "Exportación detenida: tus últimos cambios no están guardados.",
+    "clearFilters": "Quitar filtros"
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",

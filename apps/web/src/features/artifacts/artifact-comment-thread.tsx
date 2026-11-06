@@ -224,6 +224,7 @@ export function ArtifactCommentThreadView({
   onEditChange,
   onSaveEdit,
   onCancelEdit,
+  onLeaveEdit,
   onDelete,
   retryAgentLabel,
   onRetryDelivery,
@@ -249,7 +250,10 @@ export function ArtifactCommentThreadView({
   onEdit: (comment: ArtifactComment) => void;
   onEditChange: (value: string) => void;
   onSaveEdit: (comment: ArtifactComment) => void;
+  /** Cancel: the edit and its draft go away. */
   onCancelEdit: () => void;
+  /** Escape: the editor closes and keeps its draft for the next Edit, as every composer does. */
+  onLeaveEdit: () => void;
   onDelete: (comment: ArtifactComment) => void;
   /** The name of the agent `onRetryDelivery` sends to: the button says where the thread goes. */
   retryAgentLabel?: string;
@@ -418,7 +422,7 @@ export function ArtifactCommentThreadView({
                 onChange={onEditChange}
                 onSubmit={() => onSaveEdit(comment)}
                 onCancel={onCancelEdit}
-                onEscape={onCancelEdit}
+                onEscape={onLeaveEdit}
                 mentions={mentions}
                 agentsUnavailable={agentsUnavailable}
                 label={t('commentLabel')}
@@ -647,7 +651,12 @@ export function ArtifactCommentThreadView({
                   onReplyChange('');
                   collapseReply(true);
                 }}
-                onEscape={() => collapseReply(true)}
+                // Escape leaves the box and keeps the draft: a draft stays in its open box, so
+                // focus goes to the thread; an empty box closes back to the reply line.
+                onEscape={() => {
+                  if (!reply.value.trim()) return collapseReply(true);
+                  requestAnimationFrame(() => articleRef.current?.focus({ preventScroll: true }));
+                }}
                 mentions={mentions}
                 agentsUnavailable={agentsUnavailable}
                 label={t('replyLabel')}
