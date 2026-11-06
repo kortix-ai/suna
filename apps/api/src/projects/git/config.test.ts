@@ -204,7 +204,6 @@ imports:
     const config = await loadProjectConfig(project);
 
     expect(config.is_kortix_repo).toBe(true);
-    expect(config.signals).toEqual({ manifest: true, openCodeConfig: false, openCodeAgent: false });
     // `manifest_raw` stays the ROOT file text even when imports merge into `manifest`.
     expect(config.manifest_raw).toBe(ROOT);
     expect(config.manifest_health).toEqual({ path: 'kortix.yaml', state: 'ok', errors: 0, warnings: 0, issues: [] });

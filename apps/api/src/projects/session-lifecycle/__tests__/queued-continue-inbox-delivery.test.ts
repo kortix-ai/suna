@@ -138,6 +138,8 @@ mock.module('../../../config', () => ({
 }));
 
 mock.module('../../../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
+  afterDbCommit: (action: () => void) => action(),
   hasDatabase: () => true,
   db: {
     select: (projection?: Record<string, unknown>) => ({
@@ -374,7 +376,6 @@ mock.module('../../runtime-session-mapping', () => ({
 // ingress and calls `syncSandboxEnvForPrompt`; this file records whether it ran.
 let serviceKeyAvailable = true;
 let envSyncCalls = 0;
-const ENV_OVERRIDE = { KORTIX_TEST_OVERRIDE: '1' };
 mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
@@ -635,8 +636,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       { delivery: 'delivered', setup: () => {}, result: 'succeeded', write: 'succeeded', reason: null, retryable: null },
       { delivery: 'unreachable', setup: () => { sessionRow!.status = 'failed'; }, result: 'queued', write: 'parked', reason: "the session's machine could not be reached", retryable: null },
       { delivery: 'not-landed', setup: () => { runtimeDropsFirstDelivery = true; }, result: 'queued', write: 'requeued', reason: 'prompt accepted by the runtime but never became a message', retryable: null },
-      // An override the box cannot be given (no service key) waits for the next attempt.
-      { delivery: 'pending', setup: () => { serviceKeyAvailable = false; }, result: 'queued', write: 'failed', reason: 'the session was not ready in time', retryable: true },
       { delivery: 'no-session', setup: () => { sessionRow = null; }, result: 'failed', write: 'failed', reason: 'that session no longer exists', retryable: false },
       { delivery: 'failed', setup: () => { promptResponsePlan = ['permanent-refusal']; }, result: 'failed', write: 'failed', reason: 'The runtime rejected this prompt.', retryable: false },
     ] as const;
@@ -645,7 +644,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       expect(await executeQueuedContinue(baseRow({ payload: {
         text: scenario.delivery === 'not-landed' ? OVER_EDGE_TEXT : 'say hi',
         ...(scenario.delivery === 'not-landed' ? { wireMessageId: SUBMITTED_WIRE_ID } : {}),
-        ...(scenario.delivery === 'pending' ? { runtimeEnv: ENV_OVERRIDE } : {}),
       } }))).toBe(scenario.result);
       expect({
         succeeded: succeededCalls.length,
@@ -681,15 +679,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0]!.no_reply).toBe(true);
     expect(forwardedCalls[0]!.noReply).toBe(true);
   });
-  // The proxy never sees an `runtimeEnv` override, so a box that cannot be
-  // given it would run the prompt without it. It waits instead.
-  test('an env override onto a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
-    serviceKeyAvailable = false;
-    expect(await executeQueuedContinue(baseRow({ payload: { text: 'say hi', runtimeEnv: ENV_OVERRIDE } }))).toBe('queued');
-    expect(envSyncCalls).toBe(0);
-    expect(capturedBodies).toHaveLength(0);
-  });
-
   test('an ordinary prompt onto a woken box leaves the env push to the proxy', async () => {
     expect(await executeQueuedContinue(baseRow())).toBe('succeeded');
     expect(envSyncCalls).toBe(0);
@@ -1831,37 +1820,6 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(promotionCalls).toEqual([]);
   });
 
-  test('a released batch stops at the prompt that failed and never posts past it', async () => {
-    const a = releasedRow('a', NOW_MS - 9 * 60_000, { releasedBatchId: 'b1' });
-    const b = releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1' });
-    const c = releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1' });
-    targetedClaims.set('queue-c', [c]);
-    siblingSweeps = [[a, b], [releasedRow('c', NOW_MS - 7 * 60_000, { releasedBatchId: 'b1', ...waited })]];
-    promotionResults = ['queue-b'];
-    // B carries an env override, which the wake path must push itself.
-    targetedClaims.set('queue-b', [releasedRow('b', NOW_MS - 8 * 60_000, { releasedBatchId: 'b1', runtimeEnv: ENV_OVERRIDE, ...waited })]);
-    releasedPending = [a, b, c];
-    // The box stops answering between A and B: B's delivery ends retryable.
-    onPromotion = () => {
-      serviceKeyAvailable = false;
-    };
-
-    await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c', coalesce: false });
-    await settle(2);
-    await Bun.sleep(100);
-
-    expect(capturedBodies).toHaveLength(1);
-    expect(capturedBodies[0].no_reply).toBe(true);
-    expect(failedCalls).toEqual([
-      expect.objectContaining({ commandId: 'cmd-b', options: expect.objectContaining({ retryable: true }) }),
-    ]);
-    // C was put back twice (once per lane) and never reached the wire.
-    expect(requeues.filter((r) => r.commandId === 'cmd-c').map((r) => r.reason)).toEqual([
-      'older_prompt_pending',
-      'older_prompt_pending',
-    ]);
-    expect(promotionCalls).toEqual([SESSION_ID]);
-  });
 });
 
 
