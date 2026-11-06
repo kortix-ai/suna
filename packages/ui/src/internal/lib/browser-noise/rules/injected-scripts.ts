@@ -318,4 +318,18 @@ export const INJECTED_SCRIPT_RULES: readonly NoiseRule[] = [
   { id: 'googletag-undefined', appliesTo: 'both', match: isGoogletagUndefinedNoise },
   { id: 'redeclared-injected-identifier', appliesTo: 'both', match: isRedeclaredInjectedIdentifierNoise },
   { id: 'vercel-live-feedback', appliesTo: 'both', match: isVercelLiveFeedbackNoise },
+  {
+    // KRTX-4387: an injected `tracking_script.js` (no Kortix code, GTM tag or
+    // vendor loads it) asks Closure's jsloader for the gapi client. The CSP
+    // blocks apis.google.com and the loader throws `CustomError`. Require the
+    // exact message and the injected frame; keep any first-party frame.
+    id: 'injected-gapi-jsloader',
+    appliesTo: 'sentry',
+    match: ({ message, frames }) =>
+      /^Jsloader error \(code #\d+\): Error while loading script https:\/\/apis\.google\.com\//.test(
+        normalizeString(message),
+      ) &&
+      !frames.some((frame) => isFirstPartyResolvedSource(frame.filename)) &&
+      frames.some((frame) => frame.filename === 'app:///tracking_script.js'),
+  },
 ];
