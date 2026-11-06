@@ -100,6 +100,11 @@ async function i2(runs: DoneRun[]): Promise<InvariantResult> {
        WHERE a.project_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(projectIds)}::jsonb)) AND r.account_id <> a.account_id`],
     ['app_volumes', sql`SELECT count(*)::int AS n FROM kortix.app_volumes v JOIN kortix.apps a USING (app_id)
        WHERE a.project_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(projectIds)}::jsonb)) AND v.account_id <> a.account_id`],
+    ['oauth_clients.app_id', sql`SELECT count(*)::int AS n FROM kortix.oauth_clients oc JOIN kortix.apps a USING (app_id)
+       WHERE a.project_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(projectIds)}::jsonb)) AND oc.account_id <> a.account_id`],
+    ['oauth_access_tokens.app_client', sql`SELECT count(*)::int AS n FROM kortix.oauth_access_tokens t JOIN kortix.oauth_clients oc USING (client_id)
+       JOIN kortix.apps a USING (app_id)
+       WHERE a.project_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(projectIds)}::jsonb)) AND t.account_id <> a.account_id`],
     ['role_assignments', sql`SELECT count(*)::int AS n FROM kortix.role_assignments ra JOIN kortix.projects p ON p.project_id = ra.scope_id
        WHERE ra.scope_type = 'project' AND ra.scope_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(projectIds)}::jsonb)) AND ra.account_id <> p.account_id`],
     // The project default model is keyed by scope_key (its project_id is NULL).

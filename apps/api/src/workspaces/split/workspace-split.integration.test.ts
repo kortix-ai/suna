@@ -22,6 +22,8 @@ import {
   accountSecretResources,
   accounts,
   apps,
+  oauthAccessTokens,
+  oauthClients,
   appDeployments,
   appSiteBlobs,
   appSiteFiles,
@@ -216,6 +218,14 @@ async function seed(storage: ReturnType<typeof memoryStorage>): Promise<void> {
   await db.insert(appSiteBlobs).values({ accountId: LEGACY, sha256: SHA, sizeBytes: 4 });
   await db.insert(appSiteFiles).values({ deploymentId: deployment!.deploymentId, accountId: LEGACY, path: 'index.html', sha256: SHA, sizeBytes: 4, contentType: 'text/html' });
   storage.objects.set(`${LEGACY}/${SHA}`, 'site');
+  // The App's implicit OAuth client and one viewer token it minted.
+  const [client] = await db.insert(oauthClients).values({
+    clientSecretHash: `h_${crypto.randomUUID()}`, name: 'Kortix App — Split site', accountId: LEGACY, appId: app!.appId,
+  }).returning();
+  await db.insert(oauthAccessTokens).values({
+    tokenHash: `h_${crypto.randomUUID()}`, clientId: client!.clientId, userId: OWNER, accountId: LEGACY,
+    expiresAt: new Date(Date.now() + 3_600_000),
+  });
 }
 
 async function cleanup(): Promise<void> {
@@ -380,6 +390,12 @@ withDb('workspace split', () => {
     // The static site: rows and object under the new account.
     expect(await db.select({ accountId: appSiteFiles.accountId }).from(appSiteFiles).where(eq(appSiteFiles.sha256, SHA))).toEqual([{ accountId: target }]);
     expect(storage.objects.get(`${target}/${SHA}`)).toBe('site');
+    // The App's implicit OAuth client and its tokens follow the App.
+    const [appClient] = await db.select({ accountId: oauthClients.accountId, clientId: oauthClients.clientId }).from(oauthClients)
+      .where(eq(oauthClients.name, 'Kortix App — Split site'));
+    expect(appClient?.accountId).toBe(target);
+    expect((await db.select({ accountId: oauthAccessTokens.accountId }).from(oauthAccessTokens).where(eq(oauthAccessTokens.clientId, appClient!.clientId))))
+      .toEqual([{ accountId: target }]);
 
     // Billing (C6): a split-off of a free account goes on Free, keeps the
     // free-credit eligibility as a one-time exception, and gets one grant.

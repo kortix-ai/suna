@@ -148,6 +148,9 @@ export const PROJECT_TRANSFER_APP_TABLES: Readonly<Record<string, string>> = {
   app_runtimes: 'moved by app_deployments.app_id → apps.project_id',
   app_volumes: 'moved by app_id → apps.project_id',
   app_site_blobs: 'copied for the moved Apps\' sha256 set; source rows stay for reclaimAppSiteBlobs',
+  oauth_clients: 'the implicit client of each moved App (oauth_clients.app_id), so the source never lists or deletes it',
+  oauth_authorization_codes: 'the codes of those clients',
+  oauth_access_tokens: 'the viewer tokens of those clients',
 };
 
 /**
@@ -614,4 +617,13 @@ async function moveAppHostingRows(tx: TransferTx, projectId: string, fromAccount
     WHERE account_id = ${fromAccountId} AND deployment_id IN (${deployments})`);
   await tx.execute(sql`UPDATE kortix.app_volumes SET account_id = ${toAccountId}
     WHERE account_id = ${fromAccountId} AND app_id IN (SELECT app_id FROM kortix.apps WHERE project_id = ${projectId})`);
+  // The App's implicit OAuth client (and what it minted) belongs to the App.
+  const appClients = sql`SELECT client_id FROM kortix.oauth_clients
+    WHERE account_id = ${fromAccountId} AND app_id IN (SELECT app_id FROM kortix.apps WHERE project_id = ${projectId})`;
+  await tx.execute(sql`UPDATE kortix.oauth_access_tokens SET account_id = ${toAccountId}
+    WHERE account_id = ${fromAccountId} AND client_id IN (${appClients})`);
+  await tx.execute(sql`UPDATE kortix.oauth_authorization_codes SET account_id = ${toAccountId}
+    WHERE account_id = ${fromAccountId} AND client_id IN (${appClients})`);
+  await tx.execute(sql`UPDATE kortix.oauth_clients SET account_id = ${toAccountId}, updated_at = now()
+    WHERE client_id IN (${appClients})`);
 }
