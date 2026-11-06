@@ -235,6 +235,7 @@ async function cleanup(): Promise<void> {
   await db.delete(workspaceSplitRuns);
   await db.delete(appSiteBlobs).where(inArray(appSiteBlobs.accountId, all));
   await db.delete(creditPurchases).where(inArray(creditPurchases.accountId, all));
+  await db.execute(sql`DELETE FROM kortix.enterprise_contracts WHERE account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(all)}::jsonb))`);
   await db.execute(sql`DELETE FROM kortix.credit_ledger WHERE account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(all)}::jsonb))`);
   await db.delete(creditAccounts).where(inArray(creditAccounts.accountId, all));
   await db.delete(accounts).where(inArray(accounts.accountId, all));
@@ -584,6 +585,45 @@ withDb('workspace split', () => {
       await planWorkspaceSplits({ accountIds: [LEGACY] });
       expect([free, (await runFor(MOVED))?.phase]).toEqual([free, 'planned']);
     }
+  });
+
+  test('a Free account that only bought credits, or holds an enterprise contract, is held until an owner confirms; its split-offs get Free, never a comp (D3)', async () => {
+    const sources: { name: string; setup: () => Promise<void> }[] = [
+      { name: 'top-up only', setup: async () => {
+        await db.insert(creditAccounts).values({ accountId: LEGACY, tier: 'free', lifetimePurchased: '25', balance: '25' });
+      } },
+      { name: 'enterprise contract on Free', setup: async () => {
+        await db.insert(creditAccounts).values({ accountId: LEGACY, tier: 'free' });
+        await db.execute(sql`INSERT INTO kortix.enterprise_contracts (account_id, status, license_usd, credits_usd, collection)
+          VALUES (${LEGACY}, 'active', 1000, 500, 'manual')`);
+      } },
+    ];
+    for (const source of sources) {
+      await db.delete(workspaceSplitRuns);
+      await db.execute(sql`DELETE FROM kortix.enterprise_contracts WHERE account_id = ${LEGACY}`);
+      await db.delete(creditAccounts).where(eq(creditAccounts.accountId, LEGACY));
+      await source.setup();
+      // No auto split: the whole account waits for its owner.
+      await planWorkspaceSplits({ accountIds: [LEGACY] });
+      expect([source.name, (await runFor(MOVED))?.phase, (await runFor(OLDEST))?.phase]).toEqual([source.name, 'held', 'held']);
+      expect((await runFor(MOVED))?.plan.held_reason).toBe('account_has_billing');
+      const tick = await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage, sendEmail: mailStub().sendEmail } });
+      expect([source.name, (await accountOfProject(MOVED))?.accountId]).toEqual([source.name, LEGACY]);
+      expect(tick.outcomes.done).toBe(0);
+      // The dry-run report counts what each split-off gets: Free.
+      expect((await runFor(MOVED))?.plan.account).toMatchObject({ split_off_billing: { kind: 'free', comped_until: null } });
+    }
+    // The owner confirms: the account splits, the keeper keeps the purchased
+    // credits and the contract, and each split-off gets Free with its free credits.
+    await confirmWorkspaceSplitKeeper(LEGACY, KEEPER);
+    expect((await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage, sendEmail: mailStub().sendEmail } })).outcomes.done).toBe(2);
+    for (const projectId of [MOVED, OLDEST]) {
+      const run = (await runFor(projectId))!;
+      expect([run.phase, (run.plan.billing as { kind: string }).kind]).toEqual(['done', 'free']);
+      const [wallet] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, run.toAccountId!));
+      expect([wallet?.tier, wallet?.compPlanUntil ?? null, wallet?.freeCreditsEligible]).toEqual(['free', null, true]);
+    }
+    await db.execute(sql`DELETE FROM kortix.enterprise_contracts WHERE account_id = ${LEGACY}`);
   });
 
   test('an account with an identity provider (SSO or a SCIM token) is held, keeper confirmed or not', async () => {
