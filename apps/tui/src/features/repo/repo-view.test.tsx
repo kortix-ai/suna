@@ -265,3 +265,165 @@ describe('<RepoView/>', () => {
     renderer.destroy();
   });
 });
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+// The picker's `<input>` owns the letter keys, so the picker moves with arrows.
+async function pickFeatureBranch(
+  input: {
+    pressKey: (key: string) => void;
+    pressArrow: (dir: 'down') => void;
+    pressEnter: () => void;
+  },
+  flush: () => Promise<void>,
+): Promise<void> {
+  await press(input, flush, 'b');
+  await act(async () => {
+    input.pressArrow('down');
+  });
+  await settle(flush);
+  await pressEnter(input, flush);
+}
+
+describe('<RepoView/> generation guard', () => {
+  test('a directory read that lands after the ref changed is dropped', async () => {
+    const calls = fresh();
+    const stale = deferred<{
+      nodes: { name: string; path: string; type: 'file' }[];
+      truncated: boolean;
+    }>();
+    const base = loaders(calls);
+    const lazy = loaders(calls, {
+      listDirectory: (path, ref) => {
+        if (ref === undefined) {
+          calls.listed.push([path, ref]);
+          return stale.promise;
+        }
+        return base.listDirectory(path, ref);
+      },
+    });
+    const { captureCharFrame, flush, mockInput, renderer } = await testRender(
+      element(calls, { loaders: lazy }),
+      SIZE,
+    );
+    await settle(flush, 120);
+    await pickFeatureBranch(mockInput, flush);
+    expect(calls.listed.at(-1)).toEqual(['/', 'feature-x']);
+    await act(async () => {
+      stale.resolve({
+        truncated: false,
+        nodes: [{ name: 'STALE.md', path: '/STALE.md', type: 'file' }],
+      });
+    });
+    await settle(flush, 120);
+    const frame = captureCharFrame();
+    expect(frame).toContain('branch feature-x');
+    expect(frame).toContain('README.md');
+    expect(frame).not.toContain('STALE.md');
+    renderer.destroy();
+  });
+
+  test('a file read that lands after the ref changed is dropped', async () => {
+    const calls = fresh();
+    const stale = deferred<{ content: string }>();
+    const slow = loaders(calls, {
+      readFile: (path, ref) => {
+        calls.read.push([path, ref]);
+        return stale.promise;
+      },
+    });
+    const { captureCharFrame, flush, mockInput, renderer } = await testRender(
+      element(calls, { loaders: slow }),
+      SIZE,
+    );
+    await settle(flush, 120);
+    await press(mockInput, flush, 'j'); // src -> README.md
+    await pressEnter(mockInput, flush);
+    expect(calls.read).toEqual([['/README.md', undefined]]);
+    await pickFeatureBranch(mockInput, flush);
+    await act(async () => {
+      stale.resolve({ content: 'STALE CONTENT\n' });
+    });
+    await settle(flush, 120);
+    const frame = captureCharFrame();
+    expect(frame).toContain('branch feature-x');
+    expect(frame).not.toContain('STALE CONTENT');
+    renderer.destroy();
+  });
+
+  test('a history read that lands after the ref changed is dropped', async () => {
+    const calls = fresh();
+    const stale = deferred<CommitRow[]>();
+    const slow = loaders(calls, {
+      history: (path, ref) => {
+        calls.history.push([path, ref]);
+        return stale.promise;
+      },
+    });
+    const { captureCharFrame, flush, mockInput, renderer } = await testRender(
+      element(calls, { loaders: slow }),
+      SIZE,
+    );
+    await settle(flush, 120);
+    await press(mockInput, flush, 'j');
+    await press(mockInput, flush, 'h');
+    expect(calls.history).toEqual([['README.md', undefined]]);
+    expect(captureCharFrame()).toContain('history · README.md');
+    await pickFeatureBranch(mockInput, flush);
+    expect(captureCharFrame()).not.toContain('history · README.md');
+    await act(async () => {
+      stale.resolve(COMMITS);
+    });
+    await settle(flush, 120);
+    const frame = captureCharFrame();
+    expect(frame).toContain('branch feature-x');
+    expect(frame).not.toContain('history · README.md');
+    expect(frame).not.toContain('Add readme');
+    renderer.destroy();
+  });
+});
+
+describe('<RepoView/> history target', () => {
+  test('h on a file row reads that file at the current ref', async () => {
+    const calls = fresh();
+    const { captureCharFrame, flush, mockInput, renderer } = await testRender(element(calls), SIZE);
+    await settle(flush, 120);
+    await pickFeatureBranch(mockInput, flush);
+    await press(mockInput, flush, 'j'); // src -> README.md
+    await press(mockInput, flush, 'h');
+    expect(calls.history).toEqual([['README.md', 'feature-x']]);
+    expect(captureCharFrame()).toContain('history · README.md');
+    renderer.destroy();
+  });
+
+  test('h on a directory row reads that directory at the current ref', async () => {
+    const calls = fresh();
+    const { captureCharFrame, flush, mockInput, renderer } = await testRender(element(calls), SIZE);
+    await settle(flush, 120);
+    await pickFeatureBranch(mockInput, flush);
+    await press(mockInput, flush, 'h');
+    expect(calls.history).toEqual([['src', 'feature-x']]);
+    expect(captureCharFrame()).toContain('history · src');
+    renderer.destroy();
+  });
+
+  test('h with nothing selected reads the whole repository', async () => {
+    const calls = fresh();
+    const empty = loaders(calls, { listDirectory: async () => ({ nodes: [], truncated: false }) });
+    const { captureCharFrame, flush, mockInput, renderer } = await testRender(
+      element(calls, { loaders: empty }),
+      SIZE,
+    );
+    await settle(flush, 120);
+    await press(mockInput, flush, 'h');
+    expect(calls.history).toEqual([[null, undefined]]);
+    expect(captureCharFrame()).toContain('history · repository');
+    renderer.destroy();
+  });
+});

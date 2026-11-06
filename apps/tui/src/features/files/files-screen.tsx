@@ -71,8 +71,8 @@ export interface FileLoaders {
 }
 
 export interface FilesScreenProps {
-  projectId: string;
-  sessionId: string;
+  projectId: string | null;
+  sessionId: string | null;
   focused: boolean;
   width: number;
   height: number;
@@ -80,7 +80,7 @@ export interface FilesScreenProps {
   /** The host's `useSession` result. Gates the reads on the runtime phase. */
   session?: SessionState;
   /** A file to open on mount (`/shown` → a shown file). */
-  reveal?: string | null;
+  target?: string | null;
   onToast?(message: string, kind?: 'info' | 'error'): void;
 }
 
@@ -99,7 +99,14 @@ const DRIVE_READS: DriveReads = {
   readFile: async (driveId, path) => (await readDriveFile(driveId, path)).blob,
 };
 
-export function FilesScreen({
+export function FilesScreen(props: FilesScreenProps) {
+  if (!props.projectId || !props.sessionId) {
+    return <text fg={theme.faint}>Open a session to browse its files.</text>;
+  }
+  return <FilesScreenBody {...props} projectId={props.projectId} sessionId={props.sessionId} />;
+}
+
+function FilesScreenBody({
   projectId,
   sessionId,
   focused,
@@ -107,9 +114,9 @@ export function FilesScreen({
   height,
   onBack,
   session,
-  reveal = null,
+  target: reveal = null,
   onToast,
-}: FilesScreenProps) {
+}: FilesScreenProps & { projectId: string; sessionId: string }) {
   // The folders the session mounts under `/drives`. The hook is off while the
   // project's `drives` flag is off, so the tree is then exactly the sandbox.
   // React Query keeps the same array while a poll returns the same mounts, so

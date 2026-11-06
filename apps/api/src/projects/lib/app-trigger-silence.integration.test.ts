@@ -14,6 +14,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { insertIntoView } from '../../__tests__/helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from '../../__tests__/helpers/integration-fixtures';
+import type { ParsedManifest } from '../triggers';
 
 const { checkAppTriggerSilence, silenceMessage } = await import('./app-trigger-silence');
 const { ingestAppEvents } = await import('./app-events');
@@ -145,4 +146,41 @@ test('kortix.heartbeat counts as heard and ends the alert, but is never stored; 
   expect(added.map((row) => [(row.line as { name: string }).name, row.slug])).toEqual([['kortix.app.recovered', '']]);
   expect((await runtime('quiet')).alertFailingSince).toBeNull();
   expect((await inbox('quiet')).map((r) => r.kind)).toEqual(['automation_failed', 'automation_recovered', 'automation_failed', 'automation_recovered']);
+});
+
+test('an app trigger saved through the manifest keeps its window and still raises its silence alert', async () => {
+  const { draftToSpec, parseTriggerDraft, specToBody } = await import('./trigger-draft');
+  const { upsertTriggerInManifest } = await import('./trigger-manifest');
+  const { extractTriggers } = await import('../triggers');
+  const { reconcileProjectTriggerRuntime } = await import('../trigger-runtime-catalog');
+
+  // The manifest entry an edited app trigger has, with the silence window set.
+  const manifest: ParsedManifest = {
+    raw: {
+      triggers: [{
+        slug: 'saved', name: 'Saved watch', type: 'app', agent: 'default', enabled: true,
+        app: 'status-watch', prompt: 'Status: {{ event.data.status }}', expect_event_within: '10m',
+      }],
+    },
+    path: 'kortix.yaml',
+  };
+  const before = extractTriggers(manifest);
+  expect(before.errors).toEqual([]);
+
+  // An edit through the trigger UI: specToBody → parseTriggerDraft → the manifest write.
+  const draft = parseTriggerDraft({ ...specToBody(before.specs[0]!), name: 'Saved watcher' }, { existingSlug: 'saved' });
+  if ('error' in draft) throw new Error(draft.error);
+  const { specs, errors } = extractTriggers(upsertTriggerInManifest(manifest, draftToSpec(draft)));
+  expect(errors).toEqual([]);
+  await reconcileProjectTriggerRuntime(project.project_id, specs);
+
+  const row = await runtime('saved');
+  expect(row.scheduleSpec).toMatchObject({ app: 'status-watch', expectEventWithinSeconds: 600 });
+  // Written 120 min ago and heard nothing since: past its 10 min window.
+  await db.update(projectTriggerRuntime).set({ updatedAt: new Date(Date.now() - 120 * MIN) })
+    .where(and(eq(projectTriggerRuntime.projectId, project.project_id), eq(projectTriggerRuntime.slug, 'saved')));
+
+  await checkAppTriggerSilence(new Date(), true);
+  expect((await runtime('saved')).alertSource).toBe('silence');
+  expect((await inbox('saved')).map((r) => r.kind)).toEqual(['automation_failed']);
 });

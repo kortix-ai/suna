@@ -28,7 +28,7 @@ export interface ProvidersScreenProps {
   width: number;
   height: number;
   /** Open this provider's sheet first (`/providers openai`). */
-  initialProviderId?: string;
+  target?: string | null;
   onBack(): void;
   onToast(message: string, kind?: 'info' | 'error'): void;
   /** True while Esc is ours: the sheet is open, a search or a flow is active. */
@@ -50,7 +50,7 @@ function ProvidersScreenBody({
   focused,
   width,
   height,
-  initialProviderId,
+  target: initialProviderId,
   onBack,
   onToast,
   onHoldsBack,
