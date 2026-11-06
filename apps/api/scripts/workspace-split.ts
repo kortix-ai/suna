@@ -15,6 +15,13 @@
  *   reopen <run_id>                      plan a reversed run again (the next apply splits it into a fresh account)
  *   confirm-keeper <account_id> <project_id>
  *                                        an owner's keeper choice; releases a held account
+ *   fill <account_id>... | fill --null [--limit <n>]
+ *                                        stamp workspace_id on an account's expand rows
+ *                                        (kortix.workspace_fill_account). --null finds the
+ *                                        accounts with a live workspace id whose rows are
+ *                                        still NULL (an account that left split_pending
+ *                                        outside the split runner, e.g. by a transfer);
+ *                                        the Release 2 gate (design.md §8, R2a) runs it
  *
  * The worker's mode is WORKSPACE_SPLIT_MODE, or at runtime:
  *   INSERT INTO kortix.platform_settings (key, value) VALUES ('workspace_split', '{"mode":"apply"}')
@@ -70,14 +77,47 @@ async function main(): Promise<number> {
       await reopenWorkspaceSplitRun(args[0]);
       console.log('reopened');
       return 0;
+    case 'fill': {
+      const accounts = args[0] === '--null'
+        ? await accountsWithNullWorkspaceIds(Number(args[args.indexOf('--limit') + 1]) || 500)
+        : args;
+      if (!accounts.length && args[0] !== '--null') break;
+      let rows = 0;
+      for (const accountId of accounts) {
+        const [row] = await db.execute<{ n: number }>(sql`SELECT kortix.workspace_fill_account(${accountId}::uuid) AS n`);
+        rows += Number(row?.n ?? 0);
+      }
+      console.log(JSON.stringify({ accounts: accounts.length, rows }, null, 2));
+      return 0;
+    }
     case 'confirm-keeper':
       if (!args[0] || !args[1]) break;
       await confirmWorkspaceSplitKeeper(args[0], args[1]);
       console.log('confirmed');
       return 0;
   }
-  console.error('usage: workspace-split.ts status | plan [--account <id>] | report | apply <run_id> | repair <run_id> | reverse <run_id> | reopen <run_id> | confirm-keeper <account_id> <project_id>');
+  console.error('usage: workspace-split.ts status | plan [--account <id>] | report | apply <run_id> | repair <run_id> | reverse <run_id> | reopen <run_id> | confirm-keeper <account_id> <project_id> | fill <account_id>... | fill --null [--limit <n>]');
   return 2;
+}
+
+/**
+ * Accounts that have a live workspace id but expand rows still NULL, up to
+ * `limit`: a sample of each expand table's NULL rows (one indexed probe per
+ * table is not available in Release 1, so each table is read in a bounded
+ * scan), kept when kortix.workspace_id_of_account answers.
+ */
+async function accountsWithNullWorkspaceIds(limit: number): Promise<string[]> {
+  const [tables] = await db.execute<{ names: string[] }>(sql`SELECT kortix.workspace_expand_tables() AS names`);
+  const found = new Set<string>();
+  for (const table of tables?.names ?? []) {
+    if (found.size >= limit) break;
+    const rows = await db.execute<{ account_id: string }>(sql`
+      SELECT DISTINCT t.account_id::text FROM (
+        SELECT account_id FROM kortix.${sql.raw(table)} WHERE workspace_id IS NULL AND account_id IS NOT NULL LIMIT ${limit * 20}
+      ) t WHERE kortix.workspace_id_of_account(t.account_id) IS NOT NULL LIMIT ${limit - found.size}`);
+    for (const row of rows) found.add(row.account_id);
+  }
+  return [...found];
 }
 
 process.exit(await main());

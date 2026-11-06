@@ -7,11 +7,12 @@
 --   kortix.account_secret_grants
 --   kortix.account_sso_group_mappings
 --   kortix.account_sso_providers
---   kortix.api_keys
 --   kortix.app_runtimes
 --   kortix.app_site_blobs
 --   kortix.app_site_files
 -- At most 7 small tables per file, so the file waits for small locks only.
+-- kortix.api_keys is hot (every API-key request reads it): it has its own file,
+-- 20261106061650000_workspace_id_api_keys.sql, so no other lock wait holds it.
 -- Existing rows stay NULL here; 20261106062000000_workspace_id_fill.concurrent.ts
 -- fills them in batches. No index on workspace_id in Release 1: nothing reads it
 -- until Release 2.
@@ -50,12 +51,6 @@ ALTER TABLE "kortix"."account_sso_providers" ADD COLUMN IF NOT EXISTS "workspace
 
 CREATE OR REPLACE TRIGGER account_sso_providers_workspace_id_stamp
   BEFORE INSERT OR UPDATE OF account_id ON "kortix"."account_sso_providers"
-  FOR EACH ROW EXECUTE FUNCTION kortix.workspace_id_stamp();
-
-ALTER TABLE "kortix"."api_keys" ADD COLUMN IF NOT EXISTS "workspace_id" uuid;
-
-CREATE OR REPLACE TRIGGER api_keys_workspace_id_stamp
-  BEFORE INSERT OR UPDATE OF account_id ON "kortix"."api_keys"
   FOR EACH ROW EXECUTE FUNCTION kortix.workspace_id_stamp();
 
 ALTER TABLE "kortix"."app_runtimes" ADD COLUMN IF NOT EXISTS "workspace_id" uuid;
