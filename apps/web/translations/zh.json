@@ -1442,7 +1442,7 @@
       "keyCopied": "API 密钥已复制",
       "done": "完成",
       "createTitle": "创建 API 密钥",
-      "createDescription": "为 CLI、脚本或 CI 作业创建个人密钥。",
+      "createDescription": "为 CLI、脚本或 CI 作业创建密钥。",
       "name": "名称",
       "namePlaceholder": "例如，笔记本电脑 CLI",
       "nameHint": "使用能说明此密钥使用位置的名称。",

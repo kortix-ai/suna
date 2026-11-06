@@ -1442,7 +1442,7 @@
       "keyCopied": "API キーをコピーしました",
       "done": "完了",
       "createTitle": "API キーを作成",
-      "createDescription": "CLI、スクリプト、CI ジョブ用の個人キーを作成します。",
+      "createDescription": "CLI、スクリプト、CI ジョブ用のキーを作成します。",
       "name": "名前",
       "namePlaceholder": "例：ノート PC の CLI",
       "nameHint": "このキーを使用する場所が分かる名前を指定してください。",

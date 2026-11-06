@@ -1442,7 +1442,7 @@
       "keyCopied": "API-Schlüssel kopiert",
       "done": "Fertig",
       "createTitle": "API-Schlüssel erstellen",
-      "createDescription": "Erstelle einen persönlichen Schlüssel für die CLI, ein Skript oder einen CI-Job.",
+      "createDescription": "Erstelle einen Schlüssel für die CLI, ein Skript oder einen CI-Job.",
       "name": "Name",
       "namePlaceholder": "Zum Beispiel Laptop-CLI",
       "nameHint": "Wähle einen Namen, der den Einsatzort dieses Schlüssels beschreibt.",

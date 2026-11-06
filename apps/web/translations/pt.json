@@ -1442,7 +1442,7 @@
       "keyCopied": "Chave de API copiada",
       "done": "Concluído",
       "createTitle": "Criar chave de API",
-      "createDescription": "Crie uma chave pessoal para a CLI, um script ou um trabalho de CI.",
+      "createDescription": "Crie uma chave para a CLI, um script ou um job de CI.",
       "name": "Nome",
       "namePlaceholder": "Por exemplo, CLI do notebook",
       "nameHint": "Use um nome que identifique onde você usará esta chave.",

@@ -960,7 +960,7 @@ const catalog = {
       "keyCopied": "API key copied",
       "done": "Done",
       "createTitle": "Create API key",
-      "createDescription": "Create a personal key for the CLI, a script, or a CI job.",
+      "createDescription": "Create a key for the CLI, a script, or a CI job.",
       "name": "Name",
       "namePlaceholder": "For example, Laptop CLI",
       "nameHint": "Use a name that identifies where you will use this key.",
