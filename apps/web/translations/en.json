@@ -25093,7 +25093,9 @@
       "discardDrawingTitle": "Discard this drawing?",
       "discardDrawingHint": "Your strokes are not saved. This cannot be undone.",
       "discardDrawing": "Discard",
-      "keepDrawing": "Keep drawing"
+      "keepDrawing": "Keep drawing",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "insertMedia": "Image or video…",
     "diagram": "Diagram",
