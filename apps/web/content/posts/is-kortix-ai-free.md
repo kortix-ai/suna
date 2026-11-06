@@ -16,13 +16,13 @@ Kortix is open source. Read it, fork it, audit it ([Kortix on GitHub](https://gi
 
 ## What the Free plan includes
 
-The cloud Free plan is $0 and asks for no card. It includes 500 credits a month and 1 workspace, and it runs on your own provider keys or the ChatGPT subscription you already pay for ([Kortix pricing](https://kortix.com/pricing), checked October 2026). Managed models are a Credits feature: on Free, every Kortix-managed model returns `plan_upgrade_required`, and the monthly credits pay for compute and your own models only ([plans and credits](https://kortix.com/docs/credits), checked October 2026). On Credits, the balance pays for the agent computer and for Kortix models, which are DeepSeek and GLM, with zero data retention at the model provider. The grant refills every month. It buys agent-computer time the same way a paid balance does.
+The cloud Free plan is $0 and asks for no card. It includes 500 credits a month on your first workspace, and it runs on your own provider keys or the ChatGPT subscription you already pay for ([Kortix pricing](https://kortix.com/pricing), checked October 2026). Managed models are a Credits feature: on Free, every Kortix-managed model returns `plan_upgrade_required`, and the monthly credits pay for compute and your own models only ([plans and credits](https://kortix.com/docs/credits), checked October 2026). On Credits, the balance pays for the agent computer and for Kortix models, which are DeepSeek and GLM, with zero data retention at the model provider. The grant refills every month. It buys agent-computer time the same way a paid balance does.
 
 ## Credits buy work, not headcount
 
 The paid plan is Credits. $50 buys 5,000 credits a month at 100 credits per dollar. A larger monthly amount buys more credits at that rate, never a cheaper credit ([plans and credits](https://kortix.com/pricing), checked October 2026). One wallet serves the whole account. Members are unlimited and adding one does not change the bill.
 
-Unused plan credits roll over for one month, and top-ups never expire. A quiet month is not a loss. The paid plan also raises the project ceiling to 200, lifts model rate limits, and adds email support.
+Unused plan credits roll over for one month, and top-ups never expire. A quiet month is not a loss. The paid plan also lifts model rate limits and adds email support.
 
 ## What the meter counts
 
@@ -58,7 +58,7 @@ At zero, agents pause and triggers stop starting sessions. Starting a session or
 
 ## How to choose a starting point
 
-Start on Free if you want to give one project a real task and watch what the agent does with it. Move to Credits when one project and the 500 credits a month no longer cover the work; the plan raises the grant, lifts the project ceiling to 200 and turns managed models on. Self-host when the requirement is structural. The control plane, the database, the files and the secrets have to sit on disks you control, the instance must sit inside your VPC, or the platform has to be auditable line by line. Agent sessions still run on a rented Platinum sandbox outside that server. Where the data itself has to stay on your network, that is an Enterprise conversation rather than a self-host install. Free and Credits share one account, so the move between them is a billing change.
+Start on Free if you want to give one workspace a real task and watch what the agent does with it. Move to Credits when the 500 credits a month no longer cover the work; the plan raises the grant, lifts model rate limits and turns managed models on. Self-host when the requirement is structural. The control plane, the database, the files and the secrets have to sit on disks you control, the instance must sit inside your VPC, or the platform has to be auditable line by line. Agent sessions still run on a rented Platinum sandbox outside that server. Where the data itself has to stay on your network, that is an Enterprise conversation rather than a self-host install. Free and Credits share one account, so the move between them is a billing change.
 
 Two related reads: [Kortix vs Claude Cowork](/blog/kortix-vs-claude-cowork) covers the hosted option this billing model is measured against, and [Getting started with open-source Kortix](/blog/getting-started-with-kortix) has the first three commands.
 

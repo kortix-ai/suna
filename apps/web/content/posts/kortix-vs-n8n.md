@@ -58,7 +58,7 @@ n8n has access control as well: instance roles, project roles, and credentials g
 
 Kortix sells the other unit. Each session gets its own isolated machine and branch, so a session that guesses wrong spends minutes on a computer you can watch, stop, and pay for by the second.
 
-The price is published in credits. Free is $0 with 500 credits a month, every feature and 1 workspace, on your own provider keys or ChatGPT subscription. Paid plans start at $50 a month, and every tier buys credits at 1 credit = $0.01: the $200 tier carries 20,000 credits a month, about 1,830 agent-computer hours. Members are unlimited and free on one shared pool ([Kortix pricing](https://kortix.com/pricing), checked October 2026).
+The price is published in credits. Free is $0 with 500 credits a month on your first workspace and every feature, on your own provider keys or ChatGPT subscription. Paid plans start at $50 a month, and every tier buys credits at 1 credit = $0.01: the $200 tier carries 20,000 credits a month, about 1,830 agent-computer hours. Members are unlimited and free on one shared pool ([Kortix pricing](https://kortix.com/pricing), checked October 2026).
 
 Credits buy machine time. The pricing page states the rate plainly: 11 credits is an hour of agent computer, billed per second, and a stopped machine costs nothing. A job that needs four attempts costs four attempts' worth of minutes, and you can cap the clock. Attempts are the number nobody can forecast. Minutes are the number you can.
 

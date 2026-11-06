@@ -6067,7 +6067,7 @@ const catalog = {
       "text8c712bd7c1ec": "sidebar customize reorder hide show navigation rows",
       "text3fa17bba73e1": "This workspace has no plan yet. Pick a monthly amount of credits to run sessions. Every member shares one pool.",
       "text6821e42be2c1": "Your wallet is empty, so sessions can’t run. Top up to keep compute and the latest AI models going — your plan is unaffected.",
-      "text79c0703d2226": "Free is $0: 500 credits a month on your first workspace and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole workspace. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
+      "text1554fd387f25": "Free is $0: 500 credits a month on your first workspace and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole workspace. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
       "text5dffd4db88c5": "Your plan, credits, and billing for this workspace.",
       "textad828837ddd8": "members member workspace access collaborators people teammates roster who can see permissions grant share",
       "textf651529d7e60": "workspace account members organization roster owners admins",

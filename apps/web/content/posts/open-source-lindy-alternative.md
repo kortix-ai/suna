@@ -108,7 +108,7 @@ What survives a budget cut is that tree. The prompt, the skills, the connector r
 
 Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. Models come from wherever you already buy them: any model provider with your own keys, or the ChatGPT plan you already pay for ([Kortix docs](https://kortix.com/docs/project/models)).
 
-Pricing works the same way. Free is $0 with 500 credits per month, every feature and 1 workspace, on the user's own provider keys or ChatGPT subscription. Managed models are on the Credits plan only. The paid plan is credits at one rate, 100 credits per dollar, so 5,000 credits a month costs $50. Members are unlimited and free, and the account shares one credit pool. Unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing), checked October 2026).
+Pricing works the same way. Free is $0 with 500 credits per month on your first workspace and every feature, on your own provider keys or ChatGPT subscription. Managed models are on the Credits plan only. The paid plan is credits at one rate, 100 credits per dollar, so 5,000 credits a month costs $50. Members are unlimited and free, and the account shares one credit pool. Unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing), checked October 2026).
 
 Thirty people on Lindy are thirty billed seats, whether the work grows or not. Thirty members on Kortix cost nothing, and the invoice tracks what the machine spent.
 

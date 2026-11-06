@@ -66,7 +66,7 @@ Connectors are how that sandbox reaches the rest of the company, and connector c
 
 ## What the other half costs
 
-CrewAI charges nothing for the framework. Kortix prices the sandbox a session runs on and sells it in credits: "It bills per second while it runs and costs nothing while it is stopped." Free is $0 with 500 credits per month, every feature and 1 workspace, on the user's own provider keys or ChatGPT subscription. Managed models are on the Credits plan only. Credits sell at one rate, 100 credits per dollar, so 5,000 credits a month costs $50. Members are unlimited and free, and the account shares one credit pool ([pricing](https://kortix.com/pricing), checked October 2026).
+CrewAI charges nothing for the framework. Kortix prices the sandbox a session runs on and sells it in credits: "It bills per second while it runs and costs nothing while it is stopped." Free is $0 with 500 credits per month on your first workspace and every feature, on your own provider keys or ChatGPT subscription. Managed models are on the Credits plan only. Credits sell at one rate, 100 credits per dollar, so 5,000 credits a month costs $50. Members are unlimited and free, and the account shares one credit pool ([pricing](https://kortix.com/pricing), checked October 2026).
 
 Hosting is separate from that. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. The same repository runs in all three places, and the code that reads the grants and starts the sandboxes sits in it. The runtime is yours to read.
 

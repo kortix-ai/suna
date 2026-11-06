@@ -30,7 +30,7 @@ Kortix is the open-source CompanyOS: your agents, their skills, your company mem
 
 Approval gates cover the other direction, the tool calls an agent makes while it works. Approval gates you set. Off until you set them. That default matters because a new workspace looks governed when it is not: the starter manifest has no `policy:` block, and the manifest reference lists `policy.default_mode` with a default of `allow_all`. A connector call that matches no rule runs. A team that installs Kortix and stops there has a review path for files and no gate on what an agent does to Gmail or Stripe.
 
-Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. Free is $0 with 500 credits a month and 1 workspace; credits start at $50 a month, and members are free and share one credit pool ([Kortix pricing](https://kortix.com/pricing)).
+Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free. Free is $0 with 500 credits a month on your first workspace; credits start at $50 a month, and members are free and share one credit pool ([Kortix pricing](https://kortix.com/pricing)).
 
 Together, the change request and the gate cover the two ways an agent can change a company: the files in the repo and the systems outside it.
 

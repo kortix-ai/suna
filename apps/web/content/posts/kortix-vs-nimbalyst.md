@@ -63,7 +63,7 @@ The stack sits where you want it. Run it on Kortix Cloud, in your VPC, or on you
 
 ## What each costs
 
-Kortix prices in credits for the agent computer. Free is $0 with 500 credits a month and 1 workspace, on your own provider keys or a ChatGPT subscription. Paid plans start from $50 a month, at 1 credit = $0.01 and 11 credits = 1 hour of agent computer (checked October 2026). Members are unlimited on one shared credit pool, and unused credits roll over one month ([Kortix pricing](https://kortix.com/pricing)).
+Kortix prices in credits for the agent computer. Free is $0 with 500 credits a month on your first workspace, on your own provider keys or a ChatGPT subscription. Paid plans start from $50 a month, at 1 credit = $0.01 and 11 credits = 1 hour of agent computer (checked October 2026). Members are unlimited on one shared credit pool, and unused credits roll over one month ([Kortix pricing](https://kortix.com/pricing)).
 
 Nimbalyst is free for individuals: the app and the personal wiki. Sharing that wiki with a team is $200 per user a year, free while the beta lasts (checked October 2026, [Nimbalyst pricing](https://nimbalyst.com/pricing)).
 

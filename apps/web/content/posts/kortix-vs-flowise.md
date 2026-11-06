@@ -56,7 +56,7 @@ The difference shows up on the day an agent gets a change wrong. One isolated sa
 
 ## What the machine costs
 
-Kortix bills compute and model calls by usage. Nothing is charged per seat. On the Free plan an account pays $0: 500 credits a month, every feature and one workspace, on your own provider keys or a ChatGPT subscription ([Plans and credits](https://kortix.com/docs/credits)).
+Kortix bills compute and model calls by usage. Nothing is charged per seat. On the Free plan an account pays $0: 500 credits a month on your first workspace and every feature, on your own provider keys or a ChatGPT subscription ([Plans and credits](https://kortix.com/docs/credits)).
 
 The paid plan is credits. You choose a monthly amount, 5,000 credits a month costs $50, and every tier buys credits at 100 credits per dollar ([Kortix pricing](https://kortix.com/pricing)). Members are unlimited and free, the account shares one wallet, and unused monthly credits roll over one month.
 

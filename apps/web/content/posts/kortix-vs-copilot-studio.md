@@ -68,7 +68,7 @@ An agent is `agents/<name>.md` for behavior plus an `agents.<name>` block in `ko
 
 Kortix is open source. Read it, fork it, audit it ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS)). Run it on Kortix Cloud, in your VPC or on-prem, and self-hosting is free. The work comes back reviewable: nothing merges itself, because work reaches `main` through a change request a person approves unless an admin grants the merge capability. That capability is `project.gitops.merge`, and the starter's `all` includes it, so a project that needs a person at every merge narrows `kortix_permissions`.
 
-The bill follows the same ownership story. Free is $0 with 500 credits per month, every feature and 1 workspace, on your own provider keys or your ChatGPT subscription. Managed models are on the Credits plan only. Paid plans start at $50 a month for 5,000 credits, with unlimited and free members sharing one credit pool, and unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing)).
+The bill follows the same ownership story. Free is $0 with 500 credits per month on your first workspace and every feature, on your own provider keys or your ChatGPT subscription. Managed models are on the Credits plan only. Paid plans start at $50 a month for 5,000 credits, with unlimited and free members sharing one credit pool, and unused monthly credits roll over one month ([Kortix pricing](https://kortix.com/pricing)).
 
 ## What moves and what gets rebuilt
 
