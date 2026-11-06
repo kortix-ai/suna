@@ -1051,6 +1051,11 @@ function ComposerImpl(props: SessionChatInputProps) {
   const pendingDrivePathsRef = useRef(new Set<string>());
   /** The Drive paths the document named after its last change: a path that leaves it is a deleted chip. */
   const docDrivePathsRef = useRef(new Set<string>());
+  /**
+   * The Drive paths picked from the menu in this composer: the only chips worth fetching a file for
+   * again. A chip that arrives any other way (pasted rich text) is never a request to read a file.
+   */
+  const pickedDrivePathsRef = useRef(new Set<string>());
   // Declared before the question-lock effect below, so it holds the new value when that effect empties the editor.
   const lockForQuestionRef = useLatestRef(lockForQuestion);
   const pickDriveFile = useCallback(
@@ -1108,7 +1113,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       // A recalled prompt replaces the draft for a moment; the tray keeps its files, as it does every attachment.
       if (applyingHistoryRef.current) return;
       const removed = [...previous].filter((path) => !named.has(path));
-      const added = [...named].filter(([path]) => !previous.has(path));
+      const added = [...named].filter(([path]) => !previous.has(path) && pickedDrivePathsRef.current.has(path));
       if (removed.length === 0 && added.length === 0) return;
       // Run after the change settles. A send or a command empties the editor and hands its tray off in
       // the same handler, and a restore (draft, failed send, prefill) sets the document and then its
@@ -1121,7 +1126,7 @@ function ComposerImpl(props: SessionChatInputProps) {
           const index = held(path);
           if (index !== -1) removeAttachedFile(index);
         }
-        // A chip came back without its file (an undo, a draft whose upload expired): fetch it again.
+        // A picked chip came back without its file (an undo, a redo): fetch it again.
         for (const [path, name] of added) if (held(path) === -1) void pickDriveFile({ path, name });
       });
     },
@@ -1129,7 +1134,16 @@ function ComposerImpl(props: SessionChatInputProps) {
   );
   const driveMentions = useMemo<DriveMentionSource | null>(
     // A host that keeps files in its own store (`takeFiles`) gets no Drive rows.
-    () => (projectId && drivesOn && !takeFiles ? { projectId, onPick: (file) => void pickDriveFile(file) } : null),
+    () =>
+      projectId && drivesOn && !takeFiles
+        ? {
+            projectId,
+            onPick: (file) => {
+              pickedDrivePathsRef.current.add(file.path);
+              void pickDriveFile(file);
+            },
+          }
+        : null,
     [projectId, drivesOn, takeFiles, pickDriveFile],
   );
 

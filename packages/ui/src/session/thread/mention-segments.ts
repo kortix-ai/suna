@@ -14,6 +14,8 @@
  * owns where segments ARE, and only the latter is worth testing without a DOM.
  */
 
+import { MAX_PROMPT_ATTACHMENT_FILES } from '@kortix/shared';
+
 export type MentionSegmentType = 'file' | 'agent' | 'session' | 'drive';
 
 export interface MentionSegment {
@@ -62,6 +64,9 @@ function trimTrailingPunctuation(token: string): string {
   while (end > 0 && '.,;:!?)]}\'"'.includes(token[end - 1])) end -= 1;
   return token.slice(0, end);
 }
+
+/** What may follow a whole mention: space, or the sentence punctuation `trimTrailingPunctuation` drops. */
+const TOKEN_END = /[\s.,;:!?)\]}'"]/;
 
 function overlaps(ranges: Range[], start: number, end: number): boolean {
   return ranges.some((r) => start < r.end && end > r.start);
@@ -118,12 +123,17 @@ export function buildMentionSegments({
 
   // Drive file names: a name can contain spaces, and the same file can be
   // mentioned twice, so every occurrence is claimed — longest name first, so
-  // `@a b.png` wins over `@a`.
-  for (const name of [...driveNames].sort((a, b) => b.length - a.length)) {
-    if (!name) continue;
+  // `@a b.png` wins over `@a`. The names come out of the message body, so they
+  // are deduplicated and capped at the most files a message carries: a body
+  // that spells out a thousand `<drive_ref>` tags buys no thousand full scans.
+  const distinctDriveNames = [...new Set(driveNames.filter(Boolean))].slice(0, MAX_PROMPT_ATTACHMENT_FILES);
+  for (const name of distinctDriveNames.sort((a, b) => b.length - a.length)) {
     const needle = `@${name}`;
-    for (let idx = text.indexOf(needle); idx !== -1; idx = text.indexOf(needle, idx + needle.length)) {
-      if (!overlaps(ranges, idx, idx + needle.length)) ranges.push({ start: idx, end: idx + needle.length, type: 'drive' });
+    for (let idx = text.indexOf(needle); idx !== -1; idx = text.indexOf(needle, idx + 1)) {
+      const end = idx + needle.length;
+      // A whole mention only: `@a` is not the start of `@ab`, nor the tail of `x@a`.
+      const whole = (idx === 0 || /\s/.test(text.charAt(idx - 1))) && (end === text.length || TOKEN_END.test(text.charAt(end)));
+      if (whole && !overlaps(ranges, idx, end)) ranges.push({ start: idx, end, type: 'drive' });
     }
   }
 
