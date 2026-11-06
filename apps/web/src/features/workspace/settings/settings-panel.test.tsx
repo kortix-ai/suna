@@ -134,13 +134,13 @@ describe('SettingsPanelShell — desktop rail', () => {
 
     // The Organizations block counts as a second group for the rule: with it
     // on screen, "Personal" has to be labelled or the two lists run together.
-    test('the organizations block brings the Personal heading back', () => {
+    test('the workspaces block brings the Personal heading back', () => {
       const html = render({
         groups: [allGroups[0]],
         organizations: [{ account_id: 'acc-1', name: 'Mirkos Org', account_role: 'owner' }],
       });
       expect(html).toContain(`>${allGroups[0].label}<`);
-      expect(html).toContain('>Organizations<');
+      expect(html).toContain('>Workspaces<');
       expect(html).toContain('Mirkos Org');
       // `?accountId=acc-1`, not `/accounts/acc-1`: the account hub has no
       // route — it is a modal addressed by a query param on whatever page it

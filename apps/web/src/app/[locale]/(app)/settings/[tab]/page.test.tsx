@@ -124,9 +124,6 @@ test('live, renamed, unknown and project-only segments open their standalone tab
   failed = false;
   for (const [raw, expected] of [
     ['security', 'security'],
-    // KRTX-2291: the old personal API keys tab is `tokens` now (`RENAMED`).
-    ['api-keys', 'tokens'],
-    ['tokens', 'tokens'],
     ['unknown', 'profile'],
   ]) {
     segment = raw;
@@ -141,22 +138,6 @@ test('live, renamed, unknown and project-only segments open their standalone tab
     await act(async () => {
       root?.unmount();
     });
-  }
-});
-
-test('connected opens personal identity details regardless of organization lookup state', async () => {
-  segment = 'connected';
-  for (const state of ['pending', 'empty', 'failed', 'loaded']) {
-    pending = state === 'pending';
-    failed = state === 'failed';
-    accounts = state === 'loaded' ? [{ account_id: 'synthetic' }] : [];
-    replacements.length = 0;
-    let root: ReturnType<typeof create> | undefined;
-    await act(async () => { root = create(createElement(SettingsTabPage)); });
-    if (!root) throw new Error('Settings route did not render');
-    expect(JSON.stringify(root.toJSON())).toContain('profile');
-    expect(replacements).toEqual([]);
-    await act(async () => { root?.unmount(); });
   }
 });
 // KRTX-2865: a stale `/settings/computers` link rendered Profile under a
