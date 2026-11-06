@@ -42,6 +42,7 @@ import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { projectWebUrl } from '../web-url.ts';
+import { settingsWhere } from '../settings-path.ts';
 
 /** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
  *  it without an import cycle through this command module. */
@@ -88,7 +89,7 @@ Subcommands:
                        connected yourself are never touched.
                        -y / --yes skips the confirmation.
   features [ls]        List every feature flag with its effective state for the
-                       workspace (Settings → Feature flags). (--json)
+                       workspace (${settingsWhere('feature-flags')}). (--json)
   features enable <flag>   Turn a flag on for the workspace.
   features disable <flag>  Turn a flag off for the workspace.
   features reset <flag>    Clear the workspace's override (follow the default).
@@ -265,11 +266,11 @@ export async function runProjects(argv: string[], options: RunProjectsOptions = 
   }
 }
 
-// ── Feature flags (Settings → Feature flags) ───────────────────────────────
+// ── Feature flags (Workspace settings → Feature flags) ───────────────────────────────
 
 const FEATURES_HELP = help`Usage: kortix workspaces features [ls | enable | disable | reset] [<flag>]
 
-Workspace feature flags — the same switches as Settings → Feature flags.
+Workspace feature flags — the same switches as ${settingsWhere('feature-flags')}.
 A flag is a stable key (e.g. monitors, event_triggers). State is
 stored on the workspace, never in kortix.yaml.
 
@@ -454,8 +455,8 @@ interface ProjectWithIcon extends ProjectSummary {
 
 const SET_HELP = help`Usage: kortix workspaces set [<id>] [options]
 
-Update one workspace's settings — the dashboard's Workspace settings →
-General (PATCH /projects/:id). Only the fields you pass are written.
+Update one workspace's settings — the dashboard's ${settingsWhere('general')}
+(PATCH /workspaces/:id). Only the fields you pass are written.
 
 Options:
   --name <name>          Display name.

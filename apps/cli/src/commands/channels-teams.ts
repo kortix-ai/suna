@@ -1,5 +1,6 @@
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
+import { settingsWhere } from '../settings-path.ts';
 
 export interface TeamsInstallation {
   tenantId: string | null;
@@ -117,7 +118,7 @@ export async function teamsConnect(
     // reserved for the command's own output.
     if (!mode.enabled) {
       process.stderr.write(
-        `${status.err('Microsoft Teams is not enabled for this workspace. Enable it in Settings → Feature flags.')}\n`,
+        `${status.err(`Microsoft Teams is not enabled for this workspace. Enable it in ${settingsWhere('feature-flags')}.`)}\n`,
       );
       return 1;
     }

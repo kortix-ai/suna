@@ -53,8 +53,8 @@ import {
 const HELP = help`Usage: kortix access <subcommand> [options]
 
 Who can do what. People, groups and service accounts get ROLES — on the
-account, on one workspace, or on a single object inside a workspace. Agents get
-Kortix permissions in kortix.yaml; a session can only do what both allow.
+workspace, or on a single object inside it. Agents get Kortix permissions in
+kortix.yaml; a session can only do what both allow.
 
 Role assignments:
   assignments [--workspace <id>|--account|--all]  List role assignments.
@@ -81,23 +81,26 @@ Access requests (people asking to join this workspace):
            [--role <r>]             Default: member.
   requests reject <req-id>          Reject one.
 
-Every verb in these two blocks needs project.members.manage.
+Every verb in these two blocks needs workspace.members.manage.
 
-Workspace roles: ${ROLES.join(', ')}. Account roles: owner, admin, member.
+Workspace roles, one ladder: owner > admin > manager > member. Owner and admin
+cover the whole workspace (grant them with --account); manager and member are
+granted here.
 Run \`kortix roles ls\` for every role, \`kortix permissions ls\` for the catalog.
 
 Options:
-  --user <id|email>  Grant to a person. An email resolves via the account
+  --user <id|email>  Grant to a person. An email resolves via the workspace
                      member directory.
   --group <id|name>  Grant to a group instead of a person. A name resolves via
-                     the account's groups.
+                     the workspace's groups.
   --service-account <id>
                      Grant to a service account — an agent's identity.
   --role <key|id>    Role to grant — a system key (owner/admin/member,
                      manager/member) or a custom role's key or id.
   --workspace <id>   Scope to this workspace (default: the linked workspace).
-  --account          Scope to the whole account — every workspace in it.
-  --all              List every assignment in the account, at any scope.
+  --account          Scope to the whole workspace (the owner and admin roles).
+                     An older account with several projects: every one of them.
+  --all              List every assignment in the workspace, at any scope.
   --agent <name>     Narrow the grant to ONE agent. Implies --role ${OBJECT_GRANT_ROLE}.
   --connection <id>  Narrow the grant to ONE shared connector account. The first
                      grant limits the account to its grantees; revoking the last
