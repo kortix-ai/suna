@@ -392,7 +392,7 @@ describe('the registry no longer carries palette settings destinations', () => {
     // which the derived settings list structurally cannot produce — the same
     // arrangement `proj-triggers` and the `account-*` rows use. What must stay
     // gone is a row that opens the OVERLAY on a tab that no longer exists;
-    // `MenuItemKind`, which no longer admits `'settings'`, pins that,
+    // the menu item kind type, which no longer admits `'settings'`, pins that,
     // and `menu-registry-destinations.test.ts` pins that each of these hrefs
     // is a real destination.
     for (const id of [
