@@ -36,6 +36,11 @@ export const STATIC_FILE_SHARE_PORT = 3211;
  */
 export const PUBLIC_SHARE_VIEW_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/** RFC 9110 §15.5.6: a 405 response names the methods the resource supports
+ *  (KRTX-3380, pentest http.contract). Exactly the read methods a view-only
+ *  share admits. */
+export const PUBLIC_SHARE_VIEW_ALLOW = [...PUBLIC_SHARE_VIEW_METHODS].join(', ');
+
 /**
  * True when this share may not be written through, whatever the visitor sends.
  * Allowlist, not denylist: `mode` is a free-form string on the row, so anything

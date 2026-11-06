@@ -289,6 +289,11 @@ function isDecodablePath(pathname: string): boolean {
 }
 
 export async function middleware(request: NextRequest) {
+  // Every flow below (auth, cookies marked Secure) assumes the secure origin:
+  // move a plain-HTTP visitor there before any content or auth decision.
+  const httpsRedirect = httpsRedirectTarget(request);
+  if (httpsRedirect) return NextResponse.redirect(httpsRedirect, 308);
+
   let { pathname } = request.nextUrl;
   // These are probes for server files, not product routes. A plain response also
   // avoids rendering the translated application shell for sensitive-file probes.
@@ -928,6 +933,35 @@ export async function middleware(request: NextRequest) {
     console.error('Middleware error:', error);
     return finalizeEnvironmentAccess(rewriteToLocale(signedInLocale(), supabaseResponse));
   }
+}
+
+/**
+ * The https URL to move a plain-HTTP visitor to, or null when the request
+ * already arrived over https (KRTX-3380, pentest http.contract). The edge
+ * (Cloudflare -> ALB) forwards the visitor's scheme in `x-forwarded-proto`
+ * — comma list, client hop leftmost — and, when it strips that header, in
+ * its own `cf-visitor` JSON; checking both covers either proxy behavior.
+ * `/api/health` is exempt: the target group probes it inside the VPC, and a
+ * 308 there would flip healthy targets out of rotation. Defined below
+ * `middleware` on purpose: middleware-desktop-routes.test.ts scrapes the
+ * source between DESKTOP_ALLOWED_ROUTES and the middleware export for
+ * route literals, and this helper's health path is not a desktop route.
+ */
+function httpsRedirectTarget(request: NextRequest): URL | null {
+  if (request.nextUrl.pathname === '/api/health') return null;
+  const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0].trim();
+  if (forwardedProto !== 'http') {
+    let cfScheme: string | undefined;
+    try {
+      cfScheme = JSON.parse(request.headers.get('cf-visitor') ?? '')?.scheme;
+    } catch {
+      cfScheme = undefined;
+    }
+    if (cfScheme !== 'http') return null;
+  }
+  const url = request.nextUrl.clone();
+  url.protocol = 'https:';
+  return url;
 }
 
 export const config = {

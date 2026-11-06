@@ -50,6 +50,7 @@ import {
 } from './preview-session';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
+  PUBLIC_SHARE_VIEW_ALLOW,
   PUBLIC_SHARE_VIEW_METHODS,
   STATIC_FILE_SHARE_PORT,
   isViewOnlyShare,
@@ -123,10 +124,17 @@ export function isPreviewHost(req: Request, url: URL): boolean {
 /** Query parameters that carry a one-shot credential, never forwarded upstream. */
 const CREDENTIAL_PARAMS = ['token', 'public_share', 'preview_ticket'] as const;
 
-function jsonError(status: number, message: string, origin: string): Response {
+/** RFC 9110 §15.5.6: a 405 names the methods the resource supports
+ *  (KRTX-3380, pentest http.contract). */
+function jsonError(
+  status: number,
+  message: string,
+  origin: string,
+  extraHeaders?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify({ error: message }), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(origin), ...extraHeaders },
   });
 }
 
@@ -470,7 +478,9 @@ export async function handlePreviewOriginRequest(
     // serves the same links, so without this the gate simply moved aside.
     if (isViewOnlyShare({ mode: session.mode, filePath: session.filePath }) &&
         !PUBLIC_SHARE_VIEW_METHODS.has(req.method.toUpperCase())) {
-      return jsonError(405, 'This public share is view-only', origin);
+      return jsonError(405, 'This public share is view-only', origin, {
+        Allow: PUBLIC_SHARE_VIEW_ALLOW,
+      });
     }
 
     // Revocation has to be live. The signed cookie carries its own expiry, so
