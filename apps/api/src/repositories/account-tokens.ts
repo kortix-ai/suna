@@ -425,6 +425,49 @@ export async function listPersonalAccountTokens(
     .orderBy(desc(accountTokens.createdAt));
 }
 
+/**
+ * The person's personal keys across every workspace: hand-minted by `userId`,
+ * bound to no workspace (`project_id` NULL), and not a session,
+ * service-account or agent-grant bearer. `GET /v1/me/tokens`.
+ */
+export async function listPersonalTokensOfUser(userId: string) {
+  return db
+    .select({
+      tokenId: accountTokens.tokenId,
+      accountId: accountTokens.accountId,
+      publicKey: accountTokens.publicKey,
+      name: accountTokens.name,
+      status: accountTokens.status,
+      expiresAt: accountTokens.expiresAt,
+      lastUsedAt: accountTokens.lastUsedAt,
+      createdAt: accountTokens.createdAt,
+      revokedAt: accountTokens.revokedAt,
+    })
+    .from(accountTokens)
+    .where(and(...personalOfUser(userId)))
+    .orderBy(desc(accountTokens.createdAt));
+}
+
+/** The account a personal key of `userId` was minted in, or null when it is not theirs. */
+export async function personalTokenAccountOfUser(tokenId: string, userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ accountId: accountTokens.accountId })
+    .from(accountTokens)
+    .where(and(eq(accountTokens.tokenId, tokenId), ...personalOfUser(userId)))
+    .limit(1);
+  return row?.accountId ?? null;
+}
+
+function personalOfUser(userId: string) {
+  return [
+    eq(accountTokens.userId, userId),
+    isNull(accountTokens.projectId),
+    isNull(accountTokens.sessionId),
+    isNull(accountTokens.serviceAccountId),
+    isNull(accountTokens.agentGrant),
+  ];
+}
+
 /** Revoke a token (soft-delete — sets status='revoked' + revoked_at). */
 /**
  * Who minted an account token, and whether it is a hand-minted personal token

@@ -13,6 +13,8 @@ import {
   getAccountTokenOwner,
   revokeAccountToken,
   deleteRevokedPersonalAccountToken,
+  listPersonalTokensOfUser,
+  personalTokenAccountOfUser,
 } from '../../repositories/account-tokens';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf, type Actor } from '../../iam/actor';
@@ -61,6 +63,13 @@ export function actsAsFullIdentity(authType: string | undefined, actor: Actor): 
   if (authType === 'supabase') return credential.kind === 'jwt';
   if (authType === 'pat') return credential.kind === 'pat' && credential.projectId === null;
   return false;
+}
+
+/** A browser session, or a personal key bound to no workspace and no session. */
+function isPersonCaller(c: Context): boolean {
+  const authType = c.get('authType') as string | undefined;
+  if (authType === 'supabase') return true;
+  return authType === 'pat' && !c.get('tokenProjectId') && !c.get('sessionId') && !c.get('agentGrant');
 }
 
 /** `/tokens` (the caller's default or `account_id` account) and its workspace-scoped twin. */
@@ -197,6 +206,77 @@ accountsRouter.openapi(
 );
 
 // GET /v1/accounts/tokens — list CLI PATs for the active account
+
+// GET /v1/me/tokens — the person's personal keys, across every workspace
+// DELETE /v1/me/tokens/:tokenId — revoke one (or delete a revoked one)
+// A personal key is the person's own credential: listing and revoking it needs
+// no workspace grant, and works for a key minted in a workspace they left.
+// Only the person: a browser session or an unbound personal key. A workspace
+// key is refused by the credential fence (person-route) before this runs.
+accountsRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/me/tokens',
+    tags: ['accounts'],
+    summary: 'List your personal keys',
+    ...auth,
+    responses: {
+      200: json(z.array(AccountTokenSchema), 'Your personal keys (bound to no workspace)'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+  if (!isPersonCaller(c)) return c.json({ error: 'Personal keys are managed by the person, from a browser session or a personal key', code: 'person_route' }, 403);
+  const tokens = await listPersonalTokensOfUser(c.get('userId') as string);
+  return c.json(
+    tokens.map((t) => ({
+      token_id: t.tokenId,
+      name: t.name,
+      project_id: null,
+      workspace_id: null,
+      public_key: t.publicKey,
+      status: t.status,
+      expires_at: t.expiresAt?.toISOString() ?? null,
+      last_used_at: t.lastUsedAt?.toISOString() ?? null,
+      created_at: t.createdAt.toISOString(),
+      revoked_at: t.revokedAt?.toISOString() ?? null,
+    })),
+  );
+  },
+);
+
+accountsRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/me/tokens/{tokenId}',
+    tags: ['accounts'],
+    summary: 'Revoke one of your personal keys, or delete a revoked one',
+    ...auth,
+    request: {
+      params: z.object({ tokenId: z.string() }),
+      query: z.object({ delete_revoked: z.enum(['true', 'false']) }).partial(),
+    },
+    responses: {
+      200: json(z.object({ ok: z.literal(true), deleted: z.boolean().optional() }), 'Revocation or deletion result'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+  const tokenId = c.req.param('tokenId');
+  if (!isUuid(tokenId)) return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);
+  if (!isPersonCaller(c)) return c.json({ error: 'Personal keys are managed by the person, from a browser session or a personal key', code: 'person_route' }, 403);
+  // Another person's key and an unknown id answer the same 404.
+  const accountId = await personalTokenAccountOfUser(tokenId, c.get('userId') as string);
+  if (!accountId) return c.json({ error: 'token not found' }, 404);
+  if (c.req.query('delete_revoked') === 'true') {
+    const deleted = await deleteRevokedPersonalAccountToken(tokenId, accountId);
+    return deleted ? c.json({ ok: true, deleted: true }) : c.json({ error: 'revoked personal token not found' }, 404);
+  }
+  const ok = await revokeAccountToken(tokenId, accountId);
+  return ok ? c.json({ ok: true }) : c.json({ error: 'token not found or already revoked' }, 404);
+  },
+);
+
 // GET /v1/workspaces/:workspaceId/tokens — the same list, for the workspace in the path
 for (const path of TOKEN_LIST_PATHS) {
 accountsRouter.openapi(

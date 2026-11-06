@@ -529,3 +529,59 @@ flow(
     });
   },
 );
+
+// ── WS-ROUTE-10 — the person's personal keys: GET/DELETE /v1/me/tokens ──────
+flow(
+  'WS-ROUTE-10',
+  {
+    domain: 'workspaces',
+    routes: [
+      'POST /v1/accounts/tokens',
+      'POST /v1/workspaces/:workspaceId/tokens',
+      'GET /v1/me/tokens',
+      'GET /v1/accounts/me/tokens',
+      'DELETE /v1/me/tokens/:tokenId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const expires_at = new Date(Date.now() + 3_600_000).toISOString();
+    let personalId = '';
+    let workspaceKey = '';
+    let workspaceKeyId = '';
+
+    await ctx.step('the owner mints a personal key and a workspace key', async () => {
+      const personal = await owner.post('/v1/accounts/tokens', { name: 'wsr10-personal', account_id: team.id, expires_at });
+      personal.status(201).body().has('$.project_id', null);
+      personalId = personal.json<{ token_id: string }>().token_id;
+      const scoped = await owner.post(`/v1/workspaces/${w.id}/tokens`, { name: 'wsr10-workspace', expires_at });
+      scoped.status(201);
+      workspaceKey = scoped.json<{ secret_key: string }>().secret_key;
+      workspaceKeyId = scoped.json<{ token_id: string }>().token_id;
+    });
+
+    await ctx.step('GET /v1/me/tokens → 200 lists the personal key (workspace_id null), never the workspace key; the /v1/accounts/me alias answers the same', async () => {
+      const list = (await owner.get('/v1/me/tokens')).status(200).json<Array<{ token_id: string; workspace_id: string | null; status: string }>>();
+      const mine = list.find((t) => t.token_id === personalId);
+      if (!mine || mine.workspace_id !== null || mine.status !== 'active') throw new Error(`personal key row ${JSON.stringify(mine)}`);
+      if (list.some((t) => t.token_id === workspaceKeyId)) throw new Error('a workspace key is listed as personal');
+      const alias = (await owner.get('/v1/accounts/me/tokens')).status(200).json<Array<{ token_id: string }>>();
+      if (!alias.some((t) => t.token_id === personalId)) throw new Error('the /v1/accounts/me/tokens alias does not list the key');
+    });
+
+    await ctx.step('a workspace key may not read the person’s keys → 403', async () => {
+      (await ctx.client.withBearer(workspaceKey, 'WSR10_KEY').get('/v1/me/tokens')).status(403);
+    });
+
+    await ctx.step('DELETE /v1/me/tokens/:id → 200; the key reads revoked; a second revoke → 404; another person → 404', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).del(`/v1/me/tokens/${personalId}`)).status(404);
+      (await owner.del(`/v1/me/tokens/${personalId}`)).status(200).body().has('$.ok', true);
+      const list = (await owner.get('/v1/me/tokens')).status(200).json<Array<{ token_id: string; status: string }>>();
+      if (list.find((t) => t.token_id === personalId)?.status !== 'revoked') throw new Error('the key is not revoked');
+      (await owner.del(`/v1/me/tokens/${personalId}`)).status(404);
+      (await owner.del('/v1/me/tokens/not-a-uuid')).status(400);
+    });
+  },
+);

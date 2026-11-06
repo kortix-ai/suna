@@ -1,7 +1,7 @@
 {
   "generatedAt": "static",
-  "count": 1719,
-  "aliases": 667,
+  "count": 1723,
+  "aliases": 669,
   "routes": [
     {
       "method": "GET",
@@ -1001,6 +1001,16 @@
       "method": "DELETE",
       "path": "/v1/accounts/me/devices/:sessionId",
       "aliasOf": "/v1/me/devices/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/me/tokens",
+      "aliasOf": "/v1/me/tokens"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/me/tokens/:tokenId",
+      "aliasOf": "/v1/me/tokens/:tokenId"
     },
     {
       "method": "GET",
@@ -2154,6 +2164,14 @@
     {
       "method": "DELETE",
       "path": "/v1/me/devices/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/me/tokens"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/me/tokens/:tokenId"
     },
     {
       "method": "GET",
