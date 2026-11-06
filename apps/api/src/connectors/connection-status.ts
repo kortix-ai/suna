@@ -36,11 +36,19 @@ export const CONNECTION_TRANSITIONS = {
   revoke: { from: ['active', 'error', 'revoked'], to: 'revoked' },
 } as const satisfies Record<string, { from: readonly ConnectionStatus[]; to: ConnectionStatus }>;
 
-/** `revoked` only when the revoke predates `startedAt` (ISO strings sort by time). */
+/**
+ * `revoked` only when a recorded revoke predates `startedAt` (ISO strings sort
+ * by time). A revoked row with no `revokedAt` (the 2026-09-17 migration stamped
+ * only `updated_at`) cannot prove it predates the flow, so it stays revoked: a
+ * missing stamp is not the epoch.
+ */
 function revokedBefore(startedAt: Date): SQL {
   return or(
     sql`${connectorConnections.status} <> 'revoked'`,
-    sql`coalesce(${connectorConnections.metadata}->>'revokedAt', '') < ${startedAt.toISOString()}`,
+    sql`(
+      ${connectorConnections.metadata}->>'revokedAt' IS NOT NULL
+      AND ${connectorConnections.metadata}->>'revokedAt' < ${startedAt.toISOString()}
+    )`,
   )!;
 }
 
