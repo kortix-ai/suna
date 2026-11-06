@@ -103,6 +103,25 @@ function integer(value: string | undefined, label: string): number | undefined {
   return n;
 }
 
+/** The costs-only and transactions-only flags, by the option a person types. */
+const COSTS_ONLY: ReadonlyArray<[keyof Flags, string]> = [
+  ['by', '--by'], ['session', '--session'], ['owner', '--owner'], ['since', '--since'], ['until', '--until'],
+  ['sort', '--sort'], ['csv', '--csv'],
+];
+const TRANSACTIONS_ONLY: ReadonlyArray<[keyof Flags, string]> = [
+  ['limit', '--limit'], ['offset', '--offset'], ['type', '--type'], ['days', '--days'],
+  ['summary', '--summary'], ['breakdown', '--breakdown'], ['usage', '--usage'],
+];
+
+/** The flags `sub` was given but never reads. `costs` reads its own set and is not checked here. */
+function flagsUnusedBy(sub: string | undefined, f: Flags): string[] {
+  const given = (list: ReadonlyArray<[keyof Flags, string]>) =>
+    list.filter(([key]) => f[key] !== undefined && f[key] !== false).map(([, flag]) => flag);
+  if (sub === 'status') return [...given(COSTS_ONLY), ...given(TRANSACTIONS_ONLY)];
+  if (sub === 'transactions' || sub === 'tx') return given(COSTS_ONLY);
+  return [];
+}
+
 export async function runBilling(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
@@ -133,6 +152,11 @@ export async function runBilling(argv: string[]): Promise<number> {
   } catch (err) {
     return fail((err as Error).message);
   }
+
+  // A flag one subcommand consumes but another ignores is refused, never
+  // dropped: a dropped selector would answer for the wrong scope with exit 0.
+  const unused = flagsUnusedBy(sub, f);
+  if (unused.length > 0) return fail(`billing ${sub} does not take ${unused.join(', ')}.`);
 
   // In a session box, `costs --project` reads with the box's own project-bound token, no account.
   const projectToken = (sub === 'costs' || sub === 'cost') && f.project && !f.account && !f.host;

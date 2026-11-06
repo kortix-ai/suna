@@ -463,3 +463,14 @@ describe('a failed list never reads as "No workspace yet"', () => {
     expect(r.stdout).not.toContain(NO_WORKSPACE);
   });
 });
+
+describe('a flag a subcommand does not read is refused (CLI-WS-3)', () => {
+  test('billing status --since exits 2 and sends nothing', async () => {
+    let calls = 0;
+    server = Bun.serve({ port: 0, fetch() { calls += 1; return Response.json({}); } });
+    const r = await runCli(['billing', 'status', '--since', '7d'], writeConfig(`http://127.0.0.1:${server.port}/v1`, 'account_1'));
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('billing status does not take --since');
+    expect(calls).toBe(0);
+  });
+});
