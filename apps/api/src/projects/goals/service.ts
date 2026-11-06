@@ -153,9 +153,10 @@ function goalFileText(goal: GoalRow): string {
   const criteria = goal.criteria.length
     ? goal.criteria.map((c) => `- ${c.id}: ${c.text}`).join('\n')
     : '<!-- The owner writes 1 to 8 done criteria here as "- " list items, then runs `kortix goals transition active`. -->';
-  const objective = goal.title.replace(/"/g, '\\"');
+  // JSON string = a valid YAML double-quoted scalar: quotes, backslashes and newlines escaped.
+  const objective = JSON.stringify(goal.title);
   return (
-    `---\ngoal_id: ${goal.goalId}\nobjective: "${objective}"\n---\n\n` +
+    `---\ngoal_id: ${goal.goalId}\nobjective: ${objective}\n---\n\n` +
     `# ${goal.title}\n\n` +
     `<!-- For the agent: the Kortix API holds this goal's state, owner, caps and verification. Editing this file changes the brief only. -->\n\n` +
     (goal.brief ? `## Context\n\n${goal.brief}\n\n` : '') +
