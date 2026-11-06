@@ -5838,11 +5838,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "Esta página se actualiza automáticamente cada 30 segundos."
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "Página no encontrada",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "La página que busca no existe o se ha movido.",
       "line82JsxTextText404Error": "Error 404",
-      "line85JsxTextResourceNotAvailable": "recurso no disponible",
-      "line100JsxTextReturnHome": "Volver al inicio"
+      "line85JsxTextResourceNotAvailable": "recurso no disponible"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "Solicitud de autorización no válida",

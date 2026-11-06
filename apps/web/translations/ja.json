@@ -5838,11 +5838,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "このページは30秒ごとに自動更新されます。"
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "ページが見つかりません",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "お探しのページは存在しないか、移動されました。",
       "line82JsxTextText404Error": "404 エラー",
-      "line85JsxTextResourceNotAvailable": "リソースを利用できません",
-      "line100JsxTextReturnHome": "ホームに戻る"
+      "line85JsxTextResourceNotAvailable": "リソースを利用できません"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "無効な認可リクエスト",
