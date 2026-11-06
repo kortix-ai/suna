@@ -200,73 +200,20 @@ beforeEach(() => {
   stripeListCalls.length = 0;
 });
 
-describe('resolveAccountId legacy billing sync', () => {
-  test('syncs a paid legacy Stripe subscription for an already-migrated membership', async () => {
+describe('resolveAccountId has no billing side effect', () => {
+  // The legacy Stripe recovery left the request path (design.md §3.1 finding
+  // 8): only POST /v1/billing/sync-subscription runs it.
+  test('a membership with an unsynced paid Stripe customer resolves without a Stripe call or a billing write', async () => {
     state.membership = { accountId: 'acct_paid_123' };
     state.legacyCustomer = { id: 'cus_legacy_123', email: 'paid@example.com' };
     state.subscriptionResults = {
-      cus_legacy_123: [
-        {
-          id: 'sub_paid_123',
-          status: 'active',
-          items: {
-            data: [
-              {
-                price: {
-                  id: 'price_1ReHB5G6l1KZGqIrD70I1xqM', // a legacy $20 price, billed yearly
-                  recurring: { interval: 'year' },
-                },
-              },
-            ],
-          },
-        },
-      ],
+      cus_legacy_123: [{ id: 'sub_paid_123', status: 'active', items: { data: [] } }],
     };
 
-    const accountId = await resolveAccountId('user_paid_123');
-
-    expect(accountId).toBe('acct_paid_123');
-    expect(stripeListCalls).toEqual(['cus_legacy_123']);
-    expect(upsertCreditAccountCalls).toHaveLength(1);
-    expect(upsertCreditAccountCalls[0]).toEqual({
-      accountId: 'acct_paid_123',
-      data: {
-        billingCycleAnchor: undefined,
-        commitmentEndDate: null,
-        commitmentType: null,
-        tier: 'credits',
-        planMonthlyUsd: '20',
-        provider: 'stripe',
-        stripeSubscriptionId: 'sub_paid_123',
-        stripeSubscriptionStatus: 'active',
-        planType: 'yearly',
-      },
-    });
-    expect(upsertCustomerCalls).toContainEqual({
-      accountId: 'acct_paid_123',
-      id: 'cus_legacy_123',
-      email: 'paid@example.com',
-      active: true,
-      provider: 'stripe',
-    });
-    expect(walletResets).toContainEqual({
-      accountId: 'acct_paid_123',
-      amount: 20,
-      description: 'Recovered legacy Stripe subscription: 2000 credits',
-      key: { event: 'legacy_sync:sub_paid_123' },
-    });
-  });
-
-  test('skips Stripe sync when the account already has a Stripe subscription row', async () => {
-    state.membership = { accountId: 'acct_existing_123' };
-    state.creditAccount = { tier: 'tier_6_50', stripeSubscriptionId: 'sub_existing_123' };
-    state.legacyCustomer = { id: 'cus_existing_123', email: 'existing@example.com' };
-
-    const accountId = await resolveAccountId('user_existing_123');
-
-    expect(accountId).toBe('acct_existing_123');
+    expect(await resolveAccountId('user_paid_123')).toBe('acct_paid_123');
     expect(stripeListCalls).toHaveLength(0);
     expect(upsertCreditAccountCalls).toHaveLength(0);
+    expect(walletResets).toHaveLength(0);
     expect(insertCalls).toHaveLength(0);
   });
 });

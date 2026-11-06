@@ -39,6 +39,7 @@ import {
 } from '../repositories/credit-accounts';
 import { invalidateAccountBilling } from './billing-cache';
 import { isPaidTier } from './tier-facts';
+import { logger } from '../../lib/logger';
 
 export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
 
@@ -227,9 +228,12 @@ export async function applyStripeSync(
     } else if (accountHoldsComp(account ?? null) && !isPaidTier(String(next.tier ?? 'none'))) {
       // A comped split-off has no subscription, so no provider fact can end
       // its plan. Only a paid tier from a subscription it bought replaces it.
-      console.warn(
-        `[write-owner] applyStripeSync${label}: skipping tier='${String(next.tier)}' for ${accountId} — the account holds a split-off comp until ${String(account?.compPlanUntil)}.`,
-      );
+      logger.warn('[write-owner] applyStripeSync: skipping a non-paid tier over a split-off comp', {
+        reason: ctx.reason ?? null,
+        accountId,
+        tier: String(next.tier),
+        compPlanUntil: account?.compPlanUntil ?? null,
+      });
       delete next.tier;
       delete next.planMonthlyUsd;
     }

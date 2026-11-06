@@ -8,6 +8,7 @@ import { ROTATION_BATCH_SIZE } from './rotation-batch';
 import { wallet } from '../wallet';
 import { formatUsdAsCredits } from '@kortix/shared';
 import { getTier } from './tiers';
+import { logger } from '../../lib/logger';
 
 const FREE_TIER_MONTHLY_CREDITS_USD = getTier('free').monthlyCredits;
 
@@ -30,11 +31,11 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
     const { expireSplitOffComps } = await import('./split-off-billing');
     const comps = await expireSplitOffComps(now);
     if (comps.ended.length + comps.kept.length > 0) {
-      console.log(`[FreeTierRotation] Split-off comps ended: ${comps.ended.length} to Free, ${comps.kept.length} kept their own plan`);
+      logger.info('[FreeTierRotation] split-off comps ended', { toFree: comps.ended.length, keptOwnPlan: comps.kept.length });
     }
   } catch (err) {
     const msg = `Error ending split-off comps: ${(err as Error).message}`;
-    console.error(`[FreeTierRotation] ${msg}`);
+    logger.error('[FreeTierRotation] split-off comp step failed', { error: (err as Error).message });
     errors.push(msg);
   }
 
