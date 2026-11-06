@@ -16,7 +16,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, help, status } from '../style.ts';
+import { C, formatUtcInstant, help, status } from '../style.ts';
 
 export const FEEDBACK_KINDS = ['bug', 'idea', 'friction'] as const;
 export const FEEDBACK_SOURCES = ['cli', 'agent', 'web'] as const;
@@ -145,9 +145,7 @@ async function submit(inv: ParsedFeedbackInvocation): Promise<number> {
     process.stdout.write(`\n  ${status.ok(`Feedback filed · ${C.bold}${receipt.id}${C.reset}`)}\n`);
     process.stdout.write(`  ${C.dim}kind    ${C.reset}${receipt.kind}\n`);
     process.stdout.write(`  ${C.dim}source  ${C.reset}${receipt.source}\n`);
-    process.stdout.write(
-      `  ${C.dim}at      ${C.reset}${receipt.created_at.slice(0, 16).replace('T', ' ')} UTC\n`,
-    );
+    process.stdout.write(`  ${C.dim}at      ${C.reset}${formatUtcInstant(receipt.created_at)}\n`);
     process.stdout.write('\n');
     return 0;
   } catch (err) {

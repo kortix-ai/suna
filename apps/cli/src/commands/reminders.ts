@@ -22,7 +22,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, help, pad, status } from '../style.ts';
+import { C, formatUtcInstant, help, pad, status } from '../style.ts';
 
 const HELP = help`Usage: kortix loops <subcommand> [options]
        kortix loop "<prompt>" [schedule]          (= loops add)
@@ -80,11 +80,6 @@ function describeSchedule(r: SessionReminder): string {
   return 'once';
 }
 
-function formatInstant(iso: string | null): string {
-  if (!iso) return '—';
-  return `${iso.slice(0, 16).replace('T', ' ')} UTC`;
-}
-
 function writeReminder(r: SessionReminder, heading: string): void {
   // A fired one-shot reminder stays done on resume; do not say it resumed.
   const done = heading === 'Resumed' && r.state === 'done';
@@ -92,8 +87,8 @@ function writeReminder(r: SessionReminder, heading: string): void {
   process.stdout.write(`  ${C.dim}session ${C.reset}${r.session_id ?? '—'}\n`);
   process.stdout.write(`  ${C.dim}repeat  ${C.reset}${describeSchedule(r)}\n`);
   process.stdout.write(`  ${C.dim}state   ${C.reset}${r.state}\n`);
-  process.stdout.write(`  ${C.dim}next    ${C.reset}${formatInstant(r.next_fire_at)}\n`);
-  if (r.last_fired_at) process.stdout.write(`  ${C.dim}last    ${C.reset}${formatInstant(r.last_fired_at)}\n`);
+  process.stdout.write(`  ${C.dim}next    ${C.reset}${formatUtcInstant(r.next_fire_at)}\n`);
+  if (r.last_fired_at) process.stdout.write(`  ${C.dim}last    ${C.reset}${formatUtcInstant(r.last_fired_at)}\n`);
   if (r.state !== 'done') {
     process.stdout.write(`  ${C.dim}remove  ${C.reset}kortix loops rm ${r.id}\n`);
   }
@@ -178,7 +173,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
       for (const r of reminders) {
         const text = r.prompt.replace(/\s+/g, ' ');
         process.stdout.write(
-          `  ${pad(r.id, idW)}   ${pad(r.state, 7)}  ${pad(describeSchedule(r).slice(0, 24), 24)}  ${pad(formatInstant(r.next_fire_at), 20)}  ${pad(formatInstant(r.last_fired_at), 20)}  ${pad(r.name ?? '—', nameW)}  ${text.length > 60 ? `${text.slice(0, 59)}…` : text}\n`,
+          `  ${pad(r.id, idW)}   ${pad(r.state, 7)}  ${pad(describeSchedule(r).slice(0, 24), 24)}  ${pad(formatUtcInstant(r.next_fire_at), 20)}  ${pad(formatUtcInstant(r.last_fired_at), 20)}  ${pad(r.name ?? '—', nameW)}  ${text.length > 60 ? `${text.slice(0, 59)}…` : text}\n`,
         );
         if (r.last_error) process.stdout.write(`  ${' '.repeat(idW)}   ${C.red}${r.last_error}${C.reset}\n`);
       }
