@@ -228,12 +228,17 @@ describe('the box copy', () => {
           { name: 'opencode.db-wal' as const, bytes: 2, parts: ['opencode.db-wal.part.aaa'] },
         ],
       };
-      const copied = await assembleStore(found, join(dir, 'a'), async (p) => parts[p]!);
+      const copied = await assembleStore(found, join(dir, 'a'), 1024, async (p) => parts[p]!);
       expect(copied.bytes).toBe(6);
       expect([...(await Bun.file(copied.dbPath).bytes())]).toEqual([1, 2, 3, 4]);
       expect([...(await Bun.file(`${copied.dbPath}-wal`).bytes())]).toEqual([9, 9]);
       const short = { ...found, files: [{ ...found.files[0]!, bytes: 5 }] };
-      await expect(assembleStore(short, join(dir, 'b'), async (p) => parts[p]!)).rejects.toThrow('4 of 5 bytes arrived');
+      await expect(assembleStore(short, join(dir, 'b'), 1024, async (p) => parts[p]!)).rejects.toThrow('4 of 5 bytes arrived');
+      // The box reports 4 + 2 bytes, under a cap of 5 only if it lies: the received bytes decide, for good.
+      const lying = await assembleStore(found, join(dir, 'c'), 5, async (p) => parts[p]!).catch((err: unknown) => err);
+      expect(lying).toBeInstanceOf(Error);
+      expect((lying as Error).message).toContain('past the 5 B cap');
+      expect((lying as { retryable?: boolean }).retryable).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -164,11 +164,15 @@ export async function retryTransient<T>(call: () => Promise<T>, transient: (err:
 /**
  * Downloads each store file's parts in order into `localDir` and checks that
  * every byte the box measured arrived. A missing part fails the session
- * (`retry`): the store is never read without its `-wal`.
+ * (`retry`): the store is never read without its `-wal`. The cap is enforced
+ * here on the bytes received, too: the box's own measure is tenant-controlled,
+ * so it only saves a futile download. A store past the cap here was tampered
+ * with and fails for good.
  */
 export async function assembleStore(
   found: Extract<CopyOutput, { kind: 'found' }>,
   localDir: string,
+  maxStoreBytes: number,
   fetchPart: (boxPath: string) => Promise<Uint8Array>,
 ): Promise<CopiedStore> {
   await mkdir(localDir, { recursive: true, mode: 0o700 });
@@ -179,6 +183,7 @@ export async function assembleStore(
     let got = 0;
     for (const part of file.parts) {
       const bytes = await fetchPart(`${found.boxTemp}/${part}`);
+      if (total + got + bytes.length > maxStoreBytes) throw new RecoverableBoxError(`store past the ${maxStoreBytes} B cap while downloading`, false);
       await appendFile(to, bytes);
       got += bytes.length;
     }

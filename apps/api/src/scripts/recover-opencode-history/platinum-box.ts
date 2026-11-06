@@ -146,7 +146,7 @@ async function copyStore(externalId: string, localDir: string, maxStoreBytes: nu
   // A network error or a 5xx is worth another try; a 4xx is an answer.
   const transient = (err: unknown) => !(err instanceof RecoverableBoxError) && (!(err instanceof PlatinumHttpError) || err.status >= 500);
   const fetchPart = (path: string) => retryTransient(() => fetchBytes(externalId, path), transient);
-  return { kind: 'copied', ...(await assembleStore(found, localDir, fetchPart)) };
+  return { kind: 'copied', ...(await assembleStore(found, localDir, maxStoreBytes, fetchPart)) };
 }
 
 async function copySidecars(externalId: string, paths: string[], localDir: string): Promise<Map<string, Buffer>> {

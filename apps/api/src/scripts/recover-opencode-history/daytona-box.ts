@@ -112,7 +112,7 @@ async function copyStore(externalId: string, localDir: string, maxStoreBytes: nu
   const found = parseCopyOutput(exec.result ?? '');
   if (found.kind !== 'found') return found;
   const fetchPart = (path: string) => retryTransient(() => fetchBytes(sandbox, path), (err) => !notFound(err) && !(err instanceof RecoverableBoxError));
-  return { kind: 'copied', ...(await assembleStore(found, localDir, fetchPart)) };
+  return { kind: 'copied', ...(await assembleStore(found, localDir, maxStoreBytes, fetchPart)) };
 }
 
 async function copySidecars(externalId: string, paths: string[], localDir: string): Promise<Map<string, Buffer>> {
