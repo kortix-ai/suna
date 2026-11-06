@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   copyFileSync,
@@ -43,17 +44,34 @@ const PIN = '8.30.1';
 
 let resolved;
 function binary() {
-  if (process.env.GITLEAKS_BIN) return process.env.GITLEAKS_BIN;
   if (resolved) return resolved;
   const cached = join(homedir(), '.cache', 'kortix', 'gitleaks', PIN, 'gitleaks');
   if (existsSync(cached)) {
     resolved = cached;
     return cached;
   }
-  const url = `https://github.com/gitleaks/gitleaks/releases/download/v${PIN}/gitleaks_${PIN}_${process.platform === 'darwin' ? 'darwin' : 'linux'}_${process.arch === 'arm64' ? 'arm64' : 'x64'}.tar.gz`;
+  const base = `https://github.com/gitleaks/gitleaks/releases/download/v${PIN}`;
+  const archive = `gitleaks_${PIN}_${process.platform === 'darwin' ? 'darwin' : 'linux'}_${process.arch === 'arm64' ? 'arm64' : 'x64'}.tar.gz`;
   const dir = mkdtempSync(join(tmpdir(), 'gitleaks-download-'));
-  execFileSync('curl', ['-sSfL', url, '-o', join(dir, 'gitleaks.tar.gz')]);
-  execFileSync('tar', ['-xzf', join(dir, 'gitleaks.tar.gz'), '-C', dir, 'gitleaks']);
+  // CWE-494, as secret-scan.yml does it: fetch the published checksum for THIS
+  // archive and refuse a mismatch before the downloaded binary ever runs.
+  execFileSync('curl', [
+    '-sSfL',
+    `${base}/gitleaks_${PIN}_checksums.txt`,
+    '-o',
+    join(dir, 'checksums.txt'),
+  ]);
+  const expected = readFileSync(join(dir, 'checksums.txt'), 'utf8')
+    .split('\n')
+    .find((line) => line.endsWith(` ${archive}`))
+    ?.split(' ')[0];
+  assert.ok(expected, `${archive} is missing from the published checksums.txt`);
+  execFileSync('curl', ['-sSfL', `${base}/${archive}`, '-o', join(dir, archive)]);
+  const actual = createHash('sha256')
+    .update(readFileSync(join(dir, archive)))
+    .digest('hex');
+  assert.equal(actual, expected, `${archive} does not match its published sha256`);
+  execFileSync('tar', ['-xzf', join(dir, archive), '-C', dir, 'gitleaks']);
   mkdirSync(join(cached, '..'), { recursive: true });
   copyFileSync(join(dir, 'gitleaks'), cached);
   chmodSync(cached, 0o755);
