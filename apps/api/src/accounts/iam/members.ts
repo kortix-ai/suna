@@ -196,7 +196,7 @@ export function registerIamMembersRoutes(): void {
       request: { params: MemberParams },
       responses: {
         200: json(z.object({ groups: z.array(GroupSchema) }), 'Groups the member belongs to'),
-        ...errors(401, 403),
+        ...errors(400, 401, 403),
       },
     }),
     async (c: any) => {
@@ -241,7 +241,7 @@ export function registerIamMembersRoutes(): void {
       request: { params: MemberParams },
       responses: {
         200: json(z.object({ projects: z.array(ProjectAccessSchema) }), 'Projects the member can reach'),
-        ...errors(401, 403),
+        ...errors(400, 401, 403),
       },
     }),
     async (c: any) => {
