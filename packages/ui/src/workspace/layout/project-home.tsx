@@ -213,10 +213,11 @@ function ProjectHomeView({
   // The onboarding lands on the first chat: it starts the chat (the sidebar
   // row) and moves the address to it. Rendered as the first chat from this
   // render on, so the usual home never paints in between.
-  // An old account-settings link (`?accountId=`) is the hub router's to
-  // resolve (`account-hub-router.tsx`): replacing the address here first would
-  // drop it, and the link would land on the first chat instead of its section.
-  const hubLinkPending = Boolean(searchParams?.get(ACCOUNT_PANEL_PARAM));
+  // An old account-settings link (`?accountId=`, or a bare `?accountTab=`) is
+  // the hub router's to resolve (`account-hub-router.tsx`): replacing the
+  // address here first would drop it, and the link would land on the first
+  // chat instead of its section.
+  const hubLinkPending = Boolean(searchParams?.get(ACCOUNT_PANEL_PARAM) || searchParams?.get('accountTab'));
   useEffect(() => {
     if (!onboarding || hubLinkPending) return;
     useFirstChatStore.getState().start(projectId);
