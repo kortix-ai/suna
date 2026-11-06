@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { printGetStarted } from '../banner';
+import { runGit } from '../git-run';
 import { setScalarInArrayBlock, setTableScalar, setYamlMapEntry } from '../manifest-edit';
 import { convertLocalLegacy, localLegacyManifest } from '../manifest-legacy';
 import { configureProjectGitAuth } from '../project-git';
@@ -175,5 +176,22 @@ describe('legacy repo walker', () => {
     expect(
       JSON.stringify(convertLocalLegacy(dir, legacy)).match(/node_modules|\.git\b/g) ?? [],
     ).toEqual([]);
+  });
+});
+
+describe('runGit maxBuffer', () => {
+  test('keeps the node default 1 MiB cap when no maxBuffer is passed, and honors an explicit one', () => {
+    const big = 'x'.repeat(2 * 1024 * 1024);
+    const dir = mkdtempSync(join(tmpdir(), 'rungit-'));
+    try {
+      writeFileSync(join(dir, 'big.txt'), big);
+      expect(runGit(dir, ['init', '-q']).ok).toBe(true);
+      const blob = runGit(dir, ['hash-object', '-w', 'big.txt']).stdout.trim();
+      expect(runGit(dir, ['cat-file', '-p', blob]).ok).toBe(false);
+      const wide = runGit(dir, ['cat-file', '-p', blob], { maxBuffer: 8 * 1024 * 1024 });
+      expect(wide.stdout.length).toBe(big.length);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -25,7 +25,7 @@ export function runGit(
     input: opts.input,
     encoding: 'utf8',
     env: opts.env ? { ...process.env, ...opts.env } : undefined,
-    maxBuffer: opts.maxBuffer,
+    ...(opts.maxBuffer === undefined ? {} : { maxBuffer: opts.maxBuffer }),
     stdio: opts.inheritStdio ? 'inherit' : undefined,
   });
   return {
