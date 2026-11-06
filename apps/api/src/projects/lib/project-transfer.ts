@@ -458,10 +458,12 @@ export async function moveProjectInTransaction(
     let valueEnc: string;
     try {
       valueEnc = encryptAccountSecret(toAccountId, decryptAccountSecret(fromAccountId, secret.valueEnc));
-    } catch {
-      // Unusable in the source too (an old or wrong key). One such envelope
-      // must not roll back the whole move: it moves unchanged, marked for a
-      // reconnect, and the caller reports its id.
+    } catch (error) {
+      // A plain transfer is one user action: it refuses and rolls back. A
+      // split is a background run that must finish: an envelope that is
+      // unusable in the source too (an old or wrong key) moves unchanged,
+      // marked for a reconnect, and the run reports its id.
+      if (!split) throw error;
       undecryptableSecrets.push(secret.secretId);
       await tx.update(accountSecretResources).set({ needsReauthAt: new Date() })
         .where(eq(accountSecretResources.secretId, secret.secretId));
