@@ -306,7 +306,14 @@ export function registerIamCustomRolesRoutes(): void {
       // second `member` row and no `agent-user` marker. The legacy spelling
       // (`/v1/accounts/:id/iam/roles`) keeps every stored row for old clients.
       if (isCanonicalWorkspacePath(c.req.path)) {
-        return c.json({ roles: [...workspaceLadderRoles(listed), ...custom.map(serializeCustomRole)] });
+        // Every canonical row carries the same two fields: a custom role is a
+        // workspace role off the ladder. `resource_type` stays the stored scope.
+        return c.json({
+          roles: [
+            ...workspaceLadderRoles(listed),
+            ...custom.map((role) => ({ ...serializeCustomRole(role), ladder: false, scope: 'workspace' as const })),
+          ],
+        });
       }
       return c.json({
         roles: [...listed.map(serializeSystemRole), ...custom.map(serializeCustomRole)],

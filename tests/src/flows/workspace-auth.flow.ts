@@ -378,6 +378,7 @@ flow(
   'WS-AUTH-7',
   {
     domain: 'workspaces',
+    requires: ['database'],
     routes: [
       'GET /v1/workspaces/:workspaceId/iam/roles',
       'GET /v1/accounts/:workspaceId/iam/roles',
@@ -394,6 +395,17 @@ flow(
       const system = roles.filter((r) => r.is_system).map((r) => r.key);
       if (JSON.stringify(system) !== JSON.stringify(['owner', 'admin', 'manager', 'member'])) throw new Error(`ladder ${JSON.stringify(system)}`);
       if (!roles.filter((r) => r.is_system).every((r) => r.ladder === true && r.scope === 'workspace')) throw new Error('ladder fields');
+      // A custom role carries the same fields, off the ladder. (Creating one
+      // needs the rbac entitlement; the row is written directly.)
+      const db = await openDb(ctx);
+      try {
+        await db.query(`INSERT INTO kortix.roles (account_id, key, name, scope_type) VALUES ($1, 'wsa7_custom', 'WSA7 custom', 'project')`, [team.id]);
+      } finally {
+        await (db as unknown as { end(): Promise<void> }).end();
+      }
+      const withCustom = (await ctx.client.as(ctx.P.OWNER).get(`/v1/workspaces/${w.id}/iam/roles`)).status(200).json<{ roles: any[] }>().roles;
+      const custom = withCustom.find((r) => r.key === 'wsa7_custom');
+      if (custom?.ladder !== false || custom?.scope !== 'workspace') throw new Error(`custom role row ${JSON.stringify(custom)}`);
       const legacy = (await ctx.client.as(ctx.P.OWNER).get(`/v1/accounts/${team.id}/iam/roles`)).status(200).json<{ roles: any[] }>().roles;
       if (!legacy.some((r) => r.key === 'agent-user') || legacy.filter((r) => r.key === 'member').length !== 2) {
         throw new Error('the legacy role list changed');
