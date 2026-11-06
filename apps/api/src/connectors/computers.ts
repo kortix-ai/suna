@@ -13,6 +13,7 @@
 import { connectorActions, connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { revokeConnections } from './connection-status';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 import cuaDriverTools from './cua-driver-tools.generated.json';
 
@@ -428,28 +429,20 @@ export async function attachComputerConnection(
  * number of accounts revoked.
  */
 export async function revokeComputersOfDepartedOwner(accountId: string, userId: string): Promise<number> {
-  const revoked = await db
-    .update(connectorConnections)
-    .set({
-      status: 'revoked',
-      isDefault: false,
-      metadata: sql`${connectorConnections.metadata} || '{"revokedReason":"owner_left"}'::jsonb`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(connectorConnections.accountId, accountId),
-        ne(connectorConnections.status, 'revoked'),
-        inArray(
-          connectorConnections.tunnelId,
-          db
-            .select({ tunnelId: tunnelConnections.tunnelId })
-            .from(tunnelConnections)
-            .where(eq(tunnelConnections.ownerUserId, userId)),
-        ),
+  const revoked = await revokeConnections(
+    and(
+      eq(connectorConnections.accountId, accountId),
+      ne(connectorConnections.status, 'revoked'),
+      inArray(
+        connectorConnections.tunnelId,
+        db
+          .select({ tunnelId: tunnelConnections.tunnelId })
+          .from(tunnelConnections)
+          .where(eq(tunnelConnections.ownerUserId, userId)),
       ),
-    )
-    .returning({ connectionId: connectorConnections.connectionId });
+    ),
+    { set: { isDefault: false }, metadata: { revokedReason: 'owner_left' } },
+  );
   return revoked.length;
 }
 

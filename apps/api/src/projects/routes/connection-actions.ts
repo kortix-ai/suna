@@ -21,6 +21,7 @@ import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync
 import { SecretUndecryptableError } from '../../secrets/undecryptable';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { connectConnection, revokeConnections } from '../../connectors/connection-status';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { projectsApp } from '../lib/app';
 import { loadMutableConnection } from '../lib/connection-mutation';
@@ -472,16 +473,16 @@ export function registerConnectionActionsRoutes(): void {
                 : null,
           });
         } else {
-          if (operation === 'revoke') await revokeConnectionOAuth2(connectionId);
-          await db
-            .update(connectorConnections)
-            .set(
-              operation === 'revoke'
-                ? { status: 'revoked', updatedAt: new Date() }
-                : // Offboarding's revokedReason (connectors/computers.ts) no longer holds.
-                  { status: 'active', metadata: sql`${connectorConnections.metadata} - 'revokedReason'`, updatedAt: new Date() },
-            )
-            .where(eq(connectorConnections.connectionId, connectionId));
+          if (operation === 'revoke') {
+            await revokeConnectionOAuth2(connectionId);
+            await revokeConnections(eq(connectorConnections.connectionId, connectionId));
+          } else {
+            // A person restores it now. Offboarding's revokedReason
+            // (connectors/computers.ts) no longer holds.
+            await connectConnection(connectionId, {
+              metadata: sql`${connectorConnections.metadata} - 'revokedReason' - 'revokedAt'`,
+            });
+          }
         }
         // The default shared account may have changed: activate or park pending event triggers.
         await reconcileEventSubscriptionsFromCatalog(projectId, loaded.row.accountId);

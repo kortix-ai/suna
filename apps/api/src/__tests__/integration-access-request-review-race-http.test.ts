@@ -104,7 +104,7 @@ describe('a project access request is reviewed once', () => {
     const req = await newRequest();
     const res = await interleave(
       commitVerdict(req.requestId, 'rejected'),
-      () => post(`/v1/projects/${PROJECT}/access-requests/${req.requestId}/approve`, secret),
+      async () => post(`/v1/projects/${PROJECT}/access-requests/${req.requestId}/approve`, secret),
       'project_access_requests',
     );
     expect(res.status).toBe(409);
@@ -117,7 +117,7 @@ describe('a project access request is reviewed once', () => {
     const req = await newRequest();
     const res = await interleave(
       commitVerdict(req.requestId, 'approved'),
-      () => post(`/v1/projects/${PROJECT}/access-requests/${req.requestId}/reject`, secret),
+      async () => post(`/v1/projects/${PROJECT}/access-requests/${req.requestId}/reject`, secret),
       'project_access_requests',
     );
     expect(res.status).toBe(409);

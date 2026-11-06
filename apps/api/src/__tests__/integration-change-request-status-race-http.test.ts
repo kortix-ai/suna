@@ -97,7 +97,7 @@ describe('change request close and reopen never overwrite a merge that raced the
     const cr = await newRequest('open');
     const res = await interleave(
       markMerged(cr.crId),
-      () => post(`/v1/projects/${PROJECT}/change-requests/${cr.crId}/close`, secret),
+      async () => post(`/v1/projects/${PROJECT}/change-requests/${cr.crId}/close`, secret),
       'change_requests',
     );
     expect(res.status).toBe(409);
@@ -109,7 +109,7 @@ describe('change request close and reopen never overwrite a merge that raced the
     const cr = await newRequest('closed');
     const res = await interleave(
       markMerged(cr.crId),
-      () => post(`/v1/projects/${PROJECT}/change-requests/${cr.crId}/reopen`, secret),
+      async () => post(`/v1/projects/${PROJECT}/change-requests/${cr.crId}/reopen`, secret),
       'change_requests',
     );
     expect(res.status).toBe(409);

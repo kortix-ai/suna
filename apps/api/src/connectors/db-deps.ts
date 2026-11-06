@@ -22,6 +22,7 @@ import {
   listEntitledConnectorConnections,
 } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
+import { completeConnection } from './connection-status';
 import { connectorAttachmentStore } from './attachments';
 import { notifyConnectorSession } from './notify-session';
 import {
@@ -649,32 +650,25 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
                 : Promise.resolve(null),
           })
         : null;
-      await db
-        .update(connectorConnections)
-        .set({
-          // An incomplete authorization is a retryable needs-auth state. The
-          // gateway derives it from metadata and rejects execution until an
-          // account id exists or the toolkit is explicitly no-auth.
-          status: 'active',
-          metadata: composioConnectionMetadata({
-            toolkit: conn.app,
-            stableUserId,
-            sessionId: result.sessionId,
-            authRequestId: result.authRequestId ?? authRequestId,
-            connectedAccountId,
-            isNoAuth: result.isNoAuth,
-            requestingSessionId,
-            previous: metadata,
-            connectedAs,
-          }),
-          updatedAt: sql`now()`,
-        })
-        .where(and(
-          eq(connectorConnections.accountId, conn.accountId),
-          eq(connectorConnections.projectId, projectId),
-          eq(connectorConnections.connectorId, conn.connectorId),
-          eq(connectorConnections.connectionId, connection.connectionId),
-        ));
+      // An in-flight completion (connectors/connection-status.ts): a revoke
+      // that landed while the person was signing in wins, and the account
+      // stays revoked. An incomplete authorization is a retryable needs-auth
+      // state: the gateway derives it from metadata and rejects execution
+      // until an account id exists or the toolkit is explicitly no-auth.
+      const live = await completeConnection(connection.connectionId, null, {
+        metadata: composioConnectionMetadata({
+          toolkit: conn.app,
+          stableUserId,
+          sessionId: result.sessionId,
+          authRequestId: result.authRequestId ?? authRequestId,
+          connectedAccountId,
+          isNoAuth: result.isNoAuth,
+          requestingSessionId,
+          previous: metadata,
+          connectedAs,
+        }),
+      });
+      if (!live) return { provider: 'composio', connected: false };
       // The agent that minted the link is blocked waiting on this. Tell it the
       // account landed so it resumes instead of posting a second link next run.
       // Fire-and-forget: the credential is already saved, and a notification

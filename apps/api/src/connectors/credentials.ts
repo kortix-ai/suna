@@ -18,6 +18,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { decryptNamedProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
+import { completeConnection, connectConnection } from './connection-status';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import {
   acquireOAuth2ClientCredentialsToken,
@@ -498,6 +499,13 @@ export async function upsertConnectionCredential(input: {
   value: string;
   kind?: 'secret' | 'connection' | 'oauth2_client_credentials' | 'oauth2_delegated';
   createdBy?: string | null;
+  /**
+   * When the flow that produced this credential started (an OAuth sign-in).
+   * Set: the write is an in-flight completion, and a revoke that landed after
+   * `startedAt` wins (`ConnectionRevokedError`, nothing is stored). Unset: a
+   * person sets the credential now, which (re)connects the account.
+   */
+  startedAt?: Date;
 }): Promise<void> {
   const [connection] = await db
     .select({ connectionId: connectorConnections.connectionId })
@@ -512,28 +520,37 @@ export async function upsertConnectionCredential(input: {
     .limit(1);
   if (!connection) throw new Error('Connection not found');
   const valueEnc = encryptProjectSecret(input.projectId, input.value);
-  await db.insert(connectionCredentials).values({
-    connectorId: input.connectorId,
-    connectionId: input.connectionId,
-    userId: null,
-    kind: input.kind ?? 'secret',
-    valueEnc,
-    createdBy: input.createdBy ?? null,
-  }).onConflictDoUpdate({
-    // One atomic write — the partial index is the arbiter, so its predicate must be named.
-    target: connectionCredentials.connectionId,
-    targetWhere: sql`${connectionCredentials.connectionId} is not null`,
-    set: { valueEnc, kind: input.kind ?? 'secret', updatedAt: new Date() },
+  await db.transaction(async (tx) => {
+    // The status first: it locks the row, so a revoke cannot land between the
+    // check and the credential write. A new credential is no longer the one
+    // the upstream rejected, and the account is no longer revoked.
+    const metadata = sql`${connectorConnections.metadata} - 'credential_rejected_at' - 'revokedAt'`;
+    const live = input.startedAt
+      ? await completeConnection(input.connectionId, input.startedAt, { metadata }, tx)
+      : (await connectConnection(input.connectionId, { metadata }, tx)) !== null;
+    if (!live) throw new ConnectionRevokedError(input.connectionId);
+    await tx.insert(connectionCredentials).values({
+      connectorId: input.connectorId,
+      connectionId: input.connectionId,
+      userId: null,
+      kind: input.kind ?? 'secret',
+      valueEnc,
+      createdBy: input.createdBy ?? null,
+    }).onConflictDoUpdate({
+      // One atomic write — the partial index is the arbiter, so its predicate must be named.
+      target: connectionCredentials.connectionId,
+      targetWhere: sql`${connectionCredentials.connectionId} is not null`,
+      set: { valueEnc, kind: input.kind ?? 'secret', updatedAt: new Date() },
+    });
   });
-  await db
-    .update(connectorConnections)
-    .set({
-      status: 'active',
-      // A new credential is no longer the one the upstream rejected.
-      metadata: sql`${connectorConnections.metadata} - 'credential_rejected_at'`,
-      updatedAt: new Date(),
-    })
-    .where(eq(connectorConnections.connectionId, input.connectionId));
+}
+
+/** An in-flight completion lost to a revoke that landed after its flow started. */
+export class ConnectionRevokedError extends Error {
+  constructor(connectionId: string) {
+    super(`connection ${connectionId} was revoked while its authorization was in flight`);
+    this.name = 'ConnectionRevokedError';
+  }
 }
 
 export async function upsertConnectionOAuth2Credential(
