@@ -1263,7 +1263,7 @@ test('transferProject POSTs the target account id to the transfer route', async 
   const sent = await captureTransfer('proj-1', 'acc-2');
 
   expect(sent.method).toBe('POST');
-  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/transfer');
+  expect(sent.url).toBe('http://backend.test/v1/workspaces/proj-1/transfer');
   expect(sent.parsed).toEqual({ account_id: 'acc-2' });
 });
 

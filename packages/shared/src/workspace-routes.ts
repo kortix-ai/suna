@@ -209,9 +209,9 @@ export const WORKSPACE_LEGACY_ONLY_ROUTES: readonly string[] = [
  * replacement (`x-kortix-replaced-by`). Keys and values are `METHOD template`.
  */
 export const WORKSPACE_LEGACY_REPLACEMENTS: Readonly<Record<string, string>> = {
-  // One account's projects / an import into an account → every workspace / a new workspace.
+  // One account's projects → every workspace; a repository import into an account → the workspace import.
   'GET /v1/projects': 'GET /v1/workspaces',
-  'POST /v1/projects': 'POST /v1/workspaces',
+  'POST /v1/projects': 'POST /v1/workspaces/link-repository',
   'GET /v1/projects/:workspaceId': 'GET /v1/workspaces/:workspaceId',
   'PATCH /v1/projects/:workspaceId': 'PATCH /v1/workspaces/:workspaceId',
   'POST /v1/projects/provision': 'POST /v1/workspaces',

@@ -801,7 +801,7 @@ export async function createProject(input: ProjectInput) {
  */
 export async function createProjectRepo(input: CreateProjectRepoInput) {
   return unwrap(
-    await backendApi.post<KortixProject>('/projects/create-repo', input, { showErrors: false }),
+    await backendApi.post<KortixProject>('/workspaces/create-repo', input, { showErrors: false }),
   );
 }
 
@@ -1249,7 +1249,7 @@ export async function archiveProject(projectId: string) {
 export async function transferProject(projectId: string, accountId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean; project_id: string; account_id: string }>(
-      `/projects/${projectId}/transfer`,
+      `/workspaces/${projectId}/transfer`,
       { account_id: accountId },
     ),
   );

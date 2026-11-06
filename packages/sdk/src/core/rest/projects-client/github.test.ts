@@ -118,9 +118,11 @@ test('sends the GitHub user proof when saving an installation', async () => {
   });
 });
 
-test('sends the icon in the request body when linking a repository', async () => {
+test('sends the icon in the request body when linking a repository, to the canonical workspace route', async () => {
   let requestBody: unknown;
-  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+  let requestUrl = '';
+  globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+    requestUrl = input instanceof Request ? input.url : String(input);
     requestBody = JSON.parse(String(init?.body));
     return Response.json({
       project: { project_id: 'proj-1', name: 'Iconic', icon: '🚀' },
@@ -139,6 +141,7 @@ test('sends the icon in the request body when linking a repository', async () =>
     repo_url: 'https://github.com/acme/repo',
     icon: '🚀',
   });
+  expect(new URL(requestUrl).pathname).toEndWith('/v1/workspaces/link-repository');
 });
 
 test('sends the icon_glyph in the request body when linking a repository', async () => {

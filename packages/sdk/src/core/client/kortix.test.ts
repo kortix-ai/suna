@@ -794,9 +794,9 @@ test('project(id) covers experimental-feature toggle, sandbox provider pin, and 
   expect(last().method).toBe('POST');
 });
 
-test('kortix.projects.createRepo hits the create-repo endpoint (not bound to an existing project id)', async () => {
+test('kortix.projects.createRepo hits the canonical create-repo endpoint (not bound to an existing project id)', async () => {
   await kortix.projects.createRepo({ name: 'new-repo' });
-  expect(last().url).toContain('/projects/create-repo');
+  expect(last().url).toContain('/workspaces/create-repo');
   expect(last().method).toBe('POST');
 });
 
@@ -921,7 +921,8 @@ test('kortix.accounts.audit covers log/export/webhooks CRUD', async () => {
 
 test('project(id).audit and session(id).audit expose canonical cursor pagination', async () => {
   await kortix.project('PID123').audit({ phase: 'completed', cursor: 'CUR1' });
-  expect(last().url).toContain('/projects/PID123/audit?phase=completed&cursor=CUR1');
+  // The project audit slice's canonical name: `/workspaces/:id/audit` is the workspace audit log.
+  expect(last().url).toContain('/workspaces/PID123/audit/events?phase=completed&cursor=CUR1');
 
   await kortix.session('PID123', 'SID456').audit(50, { cursor: '42|EVENT' });
   expect(last().url).toContain('/workspaces/PID123/sessions/SID456/audit?limit=50&cursor=42%7CEVENT');

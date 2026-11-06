@@ -149,7 +149,7 @@ export async function getProjectGitConnectionState(projectId: string) {
 export async function linkRepository(input: LinkRepositoryInput) {
   return unwrap(
     await backendApi.post<LinkRepositoryResponse>(
-      '/projects/link-repository',
+      '/workspaces/link-repository',
       input,
       {
         showErrors: false,
