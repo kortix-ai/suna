@@ -15,6 +15,8 @@
  * helpers below, never with a bare `as` cast.
  */
 
+import { isUuid as isUuidShape } from '../shared/validate';
+
 declare const workspaceIdBrand: unique symbol;
 declare const workspaceAccountKeyBrand: unique symbol;
 
@@ -24,11 +26,9 @@ export type WorkspaceId = string & { readonly [workspaceIdBrand]: 'WorkspaceId' 
 /** The workspace's internal account key. Physically `kortix.accounts.account_id`. */
 export type WorkspaceAccountKey = string & { readonly [workspaceAccountKeyBrand]: 'WorkspaceAccountKey' };
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** True when `value` is a uuid string (any version). Both workspace keys are uuids. */
 export function isUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID_RE.test(value);
+  return isUuidShape(value);
 }
 
 /** Brand a `project_id` as a `WorkspaceId`. Throws `TypeError` on a non-uuid. */

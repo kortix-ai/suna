@@ -65,6 +65,7 @@
  */
 
 import { WORKSPACE_ACCOUNT_FAMILIES } from '@kortix/shared/workspace-routes';
+import { isUuid } from '../shared/validate';
 
 export type WorkspaceBindingKind = 'path' | 'resource' | 'ambient' | 'platform' | 'person' | 'none';
 
@@ -270,11 +271,9 @@ export interface MatchedBinding {
   params: Record<string, string>;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** A uuid in canonical (lowercase) form; anything else unchanged. Uuids are case-insensitive on input (C5). */
 export function canonicalIdParam(value: string): string {
-  return UUID_RE.test(value) ? value.toLowerCase() : value;
+  return isUuid(value) ? value.toLowerCase() : value;
 }
 
 /** The binding of one request, or null when no rule lists it (refused). Captured uuid params are lowercase. */
@@ -342,7 +341,7 @@ async function namesOwnWorkspace(
 ): Promise<WorkspaceFenceVerdict> {
   const canonical = canonicalIdParam(id);
   if (canonical === credential.workspaceId) return ALLOWED;
-  if (!viaAccount || !UUID_RE.test(canonical)) return refuse('cross-workspace');
+  if (!viaAccount || !isUuid(canonical)) return refuse('cross-workspace');
   const workspace = await deps.accountWorkspace(canonical);
   if (workspace === credential.workspaceId) return ALLOWED;
   return refuse(workspace === 'ambiguous' ? 'account-wider-than-workspace' : 'cross-workspace');

@@ -20,8 +20,7 @@
  * TS2344, TS2345: ~315) are hand-written domain types that mirror a row
  * (`GitBackedProject`, `ArtifactScope`, `Pick<…, 'projectId'>`). Renaming those
  * cascades into every caller: the bulk rename that sank #5480. Run stage 3
- * one module at a time, behind the ratchet in
- * apps/api/src/__tests__/unit-workspace-projectid-ratchet.test.ts.
+ * one module at a time, in Release 3 with the column rename (design.md §5).
  *
  * Every reference moves with its declaration through the TypeScript language
  * service (`findRenameLocations`, prefix/suffix text on: a shorthand

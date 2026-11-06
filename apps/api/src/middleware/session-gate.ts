@@ -7,6 +7,7 @@ import { auditSessionFirstSight } from './auth-audit';
 import { requestClientIp } from './client-ip';
 import { deadCredential401 } from '../shared/dead-credential-log';
 import { accountIdParam } from '../shared/route-params';
+import { isUuid } from '../shared/validate';
 
 /**
  * Mount this on /v1/accounts/:accountId/* AFTER auth middleware. It
@@ -38,7 +39,7 @@ const checksByRequest = new WeakMap<Request, Map<string, Promise<void>>>();
  * Memoized per request and account.
  */
 export function enforceSessionPolicy(c: Context, accountId: string): Promise<void> {
-  if (!accountId || !UUID_RE.test(accountId)) return Promise.resolve();
+  if (!accountId || !isUuid(accountId)) return Promise.resolve();
   if ((c.get('authType') as string | undefined) !== 'supabase') return Promise.resolve();
   const raw = c.req.raw;
   let checks = checksByRequest.get(raw);
@@ -55,7 +56,6 @@ export function enforceSessionPolicy(c: Context, accountId: string): Promise<voi
   return check;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function checkSessionPolicy(c: Context, accountId: string): Promise<void> {
   const userId = c.get('userId') as string | undefined;

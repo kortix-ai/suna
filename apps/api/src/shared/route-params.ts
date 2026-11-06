@@ -11,6 +11,7 @@
  * Both helpers also read the pre-codemod names, so a router or a test app that
  * still declares `:projectId` / `:accountId` keeps working.
  */
+import { isUuid } from './validate';
 
 /** The narrow slice of a Hono `Context` these helpers read. */
 export interface RouteParamContext {
@@ -31,11 +32,9 @@ function contextVar(c: RouteParamContext, key: string): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** A uuid in its one stored form (lowercase); any other value unchanged. */
 function canonicalId<T extends string | undefined>(value: T): T {
-  return (typeof value === 'string' && UUID.test(value) ? value.toLowerCase() : value) as T;
+  return (isUuid(value) ? value.toLowerCase() : value) as T;
 }
 
 /**

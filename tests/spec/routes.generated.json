@@ -2390,91 +2390,6 @@
       "path": "/v1/projects"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/goals",
-      "aliasOf": "/v1/workspaces/:projectId/goals"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals",
-      "aliasOf": "/v1/workspaces/:projectId/goals"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/goals/:goalId",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/goals/:goalId",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/activate",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/activate"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/answer",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/answer"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/goals/:goalId/criteria",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/criteria"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/goals/:goalId/events",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/events"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/handover",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/handover"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/pause",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/pause"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/progress",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/progress"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/request-verification",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/request-verification"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/restart",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/restart"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/resume",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/resume"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/stop",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/stop"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/verdict",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/verdict"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/goals/:goalId/wait",
-      "aliasOf": "/v1/workspaces/:projectId/goals/:goalId/wait"
-    },
-    {
       "method": "DELETE",
       "path": "/v1/projects/:workspaceId",
       "aliasOf": "/v1/workspaces/:workspaceId"
@@ -3720,6 +3635,91 @@
       "method": "PUT",
       "path": "/v1/projects/:workspaceId/git/repository",
       "aliasOf": "/v1/workspaces/:workspaceId/git/repository"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/goals",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/goals/:goalId",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:workspaceId/goals/:goalId",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/activate",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/activate"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/answer",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/answer"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/criteria",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/criteria"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/events",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/handover",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/handover"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/pause",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/pause"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/progress",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/progress"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/request-verification",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/request-verification"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/restart",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/restart"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/resume",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/resume"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/stop",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/verdict",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/verdict"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:workspaceId/goals/:goalId/wait",
+      "aliasOf": "/v1/workspaces/:workspaceId/goals/:goalId/wait"
     },
     {
       "method": "GET",
@@ -5234,74 +5234,6 @@
       "path": "/v1/workspaces"
     },
     {
-      "method": "GET",
-      "path": "/v1/workspaces/:projectId/goals"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/workspaces/:projectId/goals/:goalId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/workspaces/:projectId/goals/:goalId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/activate"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/answer"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/criteria"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/events"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/handover"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/pause"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/progress"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/request-verification"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/restart"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/resume"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/stop"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/verdict"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:projectId/goals/:goalId/wait"
-    },
-    {
       "method": "DELETE",
       "path": "/v1/workspaces/:workspaceId"
     },
@@ -6456,6 +6388,74 @@
     {
       "method": "PUT",
       "path": "/v1/workspaces/:workspaceId/git/repository"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/goals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/activate"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/answer"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/criteria"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/handover"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/pause"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/progress"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/request-verification"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/restart"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/resume"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/verdict"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/workspaces/:workspaceId/goals/:goalId/wait"
     },
     {
       "method": "GET",
