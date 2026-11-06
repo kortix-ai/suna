@@ -829,7 +829,7 @@ export class PiRuntime {
         streamFn: withMessageIdentity(
           withAgentSampling(
             (model, context, options) => this.models!.models.streamSimple(model, context, { ...options, sessionId: this.rootId }),
-            () => this.sampling(this.compiledAgent(), this.selected!),
+            () => this.sampling(this.compiledAgent(), this.selected!, this.turnParent ?? undefined),
           ),
           { reserveMessageId: () => this.adapter!.reserveMessageId(), turnId: () => this.turnParent },
         ),
@@ -2321,7 +2321,7 @@ export class PiRuntime {
       streamFn: withMessageIdentity(
         withAgentSampling(
           (m, context, options) => this.models!.models.streamSimple(m, context, { ...options, sessionId: child.id }),
-          () => this.sampling(this.compiled?.agent?.[input.agent], selected),
+          () => this.sampling(this.compiled?.agent?.[input.agent], selected, messageId),
         ),
         { reserveMessageId: () => adapter.reserveMessageId(), turnId: () => messageId, threadId: child.id },
       ),
@@ -2573,12 +2573,15 @@ export class PiRuntime {
     this.rebuildSystemPrompt()
   }
 
-  /** An agent's `temperature`, `top_p` and `steps` for its requests on `model`. */
-  private sampling(agent: CompiledAgent | undefined, model: SelectedModel) {
+  /** An agent's `temperature`, `top_p`, `steps` and current run id for its requests on `model`.
+   *  `runId` is the prompt message id of the run in flight; the step counter resets when it
+   *  changes (a new turn or sub-agent invocation) and holds across compaction within a run. */
+  private sampling(agent: CompiledAgent | undefined, model: SelectedModel, runId: string | undefined) {
     return {
       temperature: agent?.temperature,
       top_p: agent?.top_p,
       steps: agent?.steps,
+      runId,
       acceptsTemperature: this.models?.catalog[model.modelID]?.temperature !== false,
     }
   }
