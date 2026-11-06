@@ -1414,27 +1414,24 @@ builtin extension `kortix-context-record`).** It answers pi's
 `session_before_compact` hook for every trigger (threshold, overflow,
 `/summarize`) with its own compaction, and pi makes no model call:
 
-- The record: every entry of the root thread, word for word, in
-  `<KORTIX_PI_STATE_DIR>/records/<pi session id>.log` (dir `0700`, file `0600`,
-  a `.gitignore` of `*`, outside `/workspace`). One JSON header line per entry
-  (`{"n":12,"kind":"result","time":"…","name":"bash","for":"call_3","exit":"ok"}`;
-  kinds `user`, `assistant`, `thinking`, `call`, `result`, `error`, `event`,
-  `model`, `reset`), then its text. An image is one line; pi's system prompt
-  entry is left out. Written at session start (a restored log included), at
-  every settled run, and inside the hook.
+- The source: the session log the API stores (`GET .../sessions/:id/log`),
+  journaled at every turn end and every 5 s during a turn. Nothing is copied
+  into a file. `kortix sessions log <KORTIX_SESSION_ID> --json` reads it, plus
+  the open turn live from this box.
 - The reset: no `firstKeptEntryId`, so pi keeps no earlier entry. Its text
-  gives the record's path and format, tells the model to read exact lines with
-  the `grep` and `read` tools (not the shell) when it needs them, repeats the person's latest message (up to 8,000
+  names the command that reads the log, tells the model to read exact lines
+  when it needs them, repeats the person's latest message (up to 8,000
   characters), and adds a mid-turn note when the reset lands inside a tool
-  chain or an overflow retry. `details` is `{ kind: 'record', path, entries }`.
+  chain or an overflow retry. `details` is `{ kind: 'record', session, entries }`
+  (`entries`: the branch's messages).
 - The wire: the marker part gains `mode: 'record'`, `tokens_before` and
   `entries` when the reset lands (re-published at `compaction_end`), and the
-  session-log block carries `mode` and `entries`. A failed record write
-  returns nothing from the hook, so pi's summary keeps the session going.
-- The agent's `context: summary` (kortix.yaml, sent as `KORTIX_PI_CONTEXT`)
-  leaves the extension out: pi's own summary compaction below then runs.
+  session-log block carries `mode` and `entries`.
+- The agent's `context: summary` (kortix.yaml, sent as `KORTIX_PI_CONTEXT`),
+  or a daemon with no `KORTIX_SESSION_ID`, leaves the extension out: pi's own
+  summary compaction below then runs.
 
-pi's own compaction (an agent with `context: summary`, or a failed record write) runs on demand (`POST /session/:id/summarize`),
+pi's own compaction (an agent with `context: summary`, or no Kortix session) runs on demand (`POST /session/:id/summarize`),
 when the context nears the model's window, and when a model request overflows
 it or a reply is cut by the length limit (pi then retries that request once;
 the failed attempt's error is withheld from the wire and lands on the message
