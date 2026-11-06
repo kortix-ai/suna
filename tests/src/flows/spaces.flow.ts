@@ -1439,7 +1439,8 @@ flow('SPACE-23', meta([...Object.values(MEMBER_ROUTES), ROUTES.list, ROUTES.crea
     await world.setFeature('chat', true);
     const priya = await team.addMember('member');
     const sam = await team.addMember('member');
-    const outsider = await team.addMember('member');
+    // Membership is access (design.md C3): the outsider is a person outside the workspace.
+    const outsider = await ctx.fixtures.user({ label: 'SPACE23-OUTSIDER' });
     await team.grantProjectRole(project.id, priya.userId!, 'member');
     await team.grantProjectRole(project.id, sam.userId!, 'member');
     const owner = world.ownerUserId;
@@ -1467,7 +1468,7 @@ flow('SPACE-23', meta([...Object.values(MEMBER_ROUTES), ROUTES.list, ROUTES.crea
       if (JSON.stringify(memberIds(a)) !== JSON.stringify(memberIds(b))) throw new Error('two viewers read different members');
     });
 
-    await ctx.step('an account member without project access and an unknown id → 400 not_project_member; nobody is added', async () => {
+    await ctx.step('a person outside the workspace and an unknown id → 400 not_project_member; nobody is added', async () => {
       for (const id of [outsider.userId, randomUUID()]) {
         (await world.owner.post(SPACE_MEMBERS, { user_ids: [id] }, { params: { ...params, spaceId: channelId } }))
           .status(400).body().has('$.code', 'not_project_member');
@@ -1506,7 +1507,7 @@ flow('SPACE-23', meta([...Object.values(MEMBER_ROUTES), ROUTES.list, ROUTES.crea
       const spaceParams = { ...params, spaceId: general.space_id };
       const list = (await ctx.client.as(sam).get(SPACE_MEMBERS, { params: spaceParams })).status(200).json<MemberList>();
       if (!list.implicit || list.can_add) throw new Error('#general is not implicit or offers add');
-      if (memberIds(list).includes(outsider.userId!)) throw new Error('#general lists an account member without project access');
+      if (memberIds(list).includes(outsider.userId!)) throw new Error('#general lists a person outside the workspace');
       (await world.owner.post(SPACE_MEMBERS, { user_ids: [sam.userId] }, { params: spaceParams })).status(400).body().has('$.code', 'default_channel');
       (await ctx.client.as(sam).post(SPACE_JOIN, undefined, { params: spaceParams })).status(400).body().has('$.code', 'default_channel');
       (await ctx.client.as(sam).del(SPACE_MEMBER, { params: { ...spaceParams, userId: 'me' } })).status(400).body().has('$.code', 'default_channel');

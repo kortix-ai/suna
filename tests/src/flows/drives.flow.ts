@@ -515,7 +515,8 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get('/v1/drives/usage', { query: { account_id: team.id } })).status(401);
       });
 
-      await ctx.step("an account member with no access to the project never sees its name or storage in the account's list", async () => {
+      await ctx.step("an account member of the 1:1 workspace is in it: the account's storage list names the project", async () => {
+        // Membership is access (design.md C3). A non-member is refused above.
         const member = await team.addMember('member');
         // Membership reaches every API process within 15 s; until then the route may answer 403.
         const deadline = Date.now() + 45_000;
@@ -527,8 +528,8 @@ flow(
         if (r.statusCode === 403) return; // no billing.read: nothing is disclosed either
         r.status(200);
         const listed = r.json<{ projects: { projectId: string; name: string }[] }>().projects;
-        if (listed.some((p) => p.projectId === project.id)) {
-          throw new Error(`a member without project access sees the project in the storage list: ${JSON.stringify(listed)}`);
+        if (!listed.some((p) => p.projectId === project.id)) {
+          throw new Error(`a member of the workspace does not see it in the storage list: ${JSON.stringify(listed)}`);
         }
       });
 

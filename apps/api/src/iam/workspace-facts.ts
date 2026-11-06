@@ -11,10 +11,8 @@ import { isUuid } from '../shared/validate';
 import { ttlMemo } from '../shared/ttl-memo';
 import { invalidateIamCacheForProjectResources, registerProjectScopedMemo } from './cache-invalidation';
 
-const TTL_MS = (() => {
-  const raw = Number(process.env.IAM_CACHE_TTL_MS);
-  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 15_000;
-})();
+/** The IAM memo window (iam/authorize.ts reads the same 15 s default). */
+const TTL_MS = 15_000;
 
 /**
  * What the engine needs to know about an account's workspace, read once per
@@ -24,9 +22,11 @@ const TTL_MS = (() => {
  *     a closing one (its project row is archived) and a split_pending one;
  *   - `closing`: an account deletion request is open (lifecycle `closing`).
  *
- * Cached only while the account has its one workspace and is not closing, so a
- * provision, a split or a deletion is seen on the next request; the deleting
- * and restoring writers bust it through `invalidateWorkspaceFactsForAccount`.
+ * Cached only while the account is not closing and either has its one
+ * workspace or is split_pending (a dormant or closing account is read fresh,
+ * so a provision or a restore is seen on the next request). The deleting,
+ * restoring and splitting writers bust it through
+ * `invalidateWorkspaceFactsForAccount`; the TTL is the cross-replica backstop.
  * Keyed `${accountId}|…` and registered as a project-scoped memo: the bust
  * reuses the project channel, which crosses replicas.
  */
@@ -67,7 +67,7 @@ const workspaceFactsMemo = ttlMemo({
       closing: open.length > 0,
     };
   },
-  shouldCache: (facts) => facts.soleProjectId !== null && !facts.closing,
+  shouldCache: (facts) => !facts.closing && (facts.soleProjectId !== null || facts.splitPending),
 });
 registerProjectScopedMemo(workspaceFactsMemo);
 

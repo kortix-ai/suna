@@ -55,7 +55,6 @@ flow(
     const project = await team.project({ managedGit: true });
     const member = await team.addMember('member');
     await team.grantProjectRole(project.id, member.userId!, 'user');
-    const outsider = await team.addMember('member');
     const owner = ctx.client.as(ctx.P.OWNER);
     const asMember = ctx.client.as(member);
     const params = { projectId: project.id };
@@ -196,8 +195,9 @@ flow(
         (await search(owner, { q: word, limit: 'ten' })).status(400).body().has('$.code', 'invalid_input');
       });
 
-      await ctx.step('an account member without access to the project → 403', async () => {
-        (await search(ctx.client.as(outsider), { q: word })).status(403);
+      await ctx.step('a person outside the workspace → 403', async () => {
+        // Membership is access (design.md C3): an account member is in the 1:1 workspace.
+        (await search(ctx.client.as(ctx.P.NONMEMBER), { q: word })).status(403);
       });
     } finally {
       if (tokenId) await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [tokenId]).catch(() => {});

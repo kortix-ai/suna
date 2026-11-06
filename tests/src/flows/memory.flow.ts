@@ -546,7 +546,8 @@ flow(
     // A DM runs its agent: the member needs the agent's run grant to open one.
     await world.grantRun('worker', member);
     // An account member with no access to this project: never on its roster.
-    const outsider = await team.addMember('member');
+    // Membership is access (design.md C3): the outsider is a person outside the workspace.
+    const outsider = await ctx.fixtures.user({ label: 'MEM16-OUTSIDER' });
     const asMember = ctx.client.as(member);
     const stateOf = async (client: Client) => read<ChannelsOnboarding>((await client.get(ONBOARDING, { params })).status(200), (b) => b.schema(ChannelsOnboardingSchema));
     const mark = (client: Client, value: string) => client.post(MARKS, { mark: value }, { params });
@@ -666,7 +667,7 @@ flow(
       await ctx.step('the intro is marked for project members only: the owner and the member, never the account member without project access', async () => {
         const marked = await introMarks();
         for (const userId of [world.ownerUserId, member.userId!]) if (!marked.includes(userId)) fail('a project member has no intro mark', { userId, marked });
-        if (marked.includes(outsider.userId!)) fail('an account member without project access got an intro mark', marked);
+        if (marked.includes(outsider.userId!)) fail('a person outside the workspace got an intro mark', marked);
         (await ctx.client.as(outsider).get(ONBOARDING, { params })).status([403, 404]);
       });
     } finally {
