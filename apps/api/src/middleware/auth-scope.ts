@@ -1,7 +1,15 @@
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveSandboxProjectId } from '../shared/preview-ownership';
-import { workspaceFenceVerdict } from './workspace-binding';
+import { WorkspaceAmbiguousError, resolveWorkspace } from '../workspaces/surface';
+import {
+  CREDENTIAL_FENCE_REFUSED_CODE,
+  WORKSPACE_PARAM_NAMES,
+  canonicalIdParam,
+  readsWorkspaceParams,
+  workspaceFenceVerdict,
+  type AccountWorkspace,
+} from './workspace-binding';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 // ─── Internal helpers ────────────────────────────────────────────────────────
@@ -29,12 +37,13 @@ export function extractPreviewSandboxId(path: string): string | null {
 }
 
 /**
- * The credential fence for a workspace-bound PAT (a project PAT or the
- * in-sandbox session `KORTIX_TOKEN`): it reaches a route only when the route
- * binds to the token's own workspace. ONE rule over ONE table,
+ * The credential fence for a workspace-bound key (a workspace key, a project
+ * CLI token or the in-sandbox session `KORTIX_TOKEN`): it reaches a request
+ * only when the request's workspace is its own. ONE rule over ONE table,
  * `middleware/workspace-binding.ts`; read that file to add a route.
  *
- * Throws HTTPException(403) so the calling middleware aborts the chain.
+ * Throws HTTPException(403) `credential_fence_refused` so the calling
+ * middleware aborts the chain.
  */
 export async function enforceTokenProjectScope(
   c: Context,
@@ -42,11 +51,14 @@ export async function enforceTokenProjectScope(
   opts: { sessionBound?: boolean } = {},
 ): Promise<void> {
   const path = c.req.path;
+  const method = c.req.method;
+  const workspaceId = canonicalIdParam(tokenProjectId);
   const verdict = await workspaceFenceVerdict(
-    c.req.method,
+    method,
     path,
-    { workspaceId: tokenProjectId, sessionBound: Boolean(opts.sessionBound) },
-    { sandboxWorkspace: resolveSandboxProjectId },
+    { workspaceId, sessionBound: Boolean(opts.sessionBound) },
+    { sandboxWorkspace: resolveSandboxProjectId, accountWorkspace },
+    readsWorkspaceParams(method, path) ? { ids: await requestWorkspaceParams(c) } : undefined,
   );
   if (verdict.allowed) return;
   // NAME the principal and the check in the message. The global `app.onError`
@@ -54,11 +66,52 @@ export async function enforceTokenProjectScope(
   // reason made every denial indistinguishable in Better Stack: 2,338 identical
   // `POST /v1/platform/boot-timeline -> 403` lines over 7 days (2026-09-09)
   // named neither the credential nor the branch that rejected it.
+  const message =
+    `${verdict.reason} ` +
+    `[check=token-project-scope:${verdict.check} ` +
+    `principal=${opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat'} ` +
+    `project=${workspaceId} path=${path}]`;
+  // A typed body: the CLI picks its remedy from `code`, and no kortix.yaml
+  // grant can lift a fence refusal, so it must never read as a grant miss.
   throw new HTTPException(403, {
-    message:
-      `${verdict.reason} ` +
-      `[check=token-project-scope:${verdict.check} ` +
-      `principal=${opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat'} ` +
-      `project=${tokenProjectId} path=${path}]`,
+    message,
+    res: new Response(
+      JSON.stringify({ error: true, message, status: 403, code: CREDENTIAL_FENCE_REFUSED_CODE, check: verdict.check }),
+      { status: 403, headers: { 'content-type': 'application/json' } },
+    ),
   });
+}
+
+/** `account → workspace` for the fence: the one live workspace, `ambiguous`, or null. */
+async function accountWorkspace(accountId: string): Promise<AccountWorkspace> {
+  try {
+    const resolved = await resolveWorkspace(accountId);
+    return resolved ? resolved.workspaceId : null;
+  } catch (err) {
+    if (err instanceof WorkspaceAmbiguousError) return 'ambiguous';
+    throw err;
+  }
+}
+
+/**
+ * The workspace ids a `reach: 'param'` request names: `account_id`,
+ * `workspace_id` and `project_id` in the query string and in a JSON body.
+ * `c.req.json()` caches the parsed body, so the handler reads it again.
+ */
+async function requestWorkspaceParams(c: Context): Promise<string[]> {
+  const ids: string[] = [];
+  for (const name of WORKSPACE_PARAM_NAMES) {
+    for (const value of c.req.queries(name) ?? []) if (value) ids.push(value);
+  }
+  const contentType = c.req.header('content-type') ?? '';
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD' && contentType.includes('application/json')) {
+    const body = await c.req.json().catch(() => null);
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      for (const name of WORKSPACE_PARAM_NAMES) {
+        const value = (body as Record<string, unknown>)[name];
+        if (typeof value === 'string' && value) ids.push(value);
+      }
+    }
+  }
+  return ids;
 }

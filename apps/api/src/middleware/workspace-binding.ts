@@ -1,72 +1,90 @@
 /**
- * THE credential fence, as one rule (Workspaces, design.md §5):
+ * THE credential fence, as one rule (Workspaces, design.md §3.2 C4):
  *
- *     a workspace-bound credential reaches a route
- *     only when the route binds to that same workspace.
+ *     a workspace-bound credential reaches a request
+ *     only when the request's workspace is its own.
  *
- * A workspace-bound credential is a project PAT or a session PAT
- * (`account_tokens.project_id` set; the workspace id IS the project id). Every
- * route has exactly ONE binding, in `WORKSPACE_BINDINGS` below. There is no
- * fallback rule: an unlisted path is refused (fail closed), and
+ * A workspace-bound credential is a workspace key, a project CLI token or a
+ * session token (`account_tokens.project_id` = W; the workspace id IS the
+ * project id). Person credentials (a Supabase JWT, a personal key with
+ * `project_id IS NULL`, an OAuth token) are never judged here: they act as the
+ * person in each workspace, and `authorize` decides per workspace. A
+ * service-account bearer belongs to exactly one account, and `authorize`
+ * resolves it only inside that account (`resolvePrincipal`), so the engine
+ * already confines it to its workspace.
+ *
+ * The fence never decides WHAT a credential may do inside its own workspace.
+ * That is the holder's role (a person's key) or `grant ∩ ceiling − HUMAN_ONLY`
+ * (a governed agent), decided in `iam/authorize.ts`. There is no second,
+ * credential-class wall around workspace administration: a workspace key
+ * manages its own workspace exactly as far as the person who minted it may.
+ *
+ * Every route has exactly ONE binding, in `WORKSPACE_BINDINGS` below. There is
+ * no fallback rule: an unlisted path is refused (fail closed), and
  * `__tests__/unit-workspace-binding-coverage.test.ts` fails when any route in
- * `tests/spec/routes.generated.json` has no binding, so an unlisted route fails
- * in CI instead of answering 403 in production.
+ * `tests/spec/routes.generated.json` has no binding.
  *
- * The four binding kinds:
+ * The binding kinds:
  *
- *   path      The workspace is in the URL: `:projectId` or `:workspaceId`. The
- *             credential passes when the URL id is its own workspace.
+ *   path      The workspace is in the URL. `:workspaceId` (legacy
+ *             `/v1/projects/:id` routes carry the same param name) passes when
+ *             it is the credential's workspace. `/v1/accounts/:workspaceId/**`
+ *             takes either id and resolves an account key through the
+ *             account → workspace bijection (`workspace_id_of_account`). A
+ *             `split_pending` account holds several workspaces, so it is wider
+ *             than any one workspace key: `account-wider-than-workspace`.
  *   resource  The URL names a resource of one workspace: a sandbox (`/v1/p/:id`,
- *             resolved through `session_sandboxes`), a drive (resolved by the
- *             drive handlers, `drives/routes.ts`), or the session itself (the
+ *             resolved through `session_sandboxes`), a drive (the drive
+ *             handlers check the workspace), or the session itself (the
  *             daemon-only platform sinks, session-bound credentials only).
- *   ambient   No workspace in the URL. `reach: 'credential'` = the handler
- *             binds every read and write to the credential's OWN workspace
- *             (`/v1/projects/current`, cost summaries, `capture/me`), so the
- *             credential passes. `reach: 'account'` = the route acts on an
- *             account, on many workspaces or on the platform (billing, the
- *             router, admin, the project list), so a workspace-bound
- *             credential is refused.
- *   none      The route serves no workspace data at all (self-identity, the
- *             managed skills, runtime build artifacts, feedback). Every
- *             credential passes; the handler authenticates.
+ *   ambient   No workspace in the URL.
+ *             `reach: 'credential'`: the handler scopes every read and write to
+ *             the credential's own workspace (`GET /v1/workspaces` and
+ *             `GET /v1/projects` list that one workspace, `/v1/projects/current`,
+ *             cost summaries, `capture/me`).
+ *             `reach: 'param'`: an `account_id`, `workspace_id` or `project_id`
+ *             in the query or the JSON body names the workspace; it must be the
+ *             credential's own. With none, the handler falls back to the
+ *             credential's own account (`scopedAccountIdFor`'s bound account).
+ *   platform  Admin, router, ops and other platform or machine surfaces:
+ *             refused (`platform-route`).
+ *   person    The person's own surfaces across workspaces (personal keys, the
+ *             inbox, devices, invites, Chrome, private tunnel machines, the
+ *             workspace list of `/v1/accounts`): refused (`person-route`).
+ *             `/v1/me` and `/v1/accounts/me` are self-identity (`none`).
+ *   none      No workspace data at all (self-identity, the managed skills,
+ *             runtime build artifacts, feedback). Every credential passes.
  *
- * `admin: true` marks workspace ADMINISTRATION: the account surface (members,
- * IAM, billing settings, SSO, tokens, Capture admin, audit) under
- * `/v1/accounts/*` and its `/v1/workspaces/:workspaceId/<subtree>` aliases. A
- * workspace-bound credential never reaches it, even for its own workspace.
- * That is the credential half of "an agent never inherits workspace
- * administration"; the engine half is `iam/authorize.ts` step 4b.
- *
- * Account-wide credentials (an account PAT, a JWT, a service account, OAuth)
- * are not workspace-bound and are not judged here: `authorize` decides for
- * them, as it always has. Changing that would break every account PAT used
- * across a person's accounts, which compatibility rules out.
- *
- * Bind by ROUTE PATTERN, never by router: `/v1/projects/:projectId/*` and its
+ * Bind by ROUTE PATTERN, never by router: `/v1/projects/:workspaceId/*` and its
  * `/v1/workspaces/:workspaceId/*` alias resolve through the same kind, so both
  * route families get one verdict.
  *
- * Every denial message keeps the `check=token-project-scope:<check>` names the
- * old per-route allowlist used (`account-level-route`, `cross-project`,
- * `project-list`, `foreign-sandbox`, `default-deny`), so log searches and
- * dashboards keep working.
+ * Refusal: `403 { code: 'credential_fence_refused', check, message }`. The
+ * message reads "This workspace key cannot …" and keeps
+ * `[check=token-project-scope:<check> …]` for log searches.
  */
 
-export type WorkspaceBindingKind = 'path' | 'resource' | 'ambient' | 'none';
+export type WorkspaceBindingKind = 'path' | 'resource' | 'ambient' | 'platform' | 'person' | 'none';
 
-/** The `check=` name a denial reports. */
+/** The `check=` name a refusal reports. */
 export type WorkspaceFenceCheck =
-  | 'account-level-route'
-  | 'cross-project'
-  | 'project-list'
+  | 'cross-workspace'
+  | 'account-wider-than-workspace'
+  | 'platform-route'
+  | 'person-route'
   | 'foreign-sandbox'
   | 'default-deny';
 
+/** The `code` every fence refusal carries. */
+export const CREDENTIAL_FENCE_REFUSED_CODE = 'credential_fence_refused';
+
 export type WorkspaceBinding =
-  | { kind: 'path'; param: 'projectId' | 'workspaceId' }
+  /** `via: 'account'` = the param may be a legacy account key, resolved through the bijection. */
+  | { kind: 'path'; param: 'workspaceId'; via?: 'account' }
   | { kind: 'resource'; resource: 'sandbox' | 'drive' | 'own-session' }
-  | { kind: 'ambient'; reach: 'credential' | 'account'; check?: WorkspaceFenceCheck }
+  | { kind: 'ambient'; reach: 'credential' | 'param' }
+  | { kind: 'platform' }
+  | { kind: 'person' }
   | { kind: 'none' };
 
 export interface WorkspaceBindingRule {
@@ -79,42 +97,23 @@ export interface WorkspaceBindingRule {
   /** Methods this rule covers; absent = every method. */
   methods?: readonly string[];
   binding: WorkspaceBinding;
-  /** Workspace administration: never reached by a workspace-bound credential. */
-  admin?: boolean;
   /** Only a SESSION-bound credential (the in-sandbox daemon) passes. */
   sessionBoundOnly?: boolean;
 }
 
-// The legacy `/v1/projects/*` names carry the same `:workspaceId` param as the
-// canonical names (scripts/codemods/workspace-route-params.ts renames every
-// route param). The two constants stay apart so a legacy family reads as one.
-const PATH_PROJECT: WorkspaceBinding = { kind: 'path', param: 'workspaceId' };
-const PATH_WORKSPACE: WorkspaceBinding = { kind: 'path', param: 'workspaceId' };
+const PATH: WorkspaceBinding = { kind: 'path', param: 'workspaceId' };
+const PATH_OR_ACCOUNT: WorkspaceBinding = { kind: 'path', param: 'workspaceId', via: 'account' };
 const OWN_WORKSPACE: WorkspaceBinding = { kind: 'ambient', reach: 'credential' };
-const ACCOUNT_SURFACE: WorkspaceBinding = { kind: 'ambient', reach: 'account' };
-const ACCOUNT_ADMIN: WorkspaceBinding = { kind: 'ambient', reach: 'account', check: 'account-level-route' };
-const PROJECT_LIST: WorkspaceBinding = { kind: 'ambient', reach: 'account', check: 'project-list' };
+const PARAM: WorkspaceBinding = { kind: 'ambient', reach: 'param' };
+const PLATFORM: WorkspaceBinding = { kind: 'platform' };
+const PERSON: WorkspaceBinding = { kind: 'person' };
 const NONE: WorkspaceBinding = { kind: 'none' };
+const OWN_SESSION: WorkspaceBinding = { kind: 'resource', resource: 'own-session' };
 
-/**
- * The account subtrees that collapse into `/v1/workspaces/:workspaceId/<x>`
- * (design.md §4). They are workspace administration. `audit` is special:
- * `GET /v1/workspaces/:workspaceId/audit` is the project audit (path-bound),
- * everything below it is the account audit (administration).
- */
-export const WORKSPACE_ADMIN_SUBTREES = [
-  'iam',
-  'capture',
-  'secret-resources',
-  'branding',
-  'members',
-  'invites',
-  'automations',
-  'subscription-connections',
-  'top-up-requests',
-  'leave',
-  'tokens',
-] as const;
+const both = (prefix: string, binding: WorkspaceBinding): WorkspaceBindingRule[] => [
+  { pattern: prefix, binding },
+  { pattern: `${prefix}/*`, binding },
+];
 
 /**
  * Every route family, first match wins. Order matters only where two patterns
@@ -123,13 +122,10 @@ export const WORKSPACE_ADMIN_SUBTREES = [
 export const WORKSPACE_BINDINGS: readonly WorkspaceBindingRule[] = [
   // ── none: no workspace data ────────────────────────────────────────────
   // Self-identity: "which workspace, session and agent am I bound to?"
-  // `/v1/me` is its alias (design.md §4); `/v1/me/*` stays administration like `/v1/accounts/me/*`.
   { pattern: '/v1/accounts/me', binding: NONE },
   { pattern: '/v1/me', binding: NONE },
-  { pattern: '/v1/me/*', binding: ACCOUNT_ADMIN, admin: true },
   // Kortix-managed system skills: static template text, identical for everyone.
-  { pattern: '/v1/skills', binding: NONE },
-  { pattern: '/v1/skills/*', binding: NONE },
+  ...both('/v1/skills', NONE),
   // The deploy's own build artifacts (daemon, CLI, managed skills).
   { pattern: '/v1/runtime-assets/*', binding: NONE },
   // `kortix feedback`: one row for the token's own user, nothing read back.
@@ -138,83 +134,86 @@ export const WORKSPACE_BINDINGS: readonly WorkspaceBindingRule[] = [
   // ── resource: the session itself (daemon-only sinks) ───────────────────
   // Reached only with the session's own KORTIX_TOKEN; each handler re-verifies
   // the sandbox ∧ session ∧ account binding (isSessionSandboxCredential).
-  { pattern: '/v1/platform/runtime-projection', binding: { kind: 'resource', resource: 'own-session' }, sessionBoundOnly: true },
-  { pattern: '/v1/platform/boot-timeline', binding: { kind: 'resource', resource: 'own-session' }, sessionBoundOnly: true },
+  { pattern: '/v1/platform/runtime-projection', binding: OWN_SESSION, sessionBoundOnly: true },
+  { pattern: '/v1/platform/boot-timeline', binding: OWN_SESSION, sessionBoundOnly: true },
   // Kortix in Chrome: the session asks for its owner's browser.
-  { pattern: '/v1/chrome/attach', binding: { kind: 'resource', resource: 'own-session' }, sessionBoundOnly: true },
-  { pattern: '/v1/chrome/release', binding: { kind: 'resource', resource: 'own-session' }, sessionBoundOnly: true },
-  { pattern: '/v1/chrome/connections', methods: ['GET'], binding: { kind: 'resource', resource: 'own-session' }, sessionBoundOnly: true },
+  { pattern: '/v1/chrome/attach', binding: OWN_SESSION, sessionBoundOnly: true },
+  { pattern: '/v1/chrome/release', binding: OWN_SESSION, sessionBoundOnly: true },
+  { pattern: '/v1/chrome/connections', methods: ['GET'], binding: OWN_SESSION, sessionBoundOnly: true },
 
   // ── ambient, bound by the handler to the credential's own workspace ────
   { pattern: '/v1/usage/cost-summary', methods: ['GET'], binding: OWN_WORKSPACE },
   { pattern: '/v1/usage/cost-by-project', methods: ['GET'], binding: OWN_WORKSPACE },
   { pattern: '/v1/capture/me/*', methods: ['GET'], binding: OWN_WORKSPACE },
-  // Before `/v1/projects/:projectId`, which also matches `current`.
+  // Before `/v1/projects/:workspaceId`, which also matches `current`.
   { pattern: '/v1/projects/current', methods: ['GET'], binding: OWN_WORKSPACE },
   { pattern: '/v1/workspaces/current', methods: ['GET'], binding: OWN_WORKSPACE },
+  // The workspace list: a bound credential lists its one workspace. Creating a
+  // workspace is a person's act (the handler answers 403
+  // new_workspace_requires_person to any key).
+  { pattern: '/v1/projects', methods: ['GET'], binding: OWN_WORKSPACE },
+  { pattern: '/v1/workspaces', methods: ['GET'], binding: OWN_WORKSPACE },
+  { pattern: '/v1/projects', binding: PERSON },
+  { pattern: '/v1/workspaces', binding: PERSON },
 
   // ── resource: drives (keyed by drive id; the handler checks the workspace) ─
-  { pattern: '/v1/drives', binding: { kind: 'resource', resource: 'drive' } },
-  { pattern: '/v1/drives/*', binding: { kind: 'resource', resource: 'drive' } },
+  ...both('/v1/drives', { kind: 'resource', resource: 'drive' }),
 
-  // ── administration: the account surface ────────────────────────────────
-  { pattern: '/v1/accounts', binding: ACCOUNT_ADMIN, admin: true },
-  { pattern: '/v1/accounts/*', binding: ACCOUNT_ADMIN, admin: true },
-  // The project audit keeps its path binding; the account audit below it is administration.
-  { pattern: '/v1/workspaces/:workspaceId/audit', methods: ['GET'], binding: PATH_WORKSPACE },
-  { pattern: '/v1/workspaces/:workspaceId/audit/*', binding: ACCOUNT_ADMIN, admin: true },
-  ...WORKSPACE_ADMIN_SUBTREES.flatMap((subtree): WorkspaceBindingRule[] => [
-    { pattern: `/v1/workspaces/:workspaceId/${subtree}`, binding: ACCOUNT_ADMIN, admin: true },
-    { pattern: `/v1/workspaces/:workspaceId/${subtree}/*`, binding: ACCOUNT_ADMIN, admin: true },
-  ]),
+  // ── the person's own surfaces (before `/v1/accounts/:workspaceId`) ─────
+  // The person's workspace list, account creation, personal keys and devices.
+  { pattern: '/v1/accounts', binding: PERSON },
+  ...both('/v1/accounts/tokens', PERSON),
+  { pattern: '/v1/accounts/me/*', binding: PERSON },
+  { pattern: '/v1/me/*', binding: PERSON },
 
   // ── path: the workspace is in the URL ──────────────────────────────────
-  { pattern: '/v1/projects/:workspaceId', binding: PATH_PROJECT },
-  { pattern: '/v1/projects/:workspaceId/*', binding: PATH_PROJECT },
-  { pattern: '/v1/connectors/projects/:workspaceId', binding: PATH_PROJECT },
-  { pattern: '/v1/connectors/projects/:workspaceId/*', binding: PATH_PROJECT },
-  { pattern: '/v1/workspaces/:workspaceId', binding: PATH_WORKSPACE },
-  { pattern: '/v1/workspaces/:workspaceId/*', binding: PATH_WORKSPACE },
-  { pattern: '/v1/connectors/workspaces/:workspaceId', binding: PATH_WORKSPACE },
-  { pattern: '/v1/connectors/workspaces/:workspaceId/*', binding: PATH_WORKSPACE },
-
-  // ── ambient across workspaces: the list ────────────────────────────────
-  { pattern: '/v1/projects', binding: PROJECT_LIST },
-  { pattern: '/v1/workspaces', binding: PROJECT_LIST },
+  // Legacy account routes take a workspace id or an account key.
+  ...both('/v1/accounts/:workspaceId', PATH_OR_ACCOUNT),
+  ...both('/v1/projects/:workspaceId', PATH),
+  ...both('/v1/connectors/projects/:workspaceId', PATH),
+  // The canonical families also accept the account key of a 1:1 workspace
+  // during the legacy-tolerant window (the account-family alias resolves it).
+  ...both('/v1/workspaces/:workspaceId', PATH_OR_ACCOUNT),
+  ...both('/v1/connectors/workspaces/:workspaceId', PATH),
 
   // ── resource: the sandbox proxy ────────────────────────────────────────
-  // `/v1/p/auth/*` and `/v1/p/share/*` are not sandboxes (extractPreviewSandboxId);
-  // they are listed first and refused like any account surface.
-  { pattern: '/v1/p/auth', binding: ACCOUNT_SURFACE },
-  { pattern: '/v1/p/auth/*', binding: ACCOUNT_SURFACE },
-  { pattern: '/v1/p/share', binding: ACCOUNT_SURFACE },
-  { pattern: '/v1/p/share/*', binding: ACCOUNT_SURFACE },
-  { pattern: '/v1/p/:sandboxId', binding: { kind: 'resource', resource: 'sandbox' } },
-  { pattern: '/v1/p/:sandboxId/*', binding: { kind: 'resource', resource: 'sandbox' } },
+  // `/v1/p/auth/*` and `/v1/p/share/*` are not sandboxes (extractPreviewSandboxId).
+  ...both('/v1/p/auth', PERSON),
+  ...both('/v1/p/share', PERSON),
+  ...both('/v1/p/:sandboxId', { kind: 'resource', resource: 'sandbox' }),
 
-  // ── ambient account / platform surfaces: refused for a workspace-bound credential ─
+  // ── billing: the workspace is a param ──────────────────────────────────
+  // Machine and deletion surfaces first; they overlap `/v1/billing/*`.
+  ...both('/v1/billing/cron', PLATFORM),
+  ...both('/v1/billing/webhook', PLATFORM),
+  ...both('/v1/billing/webhooks', PLATFORM),
+  { pattern: '/v1/billing/deduct', binding: PLATFORM },
+  { pattern: '/v1/billing/deduct-usage', binding: PLATFORM },
+  // Account deletion deletes the PERSON (design.md §3.1 finding 2).
+  ...both('/v1/billing/account', PERSON),
+  ...both('/v1/billing', PARAM),
+
+  // ── the person's own surfaces ──────────────────────────────────────────
   ...[
-    '/v1/access', '/v1/account', '/v1/account-invites', '/v1/admin', '/v1/approval-links',
-    '/v1/apps', '/v1/artifacts', '/v1/auth', '/v1/billing', '/v1/capture', '/v1/channels',
-    '/v1/chrome', '/v1/cli', '/v1/clients', '/v1/connectors', '/v1/docs', '/v1/edge',
-    '/v1/feedback', '/v1/generation', '/v1/git', '/v1/health', '/v1/invites', '/v1/llm',
-    '/v1/llm-gateway', '/v1/marketplace', '/v1/mcp', '/v1/notifications', '/v1/oauth',
-    '/v1/openapi.json', '/v1/ops', '/v1/platform', '/v1/prewarm', '/v1/public', '/v1/router',
-    '/v1/runtime-assets', '/v1/sessions', '/v1/setup-links', '/v1/system', '/v1/tunnel',
-    '/v1/usage', '/v1/user-roles', '/v1/webhooks',
-  ].flatMap((prefix): WorkspaceBindingRule[] => [
-    { pattern: prefix, binding: ACCOUNT_SURFACE },
-    { pattern: `${prefix}/*`, binding: ACCOUNT_SURFACE },
-  ]),
+    '/v1/access', '/v1/account', '/v1/account-invites', '/v1/approval-links', '/v1/apps',
+    '/v1/artifacts', '/v1/auth', '/v1/capture', '/v1/channels', '/v1/chrome', '/v1/cli',
+    '/v1/clients', '/v1/feedback', '/v1/invites', '/v1/mcp', '/v1/notifications', '/v1/oauth',
+    '/v1/sessions', '/v1/setup-links', '/v1/tunnel', '/v1/usage',
+  ].flatMap((prefix) => both(prefix, PERSON)),
 
-  // ── public or separately authenticated (never behind the PAT fence) ────
-  // Listed so every route has a binding; a workspace-bound PAT that ever
-  // reached the fence here is refused.
+  // ── platform and machine surfaces ──────────────────────────────────────
+  ...[
+    '/v1/admin', '/v1/connectors', '/v1/docs', '/v1/edge', '/v1/generation', '/v1/git',
+    '/v1/health', '/v1/llm', '/v1/llm-gateway', '/v1/marketplace', '/v1/openapi.json', '/v1/ops',
+    '/v1/platform', '/v1/prewarm', '/v1/public', '/v1/router', '/v1/runtime-assets', '/v1/system',
+    '/v1/user-roles', '/v1/webhooks',
+  ].flatMap((prefix) => both(prefix, PLATFORM)),
+
+  // ── public or separately authenticated (never behind the key fence) ────
+  // Listed so every route has a binding; a workspace key that ever reached
+  // the fence here is refused.
   ...['/.well-known', '/health', '/internal', '/metrics', '/robots.txt', '/scim', '/sitemap.xml'].flatMap(
-    (prefix): WorkspaceBindingRule[] => [
-      { pattern: prefix, binding: ACCOUNT_SURFACE },
-      { pattern: `${prefix}/*`, binding: ACCOUNT_SURFACE },
-    ],
+    (prefix) => both(prefix, PLATFORM),
   ),
 ];
 
@@ -255,7 +254,14 @@ export interface MatchedBinding {
   params: Record<string, string>;
 }
 
-/** The binding of one request, or null when no rule lists it (refused). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A uuid in canonical (lowercase) form; anything else unchanged. Uuids are case-insensitive on input (C5). */
+export function canonicalIdParam(value: string): string {
+  return UUID_RE.test(value) ? value.toLowerCase() : value;
+}
+
+/** The binding of one request, or null when no rule lists it (refused). Captured uuid params are lowercase. */
 export function bindingFor(method: string, path: string): MatchedBinding | null {
   const m = method.toUpperCase();
   for (const compiled of COMPILED) {
@@ -264,7 +270,7 @@ export function bindingFor(method: string, path: string): MatchedBinding | null 
     if (!hit) continue;
     const params: Record<string, string> = {};
     compiled.params.forEach((name, i) => {
-      params[name] = hit[i + 1]!;
+      params[name] = canonicalIdParam(hit[i + 1]!);
     });
     return { rule: compiled.rule, params };
   }
@@ -282,54 +288,98 @@ export interface WorkspaceCredential {
   sessionBound: boolean;
 }
 
+/** What `account → workspace` gives: the one live workspace, `ambiguous` (split_pending), or null (unknown). */
+export type AccountWorkspace = string | 'ambiguous' | null;
+
 export interface WorkspaceFenceDeps {
   /** The workspace that owns a sandbox, or null when unknown. */
   sandboxWorkspace(sandboxId: string): Promise<string | null>;
+  /** The workspace of a legacy account key (`workspace_id_of_account`). */
+  accountWorkspace(accountId: string): Promise<AccountWorkspace>;
+}
+
+/** The ids a `reach: 'param'` request names, from the query string and the JSON body. */
+export interface WorkspaceParams {
+  ids: readonly string[];
 }
 
 const REFUSALS: Record<WorkspaceFenceCheck, string> = {
-  'account-level-route': 'Project-scoped token cannot call account-level routes',
-  'cross-project': 'Project-scoped token cannot access a different project',
-  'project-list': 'Project-scoped token cannot list projects',
-  'foreign-sandbox': 'Project-scoped token cannot access a sandbox outside its project',
-  'default-deny': 'Project-scoped token cannot call this surface',
+  'cross-workspace': 'This workspace key cannot access another workspace',
+  'account-wider-than-workspace': 'This workspace key cannot act on a legacy account that holds several workspaces; name the workspace',
+  'platform-route': 'This workspace key cannot call platform routes',
+  'person-route': "This workspace key cannot call a person's own routes; use a personal key or sign in",
+  'foreign-sandbox': 'This workspace key cannot access a sandbox outside its workspace',
+  'default-deny': 'This workspace key cannot call this route',
 };
 
 const refuse = (check: WorkspaceFenceCheck): WorkspaceFenceVerdict => ({ allowed: false, check, reason: REFUSALS[check] });
+const ALLOWED: WorkspaceFenceVerdict = { allowed: true };
+
+/** Does one id (a workspace id or a legacy account key) name the credential's workspace? */
+async function namesOwnWorkspace(
+  id: string,
+  credential: WorkspaceCredential,
+  deps: WorkspaceFenceDeps,
+  viaAccount: boolean,
+): Promise<WorkspaceFenceVerdict> {
+  const canonical = canonicalIdParam(id);
+  if (canonical === credential.workspaceId) return ALLOWED;
+  if (!viaAccount || !UUID_RE.test(canonical)) return refuse('cross-workspace');
+  const workspace = await deps.accountWorkspace(canonical);
+  if (workspace === credential.workspaceId) return ALLOWED;
+  return refuse(workspace === 'ambiguous' ? 'account-wider-than-workspace' : 'cross-workspace');
+}
 
 /**
- * `credential.workspace == binding(route).workspace`, for one request.
+ * `credential.workspace == binding(request).workspace`, for one request.
  *
- * Pure apart from `deps.sandboxWorkspace`, the one binding that needs a lookup.
+ * Pure apart from the two lookups in `deps`.
  */
 export async function workspaceFenceVerdict(
   method: string,
   path: string,
   credential: WorkspaceCredential,
   deps: WorkspaceFenceDeps,
+  params: WorkspaceParams = { ids: [] },
 ): Promise<WorkspaceFenceVerdict> {
   const matched = bindingFor(method, path);
   if (!matched) return refuse('default-deny');
-  const { rule, params } = matched;
+  const { rule } = matched;
   if (rule.sessionBoundOnly && !credential.sessionBound) {
-    // The method-less rule for the same path decides; for these daemon sinks it
-    // is the platform surface, which a plain workspace PAT never reaches.
-    return refuse('default-deny');
+    // The daemon sinks: a plain workspace key never reaches them.
+    return refuse('platform-route');
   }
-  if (rule.admin) return refuse(rule.binding.kind === 'ambient' && rule.binding.check ? rule.binding.check : 'account-level-route');
-
   const b = rule.binding;
   switch (b.kind) {
     case 'none':
-      return { allowed: true };
+      return ALLOWED;
+    case 'platform':
+      return refuse('platform-route');
+    case 'person':
+      return refuse('person-route');
     case 'path':
-      return params[b.param] === credential.workspaceId ? { allowed: true } : refuse('cross-project');
+      return namesOwnWorkspace(matched.params[b.param]!, credential, deps, b.via === 'account');
     case 'resource': {
-      if (b.resource === 'own-session' || b.resource === 'drive') return { allowed: true };
-      const owner = await deps.sandboxWorkspace(params.sandboxId!);
-      return owner !== null && owner === credential.workspaceId ? { allowed: true } : refuse('foreign-sandbox');
+      if (b.resource === 'own-session' || b.resource === 'drive') return ALLOWED;
+      const owner = await deps.sandboxWorkspace(matched.params.sandboxId!);
+      return owner !== null && owner === credential.workspaceId ? ALLOWED : refuse('foreign-sandbox');
     }
-    case 'ambient':
-      return b.reach === 'credential' ? { allowed: true } : refuse(b.check ?? 'default-deny');
+    case 'ambient': {
+      if (b.reach === 'credential') return ALLOWED;
+      for (const id of params.ids) {
+        const verdict = await namesOwnWorkspace(id, credential, deps, true);
+        if (!verdict.allowed) return verdict;
+      }
+      return ALLOWED;
+    }
   }
+}
+
+/** The param names a `reach: 'param'` route reads its workspace from. */
+export const WORKSPACE_PARAM_NAMES = ['account_id', 'workspace_id', 'project_id'] as const;
+
+/** Does this request need its query and body read (a `reach: 'param'` route)? */
+export function readsWorkspaceParams(method: string, path: string): boolean {
+  const matched = bindingFor(method, path);
+  return matched?.rule.binding.kind === 'ambient' && matched.rule.binding.reach === 'param';
 }
