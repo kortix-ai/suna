@@ -62,11 +62,11 @@ const IMAGE_WALK = [
 
 const IMAGE_WALK_LINES = [
   'provisioning · choosing the image (0:01)',
-  'provisioning · building the first image for this project (0:42)',
+  'provisioning · building the first image for this workspace (0:42)',
   'provisioning · starting from the last ready image while the new one builds (0:05)',
   "provisioning · copying the image to the session's region (0:07)",
   'provisioning · waiting for the provider to finish the image (retrying, 0:03)',
-  'provisioning · waiting for the first image for this project to finish building (0:05)',
+  'provisioning · waiting for the first image for this workspace to finish building (0:05)',
   'starting',
   'ready',
 ];
@@ -257,7 +257,7 @@ describe('kortix sessions start', () => {
     const r = await runCli(['sessions', 'start', SESSION, ...P]);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(
-      `${SHORT} is provisioning · building the first image for this project (0:42) — re-run with --wait`,
+      `${SHORT} is provisioning · building the first image for this workspace (0:42) — re-run with --wait`,
     );
   });
 

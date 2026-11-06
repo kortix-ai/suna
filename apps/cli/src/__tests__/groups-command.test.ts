@@ -146,7 +146,7 @@ describe('kortix groups', () => {
       'create <name>',
       'members <group>',
       'add <group> <user>...',
-      'projects <group>',
+      'workspaces <group>',
       'group.read',
       'kortix access grant --group',
     ]) {

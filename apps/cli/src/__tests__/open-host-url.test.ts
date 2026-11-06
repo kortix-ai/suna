@@ -40,7 +40,7 @@ test('open commands ignore frontend environment from a different API deployment'
       ]);
       expect(code).toBe(0);
       expect(stderr).toContain('host selected');
-      expect(stdout).toContain(`Opening http://127.0.0.1:3000/projects/${projectId}${args[0] === 'sessions' ? `/sessions/${sessionId}` : ''}`);
+      expect(stdout).toContain(`Opening http://127.0.0.1:3000/workspaces/${projectId}${args[0] === 'sessions' ? `/sessions/${sessionId}` : ''}`);
     }
     expect(paths).toContain(`/v1/workspaces/${projectId}`);
     expect(paths).toContain(`/v1/workspaces/${projectId}/sessions/${sessionId}`);
