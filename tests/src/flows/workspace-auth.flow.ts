@@ -532,3 +532,318 @@ flow(
     });
   },
 );
+
+// ── WS-AUTH-10 — a key's scope narrows it inside its creator's current role ──
+flow(
+  'WS-AUTH-10',
+  {
+    domain: 'workspaces',
+    routes: [
+      'POST /v1/workspaces/:workspaceId/tokens',
+      'GET /v1/workspaces/:workspaceId/tokens',
+      'GET /v1/workspaces/:workspaceId/members',
+      'POST /v1/workspaces/:workspaceId/members',
+      'PATCH /v1/workspaces/:workspaceId/members/:userId',
+      'GET /v1/workspaces/:workspaceId/iam/groups',
+      'PATCH /v1/workspaces/:workspaceId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    const mint = (who: Principal, body: Record<string, unknown>) => ctx.client.as(who).post(`/v1/workspaces/${w.id}/tokens`, body);
+    const invite = (who: Principal) =>
+      ctx.client.as(who).post(`/v1/workspaces/${w.id}/members`, { email: `${ctx.fixtures.name('wsa10-invitee')}@example.test`.toLowerCase() });
+
+    await ctx.step('a read key: GET members and groups → 200; PATCH the workspace and POST a key → 403 key_scope_read_only', async () => {
+      const minted = await mint(ctx.P.OWNER, { name: 'wsa10-read', scopes: 'read' });
+      minted.status(201).body().has('$.scope', 'read').has('$.workspace_id', w.id);
+      const read = keyPrincipal(ctx.P.OWNER, minted.json<{ secret_key: string }>().secret_key, 'WSA10_READ');
+      (await ctx.client.as(read).get(`/v1/workspaces/${w.id}/members`)).status(200);
+      (await ctx.client.as(read).get(`/v1/workspaces/${w.id}/iam/groups`)).status(200);
+      (await ctx.client.as(read).patch(`/v1/workspaces/${w.id}`, { name: 'x' })).status(403).body().has('$.code', 'key_scope_read_only');
+      (await ctx.client.as(read).post(`/v1/workspaces/${w.id}/tokens`, { name: 'child' })).status(403).body().has('$.code', 'key_scope_read_only');
+      const listed = (await ctx.client.as(ctx.P.OWNER).get(`/v1/workspaces/${w.id}/tokens`, { query: { mine: 'true' } })).status(200).json<any[]>();
+      const row = listed.find((t) => t.name === 'wsa10-read');
+      if (row?.scope !== 'read') throw new Error(`list scope: ${JSON.stringify(row)}`);
+    });
+
+    await ctx.step('a custom key does exactly its list: member.read + member.invite reach members and invite; groups → 403 key_scope_insufficient', async () => {
+      const minted = await mint(ctx.P.OWNER, { name: 'wsa10-custom', scopes: ['workspace.member.read', 'member.invite'] });
+      minted.status(201).body().has('$.scope', 'custom');
+      const perms = minted.json<{ workspace_permissions: string[] }>().workspace_permissions;
+      if (JSON.stringify(perms) !== JSON.stringify(['workspace.member.invite', 'workspace.member.read'])) throw new Error(`permissions ${JSON.stringify(perms)}`);
+      const custom = keyPrincipal(ctx.P.OWNER, minted.json<{ secret_key: string }>().secret_key, 'WSA10_CUSTOM');
+      (await ctx.client.as(custom).get(`/v1/workspaces/${w.id}/members`)).status(200);
+      (await invite(custom)).status(201);
+      // The route asks `workspace.account.read` first: the refusal names it.
+      (await ctx.client.as(custom).get(`/v1/workspaces/${w.id}/iam/groups`)).status(403).body()
+        .has('$.code', 'key_scope_insufficient').has('$.workspace_action', 'workspace.account.read');
+    });
+
+    await ctx.step('an unknown permission → 400 invalid_scopes; a permission outside the role → 403 key_scope_exceeds_role', async () => {
+      (await mint(ctx.P.OWNER, { name: 'wsa10-typo', scopes: ['workspace.nope'] })).status(400).body().has('$.code', 'invalid_scopes');
+      const member = await ctx.fixtures.user({ label: 'WSA10-MEMBER' });
+      (await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${w.id}/members`, { email: member.email })).status(201);
+      (await mint(member, { name: 'wsa10-over', scopes: ['workspace.member.remove'] })).status(403).body()
+        .has('$.code', 'key_scope_exceeds_role');
+    });
+
+    await ctx.step("the creator's CURRENT role bounds the key: an admin's invite key stops inviting once the admin is a member again", async () => {
+      const person = await ctx.fixtures.user({ label: 'WSA10-ADMIN' });
+      (await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${w.id}/members`, { email: person.email, role: 'admin' })).status(201);
+      const minted = await mint(person, { name: 'wsa10-admin-invite', scopes: ['workspace.member.invite', 'workspace.member.read'] });
+      minted.status(201);
+      const key = keyPrincipal(person, minted.json<{ secret_key: string }>().secret_key, 'WSA10_ADMIN_KEY');
+      (await invite(key)).status(201);
+      (await ctx.client.as(ctx.P.OWNER).patch(`/v1/workspaces/${w.id}/members/${person.userId}`, { role: 'member' })).status(200);
+      (await invite(key)).status(403);
+      (await ctx.client.as(key).get(`/v1/workspaces/${w.id}/members`)).status(200);
+    });
+
+    await ctx.step('a scoped key mints only inside its scope: omitted scopes inherit it; full → 403 key_scope_exceeds_parent', async () => {
+      // A key that mints keys needs both credential leaves: token.create and credentials.issue.
+      const minted = await mint(ctx.P.OWNER, {
+        name: 'wsa10-minter',
+        scopes: ['workspace.token.create', 'workspace.credentials.issue', 'workspace.member.read'],
+      });
+      minted.status(201);
+      const minter = keyPrincipal(ctx.P.OWNER, minted.json<{ secret_key: string }>().secret_key, 'WSA10_MINTER');
+      (await ctx.client.as(minter).post(`/v1/workspaces/${w.id}/tokens`, { name: 'wsa10-child-full', scopes: 'full' }))
+        .status(403).body().has('$.code', 'key_scope_exceeds_parent');
+      const child = await ctx.client.as(minter).post(`/v1/workspaces/${w.id}/tokens`, { name: 'wsa10-child' });
+      child.status(201).body().has('$.scope', 'custom');
+      const parentExpiry = minted.json<{ expires_at: string }>().expires_at;
+      if (child.json<{ expires_at: string }>().expires_at !== parentExpiry) {
+        throw new Error(`a default child expiry outlives its parent: ${child.json<any>().expires_at} vs ${parentExpiry}`);
+      }
+    });
+  },
+);
+
+// ── WS-AUTH-11 — keys expire by default; the key policy may allow no expiry ──
+flow(
+  'WS-AUTH-11',
+  {
+    domain: 'workspaces',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/workspaces/:workspaceId/tokens',
+      'GET /v1/workspaces/:workspaceId/tokens',
+      'GET /v1/workspaces/:workspaceId/iam/pat-policy',
+      'PATCH /v1/workspaces/:workspaceId/iam/pat-policy',
+      'POST /v1/cli/device/start',
+      'POST /v1/cli/device/decide',
+      'POST /v1/cli/device/poll',
+      'GET /v1/me/tokens',
+      'DELETE /v1/me/tokens/:tokenId',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    const DAY = 86_400_000;
+    const mint = (body: Record<string, unknown>) => ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${w.id}/tokens`, body);
+    const daysOut = (iso: string | null) => (iso ? (Date.parse(iso) - Date.now()) / DAY : Number.NaN);
+
+    await ctx.step('the policy reads default 90 days, at most 365, no expiry not allowed', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get(`/v1/workspaces/${w.id}/iam/pat-policy`)).status(200).body()
+        .has('$.default_lifetime_days', 90).has('$.effective_max_lifetime_days', 365).has('$.allow_no_expiry', false);
+    });
+
+    await ctx.step('no expires_at → 90 days; 400 days → 400 expiry_too_far; null → 400 expiry_required', async () => {
+      const r = await mint({ name: 'wsa11-default' });
+      r.status(201);
+      const days = daysOut(r.json<{ expires_at: string }>().expires_at);
+      if (!(days > 89.9 && days <= 90)) throw new Error(`default expiry ${days} days`);
+      (await mint({ name: 'wsa11-far', expires_at: new Date(Date.now() + 400 * DAY).toISOString() })).status(400).body().has('$.code', 'expiry_too_far');
+      (await mint({ name: 'wsa11-never', expires_at: null })).status(400).body().has('$.code', 'expiry_required');
+    });
+
+    await ctx.step('allow_no_expiry → a null expiry mints a key that never expires and lists as such', async () => {
+      (await ctx.client.as(ctx.P.OWNER).patch(`/v1/workspaces/${w.id}/iam/pat-policy`, { allow_no_expiry: true })).status(200).body()
+        .has('$.allow_no_expiry', true);
+      const r = await mint({ name: 'wsa11-forever', expires_at: null });
+      r.status(201).body().has('$.expires_at', null);
+      const key = keyPrincipal(ctx.P.OWNER, r.json<{ secret_key: string }>().secret_key, 'WSA11_FOREVER');
+      (await ctx.client.as(key).get(`/v1/workspaces/${w.id}/members`)).status(200);
+    });
+
+    await ctx.step('a key written before expiry existed (expires_at NULL, policy off) keeps working', async () => {
+      (await ctx.client.as(ctx.P.OWNER).patch(`/v1/workspaces/${w.id}/iam/pat-policy`, { allow_no_expiry: false })).status(200);
+      const r = await mint({ name: 'wsa11-legacy' });
+      r.status(201);
+      const db = await openDb(ctx);
+      try {
+        await db.query('UPDATE kortix.account_tokens SET expires_at = NULL WHERE token_id = $1', [r.json<{ token_id: string }>().token_id]);
+      } finally {
+        await db.end().catch(() => {});
+      }
+      const key = keyPrincipal(ctx.P.OWNER, r.json<{ secret_key: string }>().secret_key, 'WSA11_LEGACY');
+      (await ctx.client.as(key).get(`/v1/workspaces/${w.id}/members`)).status(200);
+      const row = (await ctx.client.as(ctx.P.OWNER).get(`/v1/workspaces/${w.id}/tokens`, { query: { mine: 'true' } })).status(200).json<any[]>()
+        .find((t) => t.name === 'wsa11-legacy');
+      if (row?.expires_at !== null) throw new Error(`legacy row expires_at ${row?.expires_at}`);
+    });
+
+    await ctx.step("the key policy's idle revoke covers a workspace key: unused past idle_revoke_days → 401", async () => {
+      const r = await mint({ name: 'wsa11-idle' });
+      r.status(201);
+      const key = keyPrincipal(ctx.P.OWNER, r.json<{ secret_key: string }>().secret_key, 'WSA11_IDLE');
+      (await ctx.client.as(key).get(`/v1/workspaces/${w.id}/members`)).status(200);
+      (await ctx.client.as(ctx.P.OWNER).patch(`/v1/workspaces/${w.id}/iam/pat-policy`, { idle_revoke_days: 1 })).status(200);
+      const db = await openDb(ctx);
+      try {
+        await db.query(`UPDATE kortix.account_tokens SET last_used_at = now() - interval '2 days' WHERE token_id = $1`, [r.json<{ token_id: string }>().token_id]);
+      } finally {
+        await db.end().catch(() => {});
+      }
+      (await ctx.client.as(key).get(`/v1/workspaces/${w.id}/members`)).status(401);
+      (await ctx.client.as(ctx.P.OWNER).patch(`/v1/workspaces/${w.id}/iam/pat-policy`, { idle_revoke_days: null })).status(200);
+    });
+
+    await ctx.step('the CLI device login is person-wide with a 90-day expiry that renews on use', async () => {
+      const anon = ctx.client.as(ctx.P.ANON);
+      const start = (await anon.post('/v1/cli/device/start', {})).status(200).json<{ device_code: string; user_code: string }>();
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/cli/device/decide', { user_code: start.user_code, approve: true, account_id: team.id })).status(200);
+      const token = (await anon.post('/v1/cli/device/poll', { device_code: start.device_code })).status(200).json<{ token: string }>().token;
+      const cli = ctx.client.withBearer(token, 'WSA11_CLI');
+      const tokenId = (await cli.get('/v1/me')).status(200).json<{ token_context: { token_id: string } }>().token_context.token_id;
+      const row = (await ctx.client.as(ctx.P.OWNER).get('/v1/me/tokens')).status(200).json<any[]>().find((t) => t.token_id === tokenId);
+      if (row?.expiry_renews !== true || row.workspace_id !== null) throw new Error(`device login row ${JSON.stringify(row)}`);
+      const days = daysOut(row.expires_at);
+      if (!(days > 89.9 && days <= 90)) throw new Error(`device login expiry ${days} days`);
+      (await ctx.client.as(ctx.P.OWNER).del(`/v1/me/tokens/${tokenId}`)).status(200);
+      (await cli.get('/v1/me')).status(401);
+    });
+  },
+);
+
+// ── WS-AUTH-12 — leaving a workspace takes the person's keys with them ──────
+flow(
+  'WS-AUTH-12',
+  {
+    domain: 'workspaces',
+    routes: [
+      'POST /v1/workspaces/:workspaceId/members',
+      'POST /v1/workspaces/:workspaceId/tokens',
+      'GET /v1/workspaces/:workspaceId/members',
+      'DELETE /v1/workspaces/:workspaceId/members/:userId',
+      'POST /v1/workspaces/:workspaceId/leave',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    const memberWithKey = async (label: string) => {
+      const person = await ctx.fixtures.user({ label });
+      (await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${w.id}/members`, { email: person.email })).status(201);
+      const key = keyPrincipal(person, await mintWorkspaceKey(ctx, person, w.id, `${label.toLowerCase()}-key`), `${label}_KEY`);
+      (await ctx.client.as(key).get(`/v1/workspaces/${w.id}/members`)).status(200);
+      return { person, key };
+    };
+
+    await ctx.step('removed by an owner: the key that worked → 401', async () => {
+      const { person, key } = await memberWithKey('WSA12-REMOVED');
+      (await ctx.client.as(ctx.P.OWNER).del(`/v1/workspaces/${w.id}/members/${person.userId}`)).status(200);
+      (await ctx.client.as(key).get(`/v1/workspaces/${w.id}/members`)).status(401);
+    });
+
+    await ctx.step('the member leaves: the key that worked → 401', async () => {
+      const { person, key } = await memberWithKey('WSA12-LEFT');
+      (await ctx.client.as(person).post(`/v1/workspaces/${w.id}/leave`, {})).status(200);
+      (await ctx.client.as(key).get(`/v1/workspaces/${w.id}/members`)).status(401);
+    });
+  },
+);
+
+// ── WS-AUTH-13 — an OAuth grant names one workspace and reaches it only ─────
+flow(
+  'WS-AUTH-13',
+  {
+    domain: 'workspaces',
+    timeoutMs: 120_000,
+    routes: [
+      'POST /v1/accounts/:workspaceId/iam/oauth-clients',
+      'GET /v1/oauth/authorize',
+      'GET /v1/oauth/authorize/consent/:requestId',
+      'POST /v1/oauth/authorize/consent',
+      'POST /v1/oauth/token',
+      'GET /v1/workspaces/:workspaceId/members',
+      'GET /v1/workspaces',
+    ],
+  },
+  async (ctx) => {
+    const a = await (await ctx.fixtures.team()).project();
+    const bTeam = await ctx.fixtures.team();
+    const b = await bTeam.project();
+    const redirectUri = 'https://app.example.test/oauth/callback';
+    const verifier = Buffer.from(crypto.getRandomValues(new Uint8Array(48))).toString('base64url');
+    const challenge = Buffer.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))).toString('base64url');
+    const form = (fields: Record<string, string>) => {
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+      return fd;
+    };
+    const registered = await ctx.client.as(ctx.P.OWNER).post(`/v1/accounts/${bTeam.id}/iam/oauth-clients`, {
+      name: ctx.fixtures.name('wsa13-app'),
+      redirect_uris: [redirectUri],
+      scopes: ['profile', 'kortix'],
+    });
+    registered.status(201);
+    const clientId = registered.json<{ client_id: string }>().client_id;
+    const secret = registered.json<{ client_secret: string }>().client_secret;
+
+    const authorize = async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/oauth/authorize', {
+        query: { client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'profile kortix', code_challenge: challenge, code_challenge_method: 'S256' },
+      });
+      r.status(302);
+      return new URL(r.header('location')!).searchParams.get('request_id')!;
+    };
+    const redeem = async (consent: Record<string, unknown>) => {
+      const ok = await ctx.client.as(ctx.P.OWNER).post('/v1/oauth/authorize/consent', consent);
+      ok.status(200);
+      const code = new URL(ok.json<{ redirect_uri: string }>().redirect_uri).searchParams.get('code')!;
+      const t = await ctx.client.as(ctx.P.ANON).post(
+        '/v1/oauth/token',
+        form({ grant_type: 'authorization_code', client_id: clientId, client_secret: secret, code, redirect_uri: redirectUri, code_verifier: verifier }),
+      );
+      t.status(200);
+      return t.json<{ access_token: string; refresh_token: string }>();
+    };
+    const members = (token: string, workspaceId: string) =>
+      ctx.client.as(ctx.P.ANON).get(`/v1/workspaces/${workspaceId}/members`, { headers: { Authorization: `Bearer ${token}` } });
+
+    await ctx.step('the consent request asks which workspace; an unknown workspace → 403 and the request stays open', async () => {
+      const rid = await authorize();
+      (await ctx.client.as(ctx.P.OWNER).get(`/v1/oauth/authorize/consent/${rid}`)).status(200).body().has('$.asks_workspace', true);
+      // An id no workspace has answers as a workspace the person cannot open.
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/oauth/authorize/consent', { request_id: rid, approved: true, workspace_id: crypto.randomUUID() }))
+        .status(403).body().has('$.code', 'workspace_not_found');
+      // The refusal did not consume the request: the same request still approves.
+      await redeem({ request_id: rid, approved: true, workspace_id: a.id });
+    });
+
+    await ctx.step('a token bound to A: A → 200, B → 403 credential_fence_refused, GET /workspaces lists A only; a refresh stays bound', async () => {
+      const pair = await redeem({ request_id: await authorize(), approved: true, workspace_id: a.id });
+      (await members(pair.access_token, a.id)).status(200);
+      expectFence(await members(pair.access_token, b.id), 'cross-workspace', 'B with a token bound to A');
+      const listed = (await ctx.client.as(ctx.P.ANON).get('/v1/workspaces', { headers: { Authorization: `Bearer ${pair.access_token}` } }))
+        .status(200).json<any[]>();
+      if (listed.length !== 1 || listed[0]?.workspace_id !== a.id) throw new Error(`bound token listed ${JSON.stringify(listed.map((r) => r.workspace_id))}`);
+      const refreshed = await ctx.client.as(ctx.P.ANON).post('/v1/oauth/token', form({ grant_type: 'refresh_token', client_id: clientId, client_secret: secret, refresh_token: pair.refresh_token }));
+      refreshed.status(200);
+      const next = refreshed.json<{ access_token: string }>().access_token;
+      (await members(next, a.id)).status(200);
+      expectFence(await members(next, b.id), 'cross-workspace', 'B with a refreshed token bound to A');
+    });
+
+    await ctx.step('a consent that names no workspace (an older consent screen) stays unbound: A and B → 200', async () => {
+      const pair = await redeem({ request_id: await authorize(), approved: true });
+      (await members(pair.access_token, a.id)).status(200);
+      (await members(pair.access_token, b.id)).status(200);
+    });
+  },
+);

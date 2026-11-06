@@ -1929,23 +1929,30 @@ flow(
         .status(400).body().has('$.code', 'token_expiry_in_past');
     });
 
-    await ctx.step('a browser session still mints a token with no expiry → 201', async () => {
-      await mintProjectToken();
+    await ctx.step('a browser session minting with no expiry gets the default 90 days → 201', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('tok7') }, params);
+      r.status(201);
+      const days = (Date.parse(r.json<{ expires_at: string }>().expires_at) - Date.now()) / 86_400_000;
+      if (!(days > 89.9 && days <= 90)) throw new Error(`default expiry ${days} days`);
     });
 
-    await ctx.step('a project PAT that expires in 60 min: no expiry or a later one → 403 token_mint_exceeds_parent; an earlier one → 201', async () => {
-      const parent = ctx.client.withBearer(await mintProjectToken(at(60)), 'PAT_PROJ');
-      (await parent.post('/v1/projects/:projectId/cli-token', {}, params))
-        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+    await ctx.step('a project PAT that expires in 60 min: a later expiry → 403 token_mint_exceeds_parent; none → its own expiry; an earlier one → 201', async () => {
+      const parentExpiry = at(60);
+      const parent = ctx.client.withBearer(await mintProjectToken(parentExpiry), 'PAT_PROJ');
       (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(120) }, params))
         .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      const child = await parent.post('/v1/projects/:projectId/cli-token', {}, params);
+      child.status(201);
+      if (Date.parse(child.json<{ expires_at: string }>().expires_at) !== Date.parse(parentExpiry)) {
+        throw new Error(`a default child expiry outlives its parent: ${child.json<any>().expires_at} vs ${parentExpiry}`);
+      }
       (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(30) }, params)).status(201);
     });
 
-    await ctx.step('a project PAT with no expiry must still pass one: none → 403 token_mint_exceeds_parent; one → 201', async () => {
+    await ctx.step('a project PAT never mints a key without expiry: null → 400 expiry_required', async () => {
       const parent = ctx.client.withBearer(await mintProjectToken(), 'PAT_PROJ');
-      (await parent.post('/v1/projects/:projectId/cli-token', {}, params))
-        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: null }, params))
+        .status(400).body().has('$.code', 'expiry_required');
       (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(30) }, params)).status(201);
     });
   },
