@@ -17,6 +17,7 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   approveCliDevice,
+  createAccountToken,
   listAccountTokens,
   listOAuthGrants,
   listSignedInDevices,
@@ -180,4 +181,11 @@ test('approveCliDevice(code, { accountId }) binds the CLI key to that workspace'
 test('approveCliDevice rejects with the API sentence on an expired code', async () => {
   nextResponse = { status: 404, body: { error: 'Login code expired or already used.' } };
   await expect(approveCliDevice('abcd-ef01-2345-6789')).rejects.toThrow('Login code expired or already used.');
+});
+
+test('createAccountToken({ renews: true }) asks for a renewing expiry (the CLI browser login)', async () => {
+  nextResponse = { status: 201, body: { token_id: 't1', secret_key: 'kortix_pat_x', expiry_renews: true } };
+  const minted = await createAccountToken({ name: 'CLI · laptop', renews: true });
+  expect(minted.expiry_renews).toBe(true);
+  expect(calls[0]?.body).toBe(JSON.stringify({ name: 'CLI · laptop', renews: true }));
 });

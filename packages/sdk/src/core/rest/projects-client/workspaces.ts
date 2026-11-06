@@ -50,7 +50,7 @@ import {
 } from './projects';
 import { readProvisionStream } from './provision-stream';
 import { type AccountRole, type ProjectRole, unwrap } from './shared';
-import type { AccountToken, CreateAccountTokenInput, CreatedAccountToken, ListAccountTokensOptions } from './tokens';
+import type { AccountToken, CreateAccountTokenInput, CreatedAccountToken, ListAccountTokensOptions, WorkspaceKeyScopes } from './tokens';
 
 /**
  * The caller's role in a workspace. `owner` and `admin` administer it
@@ -180,7 +180,10 @@ export interface InviteWorkspaceMemberInput {
   expires_at?: string;
 }
 /** What {@link createWorkspaceToken} sends. The key acts on the workspace in the path only. */
-export type CreateWorkspaceTokenInput = Omit<CreateAccountTokenInput, 'accountId' | 'projectId'>;
+export type CreateWorkspaceTokenInput = Omit<CreateAccountTokenInput, 'accountId' | 'projectId' | 'renews'> & {
+  /** What the key may do inside your role: `full` (default), `read`, or a list of permissions. */
+  scopes?: WorkspaceKeyScopes;
+};
 
 /** A personal key of the caller (`GET /v1/me/tokens`): acts as the person in each workspace. */
 export interface PersonalToken extends AccountToken {
@@ -641,11 +644,12 @@ export async function listWorkspaceTokens(workspaceId: string, options?: ListAcc
  * every workspace of theirs is a personal key ({@link listPersonalTokens}).
  */
 export async function createWorkspaceToken(workspaceId: string, input: CreateWorkspaceTokenInput) {
-  const { expiresAt, name } = input;
+  const { expiresAt, name, scopes } = input;
   return unwrap(
     await backendApi.post<CreatedAccountToken>(`/workspaces/${workspaceId}/tokens`, {
       name,
-      ...(expiresAt ? { expires_at: expiresAt } : {}),
+      ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
+      ...(scopes !== undefined ? { scopes } : {}),
     }),
   );
 }

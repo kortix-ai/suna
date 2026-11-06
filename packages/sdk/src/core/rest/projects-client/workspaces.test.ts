@@ -487,6 +487,23 @@ describe('workspace-scoped clients call /workspaces/:id with no account lookup',
     expect(calls[2].body).toEqual({ name: 'ci', expires_at: '2027-01-01T00:00:00.000Z' });
   });
 
+  test('createWorkspaceToken sends the scope and an explicit no-expiry', async () => {
+    route('POST', new RegExp(`^/workspaces/${WS_A}/tokens$`), { token_id: 't1', secret_key: 'kortix_pat_x', scope: 'read' });
+
+    const read = await createWorkspaceToken(WS_A, { name: 'read', scopes: 'read' });
+    await createWorkspaceToken(WS_A, { name: 'custom', scopes: ['workspace.session.read'], expiresAt: '2027-01-01T00:00:00.000Z' });
+    await createWorkspaceToken(WS_A, { name: 'forever', expiresAt: null });
+    await createWorkspaceToken(WS_A, { name: 'default' });
+
+    expect(read.scope).toBe('read');
+    expect(calls.map((c) => c.body)).toEqual([
+      { name: 'read', scopes: 'read' },
+      { name: 'custom', expires_at: '2027-01-01T00:00:00.000Z', scopes: ['workspace.session.read'] },
+      { name: 'forever', expires_at: null },
+      { name: 'default' },
+    ]);
+  });
+
   test('billing passes the workspace id as account_id (the API accepts either id)', async () => {
     route('GET', /^\/billing\/account-state\?/, { credits: {} });
     await getWorkspaceBillingState(WS_A);

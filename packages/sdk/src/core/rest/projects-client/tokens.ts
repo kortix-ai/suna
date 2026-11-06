@@ -26,14 +26,39 @@ export interface AccountToken {
   last_used_at: string | null;
   created_at: string;
   revoked_at: string | null;
+  /** What the key may do inside its creator's role. Absent on older APIs (= `full`). */
+  scope?: WorkspaceKeyScopeLabel;
+  /** A `custom` scope: its permissions, legacy spelling. Null otherwise. */
+  permissions?: string[] | null;
+  /** A `custom` scope: its permissions, workspace spelling. Null otherwise. */
+  workspace_permissions?: string[] | null;
+  /** True when each use moves `expires_at` out again (the CLI login), so a key in use does not expire. */
+  expiry_renews?: boolean;
 }
+
+/**
+ * What a workspace key may do inside its creator's role:
+ *   - `full`: the creator's whole role (the default);
+ *   - `read`: every `*.read` permission; the key makes GET requests only;
+ *   - `custom`: exactly the listed permissions.
+ * The API checks the creator's CURRENT role on every request, so a key never
+ * exceeds it.
+ */
+export type WorkspaceKeyScopeLabel = 'full' | 'read' | 'custom';
+
+/** The `scopes` a mint request sends: a preset, or a list of permissions in either spelling. */
+export type WorkspaceKeyScopes = 'full' | 'read' | string[];
 
 export interface CreateAccountTokenInput {
   name: string;
   /** Defaults to the caller's resolved account when omitted. */
   accountId?: string;
-  /** ISO-8601. Omit for a non-expiring token. */
-  expiresAt?: string;
+  /** ISO-8601. Omitted: the API's default (90 days on current APIs). `null`:
+   *  no expiry, only where the workspace key policy allows it. */
+  expiresAt?: string | null;
+  /** A renewing expiry: each use moves `expires_at` out again. A personal key
+   *  minted from a browser session only (the CLI login). */
+  renews?: boolean;
   /** Scope the minted token to a single project (still a "kortix_pat_..." token,
    *  but the auth middleware rejects it outside this project). */
   projectId?: string;
@@ -49,6 +74,16 @@ export interface CreatedAccountToken {
   status: string;
   expires_at: string | null;
   created_at: string;
+  /** The workspace the key is bound to (= `project_id`). Absent on older APIs. */
+  workspace_id?: string | null;
+  /** What the key may do inside its creator's role. Absent on older APIs (= `full`). */
+  scope?: WorkspaceKeyScopeLabel;
+  /** A `custom` scope: its permissions, legacy spelling. */
+  permissions?: string[] | null;
+  /** A `custom` scope: its permissions, workspace spelling. */
+  workspace_permissions?: string[] | null;
+  /** True for a renewing expiry. */
+  expiry_renews?: boolean;
 }
 
 export interface ListAccountTokensOptions {
@@ -102,15 +137,23 @@ export async function approveCliDevice(userCode: string, options?: { accountId?:
  * A key minted here without `projectId` is a PERSONAL key: it acts as the
  * person in every workspace of theirs (listed by `listPersonalTokens`). A key
  * for one workspace only is `createWorkspaceToken(workspaceId, input)`.
+ *
+ * Use it for personal keys only: the CLI browser login (`renews: true`) and
+ * clients released before workspace keys. The API marks the route deprecated
+ * for any other use; every new key a person mints for automation is a
+ * workspace key, `createWorkspaceToken(workspaceId, input)`. Not tagged
+ * `@deprecated`: a personal key has a different reach than a workspace key,
+ * so the two functions are not equivalents.
  */
 export async function createAccountToken(input: CreateAccountTokenInput) {
-  const { accountId, expiresAt, projectId, name } = input;
+  const { accountId, expiresAt, projectId, name, renews } = input;
   return unwrap(
     await backendApi.post<CreatedAccountToken>('/accounts/tokens', {
       name,
       ...(accountId ? { account_id: accountId } : {}),
-      ...(expiresAt ? { expires_at: expiresAt } : {}),
+      ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
       ...(projectId ? { project_id: projectId } : {}),
+      ...(renews ? { renews: true } : {}),
     }),
   );
 }

@@ -198,6 +198,8 @@ export interface OAuthConsentRequest {
   self_registered?: boolean;
   /** Where approval sends the browser: the redirect host, or a native app's scheme (`cursor:`). */
   redirect_to?: string;
+  /** True when the consent names the workspace the app gets (`workspaceId` on submit). Absent on older APIs. */
+  asks_workspace?: boolean;
 }
 
 export function getOAuthConsentRequest(
@@ -207,13 +209,22 @@ export function getOAuthConsentRequest(
   return requestJson(`/oauth/authorize/consent/${encodeURIComponent(requestId)}`, options);
 }
 
+/**
+ * Approve or deny a pending OAuth request. `workspaceId` binds the grant: the
+ * issued token reaches that workspace only, like a workspace key. Without it
+ * the token acts as the person in every workspace (older consent screens).
+ */
 export function submitOAuthConsent(
-  input: { requestId: string; approved: boolean },
+  input: { requestId: string; approved: boolean; workspaceId?: string },
   options: HostRequestOptions,
 ): Promise<{ redirect_uri?: string }> {
   return requestJson('/oauth/authorize/consent', options, {
     method: 'POST',
-    body: { request_id: input.requestId, approved: input.approved },
+    body: {
+      request_id: input.requestId,
+      approved: input.approved,
+      ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
+    },
   });
 }
 
