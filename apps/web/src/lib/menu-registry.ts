@@ -65,6 +65,7 @@ import {
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
+  TargetIcon as Target,
   TerminalIcon as Terminal,
   TextAlignLeftIcon as TextAlignLeft,
   TrayIcon as Tray,
@@ -758,6 +759,20 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     requiresFlag: 'artifacts',
     keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
+  },
+  {
+    // The project's goals (flag `goals`): the sidebar Goals row
+    // (`project-goals-nav.tsx`), same icon, same route, same gate.
+    id: 'proj-goals',
+    label: 'Goals',
+    icon: Target,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/goals',
+    requiresProject: true,
+    requiresFlag: 'goals',
+    keywords: 'goals goal objectives outcomes',
   },
   {
     // The repo browser under Customize → Repo, where it moved with Drive

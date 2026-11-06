@@ -382,6 +382,12 @@ describe('queries return the rows they name', () => {
     expect(hits('apps')).toEqual(['nav:proj-apps']);
   });
 
+  test('"goals" and "goal" reach the Goals page', () => {
+    // KRTX-4222: the Goals page had a sidebar row and no palette row.
+    expect(hits('goals')).toEqual(['nav:proj-goals']);
+    expect(hits('goal')).toEqual(['nav:proj-goals']);
+  });
+
   // The Computer row USED to answer "apps" too: PR #9992 shipped a rail
   // description that reads "the files, terminal, and apps on your computer",
   // and the palette searches every word a row shows (KRTX-2475). The
