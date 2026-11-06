@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProjectAccessRequest } from '@kortix/sdk';
-import { BellIcon, UserPlusIcon } from '@phosphor-icons/react';
+import { UserPlusIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 
@@ -18,13 +18,12 @@ import { cn } from '../../internal/lib/utils';
 
 /**
  * The pending-access-requests control, floated over the hero's top-right
- * corner. With the project's `notification_center` flag on, its glyph is a
- * person with a plus, not a bell: the bell is then the notification inbox
- * (KRTX-1742), and two bells on one screen would read as one control. With
- * the flag off there is no inbox bell, and the glyph stays the bell.
+ * corner. Its glyph is a person with a plus, not a bell: the bell names the
+ * notification Inbox (KRTX-1742), and two bells on one screen would read as
+ * one control.
  *
- * It draws its count with the inbox's `BellMark`, in the yellow "needs you"
- * tone: a request waits on the person, so it reads like the sidebar bell.
+ * It draws its count with `BellMark`, in the yellow "needs you" tone: a
+ * request waits on the person.
  * Hover opens the people card of the session header's participant stack:
  * who asked and when, with one way to review.
  *
@@ -48,7 +47,6 @@ import { cn } from '../../internal/lib/utils';
 export function AccessRequestsBell({
   requests,
   to,
-  notificationCenter = false,
   className,
 }: {
   /** The project's pending access requests, newest last as the API returns them. */
@@ -56,8 +54,6 @@ export function AccessRequestsBell({
   /** The account hub's Access › Projects pane, scoped to this project.
    *  `null` while `account_id` is still loading — the bell renders inert. */
   to: HubTarget | null;
-  /** The project's `notification_center` flag: on, the inbox owns the bell glyph. */
-  notificationCenter?: boolean;
   className?: string;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
@@ -66,9 +62,7 @@ export function AccessRequestsBell({
   const [open, setOpen] = useState(false);
   const count = requests.length;
   const label = `${count} pending access request${count === 1 ? '' : 's'}`;
-  const Glyph = notificationCenter ? UserPlusIcon : BellIcon;
-
-  const body = <BellMark count={count} needsYou icon={Glyph} />;
+  const body = <BellMark count={count} needsYou icon={UserPlusIcon} />;
 
   return (
     <AnimatePresence>

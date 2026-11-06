@@ -3,10 +3,10 @@
  * its push token (lib/notifications/registration.ts): the off switch, one
  * switch per session kind, and the sound.
  *
- * A project with the `notification_center` flag on (KRTX-1742) also reads the
- * user's record on the server: a session kind pushes there only when the
- * record AND this phone allow it. `legacyKindsMigrated` turns true once the
- * kinds this phone turned off are in that record (`carryOverLegacyKinds`).
+ * The server also reads the user's record (KRTX-1742): a session kind pushes
+ * only when the record AND this phone allow it. `legacyKindsMigrated` turns
+ * true once the kinds this phone turned off are in that record
+ * (`carryOverLegacyKinds`).
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';

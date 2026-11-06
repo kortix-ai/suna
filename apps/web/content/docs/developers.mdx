@@ -3391,11 +3391,10 @@ test of one automation starts no other on the same event.
 App trigger: `on: { event: status.changed, app: status-watch }` plus
 `expect_event_within: 30m`, or `kortix triggers add … --expect-event-within
 30m`. It watches the App, not one event name: when the App posts nothing at
-all for that long, the trigger's watchers get one "automation failed" notice,
-with the `notification_center` flag on or off; the App's next post sends
-"recovered". Every post counts, whatever its name, including one Kortix
-deduplicates and `kortix.heartbeat`, so a watcher that sees no change still
-counts as alive. A test event does not count.
+all for that long, the trigger's watchers get one "automation failed" notice;
+the App's next post sends "recovered". Every post counts, whatever its name,
+including one Kortix deduplicates and `kortix.heartbeat`, so a watcher that
+sees no change still counts as alive. A test event does not count.
 
 **Repair it.** Kortix writes three events about an App to its log:
 `kortix.app.silent` when a silence alert opens (`data.trigger`,
@@ -6545,7 +6544,7 @@ The three reply actions remove the item only after the server accepts the reply.
 | `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. See [Render messages yourself](/docs/developers#render-messages-yourself). |
 | `browserPresence` | `false` | Holds this tab's presence lease while a person uses the page (input in the last 10 minutes). The lease routes notifications and fills `presenceAwake`. The sandbox stops the idle window (15 minutes by default) after its latest turn, with the page open or not. |
 | `presenceAlerts` | `false` | `true` tells the server that this tab shows its own notifications, so the server skips phone and Web Push while the tab is in use. Pass `true` only when the tab's browser notifications are on and permitted. Needs `browserPresence`. |
-| `presencePageExit` | `false` | Ends the presence lease when the page closes. With `false`, the lease ends at its 90-second expiry. Needs `browserPresence`. |
+| `presencePageExit` | `true` | Ends the presence lease when the page closes, so a closed tab stops holding back notifications at once. Pass `false` to keep the lease until its 90-second expiry. Needs `browserPresence`. |
 | `repositoryMode` | none | `'previous'` is accepted for callers built against an older `/start`. The server reads it as telemetry only. It changes nothing. |
 
 ### Send and handle errors
@@ -8267,7 +8266,11 @@ Every method except `releaseDeviceToken` needs a person's credential. A service 
 | `preferences()` · `updatePreferences(…)` | Per-kind push and email preferences. |
 | `webPushPublicKey()` · `registerWebPushSubscription(…)` · `unregisterWebPushSubscription(…)` | Web Push for this browser. |
 
-A session push goes to the phones of the person who created the session. It goes out when a turn ends or fails, or when the agent asks a question or for a permission. While one of that person's tabs holds a presence lease on the session (`s.presence`), no push goes out.
+Every project notifies the people a session concerns: the person who prompted the turn, the session's creator and each follower (`watch()` · `setWatch(watching)` on the session), minus anyone who muted it. A turn that ends or fails, an agent question or permission request, a share, and a failing or recovered trigger each write one inbox row per person and push to that person's phones and browsers (Web Push). There is no feature flag for it.
+
+Email is opt-in per kind (`updatePreferences`). With no saved choice, email goes out only for `capture_device_down` and an `automation_failed` notice that an automation was paused, went silent or crashed. A trigger's failure streak, and a run cap that holds a trigger's fires, email only a person who turned `automation_failed` email on.
+
+While one of a person's tabs holds a presence lease on the session (`s.presence`), that person's row arrives read. A tab that shows its own notifications (`presenceAlerts`) also holds back the phone push and Web Push.
 
 #### `kortix.capture`
 

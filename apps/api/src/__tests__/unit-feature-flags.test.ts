@@ -138,6 +138,17 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
+  test('notification_center graduated: notifications are on for every project and a stored override is inert', () => {
+    // 2026-11-06: inbox rows, Web Push, mobile push, follows and alerts run for
+    // every project; email is opt-in per kind. A project that stored
+    // `experimental.notification_center` keeps the value in metadata; it must
+    // not resurface as a key, a catalog row, or a gate.
+    expect(isFeatureFlagKey('notification_center')).toBe(false);
+    const metadata = { experimental: { notification_center: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('notification_center');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('notification_center');
+  });
+
   test('event_triggers is a beta, explicit opt-in flag offered everywhere', () => {
     expect(findCatalogFlag('event_triggers')).toMatchObject({
       name: 'Composio event triggers',

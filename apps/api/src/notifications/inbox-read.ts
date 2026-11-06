@@ -1,16 +1,15 @@
 // Reading the notification inbox (KRTX-1742): the bell's page, its unread
 // count, and marking rows read. One read rule serves the bell, the mobile
 // inbox and the email digest (`filterVisibleNotificationRows`): a row shows
-// only while its project has the `notification_center` flag on and its reader
-// may still open what it names. A flag turned off, a revoked share, a lost
-// project role, a removed member, a deleted session or an MFA step-up the
-// sign-in has not passed hides the row; it is never deleted here.
+// only while its project exists and its reader may still open what it names.
+// A deleted project, a revoked share, a lost project role, a removed member, a
+// deleted session or an MFA step-up the sign-in has not passed hides the row;
+// it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
 import { notifications, projects } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
 import { loadSessionAccessRows, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
-import { notificationsEnabled } from './enabled';
 import { mfaWithheldAccounts } from './mfa-gate';
 import { inboxStore } from './inbox-store';
 import { notificationUrl } from './push-payload';
@@ -46,7 +45,7 @@ export interface InboxReadContext {
  */
 const RETIRED_KINDS: ReadonlySet<string> = new Set(['message', 'artifact_comment']);
 
-/** Capture fleet-health rows belong to the account, not to a project: no project flag or trigger read applies. */
+/** Capture fleet-health rows belong to the account, not to a project: no project or trigger read applies. */
 const isAccountNotification = (kind: string) => kind.startsWith('capture_device_');
 
 /** One inbox row as `GET /v1/notifications` returns it. */
@@ -97,23 +96,23 @@ async function mfaBlockedAccounts(userId: string, accountIds: string[], ctx: Inb
 }
 
 /**
- * The names of the projects with the `notification_center` flag on. Off, a
- * project has no inbox: its rows (from before a switch off) stay hidden.
+ * The rows' projects that still exist, with each one's name. A row whose
+ * project is gone stays hidden.
  */
-async function notificationProjectGates(projectIds: string[]): Promise<Map<string, { name: string; center: boolean }>> {
+async function notificationProjectGates(projectIds: string[]): Promise<Map<string, { name: string }>> {
   if (projectIds.length === 0) return new Map();
   const rows = await db
     .select({ projectId: projects.projectId, name: projects.name, metadata: projects.metadata })
     .from(projects)
     .where(inArray(projects.projectId, projectIds));
-  return new Map(rows.map((row) => [row.projectId, { name: row.name, center: notificationsEnabled(row.metadata) }]));
+  return new Map(rows.map((row) => [row.projectId, { name: row.name }]));
 }
 
 /**
  * The rows `userId` may see, plus the session rows the check loaded (their
  * live titles) and the names of the rows' projects. A row needs a project
- * with the `notification_center` flag on. A row without a session is an
- * automation row: its project's triggers must be readable.
+ * that still exists. A row without a session is an automation row: its
+ * project's triggers must be readable.
  */
 async function visible<T extends InboxRowForFilter>(
   userId: string,
@@ -126,10 +125,10 @@ async function visible<T extends InboxRowForFilter>(
     mfaBlockedAccounts(userId, [...new Set(rows.map((row) => row.accountId))], ctx),
     notificationProjectGates([...new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])))]),
   ]);
-  const projectNames = new Map([...gates].filter(([, gate]) => gate.center).map(([id, gate]) => [id, gate.name]));
+  const projectNames = new Map([...gates].map(([id, gate]) => [id, gate.name]));
   const open = rows.filter(
     (row) => !RETIRED_KINDS.has(row.kind) && !blocked.has(row.accountId) && (isAccountNotification(row.kind) ||
-      (row.projectId !== null && gates.get(row.projectId)?.center)),
+      (row.projectId !== null && gates.has(row.projectId))),
   );
 
   const loaded = await loadSessionAccessRows(open.flatMap((row) => (row.sessionId ? [row.sessionId] : [])));
@@ -156,8 +155,8 @@ async function visible<T extends InboxRowForFilter>(
 }
 
 /**
- * The rows `userId` may still see: the project's `notification_center` flag,
- * the account's MFA step-up (unless skipped), session rows through
+ * The rows `userId` may still see: the project still exists, the account's
+ * MFA step-up (unless skipped), session rows through
  * `maySeeSessions`, trigger rows through `mayReadProjectTriggers`. Order
  * preserved.
  */

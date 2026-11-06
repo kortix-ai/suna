@@ -2,21 +2,23 @@
  * Integration test (real PostgreSQL): automation alerts (KRTX-1742).
  *
  * A trigger that stops working tells the people who follow it, once per
- * failure streak, by inbox row and by email at once; it tells them once more
- * when it works again. Acceptance 7 runs through the real cron drain: a
+ * failure streak, by inbox row and push, and by email at once to a watcher
+ * who turned automation email on; it tells them once more when it works
+ * again. A health streak and an auto-pause email by default, as they did
+ * before email became opt-in. Acceptance 7 runs through the real cron drain: a
  * scheduled fire into an account whose paid wallet is empty is refused by the
  * real billing gate with `insufficient_credits`, dead-letters at once, and
  * alerts the trigger's watcher, not the account owner. Session creation is
  * replaced by the billing gate alone (no git, model or sandbox step runs).
  * The senders are captured through the notifier seam; every query is real.
  *
- * Alerts need the project's `notification_center` flag. A project with it off
- * (the default) gets no edge, no row and no email; an edge left from an on
- * period clears without a word.
+ * Every project sends alerts: the `notification_center` flag graduated, and a
+ * stored `false` override is inert.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import {
   accountMembers,
+  notificationPreferences,
   notifications,
   projectMembers,
   projectSessions,
@@ -61,7 +63,8 @@ const { drainTriggerExecutionQueue } = await import('../projects/lib/trigger-sch
 const { drainSessionLifecycleQueue } = await import('../projects/session-lifecycle');
 const { markGitTriggerFired } = await import('../projects/lib/trigger-fire');
 const { recordTriggerRunEnd } = await import('../projects/lib/trigger-run-outcome');
-const { clearTriggerAlert, raiseTriggerAlert, setTriggerAlertNotifierForTest, settleTriggerAlerts } = await import('../projects/lib/trigger-alerts');
+const { alertTriggerAutoPaused, raiseTriggerAlert, raiseTriggerHealthAlert, setTriggerAlertNotifierForTest, settleTriggerAlerts } = await import('../projects/lib/trigger-alerts');
+const { updateNotificationPreferences } = await import('../notifications/preferences');
 const { resolveTriggerWatchers, upsertTriggerWatcher } = await import('../projects/lib/trigger-watchers');
 const { markCommandFailed } = await import('../projects/session-lifecycle/command-transitions');
 const { markTriggerRuntimeDelivered } = await import('../projects/trigger-execution-store');
@@ -74,7 +77,7 @@ const MEMBER = crypto.randomUUID();
 const DEMOTED = crypto.randomUUID();
 
 let project: SeededProject;
-/** The same account and wallet, the flag left at its default (off). */
+/** The same account and wallet, with a stored `notification_center: false` override (inert since the flag graduated). */
 let legacy: SeededProject;
 const emails: Array<{ userId: string; kind: NotificationKindName }> = [];
 const billingWasEnabled = config.KORTIX_BILLING_INTERNAL_ENABLED;
@@ -162,8 +165,11 @@ function usersOf(rows: Array<{ userId: string }>): string[] {
 }
 
 beforeAll(async () => {
-  project = await seedProject('trigger-alerts', { metadata: { experimental: { notification_center: true } } });
-  legacy = await seedProject('trigger-alerts-legacy', { accountId: project.account_id });
+  project = await seedProject('trigger-alerts');
+  legacy = await seedProject('trigger-alerts-legacy', {
+    accountId: project.account_id,
+    metadata: { experimental: { notification_center: false } },
+  });
   await insertIntoView(db, accountMembers, [
     { userId: OWNER, accountId: project.account_id, accountRole: 'owner' },
     { userId: ADMIN, accountId: project.account_id, accountRole: 'admin' },
@@ -212,7 +218,7 @@ describe('a cron trigger that dead-letters on an empty wallet (acceptance 7)', (
   const slug = 'nightly-report';
   const spec = cronSpec(slug, 'Nightly report');
 
-  test('alerts its watcher once by inbox row and email, and not the owner who does not watch it', async () => {
+  test('alerts its watcher once by inbox row, and not the owner who does not watch it; no email until the watcher opts in', async () => {
     await seedTrigger(slug, spec);
     await upsertTriggerWatcher({ accountId: project.account_id, projectId: project.project_id, slug, userId: MEMBER });
     await seedDueExecution(slug, spec);
@@ -234,8 +240,9 @@ describe('a cron trigger that dead-letters on an empty wallet (acceptance 7)', (
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ userId: MEMBER, kind: 'automation_failed', title: 'Nightly report' });
     expect(rows[0]!.body).toBe(execution!.lastError!);
-    expect(rows[0]!.emailedAt).not.toBeNull();
-    expect(emailsFor('automation_failed')).toEqual([MEMBER]);
+    // A failure streak went out only with the notification center on: email is opt-in.
+    expect(rows[0]!.emailedAt).toBeNull();
+    expect(emailsFor('automation_failed')).toEqual([]);
     expect(usersOf(rows)).not.toContain(OWNER);
   });
 
@@ -244,7 +251,7 @@ describe('a cron trigger that dead-letters on an empty wallet (acceptance 7)', (
     await drainCron();
 
     expect(await alertRows(slug)).toHaveLength(1);
-    expect(emailsFor('automation_failed')).toEqual([MEMBER]);
+    expect(emailsFor('automation_failed')).toEqual([]);
   });
 
   test('the next good fire tells the watcher once that it works again', async () => {
@@ -260,7 +267,9 @@ describe('a cron trigger that dead-letters on an empty wallet (acceptance 7)', (
     expect(runtime).toMatchObject({ alertFailingSince: null, alertSource: null });
   });
 
-  test('a queued fire does not end the streak; a new streak alerts again', async () => {
+  test('a queued fire does not end the streak; a new streak alerts again, by email to a watcher who opted in', async () => {
+    await updateNotificationPreferences(MEMBER, { kinds: { automation_failed: { email: true } } });
+    emails.length = 0;
     await seedDueExecution(slug, spec);
     await drainCron();
     await markGitTriggerFired(project.project_id, slug, new Date(), 'queued');
@@ -269,6 +278,39 @@ describe('a cron trigger that dead-letters on an empty wallet (acceptance 7)', (
     const rows = await alertRows(slug);
     expect(rows.filter((row) => row.kind === 'automation_failed')).toHaveLength(2);
     expect(rows.filter((row) => row.kind === 'automation_recovered')).toHaveLength(1);
+    expect(emailsFor('automation_failed')).toEqual([MEMBER]);
+    await db.delete(notificationPreferences).where(eq(notificationPreferences.userId, MEMBER));
+  });
+});
+
+describe('alerts that emailed before email became opt-in still do', () => {
+  test('a health streak (an App that went silent) emails a watcher who never chose', async () => {
+    const slug = 'health-silent';
+    await seedTrigger(slug, cronSpec(slug, 'Silent watcher'));
+    await upsertTriggerWatcher({ accountId: project.account_id, projectId: project.project_id, slug, userId: MEMBER });
+    emails.length = 0;
+
+    expect(await raiseTriggerHealthAlert({ projectId: project.project_id, accountId: project.account_id, slug, source: 'silence', error: 'No App event for 2 h' })).toBe(true);
+    await settleTriggerAlerts();
+
+    expect(usersOf(await alertRows(slug))).toEqual([MEMBER]);
+    expect(emailsFor('automation_failed')).toEqual([MEMBER]);
+  });
+
+  test('an auto-pause emails a watcher who never chose; one who turned it off gets the row only', async () => {
+    const slug = 'auto-paused';
+    await seedTrigger(slug, cronSpec(slug, 'Paused report'));
+    await upsertTriggerWatcher({ accountId: project.account_id, projectId: project.project_id, slug, userId: MEMBER });
+    await upsertTriggerWatcher({ accountId: project.account_id, projectId: project.project_id, slug, userId: MANAGER });
+    await updateNotificationPreferences(MANAGER, { kinds: { automation_failed: { email: false } } });
+    emails.length = 0;
+
+    alertTriggerAutoPaused({ projectId: project.project_id, accountId: project.account_id, slug, reason: 'Paused after 24 hours of failed runs', pausedAt: new Date() });
+    await settleTriggerAlerts();
+
+    expect(usersOf(await alertRows(slug))).toEqual([MANAGER, MEMBER].sort());
+    expect(emailsFor('automation_failed')).toEqual([MEMBER]);
+    await db.delete(notificationPreferences).where(eq(notificationPreferences.userId, MANAGER));
   });
 });
 
@@ -592,8 +634,8 @@ describe('a run failure streak', () => {
   });
 });
 
-describe('a project with the notification_center flag off', () => {
-  test('a cron trigger that dead-letters records the failure but opens no alert, row or email', async () => {
+describe('a project with a stored notification_center: false override', () => {
+  test('the override is inert: a dead letter opens the streak and alerts the watcher, with no email', async () => {
     const slug = 'nightly-off';
     const spec = cronSpec(slug, 'Nightly off');
     await seedTrigger(slug, spec, null, legacy);
@@ -608,38 +650,8 @@ describe('a project with the notification_center flag off', () => {
       .from(projectTriggerExecutions)
       .where(and(eq(projectTriggerExecutions.projectId, legacy.project_id), eq(projectTriggerExecutions.slug, slug)));
     expect(execution).toMatchObject({ status: 'dead_lettered', attempts: 1 });
-    expect(await runtimeOf(slug, legacy)).toMatchObject({ lastStatus: 'failed', alertFailingSince: null, alertSource: null });
-    expect(await alertRows(slug, legacy)).toEqual([]);
-    expect(emails).toEqual([]);
-  });
-
-  test('a raise writes no edge, so turning the flag on later starts clean', async () => {
-    const slug = 'raise-off';
-    await seedTrigger(slug, cronSpec(slug, 'Raise off'), null, legacy);
-    await upsertTriggerWatcher({ accountId: legacy.account_id, projectId: legacy.project_id, slug, userId: MEMBER });
-    const raised = await raiseTriggerAlert({ projectId: legacy.project_id, accountId: legacy.account_id, slug, source: 'fire', error: 'boom' });
-    await settleTriggerAlerts();
-
-    expect(raised).toBe(false);
-    expect(await runtimeOf(slug, legacy)).toMatchObject({ alertFailingSince: null, alertSource: null });
-    expect(await alertRows(slug, legacy)).toEqual([]);
-  });
-
-  test('a clear ends an edge left from an on period without telling anyone', async () => {
-    const slug = 'clear-off';
-    await seedTrigger(slug, cronSpec(slug, 'Clear off'), null, legacy);
-    await upsertTriggerWatcher({ accountId: legacy.account_id, projectId: legacy.project_id, slug, userId: MEMBER });
-    await db
-      .update(projectTriggerRuntime)
-      .set({ alertFailingSince: new Date(Date.now() - 60_000), alertSource: 'fire' })
-      .where(and(eq(projectTriggerRuntime.projectId, legacy.project_id), eq(projectTriggerRuntime.slug, slug)));
-    emails.length = 0;
-
-    expect(await clearTriggerAlert({ projectId: legacy.project_id, slug, source: 'fire' })).toBe(true);
-    await settleTriggerAlerts();
-
-    expect(await runtimeOf(slug, legacy)).toMatchObject({ alertFailingSince: null, alertSource: null });
-    expect(await alertRows(slug, legacy)).toEqual([]);
+    expect((await runtimeOf(slug, legacy)).alertSource).toBe('fire');
+    expect(usersOf(await alertRows(slug, legacy))).toEqual([MEMBER]);
     expect(emails).toEqual([]);
   });
 });

@@ -812,30 +812,10 @@
       "notificationsDescription": "Notificaciones del navegador sobre eventos de sus sesiones.",
       "unsupported": "Su navegador no admite notificaciones.",
       "enableNotifications": "Activar notificaciones",
-      "permissionGranted": "Permiso del navegador concedido",
       "permissionDenied": "Bloqueadas por el navegador — cambie el permiso en la configuración del sitio",
-      "permissionDefault": "Se solicitará permiso al navegador al activarlas",
       "notificationTypes": "Tipos de notificación",
       "behavior": "Comportamiento",
       "sendTestNotification": "Enviar notificación de prueba",
-      "types": {
-        "onCompletion": {
-          "label": "Tareas completadas",
-          "description": "Cuando una sesión completa su tarea"
-        },
-        "onError": {
-          "label": "Errores",
-          "description": "Cuando una sesión encuentra un error"
-        },
-        "onQuestion": {
-          "label": "Preguntas",
-          "description": "Cuando Kortix necesita su respuesta para continuar"
-        },
-        "onPermission": {
-          "label": "Solicitudes de permiso",
-          "description": "Cuando Kortix necesita permiso para usar una herramienta"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Solo cuando la pestaña está oculta",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Muestra notificaciones en este navegador, incluso con todas las pestañas de Kortix cerradas.",
       "enableDescriptionDesktop": "Muestra notificaciones de la app de escritorio mientras su ventana esté abierta.",
       "enableDescriptionBrowser": "Muestra notificaciones en este navegador mientras haya una pestaña de Kortix abierta.",
-      "notificationTypesDescription": "Estas opciones se aplican en cada teléfono y en cada navegador. Un teléfono también tiene su propio interruptor para Turno terminado, Turno fallido, Pregunta y Solicitud de permiso. Solo los recibe mientras ambos están activados. La campana muestra todas las notificaciones de los proyectos con Centro de notificaciones activado.",
+      "notificationTypesDescription": "Estas opciones se aplican en cada teléfono y en cada navegador. Un teléfono también tiene su propio interruptor para Turno terminado, Turno fallido, Pregunta y Solicitud de permiso. Solo los recibe mientras ambos están activados. La bandeja de entrada muestra todas las notificaciones, sean cuales sean estas opciones. El correo está desactivado para la mayoría de los tipos hasta que lo actives.",
       "push": "Push",
       "email": "Correo",
       "channelSwitch": "{kind}: {channel}",
@@ -1287,10 +1267,6 @@
         "us_region": {
           "name": "Región de EE. UU.",
           "description": "Ejecuta las nuevas sesiones de este proyecto en la región Este de EE. UU. Una sesión en curso conserva su región hasta que se reinicia."
-        },
-        "notification_center": {
-          "name": "Centro de notificaciones",
-          "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y bucles. Desactivado: solo el teléfono de quien creó la sesión recibe su push, y el teléfono de un propietario de la cuenta recibe uno cuando un disparador empieza a fallar."
         },
         "event_triggers": {
           "name": "Disparadores de eventos de Composio",
@@ -3384,22 +3360,28 @@
       "capture_device_down": "Un ordenador de Kortix Capture no graba. Se envía a quien administra Capture.",
       "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar."
     },
-    "bell": {
-      "label": "Notificaciones",
-      "unreadLabel": "Notificaciones: {count} sin leer",
+    "inbox": {
+      "title": "Bandeja de entrada",
+      "description": "Novedades de las sesiones, los disparadores y los artefactos que te afectan, de todos los proyectos.",
+      "unreadLabel": "Bandeja de entrada: {count} sin leer",
+      "unreadCount": "{count} sin leer",
       "markAllRead": "Marcar todo como leído",
       "tabAll": "Todo",
       "tabNeedsYou": "Te necesitan",
       "tabDone": "Hecho",
       "emptyNeedsYou": "Nada te necesita ahora",
+      "emptyNeedsYouDescription": "Las preguntas, las solicitudes de permiso y los fallos aparecen en esta pestaña.",
       "empty": "Las notificaciones aparecerán aquí",
+      "emptyDescription": "Kortix te avisa cuando una sesión termina, necesita tu respuesta o falla.",
       "loadError": "No se pudieron cargar las notificaciones",
       "retry": "Reintentar",
       "unread": "Sin leer",
       "promptPush": "Recibe avisos cuando Kortix esté cerrado",
       "promptBackground": "Recibe avisos cuando Kortix esté en segundo plano",
       "turnOn": "Activar",
-      "dismiss": "Descartar"
+      "dismiss": "Descartar",
+      "settings": "Ajustes de notificaciones",
+      "emailOptIn": "El correo está desactivado para la mayoría de los tipos hasta que lo actives."
     },
     "arrival": {
       "inProject": "{kind} en {project}",

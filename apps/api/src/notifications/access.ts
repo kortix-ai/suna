@@ -187,16 +187,26 @@ export async function mayReadProjectTriggers(
   return out;
 }
 
+/** The people among `userIds` who hold `action` (default `project.read`) on one project now. */
+export async function filterProjectRecipients(
+  accountId: string,
+  projectId: string,
+  userIds: readonly string[],
+  action: string = PROJECT_ACTIONS.PROJECT_READ,
+): Promise<string[]> {
+  const people = await personsAmong(accountId, userIds);
+  const results = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
+    allows(await projectAccess(userId, accountId, action), projectId));
+  return people.filter((_, i) => results[i]);
+}
+
 /** The people among `userIds` who may read the triggers of one project now. */
 export async function filterTriggerRecipients(
   accountId: string,
   projectId: string,
   userIds: readonly string[],
 ): Promise<string[]> {
-  const people = await personsAmong(accountId, userIds);
-  const results = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
-    (await mayReadProjectTriggers(userId, accountId, [projectId])).has(projectId));
-  return people.filter((_, i) => results[i]);
+  return filterProjectRecipients(accountId, projectId, userIds, PROJECT_ACTIONS.PROJECT_TRIGGER_READ);
 }
 
 /**

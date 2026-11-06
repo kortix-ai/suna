@@ -35,7 +35,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const usRegion = useFeatureFlag(projectId, 'us_region');
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
-  const notificationCenter = useFeatureFlag(projectId, 'notification_center');
   const volumes = useFeatureFlag(projectId, 'volumes');
   const drives = useFeatureFlag(projectId, 'drives');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
@@ -61,7 +60,6 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       us_region: usRegion.enabled,
       event_triggers: eventTriggers.enabled,
-      notification_center: notificationCenter.enabled,
       volumes: volumes.enabled,
       drives: drives.enabled,
       session_log: sessionLog.enabled,

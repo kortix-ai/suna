@@ -78,15 +78,17 @@ mock.module('@kortix/sdk/react', () => ({
   useVisibleAgents: () => [{ name: 'kortix' }, { name: 'meta' }],
   useCreateProjectSpace: () => ({ mutate: () => undefined, isPending: false }),
   useUpdateProjectSpace: () => ({ mutate: () => undefined, isPending: false }),
+  // The Inbox row's count: 3 unread, one of them a question (Needs you).
+  useNotificationInbox: () => ({
+    data: { notifications: [{ id: 'n1', kind: 'question', read: false }], unread_count: 3 },
+    unreadCount: 3,
+  }),
 }));
 mock.module('@kortix/ui/internal/hooks/projects/new-session-guard', () => ({
   useIsCreatingProjectSession: () => false,
 }));
 mock.module('@kortix/ui/internal/stores/billing-account-context', () => ({
   useBillingAccountId: () => 'synthetic-account',
-}));
-mock.module('@kortix/ui/internal/notifications/notification-bell', () => ({
-  NotificationBell: () => React.createElement('div', { 'data-testid': 'notification-bell' }),
 }));
 mock.module('@kortix/ui/workspace/sidebar/project-session-list', () => ({
   ProjectSessionList: ({ secondary }: { secondary?: boolean }) =>
@@ -142,11 +144,17 @@ let container: { innerHTML: string; remove(): void } | undefined;
 
 /** Opens the mobile sheet on mount: its content only exists while open. */
 function MobileOpenHarness({ projectId }: { projectId: string }) {
-  const { setOpenMobile } = useSidebar();
+  const { openMobile, setOpenMobile } = useSidebar();
   React.useEffect(() => {
     setOpenMobile(true);
   }, [setOpenMobile]);
-  return React.createElement(ProjectSidebar, { projectId });
+  return React.createElement(
+    React.Fragment,
+    null,
+    // Outside the sheet: whether the sheet is open.
+    React.createElement('span', { 'data-testid': 'sheet', 'data-open': openMobile ? 'true' : 'false' }),
+    React.createElement(ProjectSidebar, { projectId }),
+  );
 }
 
 async function mountSidebar(width: number) {
@@ -250,4 +258,48 @@ test('with chat off, the sidebar keeps New session, the session list and Cmd+J',
     win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
   });
   expect(newSessionCalls).toBe(1);
+});
+
+const INBOX_HREF = 'href="/projects/synthetic-project/inbox"';
+
+test('the Inbox row sits under New session, links to the Inbox page and carries the unread count (KRTX-1742)', async () => {
+  await mountSidebar(1280);
+  const html = container!.innerHTML;
+  const inbox = html.indexOf(INBOX_HREF);
+  expect(inbox).toBeGreaterThan(html.indexOf('newSession'));
+  expect(inbox).toBeLessThan(html.indexOf('data-testid="session-list"'));
+  const row = html.slice(inbox, html.indexOf('</a>', inbox));
+  expect(row).toContain('inbox.title');
+  // The count badge: 3 unread, in the "needs you" tint (a question waits), named for a screen reader.
+  expect(row).toContain('aria-label="inbox.unreadCount"');
+  expect(row).toMatch(/>3</);
+  expect(row).toContain('bg-kortix-yellow/15');
+});
+
+test('with chat on, the Inbox row stays at the top, above Review and the spaces', async () => {
+  channelsOn = true;
+  await mountSidebar(1280);
+  const html = container!.innerHTML;
+  const inbox = html.indexOf(INBOX_HREF);
+  expect(inbox).toBeGreaterThan(-1);
+  expect(inbox).toBeLessThan(html.indexOf('href="/projects/synthetic-project/review"'));
+});
+
+test('the mobile sheet shows the Inbox row, and opening it closes the sheet', async () => {
+  // The row is an anchor: keep happy-dom from navigating the test window.
+  const stop = (event: Event) => event.preventDefault();
+  win.document.addEventListener('click', stop as never, true);
+  try {
+    await mountSidebar(390);
+    const sheet = () => document.querySelector('[data-testid="sheet"]')?.getAttribute('data-open');
+    expect(sheet()).toBe('true');
+    const link = document.querySelector(`a[${INBOX_HREF}]`) as unknown as { click(): void } | null;
+    expect(link).not.toBeNull();
+    await act(async () => {
+      link!.click();
+    });
+    expect(sheet()).toBe('false');
+  } finally {
+    win.document.removeEventListener('click', stop as never);
+  }
 });

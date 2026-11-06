@@ -364,6 +364,8 @@ export function serializeProject(
     // comments, presence and co-editing only while they read true.
     // `project_channels` merged into `chat` (2026-11) and stays, equal to `chat`:
     // released TUI, mobile and CLI builds show Channels only while they read true.
+    // `notification_center` graduated on 2026-11-06 and stays `true`: older web, SDK
+    // and mobile builds show the bell, Web Push and session follow only while they read true.
     experimental: {
       ...resolveFeatureFlags(row.metadata),
       apps: true,
@@ -375,6 +377,7 @@ export function serializeProject(
       connectors_v2: true,
       connectors_api_discover: true,
       meta_agent: true,
+      notification_center: true,
       warm_sessions: false,
       volumes: isPlatinumConfigured(),
       drives: isPlatinumConfigured(),

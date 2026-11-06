@@ -57,6 +57,14 @@ export interface UiRoutes {
    * inside its `customize` route.
    */
   review?: (projectId: string) => string | null;
+  /**
+   * The Inbox: the signed-in person's notifications from every project, as a
+   * page beside the project sidebar (KRTX-1742). Absent or null: the host
+   * serves no Inbox page and the sidebar has no Inbox row. It is new
+   * (2026-11-06), so a host that maps any route (its own router) gets no
+   * Inbox row until it routes `inbox` too: no host gets a link it does not serve.
+   */
+  inbox?: (projectId: string) => string | null;
 }
 
 const DEFAULT_ROUTES = {
@@ -77,6 +85,7 @@ const DEFAULT_ROUTES = {
   dm: (p: string, agentName: string) => `/projects/${p}/dm/${encodeURIComponent(agentName)}`,
   memory: (p: string) => `/projects/${p}/memory`,
   review: (p: string) => `/projects/${p}/review`,
+  inbox: (p: string) => `/projects/${p}/inbox`,
 };
 
 export const defaultUiRoutes: UiRoutes = DEFAULT_ROUTES;
@@ -93,7 +102,9 @@ export function setUiRoutes(overrides: Partial<UiRoutes>): void {
   const admin = overrides.admin ?? overrides.customize;
   // A host that routes its own customize pages serves Review there unless it also routes `review`.
   const review = overrides.review ?? (overrides.customize ? undefined : DEFAULT_ROUTES.review);
-  routes = { ...DEFAULT_ROUTES, ...overrides, ...(admin ? { admin } : {}), review };
+  // The Inbox page is new: only the default router (no override) serves it unasked.
+  const inbox = overrides.inbox ?? (Object.keys(overrides).length === 0 ? DEFAULT_ROUTES.inbox : undefined);
+  routes = { ...DEFAULT_ROUTES, ...overrides, ...(admin ? { admin } : {}), review, inbox };
 }
 
 export function uiRoutes(): UiRoutes {

@@ -146,7 +146,7 @@ export function sessionUnreadRowId(
   return rows?.find((row) => !row.read && row.session_id === sessionId)?.id ?? null;
 }
 
-/** The bell's tabs. `needs` holds the kinds that wait on the person: an answer, an approval, a failure to look at. */
+/** The Inbox page's tabs. `needs` holds the kinds that wait on the person: an answer, an approval, a failure to look at. */
 export type NotificationTab = 'all' | 'needs' | 'done';
 
 const NEEDS_YOU_KINDS: ReadonlySet<InboxNotification['kind']> = new Set([

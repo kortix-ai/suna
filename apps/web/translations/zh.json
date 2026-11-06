@@ -812,30 +812,10 @@
       "notificationsDescription": "浏览器针对会话事件发送的通知。",
       "unsupported": "您的浏览器不支持通知。",
       "enableNotifications": "启用通知",
-      "permissionGranted": "已获得浏览器权限",
       "permissionDenied": "已被浏览器阻止 — 请在网站设置中更新权限",
-      "permissionDefault": "启用时将请求浏览器权限",
       "notificationTypes": "通知类型",
       "behavior": "通知方式",
       "sendTestNotification": "发送测试通知",
-      "types": {
-        "onCompletion": {
-          "label": "任务完成",
-          "description": "会话完成任务时"
-        },
-        "onError": {
-          "label": "错误",
-          "description": "会话遇到错误时"
-        },
-        "onQuestion": {
-          "label": "问题",
-          "description": "Kortix 需要您的输入才能继续时"
-        },
-        "onPermission": {
-          "label": "权限请求",
-          "description": "Kortix 需要使用工具的权限时"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "仅在标签页隐藏时",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "在此浏览器中显示通知，即使所有 Kortix 标签页都已关闭。",
       "enableDescriptionDesktop": "在桌面应用窗口打开期间显示通知。",
       "enableDescriptionBrowser": "在 Kortix 标签页打开期间于此浏览器中显示通知。",
-      "notificationTypesDescription": "这些设置适用于每部手机和每个浏览器。手机对「本轮已完成」「本轮失败」「问题」「权限请求」还有自己的开关，只有两者都开启时才会收到。铃铛会列出已开启通知中心的项目的每条通知。",
+      "notificationTypesDescription": "这些设置适用于每部手机和每个浏览器。手机对「本轮已完成」「本轮失败」「问题」「权限请求」还有自己的开关，只有两者都开启时才会收到。无论这些设置如何，收件箱都会列出每条通知。大多数类型的邮件在你开启之前都处于关闭状态。",
       "push": "推送",
       "email": "电子邮件",
       "channelSwitch": "{kind}：{channel}",
@@ -1287,10 +1267,6 @@
         "us_region": {
           "name": "美国区域",
           "description": "在美国东部区域运行此项目的新会话。正在运行的会话在重启前保持其当前区域。"
-        },
-        "notification_center": {
-          "name": "通知中心",
-          "description": "通过铃铛收件箱、浏览器推送和电子邮件通知与会话相关的人（发送提示的人、创建者和关注者），并在触发器和循环失败时发出警报。关闭时，会话的推送只发到会话创建者的手机；触发器开始失败时，账户所有者的手机会收到一条推送。"
         },
         "event_triggers": {
           "name": "Composio 事件触发器",
@@ -3384,22 +3360,28 @@
       "capture_device_down": "有一台 Kortix Capture 电脑未在录制。发送给管理 Capture 的人员。",
       "capture_device_recovered": "停止的 Kortix Capture 电脑已重新录制。"
     },
-    "bell": {
-      "label": "通知",
-      "unreadLabel": "通知：{count} 条未读",
+    "inbox": {
+      "title": "收件箱",
+      "description": "来自所有项目、与你相关的会话、触发器和工件的动态。",
+      "unreadLabel": "收件箱：{count} 条未读",
+      "unreadCount": "{count} 条未读",
       "markAllRead": "全部标记为已读",
       "tabAll": "全部",
       "tabNeedsYou": "待处理",
       "tabDone": "已完成",
       "emptyNeedsYou": "目前没有需要你处理的事项",
+      "emptyNeedsYouDescription": "问题、权限请求和失败会显示在此标签页中。",
       "empty": "通知将显示在这里",
+      "emptyDescription": "当会话完成、需要你回答或失败时，Kortix 会通知你。",
       "loadError": "无法加载通知",
       "retry": "重试",
       "unread": "未读",
       "promptPush": "在 Kortix 关闭时接收通知",
       "promptBackground": "在 Kortix 处于后台时接收通知",
       "turnOn": "开启",
-      "dismiss": "关闭"
+      "dismiss": "关闭",
+      "settings": "通知设置",
+      "emailOptIn": "大多数类型的邮件在你开启之前都处于关闭状态。"
     },
     "arrival": {
       "inProject": "{project} 中的{kind}",

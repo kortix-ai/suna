@@ -8,7 +8,6 @@ import {
   inboxRowDetail,
   inboxRowLabel,
   inboxRowTitle,
-  notificationInboxEnabled,
 } from './inbox';
 
 const NOW = Date.parse('2026-10-09T12:00:00.000Z');
@@ -122,7 +121,3 @@ describe('inboxOpenTarget', () => {
   });
 });
 
-test('the inbox gate is the notification_center flag alone', () => {
-  for (const experimental of [{}, { notification_center: false }, { notification_center: 'true' }, { artifacts: true, artifact_comments: true }]) expect(notificationInboxEnabled({ experimental })).toBe(false);
-  expect(notificationInboxEnabled({ experimental: { notification_center: true } })).toBe(true);
-});

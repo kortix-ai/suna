@@ -295,28 +295,14 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'subscription of the project and turning it on reconciles them (feature-flags/toggle-effects.ts); ' +
       'deliverEvents never fires for a project with the flag off (trigger-events/deliver.ts).',
   },
-  {
-    key: 'notification_center',
-    name: 'Notification Center',
-    description:
-      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and loops. Off, as before: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing.",
-    stability: 'beta',
-    available: () => true,
-    // KRTX-1742 ships dark: a project opts in from Settings → Feature flags.
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'Mixed, and both halves are enforced. ROUTES: GET/PUT ' +
-      '/projects/:id/sessions/:id/watch answer 403 `feature_disabled` ' +
-      '(routes/session-watch.ts). BEHAVIORAL: notifySessionEvent and the ' +
-      'question relay take the pre-KRTX-1742 creator-only Expo path ' +
-      '(notifications/session-push-legacy.ts), recordTriggerRunEnd pushes the ' +
-      'account owner as before, and share notices, trigger and reminder alerts, ' +
-      'prompt auto-follow, trigger follow, presence mark-read and stream-end ' +
-      'lease expiry do not run. The inbox list, unread count and digest drop ' +
-      'rows of a project with the flag off (notifications/inbox-read.ts). The ' +
-      'per-person /v1/notifications/* routes carry no project and stay ungated.',
-  },
+  // `notification_center` graduated (2026-11-06: "get rid of the feature flag,
+  // they should be available by default"): every project writes inbox rows and
+  // sends Web Push and mobile push to the people a session concerns, follows
+  // sessions, and raises trigger, goal, reminder, share and permission alerts.
+  // Email is opt-in per kind (@kortix/shared/notification-kinds). The
+  // creator-only Expo push of a flag-off project is deleted. A stored
+  // `experimental.notification_center` override is inert. The project detail
+  // still sends the key as `true` for older SDKs, hosts, CLIs and mobile builds.
   // `volumes` and `drives` graduated (2026-11-02, Marko: "rm the feature flag
   // for volumes, make them default & always enabled"): every project has a
   // Drive wherever the platform stores one (Platinum configured,

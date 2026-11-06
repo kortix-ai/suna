@@ -7,7 +7,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { notificationPreferences, notifications, sessionPresenceLeases } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { NOTIFICATION_DIGEST_DELAY_MS } from '@kortix/shared/notification-kinds';
+import { DEFAULT_NOTIFICATION_PREFERENCES, NOTIFICATION_DIGEST_DELAY_MS } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from '../__tests__/helpers/integration-fixtures';
 import type { PushDeviceTokenRow } from './device-tokens';
@@ -165,8 +165,33 @@ withDb('notification fan-out', () => {
     expect(sent.email).toEqual([alice]);
   });
 
-  test('a question with email on gets a digest due time; push off sends no push', async () => {
-    await updateNotificationPreferences(alice, { kinds: { question: { push: false } } });
+  test('a question is not mailed by default: email is opt-in', async () => {
+    const { deps } = harness();
+    await deliver({ kind: 'question', accountId: project.account_id, projectId: project.project_id, sessionId, title: 'S', body: 'Which region?', recipients: [alice] }, deps);
+    const [row] = await rowsOf(alice);
+    expect(row!.emailDueAt).toBeNull();
+  });
+
+  test('a delivery that lowers its email default mails only the people who opted in', async () => {
+    await updateNotificationPreferences(bob, { kinds: { automation_failed: { email: true } } });
+    const { deps, sent } = harness();
+    await deliver({
+      kind: 'automation_failed',
+      accountId: project.account_id,
+      projectId: project.project_id,
+      triggerSlug: 'nightly-report',
+      title: 'Nightly report',
+      recipients: [alice, bob],
+      emailDefault: false,
+    }, deps);
+    expect(sent.email).toEqual([bob]);
+    // The row and the push still reach everyone.
+    expect(await rowsOf(alice)).toHaveLength(1);
+    expect([...sent.webPush].sort()).toEqual([alice, bob].sort());
+  });
+
+  test('a question with email turned on gets a digest due time; push off sends no push', async () => {
+    await updateNotificationPreferences(alice, { kinds: { question: { push: false, email: true } } });
     const { deps, sent } = harness();
     await deliver({ kind: 'question', accountId: project.account_id, projectId: project.project_id, sessionId, title: 'S', body: 'Which region?', recipients: [alice] }, deps);
 
@@ -250,7 +275,7 @@ withDb('notification preferences', () => {
     const prefs = await updateNotificationPreferences(user, {
       kinds: { question: { push: 'no' as unknown as boolean }, bogus: { push: false } } as never,
     });
-    expect(prefs.question).toEqual({ push: true, email: true });
+    expect(prefs.question).toEqual(DEFAULT_NOTIFICATION_PREFERENCES.question);
     const [row] = await db.select().from(notificationPreferences).where(eq(notificationPreferences.userId, user));
     expect(row!.settings).toEqual({ kinds: {} });
   });

@@ -61,6 +61,7 @@ import {
   PlusIcon as Plus,
   QuestionIcon as QuestionMark,
   ArrowClockwiseIcon as RefreshCw,
+  BellIcon as Bell,
   ScrollIcon as ScrollText,
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
@@ -638,6 +639,22 @@ export const menuRegistry: MenuItemDef[] = [
     // one-word query for that page returned Connectors as well. 'connector' /
     // 'connectors' / 'connections' still cover everything this row is called.
     keywords: 'connectors connections pipedream mcp openapi postman collections connector',
+  },
+  {
+    // The person's notification inbox, across projects: the sidebar Inbox row
+    // (`project-inbox-nav.tsx`), same icon, same route. On for every project
+    // since the `notification_center` flag graduated (2026-11-06). Above
+    // Channels and Review, whose keywords also hold "inbox": the palette keeps
+    // registry order inside a group, so "inbox" lists this row first.
+    id: 'proj-inbox',
+    label: 'Inbox',
+    icon: Bell,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/inbox',
+    requiresProject: true,
+    keywords: 'inbox notifications alerts unread mentions bell needs you done mark read',
   },
   {
     id: 'proj-channels',

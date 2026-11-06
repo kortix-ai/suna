@@ -20,7 +20,6 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { logger } from '../../lib/logger';
 import { fireGitTrigger, markGitTriggerFired } from '../lib/trigger-fire';
@@ -127,16 +126,13 @@ export async function createSessionTrigger(
   const inserted = await insertSessionReminderWithinCaps({ projectId, spec, createdBy: loaded.userId, firstFireAt, now });
   if ('error' in inserted) return c.json({ error: inserted.error }, 409);
   // The person who set the reminder hears when it fails (KRTX-1742); an
-  // agent's reminder goes to the person the agent acts for. Only with the
-  // `notification_center` flag on.
-  const watcher = notificationsEnabled(loaded.row.metadata)
-    ? triggerWatcherOf({
-        authType: c.get('authType'),
-        userId: c.get('userId'),
-        sessionId: c.get('sessionId'),
-        onBehalfOfUserId: getRequestOnBehalfOf(c),
-      })
-    : null;
+  // agent's reminder goes to the person the agent acts for.
+  const watcher = triggerWatcherOf({
+    authType: c.get('authType'),
+    userId: c.get('userId'),
+    sessionId: c.get('sessionId'),
+    onBehalfOfUserId: getRequestOnBehalfOf(c),
+  });
   // Best-effort: the reminder is already stored, so a failed write must not
   // fail the route (a retry would set a second reminder).
   if (watcher) {

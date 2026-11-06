@@ -269,7 +269,7 @@ describe('serverPreferences', () => {
     });
   });
 
-  test("posts this phone's per-kind switches as they are: a project with the flag off reads them alone", () => {
+  test("posts this phone's per-kind switches as they are", () => {
     expect(serverPreferences({ ...ALL_ON, enabled: false, onPermission: false })).toEqual({
       enabled: false,
       on_completion: true,

@@ -799,10 +799,6 @@ const catalog = {
           "name": "US Region",
           "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
         },
-        "notification_center": {
-          "name": "Notification Center",
-          "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and loops. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing."
-        },
         "event_triggers": {
           "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
@@ -2149,22 +2145,28 @@ const catalog = {
       "capture_device_down": "A Kortix Capture computer is not recording. Sent to people who manage Capture.",
       "capture_device_recovered": "A Kortix Capture computer that stopped records again."
     },
-    "bell": {
-      "label": "Notifications",
-      "unreadLabel": "Notifications: {count} unread",
+    "inbox": {
+      "title": "Inbox",
+      "description": "Updates about the sessions, triggers, and artifacts that concern you, from every project.",
+      "unreadLabel": "Inbox: {count} unread",
+      "unreadCount": "{count} unread",
       "markAllRead": "Mark all as read",
       "tabAll": "All",
       "tabNeedsYou": "Needs you",
       "tabDone": "Done",
       "emptyNeedsYou": "Nothing needs you right now",
+      "emptyNeedsYouDescription": "Questions, permission requests and failures show up in this tab.",
       "empty": "Notifications will show up here",
+      "emptyDescription": "Kortix notifies you when a session finishes, needs your answer or fails.",
       "loadError": "Could not load notifications",
       "retry": "Try again",
       "unread": "Unread",
       "promptPush": "Get notified when Kortix is closed",
       "promptBackground": "Get notified when Kortix is in the background",
       "turnOn": "Turn on",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "settings": "Notification settings",
+      "emailOptIn": "Email is off for most kinds until you turn it on."
     },
     "arrival": {
       "inProject": "{kind} in {project}",

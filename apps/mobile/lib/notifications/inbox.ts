@@ -74,7 +74,3 @@ export function inboxOpenTarget(row: InboxNotification): { projectId: string; se
   if (!row.project_id) return null;
   return { projectId: row.project_id, sessionId: row.session_id };
 }
-
-export function notificationInboxEnabled(project: { experimental?: { notification_center?: unknown } } | null | undefined): boolean {
-  return project?.experimental?.notification_center === true;
-}
