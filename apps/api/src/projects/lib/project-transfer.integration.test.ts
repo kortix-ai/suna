@@ -658,8 +658,10 @@ withDb('project transfer', () => {
     const { sessionSandboxes, sandboxComputeSessions, apps, appDeployments, appRuntimes } = await import('@kortix/db');
     const SANDBOX = '00000000-0000-4000-a000-00000000a150';
     const OTHER_BOX = '00000000-0000-4000-a000-00000000a151';
+    // session_sandboxes.session_id is unique and an earlier test already gave SESSION_ID a box.
+    const METERED_SESSION = 'transfer-test-session-metered';
     await db.insert(sessionSandboxes).values({
-      sandboxId: SANDBOX, sessionId: SESSION_ID, accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, provider: 'platinum', externalId: 'sbx-metered',
+      sandboxId: SANDBOX, sessionId: METERED_SESSION, accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, provider: 'platinum', externalId: 'sbx-metered',
     });
     const [app] = await db.insert(apps).values({
       accountId: SOURCE_ACCOUNT, projectId: PROJECT_ID, slug: 'transfer-metered', name: 'Metered', routeKey: 'xfer0002',
@@ -673,8 +675,8 @@ withDb('project transfer', () => {
     }).returning();
     const spec = { provider: 'platinum' as const, cpuCores: 1, memoryGb: 1, diskGb: 1 };
     const rows = await db.insert(sandboxComputeSessions).values([
-      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: SANDBOX, sessionId: SESSION_ID },
-      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: SANDBOX, sessionId: SESSION_ID, state: 'stopped', endedAt: new Date(Date.now() - 60_000).toISOString() },
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: SANDBOX, sessionId: METERED_SESSION },
+      { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: SANDBOX, sessionId: METERED_SESSION, state: 'stopped', endedAt: new Date(Date.now() - 60_000).toISOString() },
       { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: runtime!.runtimeId, workloadType: 'app', appRuntimeId: runtime!.runtimeId },
       { ...spec, accountId: SOURCE_ACCOUNT, sandboxId: OTHER_BOX },
     ]).returning({ id: sandboxComputeSessions.id });
