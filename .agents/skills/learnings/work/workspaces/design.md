@@ -501,7 +501,13 @@ are just aliases").** Decided in the Naming stage:
 - No twin, on purpose: `/v1/projects/:id/sessions/warm[/claim]` and `/v1/projects/suna-migration/*`
   answer 410 `ENDPOINT_RETIRED` (`routes/retired.ts`); a new name for a removed route is noise.
   `/v1/projects/provision[-stream]` and `/quota` stay legacy-only: `POST /v1/workspaces` is the
-  managed create and has no quota.
+  managed create and has no quota. `/quota` answers "may this account create its one project",
+  a question the workspace model does not ask: a new workspace is always a new account, so a
+  `/v1/workspaces/quota` twin would always answer "not capped". Checked 2026-11-07: `GET
+  /v1/workspaces/quota` matches `/:workspaceId` and answers `404 workspace_not_found`; the
+  legacy route is `deprecated` with `x-kortix-replaced-by: POST /v1/workspaces`. `POST
+  /v1/workspaces/:id/setup` is the canonical setup and `/v1/projects/:id/setup` its alias (both
+  new in Release 1, so the SDK's `setupWorkspace` needs no legacy fallback).
 - Every legacy route with its own meaning (`WORKSPACE_LEGACY_REPLACEMENTS`) is `deprecated` in
   `/v1/openapi.json` with `x-kortix-replaced-by`. `unit-workspace-route-aliases.test.ts` fails on a
   new non-staff route with a `projects`/`accounts` segment that is none of alias, deprecated
