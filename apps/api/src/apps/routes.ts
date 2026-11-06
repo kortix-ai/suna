@@ -42,7 +42,7 @@ import {
 } from './limits';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { projectsApp } from '../projects/lib/app';
-import { dropRetiredAppTriggers, projectCapabilityAllowed, runtimeTriggersNamingApp } from '../projects/surface';
+import { clearAppCrashAlerts, dropRetiredAppTriggers, projectCapabilityAllowed, runtimeTriggersNamingApp } from '../projects/surface';
 import { PROJECT_ACTIONS } from '../iam';
 import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
@@ -1186,6 +1186,8 @@ export function registerAppsRoutes(): void {
             }).where(eq(appRuntimes.runtimeId, runtime.runtimeId));
             await pauseComputeSession(runtime.runtimeId, now);
           }
+          // Stopped on purpose: keep-alive no longer checks it, so its crash streaks end here.
+          await clearAppCrashAlerts({ projectId, appSlug: app.slug, running: false }).catch(() => 0);
         } else {
           const loaded = await loadPublicApp(app.routeKey);
           if (!loaded) return c.json({ error: 'Active deployment has no runtime' }, 409);

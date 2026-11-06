@@ -16,7 +16,9 @@ import {
   APP_EVENT_LOG_STATUSES,
   asTestEvents,
   decodeAppEventCursor,
+  emitAppPlatformEvent,
   ingestAppEvents,
+  isAppPlatformEvent,
   listAppEventLog,
   parseAppEventsBody,
   projectsApp,
@@ -119,12 +121,14 @@ export function registerAppEventLogRoutes(): void {
         'Sends events as if the App posted them, through the same log, limits and triggers, to prove the wiring. Every id ' +
         'starts with `test-` (one is made when none is sent), so a real event with the same id still fires later; the prompt ' +
         'reads `event.test` as true and starts with a TEST preamble. `ids` lists the ids to look up in the log ' +
-        '(`GET` the events with `id=`). Needs project.app.deploy.',
+        '(`GET` the events with `id=`). The names Kortix writes about an App (`kortix.app.silent`, `kortix.app.recovered`, ' +
+        '`kortix.app.crashed`) may be sent too, to test a repair trigger: they reach only a trigger whose event is that ' +
+        'exact name. Needs project.app.deploy.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: TestEvent.or(z.object({ events: z.array(TestEvent) })) } } },
       },
-      responses: { 202: json(TestEventResult, 'Events appended'), ...errors(400, 403, 404, 429) },
+      responses: { 202: json(TestEventResult, 'Events appended'), ...errors(400, 403, 404, 429, 503) },
     }),
     async (c) => {
       const { projectId, appId } = c.req.valid('param');
@@ -137,11 +141,32 @@ export function registerAppEventLogRoutes(): void {
       if (limited) {
         return c.json({ error: 'This App sent too many requests this minute. Retry shortly.', code: 'rate_limit_exceeded', retry_after_seconds: limited.retryAfterSeconds }, 429);
       }
-      const parsed = parseAppEventsBody(await readJsonObject(c));
+      const parsed = parseAppEventsBody(await readJsonObject(c), { platform: true });
       if ('error' in parsed) return c.json({ error: parsed.error }, 400);
       const events = asTestEvents(parsed);
-      const result = await ingestAppEvents({ projectId, appId, appSlug: app.slug, events, test: true });
-      return c.json({ ...result, ids: events.map((event) => event.id!) }, 202);
+      // A kortix.app.* test goes where Kortix's own would: only to triggers on that exact name.
+      const platform = events.filter((event) => isAppPlatformEvent(event.name));
+      const appEvents = events.filter((event) => !isAppPlatformEvent(event.name));
+      const totals = { triggers: 0, accepted: 0, deduped: 0, suppressed: 0, unmatched: 0, hints: [] as string[] };
+      const add = (part: { triggers: number; accepted: number; deduped: number; suppressed: number; unmatched: number; hint?: string }) => {
+        totals.triggers = Math.max(totals.triggers, part.triggers);
+        totals.accepted += part.accepted;
+        totals.deduped += part.deduped;
+        totals.suppressed += part.suppressed;
+        totals.unmatched += part.unmatched;
+        if (part.hint && !totals.hints.includes(part.hint)) totals.hints.push(part.hint);
+      };
+      if (appEvents.length > 0) add(await ingestAppEvents({ projectId, appId, appSlug: app.slug, events: appEvents, test: true }));
+      for (const event of platform) {
+        const result = await emitAppPlatformEvent({
+          projectId, appSlug: app.slug, name: event.name as Parameters<typeof emitAppPlatformEvent>[0]['name'],
+          id: event.id!, data: event.data ?? {}, test: true,
+        });
+        if (!result) return c.json({ error: 'Could not write the test event. Retry.' }, 503);
+        add(result);
+      }
+      const { hints, ...counts } = totals;
+      return c.json({ ...counts, ...(hints.length > 0 ? { hint: hints.join(' ') } : {}), ids: events.map((event) => event.id!) }, 202);
     },
   );
 }

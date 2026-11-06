@@ -36,9 +36,14 @@ import { resolveTriggerWatchers } from './trigger-watchers';
 /**
  * 'fire' and 'run' as below; 'silence': an app trigger heard no App event
  * within its `expect_event_within` (app-trigger-silence.ts). The App's next
- * event clears it (app-events.ts).
+ * event clears it (app-events.ts). 'crash': the always-on App the trigger
+ * names stopped 3 times in an hour and keep-alive stopped restarting it
+ * (app-health-alerts.ts); the next pass that finds it running clears it.
  */
-export type TriggerAlertSource = 'fire' | 'run' | 'silence';
+export type TriggerAlertSource = 'fire' | 'run' | 'silence' | 'crash';
+
+/** App health alerts go out whatever the `notification_center` flag says: a dead watcher is invisible otherwise. */
+const HEALTH_SOURCES: readonly TriggerAlertSource[] = ['silence', 'crash'];
 
 export interface TriggerAlertInput {
   projectId: string;
@@ -124,8 +129,8 @@ export async function clearTriggerAlert(input: TriggerAlertInput): Promise<boole
       ))
       .returning({ since: previous.alertFailingSince, name: triggerName, reminder: isReminder });
     if (!row?.since) return false;
-    // A silence alert went out whatever the flag says, so its recovery does too.
-    announce('automation_recovered', input, alertTitle(input.slug, row), `recovered:${input.projectId}:${input.slug}:${row.since.getTime()}`, '', input.source === 'silence');
+    // A health alert went out whatever the flag says, so its recovery does too.
+    announce('automation_recovered', input, alertTitle(input.slug, row), `recovered:${input.projectId}:${input.slug}:${row.since.getTime()}`, '', HEALTH_SOURCES.includes(input.source));
     return true;
   } catch (err) {
     logger.warn('[trigger-alerts] clear failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
@@ -141,18 +146,27 @@ export async function clearTriggerAlert(input: TriggerAlertInput): Promise<boole
  * a streak of another source already open wins (one alert at a time).
  */
 export async function raiseTriggerSilenceAlert(input: { projectId: string; slug: string; accountId?: string | null; error: string }): Promise<boolean> {
-  const alertInput: TriggerAlertInput = { projectId: input.projectId, slug: input.slug, source: 'silence', accountId: input.accountId };
+  return raiseTriggerHealthAlert({ ...input, source: 'silence' });
+}
+
+/**
+ * A health streak (`silence` or `crash`) on one trigger, announced once,
+ * whatever the `notification_center` flag says. True when this call started
+ * it; a streak of another source already open wins (one alert at a time).
+ */
+export async function raiseTriggerHealthAlert(input: { projectId: string; slug: string; accountId?: string | null; error: string; source: 'silence' | 'crash' }): Promise<boolean> {
+  const alertInput: TriggerAlertInput = { projectId: input.projectId, slug: input.slug, source: input.source, accountId: input.accountId };
   try {
     const [row] = await db
       .update(projectTriggerRuntime)
-      .set({ alertFailingSince: sql`now()`, alertSource: 'silence' })
+      .set({ alertFailingSince: sql`now()`, alertSource: input.source })
       .where(and(runtimeRow(alertInput), isNull(projectTriggerRuntime.alertFailingSince)))
       .returning({ since: projectTriggerRuntime.alertFailingSince, name: triggerName, reminder: isReminder });
     if (!row?.since) return false;
-    announce('automation_failed', alertInput, alertTitle(input.slug, row), `silence:${input.projectId}:${input.slug}:${row.since.getTime()}`, input.error, true);
+    announce('automation_failed', alertInput, alertTitle(input.slug, row), `${input.source}:${input.projectId}:${input.slug}:${row.since.getTime()}`, input.error, true);
     return true;
   } catch (err) {
-    logger.warn('[trigger-alerts] silence raise failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
+    logger.warn('[trigger-alerts] health raise failed', { projectId: input.projectId, slug: input.slug, source: input.source, error: reason(err) });
     return false;
   }
 }
