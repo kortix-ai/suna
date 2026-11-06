@@ -8,7 +8,7 @@
  * (`secret.consumer.used`, `iam.assignment.expired`, `llm.usage`).
  *
  * A key ending in `.*` titles a family whose last segments are open-ended
- * (OpenCode event types). An exact key wins over a family; a longer family
+ * (runtime event types). An exact key wins over a family; a longer family
  * wins over a shorter one.
  *
  * Title: what happened, past tense, sentence case, 2 to 7 words. An event a
@@ -77,9 +77,13 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'session.lifecycle.continue_session': 'Queued session continuation',
   'session.event_rate_limited': 'Rate-limited session audit events',
   'sandbox.runtime.legacy_bootstrap': 'Bootstrapped legacy sandbox runtime',
-  'opencode.*': 'Recorded agent runtime event',
-  'opencode.tool.updated': 'Updated agent tool call',
-  'opencode.message.part.*': 'Updated agent message',
+  'agent.*': 'Recorded agent runtime event',
+  'agent.tool.updated': 'Updated agent tool call',
+  'agent.message.part.*': 'Updated agent message',
+  // The same events, as rows written before the rename to `agent.*` name them.
+  'opencode.*': 'Recorded agent runtime event (older rows)',
+  'opencode.tool.updated': 'Updated agent tool call (older rows)',
+  'opencode.message.part.*': 'Updated agent message (older rows)',
   'secret.created': 'Created secret',
   'secret.deleted': 'Removed shared secret',
   'secret.strategy.changed': 'Updated secret delivery strategy',

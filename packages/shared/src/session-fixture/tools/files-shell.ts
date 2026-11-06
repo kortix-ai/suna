@@ -15,8 +15,8 @@
  *   `extractSkillFiles`, `skillDocumentPath`, `isShowPayloadEmpty`;
  * - apps/web `tool/shared/file-list.tsx` `parseFilePaths` / `parseGrepOutput`
  *   (mobile: `lib/session/tool-output-parsers.ts`);
- * - PTY and show outputs as `.kortix/opencode/plugins/pty.ts` and
- *   `.kortix/opencode/tools/show.ts` write them (`packages/starter`).
+ * - PTY outputs as the OpenCode-era starter `pty` plugin wrote them, and show
+ *   outputs as kortixd `services/tools/kortix/show.ts` writes them.
  *
  * Diffs and `additions`/`deletions` were computed with jsdiff
  * (`createTwoFilesPatch`, `diffLines`) from the before/after strings below.

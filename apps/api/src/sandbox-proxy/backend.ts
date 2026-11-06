@@ -96,7 +96,7 @@ function previewLinkKey(sandboxId: string, request: SandboxIngressRequest): stri
   const transport = request.transport ?? 'http';
   // `path` only ever changes a provider's resolved ingress on the websocket
   // route (Platinum's routeIngress picks AGENT_PORT vs request.port, and sets
-  // `websocket`, based on classifyPtyWebSocketPath(request.path) — but only
+  // `websocket`, based on isPtyWebSocketPath(request.path) — but only
   // when transport === 'websocket'). Every provider's http resolveIngress
   // ignores `path` entirely, so folding it into the key there only fragments
   // the cache (one entry per distinct HTTP path instead of per port). Keep it
@@ -253,7 +253,7 @@ function setCachedServiceKey(sandboxId: string, key: string | null): void {
 
 /**
  * Resolve the service key for `sandboxId` — cached, falling back to a row fetch.
- * Used by callers (e.g. opencode-mapping) that need only the key, not the row.
+ * Used by callers (e.g. runtime-session-mapping) that need only the key, not the row.
  */
 export async function resolveServiceKey(sandboxId: string): Promise<string | null> {
   const cached = getCachedServiceKey(sandboxId);
@@ -447,7 +447,7 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
       .set({ lastUsedAt: now, updatedAt: now })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
 
-    // Passive proxy traffic (an open tab polling opencode, a background stream
+    // Passive proxy traffic (an open tab polling the runtime, a background stream
     // reconnect) must NOT heal a deliberately-stopped box back to active —
     // that resurrection is what produced 1,597 phantom-active compute rows.
     // `deadline_at > now()` is the gate, and it strictly beats the

@@ -3,8 +3,7 @@
  *
  * A module (`layout/ui-prefs.ts`, `/tabs`). Opening a session adds its tab;
  * `/close` removes the open one and lands on its neighbour; `Alt+[` / `Alt+]`
- * step through them. The model is opencode's (`session-tabs-model.ts`): tabs
- * are the sessions you are working in, not every session of the project —
+ * step through them. Tabs are the sessions you are working in, not every session of the project —
  * that list is `/sessions`.
  *
  * Pure view: `app.tsx` owns the tab list and the titles.

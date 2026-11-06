@@ -6,7 +6,7 @@
  *   initiator = human | trigger | channel | system
  *
  * Every audit writer that sees an agent-session credential (the API request
- * middleware, the Git proxy, the sandbox OpenCode ingestion) resolves the SAME
+ * middleware, the Git proxy, the sandbox runtime audit ingestion) resolves the SAME
  * attribution here, so one session reads the same way on every row.
  */
 import { and, eq } from 'drizzle-orm';

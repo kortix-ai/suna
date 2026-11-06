@@ -794,7 +794,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     }
     for (const id of ['us.amazon.nova-micro-v1:0', 'xai.grok-4.6']) {
       // No verified mapping for these families yet: the effort is DROPPED and
-      // the plain Converse request goes out. opencode sends a default effort
+      // the plain Converse request goes out. opencode sent a default effort
       // for every reasoning-capable model, so refusing it (as #6887 briefly
       // did) refused the model — including the managed Grok default.
       const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {

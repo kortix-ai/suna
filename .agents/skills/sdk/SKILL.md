@@ -43,7 +43,7 @@ Learn this once and most questions answer themselves.
    and `src/core/rest/platform-client/`, over `src/core/http/api-client.ts`
    (`backendApi`).
 
-2. **The session runtime** — the harness (OpenCode or pi) running *inside a per-session cloud
+2. **The session runtime** — the harness (pi, inside kortixd) running *inside a per-session cloud
    sandbox*. The SDK reaches its REST API through the Kortix API proxy:
 
    ```
@@ -94,8 +94,8 @@ The legacy subpath shims (`src/deprecated/`: `./projects-client`,
 `./event-stream`, `./server-store`, …) were removed in 0.15.0. Do not add a
 subpath that only re-exports root names.
 
-`core/turns/` deserves a note: the transcript (`kortix.transcript.v1`, the same
-wire from OpenCode and pi) has ~50 part variants.
+`core/turns/` deserves a note: the transcript (`kortix.transcript.v1`, the
+wire pi serves; old OpenCode transcripts use the same wire) has ~50 part variants.
 It collapses them into a compile-time-**exhaustive** `ClassifiedPart` union so a
 renderer can `switch (part.kind)` and have TypeScript prove no case is missed.
 It is framework-free on purpose — `examples/04` renders a transcript to plain
@@ -122,7 +122,7 @@ Follow the grain. Almost every feature is this shape:
 - **Session-scoped, never global.** See above. Never resolve a runtime from
   ambient state.
 - **Session-scoped and provider-agnostic.** The sandbox provider and the harness
-  (OpenCode, pi) are server-side concerns. Host code must not add a second
+  (pi) are server-side concerns. Host code must not add a second
   transport.
 - **The SDK owns its types and depends on no harness SDK.** The transcript is
   `kortix.transcript.v1` (`core/runtime/transcript-types.ts`, a copy of
@@ -135,14 +135,15 @@ Follow the grain. Almost every feature is this shape:
   `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind`,
   `stream`). `session.runtime` is deprecated; no host imports `@opencode-ai/sdk`.
 - **A harness difference is a capability, never a harness check.** The daemon
-  lists what the runtime serves in `GET /kortix/health` `capabilities`
-  (`session.rewind`, `session.compact`, `session.commands`, `session.fork`,
-  `session.subagents`, `session.mcp`, `session.todo`, `session.shell`,
-  `session.attach`, `session.config`). OpenCode lists all ten; pi lists
-  `session.subagents`. A hook or a host gates on
+  lists what the runtime serves in `GET /kortix/health` `capabilities` (the ids
+  are `RUNTIME_CAPABILITIES` in `@kortix/api-contract`). pi lists
+  `session.subagents`, `session.compact`, `session.commands` and
+  `session.steer`, plus a few per box; it does not list `session.rewind`,
+  `session.mcp`, `session.todo`, `session.shell` or `session.attach`. A hook
+  or a host gates on
   `runtimeSupports(capabilities, capability)` (`core/session/health.ts`). New
-  SDK code never branches on the harness id and never assumes an OpenCode
-  route answers.
+  SDK code never branches on the harness id and never assumes a route answers
+  that no capability lists.
 - **Hosts never raw-`fetch` the Kortix API.** If the SDK doesn't expose it, add it
   to the SDK.
 - **The core never imports a framework.** Enforced statically. See the tripwire.
@@ -246,8 +247,8 @@ Renames are expensive, so front-load the thinking. Conventions for this package:
 >
 > **Resolved:** the platform type keeps `KortixProject`. The daemon type becomes
 > `KortixMasterProject`, with `export type KortixProject = KortixMasterProject`
-> retained as a `@deprecated` alias on the `opencode-client` shim so no importer
-> breaks. This is the alias-never-replace rule applied to itself.
+> retained as a `@deprecated` alias in `core/runtime/kortix-master.ts` so no
+> importer breaks. This is the alias-never-replace rule applied to itself.
 
 ### The guardrail that actually enforces this
 

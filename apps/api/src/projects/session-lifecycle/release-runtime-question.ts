@@ -1,4 +1,4 @@
-import { resolveSessionOpencodeEndpoint } from './runtime-client';
+import { resolveSessionRuntimeEndpoint } from './runtime-client';
 import { runtimeVerbPaths, sessionRuntimeFetch } from './runtime-fetch';
 
 export type ReleaseOutcome = 'released' | 'already_answered' | 'unreachable';
@@ -37,7 +37,7 @@ export async function releaseRuntimeQuestion(
 ): Promise<ReleaseOutcome> {
   if (!sessionId || !requestId) return 'unreachable';
   try {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionRuntimeEndpoint(sessionId);
     if (!resolved) return 'unreachable';
     const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.questionReply(requestId), {
       headers: { 'Content-Type': 'application/json' },

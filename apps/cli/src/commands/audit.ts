@@ -78,7 +78,7 @@ Filters (ls, export, project):
   --project <id>       Only this project.
   --session <id>       Only this session.
   --source <s>         Trusted execution source, e.g. "human", "agent",
-                       "api_key", "opencode".
+                       "api_key", "runtime".
   --credential-kind <k>  What the API authenticated: browser_session,
                        personal_access_token, oauth_app, session_token,
                        api_key, service_account, scim_token.

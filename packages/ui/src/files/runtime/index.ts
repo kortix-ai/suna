@@ -1,8 +1,8 @@
 /**
- * Files feature — OpenCode server filesystem browsing.
+ * Files feature — sandbox filesystem browsing.
  *
  * This module replaces the entire legacy sandbox-based file system.
- * All file operations go directly to the active OpenCode server.
+ * All file operations go directly to the active sandbox daemon.
  */
 
 // Types

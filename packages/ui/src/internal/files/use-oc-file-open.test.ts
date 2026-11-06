@@ -36,8 +36,8 @@ mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   runtimeKeys: {
     ...realSdkReact.runtimeKeys,
-    currentProject: () => ['opencode', 'project', 'current', 'test'] as const,
-    pathInfo: () => ['opencode', 'path-info', 'test'] as const,
+    currentProject: () => ['runtime', 'project', 'current', 'test'] as const,
+    pathInfo: () => ['runtime', 'path-info', 'test'] as const,
   },
   // `resolveRuntimePath` passes no query client, so the SDK fallback runs;
   // it is offline here by construction.

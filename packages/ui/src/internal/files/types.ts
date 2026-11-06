@@ -1,6 +1,6 @@
 /**
- * Types matching the OpenCode server REST API responses.
- * See: https://opencode.ai/docs/server/#files
+ * Types matching the sandbox daemon's file REST API responses (the
+ * OpenCode-shaped `/file` routes kortixd serves).
  */
 
 /** GET /file?path=<path> response item */

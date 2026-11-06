@@ -410,7 +410,7 @@ export function registerSessionLogRoutes(): void {
       tags: ['sessions'],
       summary: 'List what a session would lose on another harness',
       description:
-        'Read only: claims nothing, changes nothing. Body `{ to: "pi" | "opencode" }`. Answers `SessionLogSwitchPreflight`: ' +
+        'Read only: claims nothing, changes nothing. Body `{ to: "pi" }`. Answers `SessionLogSwitchPreflight`: ' +
         '`available` and `reason` (`same_harness`: a switch that cannot happen is still a 200), ' +
         '`restores` (the project restores session logs; false puts a `history` line first in `losses`), ' +
         '`losses` (each feature or runtime control the stored log uses that `to` handles worse, with counts; `degraded`: ' +

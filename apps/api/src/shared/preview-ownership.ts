@@ -37,14 +37,14 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 // caller who sends random sandbox ids must not grow it without bound.
 const PREVIEW_CONTEXT_MAX = 20_000;
 
-// ─── Session-visibility gate for the daemon/opencode port ────────────────────
+// ─── Session-visibility gate for the session-data ports ──────────────────────
 // canAccessPreviewSandbox above authorizes on ACCOUNT MEMBERSHIP only. That is
-// correct for preview web ports, but the daemon port (8000) reverse-proxies a
-// session's OpenCode conversation + its owner's synced secrets — which is
+// correct for preview web ports, but the daemon port (8000) serves a
+// session's conversation + its owner's synced secrets — which is
 // governed by SESSION VISIBILITY (private | project | restricted), enforced on
 // the REST routes via loadVisibleSession but historically NOT on this data
 // path. Without this, a same-account member who once had access to a session
-// (so their client captured the sandbox + opencode ids) could keep reading /
+// (so their client captured the sandbox + runtime session ids) could keep reading /
 // posting to it via /v1/p/<ext>/8000/session/... after the owner made it
 // private or revoked their grant. Mirror the REST check here. Short TTL keeps
 // the hot path cheap; revocation lags at most one window (matches the existing

@@ -8,7 +8,7 @@
  * Parts come from `classifySessionLogMessage` (the message's blocks as
  * `ClassifiedPart`s) and are laid out by `collapseToolRuns`, so
  * the part `switch` below is exhaustive over `ClassifiedPart['kind']` and a
- * new opencode part type fails the build here.
+ * new part type fails the build here.
  */
 
 import {

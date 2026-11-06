@@ -50,7 +50,7 @@ import type { StoredSandboxTurn } from '../session-turn-ledger';
 import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
 import { wireIdClockDelta, wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue } from './drain';
-import { readSessionMessageTip, resolveSessionOpencodeEndpoint, retractSessionMessage } from './runtime-client';
+import { readSessionMessageTip, resolveSessionRuntimeEndpoint, retractSessionMessage } from './runtime-client';
 import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, strandedPlacement, tipIsBusy } from './forwarded-placement';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { sessionKeepsMessageIds } from './inbox-admission';
@@ -75,7 +75,7 @@ export interface ForwardedTurnReconciliation {
 
 export interface StrandReconcileDeps {
   readOpenTurns: (sessionId: string) => Promise<StoredSandboxTurn[]>;
-  closeOlderTurn: (sessionId: string, opencodeSessionId: string | null, messageId: string) => Promise<void>;
+  closeOlderTurn: (sessionId: string, runtimeSessionId: string | null, messageId: string) => Promise<void>;
   closeStrandedTurn: (sessionId: string, messageId: string) => Promise<void>;
   readTip: (sessionId: string) => Promise<PlacementTipMessage[] | null>;
   removeMessage: (sessionId: string, messageId: string) => Promise<boolean>;
@@ -97,7 +97,7 @@ const liveDeps: StrandReconcileDeps = {
       .select({
         token: sessionTurns.turnToken,
         messageId: sessionTurns.messageId,
-        opencodeSessionId: sessionTurns.runtimeSessionId,
+        runtimeSessionId: sessionTurns.runtimeSessionId,
         state: sessionTurns.state,
         startedAt: sessionTurns.startedAt,
       })
@@ -107,13 +107,13 @@ const liveDeps: StrandReconcileDeps = {
       (row): StoredSandboxTurn => ({
         token: row.token,
         messageId: row.messageId ?? null,
-        runtimeSessionId: row.opencodeSessionId ?? '',
+        runtimeSessionId: row.runtimeSessionId ?? '',
         state: row.state === 'active' ? 'active' : 'delivering',
         startedAtMs: row.startedAt ? new Date(row.startedAt).getTime() : null,
       }),
     );
   },
-  async closeOlderTurn(sessionId, _opencodeSessionId, messageId) {
+  async closeOlderTurn(sessionId, _runtimeSessionId, messageId) {
     // The step that just ended answered it (OpenCode answers every queued
     // message below the one it parents the step on, in that step).
     await closeSandboxTurnByMessageId(sessionId, messageId, 'completed');
@@ -122,7 +122,7 @@ const liveDeps: StrandReconcileDeps = {
     await closeSandboxTurnByMessageId(sessionId, messageId, 'abandoned');
   },
   async readTip(sessionId) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionRuntimeEndpoint(sessionId);
     return resolved ? readSessionMessageTip(resolved, { limit: TIP_LIMIT }) : null;
   },
   removeMessage: (sessionId, messageId) => retractSessionMessage(sessionId, messageId, 'forwarded-turns'),
@@ -197,7 +197,7 @@ const liveDeps: StrandReconcileDeps = {
  * not name one, or when no forwarded turn is open.
  */
 export async function reconcileForwardedTurnsAtEnd(
-  input: { sessionId: string; opencodeSessionId?: string | null; endedMessageId?: string | null },
+  input: { sessionId: string; runtimeSessionId?: string | null; endedMessageId?: string | null },
   deps: StrandReconcileDeps = liveDeps,
 ): Promise<ForwardedTurnReconciliation> {
   const out: ForwardedTurnReconciliation = { closedOlder: 0, candidates: 0, stranded: 0, orphaned: 0, requeued: 0 };
@@ -212,7 +212,7 @@ export async function reconcileForwardedTurnsAtEnd(
     return out;
   }
   const sameRoot = (turn: StoredSandboxTurn) =>
-    !input.opencodeSessionId || !turn.runtimeSessionId || turn.runtimeSessionId === input.opencodeSessionId;
+    !input.runtimeSessionId || !turn.runtimeSessionId || turn.runtimeSessionId === input.runtimeSessionId;
   const forwarded = open.filter((turn) => !!turn.messageId && sameRoot(turn));
   if (forwarded.length === 0) return out;
   // ONE tip read for everything below. It also stands in for the relay when

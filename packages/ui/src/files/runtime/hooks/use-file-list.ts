@@ -11,7 +11,7 @@ import { listFiles } from '../../../internal/files/runtime-files';
 export { fileListKeys };
 
 /**
- * Fetch the directory listing for a path on the active OpenCode server.
+ * Fetch the directory listing for a path on the active sandbox daemon.
  *
  * Uses GET /file?path=<path> which returns FileNode[].
  * Hidden (dot) files are filtered out unless showHidden is enabled in the store.
@@ -41,12 +41,12 @@ export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
   });
 
   // Filter hidden files client-side so the cache stays complete.
-  // .kortix and .opencode are always shown — they are elevated system dirs.
+  // .kortix is always shown — it is the elevated system dir.
   const data = useMemo(() => {
     if (!query.data) return query.data;
     if (showHidden) return query.data;
     return query.data.filter(
-      (node) => !node.name.startsWith('.') || node.name === '.kortix' || node.name === '.opencode',
+      (node) => !node.name.startsWith('.') || node.name === '.kortix',
     );
   }, [query.data, showHidden]);
 

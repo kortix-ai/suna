@@ -815,7 +815,7 @@ function watchRuntimeHealth(args: PumpArgs, externalId: string, signal: AbortSig
  *
  * The envelope is written back out with exactly two additions — `channel` and
  * `epoch` — and no other change. `seq` is the daemon's number and stays the
- * daemon's number; `payload` is OpenCode's `properties` verbatim, which is what
+ * daemon's number; `payload` is the runtime event's `properties` verbatim, which is what
  * lets an existing SDK reducer apply it unchanged.
  */
 async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: string): Promise<void> {

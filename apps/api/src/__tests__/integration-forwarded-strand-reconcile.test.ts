@@ -11,7 +11,7 @@
  * redelivered. `integration-prompt-inbox` proves the other readers of the
  * shared `wireMessageIdMatches` predicate; this file proves this one.
  *
- * Stubbed: the box. `sandboxOpencodeEndpoint` returns a fixed address, `fetch`
+ * Stubbed: the box. `sandboxRuntimeEndpoint` returns a fixed address, `fetch`
  * serves the transcript tip and accepts the message delete, and the drain kick
  * is recorded instead of delivering. The ledger read, the command-row lookup
  * and the re-queue write run against real rows.
@@ -19,7 +19,7 @@
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
-import * as realOpencodeMapping from '../projects/opencode-mapping';
+import * as realRuntimeMapping from '../projects/runtime-session-mapping';
 import * as realDrain from '../projects/session-lifecycle/drain';
 import { WIRE_ID_TIME_SCALE } from '../projects/wire-message-id';
 
@@ -27,7 +27,7 @@ const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
 const SANDBOX_ID = crypto.randomUUID();
-const OPENCODE_SESSION = 'ses_strand_root';
+const RUNTIME_SESSION = 'ses_strand_root';
 const BOX_URL = 'http://strand-box.test';
 const BOX_ORIGIN = new URL(BOX_URL).origin;
 
@@ -59,9 +59,9 @@ function nextKick(timeoutMs = 5_000): Promise<'kicked' | 'timeout'> {
   });
 }
 
-mock.module('../projects/opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  sandboxOpencodeEndpoint: async () => ({ url: BOX_URL, headers: {} }),
+mock.module('../projects/runtime-session-mapping', () => ({
+  ...realRuntimeMapping,
+  sandboxRuntimeEndpoint: async () => ({ url: BOX_URL, headers: {} }),
 }));
 mock.module('../projects/session-lifecycle/drain', () => ({
   ...realDrain,
@@ -136,7 +136,7 @@ async function forwardedPrompt(payloadPatch: Record<string, unknown> = {}): Prom
     INSERT INTO kortix.session_turns
       (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state)
     VALUES (${`tok-${row.commandId}`}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
-            ${ACCOUNT_ID}::uuid, ${OPENCODE_SESSION}, ${STRANDED}, 'active')`);
+            ${ACCOUNT_ID}::uuid, ${RUNTIME_SESSION}, ${STRANDED}, 'active')`);
   return row.commandId;
 }
 
@@ -156,7 +156,7 @@ async function readCommand(commandId: string) {
 function reconcile() {
   return reconcileForwardedTurnsAtEnd({
     sessionId: SESSION_ID,
-    opencodeSessionId: OPENCODE_SESSION,
+    runtimeSessionId: RUNTIME_SESSION,
     endedMessageId: ANSWERED,
   });
 }
@@ -171,7 +171,7 @@ beforeAll(async () => {
     INSERT INTO kortix.project_sessions
       (session_id, account_id, project_id, branch_name, status, runtime_session_id)
     VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${`br-${SESSION_ID}`}, 'running',
-            ${OPENCODE_SESSION})`);
+            ${RUNTIME_SESSION})`);
   await db.execute(sql`
     INSERT INTO kortix.session_sandboxes
       (sandbox_id, session_id, account_id, project_id, external_id, status)

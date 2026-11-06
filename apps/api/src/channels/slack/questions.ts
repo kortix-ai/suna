@@ -15,7 +15,7 @@ export type { QuestionInfo } from './types';
 // in-thread reply that @mentions the bot works too (for "Other"). Either way the answer arrives as a
 // normal follow-up turn with full context. The sentinel is returned as the
 // question tool's "answer" so the agent resumes and ends its turn. Kept here
-// (not just in the sandbox) so an OLD sandbox image — which resumes opencode
+// (not just in the sandbox) so an OLD sandbox image — which resumes OpenCode
 // from THIS response's `answers` — stays unblocked during the window between an
 // API deploy and the sandbox template rebuild.
 const QUESTION_SENTINEL =
@@ -26,7 +26,7 @@ const QUESTION_SENTINEL =
 
 // Renders the agent's question(s) into the live Slack thread. The sandbox owns
 // the "is this Slack / auto-answer the tool" decision (via its env = the session
-// metadata) and resumes opencode itself, so this is purely the thread-render side
+// metadata) and resumes the runtime itself, so this is purely the thread-render side
 // effect: it needs a live turn (for the channel/token) and is a best-effort no-op
 // when there isn't one (e.g. a second question after the first finalized).
 export async function postQuestion(

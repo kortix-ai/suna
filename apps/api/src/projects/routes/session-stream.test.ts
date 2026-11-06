@@ -500,7 +500,7 @@ describe('runtime channel: forwarded verbatim, never renumbered', () => {
     expect(status!.data.seq).toBe(2016);
     expect(status!.data.channel).toBe('runtime');
     expect(status!.data.epoch).toBe('bmtaokkdb0piayh');
-    // `payload` is OpenCode's `properties` verbatim — an existing reducer must
+    // `payload` is the runtime event's `properties` verbatim — an existing reducer must
     // keep working without a translation layer.
     expect(status!.data.payload).toEqual({ sessionID: 'ses_abc', status: { type: 'busy' } });
     // No control cursor leaked onto a runtime frame.

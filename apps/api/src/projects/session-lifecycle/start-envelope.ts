@@ -170,9 +170,6 @@ export function deriveBoot(
               metadata,
               'runtimeBootWaitFirstSeenAt',
               'runtimeReadyWaitStartedAt',
-              // The same two clocks as a pre-W4 API wrote them.
-              'opencodeBootWaitFirstSeenAt',
-              'opencodeReadyWaitStartedAt',
               'providerRunningConfirmedAt',
             )
           : phase === 'provisioning'

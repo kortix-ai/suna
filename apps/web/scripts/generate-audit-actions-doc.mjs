@@ -123,7 +123,7 @@ Every audit row carries an \`action\` of the form \`domain.resource.verb\`, for 
 - A request that matched no route records ${code(UNMATCHED_ROUTE_LABEL.action)}.
 - A row with two or more actions, such as \`secret.strategy.update\` or \`secret.strategy.changed\`, lists the route's action first. The others are events the handler records in place of the request row: only on a real change (\`secret.strategy.changed\`), or one per outcome (\`connector.approval.approved\` or \`connector.approval.denied\`). A recorded event is the request's only row.
 - An action ending in \`.*\` is a family. The rest of the action names the call, for example \`connector.github.create_issue\`.
-- An action that starts with \`opencode.\` records an agent runtime event. Every agent runtime writes it under that name.
+- An action that starts with \`agent.\` records an agent runtime event. Rows written before that name start with \`opencode.\`: filter on both prefixes to cover every row.
 
 ## Request actions
 

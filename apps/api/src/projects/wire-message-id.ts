@@ -1,5 +1,5 @@
 /**
- * The OpenCode wire message-id clock, under the names the control plane uses.
+ * The wire message-id clock (OpenCode's `msg_…` id format), under the names the control plane uses.
  *
  * The implementation is `@kortix/sdk/wire-message-id`
  * (`packages/sdk/src/core/session/wire-message-id.ts`). That subpath is a

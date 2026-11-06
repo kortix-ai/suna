@@ -33,7 +33,6 @@ export interface AllocateSessionRuntimeInput {
   extraEnvVars?: Record<string, string>;
   buildEnvVars: () => Promise<Record<string, string>>;
   resolveGitProject: () => Promise<GitBackedProject>;
-  beforeActive?: (externalId: string) => Promise<void>;
 }
 
 /**
@@ -97,7 +96,6 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       resolveGitProject: async () => gitProjectPromise,
       baseRef: input.baseRef,
       sandboxSlug: input.sandboxSlug,
-      beforeActive: input.beforeActive,
     });
 
     tl.mark('kicked');

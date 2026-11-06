@@ -258,7 +258,7 @@ managed fallback with tier gating), real unit tests on the core pipeline.
   (`pipeline/handler.ts` / `hooks.ts` `recordGatewayUsage`, confirmed still
   absent in tonight's audit). Needs an `Idempotency-Key` header contract +
   a keyed cache/table to short-circuit `recordGatewayUsage` on a replay within
-  a bounded window, plus a documented client contract (opencode and any other
+  a bounded window, plus a documented client contract (pi and any other
   caller must actually send the header on retry). Scoped follow-up, not a
   same-night addition.
 - **Per-model / per-key rate limit** *(flagged, not implemented — feature, not

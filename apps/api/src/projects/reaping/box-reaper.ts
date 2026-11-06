@@ -7,7 +7,7 @@
  * `metadata.activeTurns` records are created by accepted control-plane prompt
  * delivery. This pass renews the clock while any record is active. Terminal
  * sandbox evidence can only remove the record and pull the deadline IN. A turn
- * record renews the deadline only after the reaper observes that exact OpenCode
+ * record renews the deadline only after the reaper observes that exact runtime
  * turn in flight.
  *
  * WHAT THIS REPLACED, AND WHY
@@ -191,7 +191,7 @@ async function redeliverAbandonedPrompt(
   if (!row.sessionId || !turn.messageId) return;
   // The end reason is a GATE, not a label. `completed`/`failed` are the daemon
   // saying the turn RAN — a `delivering` record survives both, because the
-  // acceptance write is a separate statement that can lose while OpenCode
+  // acceptance write is a separate statement that can lose while the runtime
   // answers the prompt to the end. `requeueAbandonedPrompt` refuses those too;
   // refusing here as well keeps the reaper's own log honest about what it did.
   if (!PROMPT_NEVER_RAN_END_REASONS.has(endReason)) return;
@@ -395,7 +395,7 @@ async function reapRunningSandbox(
   // update itself; give it a supervisor and a current daemon from here.
   // Fire-and-forget behind its own gates (legacy-runtime-bootstrap.ts):
   // one health probe per box per 6 h on a converged fleet, never under
-  // a busy OpenCode, bounded attempts per API build. A box that installs its
+  // a busy runtime, bounded attempts per API build. A box that installs its
   // own pending update (`updatesItself`) is probed every pass, never
   // relaunched, until it converges or ~6 h of ticks pass without it.
   dependencies.scheduleLegacyRuntimeBootstrap({
@@ -415,8 +415,8 @@ async function reapRunningSandbox(
     await clearPendingStopObservation(row.sandboxId);
   }
   // Close the only non-atomic gap in the contract. The API writes a
-  // token-bound `delivering` record before the request can reach
-  // OpenCode. If OpenCode accepts it and the promotion write then fails,
+  // token-bound `delivering` record before the request can reach the
+  // runtime. If the runtime accepts it and the promotion write then fails,
   // this provider-neutral probe repairs the same record. The sandbox
   // cannot create a record or select its token.
   const turns = storedSandboxTurns(row.metadata);
@@ -567,7 +567,7 @@ async function probeTurnRecords(
       ) {
         continue;
       }
-      // A delivering record can precede OpenCode persistence by a few
+      // A delivering record can precede runtime persistence by a few
       // seconds, so inside its delivery grace `turn_in_flight === false`
       // proves nothing — the prompt may simply not have landed yet.
       // What the grace suppresses is ACTING on that answer, not asking
@@ -622,7 +622,7 @@ async function probeTurnRecords(
       if (daemonAnswered) answeredProbes += 1;
       if (backedOff) backedOffProbes += 1;
       // Inside the delivery grace only a POSITIVE answer may be acted
-      // on: `active` is proof the prompt reached OpenCode and promotes
+      // on: `active` is proof the prompt reached the runtime and promotes
       // the record early. `terminal` and `unknown` are the ambiguous
       // ones the grace exists to absorb, and neither has any work to do
       // here — the deadline cannot have passed while the grace holds.
@@ -731,7 +731,7 @@ async function settleTurnPastCeiling(
 ): Promise<boolean> {
   const { dependencies, result } = pass;
   // A turn record with no `messageId` never received a turn_begin
-  // relay (boot.ts's `relayTurnBeginToApi`, seconds after OpenCode
+  // relay (kortixd's `relayTurnBegin`, seconds after the runtime
   // accepts a prompt). Past `turnNoBeginRelayMaxMs` that is not a
   // race, it is a runtime that lost the turn before it ever
   // relayed anything — most commonly a daemon-level restart
@@ -739,9 +739,10 @@ async function settleTurnPastCeiling(
   //
   // APPLIED BEFORE OBSERVATION, deliberately: `observeSandboxTurn`
   // asks the daemon a ROOT-scoped question when there is no
-  // `messageId` to scope it by, and the daemon's own oracle
-  // (`inspectOpencodeRoot`) reads an incomplete assistant message
-  // as "still in flight" even while `/session/status` is idle —
+  // `messageId` to scope it by, and a daemon's root-scoped oracle (the
+  // OpenCode daemon's `inspectOpencodeRoot`) can read an incomplete
+  // assistant message as "still in flight" even while
+  // `/session/status` is idle —
   // correct for a genuine husk, but it means THIS shape reads
   // `observation: 'active'` forever and never reaches the
   // `terminal` branches below. This ceiling does not depend on
@@ -824,16 +825,16 @@ async function actOnTurnObservation(
 ): Promise<boolean> {
   const { now, dependencies, result } = pass;
   // Whether the control plane had to END an assistant message that
-  // OpenCode was still holding open. It is evidence about HOW the
+  // the runtime was still holding open. It is evidence about HOW the
   // turn finished — a turn somebody else had to close did not
   // complete — so it is read at this scope, not inside the branch.
   let huskFinalized = false;
-  // The daemon reported no turn in flight, but OpenCode can still be
+  // The daemon reported no turn in flight, but the runtime can still be
   // holding an assistant message that was never closed (a killed
   // model call, a lost session.idle). Clearing the record here
   // without closing that message leaves every client streaming this
   // root spinning forever. Close it through the session-scoped
-  // OpenCode abort — /kortix/abort resolves the PINNED session, not
+  // runtime abort — /kortix/abort resolves the PINNED session, not
   // this turn's session, so it cannot be used here.
   // `messageId` is what keeps that abort honest: every prompt of a
   // session shares one root, so the finalizer must prove the open
@@ -842,7 +843,7 @@ async function actOnTurnObservation(
     const huskOutcome = await dependencies.finalizeHuskTurn({
       sandboxId: row.sandboxId,
       externalId: row.externalId,
-      opencodeSessionId: turn.runtimeSessionId,
+      runtimeSessionId: turn.runtimeSessionId,
       messageId: turn.messageId,
     });
     if (huskOutcome === 'finalized') {
@@ -872,7 +873,7 @@ async function actOnTurnObservation(
       //
       // `observation === 'terminal'` is load-bearing. The other way
       // to reach `inactive` is an `active` observation whose CAS
-      // lost — OpenCode says the turn IS running and somebody else
+      // lost — the runtime says the turn IS running and somebody else
       // already took the record. Redelivering there would run the
       // prompt twice.
       //
@@ -891,7 +892,7 @@ async function actOnTurnObservation(
       // that THIS delivery is still young.
       deliveryGraceEndsAtMs <= now.getTime()
     ) {
-      // Unknown OpenCode state cannot renew itself forever. The
+      // Unknown runtime state cannot renew itself forever. The
       // original delivery grace has expired, so remove only this
       // token. A concurrent prompt has a different token and the
       // final stop claim will refuse to race it. The runtime never
@@ -983,7 +984,7 @@ async function settleTerminalTurn(
   // AND THE PROMPT COMES BACK, when the daemon says one is
   // stranded. This is the incident: the record is `active`
   // because the delivery was ACCEPTED — one upstream round trip
-  // after it was written — not because the turn ran. OpenCode
+  // after it was written — not because the turn ran. A runtime
   // killed before its first token and respawned leaves the user
   // message on record with no assistant message and nothing that
   // will ever answer it, and `turn_orphaned_prompt` is the daemon
@@ -996,7 +997,7 @@ async function settleTerminalTurn(
   // turns out to be answered, so this cannot double-run a turn.
   //
   // AND IT HAS TO BE OLD ENOUGH. "Accepted, no assistant message
-  // yet, root idle" is also what the moments between OpenCode
+  // yet, root idle" is also what the moments between the runtime
   // ACKing a prompt and starting it look like — see
   // ORPHANED_PROMPT_MIN_AGE_MS. A record with no `startedAtMs` (a
   // legacy `activeTurn`) can prove no age at all, so it never
@@ -1168,9 +1169,9 @@ function countReapFailure(result: ReapResult, row: ReapCandidate, err: unknown):
  *
  * THE BOUND IS THE RECORD'S OWN STATE, and that asymmetry is the point:
  *   - `active` — the API's own upstream response, or daemon evidence tied to
- *     this token, proved the prompt reached OpenCode. Worth the turn grant, the
+ *     this token, proved the prompt reached the runtime. Worth the turn grant, the
  *     same value an observed turn renews with.
- *   - `delivering` — NOTHING has confirmed it reached OpenCode.
+ *   - `delivering` — NOTHING has confirmed it reached the runtime.
  *     `turnDeliveryGraceMs` states exactly what such a record is worth ("a
  *     failed delivery expires on this short grace instead of retaining a
  *     four-hour active-turn window"), and measuring it against the TURN grant

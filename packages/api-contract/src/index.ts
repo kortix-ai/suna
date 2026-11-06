@@ -448,7 +448,7 @@ export const SessionScopeSchema = z
     connector_bindings_inherit_unbound: z.boolean(),
     /**
      * True when the new secrets scope was pushed to the live sandbox and
-     * OpenCode was restarted to pick it up — the change is in effect NOW.
+     * the runtime reloaded it — the change is in effect NOW.
      * False when there was no active sandbox to push to (the change is stored
      * and applies at the next boot), or when `secrets` was not part of this
      * request. Mirrors the model route's `applied_live`.
@@ -964,7 +964,7 @@ export const PendingSessionPromptSchema = z
     variant: z.string().min(1).nullable().optional(),
     attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
     /**
-     * Full prompt parts, in OpenCode's own wire shape. Lets the first prompt
+     * Full prompt parts, in the runtime's prompt-part wire shape. Lets the first prompt
      * carry attachments as `data:` URLs — the session's sandbox does not exist
      * yet, so there is nowhere to upload into. The API converts the whole
      * pending prompt into a durable inbox row at create; the inbox's own
@@ -1128,8 +1128,8 @@ export const SessionUpdateInputSchema = z.object({
 export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
 
 /** A project session as serialized by `serializeSession`. */
-/** One conversation of a session's runtime, as the snapshot writer stores it
- *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
+/** One conversation of a session's runtime, as the snapshot stores it
+ *  (`apps/api/src/projects/lib/runtime-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
   fork_source_id: z.string().optional(),
@@ -1190,7 +1190,7 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
-  /** The session's root conversation in its runtime (OpenCode or pi). */
+  /** The session's root conversation in its runtime. */
   runtime_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
@@ -1892,10 +1892,10 @@ export const SessionStartResultSchema = z.object({
   runtime_session_id: z.string().nullable(),
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),
-  /** Server-selected OpenCode REST transport. */
+  /** Server-selected runtime REST transport. */
   runtime_transport: z.literal('rest').optional(),
   /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000),
+   * Relative proxy path for this session's runtime (the daemon, port 8000),
    * composed by the client against its configured backend URL. The server owns
    * the proxy scheme; absent until the box has an external_id.
    */

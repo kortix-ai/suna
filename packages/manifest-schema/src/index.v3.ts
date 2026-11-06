@@ -103,7 +103,7 @@ export interface CommandV3 {
 export interface ExtensionV3 {
   /**
    * A repo module path, loaded as an OpenCode plugin.
-   * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   * @deprecated OpenCode only: OpenCode is deleted (2026-10-30). See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
    */
   opencode?: string;
   /** `npm:<name>@<x.y.z>`, a repo path, or pi's `{ source, extensions, … }` form. */

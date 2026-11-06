@@ -15,7 +15,7 @@ import { isSystemDirectoryPath } from './system-dir';
 export { fileContentKeys };
 
 /**
- * Fetch the content of a single file from the active OpenCode server.
+ * Fetch the content of a single file from the active sandbox daemon.
  *
  * Uses GET /file/content?path=<path> which returns FileContent.
  * Text files return plain content; images/binaries return base64-encoded content.

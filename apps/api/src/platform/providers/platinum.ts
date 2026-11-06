@@ -83,7 +83,7 @@ import {
   sandboxWorkloadType,
 } from './contract';
 import { providerAutoStopBackstopMinutes } from './contract';
-import { classifyPtyWebSocketPath } from './pty-ingress';
+import { isPtyWebSocketPath } from './pty-ingress';
 import { sandboxOwnershipMarker } from '../sandbox-ownership';
 import { RESIDENTIAL_PROXY_NOT_OFFERED_MESSAGE } from '../services/sandbox-provisioning-error';
 
@@ -1023,9 +1023,9 @@ export class PlatinumProvider implements SandboxProvider {
     const _exposeMs = Date.now() - _tExpose0;
 
     // Return as soon as the VM is running and the agent port is exposed — do NOT
-    // block on the in-guest runtime (repo clone + opencode). That readiness is
-    // polled by the frontend (useOpenCodeRuntimeReady + the react-query
-    // "opencode not ready" retry) EXACTLY as it is for Daytona, whose create()
+    // block on the in-guest runtime (repo clone + runtime start). That readiness
+    // is polled by the frontend (the SDK's `useRuntimeReady` gate) EXACTLY as it
+    // is for Daytona, whose create()
     // also returns a not-yet-usable box and defers readiness to the FE.
     //
     // Why this matters: the old code polled /kortix/health for runtimeReady up
@@ -1549,7 +1549,7 @@ export class PlatinumProvider implements SandboxProvider {
 
   routeIngress(request: SandboxIngressRequest) {
     const ptyWebsocket =
-      request.transport === 'websocket' && classifyPtyWebSocketPath(request.path) !== null;
+      request.transport === 'websocket' && isPtyWebSocketPath(request.path);
     return {
       // Either half of the opencode pair rewrites to the agent bridge —
       // Platinum cannot expose opencode's port directly. After a verified

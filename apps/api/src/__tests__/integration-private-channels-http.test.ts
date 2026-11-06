@@ -437,13 +437,13 @@ describe('threads of P', () => {
       projectId: PROJECT,
       sessionId: THREAD,
       actorType: 'agent',
-      action: 'opencode.tool.bash',
-      resourceType: 'opencode_event',
+      action: 'agent.tool.bash',
+      resourceType: 'agent_event',
       resourceId: crypto.randomUUID(),
       inputSummary: { command: `cat ${WORD}-secret.md` },
     } as any);
     await flushAuditEvents({ waitMs: 2_000 });
-    const ofP = (events: any[]) => events.filter((e) => e.session_id === THREAD && e.action === 'opencode.tool.bash');
+    const ofP = (events: any[]) => events.filter((e) => e.session_id === THREAD && e.action === 'agent.tool.bash');
     const project = await req('GET', '/audit?limit=200', keys.manager);
     expect(project.status).toBe(200);
     expect(ofP(project.body.events).length).toBe(1);

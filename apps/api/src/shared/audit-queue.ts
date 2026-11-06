@@ -26,7 +26,7 @@
  *  - the batch INSERT uses `onConflictDoNothing()`, which preserves the
  *    `idx_audit_events_source_phase` partial-unique dedup semantics
  *    (source_ledger, source_record_id, phase, coalesce(source_revision,''))
- *    used by the OpenCode relay ledger. Without it a single duplicate row would
+ *    used by the agent event relay ledger (`agent_events`). Without it a single duplicate row would
  *    fail an entire batch.
  */
 import { type Database, auditEvents } from '@kortix/db';

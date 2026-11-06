@@ -40,7 +40,7 @@ const { canStopTurns, decideTurnStop, mayStopRunningTurn, readRunningTurn, turnP
 const activeTurn = (messageId: string, startedAtMs: number, source?: string) => ({
   token: `t-${messageId}`,
   state: 'active',
-  opencodeSessionId: 'ses_root',
+  runtimeSessionId: 'ses_root',
   messageId,
   startedAtMs,
   ...(source ? { source } : {}),

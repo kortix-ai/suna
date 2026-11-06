@@ -517,7 +517,7 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
   // must learn the durable pin here, or it adopts or creates a different root
   // and relays that over the pin (prod 2026-09-23: a session opened empty).
   test('returns the durable OpenCode root pin with or without a pending prompt', async () => {
-    sessionRow = { ...session({}), opencodeSessionId: 'ses_durable' };
+    sessionRow = { ...session({}), runtimeSessionId: 'ses_durable' };
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -801,7 +801,7 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
 
   test('a coordinator-spawned session skips reconcile and promotion, and still saves its transcript', async () => {
     // A session another session's agent created runs in its own sandbox with
-    // its own OpenCode root. Nobody may ever open it, so this turn end is the
+    // its own runtime root. Nobody may ever open it, so this turn end is the
     // only moment its history is saved: skipping it served `available: false`
     // and a loading bar to the first person who looked.
     sessionRow = session({ spawned_by_session: 'parent-1' });

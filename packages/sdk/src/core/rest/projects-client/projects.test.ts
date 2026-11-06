@@ -241,7 +241,7 @@ test('returns ok:false without hitting the network when credentials are missing'
   expect(calls).toHaveLength(0);
 });
 
-test('normalizes the provider-neutral default_agent field from legacy project config', async () => {
+test('an absent default_agent reads as null; the deprecated open_code_default_agent is not read', async () => {
   configureKortix({
     backendUrl: 'http://backend.test/v1',
     getToken: async () => 'tok',
@@ -268,8 +268,7 @@ test('normalizes the provider-neutral default_agent field from legacy project co
 
   const detail = await getProjectDetail('proj-1');
 
-  expect(detail.config.default_agent).toBe('kortix');
-  expect(detail.config.open_code_default_agent).toBe('kortix');
+  expect(detail.config.default_agent).toBeNull();
 });
 
 test('project detail carries the manifest health the API reports', async () => {
@@ -314,7 +313,7 @@ test('a project response carries the icon through the backendApi/unwrap parsing 
       JSON.stringify({
         project: { project_id: 'proj-1', name: 'Iconic', icon: '🚀' },
         config: {
-          open_code_default_agent: null,
+          default_agent: null,
           agents: [],
           commands: [],
           skills: [],

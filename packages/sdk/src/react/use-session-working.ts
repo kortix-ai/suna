@@ -150,11 +150,11 @@ export function buildWorkingInputs(input: {
 export interface UseSessionWorkingOptions {
   enabled?: boolean;
   /**
-   * The OpenCode wire session id whose SSE status frames belong to this
+   * The runtime wire session id whose SSE status frames belong to this
    * session, when the host knows it.
    *
    * Two ids, deliberately: `sessionId` is the Kortix session (what `/turn` is
-   * addressed by), while the sync store is keyed by the wire id OpenCode
+   * addressed by), while the sync store is keyed by the wire id the runtime
    * assigns inside the sandbox. Passing the wrong one would read another
    * session's frames, so it is explicit rather than guessed.
    */

@@ -2160,8 +2160,8 @@ export const projectSessionPublicShares = kortixSchema.table(
 );
 
 /**
- * Runtime state for triggers defined in the project repo
- * (.opencode/triggers/<slug>.md). The repo holds the trigger config; this
+ * Runtime state for triggers declared in the project repo (the `triggers:`
+ * list of `kortix.yaml`). The repo holds the trigger config; this
  * row holds the cron scheduler's "last fired" state so we don't need to
  * write a git commit on every fire.
  */

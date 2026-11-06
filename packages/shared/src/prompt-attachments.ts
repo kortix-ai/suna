@@ -21,13 +21,13 @@ export interface PromptFileReference {
 /**
  * The attachment MIME types a model accepts INLINE, as base64 in the prompt.
  *
- * An allowlist, not `image/*`. OpenCode decodes every `image/` part as a
- * raster before it writes the message; a type it cannot decode throws
- * `ImageDecodeError` inside `prompt_async`, and OpenCode then persists NO
- * message — the prompt text and every sibling attachment vanish with it. The
- * inbox meanwhile records `delivered`, because `prompt_async` answers 204 for
- * *accepted*, not *processed*. One undecodable file therefore deletes the
- * whole turn, silently, on both ends.
+ * An allowlist, not `image/*`. OpenCode decoded every `image/` part as a
+ * raster before it wrote the message; a type it could not decode threw
+ * `ImageDecodeError` inside `prompt_async`, and OpenCode then persisted NO
+ * message — the prompt text and every sibling attachment vanished with it. The
+ * inbox meanwhile recorded `delivered`, because `prompt_async` answers 204 for
+ * *accepted*, not *processed*. One undecodable file deleted the whole turn,
+ * silently, on both ends.
  *
  * `image/svg+xml`, `image/bmp`, `image/x-icon`, `image/heic` and `image/heif`
  * are all in the composer's upload allowlist (`constants/upload-limits.ts`)

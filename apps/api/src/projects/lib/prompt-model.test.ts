@@ -19,7 +19,7 @@ describe('promptModelOverride', () => {
   };
 
   test('injects a repointed pin when the caller names no model', () => {
-    // Without this the turn runs OpenCode's own stored model — the retired id
+    // Without this the turn runs the runtime's own stored model — the retired id
     // the re-point existed to escape.
     expect(promptModelOverride(null, repointed)).toEqual({
       providerID: 'kortix',

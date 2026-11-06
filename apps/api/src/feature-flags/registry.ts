@@ -248,7 +248,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
   // `pi_harness` graduated (2026-10-23): every new session runs pi; OpenCode is
-  // sunset and serves only sessions that already run on it. No flag, no
+  // sunset (kortixd has no OpenCode harness since 2026-10-30). No flag, no
   // operator lever, no manifest `runtime:` choice. A stored
   // `experimental.pi_harness` override is inert.
   // `genui` graduated (2026-10-24): generative UI is always on. Every session

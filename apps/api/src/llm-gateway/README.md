@@ -10,7 +10,7 @@ and responses to the standalone service without reading their bodies.
 ## Request path
 
 ```text
-OpenCode
+pi (inside kortixd)
   -> API streaming bridge or gateway load balancer
   -> standalone gateway
   -> authenticate and reserve billing
@@ -21,7 +21,7 @@ OpenCode
 ```
 
 The gateway does not retry, fail over, probe completions, capture bodies, or
-retain response streams. OpenCode owns request retries. The provider owns its
+retain response streams. The client (pi inside kortixd) owns request retries. The provider owns its
 internal availability policy.
 
 OpenAI-compatible providers use one direct `fetch` to `/chat/completions`.

@@ -255,7 +255,7 @@ export function toModelMessages(rawMessages: unknown): {
 // OpenAI `tools` → an AI SDK ToolSet with NO `execute`. Without an implementation the
 // SDK surfaces the model's tool call in the stream and stops the step (it never
 // tries to run the tool), which is exactly the relay-to-client behaviour the
-// gateway needs — opencode executes tools, not us.
+// gateway needs — the session runtime executes tools, not us.
 export function toToolSet(rawTools: unknown): ToolSet | undefined {
   if (!Array.isArray(rawTools) || rawTools.length === 0) return undefined;
   const set: ToolSet = {};

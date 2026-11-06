@@ -7,8 +7,8 @@
 # directly via WORKDIR /workspace, its CWD becomes "/workspace (deleted)"
 # the moment Daytona's init clobbers the dir, and every fs operation the
 # daemon subsequently attempts (Node's mkdir/stat/chdir) silently misbehaves
-# — opencode never spawns, materializeRepo never runs, the sandbox sits
-# stuck at `opencode: starting` forever.
+# — the agent runtime never spawns, materializeRepo never runs, the sandbox
+# sits stuck at `starting` forever.
 #
 # This script polls for /workspace to exist + be writable for several
 # consecutive iterations, mkdir's it if missing, cd's into the verified
@@ -466,7 +466,7 @@ done
 # CRITICAL: cd to / (always exists) before exec'ing the daemon. Daytona's
 # runtime can delete /workspace AFTER the entrypoint loop exits — if we
 # cd'd into /workspace and exec'd from there, the daemon would inherit a
-# "deleted" cwd and every subsequent spawn (git, opencode) would inherit
+# "deleted" cwd and every subsequent spawn (git, pi) would inherit
 # it too, failing in confusing ways. Anchoring at / keeps the daemon's
 # cwd stable; the daemon itself works with absolute paths under
 # ${WORKSPACE} from here on.

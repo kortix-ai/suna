@@ -3,9 +3,9 @@
  * fixture.
  *
  * Output shapes come from the tool sources and the parsers the renderers call:
- * - `web_search`, `scrape_webpage`, `image_search`: the starter tools in
- *   `packages/starter/src/embedded.generated.json`
- *   (`.kortix/opencode/tools/*.ts`), pretty-printed with `JSON.stringify(…, null, 2)`
+ * - `web_search`, `scrape_webpage`, `image_search`: the Kortix tools in
+ *   `apps/kortix-sandbox-agent-server/src/services/tools/kortix/*.ts`,
+ *   pretty-printed with `JSON.stringify(…, null, 2)`
  *   exactly as those tools return them.
  * - `webfetch`: the OpenCode built-in (markdown / html body as the output).
  * - image/video/presentation: `parseImageOutput`, `parseVideoOutput` (mobile),

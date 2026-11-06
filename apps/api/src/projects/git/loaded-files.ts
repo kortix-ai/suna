@@ -82,8 +82,7 @@ function loadedPaths(manifest: Record<string, unknown>): string[] {
   for (const folder of Object.values(map(manifest.skills))) if (repoPath(folder)) paths.add(folder as string);
   for (const module of Object.values(map(manifest.tools))) if (repoPath(module)) paths.add(posix.dirname(module as string));
   for (const extension of Object.values(map(manifest.extensions))) {
-    const { opencode, pi } = map(extension);
-    if (repoPath(opencode)) paths.add(posix.dirname(opencode as string));
+    const { pi } = map(extension);
     const piSource = repoPath(typeof pi === 'string' ? pi : map(pi).source);
     if (piSource) paths.add(piSource);
   }

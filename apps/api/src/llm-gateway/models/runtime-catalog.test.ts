@@ -125,7 +125,7 @@ describe('runtime model catalog', () => {
     });
   });
 
-  // models.dev marks retired entries `status: "deprecated"`; opencode hides
+  // models.dev marks retired entries `status: "deprecated"`; OpenCode hid
   // those in the sandbox. The pre-runtime picker source reads this route, so
   // the field must survive or the two pickers disagree (dev 2026-08-25: 29
   // vs 7 free Zen models).
