@@ -6,6 +6,7 @@ import {
   isWordCharacter,
   lineEnd,
   lineTables,
+  nextOf,
   positionIndex,
   startsWithIgnoreCase,
 } from './scan';
@@ -79,5 +80,38 @@ describe('character classes', () => {
     expect(lineEnd('ab\ncd', 0)).toBe(2);
     expect(lineEnd('ab\ncd', 3)).toBe(5);
     expect(lineEnd('a\rb', 0)).toBe(1);
+  });
+
+  test('nextOf finds the first of one character and remembers it while the queries move forward', () => {
+    const next = nextOf('a[b]c[d', [91]);
+    expect(next(0)).toBe(1);
+    expect(next(1)).toBe(1);
+    expect(next(2)).toBe(5);
+    expect(next(5)).toBe(5);
+    expect(next(6)).toBe(-1);
+    expect(next(7)).toBe(-1);
+  });
+
+  test('nextOf finds the first of either of two characters', () => {
+    const next = nextOf('ab]cd\nef', [93, 10]);
+    expect(next(0)).toBe(2);
+    expect(next(3)).toBe(5);
+    expect(next(6)).toBe(-1);
+  });
+
+  test('nextOf rescans when a query moves backward, and is -1 on empty or missing', () => {
+    const next = nextOf('x|y|z', [124]);
+    expect(next(2)).toBe(3);
+    expect(next(0)).toBe(1);
+    expect(next(4)).toBe(-1);
+    expect(nextOf('', [124])(0)).toBe(-1);
+    expect(nextOf('abc', [124])(0)).toBe(-1);
+  });
+
+  test('nextOf agrees with indexOf for every start position of random text', () => {
+    const text = '|ab|c||d*e|`f|'.repeat(5);
+    const next = nextOf(text, [124]);
+    for (let at = 0; at <= text.length + 1; at++) expect(next(at)).toBe(text.indexOf('|', at));
+    for (let at = text.length + 1; at >= 0; at--) expect(next(at)).toBe(text.indexOf('|', at));
   });
 });

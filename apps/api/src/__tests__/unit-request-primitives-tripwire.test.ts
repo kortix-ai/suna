@@ -100,9 +100,7 @@ const BEARER_PARSE = /startsWith\(\s*['"`]Bearer ['"`]\s*\)/;
 const BEARER_ALLOW: Record<string, string> = {};
 
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
-const ESCAPE_HTML_ALLOW: Record<string, string> = {
-  'shared/html.ts': 'the one implementation',
-};
+const ESCAPE_HTML_ALLOW: Record<string, string> = {};
 
 describe('request primitives have one implementation', () => {
   test('X-Forwarded-For is read only in shared/client-ip.ts', () => {

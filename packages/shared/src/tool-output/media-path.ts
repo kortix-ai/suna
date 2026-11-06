@@ -104,13 +104,4 @@ export function sandboxMediaPath(
   }
 }
 
-/**
- * The path without its trailing slashes, as `path.replace(/\/+$/, '')`. The
- * regex retried a slash run from every slash in it: 240k slashes inside a path
- * took seconds.
- */
-export function withoutTrailingSlashes(path: string): string {
-  let end = path.length;
-  while (end > 0 && path.charCodeAt(end - 1) === 47) end--;
-  return path.slice(0, end);
-}
+export { stripTrailingSlashes as withoutTrailingSlashes } from '../utils/string';
