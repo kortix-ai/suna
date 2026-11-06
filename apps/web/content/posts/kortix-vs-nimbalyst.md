@@ -5,7 +5,7 @@ date: "2026-10-13"
 canonical: "https://kortix.com/blog/kortix-vs-nimbalyst"
 author: "team"
 tags: ["Comparisons"]
-updated: "2026-10-22"
+updated: "2026-11-06"
 slug: "/kortix-vs-nimbalyst"
 ---
 Nimbalyst gives one developer a visual window for Claude Code and Codex sessions, and Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The difference shows when an agent's work stops being a patch and becomes a permission, a connector or a decision somebody else has to approve.
@@ -78,7 +78,7 @@ Kortix asks a team to keep agents, grants and memory in a repository. That is mo
 | Dimension | Kortix | Nimbalyst |
 | --- | --- | --- |
 | Open source | Yes, self-host or managed cloud | App code MIT licensed |
-| Agent support | The OpenCode harness, any model | Claude Code, Codex; OpenCode and Copilot in alpha (checked October 2026) |
+| Agent support | An open-source agent harness, any model | Claude Code, Codex; OpenCode and Copilot in alpha (checked October 2026) |
 | Where configuration lives | `kortix.yaml` and agent files in the project repo | App settings, with documents in git |
 | Where agents run | Its own cloud computer per session | A worktree on the developer's machine |
 | Who reviews the work | A person merges a change request | Each person approves diffs before commit |
