@@ -101,7 +101,7 @@ const dbShim = {
   execute: async () => ({ rows: [] }),
 };
 
-mock.module('../shared/db', () => ({ hasDatabase: () => true, db: dbShim }));
+mock.module('../shared/db', () => ({ withDbTransaction: async <T>(action: () => Promise<T>) => action(), hasDatabase: () => true, db: dbShim }));
 
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
@@ -125,6 +125,7 @@ mockIamReadModels({
 mockIamAssignments({ onGrant: () => {} });
 
 mock.module('../iam/authorize', () => ({
+  resolvePrincipal: async () => null,
   authorize: async () => ({ allowed: true, reason: 'role' }),
   assertAuthorized: async () => {},
   listAccessible: async () => ({ mode: 'all' }),
