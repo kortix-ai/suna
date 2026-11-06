@@ -24,6 +24,7 @@ import type { Context } from 'hono';
 import { auth, json, makeOpenApiApp } from '../../openapi';
 import { impersonatedAccountFor } from '../../shared/impersonation';
 import { readJsonObject } from '../../shared/http-body';
+import { noWorkspaceError } from '../../shared/no-workspace';
 import type { AppEnv } from '../../types';
 import {
   cancelPersonDeletion,
@@ -162,6 +163,12 @@ accountDeletionRouter.openapi(
     if (denial) return c.json(denial, 403);
     // Tolerant body: optional, missing or invalid JSON reads as {}.
     await readJsonObject(c);
+    // A login with no workspace has nothing to keep for a grace period: the
+    // client deletes it immediately instead (DELETE /delete-immediately).
+    const plan = await planPersonDeletion(c.get('userId') as string);
+    if (plan.deleteWorkspaces.length + plan.leaveWorkspaces.length + plan.blockers.length === 0) {
+      throw noWorkspaceError('You belong to no workspace, so nothing waits for a grace period. Delete your account immediately instead.');
+    }
     try {
       const { plan, scheduledFor } = await deletePerson(c.get('userId') as string, 'scheduled');
       return c.json({

@@ -775,9 +775,10 @@ flow(
     domain: 'billing',
     routes: [
       'GET /v1/account/deletion-status',
-      'POST /v1/account/request-deletion',
+      'GET /v1/account/deletion-plan',
       'POST /v1/account/cancel-deletion',
       'DELETE /v1/account/delete-immediately',
+      'GET /v1/accounts/me',
       'GET /v1/accounts/:accountId',
     ],
   },
@@ -786,16 +787,21 @@ flow(
     const member = await team.addMember('member');
     const asMember = ctx.client.as(member);
 
-    await ctx.step('MEMBER reads the team deletion-status → 403 account.delete', async () => {
-      (await asMember.get('/v1/account/deletion-status')).status(403).body().has('$.action', 'account.delete');
+    // "Delete my account" deletes the PERSON (design.md §3.1 item 2): a team
+    // member leaves the team; the team is never deleted for them.
+    await ctx.step('MEMBER reads their own deletion status and plan: nothing pending; they would leave the team', async () => {
+      (await asMember.get('/v1/account/deletion-status')).status(200).body().has('$.has_pending_deletion', false);
+      const plan = (await asMember.get('/v1/account/deletion-plan')).status(200).json<{ delete_workspaces: string[]; leave_workspaces: string[] }>();
+      if (plan.delete_workspaces.length !== 0 || !plan.leave_workspaces.includes(team.id)) {
+        throw new Error(`member plan ${JSON.stringify(plan)}`);
+      }
     });
-    await ctx.step('MEMBER cannot request, cancel, or run deletion → 403 account.delete each', async () => {
-      (await asMember.post('/v1/account/request-deletion', { reason: 'ke2e member' }))
-        .status(403).body().has('$.action', 'account.delete');
-      (await asMember.post('/v1/account/cancel-deletion', {}))
-        .status(403).body().has('$.action', 'account.delete');
-      (await asMember.del('/v1/account/delete-immediately'))
-        .status(403).body().has('$.action', 'account.delete');
+    await ctx.step('MEMBER has nothing to cancel → 400', async () => {
+      (await asMember.post('/v1/account/cancel-deletion', {})).status(400);
+    });
+    await ctx.step('MEMBER deletes their account → 200: they leave the team, the team is untouched', async () => {
+      (await asMember.del('/v1/account/delete-immediately')).status(200).body().has('$.leave_workspaces', [team.id]);
+      (await asMember.get('/v1/accounts/me')).status(401);
     });
     await ctx.step('the team survives: OWNER reads it → 200', async () => {
       (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId', { params: { accountId: team.id } })).status(200);
