@@ -2404,7 +2404,9 @@
       "reactivateSubscription": "重新启用订阅",
       "commitmentCancelHint": "您的承诺期至 {date}。之后即可取消。",
       "graceUntil": "SSO 保持开启至 {date}",
-      "scheduledFrom": "→ 自 {date} 起 {amount}/月"
+      "scheduledFrom": "→ 自 {date} 起 {amount}/月",
+      "compedUntil": "{date} 前不收费，之后转为免费版",
+      "compedNote": "此工作区在 {date} 前免费沿用其拆分来源工作区的套餐，之后转为含每月免费积分的免费版。"
     },
     "topup": {
       "minimum": "最低充值金额为 {amount}。",
@@ -2634,7 +2636,6 @@
     "chatLimitReached": "聊天限制已达到。升级以获得无限聊天。",
     "concurrentRunLimit": "并发运行限制已达到。升级以获得更多并行运行。",
     "reachedLimit": "你已达到限制。",
-    "projectLimit": "工作区限制 ({current}/{limit})",
     "threadLimit": "线程限制 ({current}/{limit})",
     "workerLimit": "Worker 限制 ({current}/{limit})",
     "triggerLimit": "触发器限制 ({current}/{limit})",
@@ -2646,8 +2647,6 @@
       "creditsPerMonth": "{count} 积分/月",
       "customWorker": "{count} 个自定义 Worker",
       "customWorkers": "{count} 个自定义 Workers",
-      "privateProject": "{count} 个私有工作区",
-      "privateProjects": "私有工作区",
       "customTrigger": "{count} 个自定义触发器",
       "connectors": "100+ 连接器",
       "premiumAIModels": "高级 AI 模型",
@@ -2713,7 +2712,7 @@
       "faq": {
         "free": {
           "question": "免费版包含什么？",
-          "answer": "免费版每月包含 500 个积分、托管模型和全部功能，可用于 1 个工作区。积分用于支付智能体电脑和 Kortix 模型。其他模型可自带 API 密钥或连接 ChatGPT 订阅使用。"
+          "answer": "免费版在你的首个工作区每月包含 {freeCredits} 个积分和全部功能，无需银行卡。之后创建的工作区从 0 积分开始，可以添加积分或选择套餐。模型可使用你自己的 API 密钥或 ChatGPT 订阅。Kortix 托管模型需要 Credits 套餐。"
         },
         "credit": {
           "question": "一个积分能买到什么？",
@@ -2846,6 +2845,11 @@
       "offerAskManager": "由工作区所有者或管理员接受此报价。",
       "upsellDemoHint": "演示会立即开启它。之后销售会就许可证与你联系。",
       "upsellAskManager": "请让所有者或管理员开启企业版演示。"
+    },
+    "freeGrant": {
+      "elsewhere": "此工作区没有免费积分。你的每月免费积分在 {workspace}。",
+      "firstOnly": "此工作区没有免费积分。只有你的首个工作区获得每月免费积分。",
+      "action": "添加积分或选择套餐即可在此运行会话。"
     }
   },
   "ssoRequired": {
@@ -20412,7 +20416,7 @@
       "text146aaf3c71fa": "为已签约、同时通过付费套餐计费的企业版工作区保持 SSO、SCIM、RBAC 和审计权限，避免 Stripe 对账将其移除。",
       "text517105fd13ce": "积分用于支付沙盒算力——即使是 BYOK 试用，运行会话也需要钱包余额。免费欢迎额度为 2 美元。",
       "text2f1d17f50af8": "企业版为此工作区开通 SAML SSO、SCIM 目录同步、RBAC 和审计访问。计费套餐保持不变。",
-      "text79c0703d2226": "免费版 0 美元——1 个工作区，每月 500 个积分和全部功能，模型使用你自己的密钥或 ChatGPT 订阅。Kortix 托管模型需要付费套餐。付费套餐按积分计：选择每月金额，成员免费且不限数量，一个积分池覆盖整个工作区。自托管软件本身免费；你只需支付自己的模型费用和算力费用。",
+      "text79c0703d2226": "免费版 0 美元——首个工作区每月 500 个积分和全部功能，模型使用你自己的密钥或 ChatGPT 订阅。Kortix 托管模型需要付费套餐。付费套餐按积分计：选择每月金额，成员免费且不限数量，一个积分池覆盖整个工作区。自托管软件本身免费；你只需支付自己的模型费用和算力费用。",
       "text5dffd4db88c5": "此工作区的套餐、积分和账单。",
       "text49fd64c206dd": "你的套餐已生效，积分已到账。",
       "textad828837ddd8": "成员 成员 工作区 访问 协作者 人员 队友 名册 谁可以查看 权限 授予 分享",

@@ -2404,7 +2404,9 @@
       "reactivateSubscription": "Reactivar suscripción",
       "commitmentCancelHint": "Tu compromiso dura hasta el {date}. Podrás cancelar después.",
       "graceUntil": "SSO sigue activo hasta el {date}",
-      "scheduledFrom": "→ {amount}/mes desde el {date}"
+      "scheduledFrom": "→ {amount}/mes desde el {date}",
+      "compedUntil": "Sin cargo hasta el {date}, después Free",
+      "compedNote": "Este espacio de trabajo conserva sin cargo el plan del espacio de trabajo del que se separó hasta el {date}. Después pasa a Free con créditos gratuitos mensuales."
     },
     "topup": {
       "minimum": "La recarga mínima es de {amount}.",
@@ -2634,7 +2636,6 @@
     "chatLimitReached": "Límite de chat alcanzado. Mejora tu plan para chats ilimitados.",
     "concurrentRunLimit": "Límite de ejecuciones simultáneas alcanzado. Mejora tu plan para más ejecuciones paralelas.",
     "reachedLimit": "Has alcanzado tus límites.",
-    "projectLimit": "Límite de Espacio de trabajo ({current}/{limit})",
     "threadLimit": "Límite de Hilo ({current}/{limit})",
     "workerLimit": "Límite de Worker ({current}/{limit})",
     "triggerLimit": "Límite de Trigger ({current}/{limit})",
@@ -2646,8 +2647,6 @@
       "creditsPerMonth": "{count} créditos/mes",
       "customWorker": "{count} Worker personalizado",
       "customWorkers": "{count} Workers personalizados",
-      "privateProject": "{count} espacio de trabajo privado",
-      "privateProjects": "Espacios de trabajo privados",
       "customTrigger": "{count} trigger personalizado",
       "connectors": "100+ conectores",
       "premiumAIModels": "Modelos de IA Premium",
@@ -2713,7 +2712,7 @@
       "faq": {
         "free": {
           "question": "¿Qué incluye Free?",
-          "answer": "Free incluye 500 créditos al mes, modelos gestionados y todas las funciones, para 1 espacio de trabajo. Los créditos pagan el ordenador del agente y los modelos de Kortix. Usa tu propia clave de API o conecta tu suscripción de ChatGPT para cualquier otro modelo."
+          "answer": "Free incluye {freeCredits} créditos al mes en tu primer espacio de trabajo, todas las funciones y sin tarjeta. Los demás espacios de trabajo empiezan con 0 créditos y pueden añadir créditos o elegir un plan. Usa tu propia clave de API o tu suscripción de ChatGPT para los modelos. Los modelos gestionados por Kortix requieren Credits."
         },
         "credit": {
           "question": "¿Qué se puede comprar con un crédito?",
@@ -2846,6 +2845,11 @@
       "offerAskManager": "Un propietario o administrador del espacio de trabajo acepta la oferta.",
       "upsellDemoHint": "La demo lo activa ahora. Después, ventas te contacta por una licencia.",
       "upsellAskManager": "Pide a un propietario o administrador que active la demo de Enterprise."
+    },
+    "freeGrant": {
+      "elsewhere": "Este espacio de trabajo no tiene créditos gratuitos. Tus créditos gratuitos mensuales están en {workspace}.",
+      "firstOnly": "Este espacio de trabajo no tiene créditos gratuitos. Solo tu primer espacio de trabajo recibe los créditos gratuitos mensuales.",
+      "action": "Añade créditos o elige un plan para ejecutar sesiones aquí."
     }
   },
   "ssoRequired": {
@@ -20412,7 +20416,7 @@
       "text146aaf3c71fa": "Mantiene habilitados SSO, SCIM, RBAC y auditoría en un espacio de trabajo Enterprise firmado que también se factura mediante un plan de pago, para que la conciliación de Stripe no los retire.",
       "text517105fd13ce": "Los créditos financian el cómputo en sandbox: incluso una prueba BYOK necesita saldo en el monedero para ejecutar sesiones. La concesión de bienvenida gratuita es de 2 $.",
       "text2f1d17f50af8": "Enterprise desbloquea SAML SSO, sincronización de directorio SCIM, RBAC y acceso a auditoría para este espacio de trabajo. El plan facturado no cambia.",
-      "text79c0703d2226": "Free cuesta 0 $: un espacio de trabajo, 500 créditos al mes y todas las funciones, con tu propia clave o tu suscripción de ChatGPT para los modelos. Los modelos gestionados por Kortix requieren un plan de pago. Los planes de pago son de créditos: eliges un importe mensual, los miembros son gratuitos e ilimitados y un único fondo cubre todo el espacio de trabajo. Autoalojar el software no cuesta nada; en su lugar pagas tu propia factura de modelos y de cómputo.",
+      "text79c0703d2226": "Free cuesta 0 $: 500 créditos al mes en tu primer espacio de trabajo y todas las funciones, con tu propia clave o tu suscripción de ChatGPT para los modelos. Los modelos gestionados por Kortix requieren un plan de pago. Los planes de pago son de créditos: eliges un importe mensual, los miembros son gratuitos e ilimitados y un único fondo cubre todo el espacio de trabajo. Autoalojar el software no cuesta nada; en su lugar pagas tu propia factura de modelos y de cómputo.",
       "text5dffd4db88c5": "Tu plan, tus créditos y la facturación de este espacio de trabajo.",
       "text49fd64c206dd": "Tu plan está activo. Los créditos están listos.",
       "textad828837ddd8": "miembros miembro acceso al espacio de trabajo colaboradores personas compañeros lista quién puede ver permisos conceder compartir",

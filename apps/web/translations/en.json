@@ -2404,7 +2404,9 @@
       "reactivateSubscription": "Reactivate subscription",
       "commitmentCancelHint": "Your commitment runs through {date}. You can cancel after it ends.",
       "graceUntil": "SSO stays on until {date}",
-      "scheduledFrom": "→ {amount}/mo from {date}"
+      "scheduledFrom": "→ {amount}/mo from {date}",
+      "compedUntil": "No charge until {date}, then Free",
+      "compedNote": "This workspace keeps the plan of the workspace it was split from, at no charge, until {date}. Then it moves to Free with monthly free credits."
     },
     "topup": {
       "minimum": "Minimum top-up is {amount}.",
@@ -2634,7 +2636,6 @@
     "chatLimitReached": "Chat limit reached. Upgrade for unlimited chats.",
     "concurrentRunLimit": "Concurrent run limit reached. Upgrade for more parallel runs.",
     "reachedLimit": "You've reached your limits.",
-    "projectLimit": "Workspace Limit ({current}/{limit})",
     "threadLimit": "Thread Limit ({current}/{limit})",
     "workerLimit": "Worker Limit ({current}/{limit})",
     "triggerLimit": "Trigger Limit ({current}/{limit})",
@@ -2646,8 +2647,6 @@
       "creditsPerMonth": "{count} credits/month",
       "customWorker": "{count} custom Worker",
       "customWorkers": "{count} custom workers",
-      "privateProject": "{count} private workspace",
-      "privateProjects": "Private workspaces",
       "customTrigger": "{count} custom trigger",
       "connectors": "100+ connectors",
       "premiumAIModels": "Premium AI Models",
@@ -2713,7 +2712,7 @@
       "faq": {
         "free": {
           "question": "What does Free include?",
-          "answer": "Free includes 500 credits each month, managed models and every feature, for 1 workspace. Credits pay for the agent computer and for Kortix models. Bring your own API key or connect your ChatGPT subscription for any other model."
+          "answer": "Free includes {freeCredits} credits a month on your first workspace, every feature, and no card. Later workspaces start with 0 credits and can add credits or pick a plan. Use your own API key or your ChatGPT subscription for models. Kortix-managed models need Credits."
         },
         "credit": {
           "question": "What does a credit buy?",
@@ -2846,6 +2845,11 @@
       "offerAskManager": "A workspace owner or admin accepts the offer.",
       "upsellDemoHint": "The demo turns it on now. Sales then contacts you about a license.",
       "upsellAskManager": "Ask an owner or admin to turn on the Enterprise demo."
+    },
+    "freeGrant": {
+      "elsewhere": "This workspace has no free credits. Your monthly free credits are on {workspace}.",
+      "firstOnly": "This workspace has no free credits. Only your first workspace gets the monthly free credits.",
+      "action": "Add credits or pick a plan to run sessions here."
     }
   },
   "ssoRequired": {
@@ -20457,7 +20461,7 @@
       "text146aaf3c71fa": "Keeps SSO, SCIM, RBAC, and audit entitled for a signed Enterprise workspace that is also billed through a paid plan, so the Stripe reconciliation cannot strip them.",
       "text517105fd13ce": "Credits fund sandbox compute — even a BYOK trial needs wallet balance to run sessions. The free welcome grant is $2.",
       "text2f1d17f50af8": "Enterprise unlocks SAML SSO, SCIM directory sync, RBAC and audit access for this workspace. The billed plan is unchanged.",
-      "text79c0703d2226": "Free is $0 — one workspace, 500 credits a month and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole workspace. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
+      "text79c0703d2226": "Free is $0: 500 credits a month on your first workspace and every feature, with your own key or ChatGPT subscription for models. Kortix-managed models need a paid plan. Paid plans are credits: pick a monthly amount, members are free and unlimited, and one pool covers the whole workspace. Self-hosting the software costs nothing; you pay your own model bill and your own compute bill instead.",
       "text5dffd4db88c5": "Your plan, credits, and billing for this workspace.",
       "text49fd64c206dd": "Your plan is active. Credits are ready.",
       "textad828837ddd8": "members member workspace access collaborators people teammates roster who can see permissions grant share",

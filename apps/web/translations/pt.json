@@ -2404,7 +2404,9 @@
       "reactivateSubscription": "Reativar assinatura",
       "commitmentCancelHint": "Seu compromisso vai até {date}. Você poderá cancelar depois.",
       "graceUntil": "O SSO continua ativo até {date}",
-      "scheduledFrom": "→ {amount}/mês a partir de {date}"
+      "scheduledFrom": "→ {amount}/mês a partir de {date}",
+      "compedUntil": "Sem custo até {date}, depois Free",
+      "compedNote": "Este espaço de trabalho mantém sem custo o plano do espaço de trabalho do qual foi separado até {date}. Depois, passa para o Free com créditos gratuitos mensais."
     },
     "topup": {
       "minimum": "A recarga mínima é de {amount}.",
@@ -2634,7 +2636,6 @@
     "chatLimitReached": "Limite de chat atingido. Faz upgrade para chats ilimitados.",
     "concurrentRunLimit": "Limite de execuções simultâneas atingido. Faz upgrade para mais execuções paralelas.",
     "reachedLimit": "Atingiste teus limites.",
-    "projectLimit": "Limite de Espaço de trabalho ({current}/{limit})",
     "threadLimit": "Limite de Thread ({current}/{limit})",
     "workerLimit": "Limite de Worker ({current}/{limit})",
     "triggerLimit": "Limite de Trigger ({current}/{limit})",
@@ -2646,8 +2647,6 @@
       "creditsPerMonth": "{count} créditos/mês",
       "customWorker": "{count} Worker personalizado",
       "customWorkers": "{count} Workers personalizados",
-      "privateProject": "{count} espaço de trabalho privado",
-      "privateProjects": "Espaços de trabalho privados",
       "customTrigger": "{count} trigger personalizado",
       "connectors": "100+ conectores",
       "premiumAIModels": "Modelos de IA Premium",
@@ -2713,7 +2712,7 @@
       "faq": {
         "free": {
           "question": "O que o Free inclui?",
-          "answer": "O Free inclui 500 créditos por mês, modelos gerenciados e todos os recursos, para 1 espaço de trabalho. Os créditos pagam o computador do agente e os modelos da Kortix. Use sua própria chave de API ou conecte sua assinatura do ChatGPT para qualquer outro modelo."
+          "answer": "O Free inclui {freeCredits} créditos por mês no seu primeiro espaço de trabalho, todos os recursos e nenhum cartão. Os outros espaços de trabalho começam com 0 créditos e podem adicionar créditos ou escolher um plano. Use sua própria chave de API ou sua assinatura do ChatGPT para os modelos. Os modelos gerenciados pela Kortix exigem Credits."
         },
         "credit": {
           "question": "O que um crédito compra?",
@@ -2846,6 +2845,11 @@
       "offerAskManager": "Um proprietário ou administrador do espaço de trabalho aceita a oferta.",
       "upsellDemoHint": "A demonstração ativa agora. Depois, vendas entra em contato sobre uma licença.",
       "upsellAskManager": "Peça a um proprietário ou administrador para ativar a demonstração Enterprise."
+    },
+    "freeGrant": {
+      "elsewhere": "Este espaço de trabalho não tem créditos gratuitos. Seus créditos gratuitos mensais estão em {workspace}.",
+      "firstOnly": "Este espaço de trabalho não tem créditos gratuitos. Só o seu primeiro espaço de trabalho recebe os créditos gratuitos mensais.",
+      "action": "Adicione créditos ou escolha um plano para executar sessões aqui."
     }
   },
   "ssoRequired": {
@@ -20412,7 +20416,7 @@
       "text146aaf3c71fa": "Mantém SSO, SCIM, RBAC e auditoria habilitados para um espaço de trabalho Enterprise contratado que também é cobrado por um plano pago, para que a reconciliação do Stripe não os remova.",
       "text517105fd13ce": "Os créditos financiam a computação em sandbox — até um teste BYOK precisa de saldo na carteira para executar sessões. O crédito de boas-vindas gratuito é de US$ 2.",
       "text2f1d17f50af8": "O Enterprise libera SAML SSO, sincronização de diretório SCIM, RBAC e acesso à auditoria para este espaço de trabalho. O plano cobrado não muda.",
-      "text79c0703d2226": "O Free custa US$ 0 — um espaço de trabalho, 500 créditos por mês e todos os recursos, com sua própria chave ou assinatura do ChatGPT para os modelos. Os modelos gerenciados pela Kortix exigem um plano pago. Os planos pagos são em créditos: escolha um valor mensal, os membros são gratuitos e ilimitados, e um único pool cobre o espaço de trabalho inteiro. Hospedar o software por conta própria não custa nada; você paga a sua própria conta de modelos e de computação.",
+      "text79c0703d2226": "O Free custa US$ 0 — 500 créditos por mês no seu primeiro espaço de trabalho e todos os recursos, com sua própria chave ou assinatura do ChatGPT para os modelos. Os modelos gerenciados pela Kortix exigem um plano pago. Os planos pagos são em créditos: escolha um valor mensal, os membros são gratuitos e ilimitados, e um único pool cobre o espaço de trabalho inteiro. Hospedar o software por conta própria não custa nada; você paga a sua própria conta de modelos e de computação.",
       "text5dffd4db88c5": "Seu plano, seus créditos e o faturamento deste espaço de trabalho.",
       "text49fd64c206dd": "Seu plano está ativo. Os créditos estão prontos.",
       "textad828837ddd8": "membros membro acesso ao espaço de trabalho colaboradores pessoas colegas lista quem pode ver permissões conceder compartilhar",

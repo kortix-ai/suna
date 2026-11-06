@@ -372,6 +372,7 @@ export default function PricingPage() {
   const bonusSmallest = TOP_UP_BONUS_STEPS[TOP_UP_BONUS_STEPS.length - 1];
   const bonusLargest = TOP_UP_BONUS_STEPS[0];
   const facts = {
+    freeCredits: new Intl.NumberFormat(locale).format(FREE_MONTHLY_CREDITS),
     creditsPerHour: DEFAULT_COMPUTE_CREDITS_PER_HOUR,
     minutes: MINUTES_PER_CREDIT,
     spec: DEFAULT_COMPUTE_SPEC,

@@ -2404,7 +2404,9 @@
       "reactivateSubscription": "Abonnement wieder aktivieren",
       "commitmentCancelHint": "Deine Verpflichtung läuft bis {date}. Du kannst danach kündigen.",
       "graceUntil": "SSO bleibt bis {date} aktiv",
-      "scheduledFrom": "→ {amount}/Monat ab {date}"
+      "scheduledFrom": "→ {amount}/Monat ab {date}",
+      "compedUntil": "Kostenlos bis {date}, danach Free",
+      "compedNote": "Dieser Workspace behält bis {date} kostenlos den Plan des Workspace, aus dem er abgetrennt wurde. Danach wechselt er zu Free mit monatlichen kostenlosen Credits."
     },
     "topup": {
       "minimum": "Der Mindestbetrag beträgt {amount}.",
@@ -2634,7 +2636,6 @@
     "chatLimitReached": "Chat-Limit erreicht. Upgrade für unbegrenzte Chats.",
     "concurrentRunLimit": "Limit für gleichzeitige Ausführungen erreicht. Upgrade für mehr parallele Ausführungen.",
     "reachedLimit": "Du hast deine Limits erreicht.",
-    "projectLimit": "Workspace-Limit ({current}/{limit})",
     "threadLimit": "Thread-Limit ({current}/{limit})",
     "workerLimit": "Worker-Limit ({current}/{limit})",
     "triggerLimit": "Trigger-Limit ({current}/{limit})",
@@ -2646,8 +2647,6 @@
       "creditsPerMonth": "{count} Credits/Monat",
       "customWorker": "{count} benutzerdefinierter Worker",
       "customWorkers": "{count} benutzerdefinierte Worker",
-      "privateProject": "{count} privater Workspace",
-      "privateProjects": "Private Workspaces",
       "customTrigger": "{count} benutzerdefinierter Trigger",
       "connectors": "100+ Connectoren",
       "premiumAIModels": "Premium-KI-Modelle",
@@ -2713,7 +2712,7 @@
       "faq": {
         "free": {
           "question": "Was enthält Free?",
-          "answer": "Free enthält jeden Monat 500 Credits, verwaltete Modelle und alle Funktionen, für 1 Workspace. Credits bezahlen den Agent-Computer und Kortix-Modelle. Nutze deinen eigenen API-Schlüssel oder verbinde dein ChatGPT-Abo für jedes andere Modell."
+          "answer": "Free enthält {freeCredits} Credits pro Monat in deinem ersten Workspace, alle Funktionen und keine Karte. Weitere Workspaces starten mit 0 Credits und können Credits hinzufügen oder einen Plan wählen. Nutze deinen eigenen API-Schlüssel oder dein ChatGPT-Abo für Modelle. Von Kortix verwaltete Modelle brauchen Credits."
         },
         "credit": {
           "question": "Was bekomme ich für einen Credit?",
@@ -2846,6 +2845,11 @@
       "offerAskManager": "Ein Inhaber oder Administrator des Workspace nimmt das Angebot an.",
       "upsellDemoHint": "Die Demo aktiviert es sofort. Danach meldet sich der Vertrieb wegen einer Lizenz.",
       "upsellAskManager": "Bitte einen Inhaber oder Administrator, die Enterprise-Demo zu aktivieren."
+    },
+    "freeGrant": {
+      "elsewhere": "Dieser Workspace hat keine kostenlosen Credits. Deine monatlichen kostenlosen Credits liegen in {workspace}.",
+      "firstOnly": "Dieser Workspace hat keine kostenlosen Credits. Nur dein erster Workspace erhält die monatlichen kostenlosen Credits.",
+      "action": "Füge Credits hinzu oder wähle einen Plan, um hier Sitzungen zu starten."
     }
   },
   "ssoRequired": {
@@ -20412,7 +20416,7 @@
       "text146aaf3c71fa": "Hält SSO, SCIM, RBAC und Audit für einen unterzeichneten Enterprise-Workspace freigeschaltet, der zusätzlich über einen kostenpflichtigen Plan abgerechnet wird, damit der Stripe-Abgleich sie nicht entziehen kann.",
       "text517105fd13ce": "Credits finanzieren Sandbox-Rechenzeit – auch eine BYOK-Testphase braucht Guthaben, um Sitzungen auszuführen. Das kostenlose Willkommensguthaben beträgt 2 $.",
       "text2f1d17f50af8": "Enterprise schaltet SAML-SSO, SCIM-Verzeichnissynchronisierung, RBAC und Audit-Zugriff für diesen Workspace frei. Der abgerechnete Plan bleibt unverändert.",
-      "text79c0703d2226": "Free kostet 0 $ – ein Workspace, 500 Credits pro Monat und alle Funktionen, mit deinem eigenen Schlüssel oder ChatGPT-Abo für Modelle. Von Kortix verwaltete Modelle brauchen einen bezahlten Plan. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt den ganzen Workspace. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
+      "text79c0703d2226": "Free kostet 0 $ – 500 Credits pro Monat in deinem ersten Workspace und alle Funktionen, mit deinem eigenen Schlüssel oder ChatGPT-Abo für Modelle. Von Kortix verwaltete Modelle brauchen einen bezahlten Plan. Bezahlte Pläne bestehen aus Credits: Du wählst einen Monatsbetrag, Mitglieder sind kostenlos und unbegrenzt, und ein Pool deckt den ganzen Workspace. Self-Hosting der Software kostet nichts; stattdessen zahlst du deine eigene Modell- und Rechenrechnung.",
       "text5dffd4db88c5": "Dein Plan, deine Credits und die Abrechnung für diesen Workspace.",
       "text49fd64c206dd": "Dein Plan ist aktiv. Die Credits sind bereit.",
       "textad828837ddd8": "Mitglieder Mitglied Arbeitsbereichszugriff Mitarbeitende Personen Teammitglieder Verzeichnis wer kann sehen Berechtigungen gewähren teilen",

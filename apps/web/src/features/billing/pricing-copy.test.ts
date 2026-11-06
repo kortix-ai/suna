@@ -67,6 +67,19 @@ describe('pricing copy', () => {
     }
   });
 
+  test('the Free answer states the first-workspace rule from the facts: no workspace cap, no managed models on Free', () => {
+    // Free has no workspace cap: only a person's first workspace gets the
+    // monthly credits (review finding 33). Free has no managed models
+    // (plan-catalog.ts: managedModels false on Free).
+    for (const locale of locales) {
+      expect(catalog(locale).billing.pricing.faq.free.answer).toContain('{freeCredits}');
+    }
+    const answer = english.billing.pricing.faq.free.answer;
+    expect(answer).toContain('on your first workspace');
+    expect(answer).not.toMatch(/\b(1|one) workspace\b/i);
+    expect(answer.replace('Kortix-managed models need Credits', '')).not.toMatch(/managed models/i);
+  });
+
   test('the credit rate is stated as 1 credit = $0.01', () => {
     expect(english.billing.credits.planCard.rate).toContain('1 credit = $0.01');
     expect(english.billing.pricing.faq.credit.answer).toContain('1 credit is $0.01');
