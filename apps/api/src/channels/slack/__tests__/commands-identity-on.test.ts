@@ -15,7 +15,7 @@ mock.module('../../../config', () => ({
     API_KEY_SECRET: 'test-api-key-secret',
   },
 }));
-mock.module('../../../shared/db', () => ({ db: {}, hasDatabase: () => true }));
+mock.module('../../../shared/db', () => ({ withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(), db: {}, hasDatabase: () => true }));
 mock.module('../../core/sessions', () => ({ listVisibleChatSessions: async () => [] }));
 mock.module('../../core/identity', () =>
   chatIdentityStub({

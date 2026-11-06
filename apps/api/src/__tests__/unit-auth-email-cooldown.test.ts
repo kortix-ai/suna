@@ -21,6 +21,7 @@ mock.module('../config', () => ({
 let users = new Map<string, number | null>();
 let dbDown = false;
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     execute: async (query: SQL) => {
       if (dbDown) throw new Error('connection refused');

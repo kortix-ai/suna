@@ -87,7 +87,7 @@ describe('postTeamsReviewCard', () => {
     expect(texts[0]).toContain('Delete the staging bucket');
     expect(texts[0]).toContain('Removes 400 objects');
     expect(texts[0]).toContain('Risk · high');
-    expect(texts[0]).toContain('/projects/proj-1/review');
+    expect(texts[0]).toContain('/workspaces/proj-1/review');
   });
 
   test('only a card AND text both failing is reported as a failure', async () => {

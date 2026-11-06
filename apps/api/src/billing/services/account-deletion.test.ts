@@ -123,6 +123,7 @@ mock.module('../../notifications/cleanup', () => ({
   deleteMemberNotificationData: async () => undefined,
 }));
 mock.module('../../shared/supabase', () => ({
+  toPublicStorageUrl: (url: string) => url,
   getSupabase: () => ({
     auth: { admin: { deleteUser: async (id: string) => {
       if (deleteUserError) return { error: deleteUserError };

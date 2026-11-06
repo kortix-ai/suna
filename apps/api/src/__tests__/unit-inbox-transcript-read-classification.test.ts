@@ -31,6 +31,7 @@ mock.module('../lib/logger', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: () => true,
   db: {
     select: () => ({

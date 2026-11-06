@@ -37,6 +37,7 @@ console.warn = (...args: unknown[]) => {
 };
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     update: () => ({
       set: (patch: { metadata: unknown }) => ({

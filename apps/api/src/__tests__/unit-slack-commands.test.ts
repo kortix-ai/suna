@@ -14,6 +14,7 @@ function makeChain(): any {
 }
 let deletes = 0;
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: () => makeChain(),
     update: () => makeChain(),
@@ -294,7 +295,7 @@ describe('/kortix session (singular)', () => {
     const ids = actionIds(resp);
     expect(ids).toContain('session_open');
     const txt = allText(resp);
-    expect(txt).toContain('/projects/p1/sessions/sess-9');
+    expect(txt).toContain('/workspaces/p1/sessions/sess-9');
     expect(txt).toContain('running');
   });
   test('no sessions yet → empty state', async () => {

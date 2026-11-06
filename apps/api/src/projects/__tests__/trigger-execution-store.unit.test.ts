@@ -23,6 +23,7 @@ let updatedRows: Array<Record<string, unknown>> = [];
 let raised: Array<Record<string, unknown>> = [];
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     update: (table: unknown) => ({
       set: (updates: Record<string, unknown>) => ({

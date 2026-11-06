@@ -84,6 +84,7 @@ let returningRow: Record<string, unknown> = projectRow();
 // reachable from this handler, so only that chain is implemented; anything else
 // throws rather than silently resolving.
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     update: () => ({
@@ -119,6 +120,14 @@ const realManifestName = await import('../lib/manifest-project-name');
 mock.module('../lib/manifest-project-name', () => ({
   ...realManifestName,
   commitProjectName: async () => ({ ok: true }),
+}));
+
+// ── A rename also renames the workspace's account (workspace-name.ts): that
+// write is not what this suite covers.
+const realWorkspaceName = await import('../lib/workspace-name');
+mock.module('../lib/workspace-name', () => ({
+  ...realWorkspaceName,
+  renameAccountOfSoleProject: async () => {},
 }));
 
 // Registers project-detail.ts's routes onto the shared `projectsApp` singleton. projects.ts

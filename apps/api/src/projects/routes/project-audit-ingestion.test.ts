@@ -64,6 +64,7 @@ function rowsFor(table: unknown): unknown[] {
 }
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: () => true,
   db: {
     select: () => ({

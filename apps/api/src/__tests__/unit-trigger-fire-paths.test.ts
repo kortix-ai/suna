@@ -377,6 +377,8 @@ mock.module('../llm-gateway/models/servable-catalog', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+  // No workspace id resolves to an account key in this suite.
+  accountKeyForWorkspaceId: async () => null,
 }));
 
 mock.module('../shared/supabase', () => ({

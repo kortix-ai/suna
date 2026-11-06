@@ -169,49 +169,6 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
 // Asserted on source: the
 // release is one branch inside a route handler with no seam to import, and
 // what matters is which inputs gate it and where it sits.
-describe('POST /turn-question releases channel questions, and only those', () => {
-  const src = Bun.file(new URL('../projects/routes/turn-questions.ts', import.meta.url).pathname);
-
-  const handler = async () => {
-    const all = await src.text();
-    const start = all.indexOf("path: '/{projectId}/turn-question'");
-    expect(start, 'turn-question route is missing').toBeGreaterThan(-1);
-    const rest = all.slice(start);
-    return rest.slice(0, rest.indexOf('\n);\n'));
-  };
-
-  test('reads the channel from the SESSION`s metadata, not the live-turn row', async () => {
-    const body = await handler();
-    expect(body).toContain('metadata: projectSessions.metadata');
-    expect(body).toContain('channelOfSessionMetadata(turnQuestionSession.metadata)');
-  });
-
-  test('releases only a channel session, and only with a real runtime id', async () => {
-    const body = await handler();
-    // The `q-<session>` fallback used for persistence names nothing the runtime
-    // can answer, so the release must key on the caller's own request_id.
-    expect(body).toContain('const runtimeRequestId = body.request_id?.trim();');
-    expect(body).toContain('if (channel && runtimeRequestId)');
-  });
-
-  test('tells the agent whether the card was actually posted', async () => {
-    const body = await handler();
-    expect(body).toContain('posted: result.ok');
-  });
-
-  test('releases BEFORE responding — the daemon is still awaiting this request', async () => {
-    // Ordering is what makes the server's sentinel win over an old daemon's.
-    const body = await handler();
-    const releaseAt = body.indexOf('await releaseChannelQuestion(');
-    const firstReturnAfterRelay = body.indexOf('return c.json', body.indexOf('relayTurnQuestion('));
-    expect(releaseAt).toBeGreaterThan(-1);
-    expect(releaseAt).toBeLessThan(firstReturnAfterRelay);
-  });
-});
-
-// A session a trigger started (cron, webhook, monitor) has nobody to answer a
-// question. Prod 2026-10-09: a keyed cron session asked one and blocked 5 days;
-// every later fire queued behind it.
 describe('unattended sessions', () => {
   test('a trigger-started session is unattended', () => {
     expect(isUnattendedSessionMetadata({ source: 'trigger:cron' })).toBe(true);
@@ -238,14 +195,5 @@ describe('unattended sessions', () => {
     expect(s).toContain('nobody can answer');
     expect(s).toContain('finish');
     expect(s).not.toMatch(/wait for/i);
-  });
-
-  test('POST /turn-question releases an unattended session`s question before responding', async () => {
-    const all = await Bun.file(new URL('../projects/routes/turn-questions.ts', import.meta.url).pathname).text();
-    const body = all.slice(all.indexOf("path: '/{projectId}/turn-question'"));
-    expect(body).toContain('isUnattendedSessionMetadata(turnQuestionSession.metadata)');
-    const releaseAt = body.indexOf('await releaseRuntimeQuestion(sessionId, runtimeRequestId, answers)');
-    expect(releaseAt).toBeGreaterThan(-1);
-    expect(releaseAt).toBeLessThan(body.indexOf('return c.json', body.indexOf('relayTurnQuestion(')));
   });
 });

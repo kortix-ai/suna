@@ -6,6 +6,9 @@
  * Regression: the canonical alias re-mounts the catch-all middlewares on
  * `/:workspaceId/<family>`, so the session gate read the raw workspace id
  * (a project_id), found no account row and let a revoked session through.
+ *
+ * A canonical path takes a workspace id only (K3): an account id there is
+ * `404 workspace_not_found` before any account policy is read.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -18,6 +21,8 @@ const policyReads: string[] = [];
 const realGate = await import('../iam/session-gate');
 const realResolve = await import('../shared/resolve-account');
 const realSurface = await import('../workspaces/surface');
+const realIam = await import('../iam');
+const realActor = await import('../middleware/actor');
 mock.module('../iam/session-gate', () => ({
   ...realGate,
   evaluateSessionGate: () => 'revoked',
@@ -32,13 +37,32 @@ mock.module('../iam/session-gate', () => ({
 mock.module('../middleware/auth-audit', () => ({ auditSessionFirstSight: async () => undefined }));
 mock.module('../middleware/sso-gate', () => ({
   accountSsoGate: () => async (_c: unknown, next: () => Promise<void>) => next(),
+  accountClosingGate: () => async (_c: unknown, next: () => Promise<void>) => next(),
 }));
 mock.module('../shared/resolve-account', () => ({
   ...realResolve,
   resolveAccountId: async () => '00000000-0000-4000-8000-0000000000ff',
 }));
+mock.module('../middleware/actor', () => ({ ...realActor, actorOf: async () => ({ kind: 'user' }) }));
+mock.module('../iam', () => ({
+  ...realIam,
+  authorize: async () => ({ allowed: true, reason: 'test' }),
+  workspaceRoleFor: async () => 'member',
+}));
 mock.module('../workspaces/surface', () => ({
   ...realSurface,
+  getWorkspace: async (id: string) =>
+    id === WORKSPACE_ID
+      ? {
+          workspaceId: WORKSPACE_ID,
+          accountId: ACCOUNT_ID,
+          projectId: WORKSPACE_ID,
+          splitPending: false,
+          lifecycle: 'active',
+          deletionScheduledFor: null,
+        }
+      : null,
+  accountIsPaying: async () => false,
   resolveWorkspace: async (id: string) =>
     id === WORKSPACE_ID || id === ACCOUNT_ID
       ? { workspaceId: WORKSPACE_ID, accountId: ACCOUNT_ID, splitPending: false }
@@ -77,10 +101,16 @@ describe('account request gates: the session policy on both route names', () => 
     `/v1/accounts/${ACCOUNT_ID}/members`,
     `/v1/accounts/${WORKSPACE_ID}/members`,
     `/v1/workspaces/${WORKSPACE_ID}/members`,
-    `/v1/workspaces/${ACCOUNT_ID}/members`,
   ])('a revoked session gets 401 on GET %s', async (path) => {
     const res = await buildApp().request(path);
     expect(policyReads).toEqual([ACCOUNT_ID]);
     expect(res.status).toBe(401);
+  });
+
+  test('an account id on the canonical path is 404 workspace_not_found, no policy read', async () => {
+    const res = await buildApp().request(`/v1/workspaces/${ACCOUNT_ID}/members`);
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code?: string }).code).toBe('workspace_not_found');
+    expect(policyReads).toEqual([]);
   });
 });

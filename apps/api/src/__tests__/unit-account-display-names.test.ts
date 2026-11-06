@@ -18,6 +18,7 @@ function makeChain(): any {
 // (they used to be one Supabase admin HTTP call per owner).
 let emailsById: Record<string, string> = {};
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: { select: () => makeChain(), update: () => makeChain(), insert: () => makeChain(), execute: async () => Object.entries(emailsById).map(([id, email]) => ({ id, email })) },
   hasDatabase: () => true,
 }));
@@ -29,6 +30,8 @@ mock.module('../shared/supabase', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => 'acc-x',
+  // No workspace id resolves to an account key in this suite.
+  accountKeyForWorkspaceId: async () => null,
 }));
 
 const {

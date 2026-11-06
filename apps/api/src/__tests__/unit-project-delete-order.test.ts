@@ -27,6 +27,7 @@
  * so the fault paths live here.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamEngineAllowAll } from './helpers/iam-mocks';
 
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const steps: string[] = [];
@@ -35,6 +36,10 @@ let screenshotError: Error | null = null;
 let repoError: Error | null = null;
 let connectorError: Error | null = null;
 let splitPending = true;
+
+// The 1:1 close asks the engine for account.delete; this suite covers the step
+// order, not the gate (DEL-2 covers who may delete over HTTP).
+mockIamEngineAllowAll();
 
 const realAccess = await import('../projects/lib/access');
 mock.module('../projects/lib/access', () => ({

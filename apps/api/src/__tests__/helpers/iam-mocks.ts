@@ -192,6 +192,8 @@ export function mockIamEngineAllowAll(
     // The account MFA gate is a pure rule; chat identity linking reads it.
     mfaGateBlocks: (rec: { accountMfaRequired: boolean }, tokenId: string | null | undefined, mfaAal: string | undefined) =>
       rec.accountMfaRequired && !tokenId && mfaAal !== 'aal2',
+    // Allow-all: every caller holds the top workspace role.
+    workspaceRoleFor: async () => 'owner',
   }));
 }
 

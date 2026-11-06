@@ -27,7 +27,7 @@ function makeChain(): any {
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
   return chain;
 }
-mock.module('../../../shared/db', () => ({ db: { select: () => makeChain() }, hasDatabase: () => true }));
+mock.module('../../../shared/db', () => ({ withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(), db: { select: () => makeChain() }, hasDatabase: () => true }));
 
 let selection: any = { projectId: 'p1', agentName: null, sessionModel: null, conversationPolicy: null };
 mock.module('../selection', () => ({

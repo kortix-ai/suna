@@ -18,5 +18,6 @@ test('Artifact push carries its thread deep link and digest email uses the comme
   expect(DEFAULT_NOTIFICATION_PREFERENCES.artifact_comment).toEqual({ push: true, email: true });
   const email = renderNotificationDigestEmail({ items: [{ kind: 'artifact_comment', title: content.title, body: content.body, url: content.payload.url }], more: 0 });
   expect(email.text).toContain('Artifact comment');
-  expect(email.text).toContain(content.payload.url);
+  // The email links the canonical workspace page; the push keeps the path the apps route.
+  expect(email.text).toContain('/workspaces/project-one/artifacts/artifact-one?thread=thread-one&notification=notice-one');
 });

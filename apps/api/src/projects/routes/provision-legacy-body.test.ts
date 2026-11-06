@@ -4,8 +4,10 @@
  * Every client before Workspaces 1:1 (the published CLI, cached web and mobile
  * bundles, the SDK's provisionProject) sends no `new_workspace` flag. When the
  * caller's active account already holds its one project, or the caller has no
- * workspace yet, the request becomes a new workspace (201). A request that
- * names an occupied account keeps the 409 `workspace_has_project`.
+ * workspace yet, the request becomes a new workspace (201). So does a request
+ * that names an occupied account the person may create in (the published CLI
+ * sends `account_id`). A caller that may not create a workspace (an API key)
+ * keeps the 409 `workspace_has_project`.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
@@ -106,7 +108,14 @@ describe('POST /provision with a pre-Workspaces body', () => {
     expect(res.body.account_id).toBe(AMBIENT);
   });
 
-  test('an explicitly named occupied account keeps 409 workspace_has_project', async () => {
+  test('an explicitly named occupied account (the published CLI): 201 in a new workspace', async () => {
+    const res = await provision({ name: 'second', account_id: AMBIENT });
+    expect(res.status).toBe(201);
+    expect(res.body.account_id).toBe(NEW_ACCOUNT);
+  });
+
+  test('an API key naming an occupied account keeps 409 workspace_has_project', async () => {
+    authType = 'api_key';
     const res = await provision({ name: 'second', account_id: AMBIENT });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('workspace_has_project');

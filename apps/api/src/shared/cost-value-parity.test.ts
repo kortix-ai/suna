@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test';
-mock.module('./db', () => ({ db: {}, hasDatabase: true }));
+mock.module('./db', () => ({ db: {}, withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(), hasDatabase: true }));
 const { mergeLegacyGatewaySessionRows, computeBilledSeconds } = await import('./session-costs');
 const { splitLlmSpend } = await import('./llm-spend');
 const numbers = [null, undefined, '', '12.5', '-2', 'garbage', Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, 1.25];

@@ -32,6 +32,7 @@ let authorizeCalls: Array<{
 }> = [];
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: (fields?: Record<string, unknown>) => {
       const rows = fields?.agentGrant
