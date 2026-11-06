@@ -134,7 +134,7 @@ flow(
     });
     await ctx.step('gateway logs filters: a bad since/until → 400; session, model, provider, error code and search filters → 200 with rows that match', async () => {
       const logs = (query: Record<string, string>) => owner.get('/v1/workspaces/:projectId/gateway/logs', { params, query });
-      for (const query of [{ since: 'yesterday' }, { until: 'nope' }]) {
+      for (const query of [{ since: 'yesterday' }, { until: 'nope' }] as Record<string, string>[]) {
         (await logs(query)).status(400).body().has('$.error', 'since and until must be ISO-8601 times');
       }
       (await logs({ q: 'x'.repeat(201) })).status(400).body().has('$.error', 'q must be at most 200 characters');
