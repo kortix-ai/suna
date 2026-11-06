@@ -1,9 +1,10 @@
 import { describe, expect, mock, test } from 'bun:test';
 
-// `useQuery` is mocked to an identity function so the hook's config can be
-// asserted as a plain value, and `listSessionsNeedingInput` is mocked so its
-// `queryFn` can run here (the harness of `./use-project-session.test.ts`).
+// `useQuery` is mocked to record the hook's config, and
+// `listSessionsNeedingInput` is mocked so the recorded `queryFn` can run here
+// (the harness of `./use-project-session.test.ts`).
 const needsInputCalls: unknown[][] = [];
+const queryConfigs: { queryFn: () => Promise<unknown> }[] = [];
 mock.module('../core/rest/projects-client', () => ({
   listSessionsNeedingInput: (...args: unknown[]) => {
     needsInputCalls.push(args);
@@ -11,7 +12,10 @@ mock.module('../core/rest/projects-client', () => ({
   },
 }));
 mock.module('@tanstack/react-query', () => ({
-  useQuery: (config: Record<string, unknown>) => config,
+  useQuery: (config: { queryFn: () => Promise<unknown> }) => {
+    queryConfigs.push(config);
+    return config;
+  },
 }));
 
 const { qk } = await import('./query-keys');
@@ -50,8 +54,9 @@ describe('useSessionsNeedingInput', () => {
   // 2026-11-06 rollout window this poll was 92 of the 96 frontend
   // `ApiError: Internal server error` events (KRTX-4358).
   test('polls with showErrors: false', async () => {
-    const config = useSessionsNeedingInput('P1') as unknown as { queryFn: () => Promise<unknown> };
-    await config.queryFn();
+    useSessionsNeedingInput('P1');
+    expect(queryConfigs).toHaveLength(1);
+    await queryConfigs[0]?.queryFn();
     expect(needsInputCalls).toEqual([['P1', { showErrors: false }]]);
   });
 });
