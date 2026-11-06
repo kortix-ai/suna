@@ -19,17 +19,22 @@ mock.module('electron', () => ({
   },
 }));
 mock.module('electron-updater', () => ({ autoUpdater }));
-const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 
 const liveWindow = { isDestroyed: () => false };
 const destroyedWindow = { isDestroyed: () => true };
 let mainWindow = null;
-setupAutoUpdates({ getSplashWindow: () => null, getMainWindow: () => mainWindow });
+let checkForUpdatesInteractive;
 
 beforeEach(() => {
   boxes.length = 0;
   answer = 1;
   autoUpdater.quitAndInstall.mockClear();
+  // A fresh updater per test: a staged update is module state that would leak into the next test.
+  delete require.cache[require.resolve('./updater')];
+  autoUpdater.removeAllListeners();
+  const updater = require('./updater');
+  updater.setupAutoUpdates({ getSplashWindow: () => null, getMainWindow: () => mainWindow });
+  checkForUpdatesInteractive = updater.checkForUpdatesInteractive;
 });
 
 const upToDate = {
