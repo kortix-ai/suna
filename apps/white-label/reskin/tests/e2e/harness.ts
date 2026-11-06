@@ -43,7 +43,14 @@ export function ensureBuilt(): Promise<void> {
       const proc = Bun.spawn({
         cmd: [NEXT_BIN, 'build'],
         cwd: APP_ROOT,
-        env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1' },
+        // `next build` type-checks the app and @kortix/ui in one process. The
+        // default ~2 GB heap ran out on the 16 GB CI runner (v0.15.0 release
+        // suite, 2 of 2 runs, in "Failed to type check"); 4 GB passes.
+        env: {
+          ...process.env,
+          NEXT_TELEMETRY_DISABLED: '1',
+          NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=4096`.trim(),
+        },
         stdout: 'pipe',
         stderr: 'pipe',
       });
