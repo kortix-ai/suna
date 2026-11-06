@@ -23,8 +23,15 @@ let stopped = true;
 let active: Promise<void> | null = null;
 
 async function tick(): Promise<void> {
-  const { processScheduledDeletions } = await import('../../billing/services/account-deletion');
+  const { processScheduledDeletions, SWEEP_BATCH_SIZE } = await import('../../billing/services/account-deletion');
   await processScheduledDeletions();
+  // "Delete my account" requests: their own table, after the account requests.
+  // Paused with the account sweep (ACCOUNT_DELETION_SWEEP_PAUSED).
+  const { config } = await import('../../config');
+  if (config.ACCOUNT_DELETION_SWEEP_PAUSED) return;
+  const { processScheduledPersonDeletions } = await import('../../workspaces/surface');
+  const people = await processScheduledPersonDeletions(SWEEP_BATCH_SIZE);
+  logger.info(`[PersonDeletion] Processed: ${people.processed}, Errors: ${people.errors.length}`);
 }
 
 function schedule(delayMs: number): void {

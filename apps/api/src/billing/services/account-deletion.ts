@@ -435,12 +435,6 @@ export async function processScheduledDeletions(): Promise<{
     }
   }
 
-  // The person deletions ("Delete my account", scheduled): their own table.
-  const { processScheduledPersonDeletions } = await import('../../workspaces/surface');
-  const people = await processScheduledPersonDeletions(SWEEP_BATCH_SIZE);
-  processed += people.processed;
-  errors.push(...people.errors);
-
   const backlog = await countOverdueBacklog();
   if (backlog > 0) {
     logger.warn(`[AccountDeletion] ${backlog} pending request(s) are past the overdue window and wait for a person`);
