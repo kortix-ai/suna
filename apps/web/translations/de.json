@@ -2850,6 +2850,9 @@
       "elsewhere": "Dieser Workspace hat keine kostenlosen Credits. Deine monatlichen kostenlosen Credits liegen in {workspace}.",
       "firstOnly": "Dieser Workspace hat keine kostenlosen Credits. Nur dein erster Workspace erhält die monatlichen kostenlosen Credits.",
       "action": "Füge Credits hinzu oder wähle einen Plan, um hier Sitzungen zu starten."
+    },
+    "costs": {
+      "billedElsewhere": "{amount} Credits dieser Kosten wurden dem Workspace berechnet, aus dem dieses Projekt verschoben wurde."
     }
   },
   "ssoRequired": {

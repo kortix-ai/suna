@@ -592,6 +592,20 @@ describe('isProjectRowClickable', () => {
     };
     expect(isProjectRowClickable(row)).toBe(false);
   });
+
+  test('a project that moved to another workspace is not clickable: it is no longer this workspace\'s', () => {
+    const row: ProjectTableRow = {
+      project_id: 'p-moved',
+      project_name: 'Moved to another workspace',
+      session_count: 3,
+      llm_cost: 4,
+      compute_cost: 1,
+      total_cost: 5,
+      last_activity_at: null,
+      moved: true,
+    };
+    expect(isProjectRowClickable(row)).toBe(false);
+  });
 });
 
 // ── Pure function: hasRecentSpendSignal ─────────────────────────────────────

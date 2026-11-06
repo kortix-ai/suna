@@ -2850,6 +2850,9 @@
       "elsewhere": "This workspace has no free credits. Your monthly free credits are on {workspace}.",
       "firstOnly": "This workspace has no free credits. Only your first workspace gets the monthly free credits.",
       "action": "Add credits or pick a plan to run sessions here."
+    },
+    "costs": {
+      "billedElsewhere": "{amount} credits of this cost were billed to the workspace this project moved from."
     }
   },
   "ssoRequired": {

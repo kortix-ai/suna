@@ -17,6 +17,7 @@ import {
   desc,
   eq,
   gte,
+  inArray,
   isNull,
   lt,
   sql,
@@ -99,6 +100,9 @@ export interface SessionCostLlmLedgerEntry {
   output_tokens: number;
   cached_tokens: number;
   cache_write_tokens: number;
+  /** True when another workspace paid for this row: the request ran before the
+   *  session's project moved to this workspace. Absent from an older API. */
+  billed_elsewhere?: boolean;
 }
 
 export interface SessionCostComputeLedgerEntry {
@@ -115,6 +119,8 @@ export interface SessionCostComputeLedgerEntry {
   memory_gb: number;
   disk_gb: number;
   gpu_count: number;
+  /** True when another workspace paid for this row (see the LLM entry). */
+  billed_elsewhere?: boolean;
 }
 
 export type SessionCostLedgerEntry = SessionCostLlmLedgerEntry | SessionCostComputeLedgerEntry;
@@ -122,6 +128,9 @@ export type SessionCostLedgerEntry = SessionCostLlmLedgerEntry | SessionCostComp
 export interface SessionCostDetail extends SessionCostSummary {
   model_usage: SessionCostModelUsage[];
   ledger_entries: SessionCostLedgerEntry[];
+  /** The part of `total_cost` another workspace paid for: the session ran
+   *  before its project moved here. 0 when it all billed here. */
+  billed_elsewhere_cost?: number;
 }
 
 export interface SessionCostReconciliation {
@@ -379,11 +388,37 @@ const computeAggregateFields = {
   lastAt: sql<string | null>`max(${sandboxComputeSessions.lastBilledAt})`,
 };
 
+/**
+ * Which rows a cost view reads. A workspace or session view reads its
+ * project's rows wherever they were billed: a project that moved to another
+ * workspace (a split or a transfer) keeps its history, while the ledgers stay
+ * with the account that paid (PROJECT_TRANSFER_LEAVE_TABLES). An account view
+ * (no project) reads what the account paid for. Design.md §3.1 finding 31.
+ */
+export interface CostScope {
+  accountId: string;
+  projectId?: string;
+}
+
+function llmScope(scope: CostScope): SQL {
+  return scope.projectId ? eq(gatewayRequestLogs.projectId, scope.projectId) : eq(gatewayRequestLogs.accountId, scope.accountId);
+}
+
+/** Compute rows carry no project: a project scope reads the rows of its sessions. */
+function computeScope(scope: CostScope): SQL {
+  return scope.projectId
+    ? inArray(
+        sandboxComputeSessions.sessionId,
+        db.select({ sessionId: projectSessions.sessionId }).from(projectSessions).where(eq(projectSessions.projectId, scope.projectId)),
+      )
+    : eq(sandboxComputeSessions.accountId, scope.accountId);
+}
+
 // Windowed LLM aggregate, grouped per session so the caller can join it to a
 // page of sessions and let Postgres order by spend. Anchored on created_at,
 // which idx_gateway_logs_account_time covers. Money stays numeric through the
 // sum and is cast to float8 only for transport.
-function llmAggregateSubquery(accountId: string, window: CostWindow) {
+function llmAggregateSubquery(scope: CostScope, window: CostWindow) {
   return db
     .select({
       sessionId: gatewayRequestLogs.sessionId,
@@ -406,7 +441,7 @@ function llmAggregateSubquery(accountId: string, window: CostWindow) {
     .from(gatewayRequestLogs)
     .where(
       and(
-        eq(gatewayRequestLogs.accountId, accountId),
+        llmScope(scope),
         // createdAt is a Date-mode timestamp, so the bounds are Date objects.
         gte(gatewayRequestLogs.createdAt, window.from),
         lt(gatewayRequestLogs.createdAt, window.to),
@@ -420,7 +455,7 @@ function llmAggregateSubquery(accountId: string, window: CostWindow) {
 // Windowed compute aggregate, anchored on started_at because that is the column
 // idx_sandbox_compute_sessions_account_time covers. last_billed_at's only index
 // is partial (WHERE state = 'active') and exists for the biller, not reporting.
-function computeAggregateSubquery(accountId: string, window: CostWindow) {
+function computeAggregateSubquery(scope: CostScope, window: CostWindow) {
   return db
     .select({
       sessionId: sandboxComputeSessions.sessionId,
@@ -432,7 +467,7 @@ function computeAggregateSubquery(accountId: string, window: CostWindow) {
     .from(sandboxComputeSessions)
     .where(
       and(
-        eq(sandboxComputeSessions.accountId, accountId),
+        computeScope(scope),
         // startedAt is declared mode:'string', so the bounds are ISO strings.
         gte(sandboxComputeSessions.startedAt, window.from.toISOString()),
         lt(sandboxComputeSessions.startedAt, window.to.toISOString()),
@@ -447,31 +482,37 @@ function computeAggregateSubquery(accountId: string, window: CostWindow) {
 // reconcile against the ledger entries listed beside it, which are unwindowed.
 // No GROUP BY, so both queries always return exactly one row.
 async function loadSessionTotals(
-  accountId: string,
+  scope: Required<CostScope>,
   sessionId: string,
-): Promise<{ llm: LlmAggregateRow | undefined; compute: ComputeAggregateRow | undefined }> {
+): Promise<{ llm: LlmAggregateRow | undefined; compute: ComputeAggregateRow | undefined; billedElsewhere: number }> {
   const [llmRows, computeRows] = await Promise.all([
     db
-      .select(llmAggregateFields)
+      .select({
+        ...llmAggregateFields,
+        elsewhere: sql<number>`coalesce(sum(${rowKortixBilledSpendSql}) filter (where ${gatewayRequestLogs.accountId} <> ${scope.accountId}::uuid), 0)::float8`,
+      })
       .from(gatewayRequestLogs)
       .where(
         and(
-          eq(gatewayRequestLogs.accountId, accountId),
+          eq(gatewayRequestLogs.projectId, scope.projectId),
           eq(gatewayRequestLogs.sessionId, sessionId),
         ),
       ),
+    // A session id names one session; the caller verified it is this workspace's.
     db
-      .select(computeAggregateFields)
+      .select({
+        ...computeAggregateFields,
+        elsewhere: sql<number>`coalesce(sum(${sandboxComputeSessions.costUsd}) filter (where ${sandboxComputeSessions.accountId} <> ${scope.accountId}::uuid), 0)::float8`,
+      })
       .from(sandboxComputeSessions)
-      .where(
-        and(
-          eq(sandboxComputeSessions.accountId, accountId),
-          eq(sandboxComputeSessions.sessionId, sessionId),
-        ),
-      ),
+      .where(eq(sandboxComputeSessions.sessionId, sessionId)),
   ]);
 
-  return { llm: llmRows[0], compute: computeRows[0] };
+  return {
+    llm: llmRows[0],
+    compute: computeRows[0],
+    billedElsewhere: sumCosts(numberValue(llmRows[0]?.elsewhere), numberValue(computeRows[0]?.elsewhere)),
+  };
 }
 
 async function loadReconciliation(
@@ -481,22 +522,21 @@ async function loadReconciliation(
 ): Promise<SessionCostReconciliation> {
   // The unassigned-cost figure has to describe the same period as the table it
   // sits beside, so it carries the caller's window on the same columns the
-  // per-session aggregates use.
+  // per-session aggregates use. A project scope reads the project's rows
+  // wherever they were billed, as the per-session aggregates do (CostScope).
   const llmConditions: SQL[] = [
-    eq(gatewayRequestLogs.accountId, accountId),
+    llmScope({ accountId, projectId }),
     isNull(projectSessions.sessionId),
     gte(gatewayRequestLogs.createdAt, window.from),
     lt(gatewayRequestLogs.createdAt, window.to),
   ];
-  if (projectId) llmConditions.push(eq(gatewayRequestLogs.projectId, projectId));
 
   const computeConditions: SQL[] = [
-    eq(sandboxComputeSessions.accountId, accountId),
+    projectId ? eq(sessionSandboxes.projectId, projectId) : eq(sandboxComputeSessions.accountId, accountId),
     isNull(projectSessions.sessionId),
     gte(sandboxComputeSessions.startedAt, window.from.toISOString()),
     lt(sandboxComputeSessions.startedAt, window.to.toISOString()),
   ];
-  if (projectId) computeConditions.push(eq(sessionSandboxes.projectId, projectId));
 
   const [llmResult, computeResult] = await Promise.all([
     db
@@ -507,10 +547,12 @@ async function loadReconciliation(
       .from(gatewayRequestLogs)
       .leftJoin(
         projectSessions,
-        and(
-          eq(projectSessions.accountId, gatewayRequestLogs.accountId),
-          eq(projectSessions.sessionId, gatewayRequestLogs.sessionId),
-        ),
+        projectId
+          ? eq(projectSessions.sessionId, gatewayRequestLogs.sessionId)
+          : and(
+              eq(projectSessions.accountId, gatewayRequestLogs.accountId),
+              eq(projectSessions.sessionId, gatewayRequestLogs.sessionId),
+            ),
       )
       .where(and(...llmConditions)),
     db
@@ -522,17 +564,21 @@ async function loadReconciliation(
       .from(sandboxComputeSessions)
       .leftJoin(
         projectSessions,
-        and(
-          eq(projectSessions.accountId, sandboxComputeSessions.accountId),
-          eq(projectSessions.sessionId, sandboxComputeSessions.sessionId),
-        ),
+        projectId
+          ? eq(projectSessions.sessionId, sandboxComputeSessions.sessionId)
+          : and(
+              eq(projectSessions.accountId, sandboxComputeSessions.accountId),
+              eq(projectSessions.sessionId, sandboxComputeSessions.sessionId),
+            ),
       )
       .leftJoin(
         sessionSandboxes,
-        and(
-          eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId),
-          eq(sessionSandboxes.accountId, sandboxComputeSessions.accountId),
-        ),
+        projectId
+          ? eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId)
+          : and(
+              eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId),
+              eq(sessionSandboxes.accountId, sandboxComputeSessions.accountId),
+            ),
       )
       .where(and(...computeConditions)),
   ]);
@@ -614,8 +660,9 @@ export async function listSessionCosts(input: {
   // never chose.
   const { window, sort } = input;
 
-  const llm = llmAggregateSubquery(input.accountId, window);
-  const compute = computeAggregateSubquery(input.accountId, window);
+  const scope: CostScope = { accountId: input.accountId, projectId: input.projectId };
+  const llm = llmAggregateSubquery(scope, window);
+  const compute = computeAggregateSubquery(scope, window);
 
   const conditions: SQL[] = [eq(projectSessions.accountId, input.accountId)];
   if (input.projectId) conditions.push(eq(projectSessions.projectId, input.projectId));
@@ -720,7 +767,7 @@ export async function listSessionCosts(input: {
 }
 
 async function loadModelUsage(
-  accountId: string,
+  scope: Required<CostScope>,
   sessionId: string,
 ): Promise<SessionCostModelUsage[]> {
   const rows = await db
@@ -738,7 +785,7 @@ async function loadModelUsage(
     })
     .from(gatewayRequestLogs)
     .where(
-      and(eq(gatewayRequestLogs.accountId, accountId), eq(gatewayRequestLogs.sessionId, sessionId)),
+      and(eq(gatewayRequestLogs.projectId, scope.projectId), eq(gatewayRequestLogs.sessionId, sessionId)),
     )
     .groupBy(gatewayRequestLogs.provider, gatewayRequestLogs.resolvedModel)
     .orderBy(desc(kortixBilledSpendSql));
@@ -758,7 +805,7 @@ async function loadModelUsage(
 }
 
 async function loadLedgerEntries(
-  accountId: string,
+  scope: Required<CostScope>,
   sessionId: string,
 ): Promise<SessionCostLedgerEntry[]> {
   const [llmRows, computeRows] = await Promise.all([
@@ -776,11 +823,12 @@ async function loadLedgerEntries(
         outputTokens: gatewayRequestLogs.outputTokens,
         cachedTokens: gatewayRequestLogs.cachedTokens,
         cacheWriteTokens: gatewayRequestLogs.cacheWriteTokens,
+        accountId: gatewayRequestLogs.accountId,
       })
       .from(gatewayRequestLogs)
       .where(
         and(
-          eq(gatewayRequestLogs.accountId, accountId),
+          eq(gatewayRequestLogs.projectId, scope.projectId),
           eq(gatewayRequestLogs.sessionId, sessionId),
         ),
       ),
@@ -797,14 +845,10 @@ async function loadLedgerEntries(
         memoryGb: sandboxComputeSessions.memoryGb,
         diskGb: sandboxComputeSessions.diskGb,
         gpuCount: sandboxComputeSessions.gpuCount,
+        accountId: sandboxComputeSessions.accountId,
       })
       .from(sandboxComputeSessions)
-      .where(
-        and(
-          eq(sandboxComputeSessions.accountId, accountId),
-          eq(sandboxComputeSessions.sessionId, sessionId),
-        ),
-      ),
+      .where(eq(sandboxComputeSessions.sessionId, sessionId)),
   ]);
 
   const llmEntries: SessionCostLlmLedgerEntry[] = llmRows.map((row) => ({
@@ -821,6 +865,7 @@ async function loadLedgerEntries(
     output_tokens: row.outputTokens,
     cached_tokens: row.cachedTokens,
     cache_write_tokens: row.cacheWriteTokens,
+    ...(row.accountId !== scope.accountId ? { billed_elsewhere: true } : {}),
   }));
 
   const computeEntries: SessionCostComputeLedgerEntry[] = computeRows.map((row) => ({
@@ -837,6 +882,7 @@ async function loadLedgerEntries(
     memory_gb: row.memoryGb,
     disk_gb: row.diskGb,
     gpu_count: row.gpuCount,
+    ...(row.accountId !== scope.accountId ? { billed_elsewhere: true } : {}),
   }));
 
   return sortLedgerEntriesNewestFirst([...llmEntries, ...computeEntries]);
@@ -870,11 +916,14 @@ export async function getSessionCostRecord(input: {
   if (!session) return null;
 
   const ownerIds = session.ownerId ? [session.ownerId] : [];
+  // The session is this account's (checked above): its rows are read by its
+  // project, so a session from before a move keeps its history (CostScope).
+  const scope = { accountId: input.accountId, projectId: session.projectId };
   const [totals, ownerById, modelUsage, ledgerEntries] = await Promise.all([
-    loadSessionTotals(input.accountId, session.sessionId),
+    loadSessionTotals(scope, session.sessionId),
     resolveSessionOwnerIdentities(ownerIds, input.accountId),
-    loadModelUsage(input.accountId, session.sessionId),
-    loadLedgerEntries(input.accountId, session.sessionId),
+    loadModelUsage(scope, session.sessionId),
+    loadLedgerEntries(scope, session.sessionId),
   ]);
 
   return {
@@ -886,6 +935,7 @@ export async function getSessionCostRecord(input: {
     }),
     model_usage: modelUsage,
     ledger_entries: ledgerEntries,
+    billed_elsewhere_cost: totals.billedElsewhere,
   };
 }
 
@@ -911,7 +961,8 @@ export async function listProjectGatewaySessionSpend(input: {
       .from(gatewayRequestLogs)
       .where(
         and(
-          eq(gatewayRequestLogs.accountId, input.accountId),
+          // By project, wherever it was billed (CostScope): a project that
+          // moved keeps its spend history.
           eq(gatewayRequestLogs.projectId, input.projectId),
           sql`${gatewayRequestLogs.sessionId} is not null`,
           sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${input.days})`,
@@ -930,8 +981,6 @@ export async function listProjectGatewaySessionSpend(input: {
       .innerJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, sandboxComputeSessions.sessionId))
       .where(
         and(
-          eq(sandboxComputeSessions.accountId, input.accountId),
-          eq(sessionSandboxes.accountId, input.accountId),
           eq(sessionSandboxes.projectId, input.projectId),
           sql`${sandboxComputeSessions.sessionId} is not null`,
           sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${input.days})`,
@@ -1035,7 +1084,7 @@ export async function listProjectGatewaySourceSpend(input: {
     .leftJoin(parent, eq(parent.sessionId, projectSessions.parentSessionId))
     .where(
       and(
-        eq(gatewayRequestLogs.accountId, input.accountId),
+        // By project, wherever it was billed (CostScope).
         eq(gatewayRequestLogs.projectId, input.projectId),
         sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(hours => ${hours})`,
       ),

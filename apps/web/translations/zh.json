@@ -2850,6 +2850,9 @@
       "elsewhere": "此工作区没有免费积分。你的每月免费积分在 {workspace}。",
       "firstOnly": "此工作区没有免费积分。只有你的首个工作区获得每月免费积分。",
       "action": "添加积分或选择套餐即可在此运行会话。"
+    },
+    "costs": {
+      "billedElsewhere": "此费用中的 {amount} 积分已计入此项目迁出前所在的工作区。"
     }
   },
   "ssoRequired": {

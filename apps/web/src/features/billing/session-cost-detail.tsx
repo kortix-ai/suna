@@ -87,6 +87,7 @@ export function SessionCostDetailContent({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
   const tCredits = useTranslations('settings.credits');
+  const tBilling = useTranslations('billing.costs');
   if (error) {
     return (
       <div className="space-y-4">
@@ -170,6 +171,11 @@ export function SessionCostDetailContent({
           </div>
         ))}
       </div>
+      {detail.billed_elsewhere_cost ? (
+        <p className="text-muted-foreground text-xs text-pretty" data-testid="billed-elsewhere">
+          {tBilling('billedElsewhere', { amount: formatSessionCostCredits(detail.billed_elsewhere_cost, locale) })}
+        </p>
+      ) : null}
 
       <section className="space-y-2">
         <div>

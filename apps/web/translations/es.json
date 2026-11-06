@@ -2850,6 +2850,9 @@
       "elsewhere": "Este espacio de trabajo no tiene créditos gratuitos. Tus créditos gratuitos mensuales están en {workspace}.",
       "firstOnly": "Este espacio de trabajo no tiene créditos gratuitos. Solo tu primer espacio de trabajo recibe los créditos gratuitos mensuales.",
       "action": "Añade créditos o elige un plan para ejecutar sesiones aquí."
+    },
+    "costs": {
+      "billedElsewhere": "{amount} créditos de este coste se cobraron al espacio de trabajo del que se movió este proyecto."
     }
   },
   "ssoRequired": {

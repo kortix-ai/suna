@@ -69,6 +69,9 @@ export interface SessionCostLlmLedgerEntry {
   output_tokens: number;
   cached_tokens: number;
   cache_write_tokens: number;
+  /** True when another workspace paid for this row: the request ran before the
+   *  session's project moved to this workspace. Absent from an older API. */
+  billed_elsewhere?: boolean;
 }
 
 export interface SessionCostComputeLedgerEntry {
@@ -85,6 +88,8 @@ export interface SessionCostComputeLedgerEntry {
   memory_gb: number;
   disk_gb: number;
   gpu_count: number;
+  /** True when another workspace paid for this row (see the LLM entry). */
+  billed_elsewhere?: boolean;
 }
 
 export type SessionCostLedgerEntry =
@@ -94,6 +99,9 @@ export type SessionCostLedgerEntry =
 export interface SessionCostDetail extends SessionCostSummary {
   model_usage: SessionCostModelUsage[];
   ledger_entries: SessionCostLedgerEntry[];
+  /** The part of `total_cost` another workspace paid for: the session ran
+   *  before its project moved here. Absent from an older API. */
+  billed_elsewhere_cost?: number;
 }
 
 export interface SessionCostReconciliation {
@@ -232,6 +240,9 @@ export interface ProjectCostRow {
   storage_gib_hours?: number;
   total_cost: number;
   last_activity_at: string | null;
+  /** True when the project now lives in another workspace; `project_name` is
+   *  then "Moved to another workspace". Absent from an older API. */
+  moved?: boolean;
 }
 
 export interface ProjectCostPage {
