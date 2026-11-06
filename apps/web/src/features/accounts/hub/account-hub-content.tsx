@@ -27,7 +27,7 @@
  */
 
 import { useTranslations } from '@/i18n/use-translations';
-import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
+import { invalidatePermissionProbes, qk, useWorkspace } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon as ExternalLink,
   GithubLogoIcon as Github,
@@ -261,6 +261,9 @@ export function AccountHubContent({
   const openInviteRef = useRef<((target: AccountDetail) => void) | null>(null);
   // The page's own query (`?invite=1`), not the hub's mapped params.
   const pageSearchParams = useUiSearchParams();
+  // The workspace's own name for the invite title; the account name is the
+  // fallback (they are kept equal on a 1:1 workspace).
+  const workspaceName = useWorkspace(workspaceId).data?.name;
   useEffect(() => {
     closeHubSheet();
     inviteOpenedRef.current = false;
@@ -344,7 +347,7 @@ export function AccountHubContent({
     // per-workspace grant form until the split runs.
     workspaceId && target.project_count <= 1
       ? hubSheet.open({
-          title: tSettings('inviteTitle', { name: target.name }),
+          title: tSettings('inviteTitle', { name: workspaceName ?? target.name }),
           body: (
             <InvitePeopleDialog
               open
@@ -352,7 +355,7 @@ export function AccountHubContent({
                 if (!next) hubSheet.close();
               }}
               workspaceId={workspaceId}
-              workspaceName={target.name}
+              workspaceName={workspaceName ?? target.name}
               canGrantAdmin={canUpdateMember}
               onDone={() => invalidateAfterInvite(target.account_id)}
             />

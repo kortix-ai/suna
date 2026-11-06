@@ -26781,6 +26781,13 @@
       "approvedToast": "Odobreno. Sada je Član.",
       "declinedToast": "Zahtev je odbijen",
       "decideFailed": "Zahtev nije mogao da se ažurira."
+    },
+    "deleting": {
+      "title": "{name} се брише.",
+      "body": "Његови чланови су изгубили приступ. Брише се {date}. Вратите га да бисте наставили да радите у њему.",
+      "restore": "Врати радни простор",
+      "back": "Назад на радне просторе",
+      "restoreFailed": "Радни простор није могао да се врати."
     }
   }
 }

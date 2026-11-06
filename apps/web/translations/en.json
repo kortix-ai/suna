@@ -26781,6 +26781,13 @@
       "approvedToast": "Approved. They are a Member now.",
       "declinedToast": "Request declined",
       "decideFailed": "Could not update the request."
+    },
+    "deleting": {
+      "title": "{name} is being deleted.",
+      "body": "Its members lost access. It is erased on {date}. Restore it to keep working in it.",
+      "restore": "Restore workspace",
+      "back": "Back to workspaces",
+      "restoreFailed": "Could not restore the workspace."
     }
   }
 }

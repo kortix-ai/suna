@@ -26781,6 +26781,13 @@
       "approvedToast": "Approvato. Ora è un Membro.",
       "declinedToast": "Richiesta rifiutata",
       "decideFailed": "Impossibile aggiornare la richiesta."
+    },
+    "deleting": {
+      "title": "{name} è in fase di eliminazione.",
+      "body": "I suoi membri hanno perso l'accesso. Verrà cancellato il {date}. Ripristinalo per continuare a lavorarci.",
+      "restore": "Ripristina workspace",
+      "back": "Torna ai workspace",
+      "restoreFailed": "Impossibile ripristinare il workspace."
     }
   }
 }

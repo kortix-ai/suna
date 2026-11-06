@@ -26781,6 +26781,13 @@
       "approvedToast": "Aprovado. Agora é Membro.",
       "declinedToast": "Solicitação recusada",
       "decideFailed": "Não foi possível atualizar a solicitação."
+    },
+    "deleting": {
+      "title": "{name} está sendo excluído.",
+      "body": "Seus membros perderam o acesso. Ele será apagado em {date}. Restaure-o para continuar trabalhando nele.",
+      "restore": "Restaurar espaço de trabalho",
+      "back": "Voltar aos espaços de trabalho",
+      "restoreFailed": "Não foi possível restaurar o espaço de trabalho."
     }
   }
 }

@@ -26781,6 +26781,13 @@
       "approvedToast": "Approuvé. La personne est maintenant Membre.",
       "declinedToast": "Demande refusée",
       "decideFailed": "Impossible de mettre à jour la demande."
+    },
+    "deleting": {
+      "title": "{name} est en cours de suppression.",
+      "body": "Ses membres ont perdu l'accès. Il sera effacé le {date}. Restaurez-le pour continuer à y travailler.",
+      "restore": "Restaurer l'espace de travail",
+      "back": "Retour aux espaces de travail",
+      "restoreFailed": "Impossible de restaurer l'espace de travail."
     }
   }
 }

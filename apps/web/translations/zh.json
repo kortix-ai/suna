@@ -26781,6 +26781,13 @@
       "approvedToast": "已批准。对方现在是成员。",
       "declinedToast": "已拒绝请求",
       "decideFailed": "无法更新请求。"
+    },
+    "deleting": {
+      "title": "{name} 正在删除中。",
+      "body": "其成员已失去访问权限。它将于 {date} 被清除。恢复它即可继续使用。",
+      "restore": "恢复工作区",
+      "back": "返回工作区",
+      "restoreFailed": "无法恢复工作区。"
     }
   }
 }

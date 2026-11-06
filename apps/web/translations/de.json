@@ -26781,6 +26781,13 @@
       "approvedToast": "Genehmigt. Die Person ist jetzt Mitglied.",
       "declinedToast": "Anfrage abgelehnt",
       "decideFailed": "Die Anfrage konnte nicht aktualisiert werden."
+    },
+    "deleting": {
+      "title": "{name} wird gelöscht.",
+      "body": "Seine Mitglieder haben den Zugriff verloren. Er wird am {date} gelöscht. Stelle ihn wieder her, um darin weiterzuarbeiten.",
+      "restore": "Workspace wiederherstellen",
+      "back": "Zurück zu den Workspaces",
+      "restoreFailed": "Der Workspace konnte nicht wiederhergestellt werden."
     }
   }
 }
