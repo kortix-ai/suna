@@ -39,6 +39,7 @@ import { createDocSaver, pendingSave, type DocSaveStatus, type DocSaver, type Kn
 import {
   CoeditUnavailable,
   createDocCoedit,
+  viewerMayGoLive,
   waitForSeed,
   type CoeditFallback,
   type DocCoeditSession,
@@ -87,6 +88,11 @@ const isConflict = (err: unknown) =>
 const NO_COMMENTS: readonly ArtifactCommentThread[] = [];
 /** A co-edited doc that has not loaded by then opens with autosave instead. */
 const COEDIT_START_MS = 10_000;
+/**
+ * After the file moves, how long a live read-only viewer waits for an open editor to merge it into
+ * the doc (a leader merges at once and flushes about 2 s later) before it shows the file instead.
+ */
+const VIEWER_CATCH_UP_MS = 8_000;
 
 /**
  * What the editor opened on. `live`: co-edited (KRTX-3670), the editor binds
@@ -211,6 +217,11 @@ export function DocEditor({
   const [conflict, setConflict] = useState(false);
   const [confirmReload, setConfirmReload] = useState(false);
   const sourceMarkdown = useRef('');
+  // The `loaded` on screen now: an editor made for an earlier one is being replaced.
+  const currentLoaded = useRef(loaded);
+  useLayoutEffect(() => {
+    currentLoaded.current = loaded;
+  });
   /**
    * A read-only editor with co-editing on stays mounted across file versions (the viewer keys it
    * so) and shows the file it last read: this one.
@@ -297,9 +308,6 @@ export function DocEditor({
     });
   // The text did not load: the doc area says so and offers a retry (below), never a spinner forever.
   const textFailed = loaded === null && handoff === null && text.isError;
-  useEffect(() => {
-    if (loaded) sourceMarkdown.current = loaded.start.text;
-  }, [loaded]);
 
   const markdownOf = (editor: Editor) => htmlToMarkdown(media.restore(editor.getHTML()));
   const readNow = async (current: ArtifactDetail): Promise<Known> => {
@@ -358,6 +366,13 @@ export function DocEditor({
    * cancel; once the editor opened on the session, the `liveSession` effect
    * closes it instead.
    */
+  /** This read-only viewer may show the shared doc: it is not behind the file (`viewerMayGoLive`). */
+  const viewerDocCurrent = async () => {
+    const current = latest.current.artifact;
+    const doc = await getArtifactDoc(projectId, current.artifact_id, { after: Number.MAX_SAFE_INTEGER });
+    return viewerMayGoLive(doc, latest.current.artifact.entry_version, Date.now());
+  };
+
   const openLive = (opened: Known, onSolo: (outcome: { note?: CoeditNoteReason; unseeded?: boolean }) => void) => {
     const current = latest.current.artifact;
     const schema = docExtensions({ editable, placeholder: () => '' });
@@ -398,7 +413,11 @@ export function DocEditor({
     };
     const timer = window.setTimeout(() => solo({ note: 'off-failed' }), COEDIT_START_MS);
     session.start().then(
-      () => {
+      async () => {
+        if (over) return;
+        // A read-only viewer goes live only on a doc that is not behind the file (`viewerMayGoLive`):
+        // otherwise it shows the file and waits, as for a doc nobody seeded.
+        if (!editable && !(await viewerDocCurrent().catch(() => false))) return solo({ unseeded: true });
         if (over) return;
         over = true;
         adopted = true;
@@ -434,18 +453,19 @@ export function DocEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startText, startVersion]);
 
-  // A read-only viewer of a doc nobody seeded goes live, without a reload, once an editor seeds it.
+  // A read-only viewer that shows the file (a doc nobody seeded, or one behind the file) goes live,
+  // without a reload, once the doc is current: an editor seeded it, or opened it and merged the file.
   useEffect(() => {
     if (!loaded?.unseeded) return;
-    const current = latest.current.artifact;
     const shown = shownFile.current ?? loaded.start;
     let cancel: (() => void) | null = null;
     const stop = waitForSeed({
-      seeded: async () =>
-        (await getArtifactDoc(projectId, current.artifact_id, { after: Number.MAX_SAFE_INTEGER })).seeded,
-      // A refusal now keeps the file on screen as it is.
+      seeded: viewerDocCurrent,
       onSeeded: () => {
-        cancel = openLive(shown, () => {});
+        // The doc fell behind again between the ask and the open: wait again (a new `loaded`).
+        cancel = openLive(shownFile.current ?? shown, ({ unseeded }) => {
+          if (unseeded) setLoaded((prev) => (prev?.unseeded ? { ...prev } : prev));
+        });
       },
     });
     return () => {
@@ -590,6 +610,9 @@ export function DocEditor({
         },
       },
       onUpdate: ({ editor: updated }) => {
+        // Only the editor of the current `loaded` speaks: one being replaced (its session closing
+        // as the viewer falls back to the file) must not write its old Markdown over the new.
+        if (updated.isDestroyed || currentLoaded.current !== loaded) return;
         // A co-edited doc also changes under a read-only viewer: others' text arrives.
         if (editable || liveSession) {
           sourceMarkdown.current = markdownOf(updated);
@@ -613,6 +636,17 @@ export function DocEditor({
       }
     };
   }, [editor]);
+  // The Markdown that highlights, carets and new anchors map against: what this editor shows. A
+  // live editor shows the shared doc, which can be ahead of the file it opened on (an unflushed
+  // edit, an outside edit merged in), and its binding may render that without an update event.
+  // Any other editor shows the file it loaded. Set again for every new editor, before the
+  // highlights read it.
+  useEffect(() => {
+    if (!loaded) return;
+    sourceMarkdown.current =
+      loaded.live && editor && !editor.isDestroyed ? markdownOf(editor) : loaded.start.text;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, editor]);
 
   // Co-editing: the leader's duties need the mounted editor (its Markdown, the outside-edit merge).
   // Binding renders the shared doc, which may be ahead of the file it opened on, as one update:
@@ -872,7 +906,34 @@ export function DocEditor({
   const fileVersion = artifact.entry_version;
   useEffect(() => {
     // Co-edited: only the leader looks (an outside edit is merged into the live doc).
-    if (liveSession) return liveSession.fileMoved(fileVersion);
+    if (liveSession) {
+      liveSession.fileMoved(fileVersion);
+      if (editable) return;
+      // A read-only viewer cannot merge the new file into the doc; an open editor does, within
+      // seconds. With none open the doc stays behind, so the viewer shows the file instead and
+      // goes live again once an editor catches the doc up.
+      const session = liveSession;
+      let live = true;
+      const timer = window.setTimeout(() => {
+        void viewerDocCurrent()
+          .then(async (current) => {
+            if (!live || current) return;
+            const now = await readNow(latest.current.artifact);
+            if (!live) return;
+            shownFile.current = now;
+            setLoaded((prev) =>
+              prev?.live === session
+                ? { html: media.resolveHtml(markdownToHtml(now.text)), start: now, unseeded: true }
+                : prev,
+            );
+          })
+          .catch(() => {});
+      }, VIEWER_CATCH_UP_MS);
+      return () => {
+        live = false;
+        window.clearTimeout(timer);
+      };
+    }
     const shown = shownFile.current ?? loaded?.start;
     if (editor && !editable && coedit && loaded && fileVersion !== shown?.version) {
       let live = true;
