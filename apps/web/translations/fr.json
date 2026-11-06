@@ -2124,7 +2124,9 @@
       "commandsAndActions": "Commandes et actions",
       "toUse": "à utiliser",
       "use": "Utiliser",
-      "noOneMatches": "Personne ne correspond"
+      "noOneMatches": "Personne ne correspond",
+      "drive": "Drive",
+      "driveSearchFailed": "Impossible de rechercher dans Drive."
     },
     "history": {
       "restoreTitle": "Une partie du contenu précédent n’a pas pu être restaurée",
@@ -10320,7 +10322,8 @@
       "budgetExceeded": "Trop de téléversements non envoyés. Les téléversements inutilisés expirent sous 24 heures.",
       "tooLarge": "Ce fichier dépasse 50 Mio.",
       "expired": "Ce téléversement a expiré. Supprimez-le, puis joignez de nouveau le fichier.",
-      "checkConnection": "Vérifiez votre connexion, puis réessayez."
+      "checkConnection": "Vérifiez votre connexion, puis réessayez.",
+      "driveFileUnavailable": "Impossible de joindre {name} depuis Drive. Le fichier a peut-être été déplacé, ou vous ne pouvez plus l’ouvrir."
     },
     "i18nComplete": {
       "authEmailRateLimit": "Impossible d’envoyer l’e-mail. Réessaie dans environ une heure.",

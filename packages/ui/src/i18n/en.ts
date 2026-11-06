@@ -1503,7 +1503,9 @@ const catalog = {
       "commandsAndActions": "Commands and actions",
       "toUse": "to use",
       "use": "Use",
-      "noOneMatches": "No one matches"
+      "noOneMatches": "No one matches",
+      "drive": "Drive",
+      "driveSearchFailed": "Could not search Drive."
     },
     "history": {
       "restoreTitle": "Some earlier content could not be restored",
@@ -2658,7 +2660,8 @@ const catalog = {
       "budgetExceeded": "Too many unsent uploads. Unused uploads expire within 24 hours.",
       "tooLarge": "This file is larger than 50 MiB.",
       "expired": "This upload expired. Remove it and attach the file again.",
-      "checkConnection": "Check your connection, then retry."
+      "checkConnection": "Check your connection, then retry.",
+      "driveFileUnavailable": "{name} could not be attached from Drive. It may have moved, or you can no longer open it."
     },
     "i18nComplete": {
       "text03217276a5f1": "Balance {value0} credits",

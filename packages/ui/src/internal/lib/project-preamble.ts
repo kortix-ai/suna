@@ -19,6 +19,9 @@
  *
  *   Referenced sessions (...):
  *   <session_ref id="..." title="..." />
+ *
+ *   Referenced Drive files (...):
+ *   <drive_ref path="..." name="..." />
  */
 
 // ─── Attribute escaping ─────────────────────────────────────────────────────
@@ -71,6 +74,16 @@ export function buildAgentRef(a: AgentRefLike): string {
   return `<agent_ref name="${escapeXmlAttr(a.name)}" />`;
 }
 
+/** A file in the project's Drive: `path` is its Drive path (`/Company/a.png`), not a sandbox path. */
+export interface DriveRefLike {
+  path: string;
+  name: string;
+}
+
+export function buildDriveRef(d: DriveRefLike): string {
+  return `<drive_ref path="${escapeXmlAttr(d.path)}" name="${escapeXmlAttr(d.name)}" />`;
+}
+
 export function buildSessionRef(s: SessionRefLike): string {
   return `<session_ref id="${escapeXmlAttr(s.id)}" title="${escapeXmlAttr(s.title)}" />`;
 }
@@ -98,6 +111,32 @@ export function buildSessionRefsBlock(sessions: ReadonlyArray<SessionRefLike>): 
   return `Referenced sessions (${SESSION_REFS_HINT}):\n${refs}`;
 }
 
+/** The parenthesised hint `parseFileMentionReferences` strips with the header. */
+export const DRIVE_REFS_HINT = "files the user picked from the project's Drive, attached to this message as uploads";
+
+export function buildDriveRefsBlock(files: ReadonlyArray<DriveRefLike>): string {
+  if (!files.length) return '';
+  const refs = files.map(buildDriveRef).join('\n');
+  return `Referenced Drive files (${DRIVE_REFS_HINT}):\n${refs}`;
+}
+
+/** One Drive ref per path, in mention order: a file mentioned twice is one file. */
+export function driveRefsOf(mentions: ReadonlyArray<MentionRefLike> | undefined): DriveRefLike[] {
+  const refs = new Map<string, DriveRefLike>();
+  for (const mention of mentions ?? []) {
+    if (mention.kind === 'drive' && mention.value && mention.label && !refs.has(mention.value)) {
+      refs.set(mention.value, { path: mention.value, name: mention.label });
+    }
+  }
+  return [...refs.values()];
+}
+
+export function appendDriveRefs(text: string, files: ReadonlyArray<DriveRefLike>): string {
+  const block = buildDriveRefsBlock(files);
+  if (!block) return text;
+  return `${text}\n\n${block}`;
+}
+
 // ─── Appenders (text-in, text-out) ──────────────────────────────────────────
 
 export function appendFileRefs(text: string, files: ReadonlyArray<FileRefLike>): string {
@@ -122,13 +161,13 @@ export function appendSessionRefs(text: string, sessions: ReadonlyArray<SessionR
 export interface MentionRefLike {
   kind: string;
   label: string;
-  /** A session mention's session id. */
+  /** A session mention's session id; a Drive mention's Drive path. */
   value?: string;
 }
 
 /**
- * Append the reference blocks for a draft's `@` mentions: sessions, then files,
- * then agents, the order an in-session send writes them. The draft text holds
+ * Append the reference blocks for a draft's `@` mentions: sessions, files,
+ * Drive files, then agents, the order an in-session send writes them. The draft text holds
  * only `@label`, so without these blocks the agent gets no path to open and no
  * agent to hand off to. Used by every path that is not that send: a chat's
  * first message (`ComposerChatInput`) and a slash command's args
@@ -148,5 +187,5 @@ export function appendMentionRefs(
   const agents = labelled
     .filter((mention) => mention.kind === 'agent')
     .map((mention) => ({ name: mention.label }));
-  return appendAgentRefs(appendFileRefs(appendSessionRefs(text, sessions), files), agents);
+  return appendAgentRefs(appendDriveRefs(appendFileRefs(appendSessionRefs(text, sessions), files), driveRefsOf(labelled)), agents);
 }

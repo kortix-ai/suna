@@ -34,6 +34,14 @@ describe('collectMentions', () => {
     ]);
   });
 
+  test('a Drive mention carries its Drive path, so two files with one name stay apart', () => {
+    const nodes = [mention('drive', 'logo.png', '/Company/logo.png'), mention('drive', 'logo.png', '/Users/ana/logo.png')];
+    expect(collectMentions(nodes)).toEqual([
+      { kind: 'drive', label: 'logo.png', value: '/Company/logo.png' },
+      { kind: 'drive', label: 'logo.png', value: '/Users/ana/logo.png' },
+    ]);
+  });
+
   test('plain text contributes no mentions', () => {
     expect(collectMentions([text('just an @email@example.com here')])).toEqual([]);
   });

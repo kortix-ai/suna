@@ -1602,7 +1602,7 @@ export function UserMessage({
     () => parseProjectReferences(textAfterFiles),
     [textAfterFiles],
   );
-  const { cleanText: textAfterFileMentions, files: fileMentionRefs } = useMemo(
+  const { cleanText: textAfterFileMentions, files: fileMentionRefs, drives: driveMentionRefs } = useMemo(
     () => parseFileMentionReferences(textAfterProjects),
     [textAfterProjects],
   );
@@ -1818,6 +1818,8 @@ export function UserMessage({
   }, [effectiveCommandInfo, message.blocks]);
 
   const sessionTitles = useMemo(() => sessionRefs.map((s) => s.title), [sessionRefs]);
+  const driveNames = useMemo(() => driveMentionRefs.map((d) => d.name), [driveMentionRefs]);
+  const drivePathOf = (name: string) => driveMentionRefs.find((d) => d.name === name)?.path;
 
   // Build highlighted text segments — see `../thread/mention-segments.ts`. The walk
   // used to live inline here and in `optimistic-turn.tsx`, and the two copies
@@ -1829,10 +1831,11 @@ export function UserMessage({
           text: bodyText,
           sourceRefs,
           sessionTitles,
+          driveNames,
           agentNames,
         }),
       ),
-    [bodyText, sourceRefs, sessionTitles, agentNames],
+    [bodyText, sourceRefs, sessionTitles, driveNames, agentNames],
   );
 
   /**
@@ -1931,6 +1934,9 @@ export function UserMessage({
         // Static: an agent is named, not navigable. Same surface,
         // no press affordance it cannot honour.
         <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
+      ) : seg.type === 'drive' ? (
+        // Static: the file itself is in the attachment strip; the chip names its Drive path.
+        <MentionChip key={seg.key} kind="drive" label={seg.text.replace(/^@/, '')} title={drivePathOf(seg.text.replace(/^@/, ''))} />
       ) : (
         <span key={seg.key}>{seg.text}</span>
       ),
@@ -1938,7 +1944,7 @@ export function UserMessage({
 
   const renderRunSegments = (runText: string) =>
     renderSegments(
-      keyMentionSegments(buildMentionSegments({ text: runText, sessionTitles, agentNames })),
+      keyMentionSegments(buildMentionSegments({ text: runText, sessionTitles, driveNames, agentNames })),
     );
 
   /** One text run of a quoted body. The run holding `COMMAND_SLOT` draws the

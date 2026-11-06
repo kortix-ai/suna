@@ -2124,7 +2124,9 @@
       "commandsAndActions": "コマンドとアクション",
       "toUse": "使用するには",
       "use": "使用",
-      "noOneMatches": "一致する人はいません"
+      "noOneMatches": "一致する人はいません",
+      "drive": "ドライブ",
+      "driveSearchFailed": "ドライブを検索できませんでした。"
     },
     "history": {
       "restoreTitle": "以前の内容の一部を復元できませんでした",
@@ -10320,7 +10322,8 @@
       "budgetExceeded": "未送信のアップロードが多すぎます。未使用のアップロードは24時間以内に期限切れになります。",
       "tooLarge": "このファイルは50 MiBを超えています。",
       "expired": "このアップロードは期限切れです。削除して、ファイルをもう一度添付してください。",
-      "checkConnection": "接続を確認してから、再試行してください。"
+      "checkConnection": "接続を確認してから、再試行してください。",
+      "driveFileUnavailable": "{name} をドライブから添付できませんでした。移動されたか、開く権限がなくなった可能性があります。"
     },
     "i18nComplete": {
       "authEmailRateLimit": "メールを送信できませんでした。約1時間後にもう一度お試しください。",

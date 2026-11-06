@@ -446,7 +446,7 @@ describe('each parser returns exactly what its regex returned', () => {
 
   test('parseFileMentionReferences', () => {
     for (const text of samples(['<file_ref', ' path="a.ts"', ' name="b"', ' path=""', '/>', '\n', 'Referenced files (', 'x', '):', '&amp;'])) {
-      expect(parseFileMentionReferences(text)).toEqual(legacy.fileMentions(text));
+      expect(parseFileMentionReferences(text)).toEqual({ ...legacy.fileMentions(text), drives: [] });
     }
   });
 

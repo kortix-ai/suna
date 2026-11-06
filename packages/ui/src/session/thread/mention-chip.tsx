@@ -79,7 +79,7 @@ const CHIP_INTERACTIVE = cn(
 );
 
 export interface MentionChipProps {
-  /** `file` | `agent` | `session` | `command`. */
+  /** `file` | `agent` | `session` | `drive` | `command`. */
   kind: string;
   /** The chip's text WITHOUT its prefix — `chipText` adds `@` or `/`. */
   label: string;
@@ -89,6 +89,8 @@ export interface MentionChipProps {
    * a dead control.
    */
   onClick?: () => void;
+  /** The native tooltip: a Drive chip shows its Drive path. */
+  title?: string;
   className?: string;
 }
 
@@ -99,13 +101,13 @@ export interface MentionChipProps {
  * target (it expands a clamped message), so a chip that let its click bubble
  * would open a file AND toggle the bubble in one press.
  */
-export function MentionChip({ kind, label, onClick, className }: MentionChipProps) {
+export function MentionChip({ kind, label, onClick, title, className }: MentionChipProps) {
   const text = chipText(kind, label);
   const ariaLabel = chipAriaLabel(kind, label);
 
   if (!onClick) {
     return (
-      <span aria-label={ariaLabel} className={cn(chipClass(kind), className)}>
+      <span aria-label={ariaLabel} title={title} className={cn(chipClass(kind), className)}>
         {text}
       </span>
     );

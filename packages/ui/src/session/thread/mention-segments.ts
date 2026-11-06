@@ -14,7 +14,7 @@
  * owns where segments ARE, and only the latter is worth testing without a DOM.
  */
 
-export type MentionSegmentType = 'file' | 'agent' | 'session';
+export type MentionSegmentType = 'file' | 'agent' | 'session' | 'drive';
 
 export interface MentionSegment {
   text: string;
@@ -86,6 +86,7 @@ export function buildMentionSegments({
   text,
   sourceRefs = [],
   sessionTitles = [],
+  driveNames = [],
   agentNames = [],
 }: {
   text: string;
@@ -93,6 +94,8 @@ export function buildMentionSegments({
   sourceRefs?: readonly MentionSourceRef[];
   /** `<session_ref>` titles, matched as `@<title>` (titles contain spaces). */
   sessionTitles?: readonly string[];
+  /** `<drive_ref>` names, matched as `@<name>` (names contain spaces). Every occurrence chips. */
+  driveNames?: readonly string[];
   /** Known agent names, so `@build` chips as an agent rather than a file. */
   agentNames?: readonly string[];
 }): MentionSegment[] {
@@ -111,6 +114,17 @@ export function buildMentionSegments({
     if (idx === -1) continue;
     if (overlaps(ranges, idx, idx + needle.length)) continue;
     ranges.push({ start: idx, end: idx + needle.length, type: 'session' });
+  }
+
+  // Drive file names: a name can contain spaces, and the same file can be
+  // mentioned twice, so every occurrence is claimed — longest name first, so
+  // `@a b.png` wins over `@a`.
+  for (const name of [...driveNames].sort((a, b) => b.length - a.length)) {
+    if (!name) continue;
+    const needle = `@${name}`;
+    for (let idx = text.indexOf(needle); idx !== -1; idx = text.indexOf(needle, idx + needle.length)) {
+      if (!overlaps(ranges, idx, idx + needle.length)) ranges.push({ start: idx, end: idx + needle.length, type: 'drive' });
+    }
   }
 
   for (const ref of sourceRefs) {

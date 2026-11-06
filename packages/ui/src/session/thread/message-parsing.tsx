@@ -153,15 +153,26 @@ interface ParsedFileMentionRef {
   path: string;
   name: string;
 }
+/** A `<drive_ref>`: a file of the project's Drive, by its Drive path. */
+export interface ParsedDriveMentionRef {
+  path: string;
+  name: string;
+}
 interface ParsedAgentMentionRef {
   name: string;
 }
 
+/**
+ * Strips the `<file_ref>` and `<drive_ref>` blocks the composer appends for
+ * `@` file mentions: every caller that cleans a message for display gets both.
+ */
 export function parseFileMentionReferences(text: string): {
   cleanText: string;
   files: ParsedFileMentionRef[];
+  drives: ParsedDriveMentionRef[];
 } {
   const files: ParsedFileMentionRef[] = [];
+  const drives: ParsedDriveMentionRef[] = [];
   let cleaned = replaceSpans(text, selfClosingTags(text, 'file_ref'), ({ attrs }) => {
     const pick = (key: string): string | undefined => {
       const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
@@ -172,8 +183,15 @@ export function parseFileMentionReferences(text: string): {
     if (path) files.push({ path, name: name || path });
     return '';
   });
-  cleaned = removeSpans(cleaned, referenceHeaders(cleaned, 'files')).trim();
-  return { cleanText: cleaned, files };
+  cleaned = removeSpans(cleaned, referenceHeaders(cleaned, 'files'));
+  cleaned = replaceSpans(cleaned, selfClosingTags(cleaned, 'drive_ref'), ({ attrs }) => {
+    const path = attrs.match(/\bpath="([^"]*?)"/)?.[1];
+    const name = attrs.match(/\bname="([^"]*?)"/)?.[1];
+    if (path) drives.push({ path: unescapeAttr(path), name: unescapeAttr(name ?? '') || unescapeAttr(path) });
+    return '';
+  });
+  cleaned = removeSpans(cleaned, referenceHeaders(cleaned, 'Drive files')).trim();
+  return { cleanText: cleaned, files, drives };
 }
 
 export function parseAgentMentionReferences(text: string): {

@@ -1,7 +1,8 @@
 'use client';
 
 import { errorToast } from '../../primitives/toast';
-import { type UiSlashAction, useUiHostConfig } from '../../providers/ui-provider';
+import { type UiSlashAction, useUiHostConfig, useUiViewerId } from '../../providers/ui-provider';
+import { attachmentMime } from '../../internal/lib/attachment-mime';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import { isImageFile } from '../../internal/lib/utils/file-utils';
@@ -12,10 +13,17 @@ import type {
   ProviderListResponse,
   UsePromptAttachmentsResult,
 } from '@kortix/sdk/react';
-import { useProjectConfig, usePromptAttachments, useRuntimeSessions } from '@kortix/sdk/react';
+import {
+  projectDriveQueryOptions,
+  useFeatureFlag,
+  useProjectConfig,
+  usePromptAttachments,
+  useRuntimeSessions,
+} from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useActiveSpace } from '../../internal/stores/active-space-store';
 import { MoonIcon, WarningIcon } from '@phosphor-icons/react';
-import { SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
+import { downloadDriveFile, SESSION_NOTICE, type SessionLogMessage } from '@kortix/sdk';
 import { newPastedContentId, type PastedContent, splitPastedContent, trimPastedText } from '@kortix/shared';
 import type { JSONContent } from '@tiptap/core';
 import type { RefObject } from 'react';
@@ -34,6 +42,8 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
+import { drivePathsIn, orphanedDriveUploads, withoutDriveChips } from './drive-mentions';
+import type { DriveMentionSource } from './menus/mention-menu';
 import { mergeFailedSubmissionFiles } from './composer-draft-recovery';
 import { resolveComposerResetOnSend, type ComposerSendReset } from './composer-reset';
 import { disownSentAttachmentPreviews, revokeUnsentPreview } from './sent-attachment-previews';
@@ -113,6 +123,7 @@ import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
+import { useLatestRef } from './hooks/use-latest-ref';
 import { controlToOpenFor, hostSlashActions, localizedSlashActions, slashActionShown, type SlashAction } from './menus/slash-actions';
 import type { SlashFile } from './menus/slash-files';
 import { outsideAgentMentions, SpaceMentionContext } from './menus/space-mentions';
@@ -1026,6 +1037,79 @@ function ComposerImpl(props: SessionChatInputProps) {
       if (uploadId) void removePromptAttachment(uploadId);
     },
     [removePromptAttachment],
+  );
+
+  // ── Drive `@` mentions ────────────────────────────────────────────────
+  // A picked Drive file is fetched with the viewer's own access (the server
+  // answers 404 for a file they may not read) and staged as an ordinary
+  // attachment, so it reaches the agent like any upload: no session mount
+  // changes, no second file transport.
+  const drivesOn = useFeatureFlag(projectId ?? null, 'drives').enabled;
+  const viewerId = useUiViewerId();
+  const queryClient = useQueryClient();
+  /** Drive path → the upload its pick staged. A second chip reuses it; removing the last chip drops it. */
+  const driveUploadsRef = useRef(new Map<string, string>());
+  // Declared before the question-lock effect below, so it holds the new value when that effect empties the editor.
+  const lockForQuestionRef = useLatestRef(lockForQuestion);
+  const pickDriveFile = useCallback(
+    async ({ path, name }: { path: string; name: string }) => {
+      const staged = driveUploadsRef.current.get(path);
+      if (staged && attachedFilesRef.current.some((file) => attachedFileUploadId(file) === staged)) return;
+      const dropChips = () => {
+        const doc = editorRef.current?.getDocument();
+        if (doc) setDocumentWithoutStealingFocus(editorRef.current, withoutDriveChips(doc, path));
+      };
+      let file: File;
+      try {
+        const drive = await queryClient.fetchQuery(projectDriveQueryOptions(projectId ?? undefined, viewerId));
+        const blob = await downloadDriveFile(drive.driveId, path);
+        // Drive serves every file as `application/octet-stream`: the name says what it is (an image reaches the model as one).
+        file = new File([blob], name, { type: attachmentMime(blob.type === 'application/octet-stream' ? '' : blob.type, name) });
+      } catch {
+        // Deleted, moved, or no longer shared with the viewer: say so, and take the chip back.
+        errorToast(tComposerAttachments('driveFileUnavailable', { name }));
+        dropChips();
+        return;
+      }
+      // The chip went away while the file downloaded: nothing to attach.
+      if (!drivePathsIn(editorRef.current?.getDocument()).has(path)) return;
+      const before = new Set(attachedFilesRef.current);
+      appendAttachedFiles([file]);
+      const added = attachedFilesRef.current.find((attached) => !before.has(attached));
+      const uploadId = added ? attachedFileUploadId(added) : undefined;
+      if (uploadId) driveUploadsRef.current.set(path, uploadId);
+      // Refused by the message limits: `appendAttachedFiles` already said why.
+      else dropChips();
+    },
+    [appendAttachedFiles, projectId, queryClient, tComposerAttachments, viewerId],
+  );
+  /**
+   * The uploads whose chip the person deleted leave the tray. Run after the
+   * change settles: a send or a command empties the editor and then hands its
+   * tray off in the same handler, so those uploads are gone from the tray by
+   * then. A question lock empties the editor and keeps the tray, so it is skipped.
+   */
+  const dropOrphanedDriveUploads = useCallback(() => {
+    if (lockForQuestionRef.current) return;
+    for (const path of orphanedDriveUploads(driveUploadsRef.current, editorRef.current?.getDocument())) {
+      const uploadId = driveUploadsRef.current.get(path);
+      driveUploadsRef.current.delete(path);
+      const index = attachedFilesRef.current.findIndex((file) => attachedFileUploadId(file) === uploadId);
+      if (index !== -1) removeAttachedFile(index);
+    }
+  }, [lockForQuestionRef, removeAttachedFile]);
+  const handleDocChangeWithDrive = useCallback(
+    (doc: JSONContent, isEmpty: boolean) => {
+      handleEditorDocChange(doc, isEmpty);
+      // A recalled prompt replaces the draft for a moment; its Drive files stay.
+      if (!applyingHistoryRef.current && driveUploadsRef.current.size > 0) queueMicrotask(dropOrphanedDriveUploads);
+    },
+    [handleEditorDocChange, dropOrphanedDriveUploads],
+  );
+  const driveMentions = useMemo<DriveMentionSource | null>(
+    // A host that keeps files in its own store (`takeFiles`) gets no Drive rows.
+    () => (projectId && drivesOn && !takeFiles ? { projectId, onPick: (file) => void pickDriveFile(file) } : null),
+    [projectId, drivesOn, takeFiles, pickDriveFile],
   );
 
   const retryAttachedFile = useCallback(
@@ -2122,6 +2206,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     attachedFiles,
     promptAttachmentItems,
     removeAttachedFile,
+    driveMentions,
     retryAttachedFile,
     pastes,
     removePaste,
@@ -2137,7 +2222,7 @@ function ComposerImpl(props: SessionChatInputProps) {
     historyPosition:
       historyIndex === null ? null : { index: historyIndex + 1, total: historyEntries.length },
     setIsEmpty,
-    handleDocChange: handleEditorDocChange,
+    handleDocChange: handleDocChangeWithDrive,
     allSessions,
     slashActions,
     handleSelectAction,

@@ -142,3 +142,29 @@ describe('classifyMentionToken', () => {
     expect(classifyMentionToken('src/a.ts', agents)).toBe('file');
   });
 });
+
+describe('buildMentionSegments — Drive files', () => {
+  test('a Drive name with spaces chips whole, every time it appears; the longest name wins', () => {
+    expect(
+      buildMentionSegments({
+        text: 'swap @my photo.png for @my photo.png v2 and @my',
+        driveNames: ['my', 'my photo.png'],
+      }),
+    ).toEqual([
+      { text: 'swap ' },
+      { text: '@my photo.png', type: 'drive' },
+      { text: ' for ' },
+      { text: '@my photo.png', type: 'drive' },
+      { text: ' v2 and ' },
+      { text: '@my', type: 'drive' },
+    ]);
+  });
+
+  test('an agent mention next to a Drive file still chips as an agent', () => {
+    expect(buildMentionSegments({ text: '@build read @a.png', driveNames: ['a.png'], agentNames: ['build'] })).toEqual([
+      { text: '@build', type: 'agent' },
+      { text: ' read ' },
+      { text: '@a.png', type: 'drive' },
+    ]);
+  });
+});

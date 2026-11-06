@@ -40,8 +40,11 @@ export type AttachedFile =
       isImage: boolean;
     };
 
-/** `person`: a member of a space (`@` menu inside a space only); it leaves the composer as plain `@token` text. */
-export type MentionKind = 'file' | 'agent' | 'session' | 'person';
+/**
+ * `person`: a member of a space (`@` menu inside a space only); it leaves the composer as plain `@token` text.
+ * `drive`: a file in the project's Drive. `label` is its name, `value` its Drive path.
+ */
+export type MentionKind = 'file' | 'agent' | 'session' | 'person' | 'drive';
 
 /**
  * Every kind of chip the editor document can hold.
@@ -65,5 +68,5 @@ export interface MentionItem {
 export interface TrackedMention {
   kind: MentionKind;
   label: string;
-  value?: string; // session ID for session mentions
+  value?: string; // session ID for session mentions, Drive path for drive mentions
 }
