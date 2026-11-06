@@ -72,3 +72,46 @@ backfill (old names kept in a backup table). The 401 multi-project accounts are
 split automatically: the most recently opened project keeps the account, its
 credits and subscription; every move is logged and reversible. The 40,618 empty
 accounts stay as dormant records.
+
+## 2026-11-06
+
+**D5 (closed, Marko 2026-11-06, "Hardcore treat everything 100% like SLACK
+Workspace").** Joining a workspace is access. Engine rule (design.md §3.2 C3):
+an account-scope system `member` reaches its account's workspace at the
+`member` tier when the workspace is not `split_pending`. No data migration;
+`split_pending` accounts keep per-project grants until the split.
+
+**D8 (decided, Marko 2026-11-06, "it should all just be 'workspace'").** Fold
+hard into one primitive, the workspace, with one id, `workspace_id`. Account
+and project stop being concepts in the data model over three releases
+(design.md §0, §2). Compatibility stays at the edge permanently: the legacy
+routes, the deprecated `account_id` field, and the `legacy_account_id →
+workspace_id` lookup. Supersedes D7's "the old DB names stay".
+
+**D9 (decided, Marko 2026-11-06, "there will just be Workspace scopes … just 1
+type & then agent either can or cannot").** One auth model (K1): a
+workspace-bound credential reaches every route of its own workspace; the
+person's grants decide, or `grant ∩ ceiling − HUMAN_ONLY` for a governed agent.
+`HUMAN_ONLY` (minting credentials, moving money, deleting the workspace) is the
+only agent wall. `WORKSPACE_ADMIN_PROJECT_ACTIONS` and
+`isWorkspaceAdministration` are deleted.
+
+**D10 (decided, Marko 2026-11-06, plan approval "yea go revamp").** Workspace
+lifecycle = account lifecycle (K2). `DELETE /v1/workspaces/:id` closes the
+account in the same transaction as the project archive (14-day grace,
+credentials revoked, automations paused, subscription set to cancel at period
+end); owners restore it until `deletion_scheduled_for`; the account-deletion
+sweep erases it after. A create never reuses an account (only an idempotent
+replay of the same create returns one). "Delete my account" deletes the
+person: sole-owned single-member workspaces go with them, they leave the
+others, a sole owner of a shared workspace is refused with the list, and the
+login goes last. Built in R1 by the identity stream.
+
+**D11 (decided, Marko 2026-11-06, plan approval).** Split billing (K4): the
+paying rule is `kortix.account_is_paying` (paid tier, purchased credits, or an
+active enterprise contract; a bare `stripe_subscription_id` never counts). A
+free source's split-off keeps free-credit eligibility and gets one Free grant
+(a one-time exception); a paying source's split-off gets the keeper's plan
+comped until the keeper's current period ends, with pro-rated plan credits.
+Each affected workspace shows a notice for 30 days; each OWNER gets one email,
+in `apply` mode only, never a bulk email.

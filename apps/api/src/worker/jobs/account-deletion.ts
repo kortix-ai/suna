@@ -1,7 +1,10 @@
 import { logger } from '../../lib/logger';
 import { runWorkerTick } from '../../shared/audit-scope';
 
-// Executes due scheduled account deletions. The only processor of
+// Executes due scheduled deletions: account requests
+// (`kortix.account_deletion_requests`, including closed workspaces at the end
+// of their 14-day grace) and person requests (`kortix.person_deletion_requests`,
+// "Delete my account", processScheduledPersonDeletions). The only processor of
 // `kortix.account_deletion_requests`: the Supabase pg_cron job that used to
 // own this read the pre-baseline legacy `public` copy of the table (migration
 // 20260924205551453 kept its function alive for that job), so nothing has
