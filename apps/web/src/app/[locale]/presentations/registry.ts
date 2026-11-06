@@ -52,9 +52,9 @@ export const DECKS: readonly DeckDef[] = [
     slug: 'how-to-kortix',
     title: 'How to Kortix',
     description:
-      'The Frontier Hackathon talk: put agents in a loop. A trigger starts a session on its own sandbox and branch, and the work lands as a change request. Three loops: a software factory, a GEO/SEO writer, an X bot.',
+      'A technical walkthrough: kortix init makes one git repo for agents, skills, memory and kortix.yaml, kortix ship deploys it, connectors give agents reach, and triggers run them in a loop.',
     kind: 'Product',
-    tags: ['Hackathon', 'Diagram-led'],
+    tags: ['Technical', 'Diagram-led'],
     useSlides: useHowToKortixSlides,
   },
   {

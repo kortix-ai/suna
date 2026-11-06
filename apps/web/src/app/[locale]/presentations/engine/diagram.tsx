@@ -825,3 +825,97 @@ export function LoopDiagram({ step, content }: { step: number; content: LoopDiag
     </Stage>
   );
 }
+
+/* ── 7 · a loop ring ────────────────────────────────────────────────────────
+   One loop drawn as a loop: the cadence in the middle, four stations on the
+   ring, and one packet that travels the ring while the ring is the step being
+   explained. The packet mounts for that step only, like `Link fire`. The deck
+   passes every string in. */
+
+export type LoopRingContent = {
+  /** The cadence, set large in the middle: `1h`, `07:00`. */
+  readonly cadence: string;
+  /** The word under the cadence: `every`, `daily`. */
+  readonly when: string;
+  /** Clockwise from the top. */
+  readonly stations: readonly [string, string, string, string];
+};
+
+/** Station anchors on the ring, clockwise from the top (percent of the box). */
+const RING_STATIONS = [
+  { left: '50%', top: '11%' },
+  { left: '89%', top: '50%' },
+  { left: '50%', top: '89%' },
+  { left: '11%', top: '50%' },
+] as const;
+
+export function LoopRing({
+  content,
+  on = true,
+  spin = false,
+}: {
+  content: LoopRingContent;
+  on?: boolean;
+  spin?: boolean;
+}) {
+  return (
+    // `w-full` on the wrapper: inside a centered flex column the wrapper
+    // would shrink to its content, and the ring has no intrinsic width.
+    <Reveal on={on} className="w-full">
+      <div className="relative mx-auto aspect-square w-full max-w-96">
+        <svg viewBox="0 0 200 200" className="absolute inset-0 size-full" aria-hidden>
+          <circle
+            cx="100"
+            cy="100"
+            r="78"
+            fill="none"
+            className="stroke-border"
+            strokeWidth="1.5"
+            strokeDasharray="2 5"
+          />
+        </svg>
+
+        <AnimatePresence>
+          {spin ? (
+            <m.div
+              key="packet"
+              className="absolute inset-0"
+              initial={{ rotate: 0, opacity: 0 }}
+              animate={{ rotate: 360, opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.2, ease: EASE } }}
+              transition={{
+                rotate: { duration: 4, ease: 'easeInOut', repeat: Infinity },
+                opacity: { duration: 0.3, ease: EASE },
+              }}
+              aria-hidden
+            >
+              <span
+                className="bg-foreground absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                style={RING_STATIONS[0]}
+              />
+            </m.div>
+          ) : null}
+        </AnimatePresence>
+
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-foreground font-mono text-3xl font-medium tracking-tight">
+            {content.cadence}
+          </span>
+          <span className="text-muted-foreground mt-2 font-mono text-xs tracking-wider uppercase">
+            {content.when}
+          </span>
+        </div>
+
+        {content.stations.map((station, i) => (
+          <span
+            key={station}
+            className="border-border bg-card text-foreground absolute -translate-x-1/2 -translate-y-1/2 rounded-sm border px-2.5 py-1 font-mono text-xs whitespace-nowrap"
+            style={RING_STATIONS[i]}
+          >
+            {station}
+          </span>
+        ))}
+      </div>
+    </Reveal>
+  );
+}
