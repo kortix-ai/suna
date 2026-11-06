@@ -116,7 +116,8 @@ flow(
     const p = await team.project();
 
     await ctx.step('an account family answers the same by account key and by workspace id', async () => {
-      for (const tail of ['members', 'iam/roles', 'invites', 'branding']) {
+      // `iam/roles` differs on purpose: the canonical name lists the one role ladder (finding 13).
+      for (const tail of ['members', 'invites', 'branding']) {
         const legacy = `/v1/accounts/${team.id}/${tail}`;
         const status = await sameAnswer(ctx, ctx.P.OWNER, legacy, `/v1/workspaces/${p.id}/${tail}`);
         if (status !== 200) throw new Error(`${tail} → ${status}`);
@@ -197,10 +198,13 @@ flow(
       if ((await sameAnswer(ctx, pat, `/v1/projects/${p.id}/sessions`, `/v1/workspaces/${p.id}/sessions`)) !== 200) {
         throw new Error('own workspace refused');
       }
-      if ((await sameAnswer(ctx, pat, `/v1/accounts/${team.id}/members`, `/v1/workspaces/${p.id}/members`)) !== 403) {
-        throw new Error('account family not fenced');
+      // One rule (K1): a workspace key reaches every route of its own workspace,
+      // the account family included; its holder's role decides.
+      if ((await sameAnswer(ctx, pat, `/v1/accounts/${team.id}/members`, `/v1/workspaces/${p.id}/members`)) !== 200) {
+        throw new Error('own account family refused');
       }
-      if ((await sameAnswer(ctx, pat, '/v1/projects', '/v1/workspaces')) !== 403) throw new Error('list not fenced');
+      const listed = (await ctx.client.as(pat).get('/v1/projects')).status(200).json<any[]>();
+      if (listed.some((w) => w.project_id !== p.id)) throw new Error('a workspace key listed another workspace');
       if ((await sameAnswer(ctx, pat, '/v1/accounts/me', '/v1/me')) !== 200) throw new Error('identity probe refused');
     });
 

@@ -12,9 +12,6 @@ export {
   listAccessible,
   filterAccessibleObjects,
   workspaceRoleFor,
-  workspaceFactsOf,
-  invalidateWorkspaceFactsForAccount,
-  type WorkspaceFacts,
   type Obj,
   type Verdict,
   type Accessible,
@@ -90,6 +87,7 @@ export {
   type ProjectRole,
   type WorkspaceRole,
 } from './roles';
+export { workspaceFactsOf, invalidateWorkspaceFactsForAccount, type WorkspaceFacts } from './workspace-facts';
 export {
   addWorkspaceMember,
   type AddWorkspaceMemberOptions,

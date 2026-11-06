@@ -1108,7 +1108,7 @@
   },
   "src/iam/sso-sync.ts": {
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/inbound-dispatch.ts": {
@@ -2773,9 +2773,6 @@
     }
   },
   "src/scim/users.ts": {
-    "no-console": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 6
     }

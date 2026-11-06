@@ -523,7 +523,7 @@ flow(
       const foreign = ctx.P.NONMEMBER.accountId;
       if (!foreign) throw new Error("NONMEMBER fixture has no account id");
       const r = await owner.post("/v1/workspaces/provision", { name: ctx.fixtures.name("foreign-acct"), account_id: foreign });
-      r.status(403).body().has("$.message", "You do not have access to this account");
+      r.status(403).body().has("$.message", "You do not have access to this workspace");
     });
     const status = await owner.get("/v1/workspaces/managed-git/status");
     status.status(200);

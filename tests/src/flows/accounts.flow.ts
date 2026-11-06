@@ -1308,9 +1308,9 @@ flow(
   },
 );
 
-// TOK-4 — project-scoped PAT (enforceTokenProjectScope): allowed only on its
-// own project + the `/accounts/me` self-identity probe; every other surface
-// (a different project, project-list, account-level routes) → 403.
+// TOK-4 — project-scoped PAT (enforceTokenProjectScope): it reaches its own
+// workspace (the project list names only it) and the `/accounts/me` probe;
+// another project and the person's own routes → 403.
 flow(
   'TOK-4',
   {
@@ -1362,13 +1362,15 @@ flow(
       const r = await pat().get('/v1/projects/:projectId', { params: { projectId: projB.id } });
       r.status(403);
     });
-    await ctx.step('denied: enumerate projects → 403', async () => {
+    await ctx.step('the project list names only its own project → 200 [A]', async () => {
       const r = await pat().get('/v1/projects');
-      r.status(403);
+      r.status(200);
+      const ids = r.json<Array<{ project_id: string }>>().map((row) => row.project_id);
+      if (ids.length !== 1 || ids[0] !== projA.id) throw new Error(`listed ${JSON.stringify(ids)}`);
     });
-    await ctx.step('denied: account-level route → 403', async () => {
+    await ctx.step("denied: the person's own key list → 403 credential_fence_refused", async () => {
       const r = await pat().get('/v1/accounts/tokens');
-      r.status(403);
+      r.status(403).body().has('$.code', 'credential_fence_refused').has('$.check', 'person-route');
     });
     await ctx.step('revoke the project token → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/cli-token/:tokenId', {

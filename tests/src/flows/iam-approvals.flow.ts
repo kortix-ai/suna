@@ -114,6 +114,10 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
+    // A second project makes the team a split_pending legacy account: there a
+    // member reaches a project only through a grant, so asking for access means
+    // something (on a 1:1 workspace membership already is access, design.md C3).
+    await team.project();
     const requesterA = await team.addMember('member');
     const requesterB = await team.addMember('member');
     let approveRequestId = '';
@@ -247,6 +251,8 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
+    // split_pending (two projects): a bare account member holds no project role.
+    await team.project();
     const viewer = await team.addMember('member');
     await team.grantProjectRole(project.id, viewer.userId!, 'user');
 
@@ -274,10 +280,11 @@ flow(
         r.status(403);
         deepStrictEqual(r.json(), {
           error: true,
-          message: 'You do not have access to this project',
+          message: 'You do not have access to this workspace',
           status: 403,
           code: 'no_project_membership',
           action: 'project.read',
+          workspace_action: 'workspace.read',
         });
       },
     );

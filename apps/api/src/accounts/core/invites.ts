@@ -88,9 +88,16 @@ export function registerMemberInviteRoute(): void {
       const email = normalizeEmail(body.email);
       if (!email) return c.json({ error: 'A valid email is required' }, 400);
 
-      const role: WorkspaceRole | null = body.role === undefined ? 'member' : parseWorkspaceRole(body.role);
-      if (!role || role === 'owner') {
+      const parsedRole: WorkspaceRole | null = body.role === undefined ? 'member' : parseWorkspaceRole(body.role);
+      let role: WorkspaceRole;
+      if (parsedRole && parsedRole !== 'owner') {
+        role = parsedRole;
+      } else if (c.req.path.startsWith('/v1/workspaces/')) {
         return c.json({ error: 'role must be one of admin|manager|member (owner is a transfer)' }, 400);
+      } else {
+        // The legacy spelling always coerced an unknown role to `member`;
+        // published CLIs and SDKs rely on it.
+        role = 'member';
       }
       if (role === 'admin') await assertAuthorized(actor, ACCOUNT_ACTIONS.MEMBER_UPDATE);
       if (role === 'manager' && !facts.soleProjectId) {
@@ -114,12 +121,19 @@ export function registerMemberInviteRoute(): void {
         ? body.project_grants
         : [];
       let projectGrants: Array<{ project_id: string; role: ProjectRole }> = [];
+      const canonical = c.req.path.startsWith('/v1/workspaces/');
       if (!facts.splitPending) {
-        const foreign = rawGrants.find(
-          (g) => typeof g.project_id !== 'string' || g.project_id.toLowerCase() !== facts.soleProjectId,
-        );
-        if (foreign) {
+        const namesWorkspace = (g: { project_id?: unknown }) =>
+          typeof g.project_id === 'string' && g.project_id.toLowerCase() === facts.soleProjectId;
+        // The canonical route refuses a grant on another project; the legacy
+        // route kept its old answer and drops it.
+        if (canonical && rawGrants.some((g) => !namesWorkspace(g))) {
           return c.json({ error: 'project_grants may only name this workspace; membership already gives access to it' }, 400);
+        }
+        // A `manager` grant on the workspace is the manager rung (older clients
+        // send it that way); a `member` grant adds nothing to membership.
+        if (role === 'member' && rawGrants.some((g) => namesWorkspace(g) && parseAssignableProjectRole(g.role) === 'manager')) {
+          role = 'manager';
         }
       } else if (rawGrants.length > 0 && accountRole === 'member') {
         const requestedIds = [

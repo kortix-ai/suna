@@ -571,7 +571,8 @@ export interface FoldedProjectAccess {
    *  channels. The legacy fold emitted null here and the UI renders "No access"
    *  from it, so the nullability is part of the wire contract, not an oversight. */
   effective_project_role: ProjectRoleKey | null;
-  effective_source: 'implicit' | 'direct' | 'group' | null;
+  /** `membership` = an account member of a 1:1 workspace: membership is access (design.md C3). */
+  effective_source: 'implicit' | 'membership' | 'direct' | 'group' | null;
   group_sources: GroupSourceLabel[];
 }
 
@@ -587,6 +588,9 @@ export function foldProjectAccess(input: {
   accountRole: AccountRoleKey | null;
   directRole: ProjectRoleKey | null;
   groupSources: GroupSourceLabel[];
+  /** The project is its account's one workspace (not split_pending): an
+   *  account member reaches it at the member tier, as the engine decides. */
+  membershipIsAccess?: boolean;
 }): FoldedProjectAccess {
   let effective: ProjectRoleKey | null = null;
   let source: FoldedProjectAccess['effective_source'] = null;
@@ -594,6 +598,9 @@ export function foldProjectAccess(input: {
   if (isAccountManagerRole(input.accountRole)) {
     effective = 'manager';
     source = 'implicit';
+  } else if (input.membershipIsAccess && input.accountRole === 'member') {
+    effective = 'member';
+    source = 'membership';
   }
   if (input.directRole) {
     if (!effective || PROJECT_ROLE_RANK[input.directRole] > PROJECT_ROLE_RANK[effective]) {

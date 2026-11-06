@@ -21,7 +21,7 @@ import { accountMemberships } from '@kortix/db';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { assignRole, SYSTEM_ACTOR, type AssignmentSource, type Writer } from './assignments';
-import { workspaceFactsOf } from './authorize';
+import { workspaceFactsOf } from './workspace-facts';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import { accountRoleForWorkspaceRole, type ProjectRole, type WorkspaceRole } from './roles';
 

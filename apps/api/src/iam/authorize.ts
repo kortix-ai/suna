@@ -33,7 +33,6 @@
 import { timeStage } from '../lib/server-timing';
 import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
-  accountDeletionRequests,
   accountGroupMembers,
   accountMembers,
   accounts,
@@ -62,11 +61,8 @@ import {
   type ObjectType,
   type ScopeType,
 } from './catalog';
-import {
-  invalidateIamCacheForProjectResources,
-  registerPrincipalScopedMemo,
-  registerProjectScopedMemo,
-} from './cache-invalidation';
+import { registerPrincipalScopedMemo, registerProjectScopedMemo } from './cache-invalidation';
+import { clearWorkspaceFacts, workspaceFactsOf } from './workspace-facts';
 import { buildDenialError } from './denial-message';
 import type { WorkspaceRole } from './roles';
 import {
@@ -1147,72 +1143,6 @@ function workspaceAccountOf(workspaceId: string): Promise<string | null> {
 }
 
 /**
- * What the engine needs to know about an account's workspace, read once per
- * account:
- *   - `soleProjectId`: the account's one active project (= its workspace id)
- *     when it is not split_pending; null for a project-less (dormant) account,
- *     a closing one (its project row is archived) and a split_pending one;
- *   - `closing`: an account deletion request is open (lifecycle `closing`).
- *
- * Cached only while the account has its one workspace and is not closing, so a
- * provision, a split or a deletion is seen on the next request; the deleting
- * and restoring writers bust it through `invalidateWorkspaceFactsForAccount`.
- * Keyed `${accountId}|…` and registered as a project-scoped memo: the bust
- * reuses the project channel, which crosses replicas.
- */
-export interface WorkspaceFacts {
-  soleProjectId: string | null;
-  splitPending: boolean;
-  closing: boolean;
-}
-
-const NO_WORKSPACE: WorkspaceFacts = { soleProjectId: null, splitPending: false, closing: false };
-
-const workspaceFactsMemo = ttlMemo({
-  ttlMs: TTL_MS,
-  keyFn: (accountId: string) => `${accountId}|workspace-facts`,
-  loader: async (accountId: string): Promise<WorkspaceFacts> => {
-    if (!isUuid(accountId)) return NO_WORKSPACE;
-    const [active, open] = await Promise.all([
-      db
-        .select({ projectId: projects.projectId, splitPending: projects.splitPending })
-        .from(projects)
-        .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')))
-        .limit(2),
-      db
-        .select({ id: accountDeletionRequests.id })
-        .from(accountDeletionRequests)
-        .where(
-          and(
-            eq(accountDeletionRequests.accountId, accountId),
-            inArray(accountDeletionRequests.status, ['pending', 'processing']),
-          ),
-        )
-        .limit(1),
-    ]);
-    const splitPending = active.length > 1 || active.some((row) => row.splitPending);
-    return {
-      soleProjectId: active.length === 1 && !splitPending ? active[0]!.projectId : null,
-      splitPending,
-      closing: open.length > 0,
-    };
-  },
-  shouldCache: (facts) => facts.soleProjectId !== null && !facts.closing,
-});
-registerProjectScopedMemo(workspaceFactsMemo);
-
-/** The workspace facts of one account (memoized; see `WorkspaceFacts`). */
-export function workspaceFactsOf(accountId: string): Promise<WorkspaceFacts> {
-  if (!accountId) return Promise.resolve(NO_WORKSPACE);
-  return workspaceFactsMemo(accountId);
-}
-
-/** A workspace was closed, restored, split or set up: drop its cached facts on every replica. */
-export function invalidateWorkspaceFactsForAccount(accountId: string): void {
-  invalidateIamCacheForProjectResources(accountId);
-}
-
-/**
  * The actions an OWNER keeps on a closing workspace: read it, read its billing,
  * and restore it (restore and cancel-deletion assert `account.delete`).
  */
@@ -1261,5 +1191,5 @@ export function clearAuthorizeCaches(): void {
   resolvePrincipalMemo.clear();
   loadObjectGrants.clear();
   workspaceAccountMemo.clear();
-  workspaceFactsMemo.clear();
+  clearWorkspaceFacts();
 }
