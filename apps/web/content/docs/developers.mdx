@@ -2022,7 +2022,7 @@ An MCP client can use Kortix without the CLI. See [Other AI tools (MCP)](/docs/g
 
 ### Inside a session sandbox
 
-Every sandbox has the CLI installed and signed in. The platform sets `KORTIX_TOKEN`, `KORTIX_API_URL`, `KORTIX_WORKSPACE_ID` (and the same value as `KORTIX_PROJECT_ID`) and `KORTIX_SESSION_ID`, so the agent runs commands with no login and no link. The token is a session token: `kortix token` shows its session, its agent and its grants. It acts only on the session's own workspace.
+Every sandbox has the CLI installed and signed in. The platform sets `KORTIX_TOKEN`, `KORTIX_API_URL`, `KORTIX_PROJECT_ID` (the workspace id) and `KORTIX_SESSION_ID`, so the agent runs commands with no login and no link. The token is a session token: `kortix token` shows its session, its agent and its grants. It acts only on the session's own workspace.
 
 Commands an agent uses:
 

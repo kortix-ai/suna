@@ -57,11 +57,14 @@ describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
 });
 
 describe('buildSessionRuntimeEnv — workspace id', () => {
-  test('KORTIX_WORKSPACE_ID carries the workspace id, next to the permanent KORTIX_PROJECT_ID', () => {
+  test('the box gets KORTIX_PROJECT_ID only, so a script that sets KORTIX_PROJECT_ID=<other> still wins', () => {
+    // The CLI reads KORTIX_WORKSPACE_ID before KORTIX_PROJECT_ID. An injected
+    // KORTIX_WORKSPACE_ID would outrank an older script's own
+    // KORTIX_PROJECT_ID override and silently target the box's project.
     const env = buildSessionRuntimeEnv(BASE_INPUT);
 
-    expect(env.KORTIX_WORKSPACE_ID).toBe(BASE_INPUT.projectId);
     expect(env.KORTIX_PROJECT_ID).toBe(BASE_INPUT.projectId);
+    expect('KORTIX_WORKSPACE_ID' in env).toBe(false);
   });
 });
 

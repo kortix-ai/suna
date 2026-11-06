@@ -147,10 +147,11 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...restoreGitEnv,
     ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
+    // The workspace id is the project id. The box gets KORTIX_PROJECT_ID only:
+    // the CLI and kortixd read KORTIX_WORKSPACE_ID first, so an injected
+    // KORTIX_WORKSPACE_ID would outrank a script's own KORTIX_PROJECT_ID=<other>.
+    // KORTIX_WORKSPACE_ID is the name a person or a script sets.
     KORTIX_PROJECT_ID: input.projectId,
-    // The workspace id is the project id. kortixd and the CLI read
-    // KORTIX_WORKSPACE_ID first; KORTIX_PROJECT_ID stays permanently.
-    KORTIX_WORKSPACE_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,

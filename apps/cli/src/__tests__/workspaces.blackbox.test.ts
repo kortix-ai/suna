@@ -179,6 +179,17 @@ describe('the workspace flag and env var', () => {
     expect(await infoId([], { KORTIX_PROJECT_ID: 'proj_env' })).toBe('/v1/projects/proj_env');
   });
 
+  test('in a session box, a script that sets KORTIX_PROJECT_ID=<other> targets <other>', async () => {
+    // The box env the platform injects: KORTIX_PROJECT_ID in the process env
+    // and in the shell env file. No KORTIX_WORKSPACE_ID is injected.
+    const envFile = join(tmp, 'agent-env.sh');
+    writeFileSync(envFile, "export KORTIX_PROJECT_ID='box_project'\n");
+    const box = { KORTIX_DISABLE_SANDBOX_ENV_FILE: '', BASH_ENV: envFile, KORTIX_PROJECT_ID: 'box_project' };
+    expect(await infoId([], box)).toBe('/v1/projects/box_project');
+    expect(await infoId([], { ...box, KORTIX_PROJECT_ID: 'other_project' })).toBe('/v1/projects/other_project');
+    expect(await infoId([], { ...box, KORTIX_WORKSPACE_ID: 'other_workspace' })).toBe('/v1/projects/other_workspace');
+  });
+
   test('a directory link wins over KORTIX_WORKSPACE_ID', async () => {
     const dir = join(tmp, 'linked');
     mkdirSync(join(dir, '.kortix'), { recursive: true });

@@ -81,6 +81,8 @@ export function clearLink(cwd = process.cwd()): void {
  * The workspace id the environment names: `KORTIX_WORKSPACE_ID` first, then
  * `KORTIX_PROJECT_ID` (the platform-injected name inside a sandbox, and the
  * env contract every older script sets). The workspace id IS the project id.
+ * The platform never injects `KORTIX_WORKSPACE_ID`: only a person or a script
+ * sets it, so it never outranks a script's own `KORTIX_PROJECT_ID=<other>`.
  */
 export function envWorkspaceId(): string | undefined {
   return process.env.KORTIX_WORKSPACE_ID?.trim() || sandboxEnvValue('KORTIX_PROJECT_ID') || undefined;

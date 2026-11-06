@@ -1,9 +1,10 @@
 /**
  * The workspace this box serves: `KORTIX_WORKSPACE_ID`, else
  * `KORTIX_PROJECT_ID`. Both carry the same value (the workspace id is the
- * project id). `KORTIX_PROJECT_ID` stays permanently: a box started before the
- * API injected `KORTIX_WORKSPACE_ID` has only it. `KORTIX_WORKSPACE_ID` wins
- * when both are set, the same rule as the CLI (`apps/cli/src/project-link.ts`).
+ * project id). The API injects `KORTIX_PROJECT_ID` only, so a script's own
+ * `KORTIX_PROJECT_ID=<other>` is never outranked by an injected value.
+ * `KORTIX_WORKSPACE_ID` wins when someone sets both, the same rule as the CLI
+ * (`apps/cli/src/project-link.ts`).
  *
  * Not `KORTIX_WORKSPACE`: that is the `/workspace` directory path.
  *
