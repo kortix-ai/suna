@@ -107,7 +107,6 @@ flow('ART-7', {
       (await ctx.client.as(ctx.P.ANON).post(SEND, body, { params: missing })).status(401);
       (await owner.post(SEND, body, { params: missing })).status(403).body().has('$.code', 'feature_disabled');
       for (const projectId of [project.id, other.id]) for (const feature of ['artifacts', 'artifact_comments']) (await owner.patch(FEATURES, { feature, enabled: true }, { params: { projectId } })).status(200);
-      (await owner.patch(FEATURES, { feature: 'notification_center', enabled: false }, { params: pp })).status(200).body().has('$.experimental.notification_center', false);
       humanDoc = (await owner.post(ARTIFACTS, { files: { 'index.md': { content: '# People review\n\nConfirm the signed source.\n' } }, visibility: 'project' }, { params: pp })).status(201).json<Artifact>();
       allArtifacts.push(humanDoc);
       const drives = (await owner.get('/v1/drives', { query: pp })).status(200).json<{ drives: { driveId: string }[] }>().drives;
@@ -139,7 +138,7 @@ flow('ART-7', {
       const notices = await expectNotices(key(opened), [ctx.P.OWNER.userId!, mentioned.userId!]);
       const inbox = (await ctx.client.as(mentioned).get('/v1/notifications')).status(200).json<{ notifications: { id: string; kind: string; artifact_id: string | null; artifact_thread_id: string | null; url: string }[] }>();
       const row = inbox.notifications.find((item) => item.id === notices.find((notice) => notice.user_id === mentioned.userId)!.notification_id);
-      if (row?.kind !== 'artifact_comment' || row.artifact_id !== humanDoc.artifact_id || row.artifact_thread_id !== opened.thread_id || row.url !== `/projects/${project.id}/artifacts/${humanDoc.artifact_id}?thread=${opened.thread_id}&notification=${row.id}`) throw new Error('The Artifact bell row is hidden or links to the wrong thread while notification_center is off');
+      if (row?.kind !== 'artifact_comment' || row.artifact_id !== humanDoc.artifact_id || row.artifact_thread_id !== opened.thread_id || row.url !== `/projects/${project.id}/artifacts/${humanDoc.artifact_id}?thread=${opened.thread_id}&notification=${row.id}`) throw new Error('The Artifact bell row is hidden or links to the wrong thread');
       const reply = (await owner.post(REPLIES, { body: `Please check it, @${mentioned.userId}.` }, { params: tp(humanDoc, opened) })).status(201).json<{ comment: Comment }>().comment;
       await expectNotices(key(opened, reply), [member.userId!, mentioned.userId!]);
       const confirmed = (await ctx.client.as(mentioned).post(REPLIES, { body: 'The signed source is correct.' }, { params: tp(humanDoc, opened) })).status(201).json<{ comment: Comment }>().comment;
@@ -150,7 +149,7 @@ flow('ART-7', {
       if ((await commands()).length !== 0) throw new Error('A people-only discussion started an agent turn');
     });
 
-    await ctx.step('Artifact inbox flags do not reveal legacy turn notifications; a person who lost Artifact view receives no row', async () => {
+    await ctx.step('a turn row of a session the person may open is listed beside Artifact rows; a person who lost Artifact view receives no row', async () => {
       const visibleSession = await createDatabaseSession(ctx.env, { accountId: team.id, projectId: project.id, userId: ctx.P.OWNER.userId!, visibility: 'project' });
       ctx.track('session', visibleSession, { projectId: project.id });
       const seeded = (await world.db.query<{ notification_id: string }>(
@@ -158,7 +157,8 @@ flow('ART-7', {
          VALUES ($1,$2,$3,$4,'turn_done','Synthetic turn finished','') RETURNING notification_id`, [mentioned.userId, team.id, project.id, visibleSession],
       )).rows[0]!.notification_id;
       const inbox = (await ctx.client.as(mentioned).get('/v1/notifications')).status(200).json<{ notifications: { id: string }[] }>();
-      if (inbox.notifications.some((row) => row.id === seeded)) throw new Error('Artifact flags enabled a legacy turn notification');
+      // Notifications are on for every project (2026-11-06): the Artifact flags gate only Artifact rows.
+      if (!inbox.notifications.some((row) => row.id === seeded)) throw new Error('A turn notification of a project-visible session is hidden');
       (await ctx.client.as(mentioned).get(ONE, { params: ap(privateDoc) })).status(200);
       (await owner.patch(ONE, { shared_with_user_ids: [] }, { params: ap(privateDoc) })).status(200);
       (await ctx.client.as(mentioned).get(ONE, { params: ap(privateDoc) })).status(404);

@@ -9,9 +9,9 @@
  * session too large to compact is never reused again. The alert senders are
  * captured; the inbox rows are real.
  *
- * Those alerts need the project's `notification_center` flag. With it off (the
- * default) a failed run pushes the account owner once per streak, as before
- * KRTX-1742, and writes no alert edge or inbox row: the second project below.
+ * The project stores `experimental.notification_center: false`. The flag
+ * graduated on 2026-11-06, so that override is inert: every alert below still
+ * reaches the watcher.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { accountMembers, accounts, notifications, projectMembers, projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
@@ -25,30 +25,20 @@ import {
 } from '../projects/lib/trigger-fire';
 import { setTriggerAlertNotifierForTest, settleTriggerAlerts } from '../projects/lib/trigger-alerts';
 import { recordTriggerRunEnd as recordRunEnd, type TriggerRunEnd } from '../projects/lib/trigger-run-outcome';
-import type { LegacySessionPushEvent } from '../notifications/session-push-legacy';
 import { upsertTriggerWatcher } from '../projects/lib/trigger-watchers';
 import { markTriggerRuntimeDelivered } from '../projects/trigger-execution-store';
 import { insertIntoView } from './helpers/compat-views';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
-/** The same account, the notification_center flag left at its default (off). */
-const LEGACY_PROJECT = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 /** The trigger's creator: a project member who follows its alerts. */
 const WATCHER = crypto.randomUUID();
 const SLUG = 'triage';
 
-/** The flag-off owner pushes, captured instead of sent. */
-let pushes: LegacySessionPushEvent[] = [];
-const legacyPush = async (event: LegacySessionPushEvent) => {
-  pushes.push(event);
-  return { sent: 0 as const, reason: 'no_devices' as const };
-};
-
 /** The run end, then every alert it started. */
 async function recordTriggerRunEnd(end: TriggerRunEnd) {
-  const result = await recordRunEnd(end, legacyPush);
+  const result = await recordRunEnd(end);
   await settleTriggerAlerts();
   return result;
 }
@@ -108,16 +98,14 @@ const FAILED = { userId: WATCHER, kind: 'automation_failed', body: 'Out of credi
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'trigger-run-outcome-test' });
-  await db.insert(projects).values([
-    {
-      projectId: PROJECT,
-      accountId: ACCOUNT,
-      name: 'trigger runs',
-      repoUrl: 'https://example.test/runs.git',
-      metadata: { experimental: { notification_center: true } },
-    },
-    { projectId: LEGACY_PROJECT, accountId: ACCOUNT, name: 'trigger runs, flag off', repoUrl: 'https://example.test/runs-off.git' },
-  ]);
+  await db.insert(projects).values({
+    projectId: PROJECT,
+    accountId: ACCOUNT,
+    name: 'trigger runs',
+    repoUrl: 'https://example.test/runs.git',
+    // Inert since the flag graduated (2026-11-06).
+    metadata: { experimental: { notification_center: false } },
+  });
   await insertIntoView(db, accountMembers, [
     { accountId: ACCOUNT, userId: OWNER, accountRole: 'owner' },
     { accountId: ACCOUNT, userId: WATCHER, accountRole: 'member' },
@@ -133,16 +121,13 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  pushes = [];
-  for (const projectId of [PROJECT, LEGACY_PROJECT]) {
-    await db.delete(projectSessions).where(eq(projectSessions.projectId, projectId));
-    await db.delete(notifications).where(eq(notifications.projectId, projectId));
-    const healthy = { lastStatus: 'fired', lastError: null, runFailingSince: null, alertFailingSince: null, alertSource: null, updatedAt: new Date() };
-    await db
-      .insert(projectTriggerRuntime)
-      .values({ projectId, slug: SLUG, ...healthy })
-      .onConflictDoUpdate({ target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug], set: healthy });
-  }
+  await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
+  await db.delete(notifications).where(eq(notifications.projectId, PROJECT));
+  const healthy = { lastStatus: 'fired', lastError: null, runFailingSince: null, alertFailingSince: null, alertSource: null, updatedAt: new Date() };
+  await db
+    .insert(projectTriggerRuntime)
+    .values({ projectId: PROJECT, slug: SLUG, ...healthy })
+    .onConflictDoUpdate({ target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug], set: healthy });
 });
 
 afterAll(async () => {
@@ -160,7 +145,6 @@ describe('a trigger run that fails', () => {
     expect(row.lastError).toBe('Out of credits: Payment Required: Insufficient credits. Balance: $-0.06');
     expect(row.alertSource).toBe('run');
     expect(await alerts()).toEqual([FAILED]);
-    expect(pushes).toEqual([]);
 
     // The next failed run refreshes the reason without a second alert.
     expect(
@@ -237,77 +221,6 @@ describe('a trigger that keeps firing after a failed run', () => {
     await markGitTriggerAttemptFailed(PROJECT, SLUG, new Date(), 'Session create failed');
     expect(await recordTriggerRunEnd(end(sessionId, { status: 'idle', error: null }))).toBe('unchanged');
     expect(await trigger()).toMatchObject({ lastStatus: 'failed', lastError: 'Session create failed' });
-  });
-});
-
-// The notification_center flag off: the pre-KRTX-1742 contract, restored from
-// this suite's cases at 8028e0c922~1.
-describe('a trigger run that fails, with the notification_center flag off', () => {
-  const offEnd = (sessionId: string, overrides: Partial<TriggerRunEnd> = {}) =>
-    end(sessionId, { projectId: LEGACY_PROJECT, ...overrides });
-  const ownerPush = (sessionId: string): LegacySessionPushEvent => ({
-    type: 'error',
-    sessionId,
-    projectId: LEGACY_PROJECT,
-    recipients: [OWNER],
-  });
-
-  test('marks the trigger failed with the reason and pushes the account owner once, with no alert', async () => {
-    const sessionId = await seedSession(triggerMetadata, new Date(), LEGACY_PROJECT);
-    expect(await recordTriggerRunEnd(offEnd(sessionId))).toBe('failed');
-    const row = await trigger(LEGACY_PROJECT);
-    expect(row.lastStatus).toBe('failed');
-    expect(row.lastError).toBe('Out of credits: Payment Required: Insufficient credits. Balance: $-0.06');
-    expect(row).toMatchObject({ alertFailingSince: null, alertSource: null });
-    expect(pushes).toEqual([ownerPush(sessionId)]);
-    expect(await alerts(LEGACY_PROJECT)).toEqual([]);
-
-    // The next failed run refreshes the reason without a second push.
-    expect(
-      await recordTriggerRunEnd(offEnd(sessionId, { error: { name: 'UnknownError', message: 'socket hang up' } })),
-    ).toBe('still_failed');
-    expect((await trigger(LEGACY_PROJECT)).lastError).toBe('Provider unavailable: socket hang up');
-    expect(pushes).toHaveLength(1);
-  });
-
-  test('two runs that fail at once push the owner once', async () => {
-    const [a, b] = await Promise.all([
-      seedSession(triggerMetadata, new Date(), LEGACY_PROJECT),
-      seedSession(triggerMetadata, new Date(), LEGACY_PROJECT),
-    ]);
-    const results = await Promise.all([recordTriggerRunEnd(offEnd(a)), recordTriggerRunEnd(offEnd(b))]);
-    expect(results.sort()).toEqual(['failed', 'still_failed']);
-    expect(pushes).toHaveLength(1);
-  });
-
-  test('the next good run clears the failure and tells nobody', async () => {
-    const sessionId = await seedSession(triggerMetadata, new Date(), LEGACY_PROJECT);
-    await recordTriggerRunEnd(offEnd(sessionId));
-    expect(await recordTriggerRunEnd(offEnd(sessionId, { status: 'idle', error: null }))).toBe('recovered');
-    expect(await trigger(LEGACY_PROJECT)).toMatchObject({ lastStatus: 'fired', lastError: null });
-    expect(await recordTriggerRunEnd(offEnd(sessionId, { status: 'idle', error: null }))).toBe('unchanged');
-    expect(pushes).toHaveLength(1);
-    expect(await alerts(LEGACY_PROJECT)).toEqual([]);
-  });
-
-  test('a run that fails after a failed fire pushes the owner', async () => {
-    const sessionId = await seedSession(triggerMetadata, new Date(), LEGACY_PROJECT);
-    await markGitTriggerAttemptFailed(LEGACY_PROJECT, SLUG, new Date(), 'Session create failed');
-    expect(await recordTriggerRunEnd(offEnd(sessionId))).toBe('failed');
-    expect(pushes).toEqual([ownerPush(sessionId)]);
-  });
-
-  // An edge left from a period with the flag on clears without a word.
-  test('a finished run ends an alert left from an on period without telling the watcher', async () => {
-    const sessionId = await seedSession(triggerMetadata, new Date(), LEGACY_PROJECT);
-    await db
-      .update(projectTriggerRuntime)
-      .set({ alertFailingSince: new Date(Date.now() - 60_000), alertSource: 'run' })
-      .where(and(eq(projectTriggerRuntime.projectId, LEGACY_PROJECT), eq(projectTriggerRuntime.slug, SLUG)));
-    await upsertTriggerWatcher({ accountId: ACCOUNT, projectId: LEGACY_PROJECT, slug: SLUG, userId: WATCHER });
-    expect(await recordTriggerRunEnd(offEnd(sessionId, { status: 'idle', error: null }))).toBe('unchanged');
-    expect(await trigger(LEGACY_PROJECT)).toMatchObject({ alertFailingSince: null, alertSource: null });
-    expect(await alerts(LEGACY_PROJECT)).toEqual([]);
   });
 });
 

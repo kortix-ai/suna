@@ -61,6 +61,7 @@ import {
   PlusIcon as Plus,
   QuestionIcon as QuestionMark,
   ArrowClockwiseIcon as RefreshCw,
+  BellIcon as Bell,
   ScrollIcon as ScrollText,
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
@@ -731,6 +732,20 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/files',
     requiresProject: true,
     keywords: 'files repository drive browser explorer',
+  },
+  {
+    // The person's notification inbox, across projects: the sidebar Inbox row
+    // (`project-inbox-nav.tsx`), same icon, same route. On for every project
+    // since the `notification_center` flag graduated (2026-11-06).
+    id: 'proj-inbox',
+    label: 'Inbox',
+    icon: Bell,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/inbox',
+    requiresProject: true,
+    keywords: 'inbox notifications alerts unread mentions bell needs you done mark read',
   },
   {
     // The project's shared folders: the sidebar Drive row (`filesRow`). Drive

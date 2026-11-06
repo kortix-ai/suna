@@ -3,18 +3,13 @@
  * when it needs them, is blocked, or is decided. One notification per goal,
  * kind and UTC day: the dedupe key carries all three.
  *
- * The notification center is the project flag `notification_center`. With it
- * off nothing is sent; the goal's event log still records the event, and the
- * goal page shows it. The inbox row links to the owner session (the inbox has
- * no goal subject yet); its title names the goal.
+ * The goal's event log also records the event, and the goal page shows it.
+ * The inbox row links to the owner session (the inbox has no goal subject
+ * yet); its title names the goal.
  */
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
-import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { deliver } from '../../notifications/notifier';
-import { db } from '../../shared/db';
 import { utcDay } from './rules';
 import type { GoalRow } from './store';
 
@@ -45,8 +40,6 @@ export async function notifyGoal(goal: GoalRow, kind: GoalNoticeKind, detail: st
   const recipient = goal.assignedUserId ?? goal.createdByUserId;
   const dedupeKey = `goal:${goal.goalId}:${kind}:${utcDay(now)}`;
   try {
-    const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, goal.projectId)).limit(1);
-    if (!project || !notificationsEnabled(project.metadata)) return;
     await deliver({
       kind: KIND[kind],
       accountId: goal.accountId,

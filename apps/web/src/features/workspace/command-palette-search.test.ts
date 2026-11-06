@@ -388,6 +388,11 @@ describe('queries return the rows they name', () => {
     expect(hits('goal')).toEqual(['nav:proj-goals']);
   });
 
+  test('"inbox" and "notifications" reach the Inbox page', () => {
+    expect(hits('inbox')).toContain('nav:proj-inbox');
+    expect(hits('notifications')).toContain('nav:proj-inbox');
+  });
+
   // The Computer row USED to answer "apps" too: PR #9992 shipped a rail
   // description that reads "the files, terminal, and apps on your computer",
   // and the palette searches every word a row shows (KRTX-2475). The

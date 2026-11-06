@@ -718,20 +718,19 @@ describe('POST .../prompts', () => {
     };
     beforeEach(() => {
       loadedProject = {
-        row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: { experimental: { notification_center: true } } },
+        row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: {} },
         userId: USER_ID,
       };
       visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: OTHER_CREATOR } };
     });
 
-    test('with the notification_center flag off, the prompt is accepted and nobody follows', async () => {
-      for (const metadata of [{}, { experimental: { notification_center: false } }]) {
-        loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata }, userId: USER_ID };
-        asCredential('supabase', 'jwt');
-        expect((await post({ ...validBody, client_message_id: `off_${enqueued.length}` })).status).toBe(202);
-      }
-      expect(enqueued).toHaveLength(2);
-      expect(autoWatches).toEqual([]);
+    // The flag graduated on 2026-11-06: a stored override changes no follow.
+    test('with a stored notification_center: false override, the prompter still follows', async () => {
+      loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: { experimental: { notification_center: false } } }, userId: USER_ID };
+      asCredential('supabase', 'jwt');
+      expect((await post(validBody)).status).toBe(202);
+      expect(enqueued).toHaveLength(1);
+      expect(autoWatches).toEqual([{ projectId: PROJECT_ID, sessionId: SESSION_ID, userId: USER_ID }]);
     });
 
     test('a browser sign-in and a personal CLI token start following the session', async () => {

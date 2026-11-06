@@ -1046,12 +1046,12 @@ export interface UseSessionOptions {
    * End the presence lease when the page closes or enters the back/forward
    * cache, so a turn that ends right after the tab closes still notifies:
    * `pagehide` reports absent, and every absent report is sent with
-   * `keepalive`, so it outlives the page. Default false, the presence before
+   * `keepalive`, so it outlives the page. Default true (notifications are on
+   * for every project since 2026-11-06). False is the presence before
    * KRTX-1742: no `pagehide` report and no `keepalive`. A closing tab still
    * turns hidden and reports absent, but the browser may cancel that request
-   * as the page unloads; the lease then lives to its 90 s expiry. Pass the
-   * project's `notification_center` flag. A change applies at once, with no
-   * new report. Needs `browserPresence`.
+   * as the page unloads; the lease then lives to its 90 s expiry. A change
+   * applies at once, with no new report. Needs `browserPresence`.
    */
   presencePageExit?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
@@ -1164,7 +1164,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     subscribeMessages = true,
     browserPresence = false,
     presenceAlerts = false,
-    presencePageExit = false,
+    presencePageExit = true,
   } = options;
 
   // One presence id per mounted view. The session stream carries it, and the
@@ -1207,8 +1207,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     const offDeleted = onSessionDeleted((id) => {
       if (id === sessionId) deleted = true;
     });
-    // Without page exit, an absent PUT goes without `keepalive`, as before
-    // KRTX-1742: a closing page may cancel it, and the lease then expires.
+    // With `presencePageExit: false`, an absent PUT goes without `keepalive`,
+    // as before KRTX-1742: a closing page may cancel it, and the lease then
+    // expires.
     const reporter = presenceReporter(({ active, alerts }) => {
       if (deleted) return;
       // A human coming back to a stopped session is a fresh visit: release the
