@@ -207,6 +207,11 @@ export const accounts = kortixSchema.table(
   /** When set, PATs not used in this many days are auto-revoked on
    *  next validate. NULL = no idle gate. Units: days. */
   patIdleRevokeDays: integer('pat_idle_revoke_days'),
+  /** When true, a member may mint a workspace key with no expiry. False
+   *  (default): every new key expires, 90 days when the caller names none,
+   *  365 days at most (design.md §3.2 C4a). Not mirrored in
+   *  `kortix.workspaces` until Release 2. */
+  patAllowNoExpiry: boolean('pat_allow_no_expiry').default(false).notNull(),
   /** When true, account owners and admins can open EVERY session in the
    *  account, including members' private ones. Off by default; only an owner
    *  may change it (`PATCH /accounts/:id/iam/session-oversight`). Members see
@@ -4160,6 +4165,9 @@ export function readStoredAgentGrant(raw: StoredAgentGrant | null | undefined): 
   return { ...rest, permissions: permissions ?? kortixCli ?? [] };
 }
 
+/** The JSON stored in `account_tokens.scopes`. */
+export type StoredKeyScopes = { preset: 'read' } | { permissions: string[] };
+
 export const accountTokens = kortixSchema.table(
   'account_tokens',
   {
@@ -4218,6 +4226,14 @@ export const accountTokens = kortixSchema.table(
      *  (ON DELETE SET NULL) is added NOT VALID by the migration; auth.users is
      *  outside this Drizzle schema. */
     onBehalfOfUserId: uuid('on_behalf_of_user_id'),
+    /** A workspace key's scope inside its creator's role (design.md §3.2 C4a):
+     *  `{preset:'read'}` = every `*.read` action, `{permissions:[…]}` = a custom
+     *  list. NULL = the creator's whole role ('full'), as every key minted
+     *  before 2026-11-06. Read through `readKeyScopes` (apps/api iam/key-scope.ts). */
+    scopes: jsonb('scopes').$type<StoredKeyScopes>(),
+    /** A renewing expiry (the CLI device login): each use sets `expires_at` to
+     *  now + this many days. NULL = a fixed expiry. */
+    expiryRenewDays: integer('expiry_renew_days'),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
@@ -4356,6 +4372,11 @@ export const oauthAuthorizationCodes = kortixSchema.table(
     // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
     // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
     workspaceId: uuid('workspace_id'),
+    /** The workspace the consent bound this grant to (design.md §3.2 C4a); the
+     *  credential fence judges the token like a workspace key. NULL = unbound:
+     *  the token acts as the person in every workspace (every token issued
+     *  before 2026-11-06). */
+    boundWorkspaceId: uuid('bound_workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_oauth_codes_code').on(table.code),
@@ -4381,6 +4402,11 @@ export const oauthAccessTokens = kortixSchema.table(
     // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
     // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
     workspaceId: uuid('workspace_id'),
+    /** The workspace the consent bound this grant to (design.md §3.2 C4a); the
+     *  credential fence judges the token like a workspace key. NULL = unbound:
+     *  the token acts as the person in every workspace (every token issued
+     *  before 2026-11-06). */
+    boundWorkspaceId: uuid('bound_workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_oauth_access_token_hash').on(table.tokenHash),
@@ -4405,6 +4431,11 @@ export const oauthRefreshTokens = kortixSchema.table(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The workspace the consent bound this grant to (design.md §3.2 C4a); the
+     *  credential fence judges the token like a workspace key. NULL = unbound:
+     *  the token acts as the person in every workspace (every token issued
+     *  before 2026-11-06). */
+    boundWorkspaceId: uuid('bound_workspace_id'),
   },
   (table) => [
     uniqueIndex('idx_oauth_refresh_token_hash').on(table.tokenHash),
