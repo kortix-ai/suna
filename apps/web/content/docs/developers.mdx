@@ -2455,6 +2455,32 @@ token.
 
 The same tokens open the workspace's git origin. See [Git](/docs/developers#git).
 
+
+### Workspace routes
+
+`/v1/workspaces` is the canonical workspace API. The older names stay served
+permanently, so a script written against them keeps working.
+
+| Canonical | Legacy (permanent) | Relation |
+|---|---|---|
+| `GET /v1/workspaces` | `GET /v1/projects` | Different routes. The canonical list holds every workspace you can open, across every account, in one request, with `workspace_id`, `role` and `state`. The legacy list holds one account's projects (`?account_id=`). A workspace key lists its one workspace. |
+| `POST /v1/workspaces` | `POST /v1/projects/provision` with `new_workspace: true` | Different routes. The canonical create always makes a new workspace (`201`, the `Workspace`). `Accept: text/event-stream` streams the phases and ends with `{type: "done", project, workspace}`. `POST /v1/projects` imports a GitHub repository into an account. |
+| `GET /v1/workspaces/:workspaceId` | `GET /v1/projects/:projectId` | Different routes. The canonical record adds a top-level `role`, `state`, `split_pending`, `deletion_scheduled_for` and the `workspace` settings block. |
+| `PATCH /v1/workspaces/:workspaceId` | `PATCH /v1/projects/:projectId` | Different routes. The canonical update takes `name`, `icon`, `icon_glyph`, `default_branch`, `manifest_path` and `secret_default_strategy`, and answers `400 workspace_setting_read_only` for a key of the settings block, with `field` and `writer` (the route that writes it). |
+| `/v1/workspaces/:workspaceId/<sub-path>` | `/v1/projects/:projectId/<sub-path>` | The same handler: sessions, secrets, connectors, triggers, files, Apps, … |
+| `/v1/workspaces/:workspaceId/<family>` | `/v1/accounts/:accountId/<family>` | The same handler for `members`, `invites`, `iam`, `audit`, `tokens`, `branding`, `capture`, `automations`, `secret-resources`, `subscription-connections`, `top-up-requests`, `leave`. `GET …/audit` is the workspace log, not the project slice. |
+| `/v1/me[/…]` · `/v1/invites[/…]` | `/v1/accounts/me[/…]` · `/v1/account-invites[/…]` | The same handler. |
+| `/v1/connectors/workspaces/:workspaceId/…` · `/scim/v2/workspaces/:workspaceId/…` | `/v1/connectors/projects/:projectId/…` · `/scim/v2/accounts/:accountId/…` | The same handler. |
+| — | `/v1/projects/{provision,provision-stream,quota,link-repository,create-repo}` · `POST /v1/projects/:projectId/transfer` | Legacy only: they act on an account. |
+
+**Ids.** A canonical path takes the workspace id (`workspace_id`, equal to
+`project_id`) only. An account id, an unknown id or a workspace you cannot
+read answers `404 workspace_not_found` on every sub-path. A legacy path accepts
+either id. Ids are case-insensitive. Every response that names a workspace
+carries `workspace_id` next to `project_id` (records, sessions, secrets, keys,
+access and member rows). `account_id` stays and is deprecated.
+
+
 ### Errors
 
 An error response is JSON. Every body has `error`. The generic shape adds
@@ -2515,6 +2541,15 @@ These are the codes clients branch on most. The linked section explains each fix
 | `session_sandbox_removal_pending` | `409` | A restore came before the provider confirmed the deleted session's sandbox removed, or while a sandbox that was starting at the delete can still arrive. | Retry the restore in a minute. [Computers](/docs/guide#computers) |
 | `session_purged` | `410` | The session was deleted more than 30 days ago. Its messages, files and branch are deleted. | [Computers](/docs/guide#computers) |
 | `project_archived` | `404` | The workspace was deleted. | Use another workspace. |
+| `workspace_not_found` | `404` | A canonical path named no workspace you can read: an account id, an unknown id, or no access. | [Workspace routes](#workspace-routes) |
+| `workspace_setup_required` | `409` | The workspace pays but has no repository yet. | `POST /v1/workspaces/:id/setup` |
+| `workspace_deleting` | `409` | The workspace is being deleted. An owner restores it first. | `POST /v1/workspaces/:id/restore` |
+| `workspace_has_project` | `409` | The account already holds its workspace's project. The body names it (`workspace_id`). | Create another workspace: `POST /v1/workspaces`. |
+| `workspace_setting_read_only` | `400` | `PATCH /v1/workspaces/:id` named a workspace setting. `field` and `writer` (the route that writes it) are in the body. | The `writer` route. |
+| `workspace_ambiguous` | `409` | A legacy account key names several workspaces (an account the split has not reached). | Name the workspace id. |
+| `no_workspace` | `409` | You belong to no workspace yet. | `POST /v1/workspaces`, or accept an invite. |
+| `new_workspace_requires_person` | `403` | An API key, a service account or a workspace key tried to create a workspace. | Sign in, or use a personal key. |
+| `account_creation_restricted` | `403` | The deployment lets only its admin create workspaces. | Ask an admin for an invite. |
 | `request_deadline` | `503` | A request ran past the API's 25-second processing limit. | Retry the read. Check the state before you repeat a write. |
 | `git_mirror_unavailable` | `503` | The workspace repository is temporarily unreachable. | Retry after `Retry-After`. [Git](/docs/developers#git) |
 | `repository_push_rejected` | `409` | The git host refused a push because of branch protection or repository rules. | [Git](/docs/developers#who-can-clone-and-push) |
@@ -2553,7 +2588,7 @@ Two create routes deduplicate a retried request:
 | Route | Where the key goes | Format |
 |---|---|---|
 | `POST /v1/workspaces/<project_id>/sessions` (start a session) | `Idempotency-Key` header | 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -` |
-| `POST /v1/workspaces/provision` (create a workspace with a new repository) | `idempotency_key` body field | Up to 200 characters of `A-Z a-z 0-9 . _ : -` |
+| `POST /v1/workspaces` (create a workspace) and `POST /v1/projects/provision` | `idempotency_key` body field | Up to 200 characters of `A-Z a-z 0-9 . _ : -` |
 
 Send a new random value, such as a UUID, for each intent. Send the same value
 again when you retry that intent. A repeated session create returns the original
@@ -2570,7 +2605,7 @@ A list route that pages takes `limit` and `cursor`. Pass the next cursor back as
 | List | Next cursor | `limit` |
 |---|---|---|
 | `GET /v1/workspaces/<project_id>/sessions` | `X-Next-Cursor` response header | Default 50, maximum 200 |
-| `GET /v1/workspaces/<account_id>/audit` | `next_cursor` in the body | Default 50, maximum 200 |
+| `GET /v1/workspaces/<workspace_id>/audit` | `next_cursor` in the body | Default 50, maximum 200 |
 | `GET /v1/workspaces/<project_id>/files?depth=1` | `next_cursor` in the body | Default 500, maximum 2,000. Without `limit` or `cursor`: one response of up to 5,000 entries |
 
 A session page holds only the sessions you may open. Every page except the
@@ -5927,9 +5962,9 @@ const p = kortix.project(process.env.KORTIX_PROJECT_ID!);
 
 ### List and read workspaces
 
-`kortix.workspaces.list()` (`listWorkspaces()`) returns every workspace the caller can open as `WorkspaceSummary[]`, most recently opened first. Each row carries every `KortixProject` field, `workspace_id` (equal to `project_id`) and `role`: `owner`, `admin`, `manager` or `member`. An account with no workspace adds no row. One account whose list fails does not hide the others; the call rejects only when every read fails.
+`kortix.workspaces.list()` (`listWorkspaces()`) returns every workspace the caller can open, across every account, as `WorkspaceSummary[]` in one request (`GET /v1/workspaces`), most recently opened first. Each row carries every `KortixProject` field, `workspace_id` (equal to `project_id`), `role` (`owner`, `admin`, `manager` or `member`) and `state`. A workspace that is `setup_required` (it pays but has no repository yet) or `deleting` (owners only, until `deletion_scheduled_for`) is left out unless you pass `{ includeInactive: true }`. A workspace key lists its one workspace. On an older API the call reads the accounts and then each account's list.
 
-`kortix.workspace(id).get()` (`getWorkspace(id)`) returns one `Workspace`: the summary plus the settings the caller may read (`mfa_required`, `branding`, `member_count`, and on newer servers the session and personal-access-key policy). A person who may open the workspace but is not a member of it gets the workspace without the settings.
+`kortix.workspace(id).get()` (`getWorkspace(id)`) returns one `Workspace`: the summary plus `state` and the settings the caller may read (`mfa_required`, `branding`, `member_count`, the session and personal-access-key policy, `secret_default_strategy`). `update(input)` changes the name, icon, branch, manifest path or `secret_default_strategy`; a workspace setting answers `400 workspace_setting_read_only` and names the route that writes it.
 
 ```ts
 const [first] = await kortix.workspaces.list();
@@ -5938,29 +5973,31 @@ const ws = kortix.workspace(first.workspace_id);
 const workspace = await ws.get();
 await ws.update({ name: 'Northwind' });
 const members = await ws.members.list();
-await ws.members.invite({ email: 'person@example.com', role: 'member' });
+await ws.members.invite({ email: 'person@example.com', role: 'member' }); // admin, manager or member
+await ws.delete(); // owners can ws.restore() until it is erased
 const state = await ws.billing.state();
 const { secret_key } = await ws.tokens.create({ name: 'ci' }); // returned once
 const assignments = await ws.iam.assignments.list();
 ```
 
-Every response that names a workspace's project or account can also carry `workspace_id`. Older servers omit it: read `project_id` for them. The older `Project*` and `Account*` names keep working permanently. A name with an exact workspace equivalent is marked `@deprecated` and names it, for example `listAccountMembers` → `listWorkspaceMembers`.
+Every response that names a workspace carries `workspace_id`. Older servers omit it: read `project_id` for them. The older `Project*` and `Account*` names keep working permanently. A name with an exact workspace equivalent is marked `@deprecated` and names it, for example `listAccountMembers` → `listWorkspaceMembers`.
 
 `Workspace` here is the Kortix workspace. `RuntimeWorkspace*`, `@kortix/sdk/workspace-search` and `toWorkspaceRelative` are about the session sandbox's `/workspace` directory. `CaptureWorkspace` is a Kortix Capture tenant.
 
-In React, `useWorkspaces({ userId })` and `useWorkspace(id)` from `@kortix/sdk/react` read the same data. `useWorkspaces` shares its queries with `useAccounts` and `useProjects(accountId)` and returns `{ workspaces, accounts, isLoading, isError, failedAccountIds, refetchFailed }`.
+In React, `useWorkspaces({ userId })` and `useWorkspace(id)` from `@kortix/sdk/react` read the same data. `useWorkspaces` reads `listWorkspaces()` and returns `{ workspaces, accounts, isLoading, isError, failedAccountIds, refetchFailed }`.
 
 ### Create a workspace
 
 A workspace is one account and its one project. The workspace id is the `project_id`. Sign-up creates no account: a new person has 0 workspaces. Until they create or join one, every call that needs a workspace answers `409` with code `no_workspace` (`isNoWorkspaceError(err)`), and `GET /v1/accounts` answers `[]`.
 
-`createWorkspace(input, onEvent?, options?)` (also `kortix.workspaces.create` and `kortix.projects.createWorkspace`) creates the whole workspace in one call. It sends `new_workspace: true` to `POST /v1/workspaces/provision`.
+`createWorkspace(input, onEvent?, options?)` (also `kortix.workspaces.create` and `kortix.projects.createWorkspace`) creates the whole workspace in one call: `POST /v1/workspaces`. It answers the `Workspace`, with the caller as its owner.
 
-- The server reuses the caller's newest owned account that has no active project, so a plan or credits it holds stay. Else it creates an account. The account takes the workspace name.
-- `input` takes the provision fields below except `account_id`. `new_workspace` with `account_id` answers `400` `new_workspace_with_account_id`.
-- With `onEvent`, it streams `POST /v1/workspaces/provision-stream` and reports the phases `validating`, `creating_repository`, `registering` and `seeding`. On React Native, omit `onEvent`.
+- Every call makes a new workspace with its own new account. Only a retry with the same `idempotency_key` answers the workspace that key already created.
+- `input` takes the name and the repository fields below except `account_id`. `POST /v1/workspaces` with an `account_id` answers `400` `new_workspace_with_account_id`.
+- With `onEvent`, it streams the same request (`Accept: text/event-stream`) and reports the phases `validating`, `creating_repository`, `registering` and `seeding`; the last frame is `{type: "done", project, workspace}`. On React Native, omit `onEvent`.
+- On an older API it sends `new_workspace: true` to `POST /v1/projects/provision` instead.
 - `403` `account_creation_restricted`: the deployment lets only its admin create accounts. Ask an admin for an invite.
-- `403` `new_workspace_requires_person`: only a signed-in person or an unscoped personal access token creates a workspace.
+- `403` `new_workspace_requires_person`: only a signed-in person or a personal key creates a workspace, never an API key, a service account or a workspace key.
 
 ```ts
 import { createWorkspace, isNoWorkspaceError } from '@kortix/sdk';
@@ -5969,20 +6006,20 @@ const workspace = await createWorkspace(
   { name: 'Northwind', idempotency_key: crypto.randomUUID() },
   (event) => { if (event.type === 'phase') console.log(event.phase); },
 );
-console.log(workspace.project_id, workspace.account_id);
+console.log(workspace.workspace_id, workspace.role); // workspace_id === project_id
 ```
 
 Renaming the workspace renames both rows: `PATCH /v1/workspaces/:id` with a new `name` renames the account when the project is its only active project, and `PATCH /v1/accounts/:id` renames that project.
 
 ### Provision and update a workspace
 
-`kortix.projects.provision(input)` creates a workspace with a Kortix-managed git repository. It seeds the Kortix starter, so a session can start at once. The request timeout is 120,000 ms.
+`kortix.projects.provision(input)` (`POST /v1/projects/provision`, a legacy-only route) creates a workspace with a Kortix-managed git repository. It seeds the Kortix starter, so a session can start at once. The request timeout is 120,000 ms.
 
 | Field | Rule |
 | --- | --- |
 | `name` | Required. |
 | `idempotency_key` | Send the same key on every attempt at one create. A retry then returns the workspace of the first attempt. The key is scoped to the account. It identifies the attempt, not the payload: a reused key with a different `name` returns the first workspace. |
-| `account_id` | The account that owns the workspace. Omit it for the caller's default account. A caller with no account gets `409` `no_workspace`: use `createWorkspace`. |
+| `account_id` | The account that owns the workspace. Omitted, and the caller has no workspace or its default account already holds its project: a NEW workspace is created (`201`, its own `account_id`). Named, and that account already holds its project: `409` `workspace_has_project` with `workspace_id` in the body (`isWorkspaceHasProjectError`). Prefer `createWorkspace`. |
 | `starter_template` | `general-knowledge-worker` or `minimal`. |
 | `source_item_id` | Clone a `registry:project` marketplace item instead of the starter. It wins over `starter_template`. |
 | `marketplace_items` | Marketplace item ids to install. |
@@ -8336,25 +8373,26 @@ Capture belongs to the account. `kortix.capture.account(accountId)` binds one ac
 
 ### The workspace handle
 
-`kortix.workspace(workspaceId)` returns the workspace handle. `kortix.project(projectId)` returns `p`: the same handle without the workspace-level members in the first table. Every method has the workspace id bound. `p.session(sessionId)` returns the [session handle](#the-session-handle). Task guides for this handle are in [Workspaces from code](/docs/developers#workspaces-from-code).
+`kortix.workspace(workspaceId)` returns the workspace handle. `kortix.project(projectId)` returns `p`: the project members of the second table onward, without the workspace-level members of the first. Three keys mean the workspace on the workspace handle and the project on `p`: `get`, `update` and `tokens`; the project's CLI tokens are `cliTokens` on the workspace handle. Every method has the workspace id bound. `p.session(sessionId)` returns the [session handle](#the-session-handle). Task guides for this handle are in [Workspaces from code](/docs/developers#workspaces-from-code).
 
 #### Workspace-level members (`kortix.workspace(id)` only)
 
 | Member | What it does |
 | --- | --- |
 | `id` | The workspace id. |
-| `get()` · `update(input)` | The `Workspace` with role and settings · rename or change the icon. |
+| `get()` · `update(input)` | The `Workspace` with role, state and settings · change the name, icon, branch, manifest path or `secret_default_strategy`. |
+| `delete()` · `restore()` · `setup(input?)` | Delete the workspace (owners restore it until `deletion_scheduled_for`) · restore a deleting workspace · create the repository of a `setup_required` workspace. |
 | `accountId()` | The account behind the workspace. |
 | `members.list()` · `.invite(input)` · `.updateRole(userId, role)` · `.remove(userId)` · `.invites()` · `.cancelInvite(inviteId)` · `.resendInvite(inviteId)` · `leave()` | People and invites. |
 | `billing.state(options?)` | Plan, credits and limits (`AccountState`). |
-| `tokens.list({ mine? })` · `.create({ name, expiresAt?, projectId? })` · `.revoke(tokenId, { deleteRevoked? })` | The workspace's personal access keys. On `p`, `tokens` is the narrower workspace CLI token list. |
+| `tokens.list({ mine? })` · `.create({ name, expiresAt? })` · `.revoke(tokenId, { deleteRevoked? })` | Workspace keys: they act on this workspace only. On `p`, `tokens` is the project CLI token list; on the workspace handle that list is `cliTokens`. The caller's personal keys are `listPersonalTokens()` · `revokePersonalToken(id)` (`/v1/me/tokens`). |
 | `iam.assignments.list(filter?)` · `.create(input)` · `.revoke(id)` · `iam.roles()` · `iam.groups()` · `iam.can(userId, probe)` · `iam.canBatch(userId, probes)` | Identity and access. |
 
 #### Workspace
 
 | Method | What it does |
 | --- | --- |
-| `get()` · `detail()` · `update(input)` · `archive()` | Read · full detail with config · change settings · archive. |
+| `get()` · `detail()` · `update(input)` · `archive()` | On `p`: read the project record · full detail with config · change project fields · archive. On the workspace handle `get`/`update` are the workspace ones above. |
 | `llmCatalog()` · `modelPicker()` · `modelAccess()` · `setModelAccess(change)` · `customLlmProviders()` · `setCustomLlmProvider(providerId, input)` · `deleteCustomLlmProvider(providerId)` · `sandboxHealth()` | As on [`kortix.projects`](#kortixprojects), with the workspace id bound. |
 | `validateManifest(raw)` | Validates `kortix.yaml` text on the server with the schema a merge uses. |
 | `audit(options?)` | The workspace's audit timeline. |
