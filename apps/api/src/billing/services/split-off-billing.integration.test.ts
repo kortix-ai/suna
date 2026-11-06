@@ -154,6 +154,27 @@ describe('split-off billing (C6)', () => {
     expect(await isPayingAccount(source)).toBe(false);
   });
 
+  test('a comped split-off does not pay: its own split-off gets Free, never a second comp, until it buys a plan', async () => {
+    const now = new Date('2026-11-11T00:00:00Z');
+    const source = await account('Paid keeper of a comp');
+    await db.insert(creditAccounts).values({ accountId: source, tier: 'credits', planMonthlyUsd: '100', billingCycleAnchor: '2026-10-21T00:00:00Z' });
+    const comped = await splitTarget('Comped, pays nothing', now);
+    await applySplitOffBilling({ runId: crypto.randomUUID(), sourceAccountId: source, newAccountId: comped }, now);
+    expect((await row(comped)).tier).toBe('credits');
+
+    // The comp is a gift: no subscription, no purchase. It is not paying.
+    expect(await isPayingAccount(comped)).toBe(false);
+    expect(await previewSplitOffBilling(comped, now)).toMatchObject({ kind: 'free', compedUntil: null });
+    const next = await splitTarget('Split-off of a comp', now);
+    expect(await applySplitOffBilling({ runId: crypto.randomUUID(), sourceAccountId: comped, newAccountId: next }, now))
+      .toMatchObject({ kind: 'free' });
+    expect((await row(next)).compPlanUntil).toBeNull();
+
+    // A subscription it bought during the comp pays.
+    await applyStripeSync(comped, { stripeSubscriptionId: `sub_own_${crypto.randomUUID()}`, stripeSubscriptionStatus: 'active', tier: 'credits', planMonthlyUsd: '50' }, { reason: 'test' });
+    expect(await isPayingAccount(comped)).toBe(true);
+  });
+
   test('at the comp end the rotation moves the split-off to Free with eligibility and a Free grant', async () => {
     const now = new Date('2026-11-11T00:00:00Z');
     const source = await account('Paid keeper');
