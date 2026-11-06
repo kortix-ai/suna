@@ -378,7 +378,7 @@ const jsonMap = (map: Readonly<Record<string, string>>) => JSON.stringify(map);
 export async function transferProjectOwnership(
   input: TransferProjectOwnershipInput,
   options: TransferProjectOwnershipOptions = {},
-): Promise<{ projectId: string; accountId: string }> {
+): Promise<{ projectId: string; accountId: string; undecryptableSecrets: string[] }> {
   if (input.fromAccountId === input.toAccountId) {
     throw new ProjectTransferError('same_account', 'Project is already in that account');
   }
@@ -395,7 +395,7 @@ export async function moveProjectInTransaction(
   tx: TransferTx,
   input: TransferProjectOwnershipInput,
   options: Pick<TransferProjectOwnershipOptions, 'split'> = {},
-): Promise<{ projectId: string; accountId: string }> {
+): Promise<{ projectId: string; accountId: string; undecryptableSecrets: string[] }> {
   const { projectId, fromAccountId, toAccountId } = input;
   const split = options.split;
   if (fromAccountId === toAccountId) {
@@ -447,6 +447,7 @@ export async function moveProjectInTransaction(
     .where(sql`${accountSecretResources.projectId} = ${projectId} AND ${accountSecretResources.accountId} = ${fromAccountId}`)
     .for('update');
   const keptGrants: (typeof accountSecretGrants.$inferSelect)[] = [];
+  const undecryptableSecrets: string[] = [];
   for (const secret of secrets) {
     // Grants reference (secret_id, account_id): delete before changing the
     // resource's composite FK identity. A plain transfer revokes them (member
@@ -454,9 +455,20 @@ export async function moveProjectInTransaction(
     // since every source member is a member of the target.
     const deleted = await tx.delete(accountSecretGrants).where(eq(accountSecretGrants.secretId, secret.secretId)).returning();
     if (split) keptGrants.push(...deleted);
-    await tx.update(accountSecretResources).set({
-      valueEnc: encryptAccountSecret(toAccountId, decryptAccountSecret(fromAccountId, secret.valueEnc)),
-    }).where(eq(accountSecretResources.secretId, secret.secretId));
+    let valueEnc: string;
+    try {
+      valueEnc = encryptAccountSecret(toAccountId, decryptAccountSecret(fromAccountId, secret.valueEnc));
+    } catch {
+      // Unusable in the source too (an old or wrong key). One such envelope
+      // must not roll back the whole move: it moves unchanged, marked for a
+      // reconnect, and the caller reports its id.
+      undecryptableSecrets.push(secret.secretId);
+      await tx.update(accountSecretResources).set({ needsReauthAt: new Date() })
+        .where(eq(accountSecretResources.secretId, secret.secretId));
+      continue;
+    }
+    await tx.update(accountSecretResources).set({ valueEnc })
+      .where(eq(accountSecretResources.secretId, secret.secretId));
   }
 
   // Both ends contain account_id. Defer only this graph's tenant checks;
@@ -525,7 +537,7 @@ export async function moveProjectInTransaction(
     toAccountId,
     split: Boolean(split),
   });
-  return { projectId, accountId: toAccountId };
+  return { projectId, accountId: toAccountId, undecryptableSecrets };
 }
 
 /** App hosting rows follow the project by `app_id` ({@link PROJECT_TRANSFER_APP_TABLES}). */

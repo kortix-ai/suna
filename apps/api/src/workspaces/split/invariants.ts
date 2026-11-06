@@ -96,8 +96,16 @@ async function i3(runs: DoneRun[]): Promise<InvariantResult> {
      WHERE account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(accounts)}::jsonb))
     UNION ALL SELECT 'claude_login', user_id::text, account_id::text, value_enc FROM kortix.claude_subscription_logins
      WHERE account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(accounts)}::jsonb))`);
-  // A secret the source could not decrypt either was left behind on purpose.
-  return result(rows.filter((row) => probeAccountSecret(row.account_id, row.value_enc) !== 'ok').map((row) => `${row.kind}:${row.id}`));
+  // A secret the source could not decrypt either was left behind (account-wide)
+  // or moved unchanged and marked for a reconnect (project-scoped); the run
+  // lists both in copied_ids.undecryptableSecrets.
+  const known = new Set(runs.flatMap((run) => run.copied_ids.undecryptableSecrets ?? []));
+  return result(
+    rows
+      .filter((row) => !(row.kind === 'secret' && known.has(row.id)))
+      .filter((row) => probeAccountSecret(row.account_id, row.value_enc) !== 'ok')
+      .map((row) => `${row.kind}:${row.id}`),
+  );
 }
 
 async function i4(): Promise<InvariantResult> {

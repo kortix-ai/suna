@@ -281,6 +281,23 @@ withDb('workspace split', () => {
     expect(Object.fromEntries(Object.entries(report).map(([id, r]) => [id, r.violations]))).toEqual({ I1: 0, I2: 0, I3: 0, I4: 0, I5: 0, I6: 0, I7: 0 });
   });
 
+  test('a project secret that does not decrypt moves unchanged, marked for a reconnect; the split still lands', async () => {
+    const corrupt = 'synthetic-not-an-envelope';
+    await db.update(accountSecretResources).set({ valueEnc: corrupt }).where(eq(accountSecretResources.secretId, PROJECT_SECRET));
+    const result = await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage } });
+    expect(result.outcomes.done).toBe(2);
+    const run = (await runFor(MOVED))!;
+    expect(run.phase).toBe('done');
+    const copied = run.copiedIds as unknown as SplitCopiedIds;
+    expect(copied.undecryptableSecrets).toContain(PROJECT_SECRET);
+    const [projectSecret] = await db.select().from(accountSecretResources).where(eq(accountSecretResources.secretId, PROJECT_SECRET));
+    expect(projectSecret?.accountId).toBe(run.toAccountId);
+    expect(projectSecret?.valueEnc).toBe(corrupt);
+    expect(projectSecret?.needsReauthAt).not.toBeNull();
+    const report = await checkWorkspaceInvariants();
+    expect(report.I3.violations).toBe(0);
+  });
+
   test('a crash mid-move leaves nothing moved, and the next pass resumes after the lease expires', async () => {
     await planWorkspaceSplits();
     const run = (await runFor(MOVED))!;

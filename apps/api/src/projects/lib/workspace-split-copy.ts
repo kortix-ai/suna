@@ -376,7 +376,9 @@ export async function splitProjectIntoNewAccount(
   await copyAccountSecrets(tx, projectId, fromAccountId, toAccountId, out);
   await copyIntegrations(tx, fromAccountId, toAccountId, out);
   await splitInvites(tx, projectId, fromAccountId, toAccountId, invites, out);
-  await moveProjectInTransaction(tx, { projectId, fromAccountId, toAccountId }, { split: { groups: out.groups, roles: out.roles } });
+  const moved = await moveProjectInTransaction(tx, { projectId, fromAccountId, toAccountId }, { split: { groups: out.groups, roles: out.roles } });
+  // Project-scoped secrets the source could not decrypt moved unchanged, marked for a reconnect.
+  out.undecryptableSecrets.push(...moved.undecryptableSecrets);
   await nameSourceAfterKeeper(tx, fromAccountId);
   logger.info('[workspace-split] project split into its own account', {
     projectId, fromAccountId, toAccountId,
