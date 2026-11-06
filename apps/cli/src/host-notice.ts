@@ -49,6 +49,21 @@ export function findHostArg(argv: readonly string[]): string | undefined {
   return undefined;
 }
 
+/**
+ * The workspace `--workspace` / `--project` names on the command line, so the
+ * notice names the workspace the command acts on. A value with a role suffix
+ * (`<id>:<role>`, the older `members invite` grant spelling) selects nothing.
+ */
+export function findWorkspaceArg(argv: readonly string[]): string | undefined {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    const eq = /^--(?:workspace|project)=(.*)$/.exec(arg);
+    const value = eq ? eq[1] : arg === '--workspace' || arg === '--project' ? argv[i + 1] : undefined;
+    if (value && !value.startsWith('-') && !value.includes(':')) return value;
+  }
+  return undefined;
+}
+
 export function resolveHostNotice(hostArg?: string): HostNotice {
   if (hostArg) {
     const host = getHost(hostArg);
@@ -93,7 +108,8 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   // `--host`, the active-config workspace may belong to a different host, so
   // we don't claim it.
   if (!hostArg) {
-    const proj = activeProjectLabel();
+    const flagged = findWorkspaceArg(commandArgv.slice(1));
+    const proj = flagged ? { label: idPrefix(flagged), source: 'flag' as const } : activeProjectLabel();
     if (proj) line += `${C.dim} · workspace ${C.reset}${proj.label}${C.dim} (${proj.source})${C.reset}`;
     // Session is the leaf: shown only when we're actually inside one (a
     // sandbox run injects KORTIX_SESSION_ID), never as a persisted pointer.
