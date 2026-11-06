@@ -5,7 +5,7 @@ date: "2026-09-27"
 canonical: "https://kortix.com/blog/open-source-microsoft-copilot-alternative"
 author: "team"
 tags: ["Comparisons"]
-updated: "2026-10-22"
+updated: "2026-11-06"
 slug: "/open-source-microsoft-copilot-alternative"
 coverLogos: [{"domain": "microsoft.com", "name": "Microsoft Copilot"}]
 ---
@@ -51,27 +51,28 @@ Where it differs is where the result lives. Craft's work lands in a session work
 
 Glean is closed and sells search, an assistant and agents across 40+ models, with 275+ connections to work apps and data sources (checked October 2026) ([glean.com](https://www.glean.com)). A closed product cannot stand in for an open-source one, so it is the benchmark a search layer gets measured against rather than a candidate.
 
-Kortix is our recommendation for the lane Copilot now occupies. It is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The starter project shows what a team actually holds. Its header reads this way today:
+Kortix is our recommendation for the lane Copilot now occupies. It is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers. The starter project shows what a team actually holds. Its manifest reads this way today:
 
 ```yaml
 # packages/starter/templates/base/kortix.yaml
-# Kortix project manifest. Source of truth for project-wide config that
-# lives in git alongside the code. `kortix_version` pins the schema so
-# the platform can evolve safely. v2 manifests are YAML-only, with one
-# `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
-# kortix_permissions/skills/workspace/enabled), plus `file`, the path of the
-# agent's `.md`. Agent BEHAVIOR (description, model, mode, temperature,
-# permission, the prompt itself, …) lives entirely in that `.md`'s
-# frontmatter + body — a stock OpenCode agent file works as-is.
-kortix_version: 2
+# {{projectName}}: the Kortix project manifest. Agents, what each may use,
+# triggers and sandboxes live here, committed beside your files.
 
 agents:
-  kortix:
-    file: agents/kortix.md
-    connectors: all
+  worker:
+    description: "General-purpose worker: coding, research, writing, ops and data work, done end to end in its own sandbox."
+    mode: primary
+    permission: allow
+    prompt_file: agents/worker.md
+    tools: "*"
+    skills: "*"
+    connectors: "*"
+    secrets: "*"
+    kortix_permissions: "*"
+    workspace: { project_repository: true }
 ```
 
-The manifest names the file and grants the access. It never says what the agent is for, which model it runs or how it is prompted; that lives in `agents/kortix.md`, a stock OpenCode agent file a reviewer can read in a minute. A session runs on a branch of that repo, and the starter's front-door agent puts the stakes plainly: work that is never committed and pushed is work that does not survive. The thing a company audits is a file.
+The block says what the agent is for, how much it may do without asking, and what it may reach. Its prompt lives in `agents/worker.md`, a markdown file a reviewer can read in a minute. A session runs on a branch of that repo, and the starter's agent puts the stakes plainly: work that is never committed and pushed is work that does not survive. The thing a company audits is a file.
 
 Kortix runs on Kortix Cloud, in your VPC or on-prem, and self-host is free. Any model provider with your own keys, or the ChatGPT plan you already pay for. Nothing merges itself: session work reaches `main` through a change request a person approves, unless an admin granted the `project.gitops.merge` capability ([Kortix docs](https://kortix.com/docs/git)).
 
