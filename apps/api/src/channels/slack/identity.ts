@@ -145,7 +145,7 @@ export async function notifyAdminsOfAccessRequest(input: {
     input.requesterUserId,
   );
   const who = email ? `*${email}*` : `<@${input.requesterSlackUserId}>`;
-  const projectUrl = `${dashboardBase(config.FRONTEND_URL)}/projects/${input.projectId}/customize/members`;
+  const projectUrl = `${dashboardBase(config.FRONTEND_URL)}/workspaces/${input.projectId}/customize/members`;
   const text = `${who} requested access to a Kortix project in this workspace.`;
   const blocks = [
     {

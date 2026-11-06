@@ -182,7 +182,7 @@ describe('helpers', () => {
 
   test('webGoalUrl joins origin, project, scope and an encoded slug', () => {
     expect(webGoalUrl('https://dev.kortix.com/', 'p1', { scope: 'company', slug: 'a b' })).toBe(
-      'https://dev.kortix.com/projects/p1/goals/company/a%20b',
+      'https://dev.kortix.com/workspaces/p1/goals/company/a%20b',
     );
   });
 });

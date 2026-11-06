@@ -177,7 +177,7 @@ describe('installOutcome', () => {
 });
 
 test('connectorWebPath is the web connector page', () => {
-  expect(connectorWebPath('p-1', 'linear-ab12cd')).toBe('/projects/p-1/admin/connectors/connected/linear-ab12cd');
+  expect(connectorWebPath('p-1', 'linear-ab12cd')).toBe('/workspaces/p-1/admin/connectors/connected/linear-ab12cd');
 });
 
 test('wrapText breaks on spaces within the width', () => {

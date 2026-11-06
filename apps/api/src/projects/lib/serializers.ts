@@ -337,7 +337,7 @@ export function serializeProject(
     updated_at: row.updatedAt.toISOString(),
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
-    dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
+    dashboard_url: `${dashboardBaseUrl()}/workspaces/${row.projectId}`,
     // Feature flags (Settings → Feature flags) — `experimental` is the effective
     // on/off map; `experimental_features` is the self-describing catalog the UI
     // renders from. Both wire names are historical and STABLE; do not rename

@@ -309,7 +309,7 @@ export function driveWebUrl(
   folder: string,
   personalFolder: string | null,
 ): string {
-  const base = `${webBaseUrl.replace(/\/+$/, '')}/projects/${encodeURIComponent(projectId)}/drive`;
+  const base = `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${encodeURIComponent(projectId)}/drive`;
   const abs = normalizeDrivePath(folder);
   const personal = personalFolder ? normalizeDrivePath(personalFolder) : null;
   let param = '';
@@ -329,7 +329,7 @@ export function driveWebUrl(
 
 /** The web page where a project admin turns on Volumes. */
 export function featureFlagsWebUrl(webBaseUrl: string, projectId: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${encodeURIComponent(projectId)}/admin/feature-flags`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${encodeURIComponent(projectId)}/admin/feature-flags`;
 }
 
 /**

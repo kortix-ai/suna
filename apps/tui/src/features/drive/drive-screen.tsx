@@ -1,5 +1,5 @@
 /**
- * The Drive screen: the project's shared folders, the web's `/projects/:id/drive`.
+ * The Drive screen: the project's shared folders, the web's `/workspaces/:id/drive`.
  *
  * This file is the data half — every read is a `@kortix/sdk/react` hook, every
  * write is a standalone `@kortix/sdk` Drive function (there is no

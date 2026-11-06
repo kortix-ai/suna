@@ -215,13 +215,13 @@ export function resolveConnectTarget(
 
 /** The connector's page in the web app (`connectorHref`, no app). */
 export function connectorWebPath(projectId: string, slug: string): string {
-  return `/projects/${encodeURIComponent(projectId)}/admin/connectors/connected/${encodeURIComponent(slug)}`;
+  return `/workspaces/${encodeURIComponent(projectId)}/admin/connectors/connected/${encodeURIComponent(slug)}`;
 }
 
 /** A catalogue app's page in the web app (`appHref`). */
 export function catalogWebPath(projectId: string, entry: Pick<DiscoverConnector, 'slug' | 'id'>): string {
   const params = new URLSearchParams({ id: entry.id });
-  return `/projects/${encodeURIComponent(projectId)}/admin/connectors/${encodeURIComponent(entry.slug)}?${params.toString()}`;
+  return `/workspaces/${encodeURIComponent(projectId)}/admin/connectors/${encodeURIComponent(entry.slug)}?${params.toString()}`;
 }
 
 /** Break `text` into lines of at most `width` columns, on spaces. */

@@ -57,7 +57,7 @@ function errorText(error: unknown): string {
  */
 export function billingWebUrl(backendUrl: string, accountId: string): string {
   const dashboard = webDashboardUrl(hostOrigin(backendUrl));
-  return `${dashboard}/projects?accountId=${accountId}&accountTab=billing`;
+  return `${dashboard}/workspaces?accountId=${accountId}&accountTab=billing`;
 }
 
 export function AccountScreen({

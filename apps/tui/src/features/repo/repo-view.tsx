@@ -3,7 +3,7 @@
  *
  * The project's git repository: a file tree on the left, the file (or the
  * commit history) on the right. It is the read-only twin of the web's
- * `/projects/<id>/files` page.
+ * `/workspaces/<id>/files` page.
  *
  * Like `features/files/files-screen.tsx`, the view takes async `loaders` and
  * keeps the tree in local state; `repo-screen.tsx` builds the loaders from the

@@ -127,7 +127,7 @@ export function projectId(env: PlatformToolContext['env']): string {
 
 /** In-app path under the session's project. */
 export function projectHref(env: PlatformToolContext['env'], path = ''): string {
-  return `/projects/${projectId(env)}${path}`
+  return `/workspaces/${projectId(env)}${path}`
 }
 
 export function sessionHref(env: PlatformToolContext['env'], sessionId: string): string {

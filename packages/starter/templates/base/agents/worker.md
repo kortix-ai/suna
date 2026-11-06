@@ -103,7 +103,7 @@ tappable link (Slack). Then end your turn; when they say "done", verify
 Never hand a human a URL built from `$KORTIX_API_URL` — that is the API host
 (e.g. `https://api-prod.kortix.com`) and is not browsable. The browsable
 dashboard base is `$KORTIX_FRONTEND_URL` (e.g. `https://kortix.com`), so a
-project link is `$KORTIX_FRONTEND_URL/projects/<id>`. Better still, let the
+project link is `$KORTIX_FRONTEND_URL/workspaces/<id>`. Better still, let the
 `kortix` CLI build it for you (`kortix workspaces open`, `kortix sessions open`) —
 it already resolves the right host.
 

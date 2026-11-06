@@ -200,7 +200,7 @@ async function serialize(rows: ArtifactRow[], viewer: Viewer, counts?: Promise<R
       created_by_session_id: row.createdBySessionId,
       can_manage: canManage(row, viewer),
       view_url: artifactViewUrl(row.artifactId, null),
-      web_url: `${frontendBase()}/projects/${row.projectId}/artifacts/${row.artifactId}`,
+      web_url: `${frontendBase()}/workspaces/${row.projectId}/artifacts/${row.artifactId}`,
       public_url: isPublic ? `${frontendBase()}/share/artifact/${row.artifactId}` : null,
       public_content_url: isPublic ? artifactPublicContentUrl(row.artifactId) : null,
       space: row.space,

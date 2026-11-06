@@ -8,7 +8,7 @@
 
 export type AccountHubTab = 'members' | 'git' | 'audit';
 
-/** `${frontendUrl}/projects?accountId=<id>&accountTab=<tab>`, id encoded. */
+/** `${frontendUrl}/workspaces?accountId=<id>&accountTab=<tab>`, id encoded. */
 export function accountHubUrl(frontendUrl: string, accountId: string, tab: AccountHubTab): string {
-  return `${frontendUrl.replace(/\/$/, '')}/projects?accountId=${encodeURIComponent(accountId)}&accountTab=${tab}`;
+  return `${frontendUrl.replace(/\/$/, '')}/workspaces?accountId=${encodeURIComponent(accountId)}&accountTab=${tab}`;
 }

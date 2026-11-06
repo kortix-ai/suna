@@ -30,6 +30,8 @@ test('Artifact push links reject external origins, other projects, redirects, tr
   const thread = '33333333-3333-4333-8333-333333333333';
   const path = `${ARTIFACT_PATH}?thread=${thread}`;
   expect(artifactNotificationPath(path, ARTIFACT_PROJECT)).toBe(path);
+  // A server since 2026-11-06 names the web page under /workspaces; the app route stays /projects.
+  expect(artifactNotificationPath(path.replace('/projects/', '/workspaces/'), ARTIFACT_PROJECT)).toBe(path);
   for (const bad of [`https://evil.example.test${path}`, `//evil.example.test${path}`, `/projects/${thread}/artifacts/${ARTIFACT_ID}`, `${ARTIFACT_PATH}?redirect=https://evil.example.test`, `${ARTIFACT_PATH}?thread=invalid`, `${path}&thread=${thread}`, `${ARTIFACT_PATH}#other`, `/projects/${ARTIFACT_PROJECT}/artifacts/../artifacts/${ARTIFACT_ID}`]) {
     expect(artifactNotificationPath(bad, ARTIFACT_PROJECT)).toBeNull();
     expect(parsePushData({ ...ARTIFACT_DATA, url: bad })).toBeNull();

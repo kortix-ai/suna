@@ -128,12 +128,14 @@ export function parsePushData(raw: unknown): PushData | null {
 }
 
 export function artifactNotificationPath(value: unknown, projectId: string): string | null {
-  if (typeof value !== 'string' || !value.startsWith('/projects/')) return null;
+  // The API names the web page: `/workspaces/...` since 2026-11-06, `/projects/...`
+  // before. The app's own route is `/projects/[id]/...` either way.
+  if (typeof value !== 'string' || !/^\/(?:workspaces|projects)\//.test(value)) return null;
   try {
-    const url = new URL(value, 'https://kortix.invalid');
+    const url = new URL(value.replace(/^\/workspaces\//, '/projects/'), 'https://kortix.invalid');
     const match = /^\/projects\/([^/]+)\/artifacts\/([0-9a-f-]{36})$/i.exec(url.pathname);
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (url.origin !== 'https://kortix.invalid' || !uuid.test(projectId) || !match || match[1] !== projectId || !uuid.test(match[2]!) || url.hash || value.split(/[?#]/)[0] !== url.pathname) return null;
+    if (url.origin !== 'https://kortix.invalid' || !uuid.test(projectId) || !match || match[1] !== projectId || !uuid.test(match[2]!) || url.hash || value.split(/[?#]/)[0]!.replace(/^\/workspaces\//, '/projects/') !== url.pathname) return null;
     for (const [key, entry] of url.searchParams) if (!['thread', 'notification'].includes(key) || !uuid.test(entry) || url.searchParams.getAll(key).length !== 1) return null;
     return `${url.pathname}${url.search}`;
   } catch {

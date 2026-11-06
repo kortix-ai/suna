@@ -144,7 +144,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
         type: 'context',
         elements: [
           { type: 'mrkdwn', text: '🟢  *Connected*' },
-          { type: 'mrkdwn', text: `🪐  <${dashboardBase}/projects/${p.projectId}|Dashboard>` },
+          { type: 'mrkdwn', text: `🪐  <${dashboardBase}/workspaces/${p.projectId}|Dashboard>` },
         ],
       });
       blocks.push({
@@ -154,7 +154,7 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
             type: 'button',
             text: { type: 'plain_text', text: 'Open project' },
             style: 'primary',
-            url: `${dashboardBase}/projects/${p.projectId}`,
+            url: `${dashboardBase}/workspaces/${p.projectId}`,
             action_id: `home_open_${p.projectId}`,
           },
           // A Kortix-hosted repository is private: the button would open a 404.

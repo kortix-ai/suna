@@ -94,7 +94,7 @@ export function spaceWebUrl(
   projectId: string,
   space: Pick<ProjectSpace, 'kind' | 'slug' | 'dm_agent_name'>,
 ): string {
-  const base = `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}`;
+  const base = `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}`;
   if (space.kind === 'dm') return `${base}/dm/${encodeURIComponent(space.dm_agent_name ?? '')}`;
   return `${base}/c/${encodeURIComponent(space.slug ?? '')}`;
 }

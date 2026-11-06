@@ -281,7 +281,7 @@ describe('ProjectSwitcherSheet', () => {
     expect(pushCalls).toHaveLength(1);
   });
 
-  test('a `+` tap dismisses the sheet first, then opens the web hand-off to /new', async () => {
+  test('a `+` tap dismisses the sheet first, then opens the web hand-off to /workspaces/new', async () => {
     workspaceRows = [ROW('p-1', 'Acme')];
     await openAs({ currentProjectId: 'p-1' });
     const add = tree.root.findAll(
@@ -290,6 +290,6 @@ describe('ProjectSwitcherSheet', () => {
     expect(add).toHaveLength(1);
     act(() => add[0].props.onPress());
     expect(sheetCalls).toContain('dismiss');
-    expect(webCreateUrl).toBe('https://kortix.test/new');
+    expect(webCreateUrl).toBe('https://kortix.test/workspaces/new');
   });
 });

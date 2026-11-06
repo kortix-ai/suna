@@ -28,7 +28,7 @@ export function sendAlertEmail(message: EmailMessage) {
 /** The account's Billing pane: the hub opened over the project list. */
 export function billingPaneUrl(accountId: string): string {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  return `${base}/projects?accountId=${encodeURIComponent(accountId)}&accountTab=billing`;
+  return `${base}/workspaces?accountId=${encodeURIComponent(accountId)}&accountTab=billing`;
 }
 
 /**

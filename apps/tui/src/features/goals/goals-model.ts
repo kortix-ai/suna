@@ -246,7 +246,7 @@ export function webGoalUrl(
   projectId: string,
   goal: { scope: string; slug: string },
 ): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/goals/${goal.scope}/${encodeURIComponent(goal.slug)}`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/goals/${goal.scope}/${encodeURIComponent(goal.slug)}`;
 }
 
 export interface DetailLine {

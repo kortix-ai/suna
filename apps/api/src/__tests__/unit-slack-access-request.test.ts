@@ -217,6 +217,6 @@ describe('notifyAdminsOfAccessRequest', () => {
 
     const button = firstButton(sentBlocks[0]?.blocks ?? []);
     expect(sentBlocks[0]?.channel).toBe('D1');
-    expect(button.url).toBe('http://localhost:3000/projects/proj-1/customize/members');
+    expect(button.url).toBe('http://localhost:3000/workspaces/proj-1/customize/members');
   });
 });

@@ -86,7 +86,7 @@ function bakedDefaultUrl() {
 //   2. value baked into package.json at build time (CI dev vs prod)
 //   3. production kortix.com
 // A runtime KORTIX_DESKTOP_URL / the Frontend-URL menu still overrides this.
-const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() || 'https://kortix.com/projects';
+const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() || 'https://kortix.com/workspaces';
 
 // The update channel baked into the bundle decides whether the frontend-URL
 // menu is the developer preset switcher or the single production

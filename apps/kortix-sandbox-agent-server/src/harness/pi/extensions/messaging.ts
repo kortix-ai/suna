@@ -253,6 +253,6 @@ function agentRow(agent: ReachableAgent): KortixCardRow {
     title: agent.handle,
     ...(detail.length ? { detail: detail.join(' · ') } : {}),
     badge: BOARD_STATE_BADGE[agent.state] ?? agent.state,
-    href: `/projects/${agent.project_id}/sessions/${agent.session_id}`,
+    href: `/workspaces/${agent.project_id}/sessions/${agent.session_id}`,
   }
 }

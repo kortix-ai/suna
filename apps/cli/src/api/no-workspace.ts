@@ -16,5 +16,5 @@ export const NO_WORKSPACE_CODE = 'no_workspace';
  * the CLI holds no key until a workspace exists, so the fix is the web.
  */
 export function noWorkspaceLoginLine(webBase: string): string {
-  return `No workspace yet. Create one at ${webBase.replace(/\/+$/, '')}/new, or accept an invite, then run kortix login again.`;
+  return `No workspace yet. Create one at ${webBase.replace(/\/+$/, '')}/workspaces/new, or accept an invite, then run kortix login again.`;
 }

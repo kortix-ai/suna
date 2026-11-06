@@ -153,7 +153,7 @@ function complete(input: Partial<{ projectId: string; userId: string; code: stri
 }
 
 const dashboard = (qs: string) =>
-  `https://dev.kortix.com/projects/${PROJECT_ID}?projectId=${PROJECT_ID}&${qs}&customize=connectors`;
+  `https://dev.kortix.com/workspaces/${PROJECT_ID}?projectId=${PROJECT_ID}&${qs}&customize=connectors`;
 
 describe('Slack OAuth callback', () => {
   test('the callback hands off to web completion and saves nothing', async () => {

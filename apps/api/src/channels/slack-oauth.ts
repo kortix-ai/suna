@@ -228,7 +228,7 @@ function dashboardUrl(qs: Record<string, string | undefined>): string {
   // which is too fragile as an external OAuth landing target.
   if (qs.projectId) params.set('customize', 'connectors');
   return qs.projectId
-    ? `${base}/projects/${qs.projectId}?${params.toString()}`
+    ? `${base}/workspaces/${qs.projectId}?${params.toString()}`
     : `${base}/?${params.toString()}`;
 }
 

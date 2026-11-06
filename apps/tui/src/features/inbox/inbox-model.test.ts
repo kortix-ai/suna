@@ -90,7 +90,7 @@ describe('targetOf', () => {
   test('a session of another project opens on the web, without the notification param', () => {
     expect(targetOf(toInboxRow(note()), 'p-2', web)).toEqual({
       kind: 'web',
-      url: 'https://dev.kortix.com/projects/p-1/sessions/s-1',
+      url: 'https://dev.kortix.com/workspaces/p-1/sessions/s-1',
     });
   });
 
@@ -100,7 +100,7 @@ describe('targetOf', () => {
     );
     expect(targetOf(row, 'p-1', web)).toEqual({
       kind: 'web',
-      url: 'https://dev.kortix.com/projects/p-1/triggers?tab=x',
+      url: 'https://dev.kortix.com/workspaces/p-1/triggers?tab=x',
     });
   });
 });

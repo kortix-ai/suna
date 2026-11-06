@@ -150,5 +150,5 @@ export async function forkSession(
 
 /** The web page of a session, for `/copy`. */
 export function sessionWebUrl(webBase: string, projectId: string, sessionId: string): string {
-  return `${webBase.replace(/\/+$/, '')}/projects/${projectId}/sessions/${sessionId}`;
+  return `${webBase.replace(/\/+$/, '')}/workspaces/${projectId}/sessions/${sessionId}`;
 }

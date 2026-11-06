@@ -8,7 +8,7 @@ import { lookupEmailsByUserIds } from './access';
 
 function projectMembersUrl(projectId: string): string {
   const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
-  return `${base}/projects/${projectId}/customize/members`;
+  return `${base}/workspaces/${projectId}/customize/members`;
 }
 export async function notifyProjectAccessRequestManagers(input: {
   accountId: string;

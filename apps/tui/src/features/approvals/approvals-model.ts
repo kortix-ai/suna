@@ -393,5 +393,5 @@ export function detailLines(item: ReviewItem, width: number, now: number): Detai
 
 /** The item in the web Review Center. `/review` redirects and keeps `?id`. */
 export function webReviewUrl(webBaseUrl: string, projectId: string, id: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/review?id=${encodeURIComponent(id)}`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/review?id=${encodeURIComponent(id)}`;
 }

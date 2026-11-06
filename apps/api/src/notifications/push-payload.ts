@@ -62,6 +62,12 @@ export function notificationUrl(input: {
   kind?: string;
   accountId?: string;
 }): string {
+  // Still `/projects/…`, not the web's `/workspaces/…` (2026-11-06): mobile
+  // builds before then open an artifact push only for a `/projects/` path
+  // (apps/mobile/lib/notifications/push.ts). The web redirects the old path,
+  // `public/sw.js` and the notification center rewrite it, and emails name the
+  // canonical page (notification-email.ts `absoluteAppUrl`). Switch once no
+  // supported mobile build predates the change.
   const query = `?notification=${encodeURIComponent(input.notificationId)}`;
   if (input.projectId && input.artifactId && input.artifactThreadId) {
     return `/projects/${encodeURIComponent(input.projectId)}/artifacts/${encodeURIComponent(input.artifactId)}?thread=${encodeURIComponent(input.artifactThreadId)}&${query.slice(1)}`;

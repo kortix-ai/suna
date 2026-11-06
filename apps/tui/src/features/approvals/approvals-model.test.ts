@@ -237,7 +237,7 @@ describe('helpers', () => {
 
   test('webReviewUrl encodes the id', () => {
     expect(webReviewUrl('https://dev.kortix.com/', 'p1', 'call:abc')).toBe(
-      'https://dev.kortix.com/projects/p1/review?id=call%3Aabc',
+      'https://dev.kortix.com/workspaces/p1/review?id=call%3Aabc',
     );
   });
 });

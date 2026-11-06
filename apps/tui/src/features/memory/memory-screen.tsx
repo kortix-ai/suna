@@ -129,7 +129,7 @@ export function pageDetail(page: ProjectMemoryPage): MemoryPageDetail {
 
 /** The web route for this screen. The page id is not a route: the list opens. */
 export function memoryWebUrl(webBaseUrl: string, projectId: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/memory`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/memory`;
 }
 
 export function MemoryScreen({

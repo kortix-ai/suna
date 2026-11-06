@@ -288,7 +288,7 @@ describe('callback-free device login', () => {
       const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
       expect(code).toBe(1);
       expect(`${stdout}${stderr}`).toContain('No workspace yet. Create one at ');
-      expect(`${stdout}${stderr}`).toContain('/new, or accept an invite, then run kortix login again.');
+      expect(`${stdout}${stderr}`).toContain('/workspaces/new, or accept an invite, then run kortix login again.');
       expect(`${stdout}${stderr}`).not.toContain('kortix workspaces create');
     } finally { server.stop(true); rmSync(dir, { recursive: true, force: true }); }
   }, 15000);

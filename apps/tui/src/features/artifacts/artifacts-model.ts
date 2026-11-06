@@ -68,7 +68,7 @@ export function toArtifactRow(
 /**
  * The link a browser opens. The API's `web_url` wins when it is absolute; a
  * relative one is joined to the web origin; none falls back to the route the
- * web app serves (`/projects/<id>/artifacts/<artifact_id>`).
+ * web app serves (`/workspaces/<id>/artifacts/<artifact_id>`).
  */
 export function artifactWebUrl(
   webUrl: string | null | undefined,
@@ -79,7 +79,7 @@ export function artifactWebUrl(
   const base = webBaseUrl.replace(/\/+$/, '');
   if (webUrl && /^https?:\/\//i.test(webUrl)) return webUrl;
   if (webUrl) return `${base}${webUrl.startsWith('/') ? '' : '/'}${webUrl}`;
-  return `${base}/projects/${projectId}/artifacts/${artifactId}`;
+  return `${base}/workspaces/${projectId}/artifacts/${artifactId}`;
 }
 
 /** Pinned first, then as the API ordered them (newest change first). */

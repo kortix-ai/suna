@@ -274,9 +274,9 @@ describe('connectorSetup / connectorWebUrl', () => {
 
   test('the connect hint is the web page that runs the OAuth round-trip', () => {
     expect(connectorWebUrl('p1', 'slack', 'https://dev.kortix.com/')).toBe(
-      'https://dev.kortix.com/projects/p1/connectors?c=slack',
+      'https://dev.kortix.com/workspaces/p1/connectors?c=slack',
     );
-    expect(connectorWebUrl('p1', 'slack')).toBe('/projects/p1/connectors?c=slack');
+    expect(connectorWebUrl('p1', 'slack')).toBe('/workspaces/p1/connectors?c=slack');
   });
 });
 
@@ -834,7 +834,7 @@ describe('<ConnectorsTabView/>', () => {
         height={16}
         loading={false}
         errorMessage={null}
-        connectUrlFor={(slug) => `https://dev.kortix.com/projects/p1/connectors?c=${slug}`}
+        connectUrlFor={(slug) => `https://dev.kortix.com/workspaces/p1/connectors?c=${slug}`}
         onInputActive={() => {}}
       />,
       SIZE,
@@ -857,7 +857,7 @@ describe('<ConnectorsTabView/>', () => {
         height={16}
         loading={false}
         errorMessage={null}
-        connectUrlFor={(slug) => `https://dev.kortix.com/projects/p1/connectors?c=${slug}`}
+        connectUrlFor={(slug) => `https://dev.kortix.com/workspaces/p1/connectors?c=${slug}`}
         onInputActive={() => {}}
       />,
       SIZE,
@@ -868,7 +868,7 @@ describe('<ConnectorsTabView/>', () => {
     await act(async () => mockInput.pressEnter());
     await flush();
     const frame = captureCharFrame();
-    expect(frame).toContain('https://dev.kortix.com/projects/p1/connectors?c=gmail');
+    expect(frame).toContain('https://dev.kortix.com/workspaces/p1/connectors?c=gmail');
     expect(frame).toContain('none');
     renderer.destroy();
   });

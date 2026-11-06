@@ -29,7 +29,7 @@
 const HANDLER_ATTRS = new Set(['onClick', 'onSelect', 'onPress', 'onMouseDown']);
 const ESCAPE = 'nav-contract:';
 
-/** `/projects/x`, `` `/projects/${id}` `` — an internal, render-time-static href. */
+/** `/workspaces/x`, `` `/workspaces/${id}` `` — an internal, render-time-static href. */
 function staticInternalHref(node) {
   if (!node) return false;
   if (node.type === 'Literal') return typeof node.value === 'string' && node.value.startsWith('/');

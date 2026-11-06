@@ -320,7 +320,7 @@ async function buildStatusCard(
     // from the thing the card is about.
     url: session
       ? sessionWebUrl(config.FRONTEND_URL, projectId, session.sessionId)
-      : `${dashboardBase()}/projects/${projectId}`,
+      : `${dashboardBase()}/workspaces/${projectId}`,
   });
 }
 
@@ -375,7 +375,7 @@ async function buildWhoamiCard(tenantId: string, userId: string | null, projectI
       { label: 'Connected as', value: email || identity.userId },
       { label: 'Runs act as', value: 'you — your credentials & secrets' },
     ],
-    url: `${dashboardBase()}/projects/${projectId}`,
+    url: `${dashboardBase()}/workspaces/${projectId}`,
   });
 }
 

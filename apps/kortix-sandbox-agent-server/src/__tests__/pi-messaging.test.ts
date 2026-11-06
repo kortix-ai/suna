@@ -208,9 +208,9 @@ describe('pi list_agents', () => {
         subtitle: 'This session is main. 1 working.',
         status: 'done',
         rows: [
-          { title: 'reviewer', detail: 'started by this session · @reviewer · Review the auth module', badge: 'working', href: `/projects/${PROJECT_ID}/sessions/${REVIEWER}` },
-          { title: 'docs-writer', detail: 'session · Write the docs · messages wait for approval', badge: 'idle', href: `/projects/${PROJECT_ID}/sessions/${OTHER}` },
-          { title: 'quiet', detail: 'session · @reviewer · Review the auth module · takes no messages', badge: 'done', href: `/projects/${PROJECT_ID}/sessions/aaaaaaaa-0000-4000-8000-000000000004` },
+          { title: 'reviewer', detail: 'started by this session · @reviewer · Review the auth module', badge: 'working', href: `/workspaces/${PROJECT_ID}/sessions/${REVIEWER}` },
+          { title: 'docs-writer', detail: 'session · Write the docs · messages wait for approval', badge: 'idle', href: `/workspaces/${PROJECT_ID}/sessions/${OTHER}` },
+          { title: 'quiet', detail: 'session · @reviewer · Review the auth module · takes no messages', badge: 'done', href: `/workspaces/${PROJECT_ID}/sessions/aaaaaaaa-0000-4000-8000-000000000004` },
         ],
       },
       data: REACHABLE,

@@ -143,7 +143,7 @@ export async function sendProjectAddedEmail(opts: ProjectAddedEmailInput): Promi
 
 export function renderProjectAddedEmail(opts: ProjectAddedEmailInput): { subject: string; html: string; text: string } {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  const url = `${base}/projects/${encodeURIComponent(opts.projectId)}`;
+  const url = `${base}/workspaces/${encodeURIComponent(opts.projectId)}`;
   const title = `Open ${opts.projectName} on Kortix`;
   const lead = `${opts.inviterEmail || 'A project manager'} added you to the ${opts.projectName} project as ${opts.role}.`;
   const note = `This access is for ${opts.email}. Sign in with that address to open the project. You already have access; no invitation acceptance is required. If you were not expecting this access, contact the project manager.`;

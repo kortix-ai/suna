@@ -279,7 +279,7 @@ describe('/status and /sessions', () => {
     expect(posted[0]).toContain('Fix the flaky test');
     expect(posted[0]).toContain('First · done');
     expect(posted[0]).toContain('Untitled session');
-    expect(posted[0]).toContain('https://dev.kortix.com/projects/proj-1/sessions/sess-1');
+    expect(posted[0]).toContain('https://dev.kortix.com/workspaces/proj-1/sessions/sess-1');
     expect(sessionQueries).toEqual([{ user: expect.objectContaining({ platform: 'teams', workspaceId: TENANT }), opts: { limit: 5, projectId: undefined } }]);
   });
 
@@ -333,7 +333,7 @@ describe('/unbind, /home and /projects', () => {
     expect(card).toContain('Connected projects');
     expect(card).toContain('"title":"✓ In use"');
     expect(card).toContain(`"projectId":"${OTHER}"`);
-    expect(card).toContain('https://dev.kortix.com/projects/proj-2');
+    expect(card).toContain('https://dev.kortix.com/workspaces/proj-2');
   });
 
   test('/home lists the organization\'s projects and what to try', async () => {
