@@ -15,6 +15,7 @@ import {
   escapeXmlAttr,
   appendMentionRefs,
   buildDriveRefsBlock,
+  keptDriveRefs,
 } from './project-preamble';
 
 const TITLES = [
@@ -160,7 +161,21 @@ describe('Drive file refs', () => {
     const files = TITLES.map((title, i) => ({ path: `/Company/${i}/${title}`, name: title, file: `${title}.png` }));
     const parsed = parseFileMentionReferences(`look @x\n\n${buildDriveRefsBlock(files)}`);
     expect(parsed.cleanText).toBe('look @x');
-    expect(parsed.drives).toEqual(files.map(({ path, name }) => ({ path, name })));
+    expect(parsed.drives).toEqual(files);
     expect(parsed.files).toEqual([]);
+  });
+
+  test('an edited message keeps the refs whose @name and upload it kept, and sends them again', () => {
+    const refs = [
+      { path: '/Company/brand/logo.png', name: 'logo.png', file: 'logo.png' },
+      { path: '/Users/ana/logo.png', name: 'logo.png', file: 'logo (ana).png' },
+      { path: '/Company/a b.png', name: 'a b.png', file: 'a b.png' },
+      { path: '/old.png', name: 'old.png' },
+    ];
+    // The second logo's tile was removed in the editor, `a b.png`'s chip text was deleted, and a ref
+    // from before upload names were written has no file to match.
+    expect(keptDriveRefs('compare @logo.png and @old.png', refs, ['logo.png', 'a b.png', 'old.png'])).toEqual([
+      { path: '/Company/brand/logo.png', name: 'logo.png', file: 'logo.png' },
+    ]);
   });
 });

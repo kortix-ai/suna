@@ -42,7 +42,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
-import { driveUploadName, drivePathsIn, withoutDriveChips } from './drive-mentions';
+import { driveChipsIn, driveUploadName, drivePathsIn, withoutDriveChips } from './drive-mentions';
 import type { DriveMentionSource } from './menus/mention-menu';
 import { mergeFailedSubmissionFiles } from './composer-draft-recovery';
 import { resolveComposerResetOnSend, type ComposerSendReset } from './composer-reset';
@@ -1056,7 +1056,8 @@ function ComposerImpl(props: SessionChatInputProps) {
   const pickDriveFile = useCallback(
     async ({ path, name, size }: { path: string; name: string; size?: number }) => {
       const attached = () => attachedFilesRef.current.some((file) => file.kind !== 'remote' && file.drivePath === path);
-      if (pendingDrivePathsRef.current.has(path) || attached()) return;
+      // Every other way to attach refuses here too: an answer to a question takes only text.
+      if (disabled || lockForQuestionRef.current || pendingDrivePathsRef.current.has(path) || attached()) return;
       const dropChips = () => {
         const doc = editorRef.current?.getDocument();
         if (doc) setDocumentWithoutStealingFocus(editorRef.current, withoutDriveChips(doc, path));
@@ -1096,28 +1097,35 @@ function ComposerImpl(props: SessionChatInputProps) {
       attachedFilesRef.current = next;
       setAttachedFiles(next);
     },
-    [appendAttachedFiles, projectId, queryClient, tComposerAttachments, viewerId],
+    [appendAttachedFiles, disabled, lockForQuestionRef, projectId, queryClient, tComposerAttachments, viewerId],
   );
   const handleDocChangeWithDrive = useCallback(
     (doc: JSONContent, isEmpty: boolean) => {
       handleEditorDocChange(doc, isEmpty);
-      const named = drivePathsIn(doc);
-      const removed = [...docDrivePathsRef.current].filter((path) => !named.has(path));
-      docDrivePathsRef.current = named;
+      const named = driveChipsIn(doc);
+      const previous = docDrivePathsRef.current;
+      docDrivePathsRef.current = new Set(named.keys());
       // A recalled prompt replaces the draft for a moment; the tray keeps its files, as it does every attachment.
-      if (removed.length === 0 || applyingHistoryRef.current) return;
-      // The person deleted the last chip of a path: its file leaves the tray. Run after the change
-      // settles: a send or a command empties the editor and hands its tray off in the same handler,
-      // so those files are gone from the tray by then. A question lock keeps the tray.
+      if (applyingHistoryRef.current) return;
+      const removed = [...previous].filter((path) => !named.has(path));
+      const added = [...named].filter(([path]) => !previous.has(path));
+      if (removed.length === 0 && added.length === 0) return;
+      // Run after the change settles. A send or a command empties the editor and hands its tray off in
+      // the same handler, and a restore (draft, failed send, prefill) sets the document and then its
+      // files: by the microtask the tray is what the change left. A question lock keeps the tray.
       queueMicrotask(() => {
         if (lockForQuestionRef.current) return;
+        const held = (path: string) => attachedFilesRef.current.findIndex((file) => file.kind !== 'remote' && file.drivePath === path);
+        // The person deleted the last chip of a path: its file leaves the tray.
         for (const path of removed) {
-          const index = attachedFilesRef.current.findIndex((held) => held.kind !== 'remote' && held.drivePath === path);
+          const index = held(path);
           if (index !== -1) removeAttachedFile(index);
         }
+        // A chip came back without its file (an undo, a draft whose upload expired): fetch it again.
+        for (const [path, name] of added) if (held(path) === -1) void pickDriveFile({ path, name });
       });
     },
-    [handleEditorDocChange, lockForQuestionRef, removeAttachedFile],
+    [handleEditorDocChange, lockForQuestionRef, pickDriveFile, removeAttachedFile],
   );
   const driveMentions = useMemo<DriveMentionSource | null>(
     // A host that keeps files in its own store (`takeFiles`) gets no Drive rows.
@@ -1771,6 +1779,11 @@ function ComposerImpl(props: SessionChatInputProps) {
       const filesNow = stash ? stash.files : attachedFilesRef.current;
       const quotesNow = stash ? stash.quotes : quotesRef.current;
       const pastesNow = stash ? stash.pastes : pastesRef.current;
+      // A Drive file still downloading would leave without its bytes (a message) or be thrown away (a command).
+      if (!stash && pendingDrivePathsRef.current.size > 0) {
+        errorToast(tComposerAttachments('driveFilePending'));
+        return;
+      }
       // Every quote leads the message, or the command args, as its own
       // `<reply_context>` line. A question's custom answer below reads
       // `draft.text`, so it never carries them.
@@ -1896,11 +1909,6 @@ function ComposerImpl(props: SessionChatInputProps) {
       const content = draft ?? { text: '', mentions: [] };
       const trimmed = plan.text;
       if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
-      // A Drive file still downloading would leave without its bytes.
-      if (pendingDrivePathsRef.current.size > 0) {
-        errorToast(tComposerAttachments('driveFilePending'));
-        return;
-      }
 
       // Send never waits for an upload: the selection is handed to this send
       // now. Only a failed upload refuses, and the Send control says why.

@@ -12,15 +12,21 @@ import type { AttachedFile } from './types';
 
 const isDriveChip = (node: JSONContent) => node.type === 'mention' && node.attrs?.kind === 'drive';
 
-/** The Drive paths the document's chips name. */
-export function drivePathsIn(doc: JSONContent | null | undefined): Set<string> {
-  const paths = new Set<string>();
+/** The document's Drive chips: Drive path → the file's name, first chip of a path wins. */
+export function driveChipsIn(doc: JSONContent | null | undefined): Map<string, string> {
+  const chips = new Map<string, string>();
   const walk = (node: JSONContent) => {
-    if (isDriveChip(node) && typeof node.attrs?.value === 'string') paths.add(node.attrs.value);
+    const path = node.attrs?.value;
+    if (isDriveChip(node) && typeof path === 'string' && path && !chips.has(path)) chips.set(path, String(node.attrs?.label ?? ''));
     node.content?.forEach(walk);
   };
   if (doc) walk(doc);
-  return paths;
+  return chips;
+}
+
+/** The Drive paths the document's chips name. */
+export function drivePathsIn(doc: JSONContent | null | undefined): Set<string> {
+  return new Set(driveChipsIn(doc).keys());
 }
 
 /** The document without the chips that name `path` (a file that could not be attached). */

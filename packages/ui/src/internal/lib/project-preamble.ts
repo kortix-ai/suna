@@ -146,6 +146,20 @@ export function driveRefsOf(
   return [...refs.values()];
 }
 
+/**
+ * The Drive refs an edited message keeps: the ones whose `@name` is still in
+ * the text and whose upload the edit kept. The edit sends those uploads again.
+ */
+export function keptDriveRefs(
+  text: string,
+  refs: ReadonlyArray<{ path: string; name: string; file?: string }>,
+  keptFiles: ReadonlyArray<string>,
+): DriveRefLike[] {
+  return refs.flatMap((ref) =>
+    ref.file && keptFiles.includes(ref.file) && text.includes(`@${ref.name}`) ? [{ path: ref.path, name: ref.name, file: ref.file }] : [],
+  );
+}
+
 export function appendDriveRefs(text: string, files: ReadonlyArray<DriveRefLike>): string {
   const block = buildDriveRefsBlock(files);
   if (!block) return text;

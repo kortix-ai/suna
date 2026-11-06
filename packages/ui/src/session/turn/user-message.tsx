@@ -1,6 +1,7 @@
 'use client';
 
 import { attachmentMime } from '../../internal/lib/attachment-mime';
+import { appendDriveRefs, keptDriveRefs } from '../../internal/lib/project-preamble';
 import { AttachmentPreview } from './attachment-preview';
 import { getFileCategory } from '../../files/viewer/preview-policy';
 import { uiRoutes } from '../../lib/routes';
@@ -1973,7 +1974,14 @@ export function UserMessage({
         attachments={allAttachments}
         pending={editPending}
         onCancel={onEditCancel}
-        onSend={(text, kept) => onEditSend(message.message_id, text, kept)}
+        onSend={(text, kept) =>
+          onEditSend(
+            message.message_id,
+            // The inline editor holds plain text: the Drive refs of the chips and files it kept go again.
+            appendDriveRefs(text, keptDriveRefs(text, driveMentionRefs, kept.map((file) => file.filename))),
+            kept,
+          )
+        }
       />
     );
   }

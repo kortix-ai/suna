@@ -153,10 +153,11 @@ interface ParsedFileMentionRef {
   path: string;
   name: string;
 }
-/** A `<drive_ref>`: a file of the project's Drive, by its Drive path. */
+/** A `<drive_ref>`: a file of the project's Drive, by its Drive path, and the upload that carried it. */
 export interface ParsedDriveMentionRef {
   path: string;
   name: string;
+  file?: string;
 }
 interface ParsedAgentMentionRef {
   name: string;
@@ -187,7 +188,14 @@ export function parseFileMentionReferences(text: string): {
   cleaned = replaceSpans(cleaned, selfClosingTags(cleaned, 'drive_ref'), ({ attrs }) => {
     const path = attrs.match(/\bpath="([^"]*?)"/)?.[1];
     const name = attrs.match(/\bname="([^"]*?)"/)?.[1];
-    if (path) drives.push({ path: unescapeAttr(path), name: unescapeAttr(name ?? '') || unescapeAttr(path) });
+    const file = attrs.match(/\bfile="([^"]*?)"/)?.[1];
+    if (path) {
+      drives.push({
+        path: unescapeAttr(path),
+        name: unescapeAttr(name ?? '') || unescapeAttr(path),
+        ...(file ? { file: unescapeAttr(file) } : {}),
+      });
+    }
     return '';
   });
   cleaned = removeSpans(cleaned, referenceHeaders(cleaned, 'Drive files')).trim();
