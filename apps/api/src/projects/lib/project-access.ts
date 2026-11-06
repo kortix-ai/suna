@@ -1,12 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { accountMemberships, projects } from '@kortix/db';
+import { projects } from '@kortix/db';
 // Straight from the engine + the actor builder, not the barrel: the barrel is
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
 import { authorize, type Verdict } from '../../iam/authorize';
 import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { addWorkspaceMember } from '../../iam/workspace-members';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
@@ -124,24 +125,10 @@ export async function ensureOrgMembership(
 ): Promise<AccountRole> {
   const existing = await getAccountMembership(userId, accountId);
   if (existing) return existing.accountRole as AccountRole;
-  // Membership is two facts in two stores now. IDENTITY (the row that says this
-  // user belongs to this account, and carries is_super_admin / scim_external_id)
-  // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
-  // Writing the identity row first is what lets `assignRole`'s principal check
-  // resolve without falling back to auth.users.
-  await db.insert(accountMemberships).values({ userId, accountId }).onConflictDoNothing();
-  // The grant, through the ONE write path, so joining an account emits
-  // `iam.assignment.granted` like every other grant. `SYSTEM_ACTOR`: the two
+  // THE membership write (iam/workspace-members.ts). `SYSTEM_ACTOR`: the two
   // callers (accepting a project invite, approving an access request) were
   // authorized by their own route, and the person being added is not the writer.
-  await assignRole(SYSTEM_ACTOR, accountId, {
-    principal: { type: 'user', id: userId },
-    roleKey: 'member',
-    scope: { type: 'account' },
-    source: 'system',
-    // One account role per member, as the `account_role` COLUMN enforced.
-    exclusive: true,
-  });
+  await addWorkspaceMember(accountId, userId, 'member', [], { writer: SYSTEM_ACTOR, source: 'system' });
   invalidateIamCacheForUser(userId);
   return 'member';
 }
@@ -204,7 +191,7 @@ export async function resolveRequestedProjectAccount(userId: string, requested: 
     if (accountKey) membership = await getAccountMembership(userId, accountKey);
   }
   if (!membership) {
-    throw new HTTPException(403, { message: 'You do not have access to this account' });
+    throw new HTTPException(403, { message: 'You do not have access to this workspace' });
   }
   setContextField('accountId', membership.accountId);
 
@@ -314,7 +301,7 @@ async function resolveProjectGate(
   const { isServiceAccount } = request;
 
   if (!membership && !isServiceAccount) {
-    throw new HTTPException(403, { message: 'You do not have access to this account' });
+    throw new HTTPException(403, { message: 'You do not have access to this workspace' });
   }
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
@@ -333,6 +320,8 @@ async function denyProjectAccess(input: {
   actor: Actor;
   projectId: string;
   verdict: Verdict;
+  /** The workspace's name, printed only to a caller who can read it. */
+  workspaceName?: string | null;
 }): Promise<never> {
   const { action, iamAction, actor, projectId, verdict } = input;
   // The engine already computed WHY. When the reason names a constraint other
@@ -362,17 +351,20 @@ async function denyProjectAccess(input: {
       // wording ("manage project members" / "issue project credentials")
       // rather than the coarse "change this project" — the coarse phrasing is
       // what made a members-only denial read as a project-wide one.
+      // The caller can read the workspace, so its name is theirs to see.
+      const named = { workspaceName: input.workspaceName ?? null };
       if (action === 'members' || action === 'credentials') {
-        throw buildDenialError(iamAction, verdict.reason);
+        throw buildDenialError(iamAction, verdict.reason, undefined, named);
       }
       throw buildDenialError(
         iamAction,
         verdict.reason,
-        "Your role on this project doesn't let you change this project. Ask an account owner or admin to grant you a higher role.",
+        "Your role doesn't let you change this workspace. Ask a workspace owner or admin to grant you a higher role.",
+        named,
       );
     }
   }
-  throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this project');
+  throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this workspace');
 }
 
 /**
@@ -418,7 +410,7 @@ export async function authorizeProjectAccess(input: {
   );
   const { accountRole, projectRole } = gate;
   if (!gate.verdict.allowed) {
-    await denyProjectAccess({ action, iamAction, actor, projectId, verdict: gate.verdict });
+    await denyProjectAccess({ action, iamAction, actor, projectId, verdict: gate.verdict, workspaceName: row.name });
   }
   // effectiveRole label for the UI / downstream helpers. The engine
   // doesn't hand back a role — it answers yes/no. Mirror the prior

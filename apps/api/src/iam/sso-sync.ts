@@ -15,10 +15,11 @@
 // next sign-in stomping it.
 
 import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
-import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountMemberships, accountScimUsers } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountScimUsers } from '@kortix/db';
 import { db } from '../shared/db';
 import { withDirectoryTransaction } from './directory-transaction';
-import { assignRole, SYSTEM_ACTOR } from './assignments';
+import { SYSTEM_ACTOR } from './assignments';
+import { addWorkspaceMember } from './workspace-members';
 import { invalidateIamCacheForUser } from './cache-invalidation';
 import { identitiesMergeableIntoSso, reconcileAccountIdentities } from './account-identity';
 import {
@@ -351,40 +352,24 @@ export async function syncSsoMembership(args: {
       if (!provider.autoCreateMembers && !directoryUser?.active && !identityReconciled) {
         return { skipped: false, memberCreated: false };
       }
-      // IDENTITY, then the ROLE. Two stores since the cutover.
-      await db
-        .insert(accountMemberships)
-        .values({ accountId: provider.accountId, userId: args.userId })
-        .onConflictDoNothing();
-      // The ROLE, through the ONE write path. SAML users default to `member`; real
-      // privileges come from the group mappings below.
+      // THE membership write. SAML users default to `member`; real privileges
+      // come from the group mappings below.
       //
       // SSO JIT keeps bypassing user-authz by design — an IdP is not a user, and
       // this runs inside the auth middleware where there is no caller to
       // authorize — but it does not bypass the audit trail or the cache contract:
       // `SYSTEM_ACTOR` skips only `assertWriterMayAssign`, and `source: 'sso'`
-      // records WHY the row exists, so an admin reading the assignment can tell an
-      // IdP-provisioned membership from one a human granted.
+      // records WHY the row exists.
       //
-      // Still best-effort: this runs inside the auth middleware on EVERY SAML
-      // request, and a grant-store hiccup must not turn into a failed login. The
-      // identity row above is what makes the person a member; a missing assignment
-      // is re-created on their next request.
-      try {
-        await assignRole(SYSTEM_ACTOR, provider.accountId, {
-          principal: { type: 'user', id: args.userId },
-          roleKey: 'member',
-          scope: { type: 'account' },
-          source: 'sso',
-          exclusive: true,
-        });
-      } catch (err) {
-        console.warn('[sso-sync] canonical membership assignment failed', {
-          accountId: provider.accountId,
-          userId: args.userId,
-          err: (err as Error)?.message,
-        });
-      }
+      // The role write is best-effort: this runs inside the auth middleware on
+      // EVERY SAML request, and a grant-store hiccup must not turn into a failed
+      // login. The identity row is what makes the person a member; a missing
+      // assignment is re-created on their next request.
+      await addWorkspaceMember(provider.accountId, args.userId, 'member', [], {
+        writer: SYSTEM_ACTOR,
+        source: 'sso',
+        roleBestEffort: true,
+      });
       memberCreated = true;
       // JIT bypasses invite acceptance, so SCIM group memberships parked on a
       // pending invite for this email (scim/groups.ts) would strand forever —

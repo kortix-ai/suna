@@ -43,6 +43,8 @@ export interface AddWorkspaceMemberOptions {
   scimExternalId?: string | null;
   /** The role writes are best-effort (SSO JIT inside the auth middleware): the identity row stands. */
   roleBestEffort?: boolean;
+  /** The membership ends at this time (a time-boxed guest); null = no expiry. */
+  expiresAt?: Date | null;
 }
 
 export interface AddWorkspaceMemberResult {
@@ -87,8 +89,10 @@ export async function addWorkspaceMember(
         principal: { type: 'user', id: userId },
         roleKey: accountRoleForWorkspaceRole(role),
         scope: { type: 'account' },
+        expiresAt: opts.expiresAt ?? null,
         source,
         exclusive: true,
+        grantedBy: opts.grantedBy ?? undefined,
       });
       const grants: ExplicitProjectGrant[] = [...explicitProjectGrants];
       if (role === 'manager') {
@@ -100,6 +104,7 @@ export async function addWorkspaceMember(
           principal: { type: 'user', id: userId },
           roleKey: grant.role,
           scope: { type: 'project', id: grant.projectId },
+          expiresAt: opts.expiresAt ?? null,
           source,
           exclusive: true,
           grantedBy: opts.grantedBy ?? null,

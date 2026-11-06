@@ -89,3 +89,16 @@ export function parseWorkspaceRole(raw: unknown): WorkspaceRole | null {
 export function accountRoleForWorkspaceRole(role: WorkspaceRole): AccountRole {
   return role === 'owner' || role === 'admin' ? role : 'member';
 }
+
+/**
+ * A member's ladder role from the two stored rows: the account-scope system
+ * role, and the system project role held on the workspace's project (null when
+ * none). The pure half of `workspaceRoleFor`, for a list that already holds
+ * every member's rows (the Members table).
+ */
+export function workspaceRoleFromRows(accountRole: string | null, projectRoleOnWorkspace: string | null): WorkspaceRole | null {
+  if (accountRole === 'owner' || accountRole === 'admin') return accountRole;
+  if (projectRoleOnWorkspace === 'manager') return 'manager';
+  if (accountRole === 'member' || projectRoleOnWorkspace === 'member') return 'member';
+  return null;
+}
