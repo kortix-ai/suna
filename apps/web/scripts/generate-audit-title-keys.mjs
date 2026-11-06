@@ -11,14 +11,13 @@
 //   node apps/web/scripts/generate-audit-title-keys.mjs
 //   node apps/web/scripts/generate-audit-title-keys.mjs --check
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { repositoryRoot, runFileGenerator } from './docs-generated-region.mjs';
 
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const webRoot = resolve(scriptDirectory, '..');
-const repositoryRoot = resolve(webRoot, '../..');
+const webRoot = resolve(repositoryRoot, 'apps/web');
 const outputPath = resolve(webRoot, 'src/components/iam/audit-title-translation-keys.generated.ts');
 const helpersPath = resolve(webRoot, 'src/components/iam/audit-display-helpers.ts');
 
@@ -90,15 +89,11 @@ export function renderAuditTitleTranslationKeys() {
   );
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const rendered = renderAuditTitleTranslationKeys();
-  if (process.argv.includes('--check')) {
-    if (readFileSync(outputPath, 'utf8') !== rendered) {
-      console.error(`${outputPath} is stale. Run: node apps/web/scripts/generate-audit-title-keys.mjs`);
-      process.exit(1);
-    }
-  } else {
-    writeFileSync(outputPath, rendered);
-    console.log(`Wrote ${rendered.split('\n').length - 4} audit titles to ${outputPath}`);
-  }
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await runFileGenerator(
+    'the audit title translation keys',
+    'node apps/web/scripts/generate-audit-title-keys.mjs',
+    renderAuditTitleTranslationKeys,
+    outputPath,
+  );
 }
