@@ -553,13 +553,14 @@ export function registerProjectSettingsRoutes(): void {
         if (isWorkspaceOnePerAccountConflict(error)) {
           return c.json(workspaceHasProjectBody(targetAccountId, null), 409);
         }
+        if (error instanceof ProjectTransferError && error.code === 'workspace_has_project') {
+          return c.json(workspaceHasProjectBody(targetAccountId, null), 409);
+        }
         if (error instanceof ProjectTransferError) {
           const status =
             error.code === 'project_missing' || error.code === 'target_missing'
               ? 404
-              : error.code === 'project_limit_reached'
-                ? 403
-                : error.code === 'same_account'
+              : error.code === 'same_account'
                 ? 400
                 : 409; // not_active, concurrent_move
           logger.warn('[projects] transfer refused', { projectId, code: error.code });
