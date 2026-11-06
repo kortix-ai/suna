@@ -30,6 +30,7 @@ function chain(): any {
   return c;
 }
 mock.module('../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   db: {
     select: () => chain(),
     delete: () => ({

@@ -43,6 +43,7 @@ mock.module('../../../config', () => ({
 }));
 
 mock.module('../../../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   hasDatabase: () => true,
   db: {
     select: (projection?: Record<string, unknown>) => ({

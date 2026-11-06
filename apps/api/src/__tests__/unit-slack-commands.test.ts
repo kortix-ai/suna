@@ -14,6 +14,7 @@ function makeChain(): any {
 }
 let deletes = 0;
 mock.module('../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   db: {
     select: () => makeChain(),
     update: () => makeChain(),

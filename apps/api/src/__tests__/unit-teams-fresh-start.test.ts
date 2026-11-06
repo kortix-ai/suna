@@ -27,6 +27,7 @@ function chain(result: () => unknown[] | Promise<unknown[]>): any {
 }
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   hasDatabase: true,
   db: {
     select: (shape: Record<string, unknown>) =>

@@ -35,6 +35,7 @@ function makeChain(): any {
   return chain;
 }
 mock.module('../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   db: { select: () => makeChain() },
   hasDatabase: () => true,
 }));

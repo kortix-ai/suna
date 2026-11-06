@@ -84,6 +84,7 @@ let returningRow: Record<string, unknown> = projectRow();
 // reachable from this handler, so only that chain is implemented; anything else
 // throws rather than silently resolving.
 mock.module('../../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   hasDatabase: true,
   db: {
     update: () => ({
