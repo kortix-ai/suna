@@ -30,6 +30,7 @@ import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCans } from '../../../internal/lib/use-project-can';
 import { useSettingsPanelStore } from '../../../internal/stores/settings-panel-store';
 import { useLeaveWorkspace } from '../../../workspace/settings/use-leave-workspace';
+import { SplitNoticeBanner } from '../../../workspace/settings/split-notice-banner';
 import {
   deleteWorkspace,
   getProject,
@@ -676,6 +677,7 @@ export function GeneralTab({
       generalFieldsSlot={
         project ? (
           <>
+            <SplitNoticeBanner workspaceId={projectId} />
             <GeneralWorkspaceCard project={project} canManage={canEdit} canManageEffort={canEditEffort} />
             {slot}
           </>

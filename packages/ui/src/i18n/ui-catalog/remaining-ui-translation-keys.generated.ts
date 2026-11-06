@@ -1017,4 +1017,11 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'How do runs stay isolated?': 'text48b78a9ab65b',
   'Every session runs in its own sandbox on its own git branch. Nothing is shared between runs.':
     'text4af0b7d8bfb1',
+  "Full control: billing, people, and deleting the workspace.": 'textfda15274a752',
+  "Full control of the workspace: billing, people, transferring ownership and deleting it.": 'text02faaaef698b',
+  "Billing and people. Everything except deleting the workspace or transferring ownership.": 'texte1a2cfde722b',
+  "Everything an owner can do except deleting the workspace or transferring ownership.": 'text77148a20ce2e',
+  "Works in sessions with the agents they are granted.": 'text378393bbfa9f',
+  "The floor role. Works in sessions with the agents they are granted, directly or through a group. No Customize.": 'texte82608318c7f',
+  "Customize and everything in it: every agent, skill, connector, secret and trigger.": 'text7788f20533ea',
 };

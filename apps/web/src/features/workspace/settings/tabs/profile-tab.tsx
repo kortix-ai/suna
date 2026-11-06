@@ -59,6 +59,8 @@ import { removeProfileAvatar } from './profile-avatar';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getPersonDeletionPlan } from '@kortix/sdk';
+import { useWorkspaceDirectory } from '@kortix/ui/workspace/sidebar/use-workspace-directory';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@kortix/ui/avatar';
 import { Button } from '@kortix/ui/button';
@@ -119,6 +121,7 @@ export interface ProfileTabCopy {
   save: string;
   dangerZone: string;
   deleteAccount: string;
+  plan: DeletionPlanCopy;
   deletionUnavailable: string;
   deletionStatusCheckFailed: string;
   scheduledForDeletionOn: string;
@@ -162,6 +165,13 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   save: 'Save',
   dangerZone: 'Danger zone',
   deleteAccount: 'Delete account',
+  plan: {
+    deleted: 'Deleted with your account',
+    left: 'You leave',
+    blockers: 'Hand these over first: you are their only owner and others work in them.',
+    members: (count) => `${count} members`,
+    nothing: 'You belong to no workspace. Only your login is deleted.',
+  },
   deletionUnavailable:
     "Account deletion isn't available on this deployment. Contact support to close your account.",
   deletionStatusCheckFailed: "Couldn't confirm whether account deletion is available.",
@@ -229,6 +239,13 @@ export interface ProfileTabViewProps {
    * flow DEL-6). No grace period and no list of workspace data to lose.
    */
   loginOnly?: { label: string; description: string; title: string; warning: string } | null;
+  /**
+   * What deleting the person does (`GET /v1/account/deletion-plan`): the
+   * workspaces deleted with them (sole owner, only member), the ones they
+   * leave, and the shared ones they must hand over first. `undefined` while
+   * it loads or for a login with no workspace.
+   */
+  deletionPlan?: ProfileDeletionPlan;
   accountDeletionSupported?: boolean;
   hasPendingDeletion?: boolean;
   deletionScheduledForLabel?: string | null;
@@ -250,6 +267,62 @@ export interface ProfileTabViewProps {
   onConfirmCancelDeletion?: () => void;
   isCancelingDeletion?: boolean;
   copy?: Partial<ProfileTabCopy>;
+}
+
+/** What deleting the person does, with workspace names resolved for display. */
+export interface ProfileDeletionPlan {
+  deleteNames: string[];
+  leaveNames: string[];
+  blockers: Array<{ name: string; memberCount: number }>;
+}
+
+export interface DeletionPlanCopy {
+  deleted: string;
+  left: string;
+  blockers: string;
+  members: (count: number) => string;
+  nothing: string;
+}
+
+/** The plan, in three short lists: deleted, left, and the blockers that disable Delete. */
+function DeletionPlanSummary({ plan, copy }: { plan: ProfileDeletionPlan; copy: DeletionPlanCopy }) {
+  const empty = plan.deleteNames.length + plan.leaveNames.length + plan.blockers.length === 0;
+  return (
+    <div className="space-y-3" data-testid="deletion-plan">
+      {empty ? <p className="text-muted-foreground text-sm">{copy.nothing}</p> : null}
+      {plan.blockers.length > 0 ? (
+        <InfoBanner tone="destructive" title={copy.blockers}>
+          <ul className="list-disc space-y-1 pl-5">
+            {plan.blockers.map((blocker) => (
+              <li key={blocker.name}>
+                {blocker.name} · {copy.members(blocker.memberCount)}
+              </li>
+            ))}
+          </ul>
+        </InfoBanner>
+      ) : null}
+      {plan.deleteNames.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">{copy.deleted}</p>
+          <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm">
+            {plan.deleteNames.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {plan.leaveNames.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">{copy.left}</p>
+          <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm">
+            {plan.leaveNames.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -276,6 +349,7 @@ export function ProfileTabView({
   onSaveName = () => {},
   userEmail = '',
   loginOnly = null,
+  deletionPlan,
   accountDeletionSupported = true,
   hasPendingDeletion = false,
   deletionScheduledForLabel = null,
@@ -478,16 +552,20 @@ export function ProfileTabView({
                   </InfoBanner>
                   {loginOnly ? null : (
                   <>
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">{copy.whenDeleted}</p>
-                    <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
-                      <li>{copy.agentsDeleted}</li>
-                      <li>{copy.threadsDeleted}</li>
-                      <li>{copy.credentialsDeleted}</li>
-                      <li>{copy.subscriptionCancelled}</li>
-                      <li>{copy.billingRecordsKept}</li>
-                    </ul>
-                  </div>
+                  {deletionPlan ? (
+                    <DeletionPlanSummary plan={deletionPlan} copy={copy.plan} />
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">{copy.whenDeleted}</p>
+                      <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
+                        <li>{copy.agentsDeleted}</li>
+                        <li>{copy.threadsDeleted}</li>
+                        <li>{copy.credentialsDeleted}</li>
+                        <li>{copy.subscriptionCancelled}</li>
+                        <li>{copy.billingRecordsKept}</li>
+                      </ul>
+                    </div>
+                  )}
                   <div className="space-y-3">
                     <Label className="text-sm">{copy.chooseWhen}</Label>
                     <RadioGroup
@@ -546,7 +624,11 @@ export function ProfileTabView({
                   <Button
                     variant="destructive"
                     onClick={onConfirmDelete}
-                    disabled={isDeletingAccount || deleteConfirmText !== 'delete'}
+                    disabled={
+                      isDeletingAccount ||
+                      deleteConfirmText !== 'delete' ||
+                      (deletionPlan?.blockers.length ?? 0) > 0
+                    }
                     className="w-full sm:w-auto"
                   >
                     {isDeletingAccount ? copy.processing : (loginOnly?.label ?? copy.deleteAccount)}
@@ -736,6 +818,26 @@ export function ProfileTab() {
       : null;
 
   // --- Delete account ---------------------------------------------------
+  // The plan names every workspace the delete touches, read when the dialog
+  // opens: deleted (sole owner, only member), left, and the blockers.
+  const [planWanted, setPlanWanted] = useState(false);
+  const planQuery = useQuery({
+    queryKey: ['person-deletion-plan'],
+    queryFn: getPersonDeletionPlan,
+    enabled: planWanted && !loginOnly,
+    staleTime: 0,
+  });
+  const directory = useWorkspaceDirectory();
+  const deletionPlan = useMemo<ProfileDeletionPlan | undefined>(() => {
+    const plan = planQuery.data;
+    if (!plan) return undefined;
+    const nameOf = (id: string) => directory.workspaces.find((row) => row.workspaceId === id)?.project.name ?? id;
+    return {
+      deleteNames: plan.delete_workspaces.map(nameOf),
+      leaveNames: plan.leave_workspaces.map(nameOf),
+      blockers: plan.blockers.map((blocker) => ({ name: blocker.name, memberCount: blocker.member_count })),
+    };
+  }, [planQuery.data, directory.workspaces]);
   const {
     data: deletionStatus,
     isError: isDeletionStatusError,
@@ -789,6 +891,8 @@ export function ProfileTab() {
     setDeletionPreviewDate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString());
     setDeleteConfirmText('');
     setDeletionType(loginOnly ? 'immediate' : 'grace-period');
+    setPlanWanted(true);
+    void planQuery.refetch();
     setShowDeleteDialog(true);
   };
 
@@ -846,6 +950,7 @@ export function ProfileTab() {
       onSaveName={() => saveNameMutation.mutate(nameDraft)}
       userEmail={profileQuery.data?.email ?? ''}
       loginOnly={loginOnly}
+      deletionPlan={deletionPlan}
       accountDeletionSupported={accountDeletionSupported}
       hasPendingDeletion={!loginOnly && (deletionStatus?.has_pending_deletion ?? false)}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}

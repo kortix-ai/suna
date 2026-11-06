@@ -314,7 +314,10 @@ export function isDirectGrant(grant: Pick<ResourceGrantEntry, 'source'>): boolea
   return grant.source !== 'group' && grant.source !== 'project';
 }
 
-/** "via account admin" / "via Engineering +1 more" / "no access". `null` for
+/** The `accessVia` answer for an owner's or admin's implicit access; rendered as the role name. */
+export const ACCESS_VIA_ADMIN = 'Admin';
+
+/** "Admin" / "via Engineering +1 more" / "no access". `null` for
  *  a plain direct grant, which needs no attribution line. */
 export function accessVia(
   member: Pick<
@@ -323,7 +326,8 @@ export function accessVia(
   >,
 ): string | null {
   if (!member.effective_project_role) return 'no access';
-  if (member.effective_source === 'implicit') return 'via account admin';
+  // Owners and admins reach every workspace of their account: their role is the reason.
+  if (member.effective_source === 'implicit') return ACCESS_VIA_ADMIN;
   if (member.effective_source === 'group') {
     const groupName = member.group_sources?.[0]?.group_name;
     const extra = (member.group_sources?.length ?? 0) - 1;
@@ -361,7 +365,7 @@ function ExpiryMeta({ expiresAt }: { expiresAt: string | null | undefined }) {
 
 /**
  * The one muted fact under a row's name, or none. In order: how the access
- * arrives when it is inherited ("via account admin", "via Engineering"),
+ * arrives when it is inherited ("Admin", "via Engineering"),
  * then agents when they are narrowed ("Agents: 2 of 5"), then an expiry when
  * there is one. "Agents: all" and "Expires never" are the defaults and say
  * nothing.
@@ -1438,6 +1442,7 @@ function MemberAccessRow({
   onRequestRemove: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tWorkspaceRoles = useTranslations('workspaces.roles');
   const label = principalLabel(member) || member.user_id;
   const policy = directProjectPolicy(member.custom_role_policies);
 
@@ -1475,7 +1480,8 @@ function MemberAccessRow({
   const agentGrants = distinctAgentGrants(agentGrantsOf(member.resource_grants));
   const directAgentIds = agentGrants.filter(isDirectGrant).map((g) => g.resource_id);
   const expiresAt = policy ? policy.expires_at : (member.expires_at ?? null);
-  const via = accessVia(member);
+  const rawVia = accessVia(member);
+  const via = rawVia === ACCESS_VIA_ADMIN ? tWorkspaceRoles('admin.label') : rawVia;
   const inheritedFrom = (member.group_sources ?? []).map((g) => g.group_name);
 
   const inheritedOnly = isInheritedFromGroupOnly(member);

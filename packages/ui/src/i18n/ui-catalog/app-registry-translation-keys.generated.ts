@@ -122,4 +122,10 @@ export const APP_REGISTRY_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   building: 'text5167e9677e1f',
   failed: 'text5d28a90f4498',
   ready: 'textb24d6d33736e',
+  "Define roles of your own: pick exactly what a member may view and change, then give them out from Members like the built-in ones.": 'text1a836dc94f41',
+  "Give a custom role to a person or a group": 'textb2c26ac6527b',
+  "Put your own logo, icon, favicon, and product name on the app for everyone in this workspace: Kortix becomes your tool.": 'textfab4077701b7',
+  "IdP groups map to roles in this workspace": 'textfd8fee75dbb5',
+  "Bundle members into groups and give the whole group a role: one grant instead of dozens, revoked just as easily.": 'textadca5dfd1e42',
+  "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when.": 'text16ba47efb9f2',
 };

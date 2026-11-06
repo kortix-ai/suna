@@ -40,11 +40,12 @@ import {
   ClockIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useUiRouter } from '@kortix/ui/providers/ui-provider';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
+import { WorkspaceAccessRequests } from '@/components/iam/workspace-access-requests';
 import { WorkspaceAccessSection } from '@/features/workspace/settings/workspace-access-section';
 import { AddGitHubAccountDialog } from '@kortix/ui/access/iam/add-github-account-dialog';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
@@ -108,6 +109,9 @@ import {
   useAccountRoles,
 } from '@kortix/ui/access/access/index';
 import { AccessDialog } from '@kortix/ui/access';
+import { InvitePeopleDialog } from '@kortix/ui/access/access/invite-people-dialog';
+import { WorkspaceRoleDialog } from '@kortix/ui/access/access/workspace-role-dialog';
+import { memberWorkspaceRole } from '@kortix/ui/workspace/settings/use-leave-workspace';
 import { useAccountState } from '@kortix/ui/internal/billing/index';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { forgetPushedEntry, hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
@@ -117,6 +121,7 @@ import {
   type AccountInvitation,
   type AccountMember,
   type AccountRole,
+  type WorkspaceRole,
   cancelAccountInvite,
   deleteGitHubInstallation,
   leaveAccount,
@@ -252,12 +257,25 @@ export function AccountHubContent({
   // the pane that opened it, so leaving the pane closes it.
   const hubSheet = useAccountHubSheet();
   const closeHubSheet = hubSheet.close;
+  const inviteOpenedRef = useRef(false);
+  // The page's own query (`?invite=1`), not the hub's mapped params.
+  const pageSearchParams = useUiSearchParams();
   useEffect(() => {
     closeHubSheet();
   }, [accountId, activeSection, closeHubSheet]);
 
   if (authLoading || !user) {
     return <ConnectingScreen overrideStage="auth" hideWorkspacePicker />;
+  }
+
+  // `?invite=1` (the workspace menu's and the palette's "Invite people")
+  // opens the invite form once Members has loaded.
+  const wantsInvite =
+    activeSection === 'members' && pageSearchParams?.get('invite') === '1' && canInviteMember && !!accountQuery.data;
+  if (wantsInvite && !inviteOpenedRef.current && accountQuery.data) {
+    inviteOpenedRef.current = true;
+    const target = accountQuery.data;
+    queueMicrotask(() => openInvite(target));
   }
 
   const account = accountQuery.data;
@@ -304,8 +322,33 @@ export function AccountHubContent({
     );
   };
 
+  const invalidateAfterInvite = (accountIdToBust: string) => {
+    void invalidatePermissionProbes(queryClient, { accountId: accountIdToBust });
+    for (const key of ['account-members', 'account-invites', 'account']) {
+      void queryClient.invalidateQueries({ queryKey: [key, accountIdToBust] });
+    }
+  };
   const openInvite = (target: AccountDetail) =>
-    hubSheet.open({
+    // One workspace, one role: "Invite people to {workspace}" (finding 19).
+    // A legacy account that still holds several workspaces keeps the
+    // per-workspace grant form until the split runs.
+    workspaceId && target.project_count <= 1
+      ? hubSheet.open({
+          title: tSettings('inviteTitle', { name: target.name }),
+          body: (
+            <InvitePeopleDialog
+              open
+              onOpenChange={(next) => {
+                if (!next) hubSheet.close();
+              }}
+              workspaceId={workspaceId}
+              workspaceName={target.name}
+              canGrantAdmin={canUpdateMember}
+              onDone={() => invalidateAfterInvite(target.account_id)}
+            />
+          ),
+        })
+      : hubSheet.open({
       title: tI18nComplete.raw('text8693768c7e08'),
       body: (
         <AccessDialog
@@ -409,7 +452,22 @@ export function AccountHubContent({
                 onOpenGroup={(groupId) => navigate('groups', { group: groupId })}
               />
             ) : (
+              <>
+              {workspaceId && account.project_count <= 1 ? (
+                <div className="mb-8">
+                  <WorkspaceAccessRequests
+                    workspaceId={workspaceId}
+                    canManage={canInviteMember}
+                    onDecided={() => {
+                      for (const key of ['account-members', 'account-invites']) {
+                        void queryClient.invalidateQueries({ queryKey: [key, account.account_id] });
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
               <MembersCard
+                workspaceId={account.project_count <= 1 ? workspaceId : undefined}
                 account={account}
                 members={members}
                 isLoading={membersQuery.isLoading}
@@ -430,6 +488,7 @@ export function AccountHubContent({
                 onSelectMember={(id) => navigate('members', { member: id })}
                 onInvite={() => openInvite(account)}
               />
+              </>
             )
           ) : null}
 
@@ -864,6 +923,7 @@ function roleTone(value: RoleValue): RoleTone {
 // and its "Change role" confirm, and the `MEMBER_ROW` class copy.
 
 function MembersCard({
+  workspaceId,
   account,
   members,
   isLoading,
@@ -884,6 +944,9 @@ function MembersCard({
   onSelectMember,
   onInvite,
 }: {
+  /** Set for a 1:1 workspace: one ladder role per person, changed through
+   *  `PATCH /v1/workspaces/:id/members/:userId`. */
+  workspaceId?: string;
   account: AccountDetail;
   members: AccountMember[];
   isLoading: boolean;
@@ -917,6 +980,7 @@ function MembersCard({
   onInvite: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tWorkspaceRoles = useTranslations('workspaces.roles');
   // Set rather than scalar so multiple per-row mutations (remove + role
   // change on different rows) can fly in parallel without their spinners
   // hopping between rows. Helpers below add/remove on mutate/settle.
@@ -973,6 +1037,11 @@ function MembersCard({
   });
   const roleValueFor = (member: AccountMember): RoleValue =>
     roleEditor.roleValueFor(member.user_id, member.account_role);
+  // The one ladder role (owner > admin > manager > member) the API serves on
+  // every member row. A custom role keeps its name.
+  const ladderRole = (member: AccountMember) => memberWorkspaceRole(member) as WorkspaceRole;
+  const [roleTarget, setRoleTarget] = useState<{ userId: string; label: string; role: WorkspaceRole } | null>(null);
+  const viewerIsOwner = members.some((m) => m.user_id === currentUserId && m.account_role === 'owner');
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
@@ -1186,6 +1255,18 @@ function MembersCard({
 
   return (
     <div className="space-y-3">
+      {workspaceId ? (
+        <WorkspaceRoleDialog
+          workspaceId={workspaceId}
+          target={roleTarget}
+          onOpenChange={(open) => {
+            if (!open) setRoleTarget(null);
+          }}
+          viewerIsOwner={viewerIsOwner}
+          canGrantAdmin={canUpdateRole}
+          onDone={() => invalidateMembers()}
+        />
+      ) : null}
       {isError ? (
         <ErrorState
           size="sm"
@@ -1333,11 +1414,13 @@ function MembersCard({
                       label: tI18nComplete.raw('texta514a684676a'),
                       icon: <PencilSimple className="size-3.5" />,
                       onSelect: () =>
-                        roleEditor.openEdit({
-                          userId: member.user_id,
-                          label,
-                          accountRole: member.account_role,
-                        }),
+                        workspaceId && roleValueFor(member).kind === 'builtin'
+                          ? setRoleTarget({ userId: member.user_id, label, role: ladderRole(member) })
+                          : roleEditor.openEdit({
+                              userId: member.user_id,
+                              label,
+                              accountRole: member.account_role,
+                            }),
                     });
                   }
                   if (canReadMembers || isSelf) {
@@ -1412,8 +1495,16 @@ function MembersCard({
                           ) : null}
                         </>
                       }
-                      role={shortRoleLabel(roleValueFor(member))}
-                      roleTone={roleTone(roleValueFor(member))}
+                      role={
+                        workspaceId && roleValueFor(member).kind === 'builtin'
+                          ? tWorkspaceRoles(`${ladderRole(member)}.label`)
+                          : shortRoleLabel(roleValueFor(member))
+                      }
+                      roleTone={
+                        workspaceId && roleValueFor(member).kind === 'builtin'
+                          ? ROLE_TONE[ladderRole(member)]
+                          : roleTone(roleValueFor(member))
+                      }
                       kebab={kebab}
                       kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
                     />

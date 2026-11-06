@@ -719,6 +719,13 @@
         "profilePictureRemoveFailed": "プロフィール写真を削除できませんでした",
         "chooseImageFile": "画像ファイルを選択してください",
         "imageTooLarge": "画像は 5MB 未満である必要があります"
+      },
+      "plan": {
+        "deleted": "アカウントと一緒に削除",
+        "left": "退出するワークスペース",
+        "blockers": "先に引き継いでください: あなたが唯一のオーナーで、他のメンバーが利用しています。",
+        "members": "{count, plural, other {# 人のメンバー}}",
+        "nothing": "どのワークスペースにも所属していません。ログインだけが削除されます。"
       }
     },
     "security": {
@@ -2052,11 +2059,11 @@
     "connectProvider": "プロバイダーに接続",
     "manageModels": "モデルを管理",
     "loading": "モデルを読み込み中",
-    "yourDefault": "アカウントのデフォルト",
-    "defaultAria": "{model} はこのアカウントのデフォルトモデルです",
-    "setDefaultAria": "{model} をアカウントのデフォルトモデルに設定",
-    "defaultTitle": "アカウントのデフォルトモデル",
-    "setDefaultTitle": "アカウントのデフォルトモデルに設定",
+    "yourDefault": "ワークスペースの既定",
+    "defaultAria": "{model} はこのワークスペースの既定モデルです",
+    "setDefaultAria": "{model} をこのワークスペースの既定モデルに設定",
+    "defaultTitle": "ワークスペースの既定モデル",
+    "setDefaultTitle": "このワークスペースの既定モデルに設定",
     "upgrade": "アップグレード",
     "noMatch": {
       "title": "一致するモデルがありません",
@@ -3830,8 +3837,8 @@
       "checkNowAction": "今すぐ確認",
       "tryAgainAction": "再試行",
       "projectsAction": "ワークスペース一覧に戻る",
-      "accountLabel": "ワークスペース",
-      "projectLabel": "ワークスペース",
+      "accountLabel": "サインイン中",
+      "projectLabel": "ワークスペース ID",
       "approvalNote": "このワークスペースを管理している人なら誰でも、あなたのリクエストを承認できます。",
       "openAsAdmin": "管理者として開く",
       "requestFailed": "リクエストを送信できませんでした。",
@@ -21258,7 +21265,20 @@
       "text2590cd62a747": "ワークスペースの設定",
       "text276261b1e03d": "ワークスペース 設定 組織 チーム 管理",
       "text634ebc515b7f": "ワークスペース · API キー",
-      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy",
+      "textfda15274a752": "すべての操作: 請求、メンバー、ワークスペースの削除。",
+      "text02faaaef698b": "ワークスペースのすべて: 請求、メンバー、オーナー権限の移譲、削除。",
+      "texte1a2cfde722b": "請求とメンバー。ワークスペースの削除とオーナー権限の移譲以外のすべて。",
+      "text77148a20ce2e": "ワークスペースの削除とオーナー権限の移譲以外、オーナーができることすべて。",
+      "text378393bbfa9f": "付与されたエージェントでセッションを利用します。",
+      "texte82608318c7f": "基本ロール。直接またはグループ経由で付与されたエージェントでセッションを利用します。カスタマイズはできません。",
+      "text7788f20533ea": "カスタマイズとそのすべて: すべてのエージェント、スキル、コネクター、シークレット、トリガー。",
+      "text1a836dc94f41": "独自のロールを定義します。メンバーが閲覧・変更できる範囲を正確に選び、組み込みロールと同じようにメンバーから割り当てます。",
+      "textb2c26ac6527b": "カスタムロールを個人またはグループに割り当て",
+      "textfab4077701b7": "このワークスペースの全員に向けて、ロゴ、アイコン、ファビコン、製品名をアプリに表示します。Kortix があなたのツールになります。",
+      "textfd8fee75dbb5": "IdP グループをこのワークスペースのロールに対応付け",
+      "textadca5dfd1e42": "メンバーをグループにまとめ、グループ全体にロールを付与します。何十もの付与が 1 つで済み、取り消しも同じく簡単です。",
+      "text16ba47efb9f2": "このワークスペースでの管理者とエージェントのすべての操作を、絞り込み可能な完全な記録で: 誰が、何を、どこで、いつ。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",
@@ -21458,7 +21478,6 @@
     "copyTitle": "コピー",
     "copyEmail": "メールアドレス",
     "copyUserId": "ユーザー ID",
-    "copyAccountId": "アカウント ID",
     "copyProjectId": "ワークスペース ID",
     "copySessionId": "セッション ID",
     "copySessionLink": "セッションのリンク",
@@ -22920,17 +22939,17 @@
     "storageUsed": "{used} 使用中",
     "storageNearFull": "ほぼいっぱいです。アップロードを続けるには、不要なファイルを削除してください。",
     "storageFull": "いっぱいです。ファイルを削除するまで新しいアップロードは拒否されます。",
-    "storageAccountLine": "すべてのワークスペース: {used} / {limit}",
+    "storageAccountLine": "このプランの他のワークスペースと共有: {limit} のうち {used}",
     "folderNearMountLimit": "{folder} は {size} です。セッションは {limit} を超えるフォルダーをマウントできません。",
     "folderOverMountLimit": "{folder} は {size} で、セッションがマウントできる {limit} を超えています。セッションはこのフォルダーなしで実行されます。",
     "uploadRefusedProjectFull": "{name} には {needed} が必要です。このワークスペースのファイルは {limit} のうち {used} を使用しています。",
-    "uploadRefusedAccountFull": "{name} には {needed} が必要です。すべてのワークスペースのファイルで {limit} のうち {used} を使用しています。",
+    "uploadRefusedAccountFull": "{name} には {needed} が必要です。このワークスペースのファイルは {limit} のうち {used} を使用しています。",
     "uploadRefusedFileTooLarge": "{name} は {size} です。1 つのファイルは最大 {limit} です。",
     "uploadRefusedFolderMount": "{name} を追加すると {folder} が {limit} を超えます。これはセッションがマウントできる最大のフォルダーサイズです。",
     "uploadRefusedBusy": "ファイルストレージが混み合っています。少し待ってから {name} を再試行してください。",
     "uploadRefusedStorageFull": "ファイルストレージは現在いっぱいです。後で {name} を再試行してください。",
     "accountStorageTitle": "ファイルストレージ",
-    "accountStorageDescription": "各ワークスペースのファイルの使用量です。プランではワークスペースごとに {project}、合計で {account} まで使えます。",
+    "accountStorageDescription": "このワークスペースのファイルの使用量。プランの上限は {project} です。",
     "accountStorageEmpty": "まだファイルのあるワークスペースはありません。",
     "accountStorageIncomplete": "一部のワークスペースは現在測定できませんでした。",
     "folderInfo": {
@@ -23576,7 +23595,7 @@
     "groupTitle": "トリガー",
     "groupDescription": "このワークスペースのスケジュール、ループ、Webhook、アプリイベント、モニター。",
     "label": "すべてのトリガーを一時停止",
-    "description": "どのワークスペースでも何も自動で実行されません。スケジュール、ループ、Webhook、アプリイベント、モニターはすべて止まります。トリガーの手動実行は引き続き使えます。",
+    "description": "このワークスペースでは何も自動で実行されません: スケジュール、ループ、Webhook、アプリイベント、モニターのいずれも。トリガーの手動実行は引き続き使えます。",
     "readOnlyDescription": "トリガーの一時停止と再開ができるのはオーナーまたは管理者だけです。",
     "pausedSince": "{date} から一時停止中。",
     "pauseTitle": "すべてのトリガーを一時停止しますか？",
@@ -26606,7 +26625,8 @@
       "description": "ワークスペースは、会社が Kortix と働く場所です。メンバー、エージェント、そして彼らが作るすべてがここにあります。",
       "submit": "ワークスペースを作成",
       "restricted": "このサーバーでは招待された人だけがワークスペースを作成できます。管理者に {email} の招待を依頼してください。",
-      "limitReached": "プランのワークスペース上限に達しました。別のワークスペースを作成するにはアップグレードしてください。"
+      "limitReached": "プランのワークスペース上限に達しました。別のワークスペースを作成するにはアップグレードしてください。",
+      "freeCreditsRule": "毎月の無料クレジットが付与されるのは最初のワークスペースだけです。"
     },
     "settings": {
       "title": "ワークスペースの設定",
@@ -26664,7 +26684,8 @@
       "leaveDialog": "{name} にアクセスできなくなります。管理者は再び招待できます。",
       "leftToast": "{name} から退出しました",
       "leaveFailed": "ワークスペースから退出できませんでした",
-      "deletedToast": "ワークスペースを削除しました。オーナーは 14 日間復元できます。"
+      "deletedToast": "ワークスペースを削除しました。オーナーは 14 日間復元できます。",
+      "inviteTitle": "{name} にメンバーを招待"
     },
     "cli": {
       "noWorkspaceTitle": "CLI にサインインするにはワークスペースを作成してください",
@@ -26696,6 +26717,68 @@
     "menu": {
       "invite": "{name} にメンバーを招待",
       "leave": "{name} から退出"
+    },
+    "roles": {
+      "owner": {
+        "label": "オーナー",
+        "blurb": "すべての操作: 請求、メンバー、ワークスペースの削除。"
+      },
+      "admin": {
+        "label": "管理者",
+        "blurb": "請求とメンバー。ワークスペースの削除とオーナー権限の移譲以外のすべて。"
+      },
+      "manager": {
+        "label": "マネージャー",
+        "blurb": "カスタマイズとそのすべて: すべてのエージェント、スキル、コネクター、シークレット、トリガー。"
+      },
+      "member": {
+        "label": "メンバー",
+        "blurb": "付与されたエージェントでセッションを利用します。"
+      }
+    },
+    "invite": {
+      "title": "{name} にメンバーを招待",
+      "description": "各メンバーに参加用リンクを記載したメールが届きます。",
+      "emailsLabel": "メールアドレス",
+      "emailsPlaceholder": "name@company.com",
+      "emailsHint": "アドレスはカンマかスペースで区切ります。",
+      "invalidEmail": "メールアドレスではありません。",
+      "removeEmail": "{email} を削除",
+      "roleLabel": "ロール",
+      "ownerHint": "オーナーにするには、メンバーからオーナー権限を移譲します。",
+      "expiresLabel": "アクセス終了日",
+      "optional": "任意",
+      "expiresHint": "空欄: 誰かが削除するまでアクセスが続きます。",
+      "cancel": "キャンセル",
+      "send": "{count, plural, other {招待を送信 (#)}}",
+      "sentToast": "{count, plural, other {# 件の招待を送信しました}}",
+      "sendFailed": "招待を送信できませんでした。"
+    },
+    "roleDialog": {
+      "title": "{name} のロールを変更",
+      "description": "このワークスペースでは 1 人に 1 つのロールです。",
+      "roleLabel": "ロール",
+      "cancel": "キャンセル",
+      "save": "保存",
+      "savedToast": "{name} は {role} になりました",
+      "saveFailed": "ロールを変更できませんでした。"
+    },
+    "splitNotice": {
+      "movedTitle": "独立したワークスペースになりました",
+      "movedBody": "{date} に {source} から独立しました。メンバー、請求、設定はこのワークスペース専用です。",
+      "keeperTitle": "他のワークスペースが独立しました",
+      "keeperBody": "{date} に {source} の他のワークスペースが独立し、それぞれ独自のメンバーと請求を持つようになりました。",
+      "billingComped": "{date} までプランは無料です。",
+      "billingFree": "独自の無料クレジットが付与されました。",
+      "dismiss": "閉じる"
+    },
+    "accessRequests": {
+      "title": "{count, plural, other {# 人が参加をリクエストしています}}",
+      "approve": "承認",
+      "decline": "拒否",
+      "approvedToast": "承認しました。メンバーになりました。",
+      "declinedToast": "リクエストを拒否しました",
+      "decideFailed": "リクエストを更新できませんでした。"
     }
   }
 }

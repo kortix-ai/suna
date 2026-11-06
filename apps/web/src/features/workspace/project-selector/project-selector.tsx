@@ -22,7 +22,7 @@ import { AccountTopBar } from '@/features/workspace/account-top-bar';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { isAccountCreationRestricted } from '@/lib/config';
+import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { isModifiedClick } from '@kortix/ui/internal/lib/navigation/modified-click';
 import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { cn } from '@kortix/ui';
@@ -277,6 +277,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
  */
 function InlineCreateForm({ createHref, form }: { createHref: string; form: InlineCreateProps }) {
   const t = useTranslations('workspaces.chooser');
+  const tWorkspaces = useTranslations('workspaces.create');
   const tNew = useTranslations('newWorkspace');
   return (
     <form
@@ -305,6 +306,11 @@ function InlineCreateForm({ createHref, form }: { createHref: string; form: Inli
       {form.nameError ? (
         <p id="selector-workspace-name-error" className="text-destructive text-xs">
           {form.nameError}
+        </p>
+      ) : null}
+      {isBillingEnabled() ? (
+        <p className="text-muted-foreground text-xs" data-testid="create-free-credits-rule">
+          {tWorkspaces('freeCreditsRule')}
         </p>
       ) : null}
       <Button type="submit" disabled={!form.canSubmit} className="w-full" data-testid="selector-create">

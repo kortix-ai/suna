@@ -1438,11 +1438,11 @@ const catalog = {
     "connectProvider": "Connect provider",
     "manageModels": "Manage models",
     "loading": "Loading models",
-    "yourDefault": "Account default",
-    "defaultAria": "{model} is the default model for this account",
-    "setDefaultAria": "Set {model} as the account’s default model",
-    "defaultTitle": "Account default model",
-    "setDefaultTitle": "Set as the account’s default model",
+    "yourDefault": "Workspace default",
+    "defaultAria": "{model} is this workspace's default model",
+    "setDefaultAria": "Set {model} as this workspace's default model",
+    "defaultTitle": "Workspace default model",
+    "setDefaultTitle": "Set as this workspace's default model",
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "No models match",
@@ -6149,7 +6149,20 @@ const catalog = {
       "text507c24b6792d": "When a change request merges into {branch}, {agent} runs your instruction.",
       "text05ee1d6181f3": "When a change request merges, {agent} runs your instruction.",
       "texte608495c45ce": "Merged into {branch}",
-      "text80ca527b0d55": "Change request trigger created"
+      "text80ca527b0d55": "Change request trigger created",
+      "textfda15274a752": "Full control: billing, people, and deleting the workspace.",
+      "text02faaaef698b": "Full control of the workspace: billing, people, transferring ownership and deleting it.",
+      "texte1a2cfde722b": "Billing and people. Everything except deleting the workspace or transferring ownership.",
+      "text77148a20ce2e": "Everything an owner can do except deleting the workspace or transferring ownership.",
+      "text378393bbfa9f": "Works in sessions with the agents they are granted.",
+      "texte82608318c7f": "The floor role. Works in sessions with the agents they are granted, directly or through a group. No Customize.",
+      "text7788f20533ea": "Customize and everything in it: every agent, skill, connector, secret and trigger.",
+      "text1a836dc94f41": "Define roles of your own: pick exactly what a member may view and change, then give them out from Members like the built-in ones.",
+      "textb2c26ac6527b": "Give a custom role to a person or a group",
+      "textfab4077701b7": "Put your own logo, icon, favicon, and product name on the app for everyone in this workspace: Kortix becomes your tool.",
+      "textfd8fee75dbb5": "IdP groups map to roles in this workspace",
+      "textadca5dfd1e42": "Bundle members into groups and give the whole group a role: one grant instead of dozens, revoked just as easily.",
+      "text16ba47efb9f2": "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -6322,7 +6335,6 @@ const catalog = {
     "copyTitle": "Copy",
     "copyEmail": "email",
     "copyUserId": "user ID",
-    "copyAccountId": "account ID",
     "copyProjectId": "workspace ID",
     "copySessionId": "session ID",
     "copySessionLink": "session link",
@@ -7672,17 +7684,17 @@ const catalog = {
     "storageUsed": "{used} used",
     "storageNearFull": "Almost full. Delete files you no longer need to keep uploading.",
     "storageFull": "Full. New uploads are refused until files are deleted.",
-    "storageAccountLine": "All workspaces: {used} of {limit}",
+    "storageAccountLine": "Shared with this plan's other workspaces: {used} of {limit}",
     "folderNearMountLimit": "{folder} holds {size}. A session cannot mount a folder larger than {limit}.",
     "folderOverMountLimit": "{folder} holds {size}, more than the {limit} a session can mount. Sessions run without it.",
     "uploadRefusedProjectFull": "{name} needs {needed}. This workspace's Files use {used} of {limit}.",
-    "uploadRefusedAccountFull": "{name} needs {needed}. Files across all your workspaces use {used} of {limit}.",
+    "uploadRefusedAccountFull": "{name} needs {needed}. This workspace's Files use {used} of {limit}.",
     "uploadRefusedFileTooLarge": "{name} is {size}. One file can be at most {limit}.",
     "uploadRefusedFolderMount": "{name} would take {folder} past {limit}, the largest folder a session can mount.",
     "uploadRefusedBusy": "File storage is busy. Retry {name} in a moment.",
     "uploadRefusedStorageFull": "File storage is full right now. Retry {name} later.",
     "accountStorageTitle": "Files storage",
-    "accountStorageDescription": "What each workspace's Files hold. Your plan allows {project} per workspace and {account} in total.",
+    "accountStorageDescription": "What this workspace's Files hold. Your plan allows {project}.",
     "accountStorageEmpty": "No workspace holds files yet.",
     "accountStorageIncomplete": "Some workspaces could not be measured right now.",
     "folderInfo": {
@@ -7752,7 +7764,7 @@ const catalog = {
     "groupTitle": "Triggers",
     "groupDescription": "Schedules, loops, webhooks, app events and monitors in this workspace.",
     "label": "Pause all triggers",
-    "description": "Nothing in any workspace runs on its own: no schedule, loop, webhook, app event or monitor. Running a trigger by hand still works.",
+    "description": "Nothing in this workspace runs on its own: no schedule, loop, webhook, app event or monitor. Running a trigger by hand still works.",
     "readOnlyDescription": "Only an owner or admin can pause or resume triggers.",
     "pausedSince": "Paused since {date}.",
     "pauseTitle": "Pause all triggers?",
@@ -10025,7 +10037,8 @@ const catalog = {
       "leaveDialog": "You lose access to {name}. An admin can invite you again.",
       "leftToast": "You left {name}",
       "leaveFailed": "Could not leave the workspace",
-      "deletedToast": "Workspace deleted. Owners can restore it for 14 days."
+      "deletedToast": "Workspace deleted. Owners can restore it for 14 days.",
+      "inviteTitle": "Invite people to {name}"
     },
     "models": {
       "yourDefault": "Workspace default",
@@ -10034,6 +10047,60 @@ const catalog = {
       "setDefaultTitle": "Set as the workspace default model",
       "setDefaultAria": "Set {model} as the default model for this workspace",
       "setWorkspaceDefault": "Set as workspace default"
+    },
+    "roles": {
+      "owner": {
+        "label": "Owner",
+        "blurb": "Full control: billing, people, and deleting the workspace."
+      },
+      "admin": {
+        "label": "Admin",
+        "blurb": "Billing and people. Everything except deleting the workspace or transferring ownership."
+      },
+      "manager": {
+        "label": "Manager",
+        "blurb": "Customize and everything in it: every agent, skill, connector, secret and trigger."
+      },
+      "member": {
+        "label": "Member",
+        "blurb": "Works in sessions with the agents they are granted."
+      }
+    },
+    "invite": {
+      "title": "Invite people to {name}",
+      "description": "Each person gets an email with a link to join.",
+      "emailsLabel": "Email addresses",
+      "emailsPlaceholder": "name@company.com",
+      "emailsHint": "Separate addresses with a comma or a space.",
+      "invalidEmail": "That is not an email address.",
+      "removeEmail": "Remove {email}",
+      "roleLabel": "Role",
+      "ownerHint": "To make someone an owner, transfer ownership from Members.",
+      "expiresLabel": "Access ends",
+      "optional": "Optional",
+      "expiresHint": "Empty: access stays until someone removes it.",
+      "cancel": "Cancel",
+      "send": "{count, plural, one {Send invite} other {Send # invites}}",
+      "sentToast": "{count, plural, one {Invite sent} other {# invites sent}}",
+      "sendFailed": "Could not send the invite."
+    },
+    "roleDialog": {
+      "title": "Change role for {name}",
+      "description": "One role per person in this workspace.",
+      "roleLabel": "Role",
+      "cancel": "Cancel",
+      "save": "Save",
+      "savedToast": "{name} is now {role}",
+      "saveFailed": "Could not change the role."
+    },
+    "splitNotice": {
+      "movedTitle": "This is its own workspace now",
+      "movedBody": "It moved out of {source} on {date}. Its people, billing and settings are its own.",
+      "keeperTitle": "The other workspaces moved out",
+      "keeperBody": "On {date}, the other workspaces of {source} became their own workspaces, each with its own people and billing.",
+      "billingComped": "Its plan is free until {date}.",
+      "billingFree": "It got its own free credits.",
+      "dismiss": "Dismiss"
     }
   }
 };

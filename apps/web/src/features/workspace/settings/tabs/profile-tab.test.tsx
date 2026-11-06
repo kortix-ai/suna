@@ -74,7 +74,8 @@ describe('ProfileTabView', () => {
   });
 
   test('the deletion entry point explains the cancellable default before confirmation', () => {
-    const out = renderToStaticMarkup(<ProfileTabView copy={messages.settings.profile} />);
+    // The raw catalog: its plural strings are not the view's formatter functions.
+    const out = renderToStaticMarkup(<ProfileTabView copy={messages.settings.profile as never} />);
     expect(out).toContain('Schedule account deletion. You can cancel before the scheduled date.');
     expect(out).not.toContain('This cannot be undone.');
   });
