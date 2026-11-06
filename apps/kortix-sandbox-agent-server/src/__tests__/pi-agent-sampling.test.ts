@@ -33,21 +33,34 @@ describe('withAgentSampling', () => {
     expect(r.calls[0]!.options).toEqual({})
   })
 
-  test('the request that reaches steps may not call a tool, and a new prompt starts the count again', () => {
+  test('the request that reaches steps may not call a tool; a new run id restarts the count', () => {
     const r = recorder()
-    const fn = withAgentSampling(r.stream, () => ({ steps: 2 }))
-    fn({} as never, context(user), undefined)
-    fn({} as never, context(toolResult), undefined)
-    fn({} as never, context(user), undefined)
+    let runId = 'run1'
+    const fn = withAgentSampling(r.stream, () => ({ steps: 2, runId }))
+    fn({} as never, context(user), undefined) // run1 step=1
+    fn({} as never, context(toolResult), undefined) // run1 step=2 -> none
+    runId = 'run2'
+    fn({} as never, context(user), undefined) // run2 step=1 -> reset
     expect(r.calls.map((c) => c.options?.toolChoice)).toEqual([undefined, 'none', undefined])
   })
 
-  test('a request without tools (compaction) neither counts nor resets a step', () => {
+  test('a compaction (a user-role message mid-run) does NOT reset the step count', () => {
+    // Same run id throughout. The user-role message models a post-compaction
+    // continuation: it must not restart the count, or a run escapes `steps`.
     const r = recorder()
-    const fn = withAgentSampling(r.stream, () => ({ steps: 2 }))
-    fn({} as never, context(user), undefined)
-    fn({} as never, normalizeContext({ systemPrompt: '', messages: [user] }), undefined)
-    fn({} as never, context(toolResult), undefined)
+    const fn = withAgentSampling(r.stream, () => ({ steps: 3, runId: 'run1' }))
+    fn({} as never, context(user), undefined) // step=1
+    fn({} as never, context(toolResult), undefined) // step=2
+    fn({} as never, context(user), undefined) // step=3 (NOT reset) -> none
+    expect(r.calls.map((c) => c.options?.toolChoice)).toEqual([undefined, undefined, 'none'])
+  })
+
+  test('a request without tools (a compaction) neither counts nor resets a step', () => {
+    const r = recorder()
+    const fn = withAgentSampling(r.stream, () => ({ steps: 2, runId: 'run1' }))
+    fn({} as never, context(user), undefined) // step=1
+    fn({} as never, normalizeContext({ systemPrompt: '', messages: [user] }), undefined) // no tools -> skipped
+    fn({} as never, context(toolResult), undefined) // step=2 -> none
     expect(r.calls.map((c) => c.options?.toolChoice)).toEqual([undefined, undefined, 'none'])
   })
 })
