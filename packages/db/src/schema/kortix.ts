@@ -9675,3 +9675,50 @@ export const selfHostSignupPolicy = kortixSchema.table('self_host_signup_policy'
   check('self_host_signup_policy_singleton', sql`${table.id}`),
   check('self_host_signup_policy_mode_check', sql`${table.signupMode} in ('open', 'invite', 'closed')`),
 ]).enableRLS();
+
+// Credit codes: a code a person types (or opens as /redeem?code=…) to add
+// credits to an account's wallet, e.g. a campaign code worth $100. Staff
+// create them in the admin console (apps/api/src/admin/credit-codes.ts). The
+// grant goes through the wallet like every other credit
+// (apps/api/src/billing/services/credit-codes.ts).
+export const creditCodes = kortixSchema.table('credit_codes', {
+  codeId: uuid('code_id').defaultRandom().primaryKey(),
+  /** Upper-case, as typed with the case folded: `FRONTIER`. */
+  code: text('code').notNull(),
+  /** USD added to the non-expiring bucket per redemption (1 USD = 100 credits). */
+  amountUsd: numeric('amount_usd', { precision: 12, scale: 2 }).notNull(),
+  /** Null: no limit on the number of accounts. */
+  maxRedemptions: integer('max_redemptions'),
+  redemptionCount: integer('redemption_count').default(0).notNull(),
+  /** Null: never expires. */
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  /** False: switched off by staff; the code then reads as unknown. */
+  active: boolean('active').default(true).notNull(),
+  /** Staff note: what the code is for. Never shown to the customer. */
+  description: text('description'),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('uniq_credit_codes_code').on(table.code),
+  check('credit_codes_amount_positive', sql`${table.amountUsd} > 0`),
+  check('credit_codes_max_redemptions_positive', sql`${table.maxRedemptions} IS NULL OR ${table.maxRedemptions} > 0`),
+  check('credit_codes_code_shape', sql`${table.code} ~ '^[A-Z0-9_-]{3,64}$'`),
+]).enableRLS();
+
+// One row per account that redeemed a code: an account redeems a code once.
+export const creditCodeRedemptions = kortixSchema.table('credit_code_redemptions', {
+  redemptionId: uuid('redemption_id').defaultRandom().primaryKey(),
+  codeId: uuid('code_id')
+    .notNull()
+    .references(() => creditCodes.codeId, { onDelete: 'cascade' }),
+  accountId: uuid('account_id')
+    .notNull()
+    .references(() => accounts.accountId, { onDelete: 'cascade' }),
+  /** The person who redeemed it for the account. */
+  redeemedBy: uuid('redeemed_by'),
+  amountUsd: numeric('amount_usd', { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('uniq_credit_code_redemptions_code_account').on(table.codeId, table.accountId),
+  index('idx_credit_code_redemptions_account').on(table.accountId),
+]).enableRLS();

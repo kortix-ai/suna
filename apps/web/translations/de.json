@@ -2425,6 +2425,27 @@
       "autoTopupOn": "Automatische Aufladung: fügt {amount} hinzu, wenn das Guthaben unter {threshold} Credits fällt",
       "ledgerBonus": "Aufladebonus"
     },
+    "redeem": {
+      "toggle": "Guthabencode einlösen",
+      "codeLabel": "Guthabencode",
+      "placeholder": "Code eingeben",
+      "action": "Code einlösen",
+      "redeemed": "Code eingelöst",
+      "redeemedDescription": "{credits} Credits zu deinem Guthaben hinzugefügt.",
+      "invalid": "Dieser Code ist ungültig. Prüfe die Schreibweise und versuche es erneut.",
+      "expired": "Dieser Code ist abgelaufen.",
+      "exhausted": "Dieser Code kann nicht mehr eingelöst werden.",
+      "alreadyRedeemed": "Dieses Konto hat diesen Code bereits eingelöst.",
+      "noPermission": "Nur Inhaber und Admins dieses Kontos können einen Code einlösen.",
+      "rateLimited": "Zu viele Versuche. Warte eine Minute und versuche es erneut.",
+      "failed": "Der Code konnte nicht eingelöst werden. Versuche es erneut.",
+      "pageTitle": "Guthabencode einlösen",
+      "pageDescription": "Credits aus einem Code gehen auf dein Kontoguthaben und verfallen nie.",
+      "successTitle": "{credits} Credits hinzugefügt",
+      "successDescription": "Dein Guthaben beträgt jetzt {balance} Credits. Credits aus einem Code verfallen nie.",
+      "openKortix": "Kortix öffnen",
+      "backToKortix": "Zurück zu Kortix"
+    },
     "autoTopup": {
       "bufferError": "Gib {minimum} oder mehr ein: Eine Aufladung muss mindestens {buffer} Credits mehr als der Schwellenwert hinzufügen.",
       "addPaymentFirst": "Füge eine Zahlungsmethode hinzu, bevor du die automatische Aufladung aktivierst.",

@@ -2425,6 +2425,27 @@
       "autoTopupOn": "Аутоматска допуна: додаје {amount} када стање падне испод {threshold} кредита",
       "ledgerBonus": "Бонус за допуну"
     },
+    "redeem": {
+      "toggle": "Iskoristi kod za kredite",
+      "codeLabel": "Kod za kredite",
+      "placeholder": "Unesi kod",
+      "action": "Iskoristi kod",
+      "redeemed": "Kod iskorišćen",
+      "redeemedDescription": "{credits} kredita dodato na tvoj saldo.",
+      "invalid": "Ovaj kod nije važeći. Proveri kako je napisan i pokušaj ponovo.",
+      "expired": "Ovaj kod je istekao.",
+      "exhausted": "Ovaj kod više nema preostalih iskorišćenja.",
+      "alreadyRedeemed": "Ovaj nalog je već iskoristio ovaj kod.",
+      "noPermission": "Samo vlasnici i administratori ovog naloga mogu da iskoriste kod.",
+      "rateLimited": "Previše pokušaja. Sačekaj minut i pokušaj ponovo.",
+      "failed": "Kod nije mogao da se iskoristi. Pokušaj ponovo.",
+      "pageTitle": "Iskoristi kod za kredite",
+      "pageDescription": "Krediti iz koda idu na saldo tvog naloga i nikad ne ističu.",
+      "successTitle": "Dodato {credits} kredita",
+      "successDescription": "Tvoj saldo je sada {balance} kredita. Krediti iz koda nikad ne ističu.",
+      "openKortix": "Otvori Kortix",
+      "backToKortix": "Nazad na Kortix"
+    },
     "autoTopup": {
       "bufferError": "Унесите {minimum} или више: допуна мора да дода бар {buffer} кредита више од прага.",
       "addPaymentFirst": "Додајте начин плаћања пре укључивања аутоматске допуне.",
