@@ -775,6 +775,22 @@ against a view (learning `2026-08-19T163833Z`).
 7. The engine accepts `scope_type = 'workspace'` and `workspace.*` strings as stored values
    (code only; no rewrite while R1 pods run).
 8. Flip the shadow reads: the table is primary, `workspaces_expected` is the shadow.
+8a. The account-of-project lookups move to the store. Release 1 leaves 19 files
+    that read `projects.account_id` (or `projectsView.accountId`) by
+    `project_id` inline instead of through `workspaces/surface.ts`
+    (`git grep -lE 'select\(\{ *accountId: (projects|projectsView)\.accountId *\}\)' apps/api/src`,
+    tests excluded, 2026-11-06): the channels (Slack, Teams, core identity,
+    approvals, turn stop, scoped agents), connectors (db-deps, db-deps-principal,
+    http-principal), `iam/authorize.ts`, `setup-links/public-app.ts`,
+    `projects/secrets/consumer-resolution.ts`, `projects/new-workspace.ts`,
+    `projects/peer-messages/service.ts`, `projects/lib/trigger-alerts.ts`,
+    `shared/project-account-lookup.ts` (cached) and `shared/resolve-account.ts`.
+    Each reads the same row the store reads, so Release 1 is correct; after the
+    flip (step 8) they must read `kortix.workspaces` through one store function
+    (`accountKeyOfWorkspace`, cached like `shared/project-account-lookup.ts`).
+    They were not folded in Release 1: every one is on the import graph of
+    hermetic unit suites that mock `shared/db` wholesale, and the fold is a
+    pure refactor with no Release 1 behavior.
 9. The Drizzle property codemod (`scripts/codemods/workspace-drizzle-properties.ts
    --project-id`): `projectId → workspaceId` properties on every table, column names
    unchanged, `KORTIX_SQL_TRACE` diff empty.
