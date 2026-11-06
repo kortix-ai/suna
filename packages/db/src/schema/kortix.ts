@@ -1400,6 +1400,164 @@ export const projectSpaceEvents = kortixSchema.table(
   ],
 ).enableRLS();
 
+// ─── Goals (flag `goals`) ────────────────────────────────────────────────────
+// A goal is what a person wants plus a definition of done, worked by an owner
+// session until an independent verifier session passes every criterion
+// (apps/api/src/projects/goals/). The row is the lifecycle authority: GOAL.md in
+// the goal's Drive folder is the brief, log.md and evidence/ are artifacts, and
+// nothing written there changes state. Wire shape: @kortix/api-contract goals.ts.
+// Only the API reads these tables (RLS on, no policy).
+
+/** One entry of `project_goals.sessions`: every owner and verifier session the goal used, oldest first. */
+export interface ProjectGoalSessionRef {
+  id: string;
+  role: 'owner' | 'verifier';
+  since: string;
+}
+
+/** One entry of `project_goals.criteria`. `verified` is written only by a passed verification. */
+export interface ProjectGoalCriterion {
+  id: string;
+  text: string;
+  reported_met: boolean;
+  evidence: string | null;
+  verified: boolean;
+}
+
+/** `project_goals.verification`: the current (or last) verification attempt. */
+export interface ProjectGoalVerification {
+  attempt: number;
+  verifier_session_id: string;
+  criteria_revision: number;
+  started_at: string;
+  decided_at: string | null;
+  outcome: 'pending' | 'pass' | 'fail';
+  results: Array<{ criterion_id: string; result: 'pass' | 'fail' | 'inconclusive'; note: string }>;
+  evidence_hashes: Record<string, string>;
+}
+
+/**
+ * One goal. `revision` is the compare-and-set token of every lifecycle write;
+ * `generation` is the execution epoch (pause, stop, restart and an owner change
+ * bump it). `setup` holds the create steps already done, so a retried create or
+ * the reconciler finishes a partial one. `wake_day`/`wakes_today` count the
+ * admitted wakes of one UTC day against `max_wakes_per_day`.
+ */
+export const projectGoals = kortixSchema.table(
+  'project_goals',
+  {
+    /** Client-supplied on create: the idempotency key of `POST /goals`. */
+    goalId: uuid('goal_id').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    revision: integer('revision').default(1).notNull(),
+    generation: integer('generation').default(1).notNull(),
+    title: text('title').notNull(),
+    /** The context the person wrote (the brief minus its first line); GOAL.md carries it. */
+    brief: text('brief').default('').notNull(),
+    state: text('state')
+      .$type<'draft' | 'active' | 'waiting_on_user' | 'verifying' | 'done' | 'stopped'>()
+      .default('draft')
+      .notNull(),
+    waitingOn: text('waiting_on'),
+    chaseAt: timestamp('chase_at', { withTimezone: true }),
+    summary: text('summary').default('').notNull(),
+    pausedAt: timestamp('paused_at', { withTimezone: true }),
+    pausedByUserId: uuid('paused_by_user_id'),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+    stoppedByUserId: uuid('stopped_by_user_id'),
+    blockedReason: text('blocked_reason').$type<
+      'credits' | 'wake_cap' | 'session_cap' | 'owner_lost' | 'storage' | 'flag_off' | 'setup'
+    >(),
+    assignedUserId: uuid('assigned_user_id'),
+    createdByUserId: uuid('created_by_user_id').notNull(),
+    agent: text('agent'),
+    space: text('space'),
+    driveId: uuid('drive_id').notNull(),
+    /** The canonical Files path, `/Users/<handle>/Goals/<slug>`. */
+    folder: text('folder').notNull(),
+    /** The same folder as the owner's sandbox sees it, `/drives/me/Goals/<slug>`. */
+    boxFolder: text('box_folder').notNull(),
+    slug: text('slug').notNull(),
+    ownerSessionId: text('owner_session_id'),
+    verifierSessionId: text('verifier_session_id'),
+    sessions: jsonb('sessions').$type<ProjectGoalSessionRef[]>().default([]).notNull(),
+    criteriaRevision: integer('criteria_revision').default(0).notNull(),
+    criteria: jsonb('criteria').$type<ProjectGoalCriterion[]>().default([]).notNull(),
+    verification: jsonb('verification').$type<ProjectGoalVerification | null>(),
+    verificationAttempts: integer('verification_attempts').default(0).notNull(),
+    /** The session reminder (`project_trigger_runtime.slug`) the API keeps as the goal's heartbeat. */
+    heartbeatReminderId: text('heartbeat_reminder_id'),
+    heartbeatEvery: text('heartbeat_every').default('4h').notNull(),
+    nextWakeAt: timestamp('next_wake_at', { withTimezone: true }),
+    lastWakeAt: timestamp('last_wake_at', { withTimezone: true }),
+    maxWakesPerDay: integer('max_wakes_per_day').default(12).notNull(),
+    /** UTC day of `wakes_today`. */
+    wakeDay: date('wake_day', { mode: 'string' }),
+    wakesToday: integer('wakes_today').default(0).notNull(),
+    maxSessions: integer('max_sessions').default(10).notNull(),
+    /** Create checkpoints: step name → true once done (`projects/goals/setup.ts`). */
+    setup: jsonb('setup').$type<Record<string, unknown>>().default({}).notNull(),
+    provenance: text('provenance').$type<'api' | 'legacy_unverified'>().default('api').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'project_goals_state_check',
+      sql`${table.state} in ('draft', 'active', 'waiting_on_user', 'verifying', 'done', 'stopped')`,
+    ),
+    check(
+      'project_goals_blocked_reason_check',
+      sql`${table.blockedReason} is null or ${table.blockedReason} in ('credits', 'wake_cap', 'session_cap', 'owner_lost', 'storage', 'flag_off', 'setup')`,
+    ),
+    check('project_goals_provenance_check', sql`${table.provenance} in ('api', 'legacy_unverified')`),
+    // One goal per folder: the legacy import and a create race resolve on it.
+    uniqueIndex('uniq_project_goals_folder').on(table.projectId, table.driveId, table.folder),
+    index('idx_project_goals_project_state').on(table.projectId, table.state),
+    index('idx_project_goals_owner_session').on(table.ownerSessionId),
+    index('idx_project_goals_verifier_session').on(table.verifierSessionId),
+    // The admission gate's lookup on every reminder fire.
+    index('idx_project_goals_heartbeat').on(table.heartbeatReminderId),
+    // The delivery guard's lookup: the goal a session works or worked for (`sessions @> [{id}]`).
+    index('idx_project_goals_sessions').using('gin', sql`${table.sessions} jsonb_path_ops`),
+  ],
+).enableRLS();
+
+/**
+ * The goal's audit trail: one row per lifecycle write, wake decision and
+ * verdict, written in the same transaction as the change. `dedupe_key` makes a
+ * repeated wake, answer or event write nothing.
+ */
+export const projectGoalEvents = kortixSchema.table(
+  'project_goal_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    goalId: uuid('goal_id')
+      .notNull()
+      .references(() => projectGoals.goalId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').notNull(),
+    at: timestamp('at', { withTimezone: true }).defaultNow().notNull(),
+    kind: text('kind').notNull(),
+    actorKind: text('actor_kind').$type<'user' | 'session' | 'platform'>().notNull(),
+    actorId: text('actor_id'),
+    fromState: text('from_state'),
+    toState: text('to_state'),
+    message: text('message').default('').notNull(),
+    data: jsonb('data').$type<Record<string, unknown>>().default({}).notNull(),
+    dedupeKey: text('dedupe_key'),
+  },
+  (table) => [
+    check('project_goal_events_actor_kind_check', sql`${table.actorKind} in ('user', 'session', 'platform')`),
+    uniqueIndex('uniq_project_goal_events_dedupe')
+      .on(table.goalId, table.dedupeKey)
+      .where(sql`${table.dedupeKey} is not null`),
+    index('idx_project_goal_events_goal_at').on(table.goalId, table.at.desc()),
+  ],
+).enableRLS();
+
 // ─── Memory ──────────────────────────────────────────────────────────────────
 // Memory is Markdown files in the project's Drive; the database holds only
 // what a thread's first turn was listed ("Used memory"). Only the API reads it

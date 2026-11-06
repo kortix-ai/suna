@@ -23653,7 +23653,8 @@
       "missed_wake": "Poslednje buđenje kasni.",
       "ask_overdue": "Zahtevu je istekao rok.",
       "verification_stalled": "Provera je počela pre više od 24 sata.",
-      "unreadable": "GOAL.md ne postoji ili nema zaglavlje cilja."
+      "unreadable": "GOAL.md ne postoji ili nema zaglavlje cilja.",
+      "blocked": "Ovaj cilj ne može sam da nastavi."
     },
     "sessionChip": "Cilj",
     "sessionRole": {
@@ -24467,7 +24468,43 @@
     "restart": "Pokreni cilj ponovo",
     "restartReason": "Ponovo pokrenuto sa stranice cilja",
     "restartedToast": "Cilj je ponovo pokrenut",
-    "restartError": "Nije moguće ponovo pokrenuti cilj. Pokušaj ponovo."
+    "restartError": "Nije moguće ponovo pokrenuti cilj. Pokušaj ponovo.",
+    "noAccess": "Nemaš pristup ovom cilju.",
+    "noAccessHint": "Zamoli osobu kojoj je namenjen, ili administratora projekta, da ga podeli s tobom.",
+    "notFoundHint": "Obrisan je, ili je link pogrešan.",
+    "chooseGoal": "Više ciljeva ima ovo ime. Izaberi jedan.",
+    "goalLoadError": "Cilj nije učitan. Pokušaj ponovo.",
+    "eventsLoadError": "Aktivnost nije učitana.",
+    "changedToast": "Cilj se promenio pre nego što je tvoja radnja stigla. Stranica ga prikazuje kakav je sada.",
+    "blockedTitle": "Blokiran",
+    "blocked": {
+      "credits": "Ponestalo mu je kredita, pa nijedno buđenje ne može da počne.",
+      "wake_cap": "Iskoristio je svih {max} buđenja za danas.",
+      "session_cap": "Iskoristio je svih {max} sesija koje sme da pokrene.",
+      "owner_lost": "Njegova sesija agenta nije uspela i nijedna sesija je nije preuzela.",
+      "storage": "Njegova fascikla u Fajlovima nije mogla da se čita ili upisuje.",
+      "flag_off": "Ciljevi su isključeni za ovaj projekat.",
+      "setup": "Kortix ga još podešava."
+    },
+    "blockedNext": {
+      "credits": "Dodaj kredite, pa ga nastavi.",
+      "wake_cap": "Nastavlja sam posle ponoći UTC.",
+      "session_cap": "Zaustavi ga, ili zamoli administratora projekta da poveća ograničenje sesija.",
+      "owner_lost": "Pokreni ga ponovo da dobije novu sesiju.",
+      "storage": "Proveri fasciklu u Fajlovima, pa ga nastavi.",
+      "flag_off": "Uključi Ciljeve za ovaj projekat, pa ga nastavi.",
+      "setup": "Ovo se završava samo za manje od minuta."
+    },
+    "legacyUnverifiedTitle": "Kortix nije proverio",
+    "legacyUnverified": "Ovaj cilj je uvezen iz svoje fascikle. Kortix nije proverio rezultat.",
+    "verified": "Provereno",
+    "reportedMet": "Prijavljeno kao ispunjeno, još nije provereno",
+    "reportedMetHint": "Agent prijavljuje da je ovo urađeno. Nezavisna provera to još nije potvrdila.",
+    "verifiedCount": "Provereno {verified} od {total}",
+    "checkFailed": "Provera nije uspela: {note}",
+    "waitingOnPerson": "Čeka na {person}",
+    "waitNoCost": "Dok čeka odgovor, nijedna provera se ne pokreće.",
+    "chaseAt": "Proverava ponovo {time}"
   },
   "agentEditor": {
     "manage": "Upravljaj",

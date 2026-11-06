@@ -22,7 +22,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * Files, so its audience is the folder's: the person it belongs to, project
  * admins, and any agent the folder is shared with. One flat list, each row
  * the principal and its access on the right. Manage access opens the folder's
- * access dialog in place; Copy link (a project-wide goal only) copies its page.
+ * access dialog in place; Copy link copies its page (`/goals/<goal_id>`).
  */
 export function GoalShareModal({
   projectId,
@@ -130,22 +130,18 @@ export function GoalShareModal({
         <ModalContent className="sm:max-w-md" data-testid="goal-share">
           <ModalHeader>
             <ModalTitle>{t('shareTitle')}</ModalTitle>
-            <ModalDescription className="line-clamp-2 text-pretty">{goal.goal?.objective ?? goal.slug}</ModalDescription>
+            <ModalDescription className="line-clamp-2 text-pretty">{goal.record.title}</ModalDescription>
           </ModalHeader>
           <ModalBody className="flex flex-col gap-2">
             <p className="text-muted-foreground text-xs font-medium">{t('shareAccessLabel')}</p>
             {body}
           </ModalBody>
           <ModalFooter className="flex-row justify-between sm:justify-between">
-            {/* A personal goal's link names the viewer's own folder, so only a project-wide goal's link works for others. */}
-            {goal.scope === 'personal' ? (
-              <span />
-            ) : (
-              <Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={() => void copyLink()} data-testid="goal-share-copy">
-                <LinkIcon className="size-3.5 shrink-0" aria-hidden />
-                {t('copyLink')}
-              </Button>
-            )}
+            {/* The link names the goal by its id: it opens for everyone the API lets read the goal. */}
+            <Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={() => void copyLink()} data-testid="goal-share-copy">
+              <LinkIcon className="size-3.5 shrink-0" aria-hidden />
+              {t('copyLink')}
+            </Button>
             {access.data?.grantable ? (
               <Button
                 type="button"

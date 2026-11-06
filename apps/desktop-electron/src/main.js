@@ -22,6 +22,7 @@ const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
+const { createDeepLinkInbox } = require('./deep-link-inbox');
 const { menuContextForUrl, copyableUrl } = require('./menu-state');
 const { PANEL_TOGGLE_COMMAND, forwardsPanelToggle } = require('./panel-shortcut');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
@@ -269,7 +270,9 @@ function translateDeepLink(deepLink) {
 function handleDeepLink(deepLink) {
   const target = translateDeepLink(deepLink);
   if (!target || !mainWindow) return;
-  mainWindow.webContents.executeJavaScript(`window.location.replace(${JSON.stringify(target)})`);
+  mainWindow.webContents
+    .executeJavaScript(`window.location.replace(${JSON.stringify(target)})`)
+    .catch((error) => console.warn('[kortix] deep link not delivered:', error?.message ?? error));
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.focus();
 }
@@ -278,6 +281,14 @@ function handleDeepLink(deepLink) {
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
+
+/** Every kortix:// link goes through this one inbox (src/deep-link-inbox.js). */
+const deepLinks = createDeepLinkInbox({
+  deliver: handleDeepLink,
+  // Not during first-launch setup, where the chooser is the only window.
+  canOpenWindow: () => app.isReady() && needsMainWindow(mainWindow) && !instanceStore.needsSetup(),
+  openWindow: () => openMainWindow(),
+});
 /** @type {BrowserWindow | null} */
 let splashWindow = null;
 /** This computer as a Kortix account (computer-tray.js). Set once the app is ready. */
@@ -414,6 +425,7 @@ function createMainWindow() {
     refreshNavigationMenu();
     mainWindow.show();
     mainWindow.focus();
+    deepLinks.windowLoaded();
   });
 
   // Safety net: never leave the user staring at a hidden window if the load
@@ -594,6 +606,7 @@ function createMainWindow() {
     if (persistTimer) clearTimeout(persistTimer);
     clearAttentionBadge();
     mainWindow = null;
+    deepLinks.windowClosed();
     quickEntry?.close();
   });
 
@@ -1246,9 +1259,6 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  // A kortix:// link that arrives before the window exists (macOS cold start).
-  let pendingDeepLink = null;
-
   // HTTP Basic challenges cover the app origin and authenticating proxies.
   // Dev/staging sit behind one shared origin credential — see apps/web/src/
   // middleware.ts, which answers 401 "Authentication required.".
@@ -1285,18 +1295,17 @@ if (!gotLock) {
     // Not during first-launch setup, where the chooser is the only window.
     const reopened = needsMainWindow(mainWindow) && app.isReady() && !instanceStore.needsSetup();
     if (reopened) openMainWindow();
-    if (deepLink && reopened) mainWindow?.webContents.once('did-finish-load', () => handleDeepLink(deepLink));
-    else if (deepLink) handleDeepLink(deepLink);
+    if (deepLink) deepLinks.receive(deepLink);
     revealMainWindow(mainWindow);
     // First launch: the chooser is the only window.
     focusInstanceChooser();
   });
 
-  // macOS delivers deep links via open-url.
+  // macOS delivers deep links via open-url: at cold start, with the window
+  // open, and with only the tray left (the inbox reopens the window).
   app.on('open-url', (event, url) => {
     event.preventDefault();
-    if (mainWindow) handleDeepLink(url);
-    else pendingDeepLink = url; // arrived before the window existed
+    deepLinks.receive(url);
   });
 
   app.whenReady().then(async () => {
@@ -1348,15 +1357,9 @@ if (!gotLock) {
       getMainWindow: () => mainWindow,
     });
 
-    // A deep link that arrived during cold start (macOS first-launch via URL).
+    // A cold-start link in argv (Windows/Linux). A later open-url link wins.
     const firstArgvDeepLink = process.argv.find((a) => a.startsWith(`${URL_SCHEME}://`));
-    if (firstArgvDeepLink) pendingDeepLink = firstArgvDeepLink;
-    if (pendingDeepLink) {
-      mainWindow?.webContents.once('did-finish-load', () => {
-        handleDeepLink(pendingDeepLink);
-        pendingDeepLink = null;
-      });
-    }
+    if (firstArgvDeepLink && !deepLinks.hasPending()) deepLinks.receive(firstArgvDeepLink);
 
     app.on('activate', openMainWindow);
 

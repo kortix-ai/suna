@@ -13,6 +13,13 @@ name: Rerun failed jobs once
 #
 # Scope:
 # - `Tests - release` on a release pull request or a dispatched rehearsal.
+# - A release pull request gate that ended `cancelled`: GitHub replaced it
+#   while it waited for the staging slot. It reruns once when it is the PR's
+#   current head and no other gate run covers that head (a superseded head is
+#   cancelled on purpose and stays cancelled). A run cancelled before any job
+#   started has no failed job, so it reruns whole. GitHub sends no
+#   workflow_run for a run the workflow token approved, and such a run that
+#   never started cannot dispatch this workflow: re-run it by hand.
 # - `Tests` on a pull request into `staging`. Not a run on `dev`: those queue,
 #   and a rerun would take the pending slot of the newer `dev` SHA.
 #
@@ -39,7 +46,10 @@ jobs:
   rerun:
     if: >-
       github.event_name == 'workflow_dispatch'
-      || github.event.workflow_run.conclusion == 'failure'
+      || (github.event.workflow_run.conclusion == 'failure'
+      || (github.event.workflow_run.conclusion == 'cancelled'
+      && github.event.workflow_run.name == 'Tests - release'
+      && github.event.workflow_run.event == 'pull_request'))
       && github.event.workflow_run.run_attempt <= 2
       && (github.event.workflow_run.name == 'Tests - release'
       || (github.event.workflow_run.event == 'pull_request'
@@ -65,7 +75,7 @@ jobs:
               sleep 10
             done
             [ "$(gh api "$run" --jq .status)" = completed ] || { echo "::error::run $RUN_ID did not finish in 10 min"; exit 1; }
-            if [ "$(gh api "$run" --jq .conclusion)" != failure ]; then
+            if [ "$(gh api "$run" --jq .conclusion)" != failure ] && [ "$(gh api "$run" --jq .conclusion)" != cancelled ]; then
               echo "Run $RUN_ID did not fail: nothing to rerun."
               exit 0
             fi
@@ -83,18 +93,47 @@ jobs:
             echo "Run $RUN_ID attempt $attempt is already a rerun: nothing to rerun."
             exit 0
           fi
+          conclusion="$(gh api "$run" --jq .conclusion)"
+          if [ "$conclusion" = cancelled ]; then
+            # Only the current head of an open release PR, and only when no
+            # other gate run is queued, running or green on that head.
+            event="$(gh api "$run" --jq .event)"
+            head="$(gh api "$run" --jq .head_sha)"
+            name="$(gh api "$run" --jq .name)"
+            if [ "$name" != 'Tests - release' ] || [ "$event" != pull_request ]; then
+              echo "Run $RUN_ID was cancelled and is not a release PR gate: nothing to rerun."
+              exit 0
+            fi
+            current="$(gh api "repos/$REPO/pulls?state=open&base=prod&per_page=50" --jq "[.[] | select(.head.sha == \"$head\")][0].number // empty")"
+            if [ -z "$current" ]; then
+              echo "Run $RUN_ID was cancelled on $head, which is no open release PR's head (superseded): nothing to rerun."
+              exit 0
+            fi
+            others="$(gh api "repos/$REPO/actions/workflows/tests-release.yml/runs?event=pull_request&head_sha=$head&per_page=20" \
+              --jq "[.workflow_runs[] | select(.id != $RUN_ID and (.status != \"completed\" or .conclusion == \"success\"))] | length")"
+            if [ "$others" != 0 ]; then
+              echo "Another gate run covers $head: nothing to rerun."
+              exit 0
+            fi
+            PR="${PR:-$current}"
+          fi
           failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
             --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out") | .name' \
             | sort | paste -sd, - | sed 's/,/, /g')"
-          gh run rerun "$RUN_ID" --repo "$REPO" --failed
+          if [ -n "$failed" ]; then
+            gh run rerun "$RUN_ID" --repo "$REPO" --failed
+          else
+            # Cancelled before any job ran: there is no failed job to rerun.
+            gh run rerun "$RUN_ID" --repo "$REPO"
+          fi
           {
-            echo "$WORKFLOW attempt $attempt failed: \`${failed:-unknown}\`. Rerunning the failed jobs once: $RUN_URL"
+            echo "$WORKFLOW attempt $attempt ended $conclusion: \`${failed:-no job started}\`. Rerunning it once: $RUN_URL"
             echo
             echo "A job that passes on the rerun is a flake. Fix it at the root or delete it the same day (the **testing** skill, No quarantine). A job that fails twice is real."
           } > /tmp/rerun.md
           cat /tmp/rerun.md >> "$GITHUB_STEP_SUMMARY"
-          # promote.yml dispatches the gate on `release/*`, and a dispatched
-          # run lists no pull request: find it by its branch.
+          # A dispatched run (rehearsal, or this workflow's dispatch path) lists
+          # no pull request: find the release PR by its branch.
           if [ -z "$PR" ] && [ "${BRANCH#release/}" != "$BRANCH" ]; then
             PR="$(gh pr list --repo "$REPO" --base prod --head "$BRANCH" --state open --json number --jq '.[0].number // empty' || true)"
           fi

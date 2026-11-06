@@ -34,6 +34,23 @@ jobs:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
+      # A :X.Y.Z image exists as soon as deploy-prod retags it, also when the
+      # prod roll then failed. The tag vX.Y.Z and its GitHub Release exist only
+      # after deploy-prod's github-release job, which needs deploy-ecs,
+      # verify-live-version and frontend-auth-proof: prod served X.Y.Z.
+      - name: Require proof that vX.Y.Z served prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RAW_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION="${RAW_VERSION#v}"
+          if ! gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease \
+            --jq 'select(.isDraft == false and .isPrerelease == false) | .tagName' | grep -qx "v$VERSION"; then
+            echo "::error::No published GitHub Release v$VERSION. deploy-prod creates it only after prod served v$VERSION (deploy-ecs + verify-live-version + frontend-auth-proof). Refusing to move :stable to a version that never served prod."
+            exit 1
+          fi
+          echo "✓ GitHub Release v$VERSION exists: deploy-prod verified it live on prod."
       - name: Check out the aws-env action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

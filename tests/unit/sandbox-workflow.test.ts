@@ -380,6 +380,12 @@ describe('native test-lane workflow', () => {
     // Never a run on `dev`: it would take the pending slot of a newer SHA.
     expect(rerun).toContain("github.event.workflow_run.pull_requests[0].base.ref == 'staging'");
     expect(rerun).toContain('gh run rerun "$RUN_ID" --repo "$REPO" --failed');
+    // A release PR gate that ended `cancelled` (replaced while it waited)
+    // reruns once too, but only when it is the PR's current head and no other
+    // gate run covers that head.
+    expect(rerun).toContain("github.event.workflow_run.conclusion == 'cancelled'");
+    expect(rerun).toContain('pulls?state=open&base=prod');
+    expect(rerun).toContain('gh run rerun "$RUN_ID" --repo "$REPO"\n');
     // The workflow names it reruns must exist.
     expect(readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8')).toMatch(/^name: Tests - release$/m);
     expect(testWorkflow).toMatch(/^name: Tests$/m);
@@ -401,9 +407,24 @@ describe('native test-lane workflow', () => {
     expect(rerun).toContain('attempt="$(gh api "$run" --jq .run_attempt)"');
   });
 
-  test('one release gate runs against staging at a time, across every ref', () => {
+  test('one release gate runs against staging at a time, and a rehearsal never replaces a waiting gate', () => {
+    // Release pull request runs queue in one group across every ref. A
+    // rehearsal dispatch has its own group: in the shared group it replaced a
+    // waiting release gate, which then ended `cancelled` (2026-11-06).
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
-    expect(release).toMatch(/^concurrency:\n {2}group: tests-release-staging\n {2}cancel-in-progress: false$/m);
+    expect(release).toMatch(
+      /^concurrency:\n {2}group: \$\{\{ github\.event_name == 'pull_request' && 'tests-release-staging' \|\| 'tests-release-rehearsal' \}\}\n {2}cancel-in-progress: false$/m,
+    );
+    // The rehearsal refuses while a release PR gate is active, and the
+    // staging jobs wait for that check.
+    const guard = release.slice(release.indexOf('\n  rehearsal-guard:'), release.indexOf('\n  sweep-before:'));
+    expect(guard).toContain("if: github.event_name == 'workflow_dispatch'");
+    expect(guard).toContain('actions/workflows/tests-release.yml/runs?event=pull_request');
+    for (const job of ['\n  api:', '\n  browser:']) {
+      const body = release.slice(release.indexOf(job), release.indexOf(job) + 400);
+      expect(body).toContain('needs: rehearsal-guard');
+      expect(body).toContain("needs.rehearsal-guard.result != 'failure'");
+    }
   });
 
   test("Promote to Production approves the release pull request's own gate run", () => {
@@ -420,6 +441,11 @@ describe('native test-lane workflow', () => {
     expect(promote.indexOf('/approve"')).toBeGreaterThan(promote.indexOf('gh pr create --base prod'));
     // The tree checks on the release pull request are held too: approve them.
     expect(promote).toContain('actions/runs?event=pull_request&head_sha=$HEAD_SHA&per_page=100');
+    // A re-promote cancels the gate run of the older head: it holds the one
+    // staging slot and its result never counts (v0.15.0, 2026-11-06).
+    expect(promote).toContain('actions/workflows/tests-release.yml/runs?event=pull_request&branch=$RELBR');
+    expect(promote).toContain('select(.status != \\"completed\\" and .head_sha != \\"$HEAD_SHA\\")');
+    expect(promote.indexOf('of a superseded head of $RELBR')).toBeLessThan(promote.indexOf('/approve"'));
     const release = readFileSync(resolve(root, '.github/workflows/tests-release.yml'), 'utf8');
     expect(release).toMatch(/^ {2}workflow_dispatch:\n {4}inputs:\n {6}expected_sha:/m);
     expect(release).toContain('name: full suite + quality gates');
@@ -458,6 +484,22 @@ describe('native test-lane workflow', () => {
     expect(promote).toContain('ref: ${{ needs.stage.outputs.source_sha }}');
     expect(promote).not.toContain('skip_green');
     expect(promote.indexOf('gh pr merge "$PR"')).toBeLessThan(promote.indexOf('gh pr create --base prod'));
+    // 2026-11-06: a run that merged into staging and then failed resumes on a
+    // rerun instead of refusing the already-merged SHA. The merge is skipped,
+    // the build/deploy/health proof is not.
+    expect(promote).toContain('--state merged --json mergeCommit');
+    expect(promote).toContain('echo "resume_sha=$MERGED"');
+    expect(promote).toContain("&& steps.plan.outputs.resume_sha == ''");
+    expect(promote).toContain('MERGE_SHA: ${{ steps.merge.outputs.merge_sha || steps.plan.outputs.resume_sha }}');
+    // Its deploy lookup is pinned to the merge SHA (headSha or the run name).
+    expect(promote).toContain('find_run deploy-staging.yml "$T0" "$MERGE_SHA"');
+    expect(promote).not.toContain('find_run deploy-staging.yml "$T0")');
+    const deployStaging = readFileSync(resolve(root, '.github/workflows/deploy-staging.yml'), 'utf8');
+    expect(deployStaging).toMatch(/^run-name: Deploy Staging \$\{\{ inputs\.sha \|\| github\.event\.workflow_run\.head_sha/m);
+    // A push to staging never cancels the build a promote dispatched.
+    const buildStaging = readFileSync(resolve(root, '.github/workflows/build-staging.yml'), 'utf8');
+    expect(buildStaging).toContain("cancel-in-progress: ${{ github.event_name == 'push' }}");
+    expect(buildStaging).toContain("format('sha-{0}', inputs.sha || github.sha)");
     // build-staging hands off to Deploy Staging itself on a dispatched run.
     const build = readFileSync(resolve(root, '.github/workflows/build-staging.yml'), 'utf8');
     expect(build).toContain("if: github.event_name == 'workflow_dispatch'");
@@ -641,9 +683,12 @@ describe('the preview label is one fast deploy, and a superseded run never deplo
   );
 
   test('only an explicit act starts a run, and only a dispatch runs the suite', () => {
+    // A dispatch redeploys; `run_tests` (default true) decides the suite. The
+    // label is never the redeploy path: removing it deletes the environment.
     expect(previewWorkflow).toContain(
-      "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
+      "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_tests && '1' || '0' }}",
     );
+    expect(previewWorkflow).toMatch(/ {6}run_tests:\n(?: {8}.*\n)*? {8}default: true\n {8}type: boolean/);
     expect(previewWorkflow).toContain('types: [labeled, unlabeled]');
     expect(previewWorkflow).not.toContain('synchronize');
   });
