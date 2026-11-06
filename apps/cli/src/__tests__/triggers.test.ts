@@ -305,7 +305,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
   }
 
   function startFireServer(opts: { triggersEndpoint?: 'down' } = {}): string {
-    const base = `/v1/projects/${PROJECT}/triggers`;
+    const base = `/v1/workspaces/${PROJECT}/triggers`;
     server = Bun.serve({
       port: 0,
       fetch: async (req) => {
@@ -349,7 +349,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
         if (url.pathname === base && req.method === 'GET') {
           return Response.json({ triggers: state.triggers, triggers_paused: false, errors: [] });
         }
-        if (url.pathname === `/v1/projects/${PROJECT}/sessions/${SESSION_ID}`) {
+        if (url.pathname === `/v1/workspaces/${PROJECT}/sessions/${SESSION_ID}`) {
           if (req.method === 'GET') {
             if (!state.session) return Response.json({ error: 'Not found' }, { status: 404 });
             return Response.json(state.session);
@@ -1107,7 +1107,7 @@ describe('eventNextStep on an error', () => {
  * output, and the HTTP request the CLI sent.
  */
 describe('kortix triggers — runs, payload fires, dry runs, replay', () => {
-  const base = `/v1/projects/${PROJECT}/triggers`;
+  const base = `/v1/workspaces/${PROJECT}/triggers`;
   const RUN_ID = '11111111-0000-4000-8000-000000000001';
   const NEW_RUN_ID = '11111111-0000-4000-8000-000000000002';
   const SESSION_ID = '22222222-0000-4000-8000-000000000001';
@@ -1329,7 +1329,7 @@ describe('kortix triggers — runs, payload fires, dry runs, replay', () => {
 });
 
 describe('kortix triggers add --apply — the webhook-secret 409 and the signing pointer', () => {
-  const base = `/v1/projects/${PROJECT}/triggers`;
+  const base = `/v1/workspaces/${PROJECT}/triggers`;
   const WEBHOOK_SECRET_409 = {
     error: 'Webhook secret is not available to the connector consumer',
     code: 'webhook_secret_delivery_mismatch',

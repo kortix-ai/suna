@@ -89,7 +89,7 @@ export async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
 
   let resp: ProjectSecretsResponse;
   try {
-    resp = await ctx.client.get<ProjectSecretsResponse>(`/projects/${ctx.projectId}/secrets`);
+    resp = await ctx.client.get<ProjectSecretsResponse>(`/workspaces/${ctx.projectId}/secrets`);
   } catch (err) {
     return surfaceApiError(err);
   }

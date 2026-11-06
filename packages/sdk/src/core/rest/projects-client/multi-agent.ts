@@ -215,7 +215,7 @@ export interface WorkflowControlResult {
 // ── Routes ────────────────────────────────────────────────────────────────
 
 const session = (projectId: string, sessionId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`;
+  `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`;
 
 /** The agents this session can message: `mine` (default) or every live session of the project. */
 export async function getSessionReachableAgents(

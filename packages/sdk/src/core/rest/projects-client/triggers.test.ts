@@ -85,7 +85,7 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
 
   const listing = await listProjectTriggers('P1');
 
-  expect(last().url).toContain('/projects/P1/triggers');
+  expect(last().url).toContain('/workspaces/P1/triggers');
   expect(last().method).toBe('GET');
   const monitor = listing.triggers[0]!;
   expect(monitor.type).toBe('monitor');
@@ -210,7 +210,7 @@ test('createProjectTrigger POSTs the monitor draft fields the API parser accepts
     },
   });
 
-  expect(last().url).toContain('/projects/P1/triggers');
+  expect(last().url).toContain('/workspaces/P1/triggers');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({
     name: 'Checkout errors',
@@ -241,7 +241,7 @@ test('updateProjectTrigger PATCHes monitor fields, and null clears the silence w
     session_access: { mode: 'project', memberIds: [], groupIds: [] },
   });
 
-  expect(last().url).toContain('/projects/P1/triggers/checkout-errors');
+  expect(last().url).toContain('/workspaces/P1/triggers/checkout-errors');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({
     mode: 'stream',
@@ -349,7 +349,7 @@ test('listProjectTriggerEventTypes GETs event-types with the connector query and
   const catalog = await listProjectTriggerEventTypes('P1', { connector: 'my github' });
 
   expect(last().method).toBe('GET');
-  expect(last().url).toContain('/projects/P1/triggers/event-types?connector=my%20github');
+  expect(last().url).toContain('/workspaces/P1/triggers/event-types?connector=my%20github');
   expect(catalog.provider).toBe('composio');
   expect(catalog.event_types[0]!.delivery).toBe('push');
 });
@@ -358,11 +358,11 @@ test('listProjectTriggerEventTypes with { app, source } GETs event-types?app= an
   nextResponse = { status: 200, body: { source: 'composio', provider: 'composio', app: 'github', event_types: [] } };
 
   await listProjectTriggerEventTypes('P1', { app: 'git hub' });
-  expect(last().url).toContain('/projects/P1/triggers/event-types?app=git%20hub');
+  expect(last().url).toContain('/workspaces/P1/triggers/event-types?app=git%20hub');
   expect(last().url).not.toContain('connector');
 
   await listProjectTriggerEventTypes('P1', { app: 'github', source: 'composio' });
-  expect(last().url).toContain('/projects/P1/triggers/event-types?app=github&source=composio');
+  expect(last().url).toContain('/workspaces/P1/triggers/event-types?app=github&source=composio');
 });
 
 test('listProjectTriggerEventApps GETs event-apps and returns connector and connection state', async () => {
@@ -379,7 +379,7 @@ test('listProjectTriggerEventApps GETs event-apps and returns connector and conn
   const { apps } = await listProjectTriggerEventApps('P1');
 
   expect(last().method).toBe('GET');
-  expect(last().url).toContain('/projects/P1/triggers/event-apps');
+  expect(last().url).toContain('/workspaces/P1/triggers/event-apps');
   expect(apps[0]!.connected).toBe(true);
   expect(apps[1]!.connector).toBeNull();
 });
@@ -557,7 +557,7 @@ test('listTriggerRuns GETs one trigger\'s runs with cursor and limit, and return
   const page = await listTriggerRuns('P1', 'nightly', { cursor: 'c 1/=', limit: 10 });
 
   expect(last().method).toBe('GET');
-  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs?limit=10&cursor=c+1%2F%3D');
+  expect(last().url).toBe('http://test.local/workspaces/P1/triggers/nightly/runs?limit=10&cursor=c+1%2F%3D');
   expect(page.next_cursor).toBe('c2');
   expect(page.runs[0]).toEqual(RUN_WIRE_ENTRY as never);
 });
@@ -565,7 +565,7 @@ test('listTriggerRuns GETs one trigger\'s runs with cursor and limit, and return
 test('listTriggerRuns without options sends no query string', async () => {
   nextResponse = { status: 200, body: { runs: [], next_cursor: null } };
   await listTriggerRuns('P1', 'nightly');
-  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs');
+  expect(last().url).toBe('http://test.local/workspaces/P1/triggers/nightly/runs');
 });
 
 test('listProjectTriggerRuns GETs every run of the project, filtered by status', async () => {
@@ -573,10 +573,10 @@ test('listProjectTriggerRuns GETs every run of the project, filtered by status',
 
   await listProjectTriggerRuns('P1', { status: 'failed', cursor: 'c1', limit: 25 });
   expect(last().method).toBe('GET');
-  expect(last().url).toBe('http://test.local/projects/P1/trigger-runs?status=failed&limit=25&cursor=c1');
+  expect(last().url).toBe('http://test.local/workspaces/P1/trigger-runs?status=failed&limit=25&cursor=c1');
 
   await listProjectTriggerRuns('P1');
-  expect(last().url).toBe('http://test.local/projects/P1/trigger-runs');
+  expect(last().url).toBe('http://test.local/workspaces/P1/trigger-runs');
 });
 
 test('fireProjectTrigger without options still POSTs an empty body (plain manual fire)', async () => {
@@ -588,7 +588,7 @@ test('fireProjectTrigger without options still POSTs an empty body (plain manual
   const result = await fireProjectTrigger('P1', 'nightly');
 
   expect(last().method).toBe('POST');
-  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/fire');
+  expect(last().url).toBe('http://test.local/workspaces/P1/triggers/nightly/fire');
   expect(last().body).toEqual({});
   expect(result.status).toBe('deduped');
   expect(result.deduped).toBe(true);
@@ -629,7 +629,7 @@ test('replayTriggerRun POSTs the replay route, with confirm_unverified only when
 
   const result = await replayTriggerRun('P1', 'nightly', 'run-1');
   expect(last().method).toBe('POST');
-  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs/run-1/replay');
+  expect(last().url).toBe('http://test.local/workspaces/P1/triggers/nightly/runs/run-1/replay');
   expect(last().body).toEqual({});
   expect(result.run_id).toBe('run-2');
 
@@ -665,7 +665,7 @@ test('createProjectTrigger sends the run caps, updateProjectTrigger removes one 
 test('getAccountAutomations reads the switch and setAccountAutomationsPaused flips it', async () => {
   nextResponse = { status: 200, body: { paused: false, paused_at: null, paused_by: null, can_change: true } };
   const status = await getAccountAutomations('A1');
-  expect(last().url).toContain('/accounts/A1/automations');
+  expect(last().url).toContain('/workspaces/A1/automations');
   expect(last().method ?? 'GET').toBe('GET');
   expect(status.paused).toBe(false);
 
@@ -689,7 +689,7 @@ test('list preserves the exact cron occurrence separately from scheduled executi
 test('createProjectTrigger sends a type app trigger; the listing reads its app', async () => {
   const input: CreateProjectTriggerInput = { name: 'Bank reply', type: 'app', app: 'bank-replies', prompt_template: 'Reply: {{ event.data.subject }}' };
   await createProjectTrigger('P1', input);
-  expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/triggers', method: 'POST', body: { type: 'app', app: 'bank-replies' } });
+  expect(last()).toMatchObject({ url: 'http://test.local/workspaces/P1/triggers', method: 'POST', body: { type: 'app', app: 'bank-replies' } });
 
   nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'app', run: null, mode: null, app: 'bank-replies' }], errors: [] } };
   const listing = await listProjectTriggers('P1');

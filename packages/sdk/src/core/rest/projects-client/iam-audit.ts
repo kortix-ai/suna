@@ -29,7 +29,7 @@ export interface CreatedAuditWebhook extends IamAuditWebhook {
 
 export async function listAuditWebhooks(accountId: string) {
   return unwrap(
-    await iamGet<{ webhooks: IamAuditWebhook[] }>(`/accounts/${accountId}/audit/webhooks`),
+    await iamGet<{ webhooks: IamAuditWebhook[] }>(`/workspaces/${accountId}/audit/webhooks`),
   ).webhooks;
 }
 
@@ -38,7 +38,7 @@ export async function createAuditWebhook(
   input: { name: string; url: string; action_prefix?: string },
 ) {
   return unwrap(
-    await backendApi.post<CreatedAuditWebhook>(`/accounts/${accountId}/audit/webhooks`, input, {
+    await backendApi.post<CreatedAuditWebhook>(`/workspaces/${accountId}/audit/webhooks`, input, {
       showErrors: false,
     }),
   );
@@ -51,7 +51,7 @@ export async function updateAuditWebhook(
 ) {
   return unwrap(
     await backendApi.patch<IamAuditWebhook>(
-      `/accounts/${accountId}/audit/webhooks/${webhookId}`,
+      `/workspaces/${accountId}/audit/webhooks/${webhookId}`,
       patch,
     ),
   );
@@ -60,7 +60,7 @@ export async function updateAuditWebhook(
 export async function deleteAuditWebhook(accountId: string, webhookId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
-      `/accounts/${accountId}/audit/webhooks/${webhookId}`,
+      `/workspaces/${accountId}/audit/webhooks/${webhookId}`,
     ),
   );
 }
@@ -126,7 +126,7 @@ export async function listAuditEvents(accountId: string, filter: ListAuditFilter
   const query = appendQuery({ action: filter.action, actor: filter.actor, project_id: filter.project_id, session_id: filter.session_id, actor_type: filter.actor_type, source: filter.source, credential_kind: filter.credential_kind, phase: filter.phase, outcome: filter.outcome, request_id: filter.request_id, correlation_id: filter.correlation_id, resource_type: filter.resource_type, since: filter.since, until: filter.until, q: filter.q, cursor: filter.cursor, limit: filter.limit });
   return unwrap(
     await iamGet<{ events: IamAuditEvent[]; next_cursor: string | null }>(
-      `/accounts/${accountId}/audit${query}`,
+      `/workspaces/${accountId}/audit${query}`,
     ),
   );
 }

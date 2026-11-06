@@ -104,7 +104,7 @@ type SessionAttributionKey<T> = Extract<keyof T, `${'end_user' | 'origin'}_${'re
 test('listProjectSessions hits GET /projects/:id/sessions', async () => {
   nextResponse = { status: 200, body: [] };
   const result = await listProjectSessions('P1');
-  expect(last().url).toContain('/projects/P1/sessions');
+  expect(last().url).toContain('/workspaces/P1/sessions');
   expect(last().method).toBe('GET');
   expect(result).toEqual([]);
 });
@@ -112,7 +112,7 @@ test('listProjectSessions hits GET /projects/:id/sessions', async () => {
 test('listProjectSessions requests the manager-only project inventory scope', async () => {
   nextResponse = { status: 200, body: [] };
   await listProjectSessions('P1', { scope: 'project' });
-  expect(last().url).toContain('/projects/P1/sessions?scope=project');
+  expect(last().url).toContain('/workspaces/P1/sessions?scope=project');
   expect(last().method).toBe('GET');
 });
 
@@ -161,7 +161,7 @@ test('listProjectSessions forwards limit and cursor as query parameters', async 
   nextResponse = { status: 200, body: [] };
   await listProjectSessions('P1', { limit: 25, cursor: 'CURSOR1' });
   const url = new URL(last().url);
-  expect(url.pathname).toBe('/projects/P1/sessions');
+  expect(url.pathname).toBe('/workspaces/P1/sessions');
   expect(url.searchParams.get('limit')).toBe('25');
   expect(url.searchParams.get('cursor')).toBe('CURSOR1');
 });
@@ -236,7 +236,7 @@ test('setProjectSessionModel PUTs the pin as `model`, with the pre-W4 key for an
     body: { model: 'kortix/glm', applied_live: true },
   };
   const result = await setProjectSessionModel('P1', 'S 1', 'kortix/glm');
-  expect(last().url).toContain('/projects/P1/sessions/S%201/model');
+  expect(last().url).toContain('/workspaces/P1/sessions/S%201/model');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ model: 'kortix/glm' });
   expect(result.model).toBe('kortix/glm');
@@ -253,7 +253,7 @@ test('sessionModelPin reads the stored model pin, trimmed, or null', () => {
 test('setProjectSessionSharing PUTs the sharing intent', async () => {
   nextResponse = { status: 200, body: { session_id: 'S1' } };
   await setProjectSessionSharing('P1', 'S1', { mode: 'project' });
-  expect(last().url).toContain('/projects/P1/sessions/S1/sharing');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/sharing');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ mode: 'project' });
 });
@@ -281,7 +281,7 @@ const PARTICIPANTS: SessionParticipants = {
 test('getSessionParticipants hits GET /participants without raising an error toast', async () => {
   nextResponse = { status: 200, body: PARTICIPANTS };
   const result = await getSessionParticipants('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/participants');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/participants');
   expect(last().method).toBe('GET');
   expect(result).toEqual(PARTICIPANTS);
   // A missing label is the fallback; a toast here is noise on every session open.
@@ -292,14 +292,14 @@ test('getSessionParticipants hits GET /participants without raising an error toa
 test('getSessionPreviewCandidates hits the previews endpoint', async () => {
   nextResponse = { status: 200, body: { candidates: [] } };
   const result = await getSessionPreviewCandidates('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/previews');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/previews');
   expect(result).toEqual({ candidates: [] });
 });
 
 test('listSessionPublicShares hits GET /public-shares with showErrors: false', async () => {
   nextResponse = { status: 200, body: { shares: [] } };
   const result = await listSessionPublicShares('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/public-shares');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/public-shares');
   expect(result).toEqual({ shares: [] });
 });
 
@@ -307,7 +307,7 @@ test('createSessionPublicShare POSTs the share input', async () => {
   nextResponse = { status: 200, body: { share: { share_id: 'SH1' } } };
   const input = { preview_id: 'prev-1', mode: 'view' as const };
   const result = await createSessionPublicShare('P1', 'S1', input);
-  expect(last().url).toContain('/projects/P1/sessions/S1/public-shares');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/public-shares');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual(input);
   expect(result.share.share_id).toBe('SH1');
@@ -316,7 +316,7 @@ test('createSessionPublicShare POSTs the share input', async () => {
 test('createSessionPublicShare mints a transcript share with { transcript: true }', async () => {
   nextResponse = { status: 201, body: { share: { share_id: 'SH2', resource_type: 'transcript' } } };
   const result = await createSessionPublicShare('P1', 'S1', { transcript: true });
-  expect(last().url).toContain('/projects/P1/sessions/S1/public-shares');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/public-shares');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ transcript: true });
   expect(result.share.resource_type).toBe('transcript');
@@ -384,7 +384,7 @@ test('findActiveTranscriptShare is null when no transcript share is live', () =>
 test('revokeSessionPublicShare DELETEs the specific share', async () => {
   nextResponse = { status: 200, body: { share: { share_id: 'SH1' } } };
   await revokeSessionPublicShare('P1', 'S1', 'SH1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/public-shares/SH1');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/public-shares/SH1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -402,7 +402,7 @@ const TURN_SHARE: TurnShare = {
 test('getTurnShare GETs the share of one turn and answers null when none is live', async () => {
   nextResponse = { status: 200, body: { share: null } };
   const result = await getTurnShare('P1', 'S1', 'msg/user 1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg%2Fuser%201/share');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/turns/msg%2Fuser%201/share');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ share: null });
 });
@@ -410,7 +410,7 @@ test('getTurnShare GETs the share of one turn and answers null when none is live
 test('shareTurn PUTs the turn share, prompt excluded by default, and returns the live share', async () => {
   nextResponse = { status: 200, body: { share: TURN_SHARE } };
   const result = await shareTurn('P1', 'S1', 'msg_user_1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/turns/msg_user_1/share');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ include_prompt: false });
   expect(result.share.url).toBe('https://kortix.test/share/response/kps_abc');
@@ -432,7 +432,7 @@ test('shareTurn rejects with the status when the turn has no text yet', async ()
 test('unshareTurn DELETEs the turn share', async () => {
   nextResponse = { status: 200, body: { share: null } };
   const result = await unshareTurn('P1', 'S1', 'msg_user_1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/turns/msg_user_1/share');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/turns/msg_user_1/share');
   expect(last().method).toBe('DELETE');
   expect(result).toEqual({ share: null });
 });
@@ -440,7 +440,7 @@ test('unshareTurn DELETEs the turn share', async () => {
 test('createProjectSession POSTs the input and marks the new session fresh', async () => {
   nextResponse = { status: 200, body: { session_id: 'NEW-1', name: null } };
   const result = await createProjectSession('P1', { base_ref: 'main' });
-  expect(last().url).toContain('/projects/P1/sessions');
+  expect(last().url).toContain('/workspaces/P1/sessions');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ base_ref: 'main' });
   expect((result as any).session_id).toBe('NEW-1');
@@ -553,17 +553,17 @@ test('createProjectSession defaults the body to {} when no input is given', asyn
 test('getProjectSession hits GET /projects/:id/sessions/:sid and forwards showErrors', async () => {
   nextResponse = { status: 200, body: { session_id: 'S1' } };
   await getProjectSession('P1', 'S1', { showErrors: false });
-  expect(last().url).toContain('/projects/P1/sessions/S1');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1');
   expect(last().method).toBe('GET');
 });
 
 test('getSessionAudit appends ?limit= only when a limit is given', async () => {
   nextResponse = { status: 200, body: { session_id: 'S1', agent: null, count: 0, actions: [] } };
   await getSessionAudit('P1', 'S1', 10);
-  expect(last().url).toContain('/projects/P1/sessions/S1/audit?limit=10');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/audit?limit=10');
 
   await getSessionAudit('P1', 'S1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/audit');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/audit');
 });
 
 test('getSessionAudit can poll approvals without refetching historical events', async () => {
@@ -574,7 +574,7 @@ test('getSessionAudit can poll approvals without refetching historical events', 
     showErrors: false,
   });
   expect(last().url).toBe(
-    'http://test.local/projects/P1/sessions/S1/audit?limit=1000&cursor=14%7Cevent-14&include_events=false',
+    'http://test.local/workspaces/P1/sessions/S1/audit?limit=1000&cursor=14%7Cevent-14&include_events=false',
   );
 });
 
@@ -590,10 +590,10 @@ test('getSessionTranscript builds the query string from limit/chars options', as
     },
   };
   await getSessionTranscript('P1', 'S1', { limit: 5, chars: 200 });
-  expect(last().url).toContain('/projects/P1/sessions/S1/transcript?limit=5&chars=200');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/transcript?limit=5&chars=200');
 
   await getSessionTranscript('P1', 'S1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/transcript');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/transcript');
 });
 
 test('getSessionTranscriptSync pages older windows with the previous window cursor', async () => {
@@ -667,7 +667,7 @@ test('getSessionTranscriptSync omits the cursor on a first window', async () => 
 test('getSessionTurn hits GET /projects/:id/sessions/:id/turn', async () => {
   nextResponse = { status: 200, body: { turns: [] } };
   await getSessionTurn('P1', 'S1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/turn');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/turn');
   expect(last().method).toBe('GET');
 });
 
@@ -758,7 +758,7 @@ test('getSessionTurn throws on a failed request', async () => {
 test('updateProjectSession PATCHes the name/metadata input', async () => {
   nextResponse = { status: 200, body: { session_id: 'S1', name: 'Renamed' } };
   await updateProjectSession('P1', 'S1', { name: 'Renamed' });
-  expect(last().url).toContain('/projects/P1/sessions/S1');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ name: 'Renamed' });
 });
@@ -777,7 +777,7 @@ test('updateProjectSession PATCHes labels and a null metadata value (removes the
 test('deleteProjectSession DELETEs the session', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteProjectSession('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -809,7 +809,7 @@ test('deleteProjectSession returns the restore window', async () => {
 test('restoreProjectSession POSTs to /restore', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   expect(await restoreProjectSession('P1', 'S1')).toEqual({ ok: true });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/restore');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/restore');
   expect(last().method).toBe('POST');
 });
 
@@ -825,7 +825,7 @@ test('restoreProjectSession rejects a refused restore with the status and code',
 test('recoverProjectSession POSTs to /recover', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   expect(await recoverProjectSession('P1', 'S1')).toEqual({ ok: true });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/recover');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/recover');
   expect(last().method).toBe('POST');
 });
 
@@ -844,7 +844,7 @@ test('recoverProjectSession rejects a refused recover with the status, code and 
 test('restartProjectSession POSTs to /restart', async () => {
   nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'provisioning' } };
   const result = await restartProjectSession('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/restart');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/restart');
   expect(last().method).toBe('POST');
   expect(result.status).toBe('provisioning');
 });
@@ -868,7 +868,7 @@ test('getProjectSessionConfigState GETs /config', async () => {
     },
   };
   const result = await getProjectSessionConfigState('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/config');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/config');
   expect(last().method).toBe('GET');
   expect(result.stale).toBe(true);
   expect(result.latest_etag).toBe('bbbbbbbbbbbbbbbb');
@@ -1070,7 +1070,7 @@ test('reloadProjectSessionConfig POSTs to /reload with an empty body by default'
     },
   };
   const result = await reloadProjectSessionConfig('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/reload');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/reload');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
   expect(result.applied).toBe(true);
@@ -1218,7 +1218,7 @@ test('reloadProjectSessionConfigStream requests SSE and reports each server phas
     },
   ]);
   expect(result.applied).toBe(true);
-  expect(String(fetchStub.mock.calls[0]?.[0])).toContain('/projects/P1/sessions/S1/reload-stream');
+  expect(String(fetchStub.mock.calls[0]?.[0])).toContain('/workspaces/P1/sessions/S1/reload-stream');
 });
 
 test('reloadProjectSessionConfigStream preserves busy status, code, and reason', async () => {
@@ -1255,7 +1255,7 @@ test('reloadProjectSessionConfigStream rejects a bare close instead of claiming 
 test('stopProjectSession POSTs to /stop', async () => {
   nextResponse = { status: 200, body: { ok: true, session_id: 'S1', status: 'stopped' } };
   const result = await stopProjectSession('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/stop');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/stop');
   expect(last().method).toBe('POST');
   expect(result.status).toBe('stopped');
 });
@@ -1305,7 +1305,7 @@ test('getProjectSessionScope reads canonical session scope', async () => {
   };
   nextResponse = { status: 200, body: scope };
   const result = await getProjectSessionScope('P1', 'S1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/scope');
   expect(last().method).toBe('GET');
   expect(result.connector_bindings.gmail).toEqual({ connection_id: 'AUTH-1' });
   // `connector_bindings` is the RESOLVED map, identical for an inherited and an
@@ -1360,7 +1360,7 @@ test('setProjectSessionScope replaces connections with canonical input', async (
     secrets: [],
     connector_bindings: { gmail: { connection_id: 'AUTH-2' } },
   });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/scope');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/scope');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({
     secrets: [],
@@ -1397,7 +1397,7 @@ test('createSessionPrompt POSTs the submission name, the wire id, the parts and 
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: { providerID: 'p', modelID: 'm' } },
   });
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/prompts');
   expect(last().method).toBe('POST');
   // snake_case on the wire, like every other payload on this surface.
   expect(last().body).toEqual({
@@ -1555,7 +1555,7 @@ test('listSessionPrompts hits GET .../prompts and hands the rows through verbati
   };
   nextResponse = { status: 200, body: { prompts: [prompt] } };
   const result = await listSessionPrompts('P1', 'S1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/prompts');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ prompts: [prompt] });
 });
@@ -1576,7 +1576,7 @@ test('deleteSessionPrompt DELETEs one prompt and returns what it removed', async
   };
   nextResponse = { status: 200, body: { removed } };
   expect(await deleteSessionPrompt('P1', 'S1', 'cmd-1')).toEqual(removed);
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/prompts/cmd-1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -1597,7 +1597,7 @@ test('retrySessionPrompt POSTs .../retry and returns the requeued row', async ()
     },
   };
   const result = await retrySessionPrompt('P1', 'S1', 'cmd-1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1/retry');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/prompts/cmd-1/retry');
   expect(last().method).toBe('POST');
   // The wire id is UNCHANGED by a retry: the proxy's delivery claim is keyed on
   // it, so a retry of a delivery that actually landed is still absorbed.
@@ -1622,7 +1622,7 @@ test('editSessionPrompt PATCHes the row text in place and returns the row', asyn
     },
   };
   const result = await editSessionPrompt('P1', 'S1', 'cmd-1', 'say hello');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/prompts/cmd-1');
   expect(last().method).toBe('PATCH');
   // Text only: the row keeps its files, its place and its wire id.
   expect(last().body).toEqual({ text: 'say hello' });
@@ -1652,7 +1652,7 @@ test('interruptSessionPrompt PATCHes the row to interrupt delivery and returns t
     },
   };
   const result = await interruptSessionPrompt('P1', 'S1', 'cmd-1');
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/cmd-1');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/prompts/cmd-1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ delivery: 'interrupt' });
   expect(result.delivery).toBe('interrupt');
@@ -1665,7 +1665,7 @@ test('holdSessionPrompts POSTs .../prompts/hold with the flag and returns the qu
   // message the user pressed Stop to get ahead of.
   nextResponse = { status: 200, body: { prompts: [] } };
   const result = await holdSessionPrompts('P1', 'S1', true);
-  expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/prompts/hold');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/prompts/hold');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ held: true });
   expect(result).toEqual({ prompts: [] });
@@ -1725,7 +1725,7 @@ test('getSessionOpenBundle hits GET /projects/:id/sessions/:sid/snapshot', async
   // published before this change).
   nextResponse = { status: 200, body: { observed_at: 'now' } };
   const bundle = await getSessionOpenBundle('P1', 'S1');
-  expect(last().url).toContain('/projects/P1/sessions/S1/snapshot');
+  expect(last().url).toContain('/workspaces/P1/sessions/S1/snapshot');
   expect(last().method).toBe('GET');
   expect(bundle.observed_at).toBe('now');
 });
@@ -1856,7 +1856,7 @@ test('getSessionMessageAuthors reads members and sessions keyed by message id', 
   };
   nextResponse = { status: 200, body };
   expect(await getSessionMessageAuthors('P1', 'S1')).toEqual(body as never);
-  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/message-authors');
+  expect(new URL(last().url).pathname).toBe('/workspaces/P1/sessions/S1/message-authors');
 });
 
 test('getSessionModelUsage reads the model that answered, the billed cost and each turn', async () => {
@@ -1873,7 +1873,7 @@ test('getSessionModelUsage reads the model that answered, the billed cost and ea
   };
   nextResponse = { status: 200, body };
   expect(await getSessionModelUsage('P1', 'S1')).toEqual(body);
-  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/model-usage');
+  expect(new URL(last().url).pathname).toBe('/workspaces/P1/sessions/S1/model-usage');
   expect(last().method).toBe('GET');
 });
 
@@ -1894,7 +1894,7 @@ test('getSessionUsage reads the USD cost of a session and of every session it st
   };
   nextResponse = { status: 200, body };
   expect(await getSessionUsage('P1', 'S1')).toEqual(body);
-  expect(new URL(last().url).pathname).toBe('/projects/P1/sessions/S1/usage');
+  expect(new URL(last().url).pathname).toBe('/workspaces/P1/sessions/S1/usage');
   expect(last().method).toBe('GET');
 });
 
@@ -1943,7 +1943,7 @@ describe('session watch', () => {
   test('getSessionWatch GETs /watch and never raises an error toast', async () => {
     nextResponse = { status: 200, body: { watching: true } };
     expect(await getSessionWatch('P1', 'S1')).toEqual({ watching: true });
-    expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/sessions/S1/watch', method: 'GET' });
+    expect(last()).toMatchObject({ url: 'http://test.local/workspaces/P1/sessions/S1/watch', method: 'GET' });
     const onError = mock(() => {});
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
     try {
@@ -1959,7 +1959,7 @@ describe('session watch', () => {
     nextResponse = { status: 200, body: { watching: false } };
     expect(await setSessionWatch('P1', 'S1', false)).toEqual({ watching: false });
     expect(last()).toEqual({
-      url: 'http://test.local/projects/P1/sessions/S1/watch',
+      url: 'http://test.local/workspaces/P1/sessions/S1/watch',
       method: 'PUT',
       body: { watching: false },
     });
@@ -2002,13 +2002,13 @@ describe('session pin and archive', () => {
     nextResponse = { status: 200, body: stored };
     const state: SessionListState = await setSessionPinned('P1', 'S1', true);
     expect(state).toEqual(stored);
-    expect(last()).toEqual({ url: 'http://test.local/projects/P1/sessions/S1/pin', method: 'PUT', body: { pinned: true } });
+    expect(last()).toEqual({ url: 'http://test.local/workspaces/P1/sessions/S1/pin', method: 'PUT', body: { pinned: true } });
   });
 
   test('setSessionArchived PUTs { archived } and returns the stored state', async () => {
     nextResponse = { status: 200, body: { pinned_at: null, archived_at: null } };
     expect(await setSessionArchived('P1', 'S1', false)).toEqual({ pinned_at: null, archived_at: null });
-    expect(last()).toEqual({ url: 'http://test.local/projects/P1/sessions/S1/archive', method: 'PUT', body: { archived: false } });
+    expect(last()).toEqual({ url: 'http://test.local/workspaces/P1/sessions/S1/archive', method: 'PUT', body: { archived: false } });
   });
 
   test('both reject on a 403 (an agent token has no list of its own)', async () => {
@@ -2030,7 +2030,7 @@ describe('getSessionLogPage', () => {
   test('GETs /log with thread, before_seq and limit, and returns the page', async () => {
     nextResponse = { status: 200, body: page };
     expect(await getSessionLogPage('P1', 'S1', { thread: 'ses_child', before_seq: 12, limit: 500 })).toEqual(page);
-    expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/sessions/S1/log?thread=ses_child&before_seq=12&limit=500', method: 'GET' });
+    expect(last()).toMatchObject({ url: 'http://test.local/workspaces/P1/sessions/S1/log?thread=ses_child&before_seq=12&limit=500', method: 'GET' });
   });
 
   test('a 404 (no stored log, or no such thread) is null, without an error toast', async () => {
@@ -2039,7 +2039,7 @@ describe('getSessionLogPage', () => {
     try {
       nextResponse = { status: 404, body: { error: 'No session log for this session' } };
       expect(await getSessionLogPage('P1', 'S1')).toBeNull();
-      expect(last().url).toBe('http://test.local/projects/P1/sessions/S1/log');
+      expect(last().url).toBe('http://test.local/workspaces/P1/sessions/S1/log');
       expect(onError).not.toHaveBeenCalled();
     } finally {
       configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });

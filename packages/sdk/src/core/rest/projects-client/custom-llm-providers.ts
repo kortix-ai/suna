@@ -40,7 +40,7 @@ export interface CustomLlmProviderInput {
 /** Every custom provider of the project, legacy key-only rows included (`configured: false`). */
 export async function listCustomLlmProviders(projectId: string): Promise<CustomLlmProvider[]> {
   return unwrap(await backendApi.get<{ providers: CustomLlmProvider[] }>(
-      `/projects/${encodeURIComponent(projectId)}/custom-providers`,
+      `/workspaces/${encodeURIComponent(projectId)}/custom-providers`,
     )).providers;
 }
 
@@ -51,7 +51,7 @@ export async function putCustomLlmProvider(
   input: CustomLlmProviderInput,
 ): Promise<CustomLlmProvider> {
   return unwrap(await backendApi.put<CustomLlmProvider>(
-      `/projects/${encodeURIComponent(projectId)}/custom-providers/${encodeURIComponent(providerId)}`,
+      `/workspaces/${encodeURIComponent(projectId)}/custom-providers/${encodeURIComponent(providerId)}`,
       input,
     ));
 }
@@ -65,7 +65,7 @@ const isNotFound = (error: unknown) => (error as { status?: number } | null)?.st
  */
 export async function deleteCustomLlmProvider(projectId: string, providerId: string): Promise<void> {
   const res = await backendApi.delete(
-    `/projects/${encodeURIComponent(projectId)}/custom-providers/${encodeURIComponent(providerId)}`,
+    `/workspaces/${encodeURIComponent(projectId)}/custom-providers/${encodeURIComponent(providerId)}`,
     { showErrors: false },
   );
   if (!res.success && !isNotFound(res.error)) {

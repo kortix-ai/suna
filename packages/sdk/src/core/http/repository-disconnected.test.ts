@@ -76,7 +76,7 @@ describe('repository_disconnected', () => {
       }) as unknown as typeof fetch,
     });
     const state = await getProjectGitConnectionState('proj-1');
-    expect(url).toBe('http://backend.test/v1/projects/proj-1/git/connection');
+    expect(url).toBe('http://backend.test/v1/workspaces/proj-1/git/connection');
     expect(state.state).toBe('reconnect_required');
     expect(state.disconnected_reason).toBe('app_uninstalled');
     expect(state.install_url).toContain('installations/new');

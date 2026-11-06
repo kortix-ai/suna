@@ -338,7 +338,7 @@ async function showActivity(ctx: AccountContext, f: Record<string, string | unde
     ['credential_kind', f.credentialKind],
   ];
   for (const [key, value] of wire) if (value) search.set(key, value);
-  const result = await ctx.client.get<AuditActivity>(`/accounts/${ctx.accountId}/audit/activity${search.size ? `?${search}` : ''}`);
+  const result = await ctx.client.get<AuditActivity>(`/workspaces/${ctx.accountId}/audit/activity${search.size ? `?${search}` : ''}`);
   if (json) {
     emitJson(result);
     return 0;
@@ -404,7 +404,7 @@ export async function runAudit(argv: string[]): Promise<number> {
 
   const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/accounts/${ctx.accountId}/audit`;
+  const base = `/workspaces/${ctx.accountId}/audit`;
 
   try {
     switch (sub) {
@@ -418,6 +418,7 @@ export async function runAudit(argv: string[]): Promise<number> {
         if (!projectId) return fail('Missing a workspace id.');
         return await listAuditEvents(
           ctx,
+          // Legacy name on purpose: `/workspaces/:id/audit` is the workspace audit log, not the project slice.
           (search) => `/projects/${encodeURIComponent(projectId)}/audit?${search}`,
           { ...f, project: undefined },
           all,
@@ -506,7 +507,7 @@ export async function runAudit(argv: string[]): Promise<number> {
         return await listAuditEvents(
           ctx,
           (search) =>
-            `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${search.size ? `?${search}` : ''}`,
+            `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${search.size ? `?${search}` : ''}`,
           f,
           all,
           json,

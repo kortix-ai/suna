@@ -63,7 +63,7 @@ export interface UpdateSessionReminderInput {
 
 export async function listSessionReminders(projectId: string, sessionId: string) {
   return unwrap(
-    await backendApi.get<{ reminders: SessionReminder[] }>(`/projects/${projectId}/sessions/${sessionId}/reminders`),
+    await backendApi.get<{ reminders: SessionReminder[] }>(`/workspaces/${projectId}/sessions/${sessionId}/reminders`),
   );
 }
 
@@ -73,7 +73,7 @@ export async function createSessionReminder(
   input: CreateSessionReminderInput,
 ) {
   return unwrap(
-    await backendApi.post<SessionReminder>(`/projects/${projectId}/sessions/${sessionId}/reminders`, input),
+    await backendApi.post<SessionReminder>(`/workspaces/${projectId}/sessions/${sessionId}/reminders`, input),
   );
 }
 
@@ -85,7 +85,7 @@ export async function updateSessionReminder(
 ) {
   return unwrap(
     await backendApi.patch<SessionReminder>(
-      `/projects/${projectId}/sessions/${sessionId}/reminders/${reminderId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/reminders/${reminderId}`,
       input,
     ),
   );
@@ -93,7 +93,7 @@ export async function updateSessionReminder(
 
 export async function deleteSessionReminder(projectId: string, sessionId: string, reminderId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}/reminders/${reminderId}`),
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${projectId}/sessions/${sessionId}/reminders/${reminderId}`),
   );
 }
 
@@ -101,7 +101,7 @@ export async function deleteSessionReminder(projectId: string, sessionId: string
 export async function runSessionReminder(projectId: string, sessionId: string, reminderId: string) {
   return unwrap(
     await backendApi.post<SessionReminder>(
-      `/projects/${projectId}/sessions/${sessionId}/reminders/${reminderId}/run`,
+      `/workspaces/${projectId}/sessions/${sessionId}/reminders/${reminderId}/run`,
       {},
     ),
   );
@@ -177,5 +177,5 @@ export interface ProjectReminder extends SessionReminder {
  * active first, then paused, then done. At most 200.
  */
 export async function listProjectReminders(projectId: string) {
-  return unwrap(await backendApi.get<{ reminders: ProjectReminder[] }>(`/projects/${projectId}/reminders`));
+  return unwrap(await backendApi.get<{ reminders: ProjectReminder[] }>(`/workspaces/${projectId}/reminders`));
 }

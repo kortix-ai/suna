@@ -53,7 +53,7 @@ export async function listWorkspaceRowsReport(
   accountId?: string,
   knownMe?: MeResponse,
 ): Promise<{ rows: WorkspaceRow[]; failed: WorkspaceListFailure[] }> {
-  const me = knownMe ?? (await clientFromAuth(auth).get<MeResponse>('/accounts/me'));
+  const me = knownMe ?? (await clientFromAuth(auth).get<MeResponse>('/me'));
   const memberships = Array.isArray(me.accounts) ? me.accounts : [];
   const accounts = accountId
     ? memberships.filter((a) => a.account_id === accountId)
@@ -67,7 +67,7 @@ export async function listWorkspaceRowsReport(
       try {
         const projects = await clientFromAuth(auth, { accountId: account.account_id }).get<
           ProjectSummary[]
-        >('/projects');
+        >('/workspaces');
         return { account, projects: Array.isArray(projects) ? projects : [] };
       } catch (err) {
         if (accountId) throw err;
@@ -110,7 +110,7 @@ async function bindableWorkspaces(auth: Auth, accountId?: string): Promise<Works
   } catch {
     const projects = await clientFromAuth(auth, { accountId: accountId ?? bindableAccountId(auth) }).get<
       ProjectSummary[]
-    >('/projects');
+    >('/workspaces');
     return projects.map((project) => ({
       project,
       account: { account_id: project.account_id, slug: project.account_id.slice(0, 8), name: '', role: '' },

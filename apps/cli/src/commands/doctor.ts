@@ -67,7 +67,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   try {
-    const me = await ctx.client.get<MeResponse>('/accounts/me');
+    const me = await ctx.client.get<MeResponse>('/me');
     process.stdout.write(`${status.ok(`identity verified as ${C.bold}${me.email}${C.reset}`)}\n`);
   } catch (err) {
     process.stdout.write(`${status.err(`identity probe failed: ${describe(err)}`)}\n`);
@@ -77,7 +77,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
   // ── 3. Project ──────────────────────────────────────────────────────────
   let project: ProjectSummary;
   try {
-    project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+    project = await ctx.client.get<ProjectSummary>(`/workspaces/${ctx.projectId}`);
     process.stdout.write(
       `${status.ok(`workspace ${C.bold}${project.name}${C.reset} ${C.faded}(${project.project_id})${C.reset}`)}\n`,
     );

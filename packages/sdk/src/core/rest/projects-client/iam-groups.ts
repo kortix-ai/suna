@@ -5,12 +5,12 @@ import type { AccountGroup, GroupMember } from './iam-types';
 // ─── Groups ────────────────────────────────────────────────────────────────
 
 export async function listGroups(accountId: string) {
-  return unwrap(await iamGet<{ groups: AccountGroup[] }>(`/accounts/${accountId}/iam/groups`))
+  return unwrap(await iamGet<{ groups: AccountGroup[] }>(`/workspaces/${accountId}/iam/groups`))
     .groups;
 }
 
 export async function getGroup(accountId: string, groupId: string) {
-  return unwrap(await iamGet<AccountGroup>(`/accounts/${accountId}/iam/groups/${groupId}`));
+  return unwrap(await iamGet<AccountGroup>(`/workspaces/${accountId}/iam/groups/${groupId}`));
 }
 
 export async function createGroup(
@@ -18,7 +18,7 @@ export async function createGroup(
   input: { name: string; description?: string },
 ) {
   return unwrap(
-    await backendApi.post<AccountGroup>(`/accounts/${accountId}/iam/groups`, input, {
+    await backendApi.post<AccountGroup>(`/workspaces/${accountId}/iam/groups`, input, {
       showErrors: false,
     }),
   );
@@ -30,20 +30,20 @@ export async function updateGroup(
   patch: { name?: string; description?: string | null },
 ) {
   return unwrap(
-    await backendApi.patch<AccountGroup>(`/accounts/${accountId}/iam/groups/${groupId}`, patch),
+    await backendApi.patch<AccountGroup>(`/workspaces/${accountId}/iam/groups/${groupId}`, patch),
   );
 }
 
 export async function deleteGroup(accountId: string, groupId: string) {
   return unwrap(
-    await backendApi.delete<{ deleted: boolean }>(`/accounts/${accountId}/iam/groups/${groupId}`),
+    await backendApi.delete<{ deleted: boolean }>(`/workspaces/${accountId}/iam/groups/${groupId}`),
   );
 }
 
 export async function listGroupMembers(accountId: string, groupId: string) {
   return unwrap(
     await iamGet<{ members: GroupMember[] }>(
-      `/accounts/${accountId}/iam/groups/${groupId}/members`,
+      `/workspaces/${accountId}/iam/groups/${groupId}/members`,
     ),
   ).members;
 }
@@ -51,7 +51,7 @@ export async function listGroupMembers(accountId: string, groupId: string) {
 export async function addGroupMembers(accountId: string, groupId: string, userIds: string[]) {
   return unwrap(
     await backendApi.post<{ added: number }>(
-      `/accounts/${accountId}/iam/groups/${groupId}/members`,
+      `/workspaces/${accountId}/iam/groups/${groupId}/members`,
       { userIds },
     ),
   );
@@ -75,7 +75,7 @@ export interface GroupProjectGrant {
 export async function listGroupProjectGrants(accountId: string, groupId: string) {
   return unwrap(
     await iamGet<{ grants: GroupProjectGrant[] }>(
-      `/accounts/${accountId}/iam/groups/${groupId}/project-grants`,
+      `/workspaces/${accountId}/iam/groups/${groupId}/project-grants`,
     ),
   ).grants;
 }
@@ -83,7 +83,7 @@ export async function listGroupProjectGrants(accountId: string, groupId: string)
 export async function removeGroupMember(accountId: string, groupId: string, userId: string) {
   return unwrap(
     await backendApi.delete<{ removed: boolean }>(
-      `/accounts/${accountId}/iam/groups/${groupId}/members/${userId}`,
+      `/workspaces/${accountId}/iam/groups/${groupId}/members/${userId}`,
     ),
   );
 }
@@ -99,7 +99,7 @@ export interface MemberGroupSummary {
 export async function listMemberGroups(accountId: string, userId: string) {
   return unwrap(
     await iamGet<{ groups: MemberGroupSummary[] }>(
-      `/accounts/${accountId}/iam/members/${userId}/groups`,
+      `/workspaces/${accountId}/iam/members/${userId}/groups`,
     ),
   ).groups;
 }
@@ -138,7 +138,7 @@ export async function listMemberProjectAccess(accountId: string, userId: string)
        *  project — the UI shows these once instead of duplicating them per
        *  row. Same shape as MemberProjectAccess['custom_role_policies']. */
       account_wide_policies?: MemberProjectAccess['custom_role_policies'];
-    }>(`/accounts/${accountId}/iam/members/${userId}/project-access`),
+    }>(`/workspaces/${accountId}/iam/members/${userId}/project-access`),
   );
   return {
     projects: data.projects,

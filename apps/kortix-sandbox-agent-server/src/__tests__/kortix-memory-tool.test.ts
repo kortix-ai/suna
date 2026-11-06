@@ -25,7 +25,7 @@ let pages: Map<string, Page>
 let requests: Array<{ method: string; path: string; auth: string | null; body: unknown }>
 let filesOff = false
 
-const PREFIX = '/v1/projects/proj_1/memory/me/agent/mykortix'
+const PREFIX = '/v1/workspaces/proj_1/memory/me/agent/mykortix'
 const entry = ({ body: _body, ...rest }: Page) => rest
 
 beforeAll(() => {

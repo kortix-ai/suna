@@ -16,7 +16,7 @@ export async function listProjectFiles(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectFileEntry[]>(
-      `/projects/${projectId}/files${query}`,
+      `/workspaces/${projectId}/files${query}`,
       // project.file.read is manager-tier — a member deep-linking to the files
       // page legitimately 403s. The files view renders its own error state.
       { showErrors: false },
@@ -68,7 +68,7 @@ export async function listProjectDirectory(
   if (options?.limit !== undefined) params.set('limit', String(options.limit));
   return unwrap(
     await backendApi.get<ProjectDirectoryListing>(
-      `/projects/${projectId}/files?${params.toString()}`,
+      `/workspaces/${projectId}/files?${params.toString()}`,
       // Same manager-tier gate as listProjectFiles: the view renders its own error state.
       { showErrors: false },
     ),
@@ -102,7 +102,7 @@ export async function searchProjectFiles(
   if (options?.limit) params.set('limit', String(options.limit));
   return unwrap(
     await backendApi.get<ProjectFileSearchResponse>(
-      `/projects/${projectId}/files/search?${params.toString()}`,
+      `/workspaces/${projectId}/files/search?${params.toString()}`,
     ),
   );
 }
@@ -116,7 +116,7 @@ export async function readProjectFile(
   if (ref) params.set('ref', ref);
   return unwrap(
     await backendApi.get<{ path: string; ref: string; content: string; revision?: string }>(
-      `/projects/${projectId}/files/content?${params.toString()}`,
+      `/workspaces/${projectId}/files/content?${params.toString()}`,
       // Same manager-tier gate as listProjectFiles above: project.file.read
       // legitimately 403s for a plain member reading one file (e.g. a
       // skill/command detail modal, or the git-ref file explorer). Every
@@ -146,7 +146,7 @@ export async function fetchProjectArchive(
   if (path) params.set('path', path);
   const query = params.toString() ? `?${params.toString()}` : '';
 
-  const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/archive${query}`;
+  const url = `${platformConfig().backendUrl || ''}/workspaces/${projectId}/files/archive${query}`;
   const res = await sendChecked(url, { method: 'GET' }, { timeoutMs: ARCHIVE_TIMEOUT_MS }, 'Failed to download');
   return await res.blob();
 }
@@ -166,7 +166,7 @@ export async function projectArchiveRequest(
   if (path) params.set('path', path);
   const query = params.toString() ? `?${params.toString()}` : '';
   return authenticatedRequest(
-    `${platformConfig().backendUrl}/projects/${encodeURIComponent(projectId)}/files/archive${query}`,
+    `${platformConfig().backendUrl}/workspaces/${encodeURIComponent(projectId)}/files/archive${query}`,
   );
 }
 
@@ -189,7 +189,7 @@ export async function fetchProjectFileRaw(
   if (ref) params.set('ref', ref);
   const query = params.toString() ? `?${params.toString()}` : '';
 
-  const url = `${platformConfig().backendUrl || ''}/projects/${projectId}/files/raw${query}`;
+  const url = `${platformConfig().backendUrl || ''}/workspaces/${projectId}/files/raw${query}`;
   const res = await sendChecked(
     url,
     { method: 'GET', ...(options?.signal ? { signal: options.signal } : {}) },
@@ -205,6 +205,6 @@ export async function writeProjectFile(
   input: { path: string; ref: string; content: string; expected_revision: string },
 ) {
   return unwrap(await backendApi.put<{ commit_sha: string }>(
-    `/projects/${projectId}/files/content`, input, { showErrors: false },
+    `/workspaces/${projectId}/files/content`, input, { showErrors: false },
   ));
 }

@@ -124,7 +124,7 @@ export async function runRoles(argv: string[]): Promise<number> {
 
   const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/accounts/${ctx.accountId}/iam`;
+  const base = `/workspaces/${ctx.accountId}/iam`;
 
   try {
     switch (sub) {

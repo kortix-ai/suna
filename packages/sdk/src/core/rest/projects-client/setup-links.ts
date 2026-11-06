@@ -33,7 +33,7 @@ export async function requestProjectSecret(
   input: RequestProjectSecretInput,
 ): Promise<SecretRequestLink> {
   return unwrap(
-    await backendApi.post<SecretRequestLink>(`/projects/${projectId}/secret-requests`, {
+    await backendApi.post<SecretRequestLink>(`/workspaces/${projectId}/secret-requests`, {
       names: input.names,
       labels: input.labels,
       descriptions: input.descriptions,
@@ -78,7 +78,7 @@ export async function requestProjectConnector(
   input: RequestProjectConnectorInput,
 ): Promise<ConnectorRequestLink> {
   return unwrap(
-    await backendApi.post<ConnectorRequestLink>(`/projects/${projectId}/connect-requests`, {
+    await backendApi.post<ConnectorRequestLink>(`/workspaces/${projectId}/connect-requests`, {
       slug: input.slug,
       // Omitted rather than null when unset, so the API keeps applying its own
       // default and an older client's body is unchanged.

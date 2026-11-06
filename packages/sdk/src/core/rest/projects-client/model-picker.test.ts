@@ -27,7 +27,7 @@ test('loads the compact project model picker instead of the full runtime catalog
   const result = await getProjectModelPicker('P1');
   expect(result.models['glm-5.3-flash']?.name).toBe('GLM 5.3 Flash');
   expect(calls.at(-1)).toEqual({
-    url: 'http://test.local/projects/P1/model-picker',
+    url: 'http://test.local/workspaces/P1/model-picker',
     method: 'GET',
   });
 });

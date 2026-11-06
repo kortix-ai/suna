@@ -141,7 +141,7 @@ export interface ProjectGitConnectionState {
 /** `GET /projects/:projectId/git/connection`. */
 export async function getProjectGitConnectionState(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectGitConnectionState>(`/projects/${projectId}/git/connection`),
+    await backendApi.get<ProjectGitConnectionState>(`/workspaces/${projectId}/git/connection`),
     'Failed to read the Git connection',
   );
 }
@@ -149,7 +149,7 @@ export async function getProjectGitConnectionState(projectId: string) {
 export async function linkRepository(input: LinkRepositoryInput) {
   return unwrap(
     await backendApi.post<LinkRepositoryResponse>(
-      '/projects/link-repository',
+      '/workspaces/link-repository',
       input,
       {
         showErrors: false,
@@ -163,7 +163,7 @@ export async function replaceProjectRepository(input: ReplaceProjectRepositoryIn
   const { project_id, ...body } = input;
   return unwrap(
     await backendApi.put<ReplaceProjectRepositoryResponse>(
-      `/projects/${encodeURIComponent(project_id)}/git/repository`,
+      `/workspaces/${encodeURIComponent(project_id)}/git/repository`,
       body,
       { showErrors: false },
     ),
@@ -173,7 +173,7 @@ export async function replaceProjectRepository(input: ReplaceProjectRepositoryIn
 export async function getGitHubInstallation(accountId: string) {
   return unwrap(
     await backendApi.get<GitHubInstallationsResponse>(
-      `/projects/github/installation?account_id=${encodeURIComponent(accountId)}`,
+      `/workspaces/github/installation?account_id=${encodeURIComponent(accountId)}`,
       { showErrors: false },
     ),
   );
@@ -182,7 +182,7 @@ export async function getGitHubInstallation(accountId: string) {
 export async function listGitHubInstallations(accountId: string) {
   return unwrap(
     await backendApi.get<GitHubInstallationsResponse>(
-      `/projects/github/installations?account_id=${encodeURIComponent(accountId)}`,
+      `/workspaces/github/installations?account_id=${encodeURIComponent(accountId)}`,
       { showErrors: false },
     ),
   );
@@ -194,7 +194,7 @@ export async function listLinkableGitHubInstallations(input: {
 }) {
   return unwrap(
     await backendApi.post<LinkableGitHubInstallationsResponse>(
-      '/projects/github/installations/linkable',
+      '/workspaces/github/installations/linkable',
       input,
       { showErrors: false },
     ),
@@ -213,7 +213,7 @@ export async function listGitHubRepositories(
   if (options?.limit !== undefined) params.set('limit', String(options.limit));
   return unwrap(
     await backendApi.get<GitHubRepositoriesResponse>(
-      `/projects/github/repositories?${params.toString()}`,
+      `/workspaces/github/repositories?${params.toString()}`,
       { showErrors: false },
     ),
   );
@@ -231,7 +231,7 @@ export async function listGitHubRepositoryBranches(
   });
   return unwrap(
     await backendApi.get<GitHubRepositoryBranchesResponse>(
-      `/projects/github/repository-branches?${params.toString()}`,
+      `/workspaces/github/repository-branches?${params.toString()}`,
       { showErrors: false },
     ),
   );
@@ -244,7 +244,7 @@ export async function saveGitHubInstallation(input: {
 }) {
   return unwrap(
     await backendApi.post<GitHubInstallationStatus>(
-      '/projects/github/installation',
+      '/workspaces/github/installation',
       input,
       { showErrors: false },
     ),
@@ -258,7 +258,7 @@ export async function linkGitHubInstallation(input: {
 }) {
   return unwrap(
     await backendApi.post<GitHubInstallationStatus>(
-      '/projects/github/installations/link',
+      '/workspaces/github/installations/link',
       input,
       { showErrors: false },
     ),
@@ -289,7 +289,7 @@ export async function storeGitHubUserToken(input: {
 }) {
   return unwrap(
     await backendApi.post<{ ok: true; github_login: string }>(
-      '/projects/github/user-token',
+      '/workspaces/github/user-token',
       input,
       { showErrors: false },
     ),
@@ -304,7 +304,7 @@ export async function deleteGitHubInstallation(
   if (installationId) params.set('installation_id', installationId);
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/github/installation?${params.toString()}`,
+      `/workspaces/github/installation?${params.toString()}`,
     ),
   );
 }

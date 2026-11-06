@@ -70,7 +70,7 @@ beforeEach(() => {
       if (modelLookupFails) return Response.json({ error: 'unavailable' }, { status: 503 });
       return Response.json({ resolvedForCaller });
     }
-    if (url.endsWith('/v1/accounts/me')) {
+    if (url.endsWith('/v1/me')) {
       return new Response(
         JSON.stringify({
           user_id: 'user_1',
@@ -80,14 +80,14 @@ beforeEach(() => {
         { status: 200, headers: JSON_HEADERS },
       );
     }
-    if (url.endsWith(`/v1/projects/${PROJECT_ID}/sessions`) && init?.method === 'POST') {
+    if (url.endsWith(`/v1/workspaces/${PROJECT_ID}/sessions`) && init?.method === 'POST') {
       createBodies.push(typeof init.body === 'string' ? JSON.parse(init.body) : null);
       return new Response(JSON.stringify({ error: 'stop here' }), {
         status: 500,
         headers: JSON_HEADERS,
       });
     }
-    if (url.endsWith(`/v1/projects/${PROJECT_ID}`)) {
+    if (url.endsWith(`/v1/workspaces/${PROJECT_ID}`)) {
       return new Response(
         JSON.stringify({ project_id: PROJECT_ID, name: 'demo', account_id: 'acct_1' }),
         { status: 200, headers: JSON_HEADERS },

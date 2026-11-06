@@ -66,13 +66,13 @@ export interface AgentCapabilities {
 export type ProjectCapabilities = Omit<AgentCapabilities, 'agent'>;
 
 export async function getProjectCapabilities(projectId: string) {
-  return unwrap(await backendApi.get<ProjectCapabilities>(`/projects/${projectId}/capabilities`, { showErrors: false }));
+  return unwrap(await backendApi.get<ProjectCapabilities>(`/workspaces/${projectId}/capabilities`, { showErrors: false }));
 }
 
 export async function getAgentCapabilities(projectId: string, agentName: string) {
   return unwrap(
     await backendApi.get<AgentCapabilities>(
-      `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/capabilities`,
+      `/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/capabilities`,
       { showErrors: false },
     ),
   );

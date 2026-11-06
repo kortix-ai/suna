@@ -34,8 +34,8 @@ async function run(status: number, json = false) {
   server = Bun.serve({
     port: 0,
     fetch(request) {
-      if (new URL(request.url).pathname === '/v1/accounts/me') return Response.json({ accounts: [] });
-      expect(new URL(request.url).pathname).toBe(`/v1/projects/${projectId}/sessions`);
+      if (new URL(request.url).pathname === '/v1/me') return Response.json({ accounts: [] });
+      expect(new URL(request.url).pathname).toBe(`/v1/workspaces/${projectId}/sessions`);
       return Response.json({ error: status === 404 ? 'Not found' : 'Permission denied' }, { status });
     },
   });

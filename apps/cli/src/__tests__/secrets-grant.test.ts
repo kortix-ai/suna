@@ -49,7 +49,7 @@ function startServer(): string {
       const url = new URL(req.url);
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
-      const base = `/v1/projects/${PROJECT}/secrets`;
+      const base = `/v1/workspaces/${PROJECT}/secrets`;
 
       if (url.pathname === `${base}/STRIPE_KEY/grant` && req.method === 'POST') {
         return Response.json({
@@ -143,7 +143,7 @@ describe('kortix secrets grant', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/secrets/STRIPE_KEY/grant`,
+      path: `/v1/workspaces/${PROJECT}/secrets/STRIPE_KEY/grant`,
       body: { agent: 'billing' },
     });
     expect(r.stdout).toContain('billing now receives STRIPE_KEY');
@@ -153,7 +153,7 @@ describe('kortix secrets grant', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['secrets', 'grant', 'GMAPS.primary', '--agent', 'maps', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/projects/${PROJECT}/secrets/GMAPS.primary/grant`);
+    expect(calls.at(-1)!.path).toBe(`/v1/workspaces/${PROJECT}/secrets/GMAPS.primary/grant`);
   });
 
   test('grant reports an idempotent no-op distinctly', async () => {

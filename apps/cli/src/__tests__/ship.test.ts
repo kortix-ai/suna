@@ -73,7 +73,7 @@ describe('GitHub-backed project linking', () => {
 
     expect(calls).toEqual([
       {
-        path: '/projects/link-repository',
+        path: '/workspaces/link-repository',
         body: {
           repo_url: 'https://github.com/acme/demo.git',
           name: 'Demo',
@@ -96,7 +96,7 @@ describe('GitHub-backed project linking', () => {
 
     expect(calls).toEqual([
       {
-        path: '/projects/link-repository',
+        path: '/workspaces/link-repository',
         body: {
           repo_url: 'https://github.com/acme/demo.git',
           name: 'Demo',
@@ -228,7 +228,7 @@ test('ship reconciles the remote manifest independently of connector prompts', a
 
   expect(calls).toEqual([
     {
-      path: '/connectors/projects/proj_1/connectors/sync',
+      path: '/connectors/workspaces/proj_1/connectors/sync',
       body: undefined,
     },
   ]);
@@ -319,7 +319,7 @@ describe('ship provisioning declares who owns the first commit', () => {
   test('the provision body sends seed_starter:false', async () => {
     const source = await Bun.file(new URL('../commands/ship.ts', import.meta.url).pathname).text();
     const call = source.slice(
-      source.indexOf("client.post<ProvisionResponse>('/projects/provision'"),
+      source.indexOf("client.post<ProvisionResponse>('/workspaces/provision'"),
     );
     const body = call.slice(0, call.indexOf('});'));
     expect(body).toContain('seed_starter: false');

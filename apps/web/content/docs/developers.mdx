@@ -197,7 +197,7 @@ A workspace has one of two kinds of repository. Both work the same way after the
 | Managed | Kortix creates and manages a private repository. You need no GitHub account. | Pick **Kortix managed** under **Git account** when you create a workspace. Or run `kortix ship` in a folder with no `origin` remote, or `kortix ship --origin managed`. |
 | GitHub | A repository in your GitHub account or organization. Kortix reaches it through the Kortix GitHub App, which you install under **Workspace settings** → **Git**, or through a GitHub token. | Pick a GitHub account under **Git account**, then **Create a new repository** or **Import an existing repository**. Or run `kortix ship` in a folder whose `origin` is on GitHub. |
 
-On a self-hosted instance, a platform admin sets up managed repositories in the admin console. `GET /v1/projects/managed-git/status` returns `configured: false` until then, and the new-workspace form says "Kortix-managed repositories are not available on this instance." See [Self-hosting](/docs/developers#self-hosting).
+On a self-hosted instance, a platform admin sets up managed repositories in the admin console. `GET /v1/workspaces/managed-git/status` returns `configured: false` until then, and the new-workspace form says "Kortix-managed repositories are not available on this instance." See [Self-hosting](/docs/developers#self-hosting).
 
 #### The git origin
 
@@ -421,7 +421,7 @@ git checkout <session_id>
 
 - `kortix files branches` lists the branches with commits ahead of and behind the default branch.
 - `kortix sessions info <session_id>` shows `branch` and `base_ref`.
-- To start a session on another branch, pass `base_ref` when you create it, in `POST /v1/projects/<project_id>/sessions` or in `sessions.create()` of the [SDK](/docs/developers#sessions-from-code). `kortix sessions new` has no flag for it.
+- To start a session on another branch, pass `base_ref` when you create it, in `POST /v1/workspaces/<project_id>/sessions` or in `sessions.create()` of the [SDK](/docs/developers#sessions-from-code). `kortix sessions new` has no flag for it.
 
 When the base branch moves, open the command palette in the session and run **Ask Agent: Sync Branch & Reload**. The agent merges `origin/<base_ref>` into the session branch, resolves conflicts, runs the relevant tests, and commits. Its last command is `kortix sessions reload … --no-repo --force --yes`, which restarts the agent runtime and ends the turn. Send `continue` when the runtime is back.
 
@@ -516,7 +516,7 @@ A grant that names `project.cr.open` or `project.cr.merge` counts as `project.gi
 | `kortix cr reopen <cr>` | Reopens a closed one. |
 | `kortix cr version-diff --from <head> --into <base>` | Summarizes a merge before you open a change request. |
 
-Each command takes `--project <id>` and `--host <name>`. `ls`, `show`, `diff`, `merge-preview`, `request-changes` and `version-diff` also take `--json`. The REST routes are under `/v1/projects/<project_id>/change-requests` in the [API reference](https://api.kortix.com/v1/docs).
+Each command takes `--project <id>` and `--host <name>`. `ls`, `show`, `diff`, `merge-preview`, `request-changes` and `version-diff` also take `--json`. The REST routes are under `/v1/workspaces/<project_id>/change-requests` in the [API reference](https://api.kortix.com/v1/docs).
 
 `GET /change-requests` returns one page, newest number first: 50 change requests by default, at most 500 with `limit` (a larger `limit` answers `400`). Pass `next_cursor` back as `cursor` for the next page; it is `null` on the last page. `kortix cr ls` follows it and lists every change request.
 
@@ -594,7 +594,7 @@ The Review page also reads `artifact`, `description` and every other key whose v
 
 Reading needs `project.review.read`, a verdict needs `project.review.act`, and `submit` needs `project.review.submit`. A Member holds read and submit. A Manager holds all three.
 
-The REST routes are under `/v1/projects/<project_id>/review`:
+The REST routes are under `/v1/workspaces/<project_id>/review`:
 
 | Route | Returns |
 | --- | --- |
@@ -635,7 +635,7 @@ From the CLI, `kortix projects set --branch <branch>` and `--manifest <path>` ch
 
 #### GitHub connection
 
-`GET /v1/projects/<project_id>/git/connection` returns the connection `state`:
+`GET /v1/workspaces/<project_id>/git/connection` returns the connection `state`:
 
 | `state` | Meaning |
 | --- | --- |
@@ -646,7 +646,7 @@ From the CLI, `kortix projects set --branch <branch>` and `--manifest <path>` ch
 
 #### Repository disconnected
 
-Kortix reaches a GitHub repository through the Kortix GitHub App installed on the repository's owner. When that access goes away, the workspace is **disconnected**. `GET /v1/projects/<project_id>/git/connection` then returns `state: reconnect_required`, `reason: repository_disconnected`, a `disconnected_reason`, a `message` with the cause and the fix, and an `install_url`.
+Kortix reaches a GitHub repository through the Kortix GitHub App installed on the repository's owner. When that access goes away, the workspace is **disconnected**. `GET /v1/workspaces/<project_id>/git/connection` then returns `state: reconnect_required`, `reason: repository_disconnected`, a `disconnected_reason`, a `message` with the cause and the fix, and an `install_url`.
 
 | `disconnected_reason` | Cause | Fix |
 | --- | --- | --- |
@@ -670,7 +670,7 @@ Under **Git repo**, select **Change** and enter the new GitHub repository URL. K
 
 Stop active sessions, and close or merge open change requests, first. New sessions use the new repository. Existing sessions cannot restart after the change.
 
-The route is `PUT /v1/projects/<project_id>/git/repository`. It needs `project.settings.write` and `project.connector.write`.
+The route is `PUT /v1/workspaces/<project_id>/git/repository`. It needs `project.settings.write` and `project.connector.write`.
 
 #### Give people direct access
 
@@ -680,7 +680,7 @@ This needs `project.members.manage`, and works on managed repositories only. For
 
 #### A repository on another git host
 
-To let Kortix reach a repository on another git host, store a token with `PUT /v1/projects/<project_id>/git-credential` and the body `{ "token": "…" }`. Kortix keeps it as a platform credential, not as a secret a sandbox can read. It needs `project.connector.write`. GitHub and managed repositories refuse it with `409`.
+To let Kortix reach a repository on another git host, store a token with `PUT /v1/workspaces/<project_id>/git-credential` and the body `{ "token": "…" }`. Kortix keeps it as a platform credential, not as a secret a sandbox can read. It needs `project.connector.write`. GitHub and managed repositories refuse it with `409`.
 
 For a repository on another git host, `kortix sessions new` run in a checkout whose `origin` is that repository creates the session branch. It pushes your current branch with your own git credentials.
 
@@ -706,7 +706,7 @@ For uncommitted files in a running sandbox, use `kortix sessions cp <session_id>
 
 `kortix projects rm <project_id>` deletes a workspace. It needs `project.delete`. Deleting a workspace deletes its managed repository. A repository you connected yourself is left untouched.
 
-Through the API, `DELETE /v1/projects/<project-id>` answers `{ "ok": true, "deleted": true, "repo_deleted": <bool> }`. `repo_deleted` says whether a managed repository went with it. The response also carries `archived: true` for older clients; it means the same as `deleted`, and there is no restore.
+Through the API, `DELETE /v1/workspaces/<project-id>` answers `{ "ok": true, "deleted": true, "repo_deleted": <bool> }`. `repo_deleted` says whether a managed repository went with it. The response also carries `archived: true` for older clients; it means the same as `deleted`, and there is no restore.
 
 ## kortix.yaml reference
 
@@ -1387,7 +1387,7 @@ My Kortix, the built-in agent, has nine more tools. Eight run the in-sandbox `ko
 | `kortix_access` | `me`, `who_can_grant` | `kortix whoami`, `kortix access ls` |
 | `kortix_usage` | `summary`, `top_sessions` | `kortix billing costs` |
 | `kortix_change_requests` | `list`, `get`, `merge`, `close` | `kortix cr ls`, `cr show`, `cr diff`, `cr merge`, `cr close` |
-| `kortix_memory` | `list`, `view`, `save`, `delete` | No CLI: `/v1/projects/:id/memory/me/agent/mykortix`. See [My Kortix memory](#my-kortix-memory). |
+| `kortix_memory` | `list`, `view`, `save`, `delete` | No CLI: `/v1/workspaces/:id/memory/me/agent/mykortix`. See [My Kortix memory](#my-kortix-memory). |
 
 - **`kortix_schedules`.** `follow_up`, `wake_on`, `list`, `create`, `pause`, `resume`, `remove` and `run_now` change runtime rows that apply at once, with no change to the workspace files. `automate` writes a standing trigger to `kortix.yaml` on the default branch, for a schedule, a webhook, a connector event or an App event. `test` runs it with a sample payload and fires nothing. `runs` lists its recent runs.
 - **Permissions.** Each tool acts with the session token, so Kortix checks every action against the person's own workspace role. A refusal comes back as `error.kind: "denied"` with `error.grantors`: the workspace managers, workspace owners and admins who can grant it. The card shows them.
@@ -1405,7 +1405,7 @@ My Kortix, the built-in agent, has nine more tools. Eight run the in-sandbox `ko
 - **Actions.** `list` (the index), `view` (`name`), `save` (`name`, `type`, `description`, `body`, optional `title`), `delete` (`name`). `save` replaces the page with that name or creates it, so one fact is never saved twice. A name that is not a slug is refused before any request. A key or a password is refused (`422 secret_detected`). At most 200 pages per person (`409 memory_full`). The card says `Remembered: …`, `Updated: …` or `Forgot: …`.
 - **Recall.** Every My Kortix turn starts with the index of the session owner's pages, one `- [Title](name.md) — description` line each, at most 8,000 characters, appended to the turn's system prompt. It needs Drive, not channels. Another member who prompts the session gets no index.
 - **No Drive.** On a deployment without Drive storage, every action answers `403 feature_disabled`, and the tool says: "Memory lives in Files, and Files is off in this workspace. Ask a workspace admin to turn Files on."
-- **API.** `GET /v1/projects/:id/memory/me/agent/mykortix` (the index), `GET`, `PUT` and `DELETE …/pages/:name`. The caller is the person with their login, or their My Kortix session with its session token (the token's `on_behalf_of` person). Any other session token gets `403 my_kortix_only`. The shapes are `MyKortixMemory*` in `@kortix/api-contract/memory`.
+- **API.** `GET /v1/workspaces/:id/memory/me/agent/mykortix` (the index), `GET`, `PUT` and `DELETE …/pages/:name`. The caller is the person with their login, or their My Kortix session with its session token (the token's `on_behalf_of` person). Any other session token gets `403 my_kortix_only`. The shapes are `MyKortixMemory*` in `@kortix/api-contract/memory`.
 
 ### Agents working together
 
@@ -2351,21 +2351,28 @@ session.
 kortix tokens new my-script --expires 30d    # prints kortix_pat_… once
 export TOKEN=kortix_pat_...
 
-curl -s https://api.kortix.com/v1/projects \
+curl -s https://api.kortix.com/v1/workspaces \
   -H "Authorization: Bearer $TOKEN"
 
-curl -s https://api.kortix.com/v1/projects/<project_id>/sessions \
+curl -s https://api.kortix.com/v1/workspaces/<project_id>/sessions \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"initial_prompt": "Summarize the open change requests."}'
 ```
 
-`GET /v1/projects` returns an array of workspaces, each with `project_id`. The
+Every workspace route is under `/v1/workspaces`. The older names stay served
+permanently and answer the same: `/v1/projects/…`, `/v1/accounts/<id>/<family>`
+for members, invites, IAM, audit, tokens and the other account settings,
+`/v1/accounts/me` and `/v1/account-invites`. The SDK and the CLI call the
+`/v1/workspaces` names and fall back to the older names on an API that
+predates them.
+
+`GET /v1/workspaces` returns an array of workspaces, each with `project_id`. The
 session create returns `201` with the session, including `session_id` and
 `branch_name`. It returns `202` with `status`, `command_id`, and `session_id`
 when Kortix queues the create. Read the session with
-`GET /v1/projects/<project_id>/sessions/<session_id>` until it appears.
+`GET /v1/workspaces/<project_id>/sessions/<session_id>` until it appears.
 
 With only a `session_id`, `GET /v1/sessions/<session_id>` returns the same
 session with its `project_id`. The access rules are the same. A session you
@@ -2432,7 +2439,7 @@ a prefix that names its kind. Create and manage them on
 | `kortix_scim_` | SCIM token (**Workspace settings** → **Identity & directory**) | Directory sync under `/scim/v2` for one account. |
 | `kortix_pat_` in `KORTIX_TOKEN` | Session token. Kortix sets it in every session sandbox. | The agent of that one session, limited to its workspace. It ends with the session. |
 
-An OAuth token without the `kortix` scope reaches only `/v1/accounts/me`,
+An OAuth token without the `kortix` scope reaches only `/v1/me` (older name `/v1/accounts/me`),
 `/v1/oauth/userinfo`, and `/v1/oauth/revoke`. Other routes answer `403`, and
 `message` starts with `insufficient_scope`. Even with the `kortix` scope, an
 OAuth token cannot change sign-in, password or MFA state. It also cannot
@@ -2545,8 +2552,8 @@ Two create routes deduplicate a retried request:
 
 | Route | Where the key goes | Format |
 |---|---|---|
-| `POST /v1/projects/<project_id>/sessions` (start a session) | `Idempotency-Key` header | 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -` |
-| `POST /v1/projects/provision` (create a workspace with a new repository) | `idempotency_key` body field | Up to 200 characters of `A-Z a-z 0-9 . _ : -` |
+| `POST /v1/workspaces/<project_id>/sessions` (start a session) | `Idempotency-Key` header | 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -` |
+| `POST /v1/workspaces/provision` (create a workspace with a new repository) | `idempotency_key` body field | Up to 200 characters of `A-Z a-z 0-9 . _ : -` |
 
 Send a new random value, such as a UUID, for each intent. Send the same value
 again when you retry that intent. A repeated session create returns the original
@@ -2562,9 +2569,9 @@ A list route that pages takes `limit` and `cursor`. Pass the next cursor back as
 
 | List | Next cursor | `limit` |
 |---|---|---|
-| `GET /v1/projects/<project_id>/sessions` | `X-Next-Cursor` response header | Default 50, maximum 200 |
-| `GET /v1/accounts/<account_id>/audit` | `next_cursor` in the body | Default 50, maximum 200 |
-| `GET /v1/projects/<project_id>/files?depth=1` | `next_cursor` in the body | Default 500, maximum 2,000. Without `limit` or `cursor`: one response of up to 5,000 entries |
+| `GET /v1/workspaces/<project_id>/sessions` | `X-Next-Cursor` response header | Default 50, maximum 200 |
+| `GET /v1/workspaces/<account_id>/audit` | `next_cursor` in the body | Default 50, maximum 200 |
+| `GET /v1/workspaces/<project_id>/files?depth=1` | `next_cursor` in the body | Default 500, maximum 2,000. Without `limit` or `cursor`: one response of up to 5,000 entries |
 
 A session page holds only the sessions you may open. Every page except the
 last holds exactly `limit` sessions. A delete does not move a session in the
@@ -2919,7 +2926,7 @@ block's `display` when the block declares one; an absent `display` keeps what
 the App has. `kortix apps show`
 prints it on the `shown` row.
 
-`PATCH /v1/projects/<project_id>/apps/<app_id>`
+`PATCH /v1/workspaces/<project_id>/apps/<app_id>`
 with `display` replaces it whole, and `{}` restores the defaults. An unknown
 key (the keys are `listed`, `preview`, `parent`, `space` and `agent`), a `preview` other than `live` or `none`, or a malformed `parent` answers
 `400`.
@@ -3232,7 +3239,7 @@ role. A token a person got in one App for an App it uses also carries
 | Who | How they get a token |
 |---|---|
 | A person in an App | `GET /_kortix/token?audience=<slug or id>` on the App's origin: the App itself (default) or an App it uses. `kortixToken({ audience })` in `@kortix/sdk`. |
-| A member, a script, an agent session | `kortix apps token <app>` (`--json` adds `expires_at`), or `POST /v1/projects/<project_id>/apps/<app_id>/token`. An agent session gets a token that names its agent. |
+| A member, a script, an agent session | `kortix apps token <app>` (`--json` adds `expires_at`), or `POST /v1/workspaces/<project_id>/apps/<app_id>/token`. An agent session gets a token that names its agent. |
 
 Any other audience answers `403 app_not_linked`. Everyone an App admits gets a
 token for every App it uses, even when they cannot open the used App
@@ -3345,7 +3352,7 @@ An App can start agents, and triggers can call it.
 |---|---|
 | An agent to run when the App sees something | The App posts an App event to `$KORTIX_APP_EVENTS_URL` with `Authorization: Bearer $KORTIX_APP_TOKEN`. A trigger with `on: { event, app }` picks the agent. See [App events](/docs/guide#triggers). |
 | The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#triggers). |
-| The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#triggers). |
+| The App to call itself later | `POST /v1/workspaces/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#triggers). |
 
 To react to the outside world, try a webhook first, then a connector event.
 Build a watcher App when the source sends nothing (a page, a status, a price,
@@ -3372,7 +3379,7 @@ App events and runs are REST only. They authenticate with the App token, not
 a Kortix token. An App may send 120 requests a minute; past that it gets `429`
 with `retry_after_seconds`.
 
-**See what happened.** `GET /v1/projects/<project_id>/apps/<app_id>/events`
+**See what happened.** `GET /v1/workspaces/<project_id>/apps/<app_id>/events`
 (`project.app.deploy`) lists the App's events from the last 30 days, newest
 first, one row per trigger an event reached: `fired` (with `session_id`),
 `skipped` (with `reason`: a filter, a disabled trigger, a paused workspace, a
@@ -3381,7 +3388,7 @@ listens to is kept as `unmatched` (up to 60 per App an hour), and the App's
 `POST` answer says so in `unmatched` and `hint`. Filter with `status`,
 `trigger` and `id`; page with `cursor`. CLI: `kortix apps events <app>`.
 
-**Test the wiring.** `POST /v1/projects/<project_id>/apps/<app_id>/events/test`
+**Test the wiring.** `POST /v1/workspaces/<project_id>/apps/<app_id>/events/test`
 (`project.app.deploy`, your own credential) sends events as if the App posted
 them, through the same log, limits and triggers. Every id starts with `test-`,
 so the App's real event with the same id still fires later. The prompt reads
@@ -5718,7 +5725,7 @@ const created = await kortix.project(projectId).sessions.create({
 Over HTTP, send an `Idempotency-Key` header:
 
 ```bash
-curl -X POST "https://api.kortix.com/v1/projects/<project_id>/sessions" \
+curl -X POST "https://api.kortix.com/v1/workspaces/<project_id>/sessions" \
   -H "Authorization: Bearer $KORTIX_API_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: example-app:ticket-T-123:reply" \
@@ -5947,11 +5954,11 @@ In React, `useWorkspaces({ userId })` and `useWorkspace(id)` from `@kortix/sdk/r
 
 A workspace is one account and its one project. The workspace id is the `project_id`. Sign-up creates no account: a new person has 0 workspaces. Until they create or join one, every call that needs a workspace answers `409` with code `no_workspace` (`isNoWorkspaceError(err)`), and `GET /v1/accounts` answers `[]`.
 
-`createWorkspace(input, onEvent?, options?)` (also `kortix.workspaces.create` and `kortix.projects.createWorkspace`) creates the whole workspace in one call. It sends `new_workspace: true` to `POST /v1/projects/provision`.
+`createWorkspace(input, onEvent?, options?)` (also `kortix.workspaces.create` and `kortix.projects.createWorkspace`) creates the whole workspace in one call. It sends `new_workspace: true` to `POST /v1/workspaces/provision`.
 
 - The server reuses the caller's newest owned account that has no active project, so a plan or credits it holds stay. Else it creates an account. The account takes the workspace name.
 - `input` takes the provision fields below except `account_id`. `new_workspace` with `account_id` answers `400` `new_workspace_with_account_id`.
-- With `onEvent`, it streams `POST /v1/projects/provision-stream` and reports the phases `validating`, `creating_repository`, `registering` and `seeding`. On React Native, omit `onEvent`.
+- With `onEvent`, it streams `POST /v1/workspaces/provision-stream` and reports the phases `validating`, `creating_repository`, `registering` and `seeding`. On React Native, omit `onEvent`.
 - `403` `account_creation_restricted`: the deployment lets only its admin create accounts. Ask an admin for an invite.
 - `403` `new_workspace_requires_person`: only a signed-in person or an unscoped personal access token creates a workspace.
 
@@ -5965,7 +5972,7 @@ const workspace = await createWorkspace(
 console.log(workspace.project_id, workspace.account_id);
 ```
 
-Renaming the workspace renames both rows: `PATCH /v1/projects/:id` with a new `name` renames the account when the project is its only active project, and `PATCH /v1/accounts/:id` renames that project.
+Renaming the workspace renames both rows: `PATCH /v1/workspaces/:id` with a new `name` renames the account when the project is its only active project, and `PATCH /v1/accounts/:id` renames that project.
 
 ### Provision and update a workspace
 
@@ -6255,7 +6262,7 @@ A caller with any other token (a dashboard sign-in, a PAT without a workspace) g
 
 `p.approvals.list()` returns `{ count, approvals }`. Each approval carries `execution_id`, `action`, `session_id`, `requested_at` and `expires_at`.
 
-`p.approvals.resolve(executionId, decision, { note? })` decides one call. `decision` is `'approve'` or `'deny'`. `note` goes to the agent as an instruction. A workspace manager or the person who started the session may decide. A decision covers that one call only. `GET /v1/projects/:id/review/items/call:<execution_id>` returns the decision and `detail.next_step`. A call that Kortix runs adds `detail.run`: `state` (`queued`, `dispatched`, `ok`, `error`, `refused` or `unknown`), `finished_at`, and `outcome` with a redacted `output_preview` of at most 4 KB. A call that the caller repeats adds whether a repeat used the approval (`approval_used_at`) and the deadline (`rerun_by`). To run a tool without approval, write an `always_run` rule.
+`p.approvals.resolve(executionId, decision, { note? })` decides one call. `decision` is `'approve'` or `'deny'`. `note` goes to the agent as an instruction. A workspace manager or the person who started the session may decide. A decision covers that one call only. `GET /v1/workspaces/:id/review/items/call:<execution_id>` returns the decision and `detail.next_step`. A call that Kortix runs adds `detail.run`: `state` (`queued`, `dispatched`, `ok`, `error`, `refused` or `unknown`), `finished_at`, and `outcome` with a redacted `output_preview` of at most 4 KB. A call that the caller repeats adds whether a repeat used the approval (`approval_used_at`) and the deadline (`rerun_by`). To run a tool without approval, write an `always_run` rule.
 
 ```ts
 const { approvals } = await p.approvals.list();
@@ -8456,7 +8463,7 @@ Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`,
 
 | Method | What it does |
 | --- | --- |
-| `triggers.all()` | Every trigger the caller can see: `kortix.yaml` triggers (`origin: 'declared'`) and runtime ones (`origin: 'runtime'`: loops and `triggers.createRuntime` rows), `GET /v1/projects/<id>/triggers/all`. Each has a `source` (`schedule`, `webhook`, `event`, `app`, `change_request`) and a `target` (`agent`, `session` or `app`). Root export: `listUnifiedTriggers(projectId)`. React: `useUnifiedTriggers(projectId)`. |
+| `triggers.all()` | Every trigger the caller can see: `kortix.yaml` triggers (`origin: 'declared'`) and runtime ones (`origin: 'runtime'`: loops and `triggers.createRuntime` rows), `GET /v1/workspaces/<id>/triggers/all`. Each has a `source` (`schedule`, `webhook`, `event`, `app`, `change_request`) and a `target` (`agent`, `session` or `app`). Root export: `listUnifiedTriggers(projectId)`. React: `useUnifiedTriggers(projectId)`. |
 | `triggers.createRuntime({ prompt, name?, source, target })` | A runtime trigger, stored in the database (`POST …/triggers/runtime`, id `trigger.<hex>`). `target: { session_id }` wakes that session on each fire; `target: { agent }` starts a new session of that agent. `source: { type: 'change_request', cr_id?, base? }` fires when a change request merges. |
 | `triggers.updateRuntime(id, { enabled })` · `.runRuntime(id)` · `.removeRuntime(id)` | Pause or resume, fire once now, or delete a runtime trigger. A `kortix.yaml` one changes through `triggers.update` and the other slug methods. |
 | `triggers.list()` | Every trigger, with parse errors and `triggers_paused`. |

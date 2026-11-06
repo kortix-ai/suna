@@ -13,7 +13,7 @@ test('getProjectSessionModel reads the durable session pin without changing it',
     return Response.json({ session_id: 'synthetic-session', metadata: { model: 'kortix/synthetic-model' } });
   }, { preconnect: globalThis.fetch.preconnect });
   expect(await sessions.getProjectSessionModel('synthetic-project', 'synthetic-session')).toEqual({ model: 'kortix/synthetic-model' });
-  expect(requests).toEqual(['GET http://test.local/projects/synthetic-project/sessions/synthetic-session']);
+  expect(requests).toEqual(['GET http://test.local/workspaces/synthetic-project/sessions/synthetic-session']);
 });
 
 test('getProjectSessionModel reports an unpinned session as null', async () => {

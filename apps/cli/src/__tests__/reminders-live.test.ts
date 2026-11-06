@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 const CLI_ENTRY = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
 const PROJECT = '11111111-1111-4111-8111-111111111111';
 const SESSION = '22222222-2222-4222-8222-222222222222';
-const BASE = `/v1/projects/${PROJECT}/sessions/${SESSION}/reminders`;
+const BASE = `/v1/workspaces/${PROJECT}/sessions/${SESSION}/reminders`;
 
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
@@ -204,7 +204,7 @@ describe('kortix reminders — inside a session', () => {
     expect(ls.stderr).toContain('from $KORTIX_SESSION_ID');
     expect(ls.stderr).toContain('Pass --session <id>');
     expect(ls.stderr).not.toContain('✗  Not found');
-    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v1/projects/${PROJECT}/sessions/${FOREIGN}/reminders`]);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v1/workspaces/${PROJECT}/sessions/${FOREIGN}/reminders`]);
 
     const add = await runCli(['remind', 'x', '--in', '1h'], { KORTIX_SESSION_ID: FOREIGN });
     expect(add.code).toBe(1);

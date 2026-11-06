@@ -56,6 +56,6 @@ export async function searchProject(projectId: string, input: ProjectSearchInput
   if (input.limit !== undefined) query.set('limit', String(input.limit));
   if (input.cursor) query.set('cursor', input.cursor);
   return unwrap(
-    await backendApi.get<ProjectSearchResult>(`/projects/${encodeURIComponent(projectId)}/search?${query}`, { showErrors: false }),
+    await backendApi.get<ProjectSearchResult>(`/workspaces/${encodeURIComponent(projectId)}/search?${query}`, { showErrors: false }),
   );
 }

@@ -5,7 +5,7 @@ import type { ResourceType, IamRole } from './iam-types';
 // ─── Roles ─────────────────────────────────────────────────────────────────
 
 export async function listRoles(accountId: string) {
-  return unwrap(await iamGet<{ roles: IamRole[] }>(`/accounts/${accountId}/iam/roles`)).roles;
+  return unwrap(await iamGet<{ roles: IamRole[] }>(`/workspaces/${accountId}/iam/roles`)).roles;
 }
 
 /** Auto-provisioned agent (service-account) identities — the principal picker for
@@ -19,7 +19,7 @@ export interface AgentIdentity {
 
 export async function listAgentIdentities(accountId: string) {
   return unwrap(
-    await iamGet<{ agents: AgentIdentity[] }>(`/accounts/${accountId}/iam/agent-identities`),
+    await iamGet<{ agents: AgentIdentity[] }>(`/workspaces/${accountId}/iam/agent-identities`),
   ).agents;
 }
 
@@ -29,7 +29,7 @@ export async function listAgentIdentities(accountId: string) {
  *  `policy.read`. */
 export async function listProjectAgentIdentities(projectId: string) {
   return unwrap(
-    await backendApi.get<{ agents: AgentIdentity[] }>(`/projects/${projectId}/agent-identities`, {
+    await backendApi.get<{ agents: AgentIdentity[] }>(`/workspaces/${projectId}/agent-identities`, {
       showErrors: false,
     }),
   ).agents;
@@ -38,7 +38,7 @@ export async function listProjectAgentIdentities(projectId: string) {
 export async function getRolePermissions(accountId: string, roleId: string) {
   return unwrap(
     await iamGet<{ role_id: string; key: string; actions: string[] }>(
-      `/accounts/${accountId}/iam/roles/${roleId}/permissions`,
+      `/workspaces/${accountId}/iam/roles/${roleId}/permissions`,
     ),
   );
 }
@@ -51,14 +51,14 @@ export interface ActionCatalogEntry {
 
 export async function listActions(accountId: string) {
   return unwrap(
-    await iamGet<{ actions: ActionCatalogEntry[] }>(`/accounts/${accountId}/iam/actions`),
+    await iamGet<{ actions: ActionCatalogEntry[] }>(`/workspaces/${accountId}/iam/actions`),
   ).actions;
 }
 
 export async function getRoleUsage(accountId: string, roleId: string) {
   return unwrap(
     await iamGet<{ role_id: string; policy_count: number }>(
-      `/accounts/${accountId}/iam/roles/${roleId}/usage`,
+      `/workspaces/${accountId}/iam/roles/${roleId}/usage`,
     ),
   );
 }
@@ -74,7 +74,7 @@ export async function createRole(
   },
 ) {
   return unwrap(
-    await backendApi.post<IamRole>(`/accounts/${accountId}/iam/roles`, input, {
+    await backendApi.post<IamRole>(`/workspaces/${accountId}/iam/roles`, input, {
       showErrors: false,
     }),
   );
@@ -86,7 +86,7 @@ export async function updateRole(
   patch: { name?: string; description?: string | null },
 ) {
   return unwrap(
-    await backendApi.patch<IamRole>(`/accounts/${accountId}/iam/roles/${roleId}`, patch, {
+    await backendApi.patch<IamRole>(`/workspaces/${accountId}/iam/roles/${roleId}`, patch, {
       showErrors: false,
     }),
   );
@@ -95,7 +95,7 @@ export async function updateRole(
 export async function updateRolePermissions(accountId: string, roleId: string, actions: string[]) {
   return unwrap(
     await backendApi.put<{ role_id: string; actions: string[] }>(
-      `/accounts/${accountId}/iam/roles/${roleId}/permissions`,
+      `/workspaces/${accountId}/iam/roles/${roleId}/permissions`,
       { actions },
       { showErrors: false },
     ),
@@ -104,7 +104,7 @@ export async function updateRolePermissions(accountId: string, roleId: string, a
 
 export async function deleteRole(accountId: string, roleId: string) {
   return unwrap(
-    await backendApi.delete<{ deleted: boolean }>(`/accounts/${accountId}/iam/roles/${roleId}`, {
+    await backendApi.delete<{ deleted: boolean }>(`/workspaces/${accountId}/iam/roles/${roleId}`, {
       showErrors: false,
     }),
   );
@@ -119,7 +119,7 @@ export async function setMemberSuperAdmin(
 ) {
   return unwrap(
     await backendApi.patch<{ user_id: string; is_super_admin: boolean }>(
-      `/accounts/${accountId}/iam/members/${userId}/super-admin`,
+      `/workspaces/${accountId}/iam/members/${userId}/super-admin`,
       { isSuperAdmin },
     ),
   );

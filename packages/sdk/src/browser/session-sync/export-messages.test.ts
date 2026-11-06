@@ -74,7 +74,7 @@ const ids = (messages: Array<{ info: { id: string } }>) => messages.map((message
 test('no log page (a 404 without a code), asleep: the export fails, and no /transcript (P8.3)', async () => {
   windows = { '': { messages: [row('m1', 1)], next_cursor: null } };
   await expect(loadSessionExportMessages('ses_root', 'p1/s1')).rejects.toThrow();
-  expect(calls).toEqual([`${base}/projects/p1/sessions/s1/log?limit=500`]);
+  expect(calls).toEqual([`${base}/workspaces/p1/sessions/s1/log?limit=500`]);
 });
 
 test('running: the runtime history, and no saved-copy read', async () => {

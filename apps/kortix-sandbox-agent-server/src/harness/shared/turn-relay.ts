@@ -25,6 +25,7 @@ import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix
 import type { InitialTurnClaim } from '@/types/control-plane'
 import { flushSessionLogJournal } from './session-log-journal'
 import { runOnIdleHook } from './on-idle-hook'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
@@ -33,7 +34,7 @@ export async function postTurnStream(frame: TurnStreamFrame, timeoutMs = 15_000)
   const ctx = sandboxRelayContext()
   if (!ctx) return null
   const body: TurnStreamRelayBody = { session_id: ctx.sessionId, ...frame }
-  return fetch(`${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/turn-stream`, {
+  return kortixApiFetch(`${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.projectId)}/turn-stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
     body: JSON.stringify(body),
@@ -434,7 +435,7 @@ export async function relayQuestion(
   }
   let relayed: RelayedAsk | null = null
   try {
-    const response = await fetch(`${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/turn-question`, {
+    const response = await kortixApiFetch(`${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.projectId)}/turn-question`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
       body: JSON.stringify(body),
@@ -492,7 +493,7 @@ export async function relayPermission(
     ...(call ? { tool: call.tool, args_hash: call.argsHash, args: relayArgs(request.metadata) } : {}),
   }
   try {
-    const response = await fetch(`${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/turn-permission`, {
+    const response = await kortixApiFetch(`${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.projectId)}/turn-permission`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },
       body: JSON.stringify(body),

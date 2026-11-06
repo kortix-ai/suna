@@ -129,7 +129,7 @@ export async function runModels(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
 
   try {
     switch (sub) {

@@ -366,7 +366,7 @@ async function projectsFeatures(argv: string[]): Promise<number> {
 
   if (sub === 'ls' || sub === 'list') {
     try {
-      const project = await client.get<Record<string, unknown>>(`/projects/${projectId}`);
+      const project = await client.get<Record<string, unknown>>(`/workspaces/${projectId}`);
       const rows = featureRows(project);
       if (json) {
         emitJson(rows);
@@ -397,7 +397,7 @@ async function projectsFeatures(argv: string[]): Promise<number> {
       sub === 'enable' || sub === 'on' ? true : sub === 'disable' || sub === 'off' ? false : null;
     try {
       const project = await client.patch<Record<string, unknown>>(
-        `/projects/${projectId}/features`,
+        `/workspaces/${projectId}/features`,
         {
           feature: flag,
           enabled,
@@ -490,7 +490,7 @@ async function applyProjectPatch(req: ProjectPatchRequest): Promise<number> {
   if (!ctx) return 1;
   let project: ProjectWithIcon;
   try {
-    project = await ctx.client.patch<ProjectWithIcon>(`/projects/${ctx.projectId}`, req.body);
+    project = await ctx.client.patch<ProjectWithIcon>(`/workspaces/${ctx.projectId}`, req.body);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -699,7 +699,7 @@ async function projectsCliTokens(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg, hostArg });
   if (!ctx) return 1;
-  const path = `/projects/${ctx.projectId}/cli-token`;
+  const path = `/workspaces/${ctx.projectId}/cli-token`;
 
   if (sub === 'ls' || sub === 'list') {
     try {
@@ -873,7 +873,7 @@ async function projectsClone(
       const credential = await client.post<{
         push_token: string;
         git_username?: string;
-      }>(`/projects/${project.project_id}/git-token`);
+      }>(`/workspaces/${project.project_id}/git-token`);
       target.token = credential.push_token;
       target.username = credential.git_username || target.username;
     } catch (err) {
@@ -982,7 +982,7 @@ async function projectsCreate(argv: string[]): Promise<number> {
     : { name, new_workspace: true };
   try {
     const project = await clientFromAuth(auth, { accountId: accountArg }).post<ProjectSummary>(
-      '/projects/provision',
+      '/workspaces/provision',
       body,
     );
     if (!isDefaultProjectResponse(project)) return invalidDefaultProjectResponse(project);
@@ -1136,7 +1136,7 @@ async function projectsLsOlder(
   const client = clientFromAuth(auth, { accountId });
   let projects: ProjectSummary[];
   try {
-    projects = filterProjects(await client.get<ProjectSummary[]>('/projects'), query);
+    projects = filterProjects(await client.get<ProjectSummary[]>('/workspaces'), query);
   } catch (err) {
     return surface(err);
   }
@@ -1179,7 +1179,7 @@ async function projectsLsOlder(
 async function projectsLsAll(auth: Auth, json = false, query?: string, olderName = false): Promise<number> {
   let me: MeResponse;
   try {
-    me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+    me = await clientFromAuth(auth).get<MeResponse>('/me');
   } catch (err) {
     return surface(err);
   }
@@ -1193,7 +1193,7 @@ async function projectsLsAll(auth: Auth, json = false, query?: string, olderName
     let projects: ProjectSummary[] = [];
     try {
       projects = await clientFromAuth(auth, { accountId: a.account_id }).get<ProjectSummary[]>(
-        '/projects',
+        '/workspaces',
       );
     } catch {
       /* skip accounts we can't read; leave the section empty */
@@ -1303,7 +1303,7 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   // Whether Kortix can reach the repository (KRTX-2955). Best effort: an
   // older server without the route prints no git line.
   const git = await located.located.client
-    .get<GitConnectionState>(`/projects/${p.project_id}/git/connection`)
+    .get<GitConnectionState>(`/workspaces/${p.project_id}/git/connection`)
     .catch(() => null);
   if (json) {
     // The API's wire name for the id is `project_id`; scripts read `.id`.
@@ -1366,7 +1366,7 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
   if (arg) {
     // An explicit id may live in any account — resolve it unscoped.
     try {
-      target = await clientFromAuth(auth).get<ProjectSummary>(`/projects/${arg}`);
+      target = await clientFromAuth(auth).get<ProjectSummary>(`/workspaces/${arg}`);
     } catch (err) {
       return surface(err);
     }
@@ -1410,7 +1410,7 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
     let slug = target.account_id.slice(0, 8);
     let name: string | undefined;
     try {
-      const me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+      const me = await clientFromAuth(auth).get<MeResponse>('/me');
       const m = me.accounts.find((a) => a.account_id === target!.account_id);
       if (m) {
         slug = m.slug;
@@ -1488,7 +1488,7 @@ async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
   let target: ProjectSummary | null = null;
   if (arg) {
     try {
-      target = await client.get<ProjectSummary>(`/projects/${arg}`);
+      target = await client.get<ProjectSummary>(`/workspaces/${arg}`);
     } catch (err) {
       return surface(err);
     }
@@ -1614,7 +1614,7 @@ async function projectsRm(args: string[]): Promise<number> {
 
   let result: RmResult;
   try {
-    result = await client.delete<RmResult>(`/projects/${id}`);
+    result = await client.delete<RmResult>(`/workspaces/${id}`);
   } catch (err) {
     return surface(err);
   }

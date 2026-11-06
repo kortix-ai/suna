@@ -6,6 +6,7 @@ import {
   parseConfigReleaseDescriptor,
   type ConfigReleaseDescriptor,
 } from './descriptor'
+import { withWorkspaceRouteFallback } from '@/lib/kortix-api/workspace-routes'
 
 /**
  * The two API calls a config release needs.
@@ -125,9 +126,9 @@ export async function fetchConfigReleaseDescriptor(
     baseSha?: string
   } = {},
 ): Promise<ConfigReleaseDescriptor> {
-  const fetchImpl = api.fetchImpl ?? fetch
+  const fetchImpl = withWorkspaceRouteFallback(api.fetchImpl ?? fetch)
   const url =
-    `${apiOrigin(api.apiUrl)}/v1/projects/${encodeURIComponent(api.projectId)}` +
+    `${apiOrigin(api.apiUrl)}/v1/workspaces/${encodeURIComponent(api.projectId)}` +
     `/sessions/${encodeURIComponent(api.sessionId)}/config-release`
   let res: Response
   try {
@@ -175,7 +176,7 @@ export async function downloadConfigArchive(
   archivePath: string,
   opts: { maxBytes?: number; expectedBytes?: number; timeoutMs?: number } = {},
 ): Promise<Buffer> {
-  const fetchImpl = api.fetchImpl ?? fetch
+  const fetchImpl = withWorkspaceRouteFallback(api.fetchImpl ?? fetch)
   const maxBytes = opts.maxBytes ?? MAX_CONFIG_ARCHIVE_BYTES
   const signal = AbortSignal.timeout(opts.timeoutMs ?? ARCHIVE_TIMEOUT_MS)
   const origin = apiOrigin(api.apiUrl)

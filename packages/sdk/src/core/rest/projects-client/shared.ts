@@ -1,5 +1,7 @@
 // Shared helpers + cross-cutting types used by multiple projects-client modules.
 
+import { withWorkspaceRouteFallback } from '../../http/workspace-routes';
+
 export type AccountRole = 'owner' | 'admin' | 'member';
 /**
  * The two built-in project roles. `member` is read + run; `manager` is
@@ -112,7 +114,7 @@ export async function serverTokenGet<T>(
   if (!opts.backendUrl || !opts.accessToken) return null;
   const base = normalizeServerBackendBase(opts.backendUrl);
   try {
-    const res = await fetch(`${base}${path}`, {
+    const res = await withWorkspaceRouteFallback(fetch)(`${base}${path}`, {
       headers: {
         Authorization: `Bearer ${opts.accessToken}`,
         'Content-Type': 'application/json',

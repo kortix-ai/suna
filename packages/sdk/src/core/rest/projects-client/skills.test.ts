@@ -32,7 +32,7 @@ describe('createProjectSkill', () => {
       string,
       RequestInit,
     ];
-    expect(call[0]).toBe('http://backend.test/v1/projects/proj-1/skills');
+    expect(call[0]).toBe('http://backend.test/v1/workspaces/proj-1/skills');
     expect(call[1]?.method).toBe('POST');
     expect(JSON.parse(String(call[1]?.body))).toEqual({
       name: 'Release Notes',
@@ -66,7 +66,7 @@ describe('removeProjectSkill', () => {
     nextResponse = () => new Response(JSON.stringify({ ok: true, commitSha: 'abc', removed: ['skills/pdf/SKILL.md'] }), { headers: { 'content-type': 'application/json' } });
     const removed = await removeProjectSkill('proj-1', { folder: 'skills/pdf', confirm: true });
     expect(removed.removed).toEqual(['skills/pdf/SKILL.md']);
-    expect(globalThis.fetch).toHaveBeenCalledWith('http://backend.test/v1/projects/proj-1/skills/remove', expect.objectContaining({ method: 'POST', body: JSON.stringify({ folder: 'skills/pdf', confirm: true }) }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://backend.test/v1/workspaces/proj-1/skills/remove', expect.objectContaining({ method: 'POST', body: JSON.stringify({ folder: 'skills/pdf', confirm: true }) }));
   });
 });
 

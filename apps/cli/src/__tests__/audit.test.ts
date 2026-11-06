@@ -336,7 +336,7 @@ describe('audit CLI process', () => {
 
       const accountRequests = requests.filter(
         (url) =>
-          url.pathname.endsWith('/accounts/account-1/audit') && !url.pathname.endsWith('/export'),
+          url.pathname.endsWith('/workspaces/account-1/audit') && !url.pathname.endsWith('/export'),
       );
       expect(accountRequests).toHaveLength(2);
       expect(accountRequests[0]!.searchParams.get('action')).toBe('session.');
@@ -357,7 +357,7 @@ describe('audit CLI process', () => {
         'project-cursor-2',
       ]);
       const sessionRequests = requests.filter((url) =>
-        url.pathname.endsWith(`/projects/project-1/sessions/${sessionId}/audit`),
+        url.pathname.endsWith(`/workspaces/project-1/sessions/${sessionId}/audit`),
       );
       expect(sessionRequests.map((url) => url.searchParams.get('cursor'))).toEqual([
         null,

@@ -64,10 +64,10 @@ describe('useProjectReminders / useSessionReminders', () => {
     const paused = await project.updateMany.mutationFn({ reminders, enabled: false });
     const removed = await project.removeMany.mutationFn({ reminders });
     expect(calls).toEqual([
-      'PATCH http://test.local/projects/p1/sessions/s1/reminders/reminder.a',
-      'PATCH http://test.local/projects/p1/sessions/s2/reminders/reminder.b',
-      'DELETE http://test.local/projects/p1/sessions/s1/reminders/reminder.a',
-      'DELETE http://test.local/projects/p1/sessions/s2/reminders/reminder.b',
+      'PATCH http://test.local/workspaces/p1/sessions/s1/reminders/reminder.a',
+      'PATCH http://test.local/workspaces/p1/sessions/s2/reminders/reminder.b',
+      'DELETE http://test.local/workspaces/p1/sessions/s1/reminders/reminder.a',
+      'DELETE http://test.local/workspaces/p1/sessions/s2/reminders/reminder.b',
     ]);
     expect(paused).toEqual({ done: reminders, failed: [] });
     expect(removed).toEqual({ done: reminders, failed: [] });
@@ -93,10 +93,10 @@ describe('useProjectReminders / useSessionReminders', () => {
     await session.update.mutationFn({ reminderId: 'reminder.b', enabled: true });
     await session.remove.mutationFn('reminder.b');
     expect(calls).toEqual([
-      'PATCH http://test.local/projects/p1/sessions/s9/reminders/reminder.a',
-      'DELETE http://test.local/projects/p1/sessions/s9/reminders/reminder.a',
-      'PATCH http://test.local/projects/p1/sessions/s1/reminders/reminder.b',
-      'DELETE http://test.local/projects/p1/sessions/s1/reminders/reminder.b',
+      'PATCH http://test.local/workspaces/p1/sessions/s9/reminders/reminder.a',
+      'DELETE http://test.local/workspaces/p1/sessions/s9/reminders/reminder.a',
+      'PATCH http://test.local/workspaces/p1/sessions/s1/reminders/reminder.b',
+      'DELETE http://test.local/workspaces/p1/sessions/s1/reminders/reminder.b',
     ]);
   });
 });

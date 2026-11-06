@@ -32,7 +32,7 @@ const last = () => calls[calls.length - 1];
 test('validateProjectManifest posts { raw } and returns the verdict', async () => {
   nextResponse = { status: 200, body: { valid: false, issues: [{ message: 'missing [project]' }] } };
   const result = await validateProjectManifest('P1', 'name = "x"');
-  expect(last().url).toContain('/projects/P1/manifest/validate');
+  expect(last().url).toContain('/workspaces/P1/manifest/validate');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ raw: 'name = "x"' });
   expect(result.valid).toBe(false);
@@ -42,7 +42,7 @@ test('validateProjectManifest posts { raw } and returns the verdict', async () =
 test('getProjectGitToken posts to git-token and returns the push token', async () => {
   nextResponse = { status: 200, body: { push_token: 'tok_abc', git_username: 't', repo_id: 'r1', repo_url: 'https://kortix.code.storage/x.git' } };
   const result = await getProjectGitToken('P1');
-  expect(last().url).toContain('/projects/P1/git-token');
+  expect(last().url).toContain('/workspaces/P1/git-token');
   expect(last().method).toBe('POST');
   expect(result.push_token).toBe('tok_abc');
   const gitUsername: string = result.git_username;

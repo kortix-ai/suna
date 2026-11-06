@@ -175,7 +175,7 @@ export async function emailCommand(
   const slug = extra.connector ?? DEFAULT_EMAIL_CONNECTOR;
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/channels/email`;
+  const base = `/workspaces/${ctx.projectId}/channels/email`;
   const q = `?connector_slug=${encodeURIComponent(slug)}`;
 
   try {
@@ -285,7 +285,7 @@ export async function emailCommand(
             return 0;
           }
           if (sub === 'default') {
-            await ctx.client.put(`/projects/${ctx.projectId}/connections/${encodeURIComponent(inbox.connection_id)}/default`, {});
+            await ctx.client.put(`/workspaces/${ctx.projectId}/connections/${encodeURIComponent(inbox.connection_id)}/default`, {});
             if (json) {
               emitJson({ ok: true, connection_id: inbox.connection_id });
               return 0;

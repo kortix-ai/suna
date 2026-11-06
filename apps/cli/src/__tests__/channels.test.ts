@@ -470,7 +470,7 @@ describe('kortix channels --platform teams', () => {
     const code = await runChannels(['manifest', '--platform', 'teams']);
     expect(code).toBe(0);
     expect(requests).toEqual([
-      { url: 'https://api.test/v1/projects/proj_1/channels/teams/manifest', method: 'GET', body: undefined },
+      { url: 'https://api.test/v1/workspaces/proj_1/channels/teams/manifest', method: 'GET', body: undefined },
     ]);
     expect(JSON.parse(stdout)).toEqual(TEAMS_MANIFEST);
   });

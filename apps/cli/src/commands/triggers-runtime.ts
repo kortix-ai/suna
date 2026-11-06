@@ -88,7 +88,7 @@ const instant = (iso: string | null) => (iso ? `${iso.slice(0, 16).replace('T', 
 /** The runtime rows of `GET /triggers/all`, or null when the server has no such route. */
 export async function listRuntimeTriggers(client: ApiClient, projectId: string): Promise<UnifiedTrigger[] | null> {
   try {
-    const list = await client.get<UnifiedTriggerList>(`/projects/${projectId}/triggers/all`);
+    const list = await client.get<UnifiedTriggerList>(`/workspaces/${projectId}/triggers/all`);
     return list.triggers.filter((t) => t.origin === 'runtime');
   } catch {
     // ponytail: an older API has no /triggers/all; `ls` then shows kortix.yaml only.
@@ -203,7 +203,7 @@ export async function runRuntimeTriggers(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   const { client, projectId } = ctx;
-  const base = `/projects/${projectId}/triggers/runtime`;
+  const base = `/workspaces/${projectId}/triggers/runtime`;
   try {
     if (body) {
       const created = await client.post<UnifiedTrigger>(base, body);

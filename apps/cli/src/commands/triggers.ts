@@ -443,7 +443,7 @@ async function triggersLs(
 
   let resp: ProjectTriggersResponse;
   try {
-    resp = await ctx.client.get<ProjectTriggersResponse>(`/projects/${ctx.projectId}/triggers`);
+    resp = await ctx.client.get<ProjectTriggersResponse>(`/workspaces/${ctx.projectId}/triggers`);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -544,7 +544,7 @@ async function triggersFire(
   let resp: TriggerFireResponse;
   try {
     resp = await ctx.client.post<TriggerFireResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/fire`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}/fire`,
       payload ? { payload } : undefined,
     );
   } catch (err) {
@@ -558,7 +558,7 @@ async function triggersFire(
   if (resp.session_id) {
     try {
       await ctx.client.get<ProjectSession>(
-        `/projects/${ctx.projectId}/sessions/${resp.session_id}`,
+        `/workspaces/${ctx.projectId}/sessions/${resp.session_id}`,
       );
     } catch (err) {
       process.stderr.write(
@@ -591,7 +591,7 @@ async function triggersFire(
       // cleaned up here instead of leaking a live bearer. A run queued into an
       // existing session (queued response) leaves that session alone.
       try {
-        await ctx.client.delete(`/projects/${ctx.projectId}/sessions/${resp.session_id}`);
+        await ctx.client.delete(`/workspaces/${ctx.projectId}/sessions/${resp.session_id}`);
         process.stdout.write(
           `${C.dim}Cleaned up the failed run's session ${resp.session_id}.${C.reset}\n`,
         );
@@ -650,7 +650,7 @@ async function triggerRunOutcome(
 > {
   const readTrigger = async (): Promise<ProjectTrigger | undefined> => {
     const resp = await ctx.client.get<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
+      `/workspaces/${ctx.projectId}/triggers`,
     );
     return resp.triggers.find((t) => t.slug === slug);
   };
@@ -704,7 +704,7 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
 
   try {
     await ctx.client.patch<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers/activation`,
+      `/workspaces/${ctx.projectId}/triggers/activation`,
       { paused },
     );
   } catch (err) {
@@ -725,7 +725,7 @@ async function accountTriggersPause(paused: boolean, hostArg: string | undefined
   const ctx = resolveAccountContext({ hostArg });
   if (!ctx) return 1;
   try {
-    await ctx.client.patch(`/accounts/${ctx.accountId}/automations`, { paused });
+    await ctx.client.patch(`/workspaces/${ctx.accountId}/automations`, { paused });
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -748,7 +748,7 @@ async function triggersInfo(
 
   let resp: ProjectTriggersResponse;
   try {
-    resp = await ctx.client.get<ProjectTriggersResponse>(`/projects/${ctx.projectId}/triggers`);
+    resp = await ctx.client.get<ProjectTriggersResponse>(`/workspaces/${ctx.projectId}/triggers`);
   } catch (err) {
     return surfaceApiError(err);
   }

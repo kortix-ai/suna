@@ -145,11 +145,11 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
       itemId = item.id;
     }
     const result = await client.post<{ session_id: string }>(
-      `/projects/${ctx.projectId}/marketplace/install-session`,
+      `/workspaces/${ctx.projectId}/marketplace/install-session`,
       { id: itemId },
     );
     sessionId = result.session_id;
-    const base = `/projects/${ctx.projectId}/sessions/${sessionId}`;
+    const base = `/workspaces/${ctx.projectId}/sessions/${sessionId}`;
     while (!controller.signal.aborted) {
       const session = await client.get<{ status: string; error: string | null }>(base);
       if (session.status === 'failed' || session.status === 'error')

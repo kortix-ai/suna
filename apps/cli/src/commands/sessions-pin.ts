@@ -97,7 +97,7 @@ export async function runSessionsListState(verb: ListStateVerb, argv: string[]):
     const { client, projectId, session } = located.located;
     try {
       const state = await client.put<Pick<ProjectSession, 'pinned_at' | 'archived_at'>>(
-        `/projects/${projectId}/sessions/${session.session_id}/${route}`,
+        `/workspaces/${projectId}/sessions/${session.session_id}/${route}`,
         body,
       );
       results.push({

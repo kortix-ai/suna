@@ -24,19 +24,19 @@ export interface MfaRequiredPreview {
 }
 
 export async function getMfaRequired(accountId: string) {
-  return unwrap(await iamGet<MfaRequiredStatus>(`/accounts/${accountId}/iam/mfa-required`));
+  return unwrap(await iamGet<MfaRequiredStatus>(`/workspaces/${accountId}/iam/mfa-required`));
 }
 
 export async function previewMfaRequired(accountId: string) {
   return unwrap(
-    await iamGet<MfaRequiredPreview>(`/accounts/${accountId}/iam/mfa-required/preview`),
+    await iamGet<MfaRequiredPreview>(`/workspaces/${accountId}/iam/mfa-required/preview`),
   );
 }
 
 export async function setMfaRequired(accountId: string, enabled: boolean) {
   return unwrap(
     await backendApi.patch<{ enabled: boolean; unchanged?: boolean }>(
-      `/accounts/${accountId}/iam/mfa-required`,
+      `/workspaces/${accountId}/iam/mfa-required`,
       { enabled },
       { showErrors: false },
     ),
@@ -58,7 +58,7 @@ export interface SessionOversightStatus {
 
 export async function getSessionOversight(accountId: string) {
   return unwrap(
-    await iamGet<SessionOversightStatus>(`/accounts/${accountId}/iam/session-oversight`),
+    await iamGet<SessionOversightStatus>(`/workspaces/${accountId}/iam/session-oversight`),
   );
 }
 
@@ -66,7 +66,7 @@ export async function getSessionOversight(accountId: string) {
 export async function setSessionOversight(accountId: string, enabled: boolean) {
   return unwrap(
     await backendApi.patch<{ enabled: boolean; unchanged?: boolean }>(
-      `/accounts/${accountId}/iam/session-oversight`,
+      `/workspaces/${accountId}/iam/session-oversight`,
       { enabled },
       { showErrors: false },
     ),

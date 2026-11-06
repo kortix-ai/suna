@@ -16,7 +16,7 @@ export async function listPolicies(accountId: string, filter: ListPoliciesFilter
   const query = appendQuery({ principalType: filter.principalType, principalId: filter.principalId, scopeType: filter.scopeType, scopeId: filter.scopeId === null ? 'null' : filter.scopeId });
   return unwrap(
     await iamGet<{ policies: IamPolicy[] }>(
-      `/accounts/${accountId}/iam/policies${query}`,
+      `/workspaces/${accountId}/iam/policies${query}`,
     ),
   ).policies;
 }
@@ -37,7 +37,7 @@ export async function createPolicy(
   },
 ) {
   return unwrap(
-    await backendApi.post<IamPolicy>(`/accounts/${accountId}/iam/policies`, input, {
+    await backendApi.post<IamPolicy>(`/workspaces/${accountId}/iam/policies`, input, {
       showErrors: false,
     }),
   );
@@ -58,7 +58,7 @@ export async function updatePolicy(
   },
 ) {
   return unwrap(
-    await backendApi.patch<IamPolicy>(`/accounts/${accountId}/iam/policies/${policyId}`, input, {
+    await backendApi.patch<IamPolicy>(`/workspaces/${accountId}/iam/policies/${policyId}`, input, {
       showErrors: false,
     }),
   );
@@ -67,7 +67,7 @@ export async function updatePolicy(
 export async function deletePolicy(accountId: string, policyId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
-      `/accounts/${accountId}/iam/policies/${policyId}`,
+      `/workspaces/${accountId}/iam/policies/${policyId}`,
     ),
   );
 }
@@ -79,7 +79,7 @@ export interface BulkDeleteResult {
 export async function bulkDeletePolicies(accountId: string, policyIds: string[]) {
   return unwrap(
     await backendApi.post<BulkDeleteResult>(
-      `/accounts/${accountId}/iam/policies:bulk-delete`,
+      `/workspaces/${accountId}/iam/policies:bulk-delete`,
       { policy_ids: policyIds },
       { showErrors: false },
     ),
@@ -109,7 +109,7 @@ export interface BulkImportResult {
 export async function bulkImportPolicies(accountId: string, policies: BulkImportEntry[]) {
   return unwrap(
     await backendApi.post<BulkImportResult>(
-      `/accounts/${accountId}/iam/policies:bulk-import`,
+      `/workspaces/${accountId}/iam/policies:bulk-import`,
       { policies },
       { showErrors: false },
     ),

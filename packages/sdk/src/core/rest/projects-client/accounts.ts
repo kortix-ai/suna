@@ -241,7 +241,7 @@ export async function updateAccountName(accountId: string, name: string) {
 
 /** Stored branding + entitlement state. Any member may read it. */
 export async function getAccountBranding(accountId: string) {
-  return unwrap(await backendApi.get<AccountBrandingState>(`/accounts/${accountId}/branding`));
+  return unwrap(await backendApi.get<AccountBrandingState>(`/workspaces/${accountId}/branding`));
 }
 
 
@@ -255,7 +255,7 @@ export async function updateAccountBranding(
   input: { app_name: string | null },
 ) {
   return unwrap(
-    await backendApi.put<AccountBrandingState>(`/accounts/${accountId}/branding`, input),
+    await backendApi.put<AccountBrandingState>(`/workspaces/${accountId}/branding`, input),
   );
 }
 
@@ -274,7 +274,7 @@ export async function uploadAccountBrandingAsset(
   form.append('file', file, filename ?? (file instanceof File ? file.name : kind));
   return unwrap(
     await backendApi.upload<AccountBrandingState>(
-      `/accounts/${accountId}/branding/assets/${kind}`,
+      `/workspaces/${accountId}/branding/assets/${kind}`,
       form,
     ),
   );
@@ -287,19 +287,19 @@ export async function removeAccountBrandingAsset(
 ) {
   return unwrap(
     await backendApi.delete<AccountBrandingState>(
-      `/accounts/${accountId}/branding/assets/${kind}`,
+      `/workspaces/${accountId}/branding/assets/${kind}`,
     ),
   );
 }
 
 /** Reset every mark and the name to Kortix defaults (permission only). */
 export async function resetAccountBranding(accountId: string) {
-  return unwrap(await backendApi.delete<AccountBrandingState>(`/accounts/${accountId}/branding`));
+  return unwrap(await backendApi.delete<AccountBrandingState>(`/workspaces/${accountId}/branding`));
 }
 
 /** @deprecated Use `listWorkspaceMembers(workspaceId)`. Kept permanently. */
 export async function listAccountMembers(accountId: string) {
-  return unwrap(await backendApi.get<AccountMember[]>(`/accounts/${accountId}/members`));
+  return unwrap(await backendApi.get<AccountMember[]>(`/workspaces/${accountId}/members`));
 }
 
 /** @deprecated Use `inviteWorkspaceMember(workspaceId, input)`. Kept permanently. */
@@ -308,7 +308,7 @@ export async function inviteAccountMember(
   input: { email: string; role?: AccountRole; project_grants?: InviteProjectGrant[] },
 ) {
   return unwrap(
-    await backendApi.post<InviteMemberResult>(`/accounts/${accountId}/members`, input, {
+    await backendApi.post<InviteMemberResult>(`/workspaces/${accountId}/members`, input, {
       // 409 (already member) is an expected business error; page surfaces it inline.
       showErrors: false,
     }),
@@ -317,13 +317,13 @@ export async function inviteAccountMember(
 
 /** @deprecated Use `listWorkspaceInvites(workspaceId)`. Kept permanently. */
 export async function listAccountInvites(accountId: string) {
-  return unwrap(await backendApi.get<AccountInvitation[]>(`/accounts/${accountId}/invites`));
+  return unwrap(await backendApi.get<AccountInvitation[]>(`/workspaces/${accountId}/invites`));
 }
 
 /** @deprecated Use `cancelWorkspaceInvite(workspaceId, inviteId)`. Kept permanently. */
 export async function cancelAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/invites/${inviteId}`),
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${accountId}/invites/${inviteId}`),
   );
 }
 
@@ -331,7 +331,7 @@ export async function cancelAccountInvite(accountId: string, inviteId: string) {
 export async function resendAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
     await backendApi.post<ResendInviteResult>(
-      `/accounts/${accountId}/invites/${inviteId}/resend`,
+      `/workspaces/${accountId}/invites/${inviteId}/resend`,
       {},
     ),
   );
@@ -343,14 +343,14 @@ export async function resendAccountInvite(accountId: string, inviteId: string) {
  */
 export async function listMyAccountInvites() {
   const res = unwrap(
-    await backendApi.get<{ invites: MyAccountInvite[] }>('/account-invites', { showErrors: false }),
+    await backendApi.get<{ invites: MyAccountInvite[] }>('/invites', { showErrors: false }),
   );
   return res.invites;
 }
 
 export async function describeAccountInvite(inviteId: string) {
   return unwrap(
-    await backendApi.get<AccountInviteDescribe>(`/account-invites/${inviteId}`, {
+    await backendApi.get<AccountInviteDescribe>(`/invites/${inviteId}`, {
       // The redirect/landing page handles "not for you" / expired states inline.
       showErrors: false,
     }),
@@ -366,7 +366,7 @@ export async function acceptAccountInvite(inviteId: string) {
       /** The projects the invite granted, in order: where to land (KRTX-1731). */
       bootstrap_grants_applied?: Array<{ project_id: string; role: string }>;
     }>(
-      `/account-invites/${inviteId}/accept`,
+      `/invites/${inviteId}/accept`,
       {},
     ),
   );
@@ -407,13 +407,13 @@ export async function acceptAccountInviteAndLand(
 }
 
 export async function declineAccountInvite(inviteId: string) {
-  return unwrap(await backendApi.post<{ ok: boolean }>(`/account-invites/${inviteId}/decline`, {}));
+  return unwrap(await backendApi.post<{ ok: boolean }>(`/invites/${inviteId}/decline`, {}));
 }
 
 /** @deprecated Use `removeWorkspaceMember(workspaceId, userId)`. Kept permanently. */
 export async function removeAccountMember(accountId: string, userId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/members/${userId}`),
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${accountId}/members/${userId}`),
   );
 }
 
@@ -424,13 +424,13 @@ export async function updateAccountMemberRole(
   role: AccountRole,
 ) {
   return unwrap(
-    await backendApi.patch<AccountMember>(`/accounts/${accountId}/members/${userId}`, { role }),
+    await backendApi.patch<AccountMember>(`/workspaces/${accountId}/members/${userId}`, { role }),
   );
 }
 
 /** @deprecated Use `leaveWorkspace(workspaceId)`. Kept permanently. */
 export async function leaveAccount(accountId: string) {
-  return unwrap(await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}));
+  return unwrap(await backendApi.post<{ ok: boolean }>(`/workspaces/${accountId}/leave`, {}));
 }
 
 /**
@@ -479,7 +479,7 @@ export interface ValidateTokenResult {
  * token" inline rather than catch an exception.
  */
 export async function validateToken(): Promise<ValidateTokenResult> {
-  const res = await backendApi.get<AccountIdentity>('/accounts/me', { showErrors: false });
+  const res = await backendApi.get<AccountIdentity>('/me', { showErrors: false });
   if (!res.success || !res.data) {
     return { valid: false, error: res.error };
   }

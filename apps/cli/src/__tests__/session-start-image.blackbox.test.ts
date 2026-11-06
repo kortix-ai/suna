@@ -105,7 +105,7 @@ function startServer(): string {
     port: 0,
     fetch(req) {
       const path = new URL(req.url).pathname;
-      const project = `/v1/projects/${PROJECT}`;
+      const project = `/v1/workspaces/${PROJECT}`;
       if (req.method === 'POST' && path === `${project}/sessions`) {
         return Response.json(sessionRow(), { status: 201 });
       }

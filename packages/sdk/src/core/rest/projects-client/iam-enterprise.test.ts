@@ -25,12 +25,12 @@ beforeEach(() => {
 // the Enterprise features on for the account, marked "Demo", and sales hears.
 test('getEnterpriseDemo reads GET /accounts/:id/iam/enterprise-demo', async () => {
   expect(await getEnterpriseDemo('acc-1')).toBe(true);
-  expect(calls.map((c) => [c.method, c.url])).toEqual([['GET', 'http://api.test/v1/accounts/acc-1/iam/enterprise-demo']]);
+  expect(calls.map((c) => [c.method, c.url])).toEqual([['GET', 'http://api.test/v1/workspaces/acc-1/iam/enterprise-demo']]);
 });
 
 test('setEnterpriseDemo sends PUT {enabled} and returns the new value', async () => {
   expect(await setEnterpriseDemo('acc-1', false)).toBe(false);
   expect(calls).toEqual([
-    { method: 'PUT', url: 'http://api.test/v1/accounts/acc-1/iam/enterprise-demo', body: { enabled: false } },
+    { method: 'PUT', url: 'http://api.test/v1/workspaces/acc-1/iam/enterprise-demo', body: { enabled: false } },
   ]);
 });

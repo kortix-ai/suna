@@ -13,6 +13,7 @@
  */
 import { fail, ok, type PlatformToolContext } from './platform'
 import { workspaceIdFromEnv } from '@/lib/config/workspace-id'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 const TOOL = 'kortix_memory' as const
 const ACTIONS = ['list', 'view', 'save', 'delete'] as const
@@ -47,7 +48,7 @@ async function call(context: PlatformToolContext, method: 'GET' | 'PUT' | 'DELET
   if (!origin || !token || !project) return { status: 0, body: { error: 'This computer has no connection to Kortix.' } }
   const timeout = AbortSignal.timeout(CALL_TIMEOUT_MS)
   try {
-    const res = await fetch(`${origin}/v1/projects/${encodeURIComponent(project)}/memory/me/agent/mykortix${suffix}`, {
+    const res = await kortixApiFetch(`${origin}/v1/workspaces/${encodeURIComponent(project)}/memory/me/agent/mykortix${suffix}`, {
       method,
       headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),

@@ -183,7 +183,7 @@ export interface ProjectSecretsAgentScope {
 export async function listProjectSecrets(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSecretsResponse>(
-      `/projects/${projectId}/secrets`,
+      `/workspaces/${projectId}/secrets`,
       // Background read fired from member-visible surfaces (model picker, LLM
       // providers, agent editor) — project.secret.read is manager-tier, so a
       // plain member legitimately 403s here. Callers render their own state.
@@ -215,7 +215,7 @@ export async function upsertProjectSecret(
     shared_with?: SecretSharePrincipal[];
   },
 ) {
-  return unwrap(await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input));
+  return unwrap(await backendApi.post<ProjectSecret>(`/workspaces/${projectId}/secrets`, input));
 }
 
 export async function setProjectSecretStrategy(
@@ -226,7 +226,7 @@ export async function setProjectSecretStrategy(
 ) {
   return unwrap(
     await backendApi.put<ProjectSecret>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/strategy`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}/strategy`,
       { strategy, ...options },
     ),
   );
@@ -239,7 +239,7 @@ export async function brokerProjectSecretRequest(
 ): Promise<SecretBrokerResponse> {
   return unwrap(
     await backendApi.post<SecretBrokerResponse>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/broker`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}/broker`,
       input,
     ),
   );
@@ -280,7 +280,7 @@ export async function listProjectProviderOAuth(
   projectId: string,
 ): Promise<ProviderOAuthCredential[]> {
   const result = unwrap(
-    await backendApi.get<{ items: ProviderOAuthCredential[] }>(`/projects/${projectId}/oauth`),
+    await backendApi.get<{ items: ProviderOAuthCredential[] }>(`/workspaces/${projectId}/oauth`),
   );
   return result.items ?? [];
 }
@@ -297,7 +297,7 @@ export async function startProjectProviderOAuth(
   },
 ): Promise<ProviderOAuthStart> {
   return unwrap(
-    await backendApi.post<ProviderOAuthStart>(`/projects/${projectId}/oauth/${provider}/start`, {
+    await backendApi.post<ProviderOAuthStart>(`/workspaces/${projectId}/oauth/${provider}/start`, {
       sharing: input?.sharing,
       ...(input?.resourceLabel === undefined ? {} : { resource_label: input.resourceLabel }),
       ...(input?.resourceId === undefined ? {} : { resource_id: input.resourceId }),
@@ -311,7 +311,7 @@ export async function pollProjectProviderOAuth(
   flowId: string,
 ): Promise<ProviderOAuthPoll> {
   return unwrap(
-    await backendApi.post<ProviderOAuthPoll>(`/projects/${projectId}/oauth/${provider}/poll`, {
+    await backendApi.post<ProviderOAuthPoll>(`/workspaces/${projectId}/oauth/${provider}/poll`, {
       flow_id: flowId,
     }),
   );
@@ -320,7 +320,7 @@ export async function pollProjectProviderOAuth(
 export async function deleteProjectProviderOAuth(projectId: string, provider: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
+      `/workspaces/${projectId}/oauth/${encodeURIComponent(provider)}`,
     ),
   );
 }
@@ -415,14 +415,14 @@ export async function upsertProjectGitCredential(projectId: string, input: { tok
       configured: boolean;
       provider: string;
       git_connection: ProjectGitConnection;
-    }>(`/projects/${projectId}/git-credential`, input),
+    }>(`/workspaces/${projectId}/git-credential`, input),
   );
 }
 
 export async function deleteProjectSecret(projectId: string, identifier: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}`,
     ),
   );
 }
@@ -439,7 +439,7 @@ export async function setPersonalProjectSecret(
 ) {
   return unwrap(
     await backendApi.put<ProjectSecret>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
       input,
     ),
   );
@@ -449,7 +449,7 @@ export async function setPersonalProjectSecret(
 export async function deletePersonalProjectSecret(projectId: string, name: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(name)}/personal`,
     ),
   );
 }

@@ -15,6 +15,7 @@ import {
   serverTokenGet,
   unwrap,
 } from './shared';
+import { withWorkspaceRouteFallback } from '../../http/workspace-routes';
 
 /**
  * Stable ids for the platform's per-project feature flags (mirrors
@@ -621,16 +622,16 @@ export interface RepoCollaboratorInvite {
 }
 
 export async function listProjects() {
-  return unwrap(await backendApi.get<KortixProject[]>('/projects'));
+  return unwrap(await backendApi.get<KortixProject[]>('/workspaces'));
 }
 
 export async function listProjectsForAccount(accountId?: string) {
   const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
-  return unwrap(await backendApi.get<KortixProject[]>(`/projects${query}`));
+  return unwrap(await backendApi.get<KortixProject[]>(`/workspaces${query}`));
 }
 
 export async function getProject(projectId: string, options?: ApiClientOptions) {
-  return unwrap(await backendApi.get<KortixProject>(`/projects/${projectId}`, options));
+  return unwrap(await backendApi.get<KortixProject>(`/workspaces/${projectId}`, options));
 }
 
 /**
@@ -643,7 +644,7 @@ export async function inviteRepoCollaborator(
   permission: 'read' | 'write' = 'write',
 ) {
   return unwrap(
-    await backendApi.post<RepoCollaboratorInvite>(`/projects/${projectId}/git/collaborators`, {
+    await backendApi.post<RepoCollaboratorInvite>(`/workspaces/${projectId}/git/collaborators`, {
       github_username: githubUsername,
       permission,
     }),
@@ -670,7 +671,7 @@ export async function validateProjectManifest(
   raw: string,
 ): Promise<ManifestValidationResult> {
   return unwrap(
-    await backendApi.post<ManifestValidationResult>(`/projects/${projectId}/manifest/validate`, {
+    await backendApi.post<ManifestValidationResult>(`/workspaces/${projectId}/manifest/validate`, {
       raw,
     }),
     'Failed to validate manifest',
@@ -692,7 +693,7 @@ export interface ProjectGitToken {
  */
 export async function getProjectGitToken(projectId: string): Promise<ProjectGitToken> {
   return unwrap(
-    await backendApi.post<ProjectGitToken>(`/projects/${projectId}/git-token`, {}),
+    await backendApi.post<ProjectGitToken>(`/workspaces/${projectId}/git-token`, {}),
     'Failed to mint git token',
   );
 }
@@ -708,7 +709,7 @@ export function isManagedGithubProject(project: {
 
 export async function getProjectDetail(projectId: string, options?: ApiClientOptions) {
   const detail = unwrap(
-    await backendApi.get<ProjectDetail>(`/projects/${projectId}/detail`, {
+    await backendApi.get<ProjectDetail>(`/workspaces/${projectId}/detail`, {
       showErrors: false,
       ...options,
     }),
@@ -724,7 +725,7 @@ export async function getProjectDetail(projectId: string, options?: ApiClientOpt
 
 export async function getProjectLlmCatalog(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/llm-catalog`, {
+    await backendApi.get<ProjectLlmCatalogResponse>(`/workspaces/${projectId}/llm-catalog`, {
       showErrors: false,
       ...options,
     }),
@@ -738,7 +739,7 @@ export async function getProjectLlmCatalog(projectId: string, options?: ApiClien
  */
 export async function getProjectModelPicker(projectId: string, options?: ApiClientOptions) {
   return unwrap(
-    await backendApi.get<ProjectLlmCatalogResponse>(`/projects/${projectId}/model-picker`, {
+    await backendApi.get<ProjectLlmCatalogResponse>(`/workspaces/${projectId}/model-picker`, {
       showErrors: false,
       ...options,
     }),
@@ -782,14 +783,14 @@ export interface ProjectLlmCatalogProvidersResponse {
 export async function getProjectLlmCatalogProviders(projectId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<ProjectLlmCatalogProvidersResponse>(
-      `/projects/${projectId}/llm-catalog/providers`,
+      `/workspaces/${projectId}/llm-catalog/providers`,
       { showErrors: false, ...options },
     ),
   );
 }
 
 export async function createProject(input: ProjectInput) {
-  return unwrap(await backendApi.post<KortixProject>('/projects', input));
+  return unwrap(await backendApi.post<KortixProject>('/workspaces', input));
 }
 
 /**
@@ -800,7 +801,7 @@ export async function createProject(input: ProjectInput) {
  */
 export async function createProjectRepo(input: CreateProjectRepoInput) {
   return unwrap(
-    await backendApi.post<KortixProject>('/projects/create-repo', input, { showErrors: false }),
+    await backendApi.post<KortixProject>('/workspaces/create-repo', input, { showErrors: false }),
   );
 }
 
@@ -815,7 +816,7 @@ export async function provisionProject(
 ) {
   return unwrap(
     await backendApi.post<KortixProject>(
-      '/projects/provision',
+      '/workspaces/provision',
       {
         seed_starter: true,
         ...input,
@@ -971,7 +972,7 @@ export async function provisionProjectStream(
   options: ApiClientOptions = {},
 ): Promise<KortixProject> {
   const response = await backendApi.postStream(
-    '/projects/provision-stream',
+    '/workspaces/provision-stream',
     { seed_starter: true, ...input },
     options,
   );
@@ -1111,7 +1112,7 @@ export interface ProjectQuota {
  */
 export async function getProjectQuota(options?: { accountId?: string }): Promise<ProjectQuota> {
   const query = options?.accountId ? `?account_id=${encodeURIComponent(options.accountId)}` : '';
-  return unwrap(await backendApi.get<ProjectQuota>(`/projects/quota${query}`));
+  return unwrap(await backendApi.get<ProjectQuota>(`/workspaces/quota${query}`));
 }
 
 export interface ManagedGitStatus {
@@ -1131,7 +1132,7 @@ export interface ManagedGitStatus {
 export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
   try {
     return unwrap(
-      await backendApi.get<ManagedGitStatus>('/projects/managed-git/status', {
+      await backendApi.get<ManagedGitStatus>('/workspaces/managed-git/status', {
         showErrors: false,
       }),
     );
@@ -1151,7 +1152,7 @@ export async function getManagedGitStatus(): Promise<ManagedGitStatus> {
  * @deprecated Use `updateWorkspace(workspaceId, input)`. Kept permanently.
  */
 export async function updateProject(projectId: string, input: Partial<ProjectInput>) {
-  return unwrap(await backendApi.patch<KortixProject>(`/projects/${projectId}`, input));
+  return unwrap(await backendApi.patch<KortixProject>(`/workspaces/${projectId}`, input));
 }
 
 /**
@@ -1166,7 +1167,7 @@ export async function updateFeatureFlag(
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/features`, {
+    await backendApi.patch<KortixProject>(`/workspaces/${projectId}/features`, {
       feature,
       enabled,
     }),
@@ -1186,7 +1187,7 @@ export async function updateExperimentalFeature(
   enabled: boolean | null,
 ) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/experimental`, {
+    await backendApi.patch<KortixProject>(`/workspaces/${projectId}/experimental`, {
       feature,
       enabled,
     }),
@@ -1250,7 +1251,7 @@ export async function updateProjectSandboxProvider(
 ): Promise<UpdateProjectSandboxProviderResult> {
   return unwrap(
     await backendApi.patch<UpdateProjectSandboxProviderResult>(
-      `/projects/${projectId}/sandbox-provider`,
+      `/workspaces/${projectId}/sandbox-provider`,
       { provider },
     ),
   );
@@ -1265,7 +1266,7 @@ export async function setDefaultReasoningEffort(
   effort: string | null,
 ): Promise<KortixProject> {
   return unwrap(
-    await backendApi.put<KortixProject>(`/projects/${projectId}/default-reasoning-effort`, {
+    await backendApi.put<KortixProject>(`/workspaces/${projectId}/default-reasoning-effort`, {
       effort,
     }),
   );
@@ -1305,7 +1306,7 @@ export async function getProjectSandboxProviderTransition(
 ) {
   return unwrap(
     await backendApi.get<SandboxProviderTransitionState>(
-      `/projects/${projectId}/sandbox-provider/transition`,
+      `/workspaces/${projectId}/sandbox-provider/transition`,
       { showErrors: false, ...options },
     ),
   );
@@ -1324,7 +1325,7 @@ export async function updateTemplateWarmPool(
 
 export async function setProjectOnboardingComplete(projectId: string, completed: boolean) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { completed }),
+    await backendApi.patch<KortixProject>(`/workspaces/${projectId}/onboarding`, { completed }),
   );
 }
 
@@ -1365,12 +1366,12 @@ export interface OnboardingProfile {
  */
 export async function setProjectOnboardingProfile(projectId: string, profile: OnboardingProfile) {
   return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/onboarding`, { profile }),
+    await backendApi.patch<KortixProject>(`/workspaces/${projectId}/onboarding`, { profile }),
   );
 }
 
 export async function archiveProject(projectId: string) {
-  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
+  return unwrap(await backendApi.delete<{ ok: boolean }>(`/workspaces/${projectId}`));
 }
 
 /**
@@ -1387,7 +1388,7 @@ export async function archiveProject(projectId: string) {
 export async function transferProject(projectId: string, accountId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean; project_id: string; account_id: string }>(
-      `/projects/${projectId}/transfer`,
+      `/workspaces/${projectId}/transfer`,
       { account_id: accountId },
     ),
   );
@@ -1408,7 +1409,7 @@ export async function fetchProjectsForAccountWithToken(
 ): Promise<KortixProject[] | null> {
   return serverTokenGet<KortixProject[]>(
     opts,
-    `/v1/projects?account_id=${encodeURIComponent(accountId)}`,
+    `/v1/workspaces?account_id=${encodeURIComponent(accountId)}`,
   );
 }
 
@@ -1429,7 +1430,7 @@ export async function provisionProjectWithToken(
   if (!opts.backendUrl || !opts.accessToken) return { ok: false, limitReached: false };
   const base = normalizeServerBackendBase(opts.backendUrl);
   try {
-    const res = await fetch(`${base}/v1/projects/provision`, {
+    const res = await withWorkspaceRouteFallback(fetch)(`${base}/v1/workspaces/provision`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.accessToken}`,

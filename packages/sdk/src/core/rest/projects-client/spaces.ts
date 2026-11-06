@@ -111,7 +111,7 @@ export interface UpdateProjectSpaceInput {
  */
 export async function listProjectSpaces(projectId: string): Promise<ProjectSpace[]> {
   const body = unwrap(
-    await backendApi.get<{ spaces: ProjectSpace[] }>(`/projects/${projectId}/spaces`, { showErrors: false }),
+    await backendApi.get<{ spaces: ProjectSpace[] }>(`/workspaces/${projectId}/spaces`, { showErrors: false }),
   );
   return body.spaces;
 }
@@ -132,7 +132,7 @@ export interface ProjectSpaceGeneralNotice {
  */
 export async function getProjectSpaceGeneralNotice(projectId: string): Promise<ProjectSpaceGeneralNotice | null> {
   const body = unwrap(
-    await backendApi.get<{ general_notice?: ProjectSpaceGeneralNotice }>(`/projects/${projectId}/spaces`, {
+    await backendApi.get<{ general_notice?: ProjectSpaceGeneralNotice }>(`/workspaces/${projectId}/spaces`, {
       showErrors: false,
     }),
   );
@@ -146,7 +146,7 @@ export async function getProjectSpaceGeneralNotice(projectId: string): Promise<P
  */
 export async function getPrivateChannelsAvailable(projectId: string): Promise<boolean> {
   const body = unwrap(
-    await backendApi.get<{ private_channels_available?: boolean }>(`/projects/${projectId}/spaces`, {
+    await backendApi.get<{ private_channels_available?: boolean }>(`/workspaces/${projectId}/spaces`, {
       showErrors: false,
     }),
   );
@@ -163,7 +163,7 @@ export async function getPrivateChannelsAvailable(projectId: string): Promise<bo
  */
 export async function createProjectSpace(projectId: string, input: CreateProjectSpaceInput) {
   return unwrap(
-    await backendApi.post<ProjectSpace>(`/projects/${projectId}/spaces`, input, { showErrors: false }),
+    await backendApi.post<ProjectSpace>(`/workspaces/${projectId}/spaces`, input, { showErrors: false }),
   );
 }
 
@@ -176,7 +176,7 @@ export async function createProjectSpace(projectId: string, input: CreateProject
  */
 export async function updateProjectSpace(projectId: string, spaceId: string, input: UpdateProjectSpaceInput) {
   return unwrap(
-    await backendApi.patch<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}`, input, { showErrors: false }),
+    await backendApi.patch<ProjectSpace>(`/workspaces/${projectId}/spaces/${spaceId}`, input, { showErrors: false }),
   );
 }
 
@@ -190,7 +190,7 @@ export async function updateProjectSpace(projectId: string, spaceId: string, inp
  */
 export async function setProjectSpaceTabs(projectId: string, spaceId: string, tabs: ProjectSpaceTab[]) {
   return unwrap(
-    await backendApi.put<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}/tabs`, { tabs }, { showErrors: false }),
+    await backendApi.put<ProjectSpace>(`/workspaces/${projectId}/spaces/${spaceId}/tabs`, { tabs }, { showErrors: false }),
   );
 }
 
@@ -221,7 +221,7 @@ export interface ProjectSpaceProactiveInput {
 
 /** A space's Proactive settings. 403 `feature_disabled` while `spaces_proactive` is off. */
 export async function getProjectSpaceProactive(projectId: string, spaceId: string) {
-  return unwrap(await backendApi.get<ProjectSpaceProactive>(`/projects/${projectId}/spaces/${spaceId}/proactive`, { showErrors: false }));
+  return unwrap(await backendApi.get<ProjectSpaceProactive>(`/workspaces/${projectId}/spaces/${spaceId}/proactive`, { showErrors: false }));
 }
 
 /**
@@ -232,7 +232,7 @@ export async function getProjectSpaceProactive(projectId: string, spaceId: strin
  */
 export async function setProjectSpaceProactive(projectId: string, spaceId: string, input: ProjectSpaceProactiveInput) {
   return unwrap(
-    await backendApi.put<ProjectSpaceProactive>(`/projects/${projectId}/spaces/${spaceId}/proactive`, input, { showErrors: false }),
+    await backendApi.put<ProjectSpaceProactive>(`/workspaces/${projectId}/spaces/${spaceId}/proactive`, input, { showErrors: false }),
   );
 }
 
@@ -243,7 +243,7 @@ export async function setProjectSpaceProactive(projectId: string, spaceId: strin
  */
 export async function getOrCreateProjectDm(projectId: string, agentName: string) {
   return unwrap(
-    await backendApi.post<ProjectSpace>(`/projects/${projectId}/spaces/dm`, { agent_name: agentName }, { showErrors: false }),
+    await backendApi.post<ProjectSpace>(`/workspaces/${projectId}/spaces/dm`, { agent_name: agentName }, { showErrors: false }),
   );
 }
 
@@ -274,7 +274,7 @@ export interface ProjectSpaceMemberList {
 /** A channel's people. `#general` lists every project member. A background read. */
 export async function listProjectSpaceMembers(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
   return unwrap(
-    await backendApi.get<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/members`, { showErrors: false }),
+    await backendApi.get<ProjectSpaceMemberList>(`/workspaces/${projectId}/spaces/${spaceId}/members`, { showErrors: false }),
   );
 }
 
@@ -293,7 +293,7 @@ export async function addProjectSpaceMembers(
 ): Promise<ProjectSpaceMemberList> {
   return unwrap(
     await backendApi.post<ProjectSpaceMemberList>(
-      `/projects/${projectId}/spaces/${spaceId}/members`,
+      `/workspaces/${projectId}/spaces/${spaceId}/members`,
       { user_ids: userIds },
       { showErrors: false },
     ),
@@ -312,7 +312,7 @@ export async function removeProjectSpaceMember(
   userId: string,
 ): Promise<ProjectSpaceMemberList> {
   return unwrap(
-    await backendApi.delete<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/members/${userId}`, {
+    await backendApi.delete<ProjectSpaceMemberList>(`/workspaces/${projectId}/spaces/${spaceId}/members/${userId}`, {
       showErrors: false,
     }),
   );
@@ -341,14 +341,14 @@ export interface PrivateChannelSummary {
  */
 export async function listPrivateChannelsNotIn(projectId: string): Promise<PrivateChannelSummary[]> {
   return unwrap(
-    await backendApi.get<{ channels: PrivateChannelSummary[] }>(`/projects/${projectId}/spaces/private`, { showErrors: false }),
+    await backendApi.get<{ channels: PrivateChannelSummary[] }>(`/workspaces/${projectId}/spaces/private`, { showErrors: false }),
   ).channels;
 }
 
 /** The caller joins a public channel. Idempotent. `#general` rejects with 400 `default_channel`. */
 export async function joinProjectSpace(projectId: string, spaceId: string): Promise<ProjectSpaceMemberList> {
   return unwrap(
-    await backendApi.post<ProjectSpaceMemberList>(`/projects/${projectId}/spaces/${spaceId}/join`, undefined, {
+    await backendApi.post<ProjectSpaceMemberList>(`/workspaces/${projectId}/spaces/${spaceId}/join`, undefined, {
       showErrors: false,
     }),
   );
@@ -403,7 +403,7 @@ export interface AddProjectSpaceLinkInput {
  */
 export async function listProjectSpaceApps(projectId: string, spaceId: string): Promise<App[]> {
   const body = unwrap(
-    await backendApi.get<{ apps: App[] }>(`/projects/${projectId}/spaces/${spaceId}/apps`, { showErrors: false }),
+    await backendApi.get<{ apps: App[] }>(`/workspaces/${projectId}/spaces/${spaceId}/apps`, { showErrors: false }),
   );
   return body.apps;
 }
@@ -411,7 +411,7 @@ export async function listProjectSpaceApps(projectId: string, spaceId: string): 
 /** The channel's links, newest first. A background read. */
 export async function listProjectSpaceLinks(projectId: string, spaceId: string): Promise<ProjectSpaceLink[]> {
   const body = unwrap(
-    await backendApi.get<{ links: ProjectSpaceLink[] }>(`/projects/${projectId}/spaces/${spaceId}/links`, {
+    await backendApi.get<{ links: ProjectSpaceLink[] }>(`/workspaces/${projectId}/spaces/${spaceId}/links`, {
       showErrors: false,
     }),
   );
@@ -427,7 +427,7 @@ export async function listProjectSpaceLinks(projectId: string, spaceId: string):
  */
 export async function addProjectSpaceLink(projectId: string, spaceId: string, input: AddProjectSpaceLinkInput) {
   return unwrap(
-    await backendApi.post<ProjectSpaceLink>(`/projects/${projectId}/spaces/${spaceId}/links`, input, {
+    await backendApi.post<ProjectSpaceLink>(`/workspaces/${projectId}/spaces/${spaceId}/links`, input, {
       showErrors: false,
     }),
   );
@@ -436,7 +436,7 @@ export async function addProjectSpaceLink(projectId: string, spaceId: string, in
 /** Remove a link. Only its creator or a project manager may: anyone else gets 403 `forbidden`. */
 export async function removeProjectSpaceLink(projectId: string, spaceId: string, linkId: string): Promise<void> {
   unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/spaces/${spaceId}/links/${linkId}`, {
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${projectId}/spaces/${spaceId}/links/${linkId}`, {
       showErrors: false,
     }),
   );
@@ -457,7 +457,7 @@ export async function pinProjectSpaceLink(
 ): Promise<ProjectSpaceLink | null> {
   const body = unwrap(
     await backendApi.patch<{ link: ProjectSpaceLink | null }>(
-      `/projects/${projectId}/spaces/${spaceId}/links/${linkId}`,
+      `/workspaces/${projectId}/spaces/${spaceId}/links/${linkId}`,
       { pinned },
       { showErrors: false },
     ),
@@ -493,13 +493,13 @@ export interface ChannelsOnboarding {
 /** The caller's Channels onboarding state. A background read. */
 export async function getChannelsOnboarding(projectId: string): Promise<ChannelsOnboarding> {
   return unwrap(
-    await backendApi.get<ChannelsOnboarding>(`/projects/${projectId}/onboarding/channels`, { showErrors: false }),
+    await backendApi.get<ChannelsOnboarding>(`/workspaces/${projectId}/onboarding/channels`, { showErrors: false }),
   );
 }
 
 /** Record one onboarding mark for the caller. Idempotent. An unknown mark rejects with 400; the caller shows it. */
 export async function markChannelsOnboarding(projectId: string, mark: ChannelsOnboardingMark): Promise<void> {
   unwrap(
-    await backendApi.post<unknown>(`/projects/${projectId}/onboarding/channels/marks`, { mark }, { showErrors: false }),
+    await backendApi.post<unknown>(`/workspaces/${projectId}/onboarding/channels/marks`, { mark }, { showErrors: false }),
   );
 }

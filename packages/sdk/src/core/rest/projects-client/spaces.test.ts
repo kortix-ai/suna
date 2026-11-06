@@ -70,7 +70,7 @@ const general: ProjectSpace = {
 test('listProjectSpaces GETs the project spaces and returns the array', async () => {
   nextResponse = { status: 200, body: { spaces: [general] } };
   const spaces = await listProjectSpaces('P1');
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/spaces', method: 'GET', body: undefined }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/spaces', method: 'GET', body: undefined }]);
   expect(spaces).toEqual([general]);
 });
 
@@ -81,8 +81,8 @@ test('getProjectSpaceGeneralNotice reads #general\'s turned-on-again line from t
   nextResponse = { status: 200, body: { spaces: [general] } };
   expect(await getProjectSpaceGeneralNotice('P1')).toBeNull();
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-    'GET http://test.local/v1/projects/P1/spaces',
-    'GET http://test.local/v1/projects/P1/spaces',
+    'GET http://test.local/v1/workspaces/P1/spaces',
+    'GET http://test.local/v1/workspaces/P1/spaces',
   ]);
 });
 
@@ -92,8 +92,8 @@ test('getPrivateChannelsAvailable reads private_channels_available from the spac
   nextResponse = { status: 200, body: { spaces: [general] } };
   expect(await getPrivateChannelsAvailable('P1')).toBe(false);
   expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
-    'GET http://test.local/v1/projects/P1/spaces',
-    'GET http://test.local/v1/projects/P1/spaces',
+    'GET http://test.local/v1/workspaces/P1/spaces',
+    'GET http://test.local/v1/workspaces/P1/spaces',
   ]);
 });
 
@@ -110,7 +110,7 @@ test('listPrivateChannelsNotIn GETs the manager list of private channels and ret
   };
   nextResponse = { status: 200, body: { channels: [row] } };
   expect(await listPrivateChannelsNotIn('P1')).toEqual([row]);
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/spaces/private', method: 'GET', body: undefined }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/spaces/private', method: 'GET', body: undefined }]);
 });
 
 test('getChannelsOnboarding GETs the caller\'s onboarding state', async () => {
@@ -120,7 +120,7 @@ test('getChannelsOnboarding GETs the caller\'s onboarding state', async () => {
   };
   nextResponse = { status: 200, body: state };
   expect(await getChannelsOnboarding('P1')).toEqual(state);
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/onboarding/channels', method: 'GET', body: undefined }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/onboarding/channels', method: 'GET', body: undefined }]);
 });
 
 test('markChannelsOnboarding POSTs { mark } and resolves on 204', async () => {
@@ -130,7 +130,7 @@ test('markChannelsOnboarding POSTs { mark } and resolves on 204', async () => {
   }) as unknown as typeof fetch;
   expect(await markChannelsOnboarding('P1', 'channels_intro')).toBeUndefined();
   expect(calls).toEqual([
-    { url: 'http://test.local/v1/projects/P1/onboarding/channels/marks', method: 'POST', body: { mark: 'channels_intro' } },
+    { url: 'http://test.local/v1/workspaces/P1/onboarding/channels/marks', method: 'POST', body: { mark: 'channels_intro' } },
   ]);
 });
 
@@ -149,7 +149,7 @@ test('createProjectSpace POSTs the name and description', async () => {
   nextResponse = { status: 201, body: { ...general, slug: 'design', name: 'Design', is_default: false } };
   const space = await createProjectSpace('P1', { name: 'Design', description: 'UI work' });
   expect(calls[0]).toEqual({
-    url: 'http://test.local/v1/projects/P1/spaces',
+    url: 'http://test.local/v1/workspaces/P1/spaces',
     method: 'POST',
     body: { name: 'Design', description: 'UI work' },
   });
@@ -188,7 +188,7 @@ test('updateProjectSpace PATCHes the space by id', async () => {
   nextResponse = { status: 200, body: { ...general, archived_at: '2026-10-20T01:00:00.000Z' } };
   const space = await updateProjectSpace('P1', general.space_id, { archived: true, description: null });
   expect(calls[0]).toEqual({
-    url: `http://test.local/v1/projects/P1/spaces/${general.space_id}`,
+    url: `http://test.local/v1/workspaces/P1/spaces/${general.space_id}`,
     method: 'PATCH',
     body: { archived: true, description: null },
   });
@@ -199,7 +199,7 @@ test('updateProjectSpace sends the channel agent list in order and reads it back
   nextResponse = { status: 200, body: { ...general, agents: ['writer', 'kortix'] } };
   const space = await updateProjectSpace('P1', general.space_id, { agents: ['writer', 'kortix'] });
   expect(calls[0]).toEqual({
-    url: `http://test.local/v1/projects/P1/spaces/${general.space_id}`,
+    url: `http://test.local/v1/workspaces/P1/spaces/${general.space_id}`,
     method: 'PATCH',
     body: { agents: ['writer', 'kortix'] },
   });
@@ -228,7 +228,7 @@ test('getOrCreateProjectDm POSTs the agent name to the DM route', async () => {
   };
   const dm = await getOrCreateProjectDm('P1', 'kortix');
   expect(calls[0]).toEqual({
-    url: 'http://test.local/v1/projects/P1/spaces/dm',
+    url: 'http://test.local/v1/workspaces/P1/spaces/dm',
     method: 'POST',
     body: { agent_name: 'kortix' },
   });
@@ -278,7 +278,7 @@ test('a link from an API without the fetched fields lists unchanged', async () =
 test('listProjectSpaceApps GETs the channel apps and returns the array', async () => {
   nextResponse = { status: 200, body: { apps: [{ app_id: 'A1' }] } };
   const apps = await listProjectSpaceApps('P1', 'S1');
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/spaces/S1/apps', method: 'GET', body: undefined }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/spaces/S1/apps', method: 'GET', body: undefined }]);
   expect(apps).toEqual([{ app_id: 'A1' }] as never);
 });
 
@@ -290,9 +290,9 @@ test('space links: list GETs, add POSTs url and title, remove DELETEs by id', as
   nextResponse = { status: 200, body: { ok: true } };
   await removeProjectSpaceLink('P1', 'S1', 'L1');
   expect(calls).toEqual([
-    { url: 'http://test.local/v1/projects/P1/spaces/S1/links', method: 'GET', body: undefined },
-    { url: 'http://test.local/v1/projects/P1/spaces/S1/links', method: 'POST', body: { url: link.url, title: 'Spec' } },
-    { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'DELETE', body: undefined },
+    { url: 'http://test.local/v1/workspaces/P1/spaces/S1/links', method: 'GET', body: undefined },
+    { url: 'http://test.local/v1/workspaces/P1/spaces/S1/links', method: 'POST', body: { url: link.url, title: 'Spec' } },
+    { url: 'http://test.local/v1/workspaces/P1/spaces/S1/links/L1', method: 'DELETE', body: undefined },
   ]);
 });
 
@@ -303,8 +303,8 @@ test('pinProjectSpaceLink PATCHes { pinned } and returns the link, or null from 
   nextResponse = { status: 200, body: { link: null } };
   expect(await pinProjectSpaceLink('P1', 'S1', 'L1', false)).toBeNull();
   expect(calls).toEqual([
-    { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'PATCH', body: { pinned: true } },
-    { url: 'http://test.local/v1/projects/P1/spaces/S1/links/L1', method: 'PATCH', body: { pinned: false } },
+    { url: 'http://test.local/v1/workspaces/P1/spaces/S1/links/L1', method: 'PATCH', body: { pinned: true } },
+    { url: 'http://test.local/v1/workspaces/P1/spaces/S1/links/L1', method: 'PATCH', body: { pinned: false } },
   ]);
 });
 
@@ -348,7 +348,7 @@ const memberList: ProjectSpaceMemberList = {
 
 test('channel members: list, add in bulk, remove, join and leave reach their routes and return the list', async () => {
   nextResponse = { status: 200, body: memberList };
-  const base = 'http://test.local/v1/projects/P1/spaces/S1';
+  const base = 'http://test.local/v1/workspaces/P1/spaces/S1';
   expect(await listProjectSpaceMembers('P1', 'S1')).toEqual(memberList);
   expect(await addProjectSpaceMembers('P1', 'S1', ['U2', 'U3'])).toEqual(memberList);
   expect(await removeProjectSpaceMember('P1', 'S1', 'U2')).toEqual(memberList);
@@ -379,7 +379,7 @@ test('setProjectSpaceTabs PUTs the whole ordered list and returns the space with
   nextResponse = { status: 200, body: { ...general, tabs: [tabs[0], { ...tabs[1], embeddable: false }] } };
   const space = await setProjectSpaceTabs('P1', general.space_id, tabs);
   expect(calls).toEqual([
-    { url: `http://test.local/v1/projects/P1/spaces/${general.space_id}/tabs`, method: 'PUT', body: { tabs } },
+    { url: `http://test.local/v1/workspaces/P1/spaces/${general.space_id}/tabs`, method: 'PUT', body: { tabs } },
   ]);
   // The server sets a link tab's embeddable.
   expect(space.tabs).toEqual([tabs[0]!, { ...tabs[1]!, embeddable: false }]);
@@ -389,14 +389,14 @@ test('getProjectSpaceProactive GETs the space watcher settings', async () => {
   const settings: ProjectSpaceProactive = { space_id: general.space_id, enabled: false, daily_brief: false, brief_timezone: 'UTC', can_edit: true };
   nextResponse = { status: 200, body: settings };
   expect(await getProjectSpaceProactive('P1', general.space_id)).toEqual(settings);
-  expect(calls).toEqual([{ url: `http://test.local/v1/projects/P1/spaces/${general.space_id}/proactive`, method: 'GET', body: undefined }]);
+  expect(calls).toEqual([{ url: `http://test.local/v1/workspaces/P1/spaces/${general.space_id}/proactive`, method: 'GET', body: undefined }]);
 });
 
 test('setProjectSpaceProactive PUTs only the fields given and returns the stored settings', async () => {
   nextResponse = { status: 200, body: { space_id: general.space_id, enabled: true, daily_brief: true, brief_timezone: 'Europe/Berlin', can_edit: true } };
   const stored = await setProjectSpaceProactive('P1', general.space_id, { daily_brief: true, brief_timezone: 'Europe/Berlin' });
   expect(calls).toEqual([
-    { url: `http://test.local/v1/projects/P1/spaces/${general.space_id}/proactive`, method: 'PUT', body: { daily_brief: true, brief_timezone: 'Europe/Berlin' } },
+    { url: `http://test.local/v1/workspaces/P1/spaces/${general.space_id}/proactive`, method: 'PUT', body: { daily_brief: true, brief_timezone: 'Europe/Berlin' } },
   ]);
   expect(stored.enabled).toBe(true);
 });

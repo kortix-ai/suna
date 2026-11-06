@@ -228,7 +228,7 @@ export interface SessionMemoryUsage {
   layers: SessionMemoryUsageLayer[];
 }
 
-const memory = (projectId: string) => `/projects/${projectId}/memory`;
+const memory = (projectId: string) => `/workspaces/${projectId}/memory`;
 const layer = (projectId: string, layerKey: ProjectMemoryLayerKey) => `${memory(projectId)}/layers/${layerKey}`;
 const page = (projectId: string, pageId: string) => `${memory(projectId)}/pages/${pageId}`;
 const quiet = { showErrors: false } as const;
@@ -325,5 +325,5 @@ export async function searchProjectMemory(projectId: string, input: ProjectMemor
  * rejects with 404 `session_not_found`. A background read.
  */
 export async function getSessionMemoryUsage(projectId: string, sessionId: string): Promise<SessionMemoryUsage> {
-  return unwrap(await backendApi.get<SessionMemoryUsage>(`/projects/${projectId}/sessions/${sessionId}/memory-usage`, quiet));
+  return unwrap(await backendApi.get<SessionMemoryUsage>(`/workspaces/${projectId}/sessions/${sessionId}/memory-usage`, quiet));
 }

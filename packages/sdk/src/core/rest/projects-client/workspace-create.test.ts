@@ -31,7 +31,7 @@ describe('createWorkspace', () => {
 
     expect(created.project_id).toBe('p1');
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe('http://backend.test/v1/projects/provision');
+    expect(calls[0]!.url).toBe('http://backend.test/v1/workspaces/provision');
     expect(calls[0]!.body).toMatchObject({ name: 'Acme', new_workspace: true, seed_starter: true, idempotency_key: 'k-1' });
     expect(calls[0]!.body).not.toHaveProperty('account_id');
   });
@@ -73,7 +73,7 @@ describe('createWorkspace', () => {
 
     expect(created.project_id).toBe('p1');
     expect(phases).toEqual(['validating', 'creating_repository', 'registering', 'seeding']);
-    expect(calls[0]!.url).toBe('http://backend.test/v1/projects/provision-stream');
+    expect(calls[0]!.url).toBe('http://backend.test/v1/workspaces/provision-stream');
     expect(calls[0]!.body).toMatchObject({ name: 'Acme', new_workspace: true });
     expect(calls[0]!.body).not.toHaveProperty('account_id');
   });

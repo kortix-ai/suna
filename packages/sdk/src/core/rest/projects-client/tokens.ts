@@ -200,14 +200,14 @@ export interface SignedInDevice {
 
 /** The caller's signed-in devices, most recently active first. */
 export async function listSignedInDevices(): Promise<SignedInDevice[]> {
-  return unwrap(await backendApi.get<{ devices: SignedInDevice[] }>('/accounts/me/devices'))
+  return unwrap(await backendApi.get<{ devices: SignedInDevice[] }>('/me/devices'))
     .devices;
 }
 
 /** Sign one other device out. The current device signs out with `auth.signOut()`. */
 export async function signOutDevice(sessionId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: true }>(`/accounts/me/devices/${encodeURIComponent(sessionId)}`),
+    await backendApi.delete<{ ok: true }>(`/me/devices/${encodeURIComponent(sessionId)}`),
   );
 }
 
@@ -245,7 +245,7 @@ export interface CreatedProjectCliToken {
 
 export async function listProjectCliTokens(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectCliTokenListResponse>(`/projects/${projectId}/cli-token`),
+    await backendApi.get<ProjectCliTokenListResponse>(`/workspaces/${projectId}/cli-token`),
   );
 }
 
@@ -256,7 +256,7 @@ export async function createProjectCliToken(
 ) {
   return unwrap(
     await backendApi.post<CreatedProjectCliToken>(
-      `/projects/${projectId}/cli-token`,
+      `/workspaces/${projectId}/cli-token`,
       input ?? {},
     ),
   );
@@ -265,7 +265,7 @@ export async function createProjectCliToken(
 export async function revokeProjectCliToken(projectId: string, tokenId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/cli-token/${tokenId}`,
+      `/workspaces/${projectId}/cli-token/${tokenId}`,
     ),
   );
 }

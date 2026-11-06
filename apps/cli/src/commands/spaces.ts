@@ -217,7 +217,7 @@ function writeTabs(tabs: readonly SpaceTab[]): void {
 }
 
 async function listSpaces(client: ApiClient, projectId: string): Promise<Space[]> {
-  return (await client.get<{ spaces: Space[] }>(`/projects/${encodeURIComponent(projectId)}/spaces`)).spaces;
+  return (await client.get<{ spaces: Space[] }>(`/workspaces/${encodeURIComponent(projectId)}/spaces`)).spaces;
 }
 
 /** The space this command acts on: the named one, else the session's. */
@@ -226,7 +226,7 @@ async function resolveSpace(client: ApiClient, projectId: string, ref: string | 
   if (ref) return findSpace(spaces, ref) ?? `No space "${ref}" in this workspace (or you may not see it). Run \`kortix spaces ls\`.`;
   const sessionId = process.env.KORTIX_SESSION_ID;
   if (!sessionId) return 'Name the space: kortix spaces <subcommand> <space>, or --space <space>.';
-  const session = await client.get<{ space_id?: string | null }>(`/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`);
+  const session = await client.get<{ space_id?: string | null }>(`/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`);
   if (!session.space_id) return 'This session is filed in no space. Name one: --space <space>.';
   return spaces.find((s) => s.space_id === session.space_id) ?? 'The space of this session is not visible to you.';
 }
@@ -234,7 +234,7 @@ async function resolveSpace(client: ApiClient, projectId: string, ref: string | 
 /** User ids for emails or ids, through the project's member list. */
 async function userIdsFor(client: ApiClient, projectId: string, refs: readonly string[]): Promise<string[] | string> {
   if (refs.every((r) => UUID.test(r))) return [...refs];
-  const { members } = await client.get<{ members: Array<{ user_id: string; email: string | null }> }>(`/projects/${encodeURIComponent(projectId)}/access`);
+  const { members } = await client.get<{ members: Array<{ user_id: string; email: string | null }> }>(`/workspaces/${encodeURIComponent(projectId)}/access`);
   const out: string[] = [];
   for (const ref of refs) {
     if (UUID.test(ref)) {
@@ -276,7 +276,7 @@ export async function runSpaces(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   const { client, projectId } = ctx;
-  const base = `/projects/${encodeURIComponent(projectId)}/spaces`;
+  const base = `/workspaces/${encodeURIComponent(projectId)}/spaces`;
   try {
     if (sub === 'ls' || sub === 'list') {
       const spaces = await listSpaces(client, projectId);

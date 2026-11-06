@@ -17,12 +17,12 @@ export async function installationProven(client: ApiClient, itemId: string, ctx:
       );
     if (item.type === 'registry:skill' && conventional) {
       const detail = await client.get<{ config: { skills: Array<{ name: string }> } }>(
-        `/projects/${ctx.projectId}/detail`,
+        `/workspaces/${ctx.projectId}/detail`,
       );
       let filesPresent = true;
       for (const target of targets) {
         const files = await client.get<Array<{ path: string; type: string }>>(
-          `/projects/${ctx.projectId}/files?path=${encodeURIComponent(target)}`,
+          `/workspaces/${ctx.projectId}/files?path=${encodeURIComponent(target)}`,
         );
         if (!files.some((file) => file.path === target && file.type === 'file')) {
           filesPresent = false;

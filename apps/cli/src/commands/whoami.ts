@@ -96,7 +96,7 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
 
   let me: MeResponse;
   try {
-    me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+    me = await clientFromAuth(auth).get<MeResponse>('/me');
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);

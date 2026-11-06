@@ -130,7 +130,7 @@ test('disabled, it never opens a connection and reports closed', async () => {
 test('enabled, it connects with a fresh ticket and reports status, you and participants', async () => {
   await mount();
   expect(sockets).toHaveLength(1);
-  expect(sockets[0]!.url).toBe(`wss://artifact-live-hook.example/v1/projects/${P}/artifacts/${A}/live?ticket=ticket-1`);
+  expect(sockets[0]!.url).toBe(`wss://artifact-live-hook.example/v1/workspaces/${P}/artifacts/${A}/live?ticket=ticket-1`);
   expect(live.status).toBe('connecting');
   await welcome();
   expect(live.status).toBe('live');

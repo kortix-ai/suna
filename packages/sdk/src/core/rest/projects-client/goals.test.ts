@@ -139,7 +139,7 @@ describe('listProjectGoals', () => {
     };
     routes['/drives/d1/files/content?path=/Company/Goals/bank-close/goal.json'] = { status: 200, body: GOAL };
     routes['/drives/d1/files/content?path=/Users/ana/Goals/broken/goal.json'] = { status: 200, body: '{ not json' };
-    routes['/projects/p1/reminders'] = { status: 200, body: { reminders: [HEARTBEAT] } };
+    routes['/workspaces/p1/reminders'] = { status: 200, body: { reminders: [HEARTBEAT] } };
 
     const goals = await listProjectGoals('p1', { now: NOW });
 
@@ -162,7 +162,7 @@ describe('listProjectGoals', () => {
     routes['/drives'] = { status: 200, body: { drives: [{ ...drive, personalFolder: null }] } };
     routes['/drives/d1/files?path=/Company/Goals'] = { status: 200, body: { entries: [dir('/Company/Goals/bank-close')], access: 'write' } };
     routes['/drives/d1/files/content?path=/Company/Goals/bank-close/goal.json'] = { status: 200, body: { ...GOAL, reminder_id: null } };
-    routes['/projects/p1/reminders'] = { status: 200, body: { reminders: [HEARTBEAT] } };
+    routes['/workspaces/p1/reminders'] = { status: 200, body: { reminders: [HEARTBEAT] } };
 
     const [goal] = await listProjectGoals('p1', { now: NOW });
     expect(goal?.heartbeat?.id).toBe('reminder.aaaaaaaaaaaa');
@@ -176,7 +176,7 @@ describe('listProjectGoals', () => {
       status: 200,
       body: { ...GOAL, status: 'verifying', items: 'x', success_criteria: { a: 1 }, sessions: 7, transitions: [null, 'x'] },
     };
-    routes['/projects/p1/reminders'] = { status: 200, body: { reminders: [HEARTBEAT] } };
+    routes['/workspaces/p1/reminders'] = { status: 200, body: { reminders: [HEARTBEAT] } };
 
     const [goal] = await listProjectGoals('p1', { now: NOW });
     expect(goal?.goal).toMatchObject({ items: [], success_criteria: [], sessions: [], transitions: [] });
@@ -187,7 +187,7 @@ describe('listProjectGoals', () => {
     routes['/drives'] = { status: 200, body: { drives: [] } };
     expect(await listProjectGoals('p1')).toEqual([]);
     routes['/drives'] = { status: 200, body: { drives: [drive] } };
-    routes['/projects/p1/reminders'] = { status: 200, body: { reminders: [] } };
+    routes['/workspaces/p1/reminders'] = { status: 200, body: { reminders: [] } };
     expect(await listProjectGoals('p1')).toEqual([]);
   });
 
@@ -295,7 +295,7 @@ describe('GOAL.md goals', () => {
       },
     };
     routes['/drives/d1/files/content?path=/Company/Goals/eu-billing/GOAL.md'] = { status: 200, body: formatGoalFile(OWNER_DOC) };
-    routes['/projects/p1/reminders'] = { status: 200, body: { reminders: [heartbeat] } };
+    routes['/workspaces/p1/reminders'] = { status: 200, body: { reminders: [heartbeat] } };
   };
 
   test('listProjectGoals reads GOAL.md before goal.json, and the last owner is the current one', async () => {
@@ -320,7 +320,7 @@ describe('GOAL.md goals', () => {
     routes['PUT /drives/d1/files/content?path=/Company/Goals/eu-billing/GOAL.md'] = { status: 200, body: { version: 'v2' } };
     routes['/drives/d1/files/content?path=/Company/Goals/eu-billing/log.md'] = { status: 200, body: '# Log\n' };
     routes['PUT /drives/d1/files/content?path=/Company/Goals/eu-billing/log.md'] = { status: 200, body: { version: 'v2' } };
-    routes[`DELETE /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ok: true } };
+    routes[`DELETE /workspaces/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ok: true } };
     const [goal] = await listProjectGoals('p1', { now: NOW });
     requested = [];
 
@@ -353,27 +353,27 @@ describe('GOAL.md goals', () => {
 
   test('replyToProjectGoal queues the answer into the owner session, naming the goal folder', async () => {
     listRoutes();
-    routes['POST /projects/p1/sessions/s-owner/prompts'] = {
+    routes['POST /workspaces/p1/sessions/s-owner/prompts'] = {
       status: 202,
       body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false },
     };
     const [goal] = await listProjectGoals('p1', { now: NOW });
     await replyToProjectGoal('p1', goal!, 'DE123456789');
     const post = requested.find((r) => r.method === 'POST')!;
-    expect(post.key).toBe('/projects/p1/sessions/s-owner/prompts');
+    expect(post.key).toBe('/workspaces/p1/sessions/s-owner/prompts');
     const text = JSON.parse(post.body).parts[0].text as string;
     expect(text).toContain('Goal reply: /drives/company/Goals/eu-billing.');
     expect(text).toContain('DE123456789');
   });
 
   test('makeSessionGoal asks that chat session to make a goal through the kortix-goals skill', async () => {
-    routes['POST /projects/p1/sessions/s-chat/prompts'] = {
+    routes['POST /workspaces/p1/sessions/s-chat/prompts'] = {
       status: 202,
       body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false },
     };
     await makeSessionGoal('p1', 's-chat');
     const post = requested.find((r) => r.method === 'POST')!;
-    expect(post.key).toBe('/projects/p1/sessions/s-chat/prompts');
+    expect(post.key).toBe('/workspaces/p1/sessions/s-chat/prompts');
     expect(JSON.parse(post.body).parts[0].text).toBe(MAKE_GOAL_PROMPT);
     expect(MAKE_GOAL_PROMPT).toContain('kortix goals new');
   });
@@ -406,7 +406,7 @@ describe('person controls: create, pause, resume', () => {
   });
 
   const roster = (default_agent: string | null, agents: Array<Record<string, unknown>>) =>
-    (routes['/projects/p1/detail'] = { status: 200, body: { project: {}, config: { default_agent, agents }, file_count: 0, files: [] } });
+    (routes['/workspaces/p1/detail'] = { status: 200, body: { project: {}, config: { default_agent, agents }, file_count: 0, files: [] } });
   const drive = () => {
     routes['/drives'] = { status: 200, body: { drives: [{ driveId: 'd1', projectId: 'p1', personalFolder: '/Users/u1' }] } };
     roster('mykortix', [
@@ -417,13 +417,13 @@ describe('person controls: create, pause, resume', () => {
   };
   const put = (path: string) => (routes[`PUT /drives/d1/files/content?path=${path}`] = { status: 200, body: { version: 'v2' } });
   const sessionCreated = () => {
-    routes['POST /projects/p1/sessions'] = { status: 201, body: { session_id: SESSION } };
-    routes[`/projects/p1/sessions/${SESSION}/reminders`] = { status: 200, body: { reminders: [] } };
-    routes[`POST /projects/p1/sessions/${SESSION}/reminders`] = {
+    routes['POST /workspaces/p1/sessions'] = { status: 201, body: { session_id: SESSION } };
+    routes[`/workspaces/p1/sessions/${SESSION}/reminders`] = { status: 200, body: { reminders: [] } };
+    routes[`POST /workspaces/p1/sessions/${SESSION}/reminders`] = {
       status: 201,
       body: { ...HEARTBEAT, id: 'reminder.bbbbbbbbbbbb', session_id: SESSION, next_fire_at: '2026-11-04T14:00:00.000Z' },
     };
-    routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = {
+    routes[`POST /workspaces/p1/sessions/${SESSION}/prompts`] = {
       status: 202,
       body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false },
     };
@@ -471,13 +471,13 @@ describe('person controls: create, pause, resume', () => {
     // The session is created idle; GOAL.md is written once, with its heartbeat; only then does the first wake go in.
     const order = requested.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.key.split('?')[0].replace(`/${SESSION}`, '/:s')}`);
     expect(order).toEqual([
-      'POST /projects/p1/sessions',
-      'POST /projects/p1/sessions/:s/reminders',
+      'POST /workspaces/p1/sessions',
+      'POST /workspaces/p1/sessions/:s/reminders',
       'PUT /drives/d1/files/content',
       'PUT /drives/d1/files/content',
-      'POST /projects/p1/sessions/:s/prompts',
+      'POST /workspaces/p1/sessions/:s/prompts',
     ]);
-    const create = JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body);
+    const create = JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/workspaces/p1/sessions')!.body);
     expect(create).toMatchObject({
       session_id: SESSION,
       name: 'EU billing live',
@@ -512,10 +512,10 @@ describe('person controls: create, pause, resume', () => {
       status: 200,
       body: formatGoalFile({ ...GOAL, objective: 'Ship it', sessions: [{ id: SESSION, role: 'owner', since: '2026-11-01T00:00:00Z' }] }),
     };
-    routes['POST /projects/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
-    routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    routes['POST /workspaces/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
+    routes[`POST /workspaces/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
     routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/log.md'] = { status: 200, body: '# Log\n' };
-    routes[`/projects/p1/sessions/${SESSION}/reminders`] = {
+    routes[`/workspaces/p1/sessions/${SESSION}/reminders`] = {
       status: 200,
       body: { reminders: [{ ...HEARTBEAT, session_id: SESSION, prompt: 'Goal wake: /drives/me/Goals/ship-it. Load the kortix-goals skill and run one wake.' }] },
     };
@@ -532,7 +532,7 @@ describe('person controls: create, pause, resume', () => {
     put('/Users/u1/Goals/ship-it/log.md');
     sessionCreated();
     await createProjectGoal('p1', { outcome: 'Ship it', sessionId: SESSION });
-    const create = JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body);
+    const create = JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/workspaces/p1/sessions')!.body);
     expect(create.agent_name).toBe('billing');
     expect(parseGoalFile(requested.find((r) => r.method === 'PUT' && r.key.endsWith('GOAL.md'))!.body)?.agent).toBe('billing');
 
@@ -543,7 +543,7 @@ describe('person controls: create, pause, resume', () => {
       { name: 'worker' },
     ]);
     await createProjectGoal('p1', { outcome: 'Ship it', sessionId: SESSION });
-    expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body).agent_name).toBe('worker');
+    expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/workspaces/p1/sessions')!.body).agent_name).toBe('worker');
   });
 
   test('createProjectGoal refuses My Kortix and a project with no agent that has Files', async () => {
@@ -556,14 +556,14 @@ describe('person controls: create, pause, resume', () => {
 
   test('a retry with an edited outcome reuses the folder the session already owns', async () => {
     drive();
-    routes[`/projects/p1/sessions/${SESSION}`] = { status: 200, body: { session_id: SESSION, metadata: { goal: '/drives/me/Goals/ship-it' } } };
+    routes[`/workspaces/p1/sessions/${SESSION}`] = { status: 200, body: { session_id: SESSION, metadata: { goal: '/drives/me/Goals/ship-it' } } };
     routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/GOAL.md'] = {
       status: 200,
       body: formatGoalFile({ ...GOAL, objective: 'Ship it', sessions: [{ id: SESSION, role: 'owner', since: '2026-11-01T00:00:00Z' }] }),
     };
     routes['/drives/d1/files/content?path=/Users/u1/Goals/ship-it/log.md'] = { status: 200, body: '# Log\n' };
-    routes['POST /projects/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
-    routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    routes['POST /workspaces/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
+    routes[`POST /workspaces/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
     const created = await createProjectGoal('p1', { outcome: 'Ship it this week instead', sessionId: SESSION });
     expect(created.slug).toBe('ship-it');
     expect(requested.filter((r) => r.method === 'PUT' || r.key.endsWith('/reminders'))).toEqual([]);
@@ -576,8 +576,8 @@ describe('person controls: create, pause, resume', () => {
       body: formatGoalFile({ ...GOAL, objective: 'Ship it', sessions: [{ id: SESSION, role: 'owner', since: '2026-11-01T00:00:00Z' }] }),
     };
     put('/Users/u1/Goals/ship-it/log.md');
-    routes['POST /projects/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
-    routes[`POST /projects/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    routes['POST /workspaces/p1/sessions'] = { status: 409, body: { error: 'Session already exists' } };
+    routes[`POST /workspaces/p1/sessions/${SESSION}/prompts`] = { status: 200, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
     await createProjectGoal('p1', { outcome: 'Ship it', sessionId: SESSION });
     expect(requested.filter((r) => r.method === 'PUT').map((r) => r.key.split('/').at(-1))).toEqual(['log.md']);
   });
@@ -613,7 +613,7 @@ describe('person controls: create, pause, resume', () => {
 
   test('pauseProjectGoal records the pause in GOAL.md on the version it read, logs it and disables the heartbeat', async () => {
     goalRoutes(OPEN_DOC);
-    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ...HEARTBEAT, state: 'paused' } };
+    routes[`PATCH /workspaces/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ...HEARTBEAT, state: 'paused' } };
     const doc = await pauseProjectGoal('p1', goalRef, 'Waiting for the new budget');
     expect(doc).toMatchObject({ status: 'active', paused_by: 'person' });
     expect(typeof doc.paused_at).toBe('string');
@@ -631,7 +631,7 @@ describe('person controls: create, pause, resume', () => {
 
   test('a retry of a pause whose heartbeat update failed only finishes the heartbeat', async () => {
     goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
-    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ...HEARTBEAT, state: 'paused' } };
+    routes[`PATCH /workspaces/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ...HEARTBEAT, state: 'paused' } };
     const doc = await pauseProjectGoal('p1', goalRef, 'x');
     expect(doc.paused_at).toBe('2026-11-01T00:00:00Z');
     expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
@@ -640,8 +640,8 @@ describe('person controls: create, pause, resume', () => {
 
   test('resumeProjectGoal clears the pause, re-enables the heartbeat and wakes the owner now', async () => {
     goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
-    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
-    routes['POST /projects/p1/sessions/s-owner/prompts'] = {
+    routes[`PATCH /workspaces/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
+    routes['POST /workspaces/p1/sessions/s-owner/prompts'] = {
       status: 202,
       body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false },
     };
@@ -658,8 +658,8 @@ describe('person controls: create, pause, resume', () => {
 
   test('a retry of a resume whose heartbeat update failed re-enables the heartbeat and writes nothing', async () => {
     goalRoutes(OPEN_DOC);
-    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
-    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
+    routes[`PATCH /workspaces/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
+    routes['POST /workspaces/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: true } };
     await resumeProjectGoal('p1', { ...goalRef, heartbeat: { ...goalRef.heartbeat, state: 'paused' } });
     expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
     expect(JSON.parse(requested.find((r) => r.method === 'PATCH')!.body)).toEqual({ enabled: true });
@@ -667,7 +667,7 @@ describe('person controls: create, pause, resume', () => {
 
   test('resume enables the heartbeat before it clears the pause, so a failed GOAL.md write leaves nothing half-done', async () => {
     goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
-    routes[`PATCH /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
+    routes[`PATCH /workspaces/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: HEARTBEAT };
     routes['PUT /drives/d1/files/content?path=/Company/Goals/bank-close/GOAL.md'] = { status: 409, body: { code: 'file_changed' } };
     await expect(resumeProjectGoal('p1', { ...goalRef, heartbeat: { ...goalRef.heartbeat, state: 'paused' } })).rejects.toMatchObject({ status: 409 });
     expect(requested.filter((r) => r.method !== 'GET').map((r) => r.method)).toEqual(['PATCH', 'PUT']);
@@ -675,7 +675,7 @@ describe('person controls: create, pause, resume', () => {
 
   test('a resume retry with no active heartbeat still wakes the owner, so the goal is never left idle', async () => {
     goalRoutes(OPEN_DOC);
-    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    routes['POST /workspaces/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
     await resumeProjectGoal('p1', { ...goalRef, heartbeat: null });
     expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
     expect(JSON.parse(requested.find((r) => r.method === 'POST')!.body).parts[0].text).toContain('Goal wake: /drives/company/Goals/bank-close.');
@@ -694,7 +694,7 @@ describe('person controls: create, pause, resume', () => {
 
   test('stopping a paused goal clears the pause', async () => {
     goalRoutes({ ...OPEN_DOC, paused_at: '2026-11-01T00:00:00Z', paused_by: 'person' });
-    routes[`DELETE /projects/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ok: true } };
+    routes[`DELETE /workspaces/p1/sessions/s-owner/reminders/${HEARTBEAT.id}`] = { status: 200, body: { ok: true } };
     const doc = await stopProjectGoal('p1', goalRef, 'Dropped');
     expect(doc).toMatchObject({ status: 'stopped', paused_at: null, paused_by: null });
   });
@@ -712,7 +712,7 @@ describe('person controls: create, pause, resume', () => {
 
   test('restartProjectGoal moves a stopped goal back to active on the version it read, logs it and wakes the owner once per stop', async () => {
     goalRoutes(STOPPED_DOC);
-    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    routes['POST /workspaces/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
     const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'Started again from the Goal page');
     expect(doc.status).toBe('active');
     expect(doc.transitions.at(-1)).toMatchObject({ from: 'stopped', to: 'active', reason: 'Started again from the Goal page', by: 'person' });
@@ -724,7 +724,7 @@ describe('person controls: create, pause, resume', () => {
     expect(requested.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.key.split('?')[0]}`)).toEqual([
       'PUT /drives/d1/files/content',
       'PUT /drives/d1/files/content',
-      'POST /projects/p1/sessions/s-owner/prompts',
+      'POST /workspaces/p1/sessions/s-owner/prompts',
     ]);
     const wake = JSON.parse(requested.find((r) => r.method === 'POST')!.body);
     expect(wake.parts[0].text).toContain('Goal wake: /drives/company/Goals/bank-close.');
@@ -733,7 +733,7 @@ describe('person controls: create, pause, resume', () => {
 
   test('restartProjectGoal sends a stopped goal with no done criteria back to draft, so the owner writes them first', async () => {
     goalRoutes({ ...STOPPED_DOC, success_criteria: [] });
-    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    routes['POST /workspaces/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
     const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'again');
     expect(doc.status).toBe('draft');
   });
@@ -741,7 +741,7 @@ describe('person controls: create, pause, resume', () => {
   test('a retry of a restart whose wake failed writes nothing and wakes the owner with the same id', async () => {
     const restarted = { ...STOPPED_DOC, status: 'active' as const, transitions: [...STOPPED_DOC.transitions, { from: 'stopped' as const, to: 'active' as const, at: '2026-11-03T09:00:00Z', reason: 'again', by: 'person' }] };
     goalRoutes(restarted);
-    routes['POST /projects/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
+    routes['POST /workspaces/p1/sessions/s-owner/prompts'] = { status: 202, body: { prompt_id: 'pr1', state: 'queued', message_id: 'm', deduped: false } };
     const doc = await restartProjectGoal('p1', { ...goalRef, heartbeat: null }, 'again');
     expect(doc.status).toBe('active');
     expect(requested.filter((r) => r.method === 'PUT')).toEqual([]);
@@ -770,7 +770,7 @@ describe('person controls: create, pause, resume', () => {
     expect(doc.body).toBe(
       '# Draft our investor update for October.\n\n## Context\n\n- Highlights: two launches\n- Asks: intros to CFOs\n\nCompare every number with the prior period.\n',
     );
-    expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/projects/p1/sessions')!.body).name).toBe('Draft our investor update for October.');
+    expect(JSON.parse(requested.find((r) => r.method === 'POST' && r.key === '/workspaces/p1/sessions')!.body).name).toBe('Draft our investor update for October.');
   });
 
   test('a goal started again is waking, not broken, until the missed-wake window passes without a heartbeat', () => {

@@ -154,7 +154,7 @@ export async function performLogin(opts: PerformLoginOptions): Promise<number> {
   const client = createApiClient({ apiBase, token });
   let me: MeResponse;
   try {
-    me = await client.get<MeResponse>('/accounts/me');
+    me = await client.get<MeResponse>('/me');
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       // The server's verdict names the credential ("project token <id> is

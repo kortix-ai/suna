@@ -65,7 +65,7 @@ interface UploadRequest {
   abort(): void;
 }
 
-const path = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/attachments`;
+const path = (projectId: string) => `/workspaces/${encodeURIComponent(projectId)}/attachments`;
 /** The request deadline also bounds the response body: completion can stall after headers. */
 const quiet = { showErrors: false, deadlineCoversBody: true };
 const REQUEST_TIMEOUT_MS = 30_000;

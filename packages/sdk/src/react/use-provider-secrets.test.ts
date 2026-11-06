@@ -32,7 +32,7 @@ test('pool updates and cache invalidation stay bound to the same project and ses
   const sibling = useSessionProviderSecretPools('own-project', 'sibling-session') as any;
   await own.setPool.mutationFn({ providerId: 'anthropic', secretIds: [] });
   await own.setPool.onSuccess();
-  expect(calls).toEqual(['http://provider-secrets.test/projects/own-project/sessions/own-session/provider-secret-pools/anthropic']);
+  expect(calls).toEqual(['http://provider-secrets.test/workspaces/own-project/sessions/own-session/provider-secret-pools/anthropic']);
   expect(invalidated).toContainEqual(own.queryKey);
   expect(invalidated).not.toContainEqual(sibling.queryKey);
 });
@@ -40,7 +40,7 @@ test('pool updates and cache invalidation stay bound to the same project and ses
 test('account resources are queried through the public REST contract without values', async () => {
   const expected = { secrets: [{ secret_id: 'key', can_use: false }] };
   globalThis.fetch = mock(async (url: unknown) => {
-    expect(String(url)).toBe('http://provider-secrets.test/accounts/account/secret-resources');
+    expect(String(url)).toBe('http://provider-secrets.test/workspaces/account/secret-resources');
     return Response.json(expected);
   }) as unknown as typeof fetch;
   expect(await (useAccountSecretResources('account') as any).queryFn()).toEqual(expected);
@@ -48,7 +48,7 @@ test('account resources are queried through the public REST contract without val
 
 test('project resource hook scopes requests and cache identity', async () => {
   globalThis.fetch = mock(async (url: unknown) => {
-    expect(String(url)).toBe('http://provider-secrets.test/accounts/account/secret-resources?project_id=project');
+    expect(String(url)).toBe('http://provider-secrets.test/workspaces/account/secret-resources?project_id=project');
     return Response.json({ secrets: [] });
   }) as unknown as typeof fetch;
   const scoped = useAccountSecretResources('account', 'project') as any;
@@ -85,5 +85,5 @@ test('subscription usage asks the server for one login, every minute while shown
   expect(query.enabled).toBe(true);
   expect(query.refetchInterval).toBe(60_000);
   expect(await query.queryFn()).toEqual({ usage: null });
-  expect(calls).toEqual([['POST', 'http://provider-secrets.test/accounts/account/secret-resources/secret/usage']]);
+  expect(calls).toEqual([['POST', 'http://provider-secrets.test/workspaces/account/secret-resources/secret/usage']]);
 });

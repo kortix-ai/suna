@@ -15,7 +15,7 @@ import {
 
 const ACCOUNT = 'account_1';
 const SA = '55555555-5555-4555-8555-555555555555';
-const IAM = `/v1/accounts/${ACCOUNT}/iam`;
+const IAM = `/v1/workspaces/${ACCOUNT}/iam`;
 
 const laptop = {
   token_id: 'tok_a',
@@ -65,7 +65,7 @@ let api: FakeApi | null = null;
 
 const routes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
-  if (p === '/v1/accounts/me' && req.method === 'GET') {
+  if (p === '/v1/me' && req.method === 'GET') {
     return Response.json({ user_id: 'user_1', email: 'user@example.test', token_context: { auth_type: 'pat', token_id: meTokenId } });
   }
   if (p === '/v1/accounts/tokens' && req.method === 'GET') {

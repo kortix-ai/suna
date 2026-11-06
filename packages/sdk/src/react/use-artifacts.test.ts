@@ -84,11 +84,11 @@ test('each comment write refreshes the mounted Artifacts list and the current Ar
       open++;
       return Response.json({ thread: { thread_id: 'thread-a' }, comment: { comment_id: 'comment-a' }, session_id: 'next-session', created: true });
     }
-    if (path.endsWith('/projects/project-a/artifacts')) {
+    if (path.endsWith('/workspaces/project-a/artifacts')) {
       counts.list++;
       return Response.json({ artifacts: [{ artifact_id: 'artifact-a', open_thread_count: open }] });
     }
-    if (path.endsWith('/projects/project-a/artifacts/artifact-a')) {
+    if (path.endsWith('/workspaces/project-a/artifacts/artifact-a')) {
       counts.detail++;
       return Response.json({ artifact_id: 'artifact-a', open_thread_count: open, version: { id: null, files: [], view_url: '' } });
     }

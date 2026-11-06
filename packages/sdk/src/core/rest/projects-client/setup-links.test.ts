@@ -40,7 +40,7 @@ test('requestProjectSecret posts names/labels/descriptions/scope to secret-reque
     },
   };
   const result = await requestProjectSecret('P1', { names: ['STRIPE_KEY'], scope: 'runtime' });
-  expect(last().url).toContain('/projects/P1/secret-requests');
+  expect(last().url).toContain('/workspaces/P1/secret-requests');
   expect(last().method).toBe('POST');
   expect(last().body).toMatchObject({ names: ['STRIPE_KEY'], scope: 'runtime' });
   expect(result.url).toContain('/secret-intake/');
@@ -63,7 +63,7 @@ test('requestProjectConnector posts slug to connect-requests', async () => {
     },
   };
   const result = await requestProjectConnector('P1', { slug: 'github' });
-  expect(last().url).toContain('/projects/P1/connect-requests');
+  expect(last().url).toContain('/workspaces/P1/connect-requests');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ slug: 'github', expires_in_minutes: undefined });
   expect(result.slug).toBe('github');

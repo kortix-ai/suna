@@ -28,7 +28,7 @@ test('PUTs the override map to the project model-enablement endpoint', async () 
   nextResponse = { status: 200, body: { ok: true, modelOverrides: { 'glm-5.3-flash': false } } };
   const res = await setProjectModelEnablement('proj-1', { 'glm-5.3-flash': false });
   expect(last().method).toBe('PUT');
-  expect(last().url).toContain('/projects/proj-1/model-enablement');
+  expect(last().url).toContain('/workspaces/proj-1/model-enablement');
   expect(last().body).toEqual({ modelOverrides: { 'glm-5.3-flash': false } });
   expect(res).toEqual({ ok: true, modelOverrides: { 'glm-5.3-flash': false } });
 });

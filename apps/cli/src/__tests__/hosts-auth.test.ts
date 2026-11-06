@@ -98,7 +98,7 @@ function mockApi(
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     requests.push(url);
-    if (url.endsWith('/v1/accounts/me')) {
+    if (url.endsWith('/v1/me')) {
       return new Response(
         JSON.stringify({
           user_id: 'user_1',
@@ -146,7 +146,7 @@ describe('kortix hosts login', () => {
     mockApi();
     const code = await runHosts(['login', '--token', 'kortix_pat_new', '--no-project']);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://api.test/v1/accounts/me']);
+    expect(requests).toEqual(['https://api.test/v1/me']);
     const host = getHost('test');
     expect(host?.token).toBe('kortix_pat_new');
     expect(host?.user_email).toBe('user@example.test');
@@ -172,7 +172,7 @@ describe('kortix hosts login', () => {
       '--no-project',
     ]);
     expect(code).toBe(0);
-    expect(requests).toEqual(['https://fresh.test/v1/accounts/me']);
+    expect(requests).toEqual(['https://fresh.test/v1/me']);
     const host = getHost('fresh');
     expect(host?.url).toBe('https://fresh.test');
     expect(host?.token).toBe('kortix_pat_new');
@@ -335,9 +335,9 @@ describe('kortix hosts whoami', () => {
     expect(code).toBe(0);
     // One identity read. With no default workspace picked, whoami also lists
     // each account's projects to tell "pick one" from "none yet".
-    expect(requests[0]).toBe('https://api.test/v1/accounts/me');
-    expect(requests.filter((r) => r.endsWith('/accounts/me'))).toHaveLength(1);
-    expect(requests.slice(1).every((r) => r.includes('/v1/projects'))).toBe(true);
+    expect(requests[0]).toBe('https://api.test/v1/me');
+    expect(requests.filter((r) => r.endsWith('/me'))).toHaveLength(1);
+    expect(requests.slice(1).every((r) => r.includes('/v1/workspaces'))).toBe(true);
     expect(stripAnsi(stdout)).toContain('user@example.test');
   });
 

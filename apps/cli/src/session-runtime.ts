@@ -93,7 +93,7 @@ export async function waitForSessionReady(
     if (i > 0) await sleep(intervalMs);
     let start: SessionStartPayload;
     try {
-      start = await client.post<SessionStartPayload>(`/projects/${projectId}/sessions/${sessionId}/start`, {});
+      start = await client.post<SessionStartPayload>(`/workspaces/${projectId}/sessions/${sessionId}/start`, {});
     } catch (err) {
       throw new SessionRuntimeError('api', (err as Error).message, err);
     }
@@ -156,7 +156,7 @@ export async function resolveSessionRuntime(
     options.onStarting?.(session);
     if (DORMANT_SESSION_STATUSES.has(session.status)) {
       try {
-        await client.post(`/projects/${projectId}/sessions/${session.session_id}/restart`, {});
+        await client.post(`/workspaces/${projectId}/sessions/${session.session_id}/restart`, {});
       } catch (err) {
         throw new SessionRuntimeError('api', (err as Error).message, err);
       }
@@ -208,7 +208,7 @@ export async function fetchProjectSession(
   sessionId: string,
 ): Promise<ProjectSession> {
   try {
-    return await client.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`);
+    return await client.get<ProjectSession>(`/workspaces/${projectId}/sessions/${sessionId}`);
   } catch (err) {
     throw new SessionRuntimeError('api', (err as Error).message, err);
   }

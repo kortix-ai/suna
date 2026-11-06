@@ -19,7 +19,7 @@ beforeEach(() => {
 
 test('reads project access through authenticated SDK transport', async () => {
   expect(await getProjectModelAccess('project-1')).toEqual(policy);
-  expect(calls[0].url).toContain('/projects/project-1/model-access');
+  expect(calls[0].url).toContain('/workspaces/project-1/model-access');
   expect(calls[0].headers.get('authorization')).toBe('Bearer test-token');
 });
 

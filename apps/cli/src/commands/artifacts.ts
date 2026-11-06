@@ -488,7 +488,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
             const emails = wanted.filter((w) => w.includes('@'));
             people = wanted.filter((w) => !w.includes('@'));
             if (emails.length) {
-              const project = await ctx.client.get<{ account_id: string }>(`/projects/${pid}`);
+              const project = await ctx.client.get<{ account_id: string }>(`/workspaces/${pid}`);
               const members = await listAccountMembers(project.account_id);
               for (const email of emails) {
                 const m = members.find((x) => x.email?.toLowerCase() === email.toLowerCase());

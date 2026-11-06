@@ -204,7 +204,7 @@ function renderAgent(
 
 async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
   const d = await ctx.client.get<ModelDefaultsResponse>(
-    `/projects/${ctx.projectId}/model-defaults`,
+    `/workspaces/${ctx.projectId}/model-defaults`,
   );
   // The agents live on the same /detail the web Agents page reads, so the two
   // cannot disagree about what a project declares. When /detail is unavailable
@@ -213,7 +213,7 @@ async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
   let agents: DetailAgent[] | null = null;
   let defaultAgent: string | null = null;
   try {
-    const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
+    const detail = await ctx.client.get<ProjectDetail>(`/workspaces/${ctx.projectId}/detail`);
     agents = detail.config?.agents ?? [];
     defaultAgent = detail.config?.default_agent ?? null;
   } catch {
@@ -303,7 +303,7 @@ async function agentsModel(
   clear: boolean,
 ): Promise<number> {
   if (!agent) return missing('an agent name');
-  const base = `/projects/${ctx.projectId}/model-defaults`;
+  const base = `/workspaces/${ctx.projectId}/model-defaults`;
   if (clear) {
     await ctx.client.delete(`${base}?scope=agent&agentName=${encodeURIComponent(agent)}`);
     process.stdout.write(
@@ -327,7 +327,7 @@ async function agentsDefault(
   opts: { show: boolean; json: boolean },
 ): Promise<number> {
   if (opts.show || !agent) {
-    const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
+    const detail = await ctx.client.get<ProjectDetail>(`/workspaces/${ctx.projectId}/detail`);
     const current = detail.config?.default_agent ?? null;
     if (opts.json) {
       emitJson({
@@ -352,7 +352,7 @@ async function agentsDefault(
   }
 
   const resp = await ctx.client.put<{ ok: boolean; default_agent: string }>(
-    `/projects/${ctx.projectId}/default-agent`,
+    `/workspaces/${ctx.projectId}/default-agent`,
     { agent },
   );
   if (opts.json) {
@@ -416,7 +416,7 @@ async function agentsScope(
     opts.policySets.length > 0;
   if (opts.show || !wantsWrite) {
     const cfg = await ctx.client.get<AgentConfigResponse>(
-      `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`,
+      `/workspaces/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`,
     );
     if (cfg.builtin) return printBuiltinAgent(cfg, opts.json);
     const block = cfg.block ?? {};
@@ -475,7 +475,7 @@ async function agentsScope(
   let resp: AgentScopeResponse;
   try {
     resp = await ctx.client.put<AgentScopeResponse>(
-      `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/scope`,
+      `/workspaces/${ctx.projectId}/agents/${encodeURIComponent(agent)}/scope`,
       body,
     );
   } catch (err) {
@@ -614,7 +614,7 @@ async function agentsConfig(
   opts: { file?: string; sets: string[]; json: boolean },
 ): Promise<number> {
   if (!agent) return missing('an agent name');
-  const path = `/projects/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`;
+  const path = `/workspaces/${ctx.projectId}/agents/${encodeURIComponent(agent)}/config`;
 
   if (!opts.file && opts.sets.length === 0) {
     const cfg = await ctx.client.get<AgentConfigResponse>(path);

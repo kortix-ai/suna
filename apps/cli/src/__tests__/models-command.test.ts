@@ -94,10 +94,10 @@ function startServer(
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json();
       calls.push({ method: req.method, path: url.pathname, query: url.search, body });
       const p = url.pathname;
-      if (p === `/v1/projects/${PROJECT}/model-picker` && req.method === 'GET') {
+      if (p === `/v1/workspaces/${PROJECT}/model-picker` && req.method === 'GET') {
         return Response.json({ ...picker(overrides, opts.models), catalog: opts.catalog });
       }
-      if (p === `/v1/projects/${PROJECT}/model-enablement` && req.method === 'PUT') {
+      if (p === `/v1/workspaces/${PROJECT}/model-enablement` && req.method === 'PUT') {
         const next = (body as { modelOverrides: Record<string, boolean> }).modelOverrides;
         if (next['glm-5.3-flash'] === false) {
           return Response.json(
@@ -111,7 +111,7 @@ function startServer(
         overrides = next;
         return Response.json({ ok: true, modelOverrides: next });
       }
-      if (p === `/v1/projects/${PROJECT}/model-defaults`) {
+      if (p === `/v1/workspaces/${PROJECT}/model-defaults`) {
         if (req.method === 'GET') {
           return Response.json({
             platformDefault: 'openai/gpt-5.5',
@@ -270,13 +270,13 @@ describe('kortix models', () => {
     );
     expect(r.code).toBe(0);
     const put = calls.find((c) => c.method === 'PUT');
-    expect(put?.path).toBe(`/v1/projects/${PROJECT}/model-enablement`);
+    expect(put?.path).toBe(`/v1/workspaces/${PROJECT}/model-enablement`);
     expect(put?.body).toEqual({
       modelOverrides: { 'openai/gpt-5.5': true, 'anthropic/claude-opus-4-8': true },
     });
     expect(r.stdout).toContain('2 models offered');
     // It read the current map first — that is what makes the merge honest.
-    expect(calls[0]).toMatchObject({ method: 'GET', path: `/v1/projects/${PROJECT}/model-picker` });
+    expect(calls[0]).toMatchObject({ method: 'GET', path: `/v1/workspaces/${PROJECT}/model-picker` });
   });
 
   test('disable sends false for that id only, and surfaces the 409 on the project default', async () => {
@@ -303,7 +303,7 @@ describe('kortix models', () => {
     expect(calls).toEqual([
       {
         method: 'PUT',
-        path: `/v1/projects/${PROJECT}/model-enablement`,
+        path: `/v1/workspaces/${PROJECT}/model-enablement`,
         query: '',
         body: { modelOverrides: {} },
       },
@@ -377,7 +377,7 @@ describe('kortix models', () => {
     expect(p.code).toBe(0);
     expect(calls.at(-1)).toMatchObject({
       method: 'PUT',
-      path: `/v1/projects/${PROJECT}/model-defaults`,
+      path: `/v1/workspaces/${PROJECT}/model-defaults`,
       body: { scope: 'project', model: 'openai/gpt-5.5' },
     });
     expect(p.stdout).toContain('workspace default → openai/gpt-5.5');
@@ -396,7 +396,7 @@ describe('kortix models', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toMatchObject({
       method: 'DELETE',
-      path: `/v1/projects/${PROJECT}/model-defaults`,
+      path: `/v1/workspaces/${PROJECT}/model-defaults`,
       query: '?scope=project',
     });
     expect(r.stdout).toContain('Cleared the workspace default model');

@@ -156,7 +156,7 @@ async function resolveScope(
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return null;
-  const project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+  const project = await ctx.client.get<ProjectSummary>(`/workspaces/${ctx.projectId}`);
   const accountId = project.account_id || f.accountId || ctx.auth.account_id;
   return { client: clientFromAuth(ctx.auth, { accountId }), accountId, projectId: ctx.projectId };
 }
@@ -221,7 +221,7 @@ export async function runAccess(argv: string[]): Promise<number> {
     // (the handlers are thin wrappers — they live in access-projects.ts)
     const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
     if (!ctx) return 1;
-    const base = `/projects/${ctx.projectId}`;
+    const base = `/workspaces/${ctx.projectId}`;
     const role = f.role as ProjectRole | undefined;
 
     switch (sub) {
@@ -274,7 +274,7 @@ async function accessRequests(
   role: ProjectRole | undefined,
   json: boolean,
 ): Promise<number> {
-  const base = `/projects/${ctx.projectId}/access-requests`;
+  const base = `/workspaces/${ctx.projectId}/access-requests`;
   const action = positional[0] ?? 'ls';
 
   if (action === 'ls' || action === 'list') {

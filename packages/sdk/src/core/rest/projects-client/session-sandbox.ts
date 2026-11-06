@@ -291,7 +291,7 @@ function postSessionStart(projectId: string, sessionId: string, options?: Sessio
   }
   const qs = search.size > 0 ? `?${search.toString()}` : "";
   return backendApi.post<SessionStartResult>(
-    `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
+    `/workspaces/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
     // Keep toasts quiet here. Terminal client errors are rendered by the host;
     // transient transport/server failures still yield null so polling can recover.

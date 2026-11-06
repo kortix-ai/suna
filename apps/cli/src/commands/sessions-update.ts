@@ -95,7 +95,7 @@ export async function runSessionsUpdate(argv: string[]): Promise<number> {
   let updated: ProjectSession;
   try {
     updated = await client.patch<ProjectSession>(
-      `/projects/${projectId}/sessions/${session.session_id}`,
+      `/workspaces/${projectId}/sessions/${session.session_id}`,
       body,
     );
   } catch (err) {

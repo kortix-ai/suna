@@ -18,6 +18,7 @@ import {
   noteControlPlaneResponse,
   sessionTokenPresumedDead,
 } from '@/lib/kortix-api/session-token-health';
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 /*
  * The session's tool audit trail, for every harness (E12). Each runtime event
@@ -995,8 +996,8 @@ export function createRuntimeAuditRelay(harness: string, spoolPath: string): Aud
       const ctx = sandboxRelayContext();
       if (!ctx) throw new Error('audit relay context is unavailable');
       const batch: RuntimeAuditBatch = { source: 'runtime', harness, events };
-      const response = await fetch(
-        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
+      const response = await kortixApiFetch(
+        `${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/audit/events`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ctx.token}` },

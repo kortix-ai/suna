@@ -262,7 +262,7 @@ async function allChannelsStatus(
 ): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/channels`;
+  const base = `/workspaces/${ctx.projectId}/channels`;
   try {
     const [slack, teams, mode, email] = await Promise.all([
       ctx.client.get<SlackInstallation | null>(`${base}/slack/installation`),
@@ -301,7 +301,7 @@ async function channelsStatus(
   if (!ctx) return 1;
   try {
     const install = await ctx.client.get<SlackInstallation | null>(
-      `/projects/${ctx.projectId}/channels/slack/installation`,
+      `/workspaces/${ctx.projectId}/channels/slack/installation`,
     );
     if (json) {
       emitJson({ connected: Boolean(install), installation: install ?? null });
@@ -345,7 +345,7 @@ async function channelsConnect(
 
   let mode: SlackMode = { oauth_available: false, install_url: null };
   try {
-    mode = await ctx.client.get<SlackMode>(`/projects/${ctx.projectId}/channels/slack/mode`);
+    mode = await ctx.client.get<SlackMode>(`/workspaces/${ctx.projectId}/channels/slack/mode`);
   } catch (err) {
     // A host too old to serve /mode still supports manual connect.
     if (!(err instanceof ApiError && err.status === 404)) return surfaceApiError(err);
@@ -361,7 +361,7 @@ async function channelsConnect(
   let existing: SlackInstallation | null = null;
   try {
     existing = await ctx.client.get<SlackInstallation | null>(
-      `/projects/${ctx.projectId}/channels/slack/installation`,
+      `/workspaces/${ctx.projectId}/channels/slack/installation`,
     );
   } catch {
     // Non-fatal: fall through and offer the install link anyway.
@@ -409,7 +409,7 @@ async function waitForInstall(ctx: ProjectCtx, timeoutSec: number, json: boolean
     let install: SlackInstallation | null = null;
     try {
       install = await ctx.client.get<SlackInstallation | null>(
-        `/projects/${ctx.projectId}/channels/slack/installation`,
+        `/workspaces/${ctx.projectId}/channels/slack/installation`,
       );
     } catch {
       // Transient poll errors are fine; keep waiting until the deadline.
@@ -457,7 +457,7 @@ async function connectManual(ctx: ProjectCtx, opts: ConnectOpts): Promise<number
   let install: SlackInstallation;
   try {
     install = await ctx.client.post<SlackInstallation>(
-      `/projects/${ctx.projectId}/channels/slack/connect`,
+      `/workspaces/${ctx.projectId}/channels/slack/connect`,
       { bot_token: botToken, signing_secret: signingSecret },
     );
   } catch (err) {
@@ -498,7 +498,7 @@ async function channelsDisconnect(ctxOpts: {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
-    await ctx.client.delete(`/projects/${ctx.projectId}/channels/slack/installation`);
+    await ctx.client.delete(`/workspaces/${ctx.projectId}/channels/slack/installation`);
   } catch (err) {
     return surfaceApiError(err);
   }

@@ -18,7 +18,7 @@ export async function setProjectModelEnablement(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; modelOverrides: Record<string, boolean> }>(
-      `/projects/${projectId}/model-enablement`,
+      `/workspaces/${projectId}/model-enablement`,
       { modelOverrides },
     ),
   );

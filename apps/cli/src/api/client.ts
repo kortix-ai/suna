@@ -157,9 +157,9 @@ export async function withCliErrors<T>(auth: Auth, fn: () => Promise<T>): Promis
   }
 }
 
-/** Is this the identity endpoint, with or without a query string? */
+/** Is this the identity endpoint (`/me`, or its legacy name `/accounts/me`), with or without a query string? */
 function isMeEndpoint(endpoint: string): boolean {
-  return endpoint === '/accounts/me' || endpoint.startsWith('/accounts/me?');
+  return /^\/(?:accounts\/)?me(?:\?|$)/.test(endpoint);
 }
 
 /**

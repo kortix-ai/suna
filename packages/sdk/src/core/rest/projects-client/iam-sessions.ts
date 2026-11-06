@@ -22,26 +22,26 @@ export interface ActiveSession {
 }
 
 export async function getSessionPolicy(accountId: string) {
-  return unwrap(await iamGet<SessionPolicy>(`/accounts/${accountId}/iam/session-policy`));
+  return unwrap(await iamGet<SessionPolicy>(`/workspaces/${accountId}/iam/session-policy`));
 }
 
 export async function updateSessionPolicy(accountId: string, patch: Partial<SessionPolicy>) {
   return unwrap(
-    await backendApi.patch<SessionPolicy>(`/accounts/${accountId}/iam/session-policy`, patch, {
+    await backendApi.patch<SessionPolicy>(`/workspaces/${accountId}/iam/session-policy`, patch, {
       showErrors: false,
     }),
   );
 }
 
 export async function listAccountSessions(accountId: string) {
-  return unwrap(await iamGet<{ sessions: ActiveSession[] }>(`/accounts/${accountId}/iam/sessions`))
+  return unwrap(await iamGet<{ sessions: ActiveSession[] }>(`/workspaces/${accountId}/iam/sessions`))
     .sessions;
 }
 
 export async function revokeAccountSession(accountId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ revoked: boolean }>(
-      `/accounts/${accountId}/iam/sessions/${sessionId}/revoke`,
+      `/workspaces/${accountId}/iam/sessions/${sessionId}/revoke`,
       {},
       { showErrors: false },
     ),
@@ -60,12 +60,12 @@ export interface PatPolicy {
 }
 
 export async function getPatPolicy(accountId: string) {
-  return unwrap(await iamGet<PatPolicy>(`/accounts/${accountId}/iam/pat-policy`));
+  return unwrap(await iamGet<PatPolicy>(`/workspaces/${accountId}/iam/pat-policy`));
 }
 
 export async function updatePatPolicy(accountId: string, patch: Partial<PatPolicy>) {
   return unwrap(
-    await backendApi.patch<PatPolicy>(`/accounts/${accountId}/iam/pat-policy`, patch, {
+    await backendApi.patch<PatPolicy>(`/workspaces/${accountId}/iam/pat-policy`, patch, {
       showErrors: false,
     }),
   );

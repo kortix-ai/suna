@@ -144,6 +144,7 @@ import type { ExportedMessage, SessionLogChanges, SessionLogPort } from '../cont
 import { mapLimit } from '@/lib/map-limit'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
 import { carryHarness, saveSeqOffsets, type HarnessCarry } from './session-log-boot'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 /** The assistant message a compaction streams its summary into (`summary: true`, its marker as parent). */
 function isCompactionSummary(info: unknown): boolean {
@@ -533,7 +534,7 @@ export class SessionLogJournal {
       return
     }
     if (sessionTokenPresumedDead()) return
-    const blobUrl = (sha256: string) => `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/blobs/${sha256}`
+    const blobUrl = (sha256: string) => `${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/blobs/${sha256}`
     const headers = { Authorization: `Bearer ${ctx.token}` }
     let down = false
     const found = await mapLimit(pending, JOURNAL_BLOB_CONCURRENCY, async ([sha256]) => {
@@ -556,7 +557,7 @@ export class SessionLogJournal {
   private async lookupBlob(url: string, headers: Record<string, string>, sha256: string): Promise<'settled' | 'missing' | 'down'> {
     let found: Response
     try {
-      found = await fetch(url, { headers, signal: AbortSignal.timeout(JOURNAL_POST_TIMEOUT_MS) })
+      found = await kortixApiFetch(url, { headers, signal: AbortSignal.timeout(JOURNAL_POST_TIMEOUT_MS) })
     } catch (err) {
       logger.warn('[session-log] attachment lookup failed; it keeps blob: until a later collection', { err: (err as Error).message })
       return 'down'
@@ -576,7 +577,7 @@ export class SessionLogJournal {
     if (!bytes || bytes.byteLength > JOURNAL_MAX_BLOB_BYTES) return this.settleBlob(sha256, '')
     let put: Response
     try {
-      put = await fetch(url, { method: 'PUT', headers: { ...headers, 'Content-Type': mime }, body: bytes, signal: AbortSignal.timeout(JOURNAL_BLOB_TIMEOUT_MS) })
+      put = await kortixApiFetch(url, { method: 'PUT', headers: { ...headers, 'Content-Type': mime }, body: bytes, signal: AbortSignal.timeout(JOURNAL_BLOB_TIMEOUT_MS) })
     } catch (err) {
       logger.warn('[session-log] attachment upload failed', { err: (err as Error).message })
       return 'failed'
@@ -679,8 +680,8 @@ export class SessionLogJournal {
     let response: Response
     this.inflight = new AbortController()
     try {
-      response = await fetch(
-        `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/journal`,
+      response = await kortixApiFetch(
+        `${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/journal`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${ctx.token}` },

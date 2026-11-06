@@ -115,7 +115,7 @@ describe('sessions reachable without --scope', () => {
     expect(result.stdout).toMatch(/HANDLE\s+ID\s+RELATION\s+STATE\s+INBOUND/);
     expect(result.stdout).toMatch(/reviewer\s+9a8b7c6d\s+child\s+working\s+accept/);
     // The server's default scope is `mine`: the CLI no longer sends it.
-    expect(seen.map((s) => s.path)).toEqual([`/projects/${PROJECT}/sessions/${SELF}/reachable`]);
+    expect(seen.map((s) => s.path)).toEqual([`/workspaces/${PROJECT}/sessions/${SELF}/reachable`]);
   });
 
   test('with no other session it says so and names --scope workspace; --json prints { self, agents }', async () => {
@@ -211,15 +211,15 @@ describe('sessions inbound', () => {
     const machine = await runCli(['sessions', 'inbound', REVIEWER, 'deny', 'm_7Kq2', '--json']);
     expect(JSON.parse(machine.stdout)).toMatchObject({ id: 'm_7Kq2', status: 'denied' });
     expect(seen.map((s) => [s.method, s.path])).toEqual([
-      ['POST', `/projects/${PROJECT}/sessions/${REVIEWER}/peer-messages/m_7Kq2/deny`],
-      ['POST', `/projects/${PROJECT}/sessions/${REVIEWER}/peer-messages/m_7Kq2/deny`],
+      ['POST', `/workspaces/${PROJECT}/sessions/${REVIEWER}/peer-messages/m_7Kq2/deny`],
+      ['POST', `/workspaces/${PROJECT}/sessions/${REVIEWER}/peer-messages/m_7Kq2/deny`],
     ]);
   });
 
   test('a message id is percent-encoded into the route', async () => {
     route = (r) => (r.method === 'POST' ? json(message()) : undefined);
     await runCli(['sessions', 'inbound', REVIEWER, 'approve', 'm 1']);
-    expect(seen[0]?.path).toBe(`/projects/${PROJECT}/sessions/${REVIEWER}/peer-messages/m%201/approve`);
+    expect(seen[0]?.path).toBe(`/workspaces/${PROJECT}/sessions/${REVIEWER}/peer-messages/m%201/approve`);
   });
 
   test('approve without an id is a usage error before any request', async () => {

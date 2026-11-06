@@ -7,7 +7,7 @@ import { createArtifactLiveTicket, signalArtifactLiveAgent } from './artifact-li
 
 const originalFetch = globalThis.fetch;
 const backendUrl = 'https://artifact-live.example/v1';
-const live = `${backendUrl}/projects/project-a/artifacts/artifact-a/live`;
+const live = `${backendUrl}/workspaces/project-a/artifacts/artifact-a/live`;
 let calls: { url: string; method: string; body: unknown; authorization: string | null }[] = [];
 let reply: () => Response;
 let errors: unknown[] = [];
@@ -78,7 +78,7 @@ test('the project facade binds the project id: artifacts.live.ticket, .signal an
   for (let i = 0; i < 20; i++) await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 5));
   connection.close();
-  expect(urls).toEqual([`wss://artifact-live.example/v1/projects/project-a/artifacts/artifact-a/live?ticket=ticket-b`]);
+  expect(urls).toEqual([`wss://artifact-live.example/v1/workspaces/project-a/artifacts/artifact-a/live?ticket=ticket-b`]);
   expect(calls.at(-1)?.url).toBe(`${live}/ticket`);
 });
 

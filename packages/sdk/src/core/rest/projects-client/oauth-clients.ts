@@ -53,7 +53,7 @@ export interface UpdateOAuthClientInput {
 export async function listOAuthClients(accountId: string) {
   return unwrap(
     await backendApi.get<{ oauth_clients: OAuthClient[]; scopes_supported: string[] }>(
-      `/accounts/${accountId}/iam/oauth-clients`,
+      `/workspaces/${accountId}/iam/oauth-clients`,
       { showErrors: false },
     ),
   );
@@ -61,19 +61,19 @@ export async function listOAuthClients(accountId: string) {
 
 export async function getOAuthClient(accountId: string, clientId: string) {
   return unwrap(
-    await backendApi.get<OAuthClient>(`/accounts/${accountId}/iam/oauth-clients/${clientId}`, { showErrors: false }),
+    await backendApi.get<OAuthClient>(`/workspaces/${accountId}/iam/oauth-clients/${clientId}`, { showErrors: false }),
   );
 }
 
 export async function createOAuthClient(accountId: string, input: CreateOAuthClientInput) {
   return unwrap(
-    await backendApi.post<CreatedOAuthClient>(`/accounts/${accountId}/iam/oauth-clients`, input, { showErrors: false }),
+    await backendApi.post<CreatedOAuthClient>(`/workspaces/${accountId}/iam/oauth-clients`, input, { showErrors: false }),
   );
 }
 
 export async function updateOAuthClient(accountId: string, clientId: string, input: UpdateOAuthClientInput) {
   return unwrap(
-    await backendApi.patch<OAuthClient>(`/accounts/${accountId}/iam/oauth-clients/${clientId}`, input, {
+    await backendApi.patch<OAuthClient>(`/workspaces/${accountId}/iam/oauth-clients/${clientId}`, input, {
       showErrors: false,
     }),
   );
@@ -82,7 +82,7 @@ export async function updateOAuthClient(accountId: string, clientId: string, inp
 export async function rotateOAuthClientSecret(accountId: string, clientId: string) {
   return unwrap(
     await backendApi.post<CreatedOAuthClient>(
-      `/accounts/${accountId}/iam/oauth-clients/${clientId}/rotate-secret`,
+      `/workspaces/${accountId}/iam/oauth-clients/${clientId}/rotate-secret`,
       {},
       { showErrors: false },
     ),
@@ -91,7 +91,7 @@ export async function rotateOAuthClientSecret(accountId: string, clientId: strin
 
 export async function deleteOAuthClient(accountId: string, clientId: string) {
   return unwrap(
-    await backendApi.delete<{ deleted: boolean }>(`/accounts/${accountId}/iam/oauth-clients/${clientId}`, {
+    await backendApi.delete<{ deleted: boolean }>(`/workspaces/${accountId}/iam/oauth-clients/${clientId}`, {
       showErrors: false,
     }),
   );

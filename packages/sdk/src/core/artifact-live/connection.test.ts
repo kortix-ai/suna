@@ -157,7 +157,7 @@ describe('createArtifactLiveConnection', () => {
     expect(connection.status).toBe('connecting');
     await tick();
     expect(sockets).toHaveLength(1);
-    expect(socket().url).toBe(`wss://api.example.com/v1/projects/${PID}/artifacts/${AID}/live?ticket=ticket-1`);
+    expect(socket().url).toBe(`wss://api.example.com/v1/workspaces/${PID}/artifacts/${AID}/live?ticket=ticket-1`);
     expect(socket().sent).toEqual([]);
     socket().open();
     expect(socket().frames()).toEqual([{ v: 1, t: 'hello', view: 'doc', version: 'etag-1', hidden: true }]);
@@ -166,7 +166,7 @@ describe('createArtifactLiveConnection', () => {
   test('an http backend gets a ws:// URL, and ids are encoded', async () => {
     const { socket } = setup({ backendUrl: 'http://localhost:8008/v1', artifactId: 'a b' });
     await tick();
-    expect(socket().url).toBe(`ws://localhost:8008/v1/projects/${PID}/artifacts/a%20b/live?ticket=ticket-1`);
+    expect(socket().url).toBe(`ws://localhost:8008/v1/workspaces/${PID}/artifacts/a%20b/live?ticket=ticket-1`);
   });
 
   test('welcome makes it live and reports who this connection is', async () => {

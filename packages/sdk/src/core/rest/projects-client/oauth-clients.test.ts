@@ -39,7 +39,7 @@ beforeEach(() => {
 test('the six registry calls hit the IAM routes as the configured principal', async () => {
   const created = await createOAuthClient('acct-1', { name: 'Dash', redirect_uris: ['https://dash.test/cb'] });
   expect(created.client_secret).toBe('kortix_ocs_once');
-  expect(calls[0]).toMatchObject({ url: 'http://backend.local/v1/accounts/acct-1/iam/oauth-clients', method: 'POST', auth: 'Bearer kortix_pat_admin' });
+  expect(calls[0]).toMatchObject({ url: 'http://backend.local/v1/workspaces/acct-1/iam/oauth-clients', method: 'POST', auth: 'Bearer kortix_pat_admin' });
   expect(calls[0].body).toEqual({ name: 'Dash', redirect_uris: ['https://dash.test/cb'] });
 
   const listed = await listOAuthClients('acct-1');
@@ -47,14 +47,14 @@ test('the six registry calls hit the IAM routes as the configured principal', as
   expect(listed.scopes_supported).toEqual(['profile', 'email', 'kortix']);
 
   expect((await getOAuthClient('acct-1', 'c-1')).name).toBe('Dash');
-  expect(calls.at(-1)!.url).toBe('http://backend.local/v1/accounts/acct-1/iam/oauth-clients/c-1');
+  expect(calls.at(-1)!.url).toBe('http://backend.local/v1/workspaces/acct-1/iam/oauth-clients/c-1');
 
   const updated = await updateOAuthClient('acct-1', 'c-1', { name: 'Renamed', active: false });
   expect(updated).toMatchObject({ name: 'Renamed', active: false });
   expect(calls.at(-1)!.method).toBe('PATCH');
 
   expect((await rotateOAuthClientSecret('acct-1', 'c-1')).client_secret).toBe('kortix_ocs_new');
-  expect(calls.at(-1)!.url).toBe('http://backend.local/v1/accounts/acct-1/iam/oauth-clients/c-1/rotate-secret');
+  expect(calls.at(-1)!.url).toBe('http://backend.local/v1/workspaces/acct-1/iam/oauth-clients/c-1/rotate-secret');
 
   expect(await deleteOAuthClient('acct-1', 'c-1')).toEqual({ deleted: true });
   expect(calls.at(-1)!.method).toBe('DELETE');

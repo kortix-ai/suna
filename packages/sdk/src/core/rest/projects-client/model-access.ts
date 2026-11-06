@@ -21,7 +21,7 @@ export async function getProjectModelAccess(
 ): Promise<ProjectModelAccess> {
   return unwrap(
     await backendApi.get<ProjectModelAccess>(
-      `/projects/${projectId}/model-access`,
+      `/workspaces/${projectId}/model-access`,
     ),
   );
 }
@@ -33,7 +33,7 @@ export async function setProjectModelAccess(
 ): Promise<ProjectModelAccess> {
   return unwrap(
     await backendApi.put<ProjectModelAccess>(
-      `/projects/${projectId}/model-access`,
+      `/workspaces/${projectId}/model-access`,
       change,
     ),
   );

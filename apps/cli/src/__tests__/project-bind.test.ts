@@ -89,7 +89,7 @@ describe('ensureDefaultProjectBinding', () => {
   function mockProjects(list: unknown[] | { status: number }) {
     globalThis.fetch = (async (url: string | URL | Request) => {
       const u = String(url instanceof Request ? url.url : url);
-      if (u.includes('/projects')) {
+      if (u.includes('/workspaces')) {
         if (Array.isArray(list)) return Response.json(list);
         return Response.json({ error: 'boom' }, { status: list.status });
       }
@@ -149,7 +149,7 @@ describe('ensureDefaultProjectBinding', () => {
     // empty active account must not read as "no workspace".
     globalThis.fetch = (async (url: string | URL | Request) => {
       const u = new URL(String(url instanceof Request ? url.url : url));
-      if (u.pathname.endsWith('/accounts/me')) {
+      if (u.pathname.endsWith('/me')) {
         return Response.json({
           user_id: 'user_1',
           email: 'user@example.test',
@@ -159,7 +159,7 @@ describe('ensureDefaultProjectBinding', () => {
           ],
         });
       }
-      if (u.pathname.endsWith('/projects')) {
+      if (u.pathname.endsWith('/workspaces')) {
         const scoped = u.searchParams.get('account_id');
         return Response.json(
           scoped === 'account_2' ? [{ ...project('proj_acme', 'Acme'), account_id: 'account_2' }] : [],

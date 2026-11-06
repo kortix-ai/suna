@@ -152,7 +152,7 @@ function fakeApi(): Fake {
       const { pathname } = new URL(req.url);
       const body = req.method === 'GET' || req.method === 'DELETE' ? {} : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
       fake.requests.push({ method: req.method, path: pathname, body });
-      const reminder = /^\/v1\/projects\/p1\/sessions\/([^/]+)\/reminders(?:\/([^/]+))?$/.exec(pathname);
+      const reminder = /^\/v1\/workspaces\/p1\/sessions\/([^/]+)\/reminders(?:\/([^/]+))?$/.exec(pathname);
       if (reminder && req.method === 'GET') return Response.json({ reminders: fake.reminders });
       if (reminder && req.method === 'POST') {
         const next = (body.at as string) ?? new Date(Date.now() + 4 * 3_600_000).toISOString();
@@ -164,10 +164,10 @@ function fakeApi(): Fake {
         fake.reminders = fake.reminders.filter((r) => r.id !== reminder[2]);
         return Response.json({ ok: true });
       }
-      if (/^\/v1\/projects\/p1\/sessions\/[^/]+$/.test(pathname)) {
+      if (/^\/v1\/workspaces\/p1\/sessions\/[^/]+$/.test(pathname)) {
         return Response.json({ session_id: pathname.split('/').at(-1), created_by: 'u1', agent_name: 'billing', metadata: { unattended: 'true' } });
       }
-      if (pathname === '/v1/projects/p1/sessions' && req.method === 'POST') return Response.json({ session_id: `new-${++n}`, status: 'pending' });
+      if (pathname === '/v1/workspaces/p1/sessions' && req.method === 'POST') return Response.json({ session_id: `new-${++n}`, status: 'pending' });
       if (/\/prompts$/.test(pathname)) return Response.json({ prompt_id: 'p', state: 'queued', message_id: 'm', deduped: false });
       return Response.json({ error: 'unexpected' }, { status: 500 });
     },
@@ -218,13 +218,13 @@ test('the real CLI runs a goal end to end: new, active, verify, a FAIL back to a
     // Evidence missing: verify refuses and starts nobody.
     const early = await cli(fake, root, 'owner', ['verify']);
     expect(early.code).toBe(1);
-    expect(fake.requests.some((r) => r.method === 'POST' && r.path === '/v1/projects/p1/sessions')).toBe(false);
+    expect(fake.requests.some((r) => r.method === 'POST' && r.path === '/v1/workspaces/p1/sessions')).toBe(false);
 
     writeFileSync(join(folder, 'evidence', 'a.md'), 'invoice');
     writeFileSync(join(folder, 'evidence', 'b.md'), 'charge');
     const verify = await cli(fake, root, 'owner', ['verify', '--json']);
     expect(verify.code).toBe(0);
-    const spawn = fake.requests.find((r) => r.method === 'POST' && r.path === '/v1/projects/p1/sessions')!;
+    const spawn = fake.requests.find((r) => r.method === 'POST' && r.path === '/v1/workspaces/p1/sessions')!;
     expect(spawn.body).toMatchObject({ agent_name: 'billing', metadata: { unattended: 'true', goal_role: 'verifier' } });
     expect(spawn.body.initial_context).toBeUndefined();
     const verifier = read().sessions.at(-1)!;
@@ -338,7 +338,7 @@ test('handover starts a fresh owner with the note, records it, and drops the old
   try {
     const out = await cli(fake, root, 'owner', ['handover', '--note', 'Invoices done; checkout next.']);
     expect(out.code).toBe(0);
-    const spawn = fake.requests.find((r) => r.method === 'POST' && r.path === '/v1/projects/p1/sessions')!;
+    const spawn = fake.requests.find((r) => r.method === 'POST' && r.path === '/v1/workspaces/p1/sessions')!;
     expect(String(spawn.body.initial_prompt)).toContain(`Goal wake: ${folder}.`);
     expect(spawn.body.metadata).toMatchObject({ goal_role: 'owner', goal: folder });
     expect(read().sessions.at(-1)).toMatchObject({ role: 'owner' });

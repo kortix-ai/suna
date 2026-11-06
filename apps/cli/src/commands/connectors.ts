@@ -628,7 +628,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
     hostArg: f.host,
   });
   if (!ctx) return 1;
-  const ex = `/connectors/projects/${ctx.projectId}`;
+  const ex = `/connectors/workspaces/${ctx.projectId}`;
   // The OAuth 2.1 sign-in flags `authorize` and `move` share.
   const signInOptions: SignInOptions = {
     ...(f.scope ? { scopes: f.scope.split(/[\s,]+/).filter(Boolean) } : {}),
@@ -930,10 +930,10 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const { connection_id: connectionId } = await ctx.client.post<{
           connection_id: string;
         }>(
-          `/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
+          `/workspaces/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
           {},
         );
-        const oauth2 = `/projects/${ctx.projectId}/connections/${connectionId}/oauth2`;
+        const oauth2 = `/workspaces/${ctx.projectId}/connections/${connectionId}/oauth2`;
         if (statusOnly) {
           const state = await ctx.client.get<Record<string, unknown>>(`${oauth2}/status`);
           if (json) emitJson({ connection_id: connectionId, ...state });
@@ -1032,7 +1032,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           const label = f.label.trim();
           if (!label) return missing('--label <account name>');
           const link = await ctx.client.post<{ url: string; app?: string | null; expires_at?: string; label?: string | null }>(
-            `/projects/${ctx.projectId}/connect-requests`,
+            `/workspaces/${ctx.projectId}/connect-requests`,
             {
               slug,
               label,
@@ -1176,7 +1176,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           }
           const target = matches[0]!;
           await ctx.client.put(
-            `/projects/${ctx.projectId}/connections/${encodeURIComponent(target.connection_id)}/default`,
+            `/workspaces/${ctx.projectId}/connections/${encodeURIComponent(target.connection_id)}/default`,
             {},
           );
           if (json) {
@@ -2017,7 +2017,7 @@ async function runPolicySets(
   if (templateKey !== undefined && templateKey !== 'read_only' && templateKey !== 'ask_before_writes') {
     return fail('--template must be read-only or ask-before-writes');
   }
-  const base = `/connectors/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/policy-sets`;
+  const base = `/connectors/workspaces/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/policy-sets`;
   const setPath = (name: string) => `${base}/${encodeURIComponent(name)}`;
   const action = args[0] ?? 'ls';
   try {
@@ -2067,7 +2067,7 @@ async function runPolicySets(
       const written = templateKey
         ? (resp.policies ??
           (await ctx.client
-            .get<{ policies: PolicyRule[] }>(`/connectors/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/policies?policy_set=${encodeURIComponent(name)}`)
+            .get<{ policies: PolicyRule[] }>(`/connectors/workspaces/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/policies?policy_set=${encodeURIComponent(name)}`)
             .then((r) => r.policies)
             .catch(() => [])))
         : [];
@@ -2133,7 +2133,7 @@ async function runConnections(input: {
     return action ? 0 : 2;
   }
 
-  const base = `/projects/${ctx.projectId}/connections`;
+  const base = `/workspaces/${ctx.projectId}/connections`;
   switch (action) {
     case 'ls':
     case 'list': {
@@ -2332,7 +2332,7 @@ async function runConnections(input: {
           continue;
         }
         // An email resolves against the account's member directory.
-        accountId ??= (await ctx.client.get<{ account_id: string }>(`/projects/${ctx.projectId}`))
+        accountId ??= (await ctx.client.get<{ account_id: string }>(`/workspaces/${ctx.projectId}`))
           .account_id;
         const userId = await resolveUserId(ctx.client, accountId, who);
         if (!userId) return 1;
@@ -2827,7 +2827,7 @@ async function moveToKortix(
     return 1;
   }
   const to = first.to;
-  const oauth2 = `/projects/${ctx.projectId}/connections/${first.connection_id}/oauth2`;
+  const oauth2 = `/workspaces/${ctx.projectId}/connections/${first.connection_id}/oauth2`;
   const signIn = await startOAuth2SignIn(ctx.client, oauth2, opts.signIn);
   if ('error' in signIn) {
     process.stderr.write(`${status.err(signIn.error)}\n`);
