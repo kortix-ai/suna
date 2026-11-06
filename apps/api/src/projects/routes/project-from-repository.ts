@@ -16,6 +16,7 @@ import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, resolveProjectAccount } from '../lib/access';
+import { createByoWorkspaceAccount, resolveByoCreateScope, resolveByoCreateTarget } from './byo-new-workspace';
 import { projectsApp } from '../lib/app';
 import {
   GitHubInstallationAmbiguousError,
@@ -78,8 +79,17 @@ export function registerProjectFromRepositoryRoutes(): void {
     }),
     async (c: any) => {
     const body = await readJsonObject(c);
-    const scope = await resolveProjectAccount(c, body);
-    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
+    // `source: 'managed'` imports through the INSTANCE git backend instead of an
+    // account connection. It is the one place the instance backend meets an
+    // account flow, and it is self-host-operator gated: the backend owner on
+    // cloud is the shared `managed-kortix` org, and `isPlatformAdmin` admits
+    // staff, so that gate once let one customer import another's repository.
+    const managedImport = normalizeString(body.source) === 'managed';
+    // The token path (a caller's token or the instance backend's) needs no
+    // account installation. An occupied account turns an old client's request
+    // into a new workspace (./byo-new-workspace.ts), created after validation.
+    const tokenPath = Boolean(normalizeString(body.github_token ?? body.githubToken)) || managedImport;
+    const byoScope = await resolveByoCreateScope(c, body, { tokenPath });
 
     const repoFullName = normalizeString(body.repo_full_name ?? body.repoFullName);
     const repoUrlInput = normalizeString(body.repo_url ?? body.repoUrl);
@@ -89,24 +99,24 @@ export function registerProjectFromRepositoryRoutes(): void {
     if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
     const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
-    // `source: 'managed'` imports through the INSTANCE git backend instead of an
-    // account connection. It is the one place the instance backend meets an
-    // account flow, and it is self-host-operator gated: the backend owner on
-    // cloud is the shared `managed-kortix` org, and `isPlatformAdmin` admits
-    // staff, so that gate once let one customer import another's repository.
-    const managedImport = normalizeString(body.source) === 'managed';
     if (managedImport && installationIdInput) {
       return c.json({ error: 'source: managed and installation_id are mutually exclusive' }, 400);
     }
-    if (managedImport && !(await isSelfHostOperator(scope.userId))) {
+    if (managedImport && !(await isSelfHostOperator(byoScope.userId))) {
       return c.json(
         { error: 'Managed GitHub repository import is only available to a self-host operator' },
         403,
       );
     }
 
-    const quota = await enforceProjectQuota(c, scope.accountId);
-    if (quota) return quota;
+    const placed = await resolveByoCreateTarget(c, byoScope, { tokenPath });
+    if ('response' in placed) return placed.response;
+    const { target } = placed;
+    // The account the installation is read from (the source account on the
+    // new-workspace path), and the one the project lands in once it exists.
+    const sourceAccountId = target.kind === 'account' ? target.accountId : target.sourceAccountId;
+    const landIn = async (name: string): Promise<{ accountId: string } | { response: Response }> =>
+      target.kind === 'account' ? { accountId: target.accountId } : createByoWorkspaceAccount(c, name);
 
     const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.yaml';
 
@@ -142,9 +152,11 @@ export function registerProjectFromRepositoryRoutes(): void {
       // handler — see the comment there.
       const icon = normalizeProjectIcon(body.icon);
       const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
+      const landed = await landIn(normalizeString(body.name) ?? deriveProjectName(patImport.repo.full_name));
+      if ('response' in landed) return landed.response;
       const row = await registerPatLinkedProject({
-        accountId: scope.accountId,
-        userId: scope.userId,
+        accountId: landed.accountId,
+        userId: target.userId,
         repo: patImport.repo,
         token: patToken,
         name: normalizeString(body.name),
@@ -158,7 +170,7 @@ export function registerProjectFromRepositoryRoutes(): void {
       });
       kickProjectTemplatePrebuilds(
         { projectId: row.projectId, repoUrl: row.repoUrl, defaultBranch: row.defaultBranch, manifestPath: row.manifestPath, gitAuthToken: patToken },
-        { accountId: scope.accountId, source: 'project-create' },
+        { accountId: landed.accountId, source: 'project-create' },
       );
       return c.json({
         project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
@@ -168,8 +180,9 @@ export function registerProjectFromRepositoryRoutes(): void {
 
     let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
     try {
+      // `sourceAccountId` is null only on the token path (rule 5).
       imported = await resolveGitHubImport({
-        accountId: scope.accountId,
+        accountId: sourceAccountId!,
         repoUrl,
         installationId: installationIdInput,
         defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
@@ -178,7 +191,7 @@ export function registerProjectFromRepositoryRoutes(): void {
       if (error instanceof GitHubInstallationRequiredError) {
         return c.json({
           error: error.message,
-          install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+          install_url: await createGitHubInstallationInstallUrl(error.accountId, target.userId),
         }, 409);
       }
       // A dead connection is a reconnect prompt, never a raw GitHub string.
@@ -186,7 +199,7 @@ export function registerProjectFromRepositoryRoutes(): void {
         return c.json(
           githubInstallationUnreachableBody(
             installationIdInput ?? '',
-            await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+            await createGitHubInstallationInstallUrl(sourceAccountId!, target.userId),
           ),
           409,
         );
@@ -197,11 +210,15 @@ export function registerProjectFromRepositoryRoutes(): void {
 
     const icon = normalizeProjectIcon(body.icon);
     const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
+    const landed = await landIn(normalizeString(body.name) ?? deriveProjectName(imported.repo.full_name));
+    if ('response' in landed) return landed.response;
     const row = await registerGitHubLinkedProject({
-      accountId: scope.accountId,
-      userId: scope.userId,
+      accountId: landed.accountId,
+      userId: target.userId,
       repo: imported.repo,
       installation: imported.installation,
+      // The installation stays linked to the source account: a grant for this repository only.
+      projectGrant: target.kind === 'new_workspace',
       name: normalizeString(body.name),
       defaultBranch: imported.defaultBranch,
       manifestPath,
@@ -220,7 +237,7 @@ export function registerProjectFromRepositoryRoutes(): void {
         manifestPath: row.manifestPath,
         gitAuthToken: imported.auth.token,
       },
-      { accountId: scope.accountId, source: 'project-create' },
+      { accountId: landed.accountId, source: 'project-create' },
     );
 
     return c.json({

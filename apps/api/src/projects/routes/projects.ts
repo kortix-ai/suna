@@ -32,6 +32,7 @@ import {
   resolveGitHubImport,
 } from '../lib/git';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
+import { createByoWorkspaceAccount, resolveByoCreateScope, resolveByoCreateTarget } from './byo-new-workspace';
 import {
   deriveProjectName,
   normalizeRepoUrl,
@@ -232,10 +233,10 @@ export function registerProjectsRoutes(): void {
     }),
     async (c) => {
     const body = await readJsonObject(c);
-    const scope = await resolveProjectAccount(c, body);
-    // IAM-gated. Engine consults super-admin bypass, direct + group
-    // policies, and legacy owner/admin bridges (in non-strict mode).
-    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
+    // IAM-gated (`project.create` in the named account). An occupied account
+    // turns an old client's request into a new workspace, created after the
+    // repository is validated (./byo-new-workspace.ts).
+    const byoScope = await resolveByoCreateScope(c, body, { tokenPath: false });
 
     let repoUrl: string | null;
     try {
@@ -247,8 +248,11 @@ export function registerProjectsRoutes(): void {
       return c.json({ error: 'repo_url is required' }, 400);
     }
 
-    const quota = await enforceProjectQuota(c, scope.accountId);
-    if (quota) return quota;
+    const placed = await resolveByoCreateTarget(c, byoScope, { tokenPath: false });
+    if ('response' in placed) return placed.response as never;
+    const { target } = placed;
+    // The App path always has a source account (rule 5 of byo-new-workspace.ts).
+    const sourceAccountId = target.kind === 'account' ? target.accountId : target.sourceAccountId!;
 
     const name = normalizeString(body.name) ?? deriveProjectName(repoUrl);
     const requestedBranch = normalizeString(body.default_branch ?? body.defaultBranch);
@@ -257,7 +261,7 @@ export function registerProjectsRoutes(): void {
     let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
     try {
       imported = await resolveGitHubImport({
-        accountId: scope.accountId,
+        accountId: sourceAccountId,
         repoUrl,
         installationId: normalizeString(body.installation_id ?? body.installationId),
         defaultBranch: requestedBranch,
@@ -266,18 +270,24 @@ export function registerProjectsRoutes(): void {
       if (error instanceof GitHubInstallationRequiredError) {
         return c.json({
           error: error.message,
-          install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+          install_url: await createGitHubInstallationInstallUrl(error.accountId, target.userId),
         }, 409);
       }
       rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
 
+    const landed = target.kind === 'account'
+      ? { accountId: target.accountId }
+      : await createByoWorkspaceAccount(c, name);
+    if ('response' in landed) return landed.response as never;
     const row = await registerGitHubLinkedProject({
-      accountId: scope.accountId,
-      userId: scope.userId,
+      accountId: landed.accountId,
+      userId: target.userId,
       repo: imported.repo,
       installation: imported.installation,
+      // The installation stays linked to the source account: a grant for this repository only.
+      projectGrant: target.kind === 'new_workspace',
       name,
       defaultBranch: imported.defaultBranch,
       manifestPath,
@@ -292,7 +302,7 @@ export function registerProjectsRoutes(): void {
         manifestPath: row.manifestPath,
         gitAuthToken: imported.auth.token,
       },
-      { accountId: scope.accountId, source: 'project-create' },
+      { accountId: landed.accountId, source: 'project-create' },
     );
 
     return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);

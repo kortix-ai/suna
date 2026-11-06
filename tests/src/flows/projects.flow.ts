@@ -540,37 +540,109 @@ flow(
   },
 );
 
-// PROJ-41 — the workspace rule on POST /v1/projects (import), which runs the
-// same create gate as /provision before any GitHub lookup: an account holds
-// one active project, on every plan. PROJ-18 owns the deployed rule through
-// /provision; the local profile enforces it itself.
+// PROJ-41 — the workspace rule on POST /v1/projects (import): an account holds
+// one active project, on every plan. The published CLI names its occupied
+// account; a person then gets a new workspace (byo-new-workspace.ts), created
+// only after GitHub validated the repository, so the local profile (no GitHub
+// App) answers 409 install_url and creates nothing. A workspace key keeps the
+// refusal. PROJ-18 owns the deployed rule through /provision.
 flow(
   "PROJ-41",
   {
     domain: "projects",
     requires: ["database"],
-    routes: ["POST /v1/projects", "GET /v1/projects/quota", "DELETE /v1/workspaces/:projectId"],
+    routes: ["POST /v1/projects", "GET /v1/projects/quota", "GET /v1/accounts", "POST /v1/workspaces/:workspaceId/tokens", "DELETE /v1/workspaces/:projectId"],
   },
   async (ctx) => {
     if (ctx.env.target !== "local") return;
     const team = await ctx.fixtures.team();
     const first = await team.project();
     const owner = ctx.client.as(ctx.P.OWNER);
-    const create = () =>
-      owner.post("/v1/projects", { account_id: team.id, name: ctx.fixtures.name("quota-probe"), repo_url: "https://github.com/example-org/quota-probe" });
-    await ctx.step("an account that holds its project → 409 workspace_has_project {workspace_id}; /quota agrees (capped, limit 1, no upgrade copy)", async () => {
-      (await create()).status(409).body().has("$.code", "workspace_has_project").has("$.workspace_id", first.id);
+    const body = () => ({ account_id: team.id, name: ctx.fixtures.name("quota-probe"), repo_url: "https://github.com/example-org/quota-probe" });
+    const accountIds = async () =>
+      (await owner.get("/v1/accounts")).status(200).json<Array<{ account_id: string }>>().map((a) => a.account_id).sort();
+    const personCreate = async () => {
+      const before = await accountIds();
+      const r = await owner.post("/v1/projects", body());
+      r.status(409).body().exists("$.install_url");
+      if (r.json<{ code?: string }>().code === "workspace_has_project") throw new Error("a person got workspace_has_project");
+      const after = await accountIds();
+      if (after.join() !== before.join()) throw new Error(`a refused import created an account: ${after.length - before.length}`);
+    };
+    await ctx.step("an account that holds its project → the owner's import goes to a new workspace: no GitHub App → 409 install_url, never workspace_has_project, no account created; /quota says capped, limit 1, no upgrade copy", async () => {
+      await personCreate();
       const quota = (await owner.get("/v1/projects/quota", { query: { account_id: team.id } })).status(200);
       quota.body().has("$.capped", true).has("$.limit", 1).has("$.count", 1);
       if (/upgrade/i.test(String(quota.json<any>().message))) throw new Error(`quota offers an upgrade: ${quota.json<any>().message}`);
     });
-    await ctx.step("a paid plan does not change the rule → 409 workspace_has_project", async () => {
+    await ctx.step("a workspace key of the account → 403/409, never a second project in it", async () => {
+      const minted = await owner.post(`/v1/workspaces/${first.id}/tokens`, { name: "proj41-key", expires_at: new Date(Date.now() + 3_600_000).toISOString() });
+      minted.status(201);
+      const key = ctx.client.withBearer(minted.json<{ secret_key: string }>().secret_key, "PROJ41_KEY");
+      const r = await key.post("/v1/projects", body());
+      r.status([403, 409]);
+      if (r.statusCode === 409) r.body().has("$.code", "workspace_has_project").has("$.workspace_id", first.id);
+    });
+    await ctx.step("a paid plan does not change the rule → the same answers, /quota still capped", async () => {
       await fundDatabaseAccount(ctx.env, team.id);
-      (await create()).status(409).body().has("$.code", "workspace_has_project");
+      await personCreate();
+      (await owner.get("/v1/projects/quota", { query: { account_id: team.id } })).status(200).body().has("$.capped", true);
     });
     await ctx.step("deleting the one project closes the workspace (K2) → a create into it → 403 workspace_closed, never a second project", async () => {
       (await owner.del("/v1/workspaces/:projectId", { params: { projectId: first.id } })).status(200);
-      (await create()).status(403).body().has("$.code", "workspace_closed");
+      (await owner.post("/v1/projects", body())).status(403).body().has("$.code", "workspace_closed");
+    });
+  },
+);
+
+// PROJ-49 — the published `kortix ship` BYO shape: POST
+// /v1/projects/link-repository with `account_id` of the occupied account and
+// no new_workspace flag. A person never meets 409 workspace_has_project; the
+// new workspace is created only after GitHub accepts the repository, so a
+// token GitHub refuses (400) and a missing App installation (409 install_url)
+// create no account. The local profile has no GitHub: the 201 path is proved
+// against a fake GitHub in byo-new-workspace.integration.test.ts.
+flow(
+  "PROJ-49",
+  {
+    domain: "projects",
+    requires: ["database"],
+    routes: ["POST /v1/projects/link-repository", "GET /v1/accounts", "POST /v1/workspaces/:workspaceId/tokens"],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return;
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const shipBody = (token?: string) => ({
+      repo_url: "https://github.com/example-org/ship-probe",
+      name: ctx.fixtures.name("ship-probe"),
+      account_id: team.id,
+      ...(token ? { github_token: token } : {}),
+    });
+    const accountIds = async () =>
+      (await owner.get("/v1/accounts")).status(200).json<Array<{ account_id: string }>>().map((a) => a.account_id).sort();
+    await ctx.step("kortix ship --github-token with a token GitHub refuses → 400 from validation, never workspace_has_project, no account created", async () => {
+      const before = await accountIds();
+      const r = await owner.post("/v1/projects/link-repository", shipBody("ghp_synthetic_refused"));
+      r.status(400);
+      if (r.json<{ code?: string }>().code === "workspace_has_project") throw new Error("a person got workspace_has_project");
+      if ((await accountIds()).join() !== before.join()) throw new Error("a refused link created an account");
+    });
+    await ctx.step("kortix ship through the GitHub App, not installed → 409 install_url (the CLI's retry prompt), no account created", async () => {
+      const before = await accountIds();
+      const r = await owner.post("/v1/projects/link-repository", shipBody());
+      r.status(409).body().exists("$.install_url");
+      if (r.json<{ code?: string }>().code === "workspace_has_project") throw new Error("a person got workspace_has_project");
+      if ((await accountIds()).join() !== before.join()) throw new Error("an install prompt created an account");
+    });
+    await ctx.step("a workspace key of the account → 403/409 workspace_has_project, nothing created", async () => {
+      const minted = await owner.post(`/v1/workspaces/${w.id}/tokens`, { name: "proj49-key", expires_at: new Date(Date.now() + 3_600_000).toISOString() });
+      minted.status(201);
+      const key = ctx.client.withBearer(minted.json<{ secret_key: string }>().secret_key, "PROJ49_KEY");
+      const r = await key.post("/v1/projects/link-repository", shipBody("ghp_synthetic_refused"));
+      r.status([403, 409]);
+      if (r.statusCode === 409) r.body().has("$.code", "workspace_has_project");
     });
   },
 );

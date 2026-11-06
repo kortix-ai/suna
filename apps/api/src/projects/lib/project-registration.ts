@@ -23,7 +23,16 @@ import { insertProjectRow } from '../../workspaces/rows';
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 
 type RegistrationAuth =
-  | { kind: 'github_app'; installation: GitHubInstallation }
+  | {
+      kind: 'github_app';
+      installation: GitHubInstallation;
+      /**
+       * The installation is linked to another account: the connection is a
+       * repository grant for this one repository (`project_grant: true`), the
+       * BYO new-workspace path (`../routes/byo-new-workspace.ts`).
+       */
+      projectGrant?: boolean;
+    }
   | { kind: 'project_credential'; token: string };
 
 type RegistrationInput = {
@@ -49,6 +58,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
         kind: 'github_app',
         installationId: githubApp.installationId,
         permissions: githubApp.permissions,
+        ...(input.auth.kind === 'github_app' && input.auth.projectGrant ? { projectGrant: true } : {}),
       }
     : { kind: 'project_credential' };
   const metadata = buildProjectGitMetadata(input.repo, auth, input.projectMetadata, {
@@ -163,12 +173,12 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
 }
 
 export function registerGitHubLinkedProject(
-  input: Omit<RegistrationInput, 'auth'> & { installation: GitHubInstallation },
+  input: Omit<RegistrationInput, 'auth'> & { installation: GitHubInstallation; projectGrant?: boolean },
 ): Promise<ProjectRow> {
-  const { installation, ...project } = input;
+  const { installation, projectGrant, ...project } = input;
   return registerLinkedProject({
     ...project,
-    auth: { kind: 'github_app', installation },
+    auth: { kind: 'github_app', installation, ...(projectGrant ? { projectGrant: true } : {}) },
   });
 }
 
