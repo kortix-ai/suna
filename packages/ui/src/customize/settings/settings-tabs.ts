@@ -118,7 +118,10 @@ export type SettingsTab =
   // left no way back. `computer` is singular on purpose: `computers` is a
   // `GRADUATED` redirect to the Connectors page and must stay one.
   | 'mcp'
-  | 'computer';
+  | 'computer'
+  // The caller's personal keys (`GET /v1/me/tokens`): keys bound to no
+  // workspace, which act as the person in each workspace of theirs.
+  | 'personal-keys';
 // Organization (General, Billing, Usage, Groups, Roles, Identity, Audit log)
 // and API keys are gone: every one of them configured the ACCOUNT, not the
 // project, and the account already owns a full page for them at
@@ -149,6 +152,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'sessions',
   'preferences',
   'chrome',
+  'personal-keys',
   'mcp',
   'computer',
   // `tokens`, `connected`, `credits` and `plan` are still in the type but NOT

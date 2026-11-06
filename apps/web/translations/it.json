@@ -551,7 +551,7 @@
       "redirecting": "Reindirizzamento alla pagina delle connettori..."
     },
     "rail": {
-      "settings": "Impostazioni",
+      "settings": "Preferenze",
       "backToApp": "Torna all'app",
       "close": "Chiudi",
       "docs": "Documentazione",
@@ -576,7 +576,7 @@
         },
         "profile": {
           "label": "Profilo",
-          "description": "La tua immagine, il nome, l'email e i workspace."
+          "description": "La tua foto, il nome e l'email."
         },
         "security": {
           "label": "Sicurezza",
@@ -620,6 +620,10 @@
         "computer": {
           "label": "Il mio computer",
           "description": "Consenti agli agenti Kortix di lavorare con i file, il terminale e le app del tuo computer."
+        },
+        "personal-keys": {
+          "label": "Chiavi personali",
+          "description": "Chiavi che agiscono come te in ogni workspace: l'accesso della CLI e le chiavi precedenti."
         }
       }
     },
@@ -715,6 +719,14 @@
         "profilePictureRemoveFailed": "Impossibile rimuovere l'immagine del profilo",
         "chooseImageFile": "Scegli un file immagine",
         "imageTooLarge": "L'immagine deve essere inferiore a 5 MB"
+      },
+      "plan": {
+        "deleted": "Eliminati con il tuo account",
+        "left": "Lasci",
+        "blockers": "Sei l'unico proprietario e altre persone ci lavorano. Trasferisci la proprietà o elimina il workspace.",
+        "members": "{count, plural, one {# membro} other {# membri}}",
+        "nothing": "Non appartieni a nessun workspace. Viene eliminato solo il tuo accesso.",
+        "blockersTitle": "Trasferiscili prima"
       }
     },
     "security": {
@@ -975,18 +987,17 @@
       "retry": "Riprova",
       "dangerZone": "Zona pericolosa",
       "deleteWorkspace": "Elimina workspace",
-      "deleteDescription": "Rimuove questo workspace e tutto il suo contenuto per ogni membro. Questa azione non può essere annullata.",
+      "deleteDescription": "Elimina questo workspace per tutti i membri. Puoi ripristinarlo per 14 giorni.",
       "deleteTitle": "Eliminare lo workspace?",
-      "deleteDialog": "Questa azione elimina {name} per chiunque vi abbia accesso. Non può essere annullata.",
-      "consequencesTitle": "Perdi immediatamente:",
+      "deleteDialog": "Questo elimina {name} per tutti i membri. Puoi ripristinarlo per 14 giorni.",
+      "consequencesTitle": "Subito:",
       "consequences": {
-        "sessions": "Ogni sessione in questo workspace, con file, cronologia e risultati",
-        "automation": "Tutte le esecuzioni pianificate e i trigger — smettono subito di funzionare",
-        "integrations": "Ogni integrazione connessa, segreto e chiave API limitata a questo workspace",
-        "managedRepo": "Il repository Git gestito da Kortix di questo workspace, con ogni commit incluso",
-        "access": "L'accesso per tutto il team — nessuno potrà più raggiungere questo workspace"
+        "sessions": "Dopo 14 giorni, le sue sessioni, i file e il repository gestito da Kortix vengono cancellati",
+        "automation": "I trigger e le esecuzioni pianificate smettono di partire",
+        "integrations": "Le sue chiavi API e le app collegate smettono di funzionare",
+        "access": "Tutti i membri perdono l'accesso a questo workspace"
       },
-      "reassurance": "I repository Git connessi personalmente non vengono eliminati. Il codice già inviato resta al suo posto.",
+      "reassurance": "I repository Git che hai collegato tu non vengono eliminati.",
       "keepWorkspace": "Mantieni workspace",
       "transferWorkspace": "Trasferisci workspace",
       "transferDescription": "Sposta sessioni, file, impostazioni e accesso dei membri di questo workspace in un altro workspace.",
@@ -1695,7 +1706,8 @@
       "loadError": "Impossibile caricare gli workspace",
       "createIn": "Crea un workspace in {account}",
       "localComputer": "Il tuo computer",
-      "appsAndExtensions": "App ed estensioni"
+      "appsAndExtensions": "App ed estensioni",
+      "preferences": "Preferenze"
     },
     "manifestIssues": {
       "title": "{file} ha {errors, plural, one {# errore} other {# errori}} e {warnings, plural, one {# avviso} other {# avvisi}}",
@@ -2048,11 +2060,11 @@
     "connectProvider": "Connetti provider",
     "manageModels": "Gestisci modelli",
     "loading": "Caricamento modelli",
-    "yourDefault": "Predefinito dell’account",
-    "defaultAria": "{model} è il modello predefinito di questo account",
-    "setDefaultAria": "Imposta {model} come modello predefinito dell’account",
-    "defaultTitle": "Modello predefinito dell’account",
-    "setDefaultTitle": "Imposta come modello predefinito dell’account",
+    "yourDefault": "Predefinito del workspace",
+    "defaultAria": "{model} è il modello predefinito di questo workspace",
+    "setDefaultAria": "Imposta {model} come modello predefinito di questo workspace",
+    "defaultTitle": "Modello predefinito del workspace",
+    "setDefaultTitle": "Imposta come modello predefinito di questo workspace",
     "upgrade": "Effettua l’upgrade",
     "noMatch": {
       "title": "Nessun modello corrispondente",
@@ -3833,8 +3845,8 @@
       "checkNowAction": "Controlla ora",
       "tryAgainAction": "Riprova",
       "projectsAction": "Torna ai workspace",
-      "accountLabel": "Workspace",
-      "projectLabel": "Workspace",
+      "accountLabel": "Accesso effettuato come",
+      "projectLabel": "ID del workspace",
       "approvalNote": "Chiunque gestisca questo workspace può approvare la tua richiesta.",
       "openAsAdmin": "Apri come amministratore",
       "requestFailed": "Impossibile inviare la richiesta.",
@@ -21261,7 +21273,20 @@
       "text2590cd62a747": "Impostazioni del workspace",
       "text276261b1e03d": "workspace impostazioni organizzazioni team gestire",
       "text634ebc515b7f": "Workspace · Chiavi API",
-      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy",
+      "textfda15274a752": "Controllo completo: fatturazione, persone ed eliminazione del workspace.",
+      "text02faaaef698b": "Controllo completo del workspace: fatturazione, persone, trasferimento della proprietà ed eliminazione.",
+      "texte1a2cfde722b": "Fatturazione e persone. Tutto tranne eliminare il workspace o trasferirne la proprietà.",
+      "text77148a20ce2e": "Tutto ciò che può fare un proprietario tranne eliminare il workspace o trasferirne la proprietà.",
+      "text378393bbfa9f": "Lavora nelle sessioni con gli agenti che gli sono concessi.",
+      "texte82608318c7f": "Il ruolo base. Lavora nelle sessioni con gli agenti concessi, direttamente o tramite un gruppo. Niente Personalizza.",
+      "text7788f20533ea": "Personalizza e tutto ciò che contiene: ogni agente, competenza, connettore, segreto e trigger.",
+      "text1a836dc94f41": "Definisci ruoli tuoi: scegli esattamente cosa un membro può vedere e modificare, poi assegnali da Membri come quelli predefiniti.",
+      "textb2c26ac6527b": "Assegna un ruolo personalizzato a una persona o a un gruppo",
+      "textfab4077701b7": "Metti logo, icona, favicon e nome del prodotto nell'app per tutti in questo workspace: Kortix diventa il tuo strumento.",
+      "textfd8fee75dbb5": "I gruppi dell'IdP corrispondono a ruoli in questo workspace",
+      "textadca5dfd1e42": "Raggruppa i membri e assegna un ruolo all'intero gruppo: una concessione invece di decine, revocata altrettanto facilmente.",
+      "text16ba47efb9f2": "Una traccia completa e filtrabile di ogni azione di amministratori e agenti in questo workspace: chi ha fatto cosa, dove e quando."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -21461,7 +21486,6 @@
     "copyTitle": "Copia",
     "copyEmail": "email",
     "copyUserId": "ID utente",
-    "copyAccountId": "ID account",
     "copyProjectId": "ID workspace",
     "copySessionId": "ID sessione",
     "copySessionLink": "link della sessione",
@@ -22923,17 +22947,17 @@
     "storageUsed": "{used} usati",
     "storageNearFull": "Quasi pieno. Elimina i file che non ti servono più per continuare a caricare.",
     "storageFull": "Pieno. I nuovi caricamenti vengono rifiutati finché non elimini dei file.",
-    "storageAccountLine": "Tutti i workspace: {used} di {limit}",
+    "storageAccountLine": "Condiviso con gli altri workspace di questo piano: {used} di {limit}",
     "folderNearMountLimit": "{folder} occupa {size}. Una sessione non può montare una cartella più grande di {limit}.",
     "folderOverMountLimit": "{folder} occupa {size}, più dei {limit} che una sessione può montare. Le sessioni girano senza di essa.",
     "uploadRefusedProjectFull": "{name} richiede {needed}. I file di questo workspace usano {used} di {limit}.",
-    "uploadRefusedAccountFull": "{name} richiede {needed}. I file di tutti i tuoi workspace usano {used} di {limit}.",
+    "uploadRefusedAccountFull": "{name} richiede {needed}. I file di questo workspace usano {used} di {limit}.",
     "uploadRefusedFileTooLarge": "{name} occupa {size}. Un file può occupare al massimo {limit}.",
     "uploadRefusedFolderMount": "{name} porterebbe {folder} oltre {limit}, la cartella più grande che una sessione può montare.",
     "uploadRefusedBusy": "Lo spazio dei file è occupato. Riprova {name} tra un momento.",
     "uploadRefusedStorageFull": "Lo spazio dei file è pieno in questo momento. Riprova {name} più tardi.",
     "accountStorageTitle": "Spazio dei file",
-    "accountStorageDescription": "Quanto occupano i file di ogni workspace. Il tuo piano consente {project} per workspace e {account} in totale.",
+    "accountStorageDescription": "Quanto occupano i file di questo workspace. Il tuo piano consente {project}.",
     "accountStorageEmpty": "Nessun workspace contiene ancora file.",
     "accountStorageIncomplete": "Non è stato possibile misurare alcuni workspace in questo momento.",
     "folderInfo": {
@@ -23579,7 +23603,7 @@
     "groupTitle": "Trigger",
     "groupDescription": "Pianificazioni, cicli, webhook, eventi delle app e monitor in questo workspace.",
     "label": "Metti in pausa tutti i trigger",
-    "description": "Nulla si avvia da solo in nessun workspace: né pianificazioni, cicli, webhook, eventi delle app o monitor. Eseguire un trigger a mano funziona ancora.",
+    "description": "Niente in questo workspace parte da solo: nessuna pianificazione, loop, webhook, evento di app o monitor. Avviare un trigger a mano funziona ancora.",
     "readOnlyDescription": "Solo un proprietario o un amministratore può mettere in pausa o riprendere i trigger.",
     "pausedSince": "In pausa dal {date}.",
     "pauseTitle": "Mettere in pausa tutti i trigger?",
@@ -26581,12 +26605,18 @@
       "role": {
         "owner": "Proprietario",
         "admin": "Amministratore",
-        "member": "Membro"
+        "member": "Membro",
+        "manager": "Manager"
       },
       "loadErrorTitle": "Impossibile caricare i tuoi workspace",
       "loadErrorBody": "Controlla la connessione e riprova.",
       "partialError": "Impossibile caricare tutti i workspace.",
-      "retry": "Riprova"
+      "retry": "Riprova",
+      "deletingOn": "Eliminazione il {date}",
+      "setupRequired": "Pagato, nessun repository ancora",
+      "restore": "Ripristina",
+      "setUp": "Configura",
+      "stateActionError": "Non ha funzionato. Riprova."
     },
     "switcher": {
       "switch": "Cambia workspace",
@@ -26603,7 +26633,8 @@
       "description": "Un workspace è il luogo in cui la tua azienda lavora con Kortix: persone, agenti e tutto ciò che creano.",
       "submit": "Crea workspace",
       "restricted": "Questo server crea workspace solo per le persone invitate. Chiedi a un amministratore di invitare {email}.",
-      "limitReached": "Hai raggiunto il limite di workspace del tuo piano. Esegui l'upgrade per crearne un altro."
+      "limitReached": "Hai raggiunto il limite di workspace del tuo piano. Esegui l'upgrade per crearne un altro.",
+      "freeCreditsRule": "Solo il tuo primo workspace riceve i crediti gratuiti mensili."
     },
     "settings": {
       "title": "Impostazioni del workspace",
@@ -26611,32 +26642,59 @@
         "workspace": "Workspace",
         "library": "Libreria",
         "people": "Persone",
-        "billing": "Fatturazione"
+        "billing": "Fatturazione",
+        "support": "Supporto"
       },
       "sections": {
         "general": "Generale",
         "branding": "Branding",
-        "git": "Repository Git",
-        "sandbox": "Modelli sandbox",
+        "git": "Git",
+        "sandbox": "Sandbox",
         "featureFlags": "Feature flag",
         "apiKeys": "Chiavi API",
         "members": "Membri",
         "groups": "Gruppi",
-        "access": "Accesso",
         "roles": "Ruoli",
         "identity": "Identità",
         "audit": "Registro di audit",
         "help": "Aiuto",
         "plan": "Piano",
-        "usage": "Utilizzo"
+        "usage": "Utilizzo",
+        "connectors": "Connettori",
+        "skills": "Competenze",
+        "triggers": "Trigger",
+        "models": "Modelli",
+        "secrets": "Segreti",
+        "apps": "App",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "Sicurezza",
+        "repo": "Repository"
       },
       "accessTitle": "Accesso",
       "accessDescription": "Chi può aprire questo workspace e con quale ruolo.",
       "securityTitle": "Sicurezza",
       "githubTitle": "Connessioni GitHub",
       "deleteKeepsLogin": "Il tuo accesso resta: puoi creare un altro workspace o unirti a uno.",
-      "personalKeysTitle": "Le tue chiavi di accesso personali",
-      "personalKeysDescription": "Chiavi API che agiscono come te in questo workspace: per la CLI, uno script o un job CI."
+      "personalKeysTitle": "Le tue chiavi per questo workspace",
+      "personalKeysDescription": "Chiavi API che agiscono come te solo in questo workspace: per uno script o un job CI.",
+      "keyScopeWorkspace": "Questo workspace",
+      "keyScopePersonal": "Ogni workspace",
+      "keyScopeWorkspaceHint": "La chiave agisce come te solo in questo workspace.",
+      "personalKeysEmpty": "Nessuna chiave personale. kortix login ne crea una; le chiavi per uno script si creano in Impostazioni › Chiavi API di un workspace.",
+      "securityDescription": "Regole di accesso, chi può aprire le sessioni di chi e le regole di ogni chiave API.",
+      "rolesDescription": "Ruoli predefiniti e personalizzati. Assegnali da Membri.",
+      "workspaceId": "ID del workspace",
+      "workspaceIdDescription": "Per la CLI, l'API e il supporto.",
+      "leaveWorkspace": "Lascia il workspace",
+      "leaveDescription": "Perdi l'accesso a questo workspace. Un amministratore può invitarti di nuovo.",
+      "leaveTitle": "Lasciare il workspace?",
+      "leaveDialog": "Perdi l'accesso a {name}. Un amministratore può invitarti di nuovo.",
+      "leftToast": "Hai lasciato {name}",
+      "leaveFailed": "Impossibile lasciare il workspace",
+      "deletedToast": "Workspace eliminato. I proprietari possono ripristinarlo per 14 giorni.",
+      "inviteTitle": "Invita persone in {name}",
+      "apiKeysDescription": "Chiavi che agiscono in questo workspace: le tue e gli account di servizio per CI e automazioni. Le loro regole sono in Sicurezza."
     },
     "cli": {
       "noWorkspaceTitle": "Crea un workspace per accedere con la CLI",
@@ -26664,6 +26722,79 @@
       "openChooser": "Crea o unisciti a un workspace",
       "workspaceLabel": "Workspace",
       "noCaptureWorkspace": "Kortix Capture non è attivo in nessuno dei tuoi workspace. Un proprietario o un amministratore può attivarlo."
+    },
+    "menu": {
+      "invite": "Invita persone in {name}",
+      "leave": "Lascia {name}"
+    },
+    "roles": {
+      "owner": {
+        "label": "Proprietario",
+        "blurb": "Controllo completo: fatturazione, persone ed eliminazione del workspace."
+      },
+      "admin": {
+        "label": "Amministratore",
+        "blurb": "Fatturazione e persone. Tutto tranne eliminare il workspace o trasferirne la proprietà."
+      },
+      "manager": {
+        "label": "Manager",
+        "blurb": "Personalizza e tutto ciò che contiene: ogni agente, competenza, connettore, segreto e trigger."
+      },
+      "member": {
+        "label": "Membro",
+        "blurb": "Lavora nelle sessioni con gli agenti che gli sono concessi."
+      }
+    },
+    "invite": {
+      "title": "Invita persone in {name}",
+      "description": "Ogni persona riceve un'email con un link per unirsi.",
+      "emailsLabel": "Indirizzi email",
+      "emailsPlaceholder": "nome@azienda.com",
+      "emailsHint": "Separa gli indirizzi con una virgola o uno spazio.",
+      "invalidEmail": "Non è un indirizzo email.",
+      "removeEmail": "Rimuovi {email}",
+      "roleLabel": "Ruolo",
+      "ownerHint": "Per rendere qualcuno proprietario, trasferisci la proprietà da Membri.",
+      "expiresLabel": "L'accesso termina",
+      "optional": "Facoltativo",
+      "expiresHint": "Vuoto: l'accesso resta finché qualcuno non lo rimuove.",
+      "cancel": "Annulla",
+      "send": "{count, plural, one {Invia invito} other {Invia # inviti}}",
+      "sentToast": "{count, plural, one {Invito inviato} other {# inviti inviati}}",
+      "sendFailed": "Impossibile inviare l'invito."
+    },
+    "roleDialog": {
+      "title": "Cambia il ruolo di {name}",
+      "description": "Un ruolo per persona in questo workspace.",
+      "roleLabel": "Ruolo",
+      "cancel": "Annulla",
+      "save": "Salva",
+      "savedToast": "{name} ora è {role}",
+      "saveFailed": "Impossibile cambiare il ruolo."
+    },
+    "splitNotice": {
+      "movedTitle": "Ora è un workspace a sé",
+      "movedBody": "È uscito da {source} il {date}. Persone, fatturazione e impostazioni sono sue.",
+      "keeperTitle": "Gli altri workspace sono stati separati",
+      "keeperBody": "Il {date}, gli altri workspace di {source} sono diventati indipendenti, ognuno con persone e fatturazione proprie.",
+      "billingComped": "Il suo piano è gratuito fino al {date}.",
+      "billingFree": "Ha ricevuto i propri crediti gratuiti.",
+      "dismiss": "Ignora"
+    },
+    "accessRequests": {
+      "title": "{count, plural, one {# persona chiede di unirsi} other {# persone chiedono di unirsi}}",
+      "approve": "Approva",
+      "decline": "Rifiuta",
+      "approvedToast": "Approvato. Ora è un Membro.",
+      "declinedToast": "Richiesta rifiutata",
+      "decideFailed": "Impossibile aggiornare la richiesta."
+    },
+    "deleting": {
+      "title": "{name} è in fase di eliminazione.",
+      "body": "I suoi membri hanno perso l'accesso. Verrà cancellato il {date}. Ripristinalo per continuare a lavorarci.",
+      "restore": "Ripristina workspace",
+      "back": "Torna ai workspace",
+      "restoreFailed": "Impossibile ripristinare il workspace."
     }
   }
 }

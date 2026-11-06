@@ -1,43 +1,26 @@
 'use client';
 
 /**
- * /workspaces/[id]/members — legacy entry into the standalone Members page,
- * which no longer exists: Members moved off the project and onto the
- * account's Access rail (`/accounts/[id]?tab=access-projects`), scoped back
- * down to this project via `&project=<id>` so the account page opens
- * pre-filtered to it. This route is kept ONLY so bookmarks, sidebar links,
- * and `capabilityTabHref(projectId, 'members')` callers still land somewhere
- * real: it resolves the account id and replaces straight there.
- *
- * `useLegacySectionRedirect`, not a synchronous `redirect()`: the
- * destination needs `project.account_id`, a field on the project detail —
- * i.e. a network read — the same reason `customize/[section]/page.tsx` needs
- * it for every other account-scoped legacy section (see that file). The hook
- * folds `members` into `ACCOUNT_GRADUATED` (`settings-tabs.ts`) and appends
- * the `&project=` scoping itself, so this route only has to wait for
- * `pending` and replace to whatever `href` it produces.
+ * /workspaces/[id]/members — a legacy link (bookmarks, emails, the palette's
+ * older rows). Members is a section of the one Settings panel:
+ * `/workspaces/<id>/admin/members`. The query (`?member=<id>`) survives.
  */
 
-import { useParams, useRouter } from 'next/navigation';
+import { workspaceSettingsPath } from '@kortix/shared/workspace-settings';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 
-import { useLegacySectionRedirect } from '@/features/workspace/settings/use-account-section-redirect';
-
-export default function ProjectMembersRedirect() {
+export default function WorkspaceMembersRedirect() {
   const params = useParams<{ id: string }>();
-  const projectId = params?.id ?? '';
+  const searchParams = useSearchParams();
   const router = useRouter();
-
-  const legacy = useLegacySectionRedirect(projectId, 'members');
+  const projectId = params?.id ?? '';
 
   useEffect(() => {
     if (!projectId) return;
-    // Hold rather than fall back: `pending` means the account id is still
-    // resolving, and replacing now would drop the `&project=` scoping and
-    // land on the bare settings overlay instead of the account page.
-    if (legacy.pending) return;
-    router.replace(legacy.href ?? `/workspaces/${projectId}/settings`);
-  }, [projectId, legacy.href, legacy.pending, router]);
+    const query = searchParams?.toString();
+    router.replace(`${workspaceSettingsPath(projectId, 'members')}${query ? `?${query}` : ''}`);
+  }, [projectId, router, searchParams]);
 
   return null;
 }

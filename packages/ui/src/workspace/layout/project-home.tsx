@@ -2,6 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ACCOUNT_PANEL_PARAM, hubTarget } from '../../internal/stores/account-panel-store';
+import { SplitNoticeBanner } from '../settings/split-notice-banner';
 import { useTranslations } from '../../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -400,6 +401,11 @@ function ProjectHomeView({
           projects, which the create flow stamps without a wizard, the era
           never starts and the promo shows as before. */}
       {firstChatPending || !onboarded || !HomeAnnouncement ? null : <HomeAnnouncement />}
+
+      {/* What changed when a legacy account's workspaces became their own (C9). */}
+      <div className="relative z-10 mx-auto w-full max-w-2xl px-4 pt-14 empty:hidden">
+        <SplitNoticeBanner workspaceId={projectId} />
+      </div>
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the

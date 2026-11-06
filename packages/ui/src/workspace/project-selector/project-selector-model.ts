@@ -5,6 +5,9 @@ import {
   type AccountInviteLanding,
   type KortixAccount,
   type KortixProject,
+  type WorkspaceRole,
+  type WorkspaceState,
+  type WorkspaceSummary,
 } from '@kortix/sdk';
 
 import { workspaceAccountLabel } from '../sidebar/workspace-grouping';
@@ -37,9 +40,50 @@ export interface WorkspaceRow {
   accountId: string;
   /** Display-ready — see `workspaceAccountLabel`. Search text only, never a heading. */
   accountName: string;
-  /** The caller's role in the owning account. `member` for a project shared
-   *  into an account the caller does not belong to. */
-  role: NonNullable<KortixAccount['account_role']>;
+  /** The caller's one role in the workspace (the C3 ladder). */
+  role: WorkspaceRole;
+  /** `active`, or a state that takes an action first: `setup_required` (Set
+   *  up) or `deleting` (Restore, owners only). */
+  state: WorkspaceState;
+  /** When a `deleting` workspace is erased. */
+  deletionScheduledFor: string | null;
+}
+
+/**
+ * One row per workspace the API serves (`GET /v1/workspaces`, every state),
+ * in the API's order: most recently opened first, then by name. The role and
+ * the state are the served ones.
+ */
+export function workspaceRowsFromSummaries(input: {
+  summaries: WorkspaceSummary[];
+  accounts: KortixAccount[];
+}): WorkspaceRow[] {
+  const accountById = new Map(input.accounts.map((account) => [account.account_id, account]));
+  const seen = new Set<string>();
+  return [...input.summaries]
+    .sort(compareWorkspacesByRecent)
+    .filter((summary) => (seen.has(summary.workspace_id) ? false : (seen.add(summary.workspace_id), true)))
+    .map((summary) => ({
+      workspaceId: summary.workspace_id,
+      project: summary,
+      accountId: summary.account_id,
+      accountName: workspaceAccountLabel(accountById.get(summary.account_id)?.name ?? null),
+      role: summary.role,
+      state: summary.state ?? 'active',
+      deletionScheduledFor: summary.deletion_scheduled_for ?? null,
+    }));
+}
+
+/** "Nov 20, 2026": the day a `deleting` workspace is erased. Empty for no date. */
+export function formatWorkspaceDate(iso: string | null | undefined, locale: string): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date);
+}
+
+/** A workspace row the caller can open now. */
+export function isOpenableRow(row: WorkspaceRow): boolean {
+  return row.state === 'active';
 }
 
 export interface ProjectListResult {
@@ -48,7 +92,7 @@ export interface ProjectListResult {
   isError: boolean;
 }
 
-function roleOf(account: KortixAccount | undefined): WorkspaceRow['role'] {
+function roleOf(account: KortixAccount | undefined): WorkspaceRole {
   const role = account?.account_role;
   return role === 'owner' || role === 'admin' ? role : 'member';
 }
@@ -82,6 +126,8 @@ export function buildWorkspaceRows(input: {
         accountId: workspace.account_id,
         accountName: workspaceAccountLabel(account?.name ?? null),
         role: roleOf(account),
+        state: 'active' as const,
+        deletionScheduledFor: null,
       };
     });
 }
@@ -131,6 +177,21 @@ export function reusableEmptyAccount(input: {
   if (empty.length === 0) return null;
   const created = (account: KortixAccount) =>
     account.created_at ? new Date(account.created_at).getTime() : 0;
+  return [...empty].sort((a, b) => created(b) - created(a))[0] ?? null;
+}
+
+/**
+ * {@link reusableEmptyAccount} for a list read from `GET /v1/workspaces`: an
+ * owned account none of the served workspaces belongs to.
+ */
+export function reusableEmptyAccountFromRows(input: {
+  accounts: KortixAccount[];
+  rows: WorkspaceRow[] | undefined;
+}): KortixAccount | null {
+  if (!input.rows) return null;
+  const used = new Set(input.rows.map((row) => row.accountId));
+  const empty = input.accounts.filter((account) => account.account_role === 'owner' && !used.has(account.account_id));
+  const created = (account: KortixAccount) => (account.created_at ? new Date(account.created_at).getTime() : 0);
   return [...empty].sort((a, b) => created(b) - created(a))[0] ?? null;
 }
 
@@ -190,12 +251,13 @@ export function decideDoor(input: {
   if (input.inviteCount > 0 && !requested) return { kind: 'select' };
   const all = input.workspaces.filter((row) => !requested || row.accountId === requested);
   if (input.rememberedProjectId) {
-    const remembered = all.find((row) => row.workspaceId === input.rememberedProjectId);
+    const remembered = all.find((row) => row.workspaceId === input.rememberedProjectId && isOpenableRow(row));
     if (remembered) {
       return { kind: 'open', projectId: remembered.workspaceId, accountId: remembered.accountId };
     }
   }
-  if (all.length === 1) {
+  // A workspace that waits on Set up or Restore is chosen on the chooser.
+  if (all.length === 1 && isOpenableRow(all[0])) {
     return { kind: 'open', projectId: all[0].workspaceId, accountId: all[0].accountId };
   }
   return { kind: 'select' };

@@ -80,7 +80,7 @@ test('45 — accepting a project invite lands in the invited project, not the re
     await expect(page.getByText(/invited you to a workspace|You have been invited to a workspace/)).toBeVisible();
     await expect(page.getByText(`You'll join Website ${runId} as a member.`)).toBeVisible();
     const accepted = page.waitForResponse(
-      (r) => r.request().method() === 'POST' && r.url().includes(`/v1/account-invites/${invited.invite_id}/accept`),
+      (r) => r.request().method() === 'POST' && /\/v1\/(account-)?invites\//.test(r.url()) && r.url().includes(`${invited.invite_id}/accept`),
     );
     await page.getByRole('button', { name: 'Accept' }).click();
     expect((await accepted).status()).toBe(200);

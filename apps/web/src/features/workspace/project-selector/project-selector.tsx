@@ -19,10 +19,10 @@ import Loading from '@kortix/ui/loading';
 import { errorToast } from '@kortix/ui/toast';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { isAccountCreationRestricted } from '@/lib/config';
+import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { isModifiedClick } from '@kortix/ui/internal/lib/navigation/modified-click';
 import { writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { cn } from '@kortix/ui';
@@ -33,6 +33,7 @@ import {
   SEARCH_THRESHOLD,
   canCreateWorkspace,
   filterWorkspaceRows,
+  formatWorkspaceDate,
   inviteLandingPath,
   type WorkspaceRow,
 } from '@kortix/ui/workspace/project-selector/project-selector-model';
@@ -44,6 +45,7 @@ import {
   suggestWorkspaceName,
   validateWorkspaceName,
 } from '@kortix/ui/workspace/new/workspace-name';
+import { useWorkspaceStateActions } from '@kortix/ui/workspace/sidebar/use-workspace-list';
 import { useProjectSelectorData } from './use-project-selector-data';
 
 /**
@@ -81,6 +83,10 @@ export interface ProjectSelectorViewProps {
   signingOut: boolean;
   onJoin: (invite: MyAccountInvite) => void;
   onOpenProject: (event: MouseEvent<HTMLAnchorElement>, row: WorkspaceRow) => void;
+  /** Set up a `setup_required` workspace, or restore a `deleting` one. */
+  onStateAction?: (row: WorkspaceRow) => void;
+  /** The workspace whose Set up or Restore is in flight. */
+  stateActionId?: string | null;
   onRetryAll: () => void;
   onLogOut: () => void;
   /**
@@ -119,6 +125,10 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
   const hasInvites = invites.length > 0;
   const restricted = !createHref && !hasWorkspaces && !hasInvites;
   const inlineCreate = createHref && !hasWorkspaces && !hasInvites ? props.inlineCreate : undefined;
+  // The handoff follows the create, not the list: the create primes the list
+  // with the new workspace before the route changes, and gating on an empty
+  // list flashed "Choose a workspace" in between (finding 38).
+  const creating = props.inlineCreate?.submitting === true ? props.inlineCreate : undefined;
 
   const [title, description] = restricted
     ? [t('restrictedTitle'), t('restrictedBody', { email: email ?? '' })]
@@ -136,11 +146,11 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
           it start at the top and scroll once the list is taller. Blank while
           the reads resolve (one round trip): a centered block that changes
           height would slide the header down under the eye. */}
-      {loading ? null : inlineCreate?.submitting ? (
+      {loading ? null : creating ? (
         // The page turns over to the handoff, as `/workspaces/new` does: the
         // heading "Create a workspace" above a create in flight is stale.
         <div className="my-auto w-full">
-          <WorkspaceHandoff workspaceName={inlineCreate.name.trim()} phase={inlineCreate.phase} />
+          <WorkspaceHandoff workspaceName={creating.name.trim()} phase={creating.phase} />
         </div>
       ) : (
         <div className="my-auto w-full">
@@ -207,6 +217,8 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
                           connectComputer={props.connectComputer}
                           opening={props.openingProjectId === row.workspaceId}
                           onOpen={props.onOpenProject}
+                          acting={props.stateActionId === row.workspaceId}
+                          onStateAction={props.onStateAction}
                         />
                       ))}
                     </ul>
@@ -265,6 +277,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
  */
 function InlineCreateForm({ createHref, form }: { createHref: string; form: InlineCreateProps }) {
   const t = useTranslations('workspaces.chooser');
+  const tWorkspaces = useTranslations('workspaces.create');
   const tNew = useTranslations('newWorkspace');
   return (
     <form
@@ -293,6 +306,11 @@ function InlineCreateForm({ createHref, form }: { createHref: string; form: Inli
       {form.nameError ? (
         <p id="selector-workspace-name-error" className="text-destructive text-xs">
           {form.nameError}
+        </p>
+      ) : null}
+      {isBillingEnabled() ? (
+        <p className="text-muted-foreground text-xs" data-testid="create-free-credits-rule">
+          {tWorkspaces('freeCreditsRule')}
         </p>
       ) : null}
       <Button type="submit" disabled={!form.canSubmit} className="w-full" data-testid="selector-create">
@@ -385,14 +403,51 @@ function WorkspaceRowLink({
   connectComputer,
   opening,
   onOpen,
+  acting = false,
+  onStateAction,
 }: {
   row: WorkspaceRow;
   connectComputer?: boolean;
   opening: boolean;
   onOpen: (event: MouseEvent<HTMLAnchorElement>, row: WorkspaceRow) => void;
+  acting?: boolean;
+  onStateAction?: (row: WorkspaceRow) => void;
 }) {
   const t = useTranslations('workspaces.chooser');
+  const locale = useLocale();
   const { project } = row;
+  if (row.state !== 'active') {
+    // Set up (it pays, no repository yet) or Restore (deleted, inside its
+    // restore window): the row opens nothing until the action ran.
+    const meta =
+      row.state === 'deleting'
+        ? t('deletingOn', { date: formatWorkspaceDate(row.deletionScheduledFor, locale) })
+        : t('setupRequired');
+    return (
+      <li
+        className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5"
+        data-testid="selector-project"
+        data-state={row.state}
+      >
+        <EntityAvatar label={project.name} glyph={project.icon_glyph} emoji={project.icon} size="md" />
+        <span className="min-w-0 flex-1 space-y-0.5">
+          <span className="text-muted-foreground block truncate text-sm font-medium">{project.name}</span>
+          <span className="text-muted-foreground block truncate text-xs">{meta}</span>
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={acting || !onStateAction}
+          aria-busy={acting || undefined}
+          onClick={() => onStateAction?.(row)}
+          className="shrink-0 gap-1.5"
+        >
+          {acting ? <Loading className="size-3.5 shrink-0" /> : null}
+          {row.state === 'deleting' ? t('restore') : t('setUp')}
+        </Button>
+      </li>
+    );
+  }
   return (
     <li>
       <Link
@@ -445,6 +500,12 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
     : null;
 
   const inlineCreate = useInlineCreate(data.reusableAccount?.account_id ?? null, Boolean(createHref));
+  const stateActions = useWorkspaceStateActions((workspaceId) => router.push(`/workspaces/${workspaceId}`));
+  const stateActionId = stateActions.setup.isPending
+    ? (stateActions.setup.variables ?? null)
+    : stateActions.restore.isPending
+      ? (stateActions.restore.variables ?? null)
+      : null;
 
   const join = useMutation({
     mutationFn: (invite: MyAccountInvite) => acceptAccountInviteAndLand(invite.invite_id, invite),
@@ -485,6 +546,13 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
         setSelectedAccountId(row.accountId);
         writeLastProjectId(user?.id, row.workspaceId);
       }}
+      onStateAction={(row) => {
+        const action = row.state === 'deleting' ? stateActions.restore : stateActions.setup;
+        action.mutate(row.workspaceId, {
+          onError: (error: Error) => errorToast(error.message || t('stateActionError')),
+        });
+      }}
+      stateActionId={stateActionId}
       onRetryAll={data.retryAll}
       inlineCreate={inlineCreate}
       onLogOut={() => {

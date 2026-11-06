@@ -343,7 +343,7 @@ const catalog = {
   },
   "settings": {
     "rail": {
-      "settings": "Settings",
+      "settings": "Preferences",
       "backToApp": "Back to app",
       "close": "Close",
       "docs": "Docs",
@@ -368,7 +368,7 @@ const catalog = {
         },
         "profile": {
           "label": "Profile",
-          "description": "Your picture, name, email, and workspaces."
+          "description": "Your picture, name, and email."
         },
         "security": {
           "label": "Security",
@@ -412,6 +412,10 @@ const catalog = {
         "computer": {
           "label": "My computer",
           "description": "Let Kortix agents work with the files, terminal, and applications on your computer."
+        },
+        "personal-keys": {
+          "label": "Personal keys",
+          "description": "Keys that act as you in every workspace: the CLI login and older keys."
         }
       }
     },
@@ -486,18 +490,17 @@ const catalog = {
       "retry": "Retry",
       "dangerZone": "Danger zone",
       "deleteWorkspace": "Delete workspace",
-      "deleteDescription": "Removes this workspace and everything inside it, for every member. This cannot be undone.",
+      "deleteDescription": "Deletes this workspace for every member. You can restore it for 14 days.",
       "deleteTitle": "Delete workspace?",
-      "deleteDialog": "This deletes {name} for everyone with access to it. It cannot be undone.",
-      "consequencesTitle": "You immediately lose:",
+      "deleteDialog": "This deletes {name} for every member. You can restore it for 14 days.",
+      "consequencesTitle": "Straight away:",
       "consequences": {
-        "sessions": "Every session in this workspace, with its files, history, and outputs",
-        "automation": "All scheduled runs and triggers — they stop firing straight away",
-        "integrations": "Every connected integration, secret, and API key scoped to this workspace",
-        "managedRepo": "The Kortix-managed git repository for this workspace, with every commit in it",
-        "access": "Access for everyone on the team — nobody can reach this workspace again"
+        "sessions": "After 14 days, its sessions, files, and Kortix-managed repository are erased",
+        "automation": "Triggers and scheduled runs stop firing",
+        "integrations": "Its API keys and connected apps stop working",
+        "access": "Every member loses access to this workspace"
       },
-      "reassurance": "Git repositories you connected yourself are not deleted. Any code already pushed to them stays where it is.",
+      "reassurance": "Git repositories you connected yourself are not deleted.",
       "keepWorkspace": "Keep workspace",
       "transferWorkspace": "Transfer workspace",
       "transferDescription": "Move this workspace's sessions, files, settings and member access into another workspace.",
@@ -1174,7 +1177,8 @@ const catalog = {
       "loadError": "Failed to load workspaces",
       "createIn": "Create a workspace in {account}",
       "localComputer": "Your computer",
-      "appsAndExtensions": "Apps and extensions"
+      "appsAndExtensions": "Apps and extensions",
+      "preferences": "Preferences"
     },
     "manifestIssues": {
       "title": "{file} has {errors, plural, one {# error} other {# errors}} and {warnings, plural, one {# warning} other {# warnings}}",
@@ -1434,11 +1438,11 @@ const catalog = {
     "connectProvider": "Connect provider",
     "manageModels": "Manage models",
     "loading": "Loading models",
-    "yourDefault": "Account default",
-    "defaultAria": "{model} is the default model for this account",
-    "setDefaultAria": "Set {model} as the account’s default model",
-    "defaultTitle": "Account default model",
-    "setDefaultTitle": "Set as the account’s default model",
+    "yourDefault": "Workspace default",
+    "defaultAria": "{model} is this workspace's default model",
+    "setDefaultAria": "Set {model} as this workspace's default model",
+    "defaultTitle": "Workspace default model",
+    "setDefaultTitle": "Set as this workspace's default model",
     "upgrade": "Upgrade",
     "noMatch": {
       "title": "No models match",
@@ -6145,7 +6149,20 @@ const catalog = {
       "text507c24b6792d": "When a change request merges into {branch}, {agent} runs your instruction.",
       "text05ee1d6181f3": "When a change request merges, {agent} runs your instruction.",
       "texte608495c45ce": "Merged into {branch}",
-      "text80ca527b0d55": "Change request trigger created"
+      "text80ca527b0d55": "Change request trigger created",
+      "textfda15274a752": "Full control: billing, people, and deleting the workspace.",
+      "text02faaaef698b": "Full control of the workspace: billing, people, transferring ownership and deleting it.",
+      "texte1a2cfde722b": "Billing and people. Everything except deleting the workspace or transferring ownership.",
+      "text77148a20ce2e": "Everything an owner can do except deleting the workspace or transferring ownership.",
+      "text378393bbfa9f": "Works in sessions with the agents they are granted.",
+      "texte82608318c7f": "The floor role. Works in sessions with the agents they are granted, directly or through a group. No Customize.",
+      "text7788f20533ea": "Customize and everything in it: every agent, skill, connector, secret and trigger.",
+      "text1a836dc94f41": "Define roles of your own: pick exactly what a member may view and change, then give them out from Members like the built-in ones.",
+      "textb2c26ac6527b": "Give a custom role to a person or a group",
+      "textfab4077701b7": "Put your own logo, icon, favicon, and product name on the app for everyone in this workspace: Kortix becomes your tool.",
+      "textfd8fee75dbb5": "IdP groups map to roles in this workspace",
+      "textadca5dfd1e42": "Bundle members into groups and give the whole group a role: one grant instead of dozens, revoked just as easily.",
+      "text16ba47efb9f2": "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -6318,7 +6335,6 @@ const catalog = {
     "copyTitle": "Copy",
     "copyEmail": "email",
     "copyUserId": "user ID",
-    "copyAccountId": "account ID",
     "copyProjectId": "workspace ID",
     "copySessionId": "session ID",
     "copySessionLink": "session link",
@@ -7668,17 +7684,17 @@ const catalog = {
     "storageUsed": "{used} used",
     "storageNearFull": "Almost full. Delete files you no longer need to keep uploading.",
     "storageFull": "Full. New uploads are refused until files are deleted.",
-    "storageAccountLine": "All workspaces: {used} of {limit}",
+    "storageAccountLine": "Shared with this plan's other workspaces: {used} of {limit}",
     "folderNearMountLimit": "{folder} holds {size}. A session cannot mount a folder larger than {limit}.",
     "folderOverMountLimit": "{folder} holds {size}, more than the {limit} a session can mount. Sessions run without it.",
     "uploadRefusedProjectFull": "{name} needs {needed}. This workspace's Files use {used} of {limit}.",
-    "uploadRefusedAccountFull": "{name} needs {needed}. Files across all your workspaces use {used} of {limit}.",
+    "uploadRefusedAccountFull": "{name} needs {needed}. This workspace's Files use {used} of {limit}.",
     "uploadRefusedFileTooLarge": "{name} is {size}. One file can be at most {limit}.",
     "uploadRefusedFolderMount": "{name} would take {folder} past {limit}, the largest folder a session can mount.",
     "uploadRefusedBusy": "File storage is busy. Retry {name} in a moment.",
     "uploadRefusedStorageFull": "File storage is full right now. Retry {name} later.",
     "accountStorageTitle": "Files storage",
-    "accountStorageDescription": "What each workspace's Files hold. Your plan allows {project} per workspace and {account} in total.",
+    "accountStorageDescription": "What this workspace's Files hold. Your plan allows {project}.",
     "accountStorageEmpty": "No workspace holds files yet.",
     "accountStorageIncomplete": "Some workspaces could not be measured right now.",
     "folderInfo": {
@@ -7748,7 +7764,7 @@ const catalog = {
     "groupTitle": "Triggers",
     "groupDescription": "Schedules, loops, webhooks, app events and monitors in this workspace.",
     "label": "Pause all triggers",
-    "description": "Nothing in any workspace runs on its own: no schedule, loop, webhook, app event or monitor. Running a trigger by hand still works.",
+    "description": "Nothing in this workspace runs on its own: no schedule, loop, webhook, app event or monitor. Running a trigger by hand still works.",
     "readOnlyDescription": "Only an owner or admin can pause or resume triggers.",
     "pausedSince": "Paused since {date}.",
     "pauseTitle": "Pause all triggers?",
@@ -9527,11 +9543,6 @@ const catalog = {
     "unmountProjectDescription": "New sessions stop mounting this folder, and running ones lose it now. The files stay in Files.",
     "pickerProjectDescription": "Pick a folder in Files. Every session of this workspace sees it under /drives."
   },
-  "projectAdmin": {
-    "tools": "Tools",
-    "extensions": "Extensions",
-    "drives": "Drives"
-  },
   "multiAgent": {
     "peer": {
       "message": "Message from {from}",
@@ -9947,12 +9958,18 @@ const catalog = {
       "role": {
         "owner": "Owner",
         "admin": "Admin",
-        "member": "Member"
+        "member": "Member",
+        "manager": "Manager"
       },
       "loadErrorTitle": "Could not load your workspaces",
       "loadErrorBody": "Check your connection and try again.",
       "partialError": "Could not load every workspace.",
-      "retry": "Try again"
+      "retry": "Try again",
+      "deletingOn": "Deleting on {date}",
+      "setupRequired": "Paid, no repository yet",
+      "restore": "Restore",
+      "setUp": "Set up",
+      "stateActionError": "That did not work. Try again."
     },
     "switcher": {
       "switch": "Switch workspace",
@@ -9970,32 +9987,59 @@ const catalog = {
         "workspace": "Workspace",
         "library": "Library",
         "people": "People",
-        "billing": "Billing"
+        "billing": "Billing",
+        "support": "Support"
       },
       "sections": {
         "general": "General",
         "branding": "Branding",
-        "git": "Git repo",
-        "sandbox": "Sandbox templates",
+        "git": "Git",
+        "sandbox": "Sandbox",
         "featureFlags": "Feature flags",
         "apiKeys": "API keys",
         "members": "Members",
         "groups": "Groups",
-        "access": "Access",
         "roles": "Roles",
         "identity": "Identity",
         "audit": "Audit log",
         "help": "Help",
         "plan": "Plan",
-        "usage": "Usage"
+        "usage": "Usage",
+        "connectors": "Connectors",
+        "skills": "Skills",
+        "triggers": "Triggers",
+        "models": "Models",
+        "secrets": "Secrets",
+        "apps": "Apps",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "Security",
+        "repo": "Repository"
       },
       "accessTitle": "Access",
       "accessDescription": "Who can open this workspace, and with which role.",
       "securityTitle": "Security",
       "githubTitle": "GitHub connections",
       "deleteKeepsLogin": "Your login stays: you can create or join another workspace.",
-      "personalKeysTitle": "Your personal access keys",
-      "personalKeysDescription": "API keys that act as you in this workspace: for the CLI, a script, or a CI job."
+      "personalKeysTitle": "Your keys for this workspace",
+      "personalKeysDescription": "API keys that act as you in this workspace only: for a script or a CI job.",
+      "keyScopeWorkspace": "This workspace",
+      "keyScopePersonal": "Every workspace",
+      "keyScopeWorkspaceHint": "The key acts as you in this workspace only.",
+      "personalKeysEmpty": "No personal keys. kortix login makes one; keys for a script are made in a workspace's Settings › API keys.",
+      "securityDescription": "Sign-in rules, who may open whose sessions, and the rules every API key follows.",
+      "rolesDescription": "Built-in and custom roles. Assign them from Members.",
+      "workspaceId": "Workspace ID",
+      "workspaceIdDescription": "For the CLI, the API, and support.",
+      "leaveWorkspace": "Leave workspace",
+      "leaveDescription": "You lose access to this workspace. An admin can invite you again.",
+      "leaveTitle": "Leave workspace?",
+      "leaveDialog": "You lose access to {name}. An admin can invite you again.",
+      "leftToast": "You left {name}",
+      "leaveFailed": "Could not leave the workspace",
+      "deletedToast": "Workspace deleted. Owners can restore it for 14 days.",
+      "inviteTitle": "Invite people to {name}",
+      "apiKeysDescription": "Keys that act in this workspace: yours, and service accounts for CI and automations. Their rules are in Security."
     },
     "models": {
       "yourDefault": "Workspace default",
@@ -10004,6 +10048,60 @@ const catalog = {
       "setDefaultTitle": "Set as the workspace default model",
       "setDefaultAria": "Set {model} as the default model for this workspace",
       "setWorkspaceDefault": "Set as workspace default"
+    },
+    "roles": {
+      "owner": {
+        "label": "Owner",
+        "blurb": "Full control: billing, people, and deleting the workspace."
+      },
+      "admin": {
+        "label": "Admin",
+        "blurb": "Billing and people. Everything except deleting the workspace or transferring ownership."
+      },
+      "manager": {
+        "label": "Manager",
+        "blurb": "Customize and everything in it: every agent, skill, connector, secret and trigger."
+      },
+      "member": {
+        "label": "Member",
+        "blurb": "Works in sessions with the agents they are granted."
+      }
+    },
+    "invite": {
+      "title": "Invite people to {name}",
+      "description": "Each person gets an email with a link to join.",
+      "emailsLabel": "Email addresses",
+      "emailsPlaceholder": "name@company.com",
+      "emailsHint": "Separate addresses with a comma or a space.",
+      "invalidEmail": "That is not an email address.",
+      "removeEmail": "Remove {email}",
+      "roleLabel": "Role",
+      "ownerHint": "To make someone an owner, transfer ownership from Members.",
+      "expiresLabel": "Access ends",
+      "optional": "Optional",
+      "expiresHint": "Empty: access stays until someone removes it.",
+      "cancel": "Cancel",
+      "send": "{count, plural, one {Send invite} other {Send # invites}}",
+      "sentToast": "{count, plural, one {Invite sent} other {# invites sent}}",
+      "sendFailed": "Could not send the invite."
+    },
+    "roleDialog": {
+      "title": "Change role for {name}",
+      "description": "One role per person in this workspace.",
+      "roleLabel": "Role",
+      "cancel": "Cancel",
+      "save": "Save",
+      "savedToast": "{name} is now {role}",
+      "saveFailed": "Could not change the role."
+    },
+    "splitNotice": {
+      "movedTitle": "This is its own workspace now",
+      "movedBody": "It moved out of {source} on {date}. Its people, billing and settings are its own.",
+      "keeperTitle": "The other workspaces moved out",
+      "keeperBody": "On {date}, the other workspaces of {source} became their own workspaces, each with its own people and billing.",
+      "billingComped": "Its plan is free until {date}.",
+      "billingFree": "It got its own free credits.",
+      "dismiss": "Dismiss"
     }
   }
 };

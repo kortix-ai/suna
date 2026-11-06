@@ -551,7 +551,7 @@
       "redirecting": "正在重定向到连接器页面..."
     },
     "rail": {
-      "settings": "设置",
+      "settings": "偏好设置",
       "backToApp": "返回应用",
       "close": "关闭",
       "docs": "文档",
@@ -576,7 +576,7 @@
         },
         "profile": {
           "label": "个人资料",
-          "description": "你的头像、姓名、电子邮件和工作区。"
+          "description": "你的头像、姓名和邮箱。"
         },
         "security": {
           "label": "安全",
@@ -620,6 +620,10 @@
         "computer": {
           "label": "我的电脑",
           "description": "让 Kortix 智能体使用你电脑上的文件、终端和应用。"
+        },
+        "personal-keys": {
+          "label": "个人密钥",
+          "description": "在每个工作区中以你的身份操作的密钥:CLI 登录和旧密钥。"
         }
       }
     },
@@ -715,6 +719,14 @@
         "profilePictureRemoveFailed": "无法删除个人资料图片",
         "chooseImageFile": "请选择图像文件",
         "imageTooLarge": "图片必须小于 5MB"
+      },
+      "plan": {
+        "deleted": "随你的账号一起删除",
+        "left": "你将离开",
+        "blockers": "你是唯一的所有者,且有其他人在使用。请转让所有权或删除该工作区。",
+        "members": "{count, plural, other {# 名成员}}",
+        "nothing": "你不属于任何工作区。仅删除你的登录。",
+        "blockersTitle": "请先移交这些工作区"
       }
     },
     "security": {
@@ -975,18 +987,17 @@
       "retry": "重试",
       "dangerZone": "危险区域",
       "deleteWorkspace": "删除工作区",
-      "deleteDescription": "为所有成员删除此工作区及其中的所有内容。此操作无法撤销。",
+      "deleteDescription": "为所有成员删除此工作区。14 天内可以恢复。",
       "deleteTitle": "删除工作区？",
-      "deleteDialog": "这会为所有有权访问 {name} 的人删除该工作区。此操作无法撤销。",
-      "consequencesTitle": "你将立即失去：",
+      "deleteDialog": "这会为所有成员删除 {name}。14 天内可以恢复。",
+      "consequencesTitle": "立即:",
       "consequences": {
-        "sessions": "此工作区中的每个会话及其文件、历史记录和输出",
-        "automation": "所有计划运行和触发器 — 它们会立即停止",
-        "integrations": "此工作区范围内的每个已连接集成、密钥和 API 密钥",
-        "managedRepo": "此工作区中由 Kortix 管理的 Git 存储库及其中的所有提交",
-        "access": "整个团队的访问权限 — 任何人都无法再次访问此工作区"
+        "sessions": "14 天后,其会话、文件和 Kortix 托管的仓库将被清除",
+        "automation": "触发器和计划运行停止触发",
+        "integrations": "其 API 密钥和已连接的应用停止工作",
+        "access": "所有成员都将失去对此工作区的访问权限"
       },
-      "reassurance": "自行连接的 Git 存储库不会被删除。已推送的代码将保留在原处。",
+      "reassurance": "你自己连接的 Git 仓库不会被删除。",
       "keepWorkspace": "保留工作区",
       "transferWorkspace": "转移工作区",
       "transferDescription": "将此工作区的会话、文件、设置和成员访问权限移动到另一个工作区。",
@@ -1695,7 +1706,8 @@
       "loadError": "工作区加载失败",
       "createIn": "在 {account} 中创建工作区",
       "localComputer": "你的电脑",
-      "appsAndExtensions": "应用和扩展"
+      "appsAndExtensions": "应用和扩展",
+      "preferences": "偏好设置"
     },
     "manifestIssues": {
       "title": "{file} 有 {errors, plural, other {# 个错误}}和 {warnings, plural, other {# 个警告}}",
@@ -2048,11 +2060,11 @@
     "connectProvider": "连接提供商",
     "manageModels": "管理模型",
     "loading": "正在加载模型",
-    "yourDefault": "账户默认",
-    "defaultAria": "{model} 是此账户的默认模型",
-    "setDefaultAria": "将 {model} 设为账户的默认模型",
-    "defaultTitle": "账户默认模型",
-    "setDefaultTitle": "设为账户的默认模型",
+    "yourDefault": "工作区默认",
+    "defaultAria": "{model} 是此工作区的默认模型",
+    "setDefaultAria": "将 {model} 设为此工作区的默认模型",
+    "defaultTitle": "工作区默认模型",
+    "setDefaultTitle": "设为此工作区的默认模型",
     "upgrade": "升级",
     "noMatch": {
       "title": "没有匹配的模型",
@@ -3833,8 +3845,8 @@
       "checkNowAction": "立即检查",
       "tryAgainAction": "重试",
       "projectsAction": "返回工作区列表",
-      "accountLabel": "工作区",
-      "projectLabel": "工作区",
+      "accountLabel": "登录身份",
+      "projectLabel": "工作区 ID",
       "approvalNote": "任何管理这个工作区的人都可以批准你的请求。",
       "openAsAdmin": "以管理员身份打开",
       "requestFailed": "无法发送请求。",
@@ -21261,7 +21273,20 @@
       "text2590cd62a747": "工作区设置",
       "text276261b1e03d": "工作区 设置 组织 团队 管理",
       "text634ebc515b7f": "工作区 · API 密钥",
-      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy",
+      "textfda15274a752": "完全控制:账单、成员和删除工作区。",
+      "text02faaaef698b": "完全控制工作区:账单、成员、转让所有权和删除。",
+      "texte1a2cfde722b": "账单和成员。除删除工作区或转让所有权外的一切。",
+      "text77148a20ce2e": "所有者能做的一切,除了删除工作区或转让所有权。",
+      "text378393bbfa9f": "在会话中使用授予他们的智能体工作。",
+      "texte82608318c7f": "基础角色。在会话中使用直接或通过群组授予的智能体工作。无法自定义。",
+      "text7788f20533ea": "自定义及其中的一切:每个智能体、技能、连接器、密钥和触发器。",
+      "text1a836dc94f41": "定义你自己的角色:精确选择成员可以查看和更改的内容,然后像内置角色一样在成员中分配。",
+      "textb2c26ac6527b": "将自定义角色分配给个人或群组",
+      "textfab4077701b7": "为此工作区的所有人在应用中使用你自己的徽标、图标、网站图标和产品名称:Kortix 成为你的工具。",
+      "textfd8fee75dbb5": "IdP 群组映射到此工作区中的角色",
+      "textadca5dfd1e42": "将成员归入群组并为整个群组分配一个角色:一次授权代替几十次,撤销同样容易。",
+      "text16ba47efb9f2": "此工作区中每个管理员和智能体操作的完整、可筛选记录:谁在何时何地做了什么。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -21461,7 +21486,6 @@
     "copyTitle": "复制",
     "copyEmail": "邮箱",
     "copyUserId": "用户 ID",
-    "copyAccountId": "账户 ID",
     "copyProjectId": "工作区 ID",
     "copySessionId": "会话 ID",
     "copySessionLink": "会话链接",
@@ -22923,17 +22947,17 @@
     "storageUsed": "已使用 {used}",
     "storageNearFull": "即将用满。删除不再需要的文件后才能继续上传。",
     "storageFull": "已满。删除文件之前，新的上传会被拒绝。",
-    "storageAccountLine": "所有工作区：{used} / {limit}",
+    "storageAccountLine": "与此套餐的其他工作区共享:{used}/{limit}",
     "folderNearMountLimit": "{folder} 占用 {size}。会话无法挂载超过 {limit} 的文件夹。",
     "folderOverMountLimit": "{folder} 占用 {size}，超过会话可挂载的 {limit}。会话会在没有它的情况下运行。",
     "uploadRefusedProjectFull": "{name} 需要 {needed}。此工作区的文件已使用 {limit} 中的 {used}。",
-    "uploadRefusedAccountFull": "{name} 需要 {needed}。你所有工作区的文件已使用 {limit} 中的 {used}。",
+    "uploadRefusedAccountFull": "{name} 需要 {needed}。此工作区的文件已使用 {used}/{limit}。",
     "uploadRefusedFileTooLarge": "{name} 为 {size}。单个文件最大为 {limit}。",
     "uploadRefusedFolderMount": "{name} 会使 {folder} 超过 {limit}，这是会话可挂载的最大文件夹。",
     "uploadRefusedBusy": "文件存储繁忙。请稍后重试 {name}。",
     "uploadRefusedStorageFull": "文件存储当前已满。请稍后重试 {name}。",
     "accountStorageTitle": "文件存储",
-    "accountStorageDescription": "每个工作区的文件占用的空间。你的套餐允许每个工作区 {project}，合计 {account}。",
+    "accountStorageDescription": "此工作区文件的占用量。你的套餐允许 {project}。",
     "accountStorageEmpty": "还没有工作区包含文件。",
     "accountStorageIncomplete": "部分工作区暂时无法测量。",
     "folderInfo": {
@@ -23579,7 +23603,7 @@
     "groupTitle": "触发器",
     "groupDescription": "此工作区中的计划、循环、Webhook、应用事件和监控。",
     "label": "暂停所有触发器",
-    "description": "任何工作区都不会自动运行：没有计划、循环、Webhook、应用事件或监控。手动运行触发器仍然可用。",
+    "description": "此工作区中没有任何内容会自行运行:没有计划、循环、Webhook、应用事件或监视器。手动运行触发器仍然有效。",
     "readOnlyDescription": "只有所有者或管理员可以暂停或恢复触发器。",
     "pausedSince": "自 {date} 起已暂停。",
     "pauseTitle": "暂停所有触发器？",
@@ -26581,12 +26605,18 @@
       "role": {
         "owner": "所有者",
         "admin": "管理员",
-        "member": "成员"
+        "member": "成员",
+        "manager": "经理"
       },
       "loadErrorTitle": "无法加载你的工作区",
       "loadErrorBody": "请检查网络连接后重试。",
       "partialError": "无法加载全部工作区。",
-      "retry": "重试"
+      "retry": "重试",
+      "deletingOn": "将于 {date} 删除",
+      "setupRequired": "已付费,尚无仓库",
+      "restore": "恢复",
+      "setUp": "设置",
+      "stateActionError": "操作未成功。请重试。"
     },
     "switcher": {
       "switch": "切换工作区",
@@ -26603,7 +26633,8 @@
       "description": "工作区是你的公司使用 Kortix 工作的地方：成员、智能体以及他们创建的一切。",
       "submit": "创建工作区",
       "restricted": "此服务器仅为受邀人员创建工作区。请管理员邀请 {email}。",
-      "limitReached": "你的套餐已达到工作区上限。升级后即可再创建一个。"
+      "limitReached": "你的套餐已达到工作区上限。升级后即可再创建一个。",
+      "freeCreditsRule": "只有你的第一个工作区能获得每月免费额度。"
     },
     "settings": {
       "title": "工作区设置",
@@ -26611,32 +26642,59 @@
         "workspace": "工作区",
         "library": "资源库",
         "people": "成员",
-        "billing": "账单"
+        "billing": "账单",
+        "support": "支持"
       },
       "sections": {
         "general": "常规",
         "branding": "品牌",
-        "git": "Git 仓库",
-        "sandbox": "沙盒模板",
+        "git": "Git",
+        "sandbox": "沙盒",
         "featureFlags": "功能开关",
         "apiKeys": "API 密钥",
         "members": "成员",
         "groups": "群组",
-        "access": "访问权限",
         "roles": "角色",
         "identity": "身份",
         "audit": "审计日志",
         "help": "帮助",
         "plan": "套餐",
-        "usage": "用量"
+        "usage": "用量",
+        "connectors": "连接器",
+        "skills": "技能",
+        "triggers": "触发器",
+        "models": "模型",
+        "secrets": "密钥",
+        "apps": "应用",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "安全",
+        "repo": "代码仓库"
       },
       "accessTitle": "访问权限",
       "accessDescription": "谁可以打开此工作区，以及使用哪个角色。",
       "securityTitle": "安全",
       "githubTitle": "GitHub 连接",
       "deleteKeepsLogin": "你的登录保留：你可以创建或加入另一个工作区。",
-      "personalKeysTitle": "你的个人访问密钥",
-      "personalKeysDescription": "在此工作区中代表你操作的 API 密钥：用于 CLI、脚本或 CI 任务。"
+      "personalKeysTitle": "你在此工作区的密钥",
+      "personalKeysDescription": "仅在此工作区中以你的身份操作的 API 密钥:用于脚本或 CI 任务。",
+      "keyScopeWorkspace": "此工作区",
+      "keyScopePersonal": "所有工作区",
+      "keyScopeWorkspaceHint": "该密钥仅在此工作区中以你的身份操作。",
+      "personalKeysEmpty": "没有个人密钥。kortix login 会创建一个;用于脚本的密钥在工作区的设置 › API 密钥中创建。",
+      "securityDescription": "登录规则、谁可以打开谁的会话,以及每个 API 密钥遵循的规则。",
+      "rolesDescription": "内置角色和自定义角色。在成员中分配。",
+      "workspaceId": "工作区 ID",
+      "workspaceIdDescription": "用于 CLI、API 和支持。",
+      "leaveWorkspace": "离开工作区",
+      "leaveDescription": "你将失去对此工作区的访问权限。管理员可以再次邀请你。",
+      "leaveTitle": "离开工作区?",
+      "leaveDialog": "你将失去对 {name} 的访问权限。管理员可以再次邀请你。",
+      "leftToast": "你已离开 {name}",
+      "leaveFailed": "无法离开工作区",
+      "deletedToast": "工作区已删除。所有者可在 14 天内恢复。",
+      "inviteTitle": "邀请成员加入 {name}",
+      "apiKeysDescription": "在此工作区中操作的密钥:你的密钥,以及用于 CI 和自动化的服务账号。其规则在安全中。"
     },
     "cli": {
       "noWorkspaceTitle": "创建工作区以登录 CLI",
@@ -26664,6 +26722,79 @@
       "openChooser": "创建或加入工作区",
       "workspaceLabel": "工作区",
       "noCaptureWorkspace": "你的工作区都未开启 Kortix Capture。所有者或管理员可以开启它。"
+    },
+    "menu": {
+      "invite": "邀请成员加入 {name}",
+      "leave": "离开 {name}"
+    },
+    "roles": {
+      "owner": {
+        "label": "所有者",
+        "blurb": "完全控制:账单、成员和删除工作区。"
+      },
+      "admin": {
+        "label": "管理员",
+        "blurb": "账单和成员。除删除工作区或转让所有权外的一切。"
+      },
+      "manager": {
+        "label": "经理",
+        "blurb": "自定义及其中的一切:每个智能体、技能、连接器、密钥和触发器。"
+      },
+      "member": {
+        "label": "成员",
+        "blurb": "在会话中使用授予他们的智能体工作。"
+      }
+    },
+    "invite": {
+      "title": "邀请成员加入 {name}",
+      "description": "每个人都会收到一封带有加入链接的邮件。",
+      "emailsLabel": "邮箱地址",
+      "emailsPlaceholder": "name@company.com",
+      "emailsHint": "用逗号或空格分隔地址。",
+      "invalidEmail": "这不是邮箱地址。",
+      "removeEmail": "移除 {email}",
+      "roleLabel": "角色",
+      "ownerHint": "要让某人成为所有者,请在成员中转让所有权。",
+      "expiresLabel": "访问结束",
+      "optional": "可选",
+      "expiresHint": "留空:访问权限一直保留,直到有人将其移除。",
+      "cancel": "取消",
+      "send": "{count, plural, other {发送 # 个邀请}}",
+      "sentToast": "{count, plural, other {已发送 # 个邀请}}",
+      "sendFailed": "无法发送邀请。"
+    },
+    "roleDialog": {
+      "title": "更改 {name} 的角色",
+      "description": "此工作区中每人一个角色。",
+      "roleLabel": "角色",
+      "cancel": "取消",
+      "save": "保存",
+      "savedToast": "{name} 现在是 {role}",
+      "saveFailed": "无法更改角色。"
+    },
+    "splitNotice": {
+      "movedTitle": "它现在是独立的工作区",
+      "movedBody": "它于 {date} 从 {source} 独立出来。其成员、账单和设置都归它自己。",
+      "keeperTitle": "其他工作区已独立",
+      "keeperBody": "{date},{source} 的其他工作区各自独立,拥有自己的成员和账单。",
+      "billingComped": "其套餐在 {date} 之前免费。",
+      "billingFree": "它获得了自己的免费额度。",
+      "dismiss": "关闭"
+    },
+    "accessRequests": {
+      "title": "{count, plural, other {# 人请求加入}}",
+      "approve": "批准",
+      "decline": "拒绝",
+      "approvedToast": "已批准。对方现在是成员。",
+      "declinedToast": "已拒绝请求",
+      "decideFailed": "无法更新请求。"
+    },
+    "deleting": {
+      "title": "{name} 正在删除中。",
+      "body": "其成员已失去访问权限。它将于 {date} 被清除。恢复它即可继续使用。",
+      "restore": "恢复工作区",
+      "back": "返回工作区",
+      "restoreFailed": "无法恢复工作区。"
     }
   }
 }

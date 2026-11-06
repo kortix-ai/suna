@@ -53,6 +53,8 @@ describe('railGroups', () => {
       'sessions',
       'preferences',
       'chrome',
+      // The person's keys bound to no workspace (`GET /v1/me/tokens`).
+      'personal-keys',
       'mcp',
       'computer',
     ]);

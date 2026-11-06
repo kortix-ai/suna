@@ -61,8 +61,9 @@ import { haptics } from '@/lib/haptics';
 import { useLanguage } from '@/contexts';
 import { useMyInvites } from '@/lib/invites/hooks';
 import { inviteHref } from '@/lib/invites/invite-landing';
-import { useWorkspaces } from '@/lib/projects/hooks';
+import { useWorkspaceStateAction, useWorkspaces } from '@/lib/projects/hooks';
 import { filterWorkspaceRows, projectHref, type WorkspaceRow } from '@/lib/projects/switcher';
+import { isOpenableWorkspaceRow } from '@/lib/projects/switcher';
 import { newWorkspaceWebUrl } from '@/lib/projects/web-project-links';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useCloseThen } from '@/components/kortix/sheet';
@@ -158,6 +159,7 @@ function WorkspaceList({
   openWorkspace: (row: WorkspaceRow) => void;
 }) {
   const { t } = useLanguage();
+  const stateAction = useWorkspaceStateAction();
   // While the sheet opens only the rows that fill it mount; the rest once it
   // is at rest (KRTX-2929). The sheet is fixed at 100%, so it never resizes.
   const rowLimit = useSheetRowLimit(filtered.length);
@@ -196,16 +198,36 @@ function WorkspaceList({
   }
   return (
     <SettingsGroup>
-      {filtered.slice(0, rowLimit).map((row) => (
-        <SettingsRow
-          key={row.project.project_id}
-          leading={<Avatar chalk size={28} fallbackText={row.project.name} />}
-          label={row.project.name}
-          checked={row.project.project_id === currentProjectId}
-          right={null}
-          onPress={() => openWorkspace(row)}
-        />
-      ))}
+      {filtered.slice(0, rowLimit).map((row) =>
+        isOpenableWorkspaceRow(row) ? (
+          <SettingsRow
+            key={row.project.project_id}
+            leading={<Avatar chalk size={28} fallbackText={row.project.name} />}
+            label={row.project.name}
+            checked={row.project.project_id === currentProjectId}
+            right={null}
+            onPress={() => openWorkspace(row)}
+          />
+        ) : (
+          // Set up or Restore first; the workspace opens after.
+          <SettingsRow
+            key={row.project.project_id}
+            leading={<Avatar chalk size={28} fallbackText={row.project.name} />}
+            label={row.project.name}
+            value={row.state === 'deleting' ? t('workspace.restore', 'Restore') : t('workspace.setUp', 'Set up')}
+            disabled={stateAction.isPending}
+            onPress={() =>
+              stateAction.mutate(
+                {
+                  workspaceId: row.project.project_id,
+                  state: row.state === 'deleting' ? 'deleting' : 'setup_required',
+                },
+                { onSuccess: () => openWorkspace(row) },
+              )
+            }
+          />
+        ),
+      )}
     </SettingsGroup>
   );
 }

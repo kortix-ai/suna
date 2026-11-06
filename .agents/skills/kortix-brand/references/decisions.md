@@ -10,6 +10,16 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-11-06
+
+### D40 One workspace role, one Settings panel, and the workspace code names
+- **Date:** 2026-11-06
+- **Decision:** (1) A person holds ONE role per workspace, read from one ladder: Owner, Admin, Manager, Member. The UI never shows "account owner", "account admin", "account member", "project member" or "project manager", and never a second "access role" beside the workspace role. An invite reads "Invite people to {workspace}" and carries one role (Owner only by a transfer). (2) "Workspace settings" is the workspace's one Settings panel (`/workspaces/<id>/admin/<section>`, rail Workspace · Library · People · Billing · Support). "Preferences" is the person's own settings (profile, security, appearance, notifications, personal keys); the menu row that opens it says "Preferences" and keeps Mod+,. No surface has two rows labelled "Settings". (3) The code now has workspace names (`/v1/workspaces`, `workspace_id`, `kortix workspaces`, `KORTIX_WORKSPACE_ID`): copy that cites a code name uses the workspace name; the project and account names stay valid aliases and appear only where the reader's tool still prints them. (4) A key the workspace mints says "This workspace"; a personal key says "Every workspace". Never "Whole workspace" for a key that reaches more than one.
+- **Why:** founder, 2026-11-05 and 2026-11-06: "there will just be Workspace scopes not the account level or project level shit, just 1 type", "Hardcore treat everything 100% like SLACK Workspace", "1 Settings panel with all from top to bottom things". The review of the `workspaces` branch (findings 19 to 21) found the invite dialog still offering "Account member" plus an optional "Project member" row, two rows labelled "Settings" with different meanings, and copy that called the viewer's email "Workspace".
+- **Where:** [voice-and-tone.md](verbal/voice-and-tone.md) (the workspace and role rows of the noun table, the code-name rule), `packages/ui/src/access/access/role-select.tsx`, `packages/ui/src/access/access/invite-people-dialog.tsx`, `packages/shared/src/workspace-settings.ts` (the section names), `apps/web/translations/*.json`, `.agents/skills/learnings/work/workspaces/ux.md` sections 3 and 4.
+- **Supersedes:** the two-level access sentence of D39 ("the owner, admin and member role is the 'workspace role', and the Manager, Editor and Viewer grant is the 'access role'"), and D39 rule (4) where it kept `project` code names in copy that now has a workspace name. The rest of D39 stands.
+- **Source:** the `workspaces` branch (sub-branch `ws-r1-web`).
+
 ## 2026-11-05
 
 ### D38 The email footer sits on the left edge and links the mobile apps

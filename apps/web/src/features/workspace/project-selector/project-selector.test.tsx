@@ -99,6 +99,29 @@ describe('ProjectSelectorView — create or join', () => {
     expect(html).toContain('Amber Falcon');
   });
 
+  // Finding 38: the create primes the list with the new workspace before the
+  // route changes; the handoff must stay up, not flash the chooser.
+  test('a create in flight keeps the handoff even after the new workspace joined the list', () => {
+    const html = render({ workspaces: twoAccounts, inlineCreate: inlineCreate({ submitting: true }) });
+    expect(html).not.toContain('Choose a workspace');
+    expect(html).not.toContain('data-testid="selector-workspaces"');
+  });
+
+  test('a deleting row offers Restore and a setup_required row offers Set up; neither is a link', () => {
+    const [first, second] = twoAccounts;
+    const html = render({
+      workspaces: [
+        { ...first!, state: 'deleting', deletionScheduledFor: '2026-11-20T00:00:00.000Z' },
+        { ...second!, state: 'setup_required' },
+      ],
+    });
+    expect(html).toContain('data-state="deleting"');
+    expect(html).toContain('Restore');
+    expect(html).toContain('data-state="setup_required"');
+    expect(html).toContain('Set up');
+    expect(html).not.toContain(`href="/workspaces/${first!.workspaceId}"`);
+  });
+
   test('with workspaces the inline form is not shown: one create link', () => {
     const html = render({ workspaces: twoAccounts, inlineCreate: inlineCreate() });
     expect(html).not.toContain('data-testid="selector-create-form"');

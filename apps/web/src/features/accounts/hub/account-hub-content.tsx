@@ -27,7 +27,7 @@
  */
 
 import { useTranslations } from '@/i18n/use-translations';
-import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
+import { invalidatePermissionProbes, qk, useWorkspace } from '@kortix/sdk/react';
 import {
   ArrowSquareOutIcon as ExternalLink,
   GithubLogoIcon as Github,
@@ -40,11 +40,12 @@ import {
   ClockIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useUiRouter } from '@kortix/ui/providers/ui-provider';
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useUiRouter, useUiSearchParams } from '@kortix/ui/providers/ui-provider';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AccessHelp } from '@/components/iam/access-help';
+import { WorkspaceAccessRequests } from '@/components/iam/workspace-access-requests';
 import { WorkspaceAccessSection } from '@/features/workspace/settings/workspace-access-section';
 import { AddGitHubAccountDialog } from '@kortix/ui/access/iam/add-github-account-dialog';
 import { ApiKeysSection } from '@/components/iam/api-keys-card';
@@ -59,7 +60,6 @@ import { ManagedGitNotice } from '@kortix/ui/access/iam/managed-git-notice';
 import { MemberAccessPanel } from '@/components/iam/member-access-panel';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SessionOversightCard } from '@kortix/ui/access/iam/session-oversight-card';
-import { AutomationsPauseCard } from '@/components/iam/automations-pause-card';
 import { OAuthAppsCard } from '@/components/iam/oauth-apps-card';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { ScimCard } from '@/components/iam/scim-card';
@@ -79,7 +79,6 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@kortix/ui/input-group';
-import { Label } from '@kortix/ui/label';
 import Loading from '@kortix/ui/loading';
 import { SettingsRowGroup } from '@kortix/ui/settings-row';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
@@ -110,6 +109,9 @@ import {
   useAccountRoles,
 } from '@kortix/ui/access/access/index';
 import { AccessDialog } from '@kortix/ui/access';
+import { InvitePeopleDialog } from '@kortix/ui/access/access/invite-people-dialog';
+import { WorkspaceRoleDialog } from '@kortix/ui/access/access/workspace-role-dialog';
+import { memberWorkspaceRole } from '@kortix/ui/workspace/settings/use-leave-workspace';
 import { useAccountState } from '@kortix/ui/internal/billing/index';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { forgetPushedEntry, hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
@@ -119,6 +121,7 @@ import {
   type AccountInvitation,
   type AccountMember,
   type AccountRole,
+  type WorkspaceRole,
   cancelAccountInvite,
   deleteGitHubInstallation,
   leaveAccount,
@@ -126,7 +129,6 @@ import {
   listGitHubInstallations,
   removeAccountMember,
   resendAccountInvite,
-  updateAccountName,
 } from '@kortix/sdk';
 import {
   MagnifyingGlassIcon as Search,
@@ -171,14 +173,17 @@ async function copyInviteLink(url: string, copiedMessage: string, fallbackMessag
 export function AccountHubContent({
   companion = false,
   title: titleOverride,
+  workspaceId,
 }: {
   /** Drawn under a project pane in the same section: no title, no account name. */
   companion?: boolean;
   /** The section label, when the pane stands alone in a section a project pane would lead. */
   title?: string;
+  /** The workspace whose Settings panel shows this pane. API keys mint keys bound to it. */
+  workspaceId?: string;
 } = {}) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const tAutomations = useTranslations('automationsPause');
+  const tSettings = useTranslations('workspaces.settings');
   // `?accountId=` and the hub's own params, both off the URL the modal writes
   // onto the page it floats over. See `account-hub-location.tsx`.
   const accountId = useAccountPanelId();
@@ -200,7 +205,6 @@ export function AccountHubContent({
     canReadPolicies,
     canReadAudit,
     canWriteAccount,
-    canDeleteAccount,
     canInviteMember,
     canRemoveMember,
     canUpdateMember,
@@ -253,13 +257,37 @@ export function AccountHubContent({
   // the pane that opened it, so leaving the pane closes it.
   const hubSheet = useAccountHubSheet();
   const closeHubSheet = hubSheet.close;
+  const inviteOpenedRef = useRef(false);
+  const openInviteRef = useRef<((target: AccountDetail) => void) | null>(null);
+  // The page's own query (`?invite=1`), not the hub's mapped params.
+  const pageSearchParams = useUiSearchParams();
+  // The workspace's own name for the invite title; the account name is the
+  // fallback (they are kept equal on a 1:1 workspace).
+  const workspaceName = useWorkspace(workspaceId).data?.name;
   useEffect(() => {
     closeHubSheet();
+    inviteOpenedRef.current = false;
   }, [accountId, activeSection, closeHubSheet]);
+  // `?invite=1` (the workspace menu's and the palette's "Invite people")
+  // opens the invite form once Members has loaded. Declared after the effect
+  // above, so the form opens after a section change closed the sheet.
+  const wantsInvite = activeSection === 'members' && pageSearchParams?.get('invite') === '1';
+  const inviteTarget = accountQuery.data;
+  useEffect(() => {
+    if (!wantsInvite) {
+      inviteOpenedRef.current = false;
+      return;
+    }
+    if (inviteOpenedRef.current || !canInviteMember || !inviteTarget || !openInviteRef.current) return;
+    inviteOpenedRef.current = true;
+    openInviteRef.current(inviteTarget);
+    // `accountId` and `activeSection`: re-run after the effect above closed the sheet.
+  }, [wantsInvite, canInviteMember, inviteTarget, accountId, activeSection]);
 
   if (authLoading || !user) {
     return <ConnectingScreen overrideStage="auth" hideWorkspacePicker />;
   }
+
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
@@ -281,7 +309,13 @@ export function AccountHubContent({
     (activeSection === 'members' && selectedAccessMemberId) ||
     (activeSection === 'identity' && activeSetup)
       ? undefined
-      : localizedAccountPaneMeta(tI18nComplete)[activeSection];
+      : activeSection === 'settings'
+        ? { title: tSettings('sections.security'), description: tSettings('securityDescription') }
+        : activeSection === 'roles'
+          ? { title: tSettings('sections.roles'), description: tSettings('rolesDescription') }
+          : activeSection === 'tokens'
+            ? { title: tSettings('sections.apiKeys'), description: tSettings('apiKeysDescription') }
+          : localizedAccountPaneMeta(tI18nComplete)[activeSection];
   // `project` / `group` / `member` carry the open detail entity onto the URL
   // (`?tab=groups&group=<id>`) — omit one (or pass null) to drop the param,
   // e.g. switching tabs or backing out to the list. Every other tab switch
@@ -301,8 +335,33 @@ export function AccountHubContent({
     );
   };
 
+  const invalidateAfterInvite = (accountIdToBust: string) => {
+    void invalidatePermissionProbes(queryClient, { accountId: accountIdToBust });
+    for (const key of ['account-members', 'account-invites', 'account']) {
+      void queryClient.invalidateQueries({ queryKey: [key, accountIdToBust] });
+    }
+  };
   const openInvite = (target: AccountDetail) =>
-    hubSheet.open({
+    // One workspace, one role: "Invite people to {workspace}" (finding 19).
+    // A legacy account that still holds several workspaces keeps the
+    // per-workspace grant form until the split runs.
+    workspaceId && target.project_count <= 1
+      ? hubSheet.open({
+          title: tSettings('inviteTitle', { name: workspaceName ?? target.name }),
+          body: (
+            <InvitePeopleDialog
+              open
+              onOpenChange={(next) => {
+                if (!next) hubSheet.close();
+              }}
+              workspaceId={workspaceId}
+              workspaceName={workspaceName ?? target.name}
+              canGrantAdmin={canUpdateMember}
+              onDone={() => invalidateAfterInvite(target.account_id)}
+            />
+          ),
+        })
+      : hubSheet.open({
       title: tI18nComplete.raw('text8693768c7e08'),
       body: (
         <AccessDialog
@@ -327,6 +386,8 @@ export function AccountHubContent({
         />
       ),
     });
+
+  openInviteRef.current = openInvite;
 
   return (
     <AccountPane
@@ -406,7 +467,22 @@ export function AccountHubContent({
                 onOpenGroup={(groupId) => navigate('groups', { group: groupId })}
               />
             ) : (
+              <>
+              {workspaceId && account.project_count <= 1 ? (
+                <div className="mb-8">
+                  <WorkspaceAccessRequests
+                    workspaceId={workspaceId}
+                    canManage={canInviteMember}
+                    onDecided={() => {
+                      for (const key of ['account-members', 'account-invites']) {
+                        void queryClient.invalidateQueries({ queryKey: [key, account.account_id] });
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
               <MembersCard
+                workspaceId={account.project_count <= 1 ? workspaceId : undefined}
                 account={account}
                 members={members}
                 isLoading={membersQuery.isLoading}
@@ -427,7 +503,23 @@ export function AccountHubContent({
                 onSelectMember={(id) => navigate('members', { member: id })}
                 onInvite={() => openInvite(account)}
               />
+              </>
             )
+          ) : null}
+
+          {/* A legacy account that still holds several workspaces
+              (split_pending): access is granted per workspace until the split
+              runs, so its per-workspace grants stay under the one roster. */}
+          {activeSection === 'members' && sectionVisible.members && !selectedAccessMemberId && account.project_count > 1 ? (
+            <div className="mt-10">
+              <WorkspaceAccessSection
+                accountId={account.account_id}
+                selectedProjectId={selectedAccessProjectId}
+                onSelectProject={(id) => navigate('members', { project: id })}
+                rbacEnabled={rbacEnabled}
+                canManageRoles={canManageRoles}
+              />
+            </div>
           ) : null}
 
           {activeSection === 'groups' && sectionVisible.groups ? (
@@ -449,16 +541,6 @@ export function AccountHubContent({
                 onSelectGroup={(id) => navigate('groups', { group: id })}
               />
             )
-          ) : null}
-
-          {activeSection === 'access-projects' ? (
-            <WorkspaceAccessSection
-              accountId={account.account_id}
-              selectedProjectId={selectedAccessProjectId}
-              onSelectProject={(id) => navigate('access-projects', { project: id })}
-              rbacEnabled={rbacEnabled}
-              canManageRoles={canManageRoles}
-            />
           ) : null}
 
           {activeSection === 'help' ? <AccessHelp accountId={account.account_id} /> : null}
@@ -520,7 +602,7 @@ export function AccountHubContent({
               {/* A person's own keys first: every member has them (Workspaces,
                   PR 1 — they left `/settings`). The machine keys below need
                   `token.create`. */}
-              <TokensTab accountId={account.account_id} embedded />
+              <TokensTab accountId={account.account_id} workspaceId={workspaceId} embedded />
               {canCreateToken === true ? (
                 <>
               <ApiKeysSection accountId={account.account_id} canManage={canCreateToken === true} />
@@ -529,7 +611,6 @@ export function AccountHubContent({
                   sits with the other machine credentials and under the same
                   `token.*` permissions. */}
               <OAuthAppsCard accountId={account.account_id} canManage={canCreateToken === true} />
-              <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
                 </>
               ) : null}
             </div>
@@ -587,32 +668,13 @@ export function AccountHubContent({
             )
           ) : null}
 
+          {/* Security: how hard it is to hold a session here, who may open
+              whose work, and the rules every API key follows. The name, icon,
+              Pause all triggers and the Danger zone are General's. */}
           {activeSection === 'settings' && canWriteAccount ? (
             <div className="space-y-10">
-              {/* Under the workspace's General pane the name field is the
-                  workspace's own: renaming the workspace renames its account
-                  (one active project, the API keeps them one). A legacy
-                  account with several projects keeps its own name here. */}
-              {companion && account.project_count <= 1 ? null : (
-                <SettingsGroup title={tI18nComplete.raw('textc910d474dcd7')}>
-                  <GeneralCard
-                    account={account}
-                    queryClient={queryClient}
-                    canWrite={canWriteAccount}
-                  />
-                </SettingsGroup>
-              )}
-
-              {/* MFA and the session policy are one decision — how hard it
-                  is to hold a session here — so they share one bordered
-                  group. The "Advanced" disclosure that used to hide session
-                  lifetime + idle timeout is gone: as full cards they were
-                  genuinely too much, as two rows they cost two lines. See
-                  `components/iam/session-controls-card.tsx`. */}
-              <SettingsGroup
-                title={tI18nComplete.raw('text8f6fb4eb7f42')}
-                description={tI18nComplete.raw('textf9d52abc1fb8')}
-              >
+              {/* The pane header already says Security: no second heading. */}
+              <div className="space-y-3">
                 <SettingsRowGroup>
                   <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
                   <SessionControlsCard accountId={account.account_id} canManage={canWriteAccount} />
@@ -622,24 +684,8 @@ export function AccountHubContent({
                   <SessionOversightCard accountId={account.account_id} />
                 </SettingsRowGroup>
                 <AccountSessionsPanel accountId={account.account_id} canManage={canWriteAccount} />
-              </SettingsGroup>
-
-              {/* Pause all triggers (KRTX-1721): one switch for every
-                  project's schedules, reminders, webhooks, app events and
-                  monitors. See `automations-pause-card.tsx`. */}
-              <SettingsGroup title={tAutomations('groupTitle')} description={tAutomations('groupDescription')}>
-                <SettingsRowGroup>
-                  <AutomationsPauseCard accountId={account.account_id} />
-                </SettingsRowGroup>
-              </SettingsGroup>
-
-              {/* Under the workspace's General pane its own Danger zone (delete
-                  the workspace) follows: one Danger zone per page. */}
-              {canDeleteAccount && !companion ? (
-                <SettingsGroup title={tI18nComplete.raw('textfd8b8dae4421')}>
-                  <DangerZoneCard />
-                </SettingsGroup>
-              ) : null}
+              </div>
+              <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
             </div>
           ) : null}
           {/* section-panes:end — source tests slice the panes up to here. */}
@@ -865,134 +911,6 @@ function GitHubConnectionCard({
   );
 }
 
-// ============================== SETTINGS ==============================
-
-/**
- * Visual grouping for the Settings tab: a `Label` heading with an optional
- * one-line description over the group's panels — same dialect as the
- * customize settings view.
- */
-function SettingsGroup({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-4">
-      <div className="space-y-1">
-        <Label>{title}</Label>
-        {description ? <p className="text-muted-foreground text-xs">{description}</p> : null}
-      </div>
-      <div className="space-y-3">{children}</div>
-    </section>
-  );
-}
-
-function GeneralCard({
-  account,
-  queryClient,
-  canWrite,
-}: {
-  account: AccountDetail;
-  queryClient: ReturnType<typeof useQueryClient>;
-  canWrite: boolean;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [name, setName] = useState(account.name);
-
-  useEffect(() => {
-    setName(account.name);
-  }, [account.name]);
-
-  const renameMutation = useMutation({
-    mutationFn: (next: string) => updateAccountName(account.account_id, next),
-    onSuccess: (updated) => {
-      successToast(tI18nComplete.raw('textfb38fa39668b'));
-      queryClient.setQueryData(['account', account.account_id], updated);
-      // The account LIST renders this name in every switcher. `scope()` is
-      // the prefix that reaches the signed-in user's list slot from inside a
-      // mutation callback, which has no user id in hand.
-      queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
-    },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textf8b3ddaa27a4')),
-  });
-
-  const trimmed = name.trim();
-  const canSubmit = canWrite && trimmed.length > 0 && trimmed !== account.name;
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canSubmit) return;
-    renameMutation.mutate(trimmed);
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="bg-popover rounded-md border">
-      <div className="space-y-1.5 px-4 py-5">
-        <Label htmlFor="account-name">{tI18nComplete.raw('texta704d8d4a818')}</Label>
-        <Input
-          id="account-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={!canWrite || renameMutation.isPending}
-          maxLength={120}
-          className="max-w-md"
-          title={canWrite ? undefined : tI18nComplete.raw('textc7184af7d9c9')}
-        />
-        {!canWrite ? (
-          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textc7184af7d9c9')}</p>
-        ) : null}
-      </div>
-
-      <div className="border-border flex items-center justify-between border-t px-4 py-3">
-        <p className="text-muted-foreground text-xs">
-          {tI18nComplete.raw('textd70b9e24bca2')} {formatDate(account.created_at)}
-        </p>
-        <Button
-          type="submit"
-          size="sm"
-          disabled={!canSubmit || renameMutation.isPending}
-          className="gap-1.5"
-        >
-          {renameMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-          {tI18nComplete.raw('text1509f561f241')}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function DangerZoneCard() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <div className="bg-popover rounded-md border px-4 py-3">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-foreground text-sm font-medium">
-            {tI18nComplete.raw('texta2e20a335700')}
-          </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {tI18nComplete.raw('textdc32ee18ad99')}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled
-          title={tI18nComplete.raw('text4f7d64017689')}
-          className="shrink-0"
-        >
-          {tI18nComplete.raw('text4f7d64017689')}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 // ============================== MEMBERS ==============================
 
 type MemberFilter = 'all' | AccountRole | 'invited';
@@ -1020,6 +938,7 @@ function roleTone(value: RoleValue): RoleTone {
 // and its "Change role" confirm, and the `MEMBER_ROW` class copy.
 
 function MembersCard({
+  workspaceId,
   account,
   members,
   isLoading,
@@ -1040,6 +959,9 @@ function MembersCard({
   onSelectMember,
   onInvite,
 }: {
+  /** Set for a 1:1 workspace: one ladder role per person, changed through
+   *  `PATCH /v1/workspaces/:id/members/:userId`. */
+  workspaceId?: string;
   account: AccountDetail;
   members: AccountMember[];
   isLoading: boolean;
@@ -1073,6 +995,7 @@ function MembersCard({
   onInvite: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tWorkspaceRoles = useTranslations('workspaces.roles');
   // Set rather than scalar so multiple per-row mutations (remove + role
   // change on different rows) can fly in parallel without their spinners
   // hopping between rows. Helpers below add/remove on mutate/settle.
@@ -1129,6 +1052,11 @@ function MembersCard({
   });
   const roleValueFor = (member: AccountMember): RoleValue =>
     roleEditor.roleValueFor(member.user_id, member.account_role);
+  // The one ladder role (owner > admin > manager > member) the API serves on
+  // every member row. A custom role keeps its name.
+  const ladderRole = (member: AccountMember) => memberWorkspaceRole(member) as WorkspaceRole;
+  const [roleTarget, setRoleTarget] = useState<{ userId: string; label: string; role: WorkspaceRole } | null>(null);
+  const viewerIsOwner = members.some((m) => m.user_id === currentUserId && m.account_role === 'owner');
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
@@ -1342,6 +1270,18 @@ function MembersCard({
 
   return (
     <div className="space-y-3">
+      {workspaceId ? (
+        <WorkspaceRoleDialog
+          workspaceId={workspaceId}
+          target={roleTarget}
+          onOpenChange={(open) => {
+            if (!open) setRoleTarget(null);
+          }}
+          viewerIsOwner={viewerIsOwner}
+          canGrantAdmin={canUpdateRole}
+          onDone={() => invalidateMembers()}
+        />
+      ) : null}
       {isError ? (
         <ErrorState
           size="sm"
@@ -1489,11 +1429,13 @@ function MembersCard({
                       label: tI18nComplete.raw('texta514a684676a'),
                       icon: <PencilSimple className="size-3.5" />,
                       onSelect: () =>
-                        roleEditor.openEdit({
-                          userId: member.user_id,
-                          label,
-                          accountRole: member.account_role,
-                        }),
+                        workspaceId && roleValueFor(member).kind === 'builtin'
+                          ? setRoleTarget({ userId: member.user_id, label, role: ladderRole(member) })
+                          : roleEditor.openEdit({
+                              userId: member.user_id,
+                              label,
+                              accountRole: member.account_role,
+                            }),
                     });
                   }
                   if (canReadMembers || isSelf) {
@@ -1568,8 +1510,16 @@ function MembersCard({
                           ) : null}
                         </>
                       }
-                      role={shortRoleLabel(roleValueFor(member))}
-                      roleTone={roleTone(roleValueFor(member))}
+                      role={
+                        workspaceId && roleValueFor(member).kind === 'builtin'
+                          ? tWorkspaceRoles(`${ladderRole(member)}.label`)
+                          : shortRoleLabel(roleValueFor(member))
+                      }
+                      roleTone={
+                        workspaceId && roleValueFor(member).kind === 'builtin'
+                          ? ROLE_TONE[ladderRole(member)]
+                          : roleTone(roleValueFor(member))
+                      }
                       kebab={kebab}
                       kebabLabel={tI18nComplete('text33da220b1a34', { value0: label })}
                     />

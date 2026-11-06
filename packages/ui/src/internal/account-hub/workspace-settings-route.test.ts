@@ -15,12 +15,13 @@ describe('workspaceSettingsHref — an old hub link opens a workspace section', 
   });
 
   test('every renamed tab lands on its workspace section, drill-downs kept', () => {
-    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'settings' }))).toBe('/workspaces/p1/admin/general');
+    // The account Settings pane is Security now; Access merged into Members.
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'settings' }))).toBe('/workspaces/p1/admin/security');
     expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'tokens' }))).toBe('/workspaces/p1/admin/api-keys');
     expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'billing' }))).toBe('/workspaces/p1/admin/plan');
     expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'usage' }))).toBe('/workspaces/p1/admin/usage');
     expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'access-projects', project: 'p1' }))).toBe(
-      '/workspaces/p1/admin/access?accountProject=p1',
+      '/workspaces/p1/admin/members?accountProject=p1',
     );
     expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'members', member: 'u9' }))).toBe(
       '/workspaces/p1/admin/members?accountMember=u9',

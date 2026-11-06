@@ -19,6 +19,12 @@ describe('GeneralTabView', () => {
         copy={{
           loadFailed: 'Пројекат није могао да се учита',
           retry: 'Покушај поново',
+          workspaceId: 'ID радног простора',
+          workspaceIdDescription: 'За CLI и API.',
+          leaveWorkspace: 'Напусти радни простор',
+          leaveDescription: 'Губите приступ.',
+          leaveTitle: 'Напустити?',
+          leaveDialog: (name) => `Губите приступ простору ${name}.`,
           dangerZone: 'Опасна зона',
           deleteWorkspace: 'Избриши радни простор',
           deleteDescription: 'Уклања радни простор за све чланове.',
@@ -66,6 +72,23 @@ describe('GeneralTabView', () => {
     expect(out).not.toContain('Sandbox provider');
     expect(out).not.toContain('sandbox');
     expect(out).not.toContain('Automatic');
+  });
+
+  test('shows the workspace id and a Leave row when the caller may leave', () => {
+    const out = renderToStaticMarkup(<GeneralTabView workspaceId="ws-synthetic-1" canLeave />);
+    expect(out).toContain('Workspace ID');
+    expect(out).toContain('ws-synthetic-1');
+    expect(out).toContain('Leave workspace');
+    expect(out.indexOf('Leave workspace')).toBeLessThan(out.indexOf('Delete workspace'));
+  });
+
+  test('the last owner gets no Leave row', () => {
+    const out = renderToStaticMarkup(<GeneralTabView workspaceId="ws-synthetic-1" canLeave={false} />);
+    expect(out).not.toContain('Leave workspace');
+  });
+
+  test('says the workspace can be restored for 14 days', () => {
+    expect(renderToStaticMarkup(<GeneralTabView />)).toContain('You can restore it for 14 days.');
   });
 
   test('renders a Delete workspace row with a destructive action by default', () => {

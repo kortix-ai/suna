@@ -31,7 +31,7 @@ const api = createApiJsonClient(apiBase);
 
 
 test.describe('38 — The project shell knows who you are', () => {
-  test('the switcher menu opens on the identity, and its Settings row opens the personal one', async ({
+  test('the workspace menu opens on the workspace, and its Preferences row opens the personal settings', async ({
     page,
   }) => {
     test.setTimeout(180_000);
@@ -77,20 +77,29 @@ test.describe('38 — The project shell knows who you are', () => {
         await page.setViewportSize({ width: 1280, height: 900 });
       });
 
-      await test.step('the shell opens an account menu on the signed-in identity', async () => {
+      await test.step('the workspace menu leads with the workspace and its actions, then the person', async () => {
         await page.getByRole('button', { name: 'Switch workspace' }).click();
         const menu = page.getByRole('menu');
-        await expect(menu.getByText('Logged in as')).toBeVisible();
-        await expect(menu.getByText(email)).toBeVisible();
-        await expect(menu.getByRole('menuitem', { name: 'Log out' })).toBeVisible();
+        // Header: the workspace and the caller's one role.
+        await expect(menu.getByTestId('workspace-menu-header')).toContainText(projectName);
+        await expect(menu.getByTestId('workspace-menu-header')).toContainText('Owner');
+        const rows = await menu.getByRole('menuitem').allInnerTexts();
+        const order = ['Invite people to', 'Workspace settings', 'Switch workspace', 'Preferences', 'Log out'].map((label) =>
+          rows.findIndex((row) => row.startsWith(label)),
+        );
+        expect(order.every((index) => index >= 0)).toBe(true);
+        expect([...order].sort((x, y) => x - y)).toEqual(order);
+        // Log out names the session it ends; no row is a bare "Settings".
+        await expect(menu.getByRole('menuitem', { name: /Log out/ })).toContainText(email);
+        expect(rows.some((row) => row.trim() === 'Settings')).toBe(false);
       });
 
-      await test.step('its Settings row opens the personal settings dialog, untitled by the project', async () => {
-        await page.getByRole('menuitem', { name: 'Settings' }).click();
-        await expect(page.getByRole('dialog', { name: 'Settings', exact: true })).toBeVisible({
+      await test.step('Preferences opens the personal settings dialog, untitled by the workspace', async () => {
+        await page.getByRole('menuitem', { name: /Preferences/ }).click();
+        await expect(page.getByRole('dialog', { name: 'Preferences', exact: true })).toBeVisible({
           timeout: 30_000,
         });
-        await expect(page.getByRole('dialog', { name: `Settings — ${projectName}` })).toHaveCount(0);
+        await expect(page.getByRole('dialog', { name: `Preferences — ${projectName}` })).toHaveCount(0);
       });
     } finally {
       if (projectId) await deleteDatabaseProject(env, projectId).catch(() => undefined);

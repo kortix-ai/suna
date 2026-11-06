@@ -406,6 +406,14 @@ export function NewWorkspacePage() {
                   </p>
                 ) : null}
 
+                {/* The free-credit rule, before the create (finding 10): one
+                    grant per person, on their first workspace. */}
+                {isBillingEnabled() ? (
+                  <p className="text-muted-foreground text-xs" data-testid="create-free-credits-rule">
+                    {tWorkspaces('freeCreditsRule')}
+                  </p>
+                ) : null}
+
                 {!directory.loading && restrictedOut ? (
                   <p className="text-muted-foreground text-xs">
                     {tWorkspaces('restricted', { email: user?.email ?? '' })}

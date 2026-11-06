@@ -66,10 +66,6 @@ mock.module('@/hooks/account/use-account-deletion', () => ({
   useDeleteAccountImmediately: () => ({ mutateAsync: async () => ({}), isPending: false }),
   useCancelAccountDeletion: () => ({ mutateAsync: async () => ({}), isPending: false }),
 }));
-mock.module('./account-memberships', () => ({
-  useAccountMemberships: () => ({ accounts: [], isLoading: false }),
-  AccountMembershipsSection: () => null,
-}));
 // The real exports, so a new one (ModalClose, ModalContentInner, …) never breaks the mock;
 // only the portal-based parts are replaced.
 const uiModalMock = () => ({

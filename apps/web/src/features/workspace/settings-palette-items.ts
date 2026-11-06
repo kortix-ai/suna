@@ -52,6 +52,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'credits',
   'plan',
   'mcp',
+  'personal-keys',
 ];
 
 /**
@@ -110,7 +111,9 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // called Projects.
   workspace:
     'workspace general settings name rename title icon emoji glyph avatar picture logo archive delete danger zone repo git repository github clone branch remote',
-  profile: 'profile name email avatar personal you account display organizations',
+  profile: 'profile name email avatar personal you account display',
+  // The caller's keys bound to no workspace: the CLI login and older keys.
+  'personal-keys': 'personal keys cli login revoke my keys personal access token',
   security: 'security two-factor 2fa mfa totp authenticator factor devices sign out sessions',
   appearance:
     'appearance theme color mode dark light wallpaper shader shaders background density conversation',

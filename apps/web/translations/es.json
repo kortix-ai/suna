@@ -551,7 +551,7 @@
       "redirecting": "Redirigiendo a la página de Conectores..."
     },
     "rail": {
-      "settings": "Configuración",
+      "settings": "Preferencias",
       "backToApp": "Volver a la aplicación",
       "close": "Cerrar",
       "docs": "Documentación",
@@ -576,7 +576,7 @@
         },
         "profile": {
           "label": "Perfil",
-          "description": "Tu imagen, nombre, correo electrónico y espacios de trabajo."
+          "description": "Tu foto, nombre y correo electrónico."
         },
         "security": {
           "label": "Seguridad",
@@ -620,6 +620,10 @@
         "computer": {
           "label": "Mi ordenador",
           "description": "Deja que los agentes de Kortix trabajen con los archivos, la terminal y las aplicaciones de tu ordenador."
+        },
+        "personal-keys": {
+          "label": "Claves personales",
+          "description": "Claves que actúan como tú en cada espacio de trabajo: el inicio de sesión de la CLI y claves antiguas."
         }
       }
     },
@@ -715,6 +719,14 @@
         "profilePictureRemoveFailed": "No se pudo eliminar la foto de perfil",
         "chooseImageFile": "Por favor elija un archivo de imagen",
         "imageTooLarge": "La imagen debe tener menos de 5 MB."
+      },
+      "plan": {
+        "deleted": "Se eliminan con tu cuenta",
+        "left": "Sales de",
+        "blockers": "Eres su único propietario y otras personas trabajan en ellos. Transfiere la propiedad o elimina el espacio de trabajo.",
+        "members": "{count, plural, one {# miembro} other {# miembros}}",
+        "nothing": "No perteneces a ningún espacio de trabajo. Solo se elimina tu inicio de sesión.",
+        "blockersTitle": "Transfiérelos primero"
       }
     },
     "security": {
@@ -975,18 +987,17 @@
       "retry": "Reintentar",
       "dangerZone": "Zona de peligro",
       "deleteWorkspace": "Eliminar espacio de trabajo",
-      "deleteDescription": "Elimina este espacio de trabajo y todo su contenido para todos los miembros. Esta acción no se puede deshacer.",
+      "deleteDescription": "Elimina este espacio de trabajo para todos los miembros. Puedes restaurarlo durante 14 días.",
       "deleteTitle": "¿Eliminar el espacio de trabajo?",
-      "deleteDialog": "Esto elimina {name} para todas las personas con acceso. Esta acción no se puede deshacer.",
-      "consequencesTitle": "Pierdes inmediatamente:",
+      "deleteDialog": "Esto elimina {name} para todos los miembros. Puedes restaurarlo durante 14 días.",
+      "consequencesTitle": "De inmediato:",
       "consequences": {
-        "sessions": "Todas las sesiones de este espacio de trabajo, con sus archivos, historial y resultados",
-        "automation": "Todas las ejecuciones programadas y los activadores — se detienen de inmediato",
-        "integrations": "Todas las integraciones conectadas, secretos y claves de API de este espacio de trabajo",
-        "managedRepo": "El repositorio Git administrado por Kortix de este espacio de trabajo, con cada commit incluido",
-        "access": "El acceso de todo el equipo — nadie podrá volver a acceder a este espacio de trabajo"
+        "sessions": "Después de 14 días, se borran sus sesiones, archivos y el repositorio gestionado por Kortix",
+        "automation": "Los activadores y las ejecuciones programadas dejan de dispararse",
+        "integrations": "Sus claves de API y aplicaciones conectadas dejan de funcionar",
+        "access": "Todos los miembros pierden el acceso a este espacio de trabajo"
       },
-      "reassurance": "Los repositorios Git que hayas conectado tú no se eliminan. El código que ya se haya enviado permanece intacto.",
+      "reassurance": "Los repositorios Git que conectaste tú no se eliminan.",
       "keepWorkspace": "Conservar espacio de trabajo",
       "transferWorkspace": "Transferir espacio de trabajo",
       "transferDescription": "Mueve las sesiones, los archivos, los ajustes y el acceso de miembros de este espacio de trabajo a otro espacio de trabajo.",
@@ -1695,7 +1706,8 @@
       "loadError": "No se pudieron cargar los espacios de trabajo",
       "createIn": "Crear un espacio de trabajo en {account}",
       "localComputer": "Tu ordenador",
-      "appsAndExtensions": "Apps y extensiones"
+      "appsAndExtensions": "Apps y extensiones",
+      "preferences": "Preferencias"
     },
     "manifestIssues": {
       "title": "{file} tiene {errors, plural, one {# error} other {# errores}} y {warnings, plural, one {# advertencia} other {# advertencias}}",
@@ -2048,11 +2060,11 @@
     "connectProvider": "Conectar proveedor",
     "manageModels": "Gestionar modelos",
     "loading": "Cargando modelos",
-    "yourDefault": "Predeterminado de la cuenta",
-    "defaultAria": "{model} es el modelo predeterminado de esta cuenta",
-    "setDefaultAria": "Establecer {model} como modelo predeterminado de la cuenta",
-    "defaultTitle": "Modelo predeterminado de la cuenta",
-    "setDefaultTitle": "Establecer como modelo predeterminado de la cuenta",
+    "yourDefault": "Predeterminado del espacio de trabajo",
+    "defaultAria": "{model} es el modelo predeterminado de este espacio de trabajo",
+    "setDefaultAria": "Establecer {model} como modelo predeterminado de este espacio de trabajo",
+    "defaultTitle": "Modelo predeterminado del espacio de trabajo",
+    "setDefaultTitle": "Establecer como modelo predeterminado de este espacio de trabajo",
     "upgrade": "Mejorar plan",
     "noMatch": {
       "title": "No hay modelos coincidentes",
@@ -3833,8 +3845,8 @@
       "checkNowAction": "Comprobar ahora",
       "tryAgainAction": "Intentar de nuevo",
       "projectsAction": "Volver a espacios de trabajo",
-      "accountLabel": "Espacio de trabajo",
-      "projectLabel": "Espacio de trabajo",
+      "accountLabel": "Sesión iniciada como",
+      "projectLabel": "ID del espacio de trabajo",
       "approvalNote": "Cualquiera que gestione este espacio de trabajo puede aprobar tu solicitud.",
       "openAsAdmin": "Abrir como administrador",
       "requestFailed": "No se pudo enviar la solicitud.",
@@ -21261,7 +21273,20 @@
       "text2590cd62a747": "Configuración del espacio de trabajo",
       "text276261b1e03d": "espacio de trabajo configuración organizaciones equipos gestionar",
       "text634ebc515b7f": "Espacio de trabajo · Claves de API",
-      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy"
+      "text15dad401c76f": "api keys service account tokens personal access pat cli command line terminal machine identity automation ci cd bot integration key rules expiry policy",
+      "textfda15274a752": "Control total: facturación, personas y eliminación del espacio de trabajo.",
+      "text02faaaef698b": "Control total del espacio de trabajo: facturación, personas, transferencia de propiedad y eliminación.",
+      "texte1a2cfde722b": "Facturación y personas. Todo excepto eliminar el espacio de trabajo o transferir la propiedad.",
+      "text77148a20ce2e": "Todo lo que puede hacer un propietario excepto eliminar el espacio de trabajo o transferir la propiedad.",
+      "text378393bbfa9f": "Trabaja en sesiones con los agentes que se le conceden.",
+      "texte82608318c7f": "El rol base. Trabaja en sesiones con los agentes concedidos, directamente o mediante un grupo. Sin Personalizar.",
+      "text7788f20533ea": "Personalizar y todo lo que contiene: cada agente, habilidad, conector, secreto y activador.",
+      "text1a836dc94f41": "Define tus propios roles: elige exactamente qué puede ver y cambiar un miembro y asígnalos desde Miembros como los integrados.",
+      "textb2c26ac6527b": "Asigna un rol personalizado a una persona o a un grupo",
+      "textfab4077701b7": "Pon tu logotipo, icono, favicon y nombre de producto en la app para todo este espacio de trabajo: Kortix se convierte en tu herramienta.",
+      "textfd8fee75dbb5": "Los grupos del IdP se asignan a roles en este espacio de trabajo",
+      "textadca5dfd1e42": "Agrupa a los miembros y da un rol al grupo entero: una concesión en lugar de docenas, revocada con la misma facilidad.",
+      "text16ba47efb9f2": "Un registro completo y filtrable de cada acción de administradores y agentes en este espacio de trabajo: quién hizo qué, dónde y cuándo."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -21461,7 +21486,6 @@
     "copyTitle": "Copiar",
     "copyEmail": "correo electrónico",
     "copyUserId": "ID de usuario",
-    "copyAccountId": "ID de cuenta",
     "copyProjectId": "ID de espacio de trabajo",
     "copySessionId": "ID de sesión",
     "copySessionLink": "enlace de la sesión",
@@ -22923,17 +22947,17 @@
     "storageUsed": "{used} usados",
     "storageNearFull": "Casi lleno. Elimina los archivos que ya no necesites para seguir subiendo.",
     "storageFull": "Lleno. Las nuevas subidas se rechazan hasta que se eliminen archivos.",
-    "storageAccountLine": "Todos los espacios de trabajo: {used} de {limit}",
+    "storageAccountLine": "Compartido con los demás espacios de trabajo de este plan: {used} de {limit}",
     "folderNearMountLimit": "{folder} ocupa {size}. Una sesión no puede montar una carpeta de más de {limit}.",
     "folderOverMountLimit": "{folder} ocupa {size}, más de los {limit} que una sesión puede montar. Las sesiones se ejecutan sin ella.",
     "uploadRefusedProjectFull": "{name} necesita {needed}. Los archivos de este espacio de trabajo usan {used} de {limit}.",
-    "uploadRefusedAccountFull": "{name} necesita {needed}. Los archivos de todos tus espacios de trabajo usan {used} de {limit}.",
+    "uploadRefusedAccountFull": "{name} necesita {needed}. Los archivos de este espacio de trabajo usan {used} de {limit}.",
     "uploadRefusedFileTooLarge": "{name} ocupa {size}. Un archivo puede ocupar como máximo {limit}.",
     "uploadRefusedFolderMount": "{name} haría que {folder} superara {limit}, la carpeta más grande que una sesión puede montar.",
     "uploadRefusedBusy": "El almacenamiento de archivos está ocupado. Vuelve a intentar {name} en un momento.",
     "uploadRefusedStorageFull": "El almacenamiento de archivos está lleno ahora mismo. Vuelve a intentar {name} más tarde.",
     "accountStorageTitle": "Almacenamiento de archivos",
-    "accountStorageDescription": "Lo que ocupan los archivos de cada espacio de trabajo. Tu plan permite {project} por espacio de trabajo y {account} en total.",
+    "accountStorageDescription": "Lo que ocupan los archivos de este espacio de trabajo. Tu plan permite {project}.",
     "accountStorageEmpty": "Ningún espacio de trabajo tiene archivos todavía.",
     "accountStorageIncomplete": "Algunos espacios de trabajo no se pudieron medir ahora.",
     "folderInfo": {
@@ -23579,7 +23603,7 @@
     "groupTitle": "Activadores",
     "groupDescription": "Programaciones, bucles, webhooks, eventos de apps y monitores en este espacio de trabajo.",
     "label": "Pausar todos los activadores",
-    "description": "Nada se ejecuta por sí solo en ningún espacio de trabajo: ni programaciones, bucles, webhooks, eventos de apps ni monitores. Ejecutar un disparador a mano sigue funcionando.",
+    "description": "Nada en este espacio de trabajo se ejecuta solo: ni programaciones, ni bucles, ni webhooks, ni eventos de apps, ni monitores. Ejecutar un activador a mano sigue funcionando.",
     "readOnlyDescription": "Solo un propietario o administrador puede pausar o reanudar los activadores.",
     "pausedSince": "Pausado desde {date}.",
     "pauseTitle": "¿Pausar todos los activadores?",
@@ -26581,12 +26605,18 @@
       "role": {
         "owner": "Propietario",
         "admin": "Administrador",
-        "member": "Miembro"
+        "member": "Miembro",
+        "manager": "Gestor"
       },
       "loadErrorTitle": "No se pudieron cargar tus espacios de trabajo",
       "loadErrorBody": "Comprueba tu conexión e inténtalo de nuevo.",
       "partialError": "No se pudieron cargar todos los espacios de trabajo.",
-      "retry": "Reintentar"
+      "retry": "Reintentar",
+      "deletingOn": "Se elimina el {date}",
+      "setupRequired": "Pagado, aún sin repositorio",
+      "restore": "Restaurar",
+      "setUp": "Configurar",
+      "stateActionError": "No funcionó. Inténtalo de nuevo."
     },
     "switcher": {
       "switch": "Cambiar de espacio de trabajo",
@@ -26603,7 +26633,8 @@
       "description": "Un espacio de trabajo es donde tu empresa trabaja con Kortix: personas, agentes y todo lo que crean.",
       "submit": "Crear espacio de trabajo",
       "restricted": "Este servidor solo crea espacios de trabajo para personas invitadas. Pide a un administrador que invite a {email}.",
-      "limitReached": "Alcanzaste el límite de espacios de trabajo de tu plan. Mejora tu plan para crear otro."
+      "limitReached": "Alcanzaste el límite de espacios de trabajo de tu plan. Mejora tu plan para crear otro.",
+      "freeCreditsRule": "Solo tu primer espacio de trabajo recibe los créditos gratuitos mensuales."
     },
     "settings": {
       "title": "Configuración del espacio de trabajo",
@@ -26611,32 +26642,59 @@
         "workspace": "Espacio de trabajo",
         "library": "Biblioteca",
         "people": "Personas",
-        "billing": "Facturación"
+        "billing": "Facturación",
+        "support": "Soporte"
       },
       "sections": {
         "general": "General",
         "branding": "Marca",
-        "git": "Repositorio Git",
-        "sandbox": "Plantillas de sandbox",
+        "git": "Git",
+        "sandbox": "Sandbox",
         "featureFlags": "Funciones experimentales",
         "apiKeys": "Claves de API",
         "members": "Miembros",
         "groups": "Grupos",
-        "access": "Acceso",
         "roles": "Roles",
         "identity": "Identidad",
         "audit": "Registro de auditoría",
         "help": "Ayuda",
         "plan": "Plan",
-        "usage": "Uso"
+        "usage": "Uso",
+        "connectors": "Conectores",
+        "skills": "Habilidades",
+        "triggers": "Activadores",
+        "models": "Modelos",
+        "secrets": "Secretos",
+        "apps": "Aplicaciones",
+        "drives": "Drives",
+        "capture": "Capture",
+        "security": "Seguridad",
+        "repo": "Repositorio"
       },
       "accessTitle": "Acceso",
       "accessDescription": "Quién puede abrir este espacio de trabajo y con qué rol.",
       "securityTitle": "Seguridad",
       "githubTitle": "Conexiones de GitHub",
       "deleteKeepsLogin": "Tu inicio de sesión se mantiene: puedes crear o unirte a otro espacio de trabajo.",
-      "personalKeysTitle": "Tus claves de acceso personales",
-      "personalKeysDescription": "Claves de API que actúan como tú en este espacio de trabajo: para la CLI, un script o un trabajo de CI."
+      "personalKeysTitle": "Tus claves para este espacio de trabajo",
+      "personalKeysDescription": "Claves de API que actúan como tú solo en este espacio de trabajo: para un script o una tarea de CI.",
+      "keyScopeWorkspace": "Este espacio de trabajo",
+      "keyScopePersonal": "Todos los espacios de trabajo",
+      "keyScopeWorkspaceHint": "La clave actúa como tú solo en este espacio de trabajo.",
+      "personalKeysEmpty": "No hay claves personales. kortix login crea una; las claves para un script se crean en Configuración › Claves de API de un espacio de trabajo.",
+      "securityDescription": "Reglas de inicio de sesión, quién puede abrir qué sesiones y las reglas de cada clave de API.",
+      "rolesDescription": "Roles integrados y personalizados. Asígnalos desde Miembros.",
+      "workspaceId": "ID del espacio de trabajo",
+      "workspaceIdDescription": "Para la CLI, la API y el soporte.",
+      "leaveWorkspace": "Salir del espacio de trabajo",
+      "leaveDescription": "Pierdes el acceso a este espacio de trabajo. Un administrador puede volver a invitarte.",
+      "leaveTitle": "¿Salir del espacio de trabajo?",
+      "leaveDialog": "Pierdes el acceso a {name}. Un administrador puede volver a invitarte.",
+      "leftToast": "Saliste de {name}",
+      "leaveFailed": "No se pudo salir del espacio de trabajo",
+      "deletedToast": "Espacio de trabajo eliminado. Los propietarios pueden restaurarlo durante 14 días.",
+      "inviteTitle": "Invitar personas a {name}",
+      "apiKeysDescription": "Claves que actúan en este espacio de trabajo: las tuyas y las cuentas de servicio para CI y automatizaciones. Sus reglas están en Seguridad."
     },
     "cli": {
       "noWorkspaceTitle": "Crea un espacio de trabajo para iniciar sesión en la CLI",
@@ -26664,6 +26722,79 @@
       "openChooser": "Crear o unirse a un espacio de trabajo",
       "workspaceLabel": "Espacio de trabajo",
       "noCaptureWorkspace": "Ninguno de tus espacios de trabajo tiene Kortix Capture activado. Un propietario o administrador puede activarlo."
+    },
+    "menu": {
+      "invite": "Invitar personas a {name}",
+      "leave": "Salir de {name}"
+    },
+    "roles": {
+      "owner": {
+        "label": "Propietario",
+        "blurb": "Control total: facturación, personas y eliminación del espacio de trabajo."
+      },
+      "admin": {
+        "label": "Administrador",
+        "blurb": "Facturación y personas. Todo excepto eliminar el espacio de trabajo o transferir la propiedad."
+      },
+      "manager": {
+        "label": "Gestor",
+        "blurb": "Personalizar y todo lo que contiene: cada agente, habilidad, conector, secreto y activador."
+      },
+      "member": {
+        "label": "Miembro",
+        "blurb": "Trabaja en sesiones con los agentes que se le conceden."
+      }
+    },
+    "invite": {
+      "title": "Invitar personas a {name}",
+      "description": "Cada persona recibe un correo con un enlace para unirse.",
+      "emailsLabel": "Direcciones de correo",
+      "emailsPlaceholder": "nombre@empresa.com",
+      "emailsHint": "Separa las direcciones con una coma o un espacio.",
+      "invalidEmail": "Eso no es una dirección de correo.",
+      "removeEmail": "Quitar {email}",
+      "roleLabel": "Rol",
+      "ownerHint": "Para hacer propietario a alguien, transfiere la propiedad desde Miembros.",
+      "expiresLabel": "El acceso termina",
+      "optional": "Opcional",
+      "expiresHint": "Vacío: el acceso se mantiene hasta que alguien lo quite.",
+      "cancel": "Cancelar",
+      "send": "{count, plural, one {Enviar invitación} other {Enviar # invitaciones}}",
+      "sentToast": "{count, plural, one {Invitación enviada} other {# invitaciones enviadas}}",
+      "sendFailed": "No se pudo enviar la invitación."
+    },
+    "roleDialog": {
+      "title": "Cambiar el rol de {name}",
+      "description": "Un rol por persona en este espacio de trabajo.",
+      "roleLabel": "Rol",
+      "cancel": "Cancelar",
+      "save": "Guardar",
+      "savedToast": "{name} ahora es {role}",
+      "saveFailed": "No se pudo cambiar el rol."
+    },
+    "splitNotice": {
+      "movedTitle": "Ahora es un espacio de trabajo propio",
+      "movedBody": "Salió de {source} el {date}. Sus personas, facturación y configuración son propias.",
+      "keeperTitle": "Los demás espacios de trabajo se separaron",
+      "keeperBody": "El {date}, los demás espacios de trabajo de {source} se volvieron independientes, cada uno con sus personas y su facturación.",
+      "billingComped": "Su plan es gratis hasta el {date}.",
+      "billingFree": "Recibió sus propios créditos gratuitos.",
+      "dismiss": "Descartar"
+    },
+    "accessRequests": {
+      "title": "{count, plural, one {# persona pide unirse} other {# personas piden unirse}}",
+      "approve": "Aprobar",
+      "decline": "Rechazar",
+      "approvedToast": "Aprobado. Ahora es Miembro.",
+      "declinedToast": "Solicitud rechazada",
+      "decideFailed": "No se pudo actualizar la solicitud."
+    },
+    "deleting": {
+      "title": "{name} se está eliminando.",
+      "body": "Sus miembros perdieron el acceso. Se borra el {date}. Restáuralo para seguir trabajando en él.",
+      "restore": "Restaurar espacio de trabajo",
+      "back": "Volver a los espacios de trabajo",
+      "restoreFailed": "No se pudo restaurar el espacio de trabajo."
     }
   }
 }

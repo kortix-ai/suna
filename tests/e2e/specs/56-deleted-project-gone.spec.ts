@@ -7,8 +7,9 @@ import { createAuthUser, deleteAuthUser, installBrowserSessionDirect, signIn } f
 import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 import { ensureOwnedAccount } from '../helpers/accounts';
 
-// KRTX-2760: a cached shell must not navigate away when its detail refetch 404s.
-test('56 — a deleted remembered project shows the gone page on every visit @local-only', async ({ page }) => {
+// KRTX-2760: a cached shell must not open a deleted workspace. Since K2 the
+// owner sees it as deleting, with Restore, until it is erased.
+test('56 — a deleted remembered workspace shows its owner the restore page on every visit @local-only', async ({ page }) => {
   const env = loadEnv();
   const authOptions = {
     supabaseUrl: process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321',
@@ -33,17 +34,16 @@ test('56 — a deleted remembered project shows the gone page on every visit @lo
     await page.goto('/workspaces');
     await api(session.access_token, 'DELETE', `/projects/${project.id}`);
     await api(session.access_token, 'GET', `/projects/${project.id}`, undefined, 404);
-    // Reproduce the race: the shell detail returns before the access boundary's
-    // bare-project refetch. Responses remain real; only their order is controlled.
-    await page.route(`**/v1/projects/${project.id}`, async (route) => {
-      const response = await route.fetch();
-      await new Promise((resolve) => setTimeout(resolve, 10_000));
-      await route.fulfill({ response });
-    });
+    // K2: the workspace is closed, not gone, for its owner until it is erased.
+    // The owner's canonical read serves it as `deleting`; the shell opens
+    // nothing on it and offers Restore, on every visit.
+    const served = await api(session.access_token, 'GET', `/workspaces/${project.id}`);
+    expect((served as { state?: string }).state).toBe('deleting');
     for (let visit = 0; visit < 2; visit++) {
       await page.goto(`/workspaces/${project.id}`);
-      await expect(page.getByRole('heading', { name: 'This workspace is gone.' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Delete journey is being deleted.' })).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/workspaces/${project.id}$`));
+      await expect(page.getByRole('button', { name: 'Restore workspace' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Back to workspaces' })).toBeVisible();
       await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === 'kortix_last_project')?.value)
         .not.toBe(encodeURIComponent(`${user.id}:${project.id}`));

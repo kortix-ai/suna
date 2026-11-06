@@ -78,6 +78,8 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // The MCP URL is one per person and reaches every project they can open.
   // `computer` is NOT here: pairing names the project it starts from.
   'mcp',
+  // The person's keys bound to no workspace: theirs in any project or none.
+  'personal-keys',
   // `workspace`, `sandbox` and `feature-flags` are deliberately ABSENT. They
   // are the project-scoped tabs in this overlay (`settings-tabs.ts` explains
   // why each came back), so leaving them out of this list is exactly what
@@ -515,6 +517,7 @@ function SettingsTabPane({
     tokens: () => <TokensTab accountId={accountId} />,
     credits: () => <CreditsTab accountId={accountId} />,
     plan: () => <PlanTab accountId={accountId} />,
+    'personal-keys': () => <TokensTab accountId={accountId} personal />,
     mcp: () => <McpTab />,
     computer: () => (projectId ? <ComputerTab projectId={projectId} /> : null),
   };

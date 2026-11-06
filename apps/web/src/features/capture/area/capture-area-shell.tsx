@@ -237,7 +237,7 @@ function ProfileMenu({ accountId }: { accountId: string }) {
           <DropdownMenuItem asChild size="sm">
             <Link href="/settings/profile" prefetch>
               <GearSixIcon />
-              {tSidebar('workspace.settings')}
+              {tSidebar('workspace.preferences')}
             </Link>
           </DropdownMenuItem>
           <ThemeSubmenu />

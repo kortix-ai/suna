@@ -18,7 +18,7 @@ import { CheckIcon, MagnifyingGlassIcon, MonitorPlayIcon } from '@phosphor-icons
 import { useCaptureWorkspace } from '@kortix/sdk/react';
 import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 
-import { useTranslations } from '../../i18n';
+import { useLocale, useTranslations } from '../../i18n';
 import { captureHref } from '../../internal/capture/use-capture-area';
 import { isModifiedClick } from '../../internal/lib/navigation/modified-click';
 import { cn } from '../../internal/lib/utils';
@@ -34,9 +34,11 @@ import { EntityAvatar } from '../../primitives/entity-avatar';
 import { Input } from '../../primitives/input';
 import Loading from '../../primitives/loading';
 import { Skeleton } from '../../primitives/skeleton';
-import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
+import { UiLink as Link, useUiPathname, useUiRouter } from '../../providers/ui-provider';
+import { errorToast } from '../../primitives/toast';
 import { useSessionIds } from '../../providers/session-ids';
-import { filterWorkspaceRows, type WorkspaceRow } from '../project-selector/project-selector-model';
+import { filterWorkspaceRows, formatWorkspaceDate, type WorkspaceRow } from '../project-selector/project-selector-model';
+import { useWorkspaceStateActions } from './use-workspace-list';
 import { InvitationsMenuGroup } from './invitations-menu-group';
 import { useWorkspaceDirectory, type WorkspaceDirectory } from './use-workspace-directory';
 
@@ -56,6 +58,10 @@ export function WorkspaceMenuSection({
   const switchingToProjectId = useProjectSwitchStore((s) => s.targetProjectId);
   const [query, setQuery] = useState('');
   const directory = useWorkspaceDirectory();
+  const tChooser = useTranslations('workspaces.chooser');
+  const locale = useLocale();
+  const router = useUiRouter();
+  const stateActions = useWorkspaceStateActions((workspaceId) => router.push(uiRoutes().project(workspaceId)));
 
   const activeProjectId =
     routeProjectId && isProjectPath(pathname, routeProjectId) ? routeProjectId : undefined;
@@ -113,6 +119,43 @@ export function WorkspaceMenuSection({
         ) : (
           <DropdownMenuGroup className="p-0.5">
             {visible.map((row) => {
+              if (row.state !== 'active') {
+                const acting =
+                  (stateActions.setup.isPending && stateActions.setup.variables === row.workspaceId) ||
+                  (stateActions.restore.isPending && stateActions.restore.variables === row.workspaceId);
+                return (
+                  <DropdownMenuItem
+                    key={row.workspaceId}
+                    className="cursor-pointer px-1.5"
+                    disabled={acting}
+                    data-state={row.state}
+                    // Keep the menu open while the action runs; navigation closes it.
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      (row.state === 'deleting' ? stateActions.restore : stateActions.setup).mutate(row.workspaceId, {
+                        onError: (error: Error) => errorToast(error.message || tChooser('stateActionError')),
+                      });
+                    }}
+                  >
+                    <EntityAvatar label={row.project.name} glyph={row.project.icon_glyph} emoji={row.project.icon} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-muted-foreground block truncate text-sm font-medium">{row.project.name}</span>
+                      {row.state === 'deleting' ? (
+                        <span className="text-muted-foreground block truncate text-xs">
+                          {tChooser('deletingOn', { date: formatWorkspaceDate(row.deletionScheduledFor, locale) })}
+                        </span>
+                      ) : null}
+                    </span>
+                    {acting ? (
+                      <Loading className="text-muted-foreground size-3.5" />
+                    ) : (
+                      <span className="text-muted-foreground text-xs">
+                        {row.state === 'deleting' ? tChooser('restore') : tChooser('setUp')}
+                      </span>
+                    )}
+                  </DropdownMenuItem>
+                );
+              }
               const active = row.workspaceId === activeProjectId;
               // Only the row you clicked, and only until the URL is on it.
               const loading = shouldShowProjectSwitchLoading(

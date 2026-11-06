@@ -48,6 +48,7 @@ import { markComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { useMyInvites } from '@/lib/invites/hooks';
 import { inviteHref } from '@/lib/invites/invite-landing';
 import { useWorkspaces } from '@/lib/projects/hooks';
+import { isOpenableWorkspaceRow } from '@/lib/projects/switcher';
 import type { KortixProject } from '@/lib/projects/projects-client';
 import { projectHref } from '@/lib/projects/switcher';
 import { newestProject } from '@/lib/projects/web-create';
@@ -79,7 +80,7 @@ export default function NewProjectScreen() {
   // Empty on a true first run. Refetched on return from the web.
   const workspaces = useWorkspaces();
   const existingProject = React.useMemo(
-    () => newestProject(workspaces.rows.map((row) => row.project)),
+    () => newestProject(workspaces.rows.filter(isOpenableWorkspaceRow).map((row) => row.project)),
     [workspaces.rows]
   );
   const invites = useMyInvites(true).data ?? [];
