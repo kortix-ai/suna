@@ -995,6 +995,7 @@
         "sessions": "14 天后,其会话、文件和 Kortix 托管的仓库将被清除",
         "automation": "触发器和计划运行停止触发",
         "integrations": "其 API 密钥和已连接的应用停止工作",
+        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
         "access": "所有成员都将失去对此工作区的访问权限"
       },
       "reassurance": "你自己连接的 Git 仓库不会被删除。",

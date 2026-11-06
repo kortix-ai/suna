@@ -995,6 +995,7 @@
         "sessions": "Dopo 14 giorni, le sue sessioni, i file e il repository gestito da Kortix vengono cancellati",
         "automation": "I trigger e le esecuzioni pianificate smettono di partire",
         "integrations": "Le sue chiavi API e le app collegate smettono di funzionare",
+        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
         "access": "Tutti i membri perdono l'accesso a questo workspace"
       },
       "reassurance": "I repository Git che hai collegato tu non vengono eliminati.",

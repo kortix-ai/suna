@@ -995,6 +995,7 @@
         "sessions": "Nach 14 Tagen werden seine Sitzungen, Dateien und das von Kortix verwaltete Repository gelöscht",
         "automation": "Trigger und geplante Läufe werden nicht mehr ausgelöst",
         "integrations": "Seine API-Schlüssel und verbundenen Apps funktionieren nicht mehr",
+        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
         "access": "Alle Mitglieder verlieren den Zugriff auf diesen Workspace"
       },
       "reassurance": "Git-Repositories, die du selbst verbunden hast, werden nicht gelöscht.",

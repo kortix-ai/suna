@@ -995,6 +995,7 @@
         "sessions": "14 日後に、セッション、ファイル、Kortix 管理のリポジトリが消去されます",
         "automation": "トリガーとスケジュール実行が止まります",
         "integrations": "API キーと接続済みアプリが動作しなくなります",
+        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
         "access": "すべてのメンバーがこのワークスペースにアクセスできなくなります"
       },
       "reassurance": "自分で接続した Git リポジトリは削除されません。",

@@ -995,6 +995,7 @@
         "sessions": "Après 14 jours, ses sessions, ses fichiers et son dépôt géré par Kortix sont effacés",
         "automation": "Les déclencheurs et les exécutions planifiées s'arrêtent",
         "integrations": "Ses clés API et ses applications connectées cessent de fonctionner",
+        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
         "access": "Tous les membres perdent l'accès à cet espace de travail"
       },
       "reassurance": "Les dépôts Git que vous avez connectés vous-même ne sont pas supprimés.",

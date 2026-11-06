@@ -995,6 +995,7 @@
         "sessions": "После 14 дана, његове сесије, датотеке и репозиторијум којим управља Kortix се бришу",
         "automation": "Окидачи и заказана покретања престају да се покрећу",
         "integrations": "Његови API кључеви и повезане апликације престају да раде",
+        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
         "access": "Сви чланови губе приступ овом радном простору"
       },
       "reassurance": "Git репозиторијуми које сте сами повезали се не бришу.",

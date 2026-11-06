@@ -69,6 +69,9 @@ export const DELETE_WORKSPACE_CONSEQUENCES = [
   'Every member loses access to this workspace',
   'Triggers and scheduled runs stop firing',
   'Its API keys and connected apps stop working',
+  // workspaces/lifecycle.ts closeWorkspace: a live Stripe subscription is set
+  // to cancel at period end; a restore reactivates it.
+  'A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it',
   'After 14 days, its sessions, files, and Kortix-managed repository are erased',
 ] as const;
 
@@ -668,6 +671,7 @@ export function GeneralTab({
           t('consequences.access'),
           t('consequences.automation'),
           t('consequences.integrations'),
+          t('consequences.plan'),
           t('consequences.sessions'),
         ],
         // Deleting a workspace never deletes the person: their login stays,

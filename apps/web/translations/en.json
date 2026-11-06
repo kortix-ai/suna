@@ -817,6 +817,7 @@
         "sessions": "After 14 days, its sessions, files, and Kortix-managed repository are erased",
         "automation": "Triggers and scheduled runs stop firing",
         "integrations": "Its API keys and connected apps stop working",
+        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
         "access": "Every member loses access to this workspace"
       },
       "reassurance": "Git repositories you connected yourself are not deleted.",
