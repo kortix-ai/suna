@@ -23,6 +23,7 @@ import { KORTIX_CLI_INSTALL_COMMAND } from '@kortix/ui/internal/lib/kortix-cli';
 import {
   RobotIcon as Bot,
   PackageIcon as Box,
+  EnvelopeSimpleIcon as Mail,
   CubeIcon as Boxes,
   BrainIcon as Brain,
   BuildingsIcon as Building2,
@@ -50,6 +51,34 @@ const SHOT = '/images/landing-showcase/platform';
 const DELIV = '/images/landing-showcase';
 /** The shell named on a `Code` block: a program name, not copy. */
 const SHELL = 'zsh';
+
+/* kortix.yaml excerpts: code, not copy. Shapes follow developers.mdx
+   ("Example project", "triggers keys", "Agent keys"). A cron is 6 fields,
+   seconds first: "0 0 7 * * *" is 07:00 every day. */
+const TRIGGER_YAML = [
+  'triggers:',
+  '  - slug: morning-brief',
+  '    on: { cron: "0 0 7 * * *" }',
+  '    run:',
+  '      agent: research',
+  '      prompt: Write the morning brief.',
+] as const;
+
+const CONNECTOR_YAML = [
+  'connectors:',
+  '  - slug: stripe',
+  '    provider: http',
+  '    base_url: https://api.stripe.com',
+] as const;
+
+const AGENT_YAML = [
+  'agents:',
+  '  support:',
+  '    prompt_file: agents/support.md',
+  '    skills: [refund-policy]',
+  '    connectors: [helpdesk]',
+  '    secrets: [HELPDESK_TOKEN]',
+] as const;
 
 /* ── local cells, built from frame parts ───────────────────────────────── */
 
@@ -206,9 +235,7 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxTextACompanyIsGoing0251c6e0',
           )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextNotAMetaphorLiterally9692a187',
-          )}
+          sub={tI18nHardcoded.raw('i18nComplete.text9f9007346409')}
         >
           <Cells className="lg:grid-cols-2">
             <Cell
@@ -221,9 +248,7 @@ export function useSlides(): SlideDef[] {
               label={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesPlatformJsxTextInPlainLanguage8d30ff19',
               )}
-              title={tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxTextACloudComputerWhere43543f17',
-              )}
+              title={tI18nHardcoded.raw('i18nComplete.textcdcb54ff06a9')}
             />
           </Cells>
         </Slide>
@@ -239,7 +264,7 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleTheModelsGot3c57220a',
           )}
-          sub={tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxAttrLeadYouCanHandd5adb800')}
+          sub={tI18nHardcoded.raw('i18nComplete.text470d60e311df')}
         >
           <Cells className="lg:grid-cols-3">
             {[
@@ -268,7 +293,7 @@ export function useSlides(): SlideDef[] {
                 tI18nHardcoded.raw(
                   'autoAppPresentationSlidesPlatformJsxAttrTitleKortixIsThedce2722e',
                 ),
-                tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxAttrBodyAToyOr30c5182d'),
+                tI18nHardcoded.raw('i18nComplete.text5d4a1af7af39'),
               ],
             ].map(([label, title, body]) => (
               <Cell key={label} label={label} title={title}>
@@ -297,31 +322,29 @@ export function useSlides(): SlideDef[] {
               {tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxTextCommandCenterf5978255')}
             </>
           }
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextOnePlaceWhereYour1521a0b5',
-          )}
+          sub={tI18nHardcoded.raw('i18nComplete.text7340ac6feee9')}
         >
           <Rows
             rows={[
               [
-                tI18nHardcoded.raw('i18nComplete.text9f487c7a828e'),
-                tI18nHardcoded.raw('i18nComplete.text92b8d535557e'),
+                tI18nHardcoded.raw('i18nComplete.text8ddea7299a7b'),
+                tI18nHardcoded.raw('i18nComplete.textb4249e947798'),
               ],
               [
-                tI18nHardcoded.raw('i18nComplete.text3be3e0ad0943'),
-                tI18nHardcoded.raw('i18nComplete.text4de44e09f00a'),
+                tI18nHardcoded.raw('i18nComplete.texteff4542838be'),
+                tI18nHardcoded.raw('i18nComplete.textfbf90221f33f'),
               ],
               [
-                tI18nHardcoded.raw('i18nComplete.text97eed343805f'),
-                tI18nHardcoded.raw('i18nComplete.text507d494d56bf'),
+                tI18nHardcoded.raw('i18nComplete.text73bc2775247a'),
+                tI18nHardcoded.raw('i18nComplete.text9f48a77aeb52'),
               ],
               [
-                tI18nHardcoded.raw('i18nComplete.text37d340dd4340'),
-                tI18nHardcoded.raw('i18nComplete.text3e79204a1f60'),
+                tI18nHardcoded.raw('i18nComplete.textb110db6a3ea2'),
+                tI18nHardcoded.raw('i18nComplete.textcfca15bd528a'),
               ],
               [
                 tI18nHardcoded.raw('i18nComplete.text011500bde6d0'),
-                tI18nHardcoded.raw('i18nComplete.text407f9d9c939e'),
+                tI18nHardcoded.raw('i18nComplete.texta15e73e08432'),
               ],
             ].map(([k, v]) => ({ id: k, k, v }))}
           />
@@ -344,9 +367,7 @@ export function useSlides(): SlideDef[] {
                 'autoAppPresentationSlidesPlatformJsxTextAKortixProjectIsa8e122a4',
               )}{' '}
               <em>{tI18nHardcoded.raw('i18nComplete.textfa51fd49abf6')}</em>{' '}
-              {tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxTextTheCompanyTheWhole7610bc22',
-              )}
+              {tI18nHardcoded.raw('i18nComplete.textbc9fc7d48879')}
             </>
           }
         >
@@ -356,22 +377,18 @@ export function useSlides(): SlideDef[] {
               className="lg:col-span-5"
               lines={[
                 'project:',
-                tI18nHardcoded.raw('i18nComplete.textff874fb0b49f'),
+                '  name: acme',
                 ' ',
-                tI18nHardcoded.raw('i18nComplete.text609079a06653'),
-                'triggers:',
-                tI18nHardcoded.raw('i18nComplete.textdceafd500b4c'),
+                tI18nHardcoded.raw('i18nComplete.text2d0626cc9177'),
+                ...TRIGGER_YAML,
                 ' ',
-                tI18nHardcoded.raw('i18nComplete.text31aa7515d0ce'),
-                'connectors:',
-                tI18nHardcoded.raw('i18nComplete.text3228c7f267a6'),
+                tI18nHardcoded.raw('i18nComplete.textd2aad85e1a59'),
+                ...CONNECTOR_YAML,
               ]}
             />
             <Cells className="lg:col-span-7 lg:grid-cols-2">
               <Cell title={<Mono>{tI18nHardcoded.raw('i18nComplete.text1965f383021e')}</Mono>}>
-                {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxTextTheKortixLayerSandboxca190b4e',
-                )}
+                {tI18nHardcoded.raw('i18nComplete.text56fd56f6a5ed')}
               </Cell>
               <Cell
                 title={
@@ -381,12 +398,10 @@ export function useSlides(): SlideDef[] {
                   </Mono>
                 }
               >
-                {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxTextTheRuntimeAgentsSkillscceeb26a',
-                )}
+                {tI18nHardcoded.raw('i18nComplete.textf10b68618ceb')}
               </Cell>
               <Cell title={tI18nHardcoded.raw('i18nComplete.textac4059cfd550')} />
-              <Cell title={tI18nHardcoded.raw('i18nComplete.textb5aad44ae08f')} />
+              <Cell title={tI18nHardcoded.raw('i18nComplete.text0c677e7aa3e2')} />
             </Cells>
           </div>
         </Slide>
@@ -402,9 +417,7 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleProjectSessionSandboxee8af285',
           )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadWorkReachesMain11f15aad',
-          )}
+          sub={tI18nHardcoded.raw('i18nComplete.textc189cd31434d')}
         >
           <Cells className="lg:grid-cols-5">
             {[
@@ -428,18 +441,18 @@ export function useSlides(): SlideDef[] {
                 tI18nHardcoded.raw('i18nComplete.text3e032ee7d1dd'),
                 tI18nHardcoded.raw('i18nComplete.text591967ee7f66'),
               ],
-              ['main', tI18nHardcoded.raw('i18nComplete.text6024f479d0dc'), 'self-improves'],
+              [
+                'main',
+                tI18nHardcoded.raw('i18nComplete.text6024f479d0dc'),
+                tI18nHardcoded.raw('i18nComplete.text0211e6767bb1'),
+              ],
             ].map(([k, title, s]) => (
               <Cell key={k} label={k} title={title}>
                 {s}
               </Cell>
             ))}
           </Cells>
-          <BandNote>
-            {tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxTextEverySessionRunsIn56bf7294',
-            )}
-          </BandNote>
+          <BandNote>{tI18nHardcoded.raw('i18nComplete.text3a1605586e52')}</BandNote>
         </Slide>
       ),
     },
@@ -449,24 +462,20 @@ export function useSlides(): SlideDef[] {
       id: 'session',
       label: tI18nHardcoded.raw('i18nComplete.text090051628ce4'),
       node: (
-        <Slide
-          title={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrTitleEverySessionIs5e5fc280',
-          )}
-        >
+        <Slide title={tI18nHardcoded.raw('i18nComplete.text4c6aaca6d645')}>
           <Cells className="lg:grid-cols-4">
             {[
-              ['01', 'Boot', tI18nHardcoded.raw('i18nComplete.text802370076d02')],
+              ['01', 'Boot', tI18nHardcoded.raw('i18nComplete.text78cd9072cb48')],
               ['02', 'Materialize', tI18nHardcoded.raw('i18nComplete.text554ee79d14bc')],
               [
                 '03',
                 tI18nHardcoded.raw('i18nComplete.textc6d640399b61'),
-                tI18nHardcoded.raw('i18nComplete.text351c94634971'),
+                tI18nHardcoded.raw('i18nComplete.texte25ad3457bac'),
               ],
               [
                 '04',
                 tI18nHardcoded.raw('i18nComplete.textce7da5716908'),
-                tI18nHardcoded.raw('i18nComplete.text991d9a57288f'),
+                tI18nHardcoded.raw('i18nComplete.textf2a46c0f8024'),
               ],
             ].map(([k, title, body]) => (
               <Cell key={k} label={k} title={title}>
@@ -474,11 +483,7 @@ export function useSlides(): SlideDef[] {
               </Cell>
             ))}
           </Cells>
-          <BandNote>
-            {tI18nHardcoded.raw(
-              'autoAppPresentationSlidesPlatformJsxTextASyncEngineMirrors66aaf7a1',
-            )}
-          </BandNote>
+          <BandNote>{tI18nHardcoded.raw('i18nComplete.text69f85804e819')}</BandNote>
         </Slide>
       ),
     },
@@ -495,13 +500,14 @@ export function useSlides(): SlideDef[] {
           titleMuted={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxTextZeroCrossover86ad5f52',
           )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextRunThousandsOfAgents9a3f93e4',
-          )}
+          sub={tI18nHardcoded.raw('i18nComplete.textdd87daa9b487')}
         >
           <Cells className="lg:grid-cols-3">
             {[
-              ['∞', tI18nHardcoded.raw('i18nComplete.text4debcf7369ac')],
+              [
+                tI18nHardcoded.raw('i18nComplete.text8db2a9422641'),
+                tI18nHardcoded.raw('i18nComplete.text7acecd789f09'),
+              ],
               ['1', tI18nHardcoded.raw('i18nComplete.text92553541af30')],
               [
                 tI18nHardcoded.raw('i18nComplete.text9408211c997f'),
@@ -513,9 +519,7 @@ export function useSlides(): SlideDef[] {
               </StatCell>
             ))}
           </Cells>
-          <BandNote>
-            {tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxTextThisIsTheOnly74f58f8b')}
-          </BandNote>
+          <BandNote>{tI18nHardcoded.raw('i18nComplete.textb56dbde18b83')}</BandNote>
         </Slide>
       ),
     },
@@ -535,13 +539,13 @@ export function useSlides(): SlideDef[] {
               className="lg:col-span-5 [&_dd]:lg:col-span-7 [&_dt]:lg:col-span-5"
               rows={(
                 [
-                  [Bot, 'Agents', tI18nHardcoded.raw('i18nComplete.textd180271bed63')],
-                  [Sparkles, 'Skills', tI18nHardcoded.raw('i18nComplete.textbeff1e4ca7a0')],
-                  [Plug, 'Connectors', tI18nHardcoded.raw('i18nComplete.text7f8252af886d')],
-                  [KeyRound, 'Secrets', tI18nHardcoded.raw('i18nComplete.textd2acf4ac763b')],
-                  [MessagesSquare, 'Channels', tI18nHardcoded.raw('i18nComplete.text4a1ca4f91111')],
-                  [Clock, 'Triggers', tI18nHardcoded.raw('i18nComplete.text276e88f0f37e')],
-                  [Brain, 'Memory', tI18nHardcoded.raw('i18nComplete.textf354ef2ee567')],
+                  [Bot, 'Agents', tI18nHardcoded.raw('i18nComplete.text68bc363f6dae')],
+                  [Sparkles, 'Skills', tI18nHardcoded.raw('i18nComplete.text4f9f6c6912ef')],
+                  [Plug, 'Connectors', tI18nHardcoded.raw('i18nComplete.textf7b534213dee')],
+                  [KeyRound, 'Secrets', tI18nHardcoded.raw('i18nComplete.textd64201278f20')],
+                  [MessagesSquare, 'Channels', tI18nHardcoded.raw('i18nComplete.text0dcc80d639eb')],
+                  [Clock, 'Triggers', tI18nHardcoded.raw('i18nComplete.textd006e297679b')],
+                  [Brain, 'Memory', tI18nHardcoded.raw('i18nComplete.texte86e5978c229')],
                 ] as [Glyph, string, string][]
               ).map(([Icon, k, v]) => ({
                 id: k,
@@ -571,13 +575,11 @@ export function useSlides(): SlideDef[] {
       node: (
         <FeatureSlide
           title={tI18nHardcoded.raw('i18nComplete.text279b44d2ab4b')}
-          lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadMarkdownPersonasWith298b95be',
-          )}
+          lead={tI18nHardcoded.raw('i18nComplete.text20ee42cdeeb4')}
           facts={[
-            tI18nHardcoded.raw('i18nComplete.text1c41f3a0be11'),
-            tI18nHardcoded.raw('i18nComplete.textb5ca3585c03b'),
-            tI18nHardcoded.raw('i18nComplete.textbe70d00c8928'),
+            tI18nHardcoded.raw('i18nComplete.text6e01d353189c'),
+            tI18nHardcoded.raw('i18nComplete.textb6e80a1212c1'),
+            tI18nHardcoded.raw('i18nComplete.text6db9edc46dd1'),
           ]}
           shot={`${SHOT}/05-agents.png`}
         />
@@ -592,13 +594,11 @@ export function useSlides(): SlideDef[] {
         <FeatureSlide
           reverse
           title={tI18nHardcoded.raw('i18nComplete.text66d0f523a379')}
-          lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadThePartThat99be6c94',
-          )}
+          lead={tI18nHardcoded.raw('i18nComplete.textbfc5d722836d')}
           facts={[
             tI18nHardcoded.raw('i18nComplete.text07331645370f'),
-            tI18nHardcoded.raw('i18nComplete.text9590cb5df0a8'),
-            tI18nHardcoded.raw('i18nComplete.textdbd9b1773511'),
+            tI18nHardcoded.raw('i18nComplete.text4d3a3a08fc38'),
+            tI18nHardcoded.raw('i18nComplete.textc5dcf6fe8fda'),
           ]}
           shot={`${SHOT}/04-skills.png`}
         />
@@ -614,13 +614,11 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleConnectEverythingOnce90dc9225',
           )}
-          lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLead1ClickConnectbd49b095',
-          )}
+          lead={tI18nHardcoded.raw('i18nComplete.textf1373fdaacb8')}
           facts={[
             tI18nHardcoded.raw('i18nComplete.text449992e55737'),
             tI18nHardcoded.raw('i18nComplete.text8ddaaf20bb7d'),
-            tI18nHardcoded.raw('i18nComplete.textb68f7b640d93'),
+            tI18nHardcoded.raw('i18nComplete.textaa4dcb756260'),
           ]}
           shot={`${SHOT}/03-connectors.png`}
         />
@@ -633,12 +631,8 @@ export function useSlides(): SlideDef[] {
       label: tI18nHardcoded.raw('i18nComplete.textd8707d411d99'),
       node: (
         <Slide
-          title={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextOneTokenNotNinetya67633e0',
-          )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextKeysOAuthAndModel44974f3c',
-          )}
+          title={tI18nHardcoded.raw('i18nComplete.text85d1065dc00c')}
+          sub={tI18nHardcoded.raw('i18nComplete.textf639c1c41766')}
         >
           <div className="flex flex-col gap-6">
             <Cells className="lg:grid-cols-2">
@@ -671,9 +665,9 @@ export function useSlides(): SlideDef[] {
               </Cell>
             </Cells>
             <Cells className="lg:grid-cols-3">
-              <Cell title={tI18nHardcoded.raw('i18nComplete.text5ebe32e1b916')} />
+              <Cell title={tI18nHardcoded.raw('i18nComplete.textd87cb0774bec')} />
               <Cell title={tI18nHardcoded.raw('i18nComplete.text2fea30b8d515')} />
-              <Cell title={tI18nHardcoded.raw('i18nComplete.text5731d8c0fb14')} />
+              <Cell title={tI18nHardcoded.raw('i18nComplete.text6810852b1ce4')} />
             </Cells>
           </div>
         </Slide>
@@ -690,13 +684,11 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleWhereYourPeople5a92eefb',
           )}
-          lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadSlackTeamsTelegram3e7973c3',
-          )}
+          lead={tI18nHardcoded.raw('i18nComplete.textf87fa8568900')}
           facts={[
-            tI18nHardcoded.raw('i18nComplete.textcf885bfcd8a4'),
-            tI18nHardcoded.raw('i18nComplete.text009cb0fc376f'),
-            tI18nHardcoded.raw('i18nComplete.textbe0fce7637ce'),
+            tI18nHardcoded.raw('i18nComplete.texta14f0bc4c163'),
+            tI18nHardcoded.raw('i18nComplete.texte90fd8646710'),
+            tI18nHardcoded.raw('i18nComplete.text7ee67f59f5f1'),
           ]}
           shot={`${SHOT}/06-channels.png`}
         />
@@ -712,19 +704,13 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleItRunsWithout0222686a',
           )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadCronAndSignedc7137017',
-          )}
+          sub={tI18nHardcoded.raw('i18nComplete.text131452881360')}
         >
           <div className="grid gap-6 lg:grid-cols-12">
             <Code
               title={tI18nHardcoded.raw('i18nComplete.text1965f383021e')}
               className="lg:col-span-5"
-              lines={[
-                tI18nHardcoded.raw('i18nComplete.text609079a06653'),
-                'triggers:',
-                tI18nHardcoded.raw('i18nComplete.textdceafd500b4c'),
-              ]}
+              lines={[tI18nHardcoded.raw('i18nComplete.text2d0626cc9177'), ...TRIGGER_YAML]}
             />
             <Cells className="lg:col-span-7 lg:grid-cols-2">
               <IconCell icon={Clock} title={tI18nHardcoded.raw('i18nComplete.textdd9d24965dbe')}>
@@ -748,19 +734,17 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleChangeRequests6e5aad55',
           )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadTheReviewedMerge785e3799',
-          )}
+          sub={tI18nHardcoded.raw('i18nComplete.text82da7ea8d265')}
         >
           <Cells className="lg:grid-cols-3">
-            <IconCell icon={Users} title={tI18nHardcoded.raw('i18nComplete.text9a1ffabd3658')} />
+            <IconCell icon={Users} title={tI18nHardcoded.raw('i18nComplete.text2002f6507502')} />
             <IconCell
               icon={GitBranch}
-              title={tI18nHardcoded.raw('i18nComplete.text6d6fb78e4419')}
+              title={tI18nHardcoded.raw('i18nComplete.texteee86f66669f')}
             />
             <IconCell
               icon={FileCode2}
-              title={tI18nHardcoded.raw('i18nComplete.textb88cae951498')}
+              title={tI18nHardcoded.raw('i18nComplete.text39286b2a4fa6')}
             />
           </Cells>
         </Slide>
@@ -776,7 +760,7 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxTextALivingCompanyBrain7ed9d8a3',
           )}
-          sub={tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxTextFilesForNowAndf51cbec0')}
+          sub={tI18nHardcoded.raw('i18nComplete.text6102aeb192be')}
         >
           <div className="grid gap-6 lg:grid-cols-12">
             <Code
@@ -789,14 +773,14 @@ export function useSlides(): SlideDef[] {
                 tI18nHardcoded.raw('i18nComplete.text96f660c6ea36'),
                 '---',
                 ' ',
-                tI18nHardcoded.raw('i18nComplete.text40223a3c6277'),
+                tI18nHardcoded.raw('i18nComplete.textfadd828777b8'),
                 tI18nHardcoded.raw('i18nComplete.text742ae8324623'),
               ]}
             />
             <Cells className="lg:col-span-6 lg:grid-rows-3">
               <Cell title={tI18nHardcoded.raw('i18nComplete.text90cc8430dca3')} />
-              <Cell title={tI18nHardcoded.raw('i18nComplete.text844d1616ac93')} />
-              <Cell title={tI18nHardcoded.raw('i18nComplete.textea94f48d89d0')} />
+              <Cell title={tI18nHardcoded.raw('i18nComplete.text232aa085a0d4')} />
+              <Cell title={tI18nHardcoded.raw('i18nComplete.textc865410820c6')} />
             </Cells>
           </div>
         </Slide>
@@ -813,12 +797,10 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleAWorkforceYou8e9267ec',
           )}
-          lead={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadARealAccountc271c3da',
-          )}
+          lead={tI18nHardcoded.raw('i18nComplete.texta065f617aa0f')}
           facts={[
-            tI18nHardcoded.raw('i18nComplete.textb9b2cc46e71e'),
-            tI18nHardcoded.raw('i18nComplete.textf7d76d648261'),
+            tI18nHardcoded.raw('i18nComplete.text179c7711b8b6'),
+            tI18nHardcoded.raw('i18nComplete.texteb1a3b714329'),
             tI18nHardcoded.raw('i18nComplete.text2a462ba2ae5e'),
           ]}
           shot={`${SHOT}/02-team.png`}
@@ -835,24 +817,22 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleThreeWaysThe38c4ef16',
           )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextPoliciesDecideWhatRunsdea9e686',
-          )}
+          sub={tI18nHardcoded.raw('i18nComplete.text92038980f5b8')}
         >
           <Cells className="lg:grid-cols-3">
             {[
               [
-                'On-demand',
+                tI18nHardcoded.raw('i18nComplete.text7be15cd189a3'),
                 tI18nHardcoded.raw('i18nComplete.textd8a321e980e7'),
                 tI18nHardcoded.raw('i18nComplete.texte5c56bc61eb0'),
               ],
               [
-                'Human-assisted',
+                tI18nHardcoded.raw('i18nComplete.textc91c073984b4'),
                 tI18nHardcoded.raw('i18nComplete.text1bf354f2b825'),
                 tI18nHardcoded.raw('i18nComplete.text9aef8ba99514'),
               ],
               [
-                'Automated',
+                tI18nHardcoded.raw('i18nComplete.text31483b94fbda'),
                 tI18nHardcoded.raw('i18nComplete.textbded910328ad'),
                 tI18nHardcoded.raw('i18nComplete.text043cf55ca745'),
               ],
@@ -876,9 +856,7 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleAgentsReturnFinished8d0f12c2',
           )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadNotATranscript07b7fc10',
-          )}
+          sub={tI18nHardcoded.raw('i18nComplete.text29dbc106ca65')}
         >
           <div className="grid gap-6 lg:grid-cols-3">
             {[
@@ -905,7 +883,7 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleStartWithOne2fe53fe5',
           )}
-          sub={tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxAttrLeadEachIsA2eb95c3b')}
+          sub={tI18nHardcoded.raw('i18nComplete.text18208bf90ef6')}
         >
           <Cells className="lg:grid-cols-3">
             {[
@@ -917,7 +895,7 @@ export function useSlides(): SlideDef[] {
               [
                 'Engineering',
                 tI18nHardcoded.raw('i18nComplete.text424dfcf4d7e8'),
-                tI18nHardcoded.raw('i18nComplete.textcda73ce6e6aa'),
+                tI18nHardcoded.raw('i18nComplete.text94b7e2f85a64'),
               ],
               [
                 'Research',
@@ -983,12 +961,10 @@ export function useSlides(): SlideDef[] {
               line={tI18nHardcoded.raw(
                 'autoAppPresentationSlidesPlatformJsxTextUseItLikeChat53e3e05e',
               )}
-              body={tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxTextGiveEveryTeamAgentsea166472',
-              )}
+              body={tI18nHardcoded.raw('i18nComplete.textbe0da8b4c397')}
               facts={[
                 tI18nHardcoded.raw('i18nComplete.text602ff50f0ec1'),
-                tI18nHardcoded.raw('i18nComplete.text88098ef371c2'),
+                tI18nHardcoded.raw('i18nComplete.text6160f9f8d709'),
                 tI18nHardcoded.raw('i18nComplete.text4ee510d053d5'),
               ]}
             />
@@ -1003,18 +979,14 @@ export function useSlides(): SlideDef[] {
       label: tI18nHardcoded.raw('i18nComplete.texteb7aa5b77168'),
       node: (
         <Slide
-          title={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrTitleChatSlackTeams59488d51',
-          )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadYourTeamTalkse4dd114d',
-          )}
+          title={tI18nHardcoded.raw('i18nComplete.textb1a46aa6943c')}
+          sub={tI18nHardcoded.raw('i18nComplete.textd72a49c26fd1')}
         >
           <Cells className="lg:grid-cols-3">
             {(
               [
-                [Bot, tI18nHardcoded.raw('i18nComplete.texta535409d22df')],
-                [Box, tI18nHardcoded.raw('i18nComplete.text429bbfa117e2')],
+                [Bot, tI18nHardcoded.raw('i18nComplete.textf2dc406dd2f3')],
+                [Mail, tI18nHardcoded.raw('i18nComplete.text969ccbd3cf63')],
                 [MessagesSquare, 'Slack'],
                 [Users, tI18nHardcoded.raw('i18nComplete.texta7b52b269a23')],
                 [Code2, tI18nHardcoded.raw('i18nComplete.texte27a31ed1d6f')],
@@ -1037,33 +1009,17 @@ export function useSlides(): SlideDef[] {
           title={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxAttrTitleBuiltOnFiles64c977e2',
           )}
-          sub={tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxAttrLeadNoSDKToca0b7d2f')}
+          sub={tI18nHardcoded.raw('i18nComplete.text375e05205863')}
         >
           <div className="grid gap-6 lg:grid-cols-12">
             <Code
-              title={tI18nHardcoded.raw('i18nComplete.text6f37eb69ebc8')}
+              title={tI18nHardcoded.raw('i18nComplete.text1965f383021e')}
               className="lg:col-span-5"
-              lines={[
-                '---',
-                tI18nHardcoded.raw('i18nComplete.text5346918b32c0'),
-                tI18nHardcoded.raw('i18nComplete.text035549be9e10'),
-                '---',
-                ' ',
-                tI18nHardcoded.raw('i18nComplete.text9c84074599b5'),
-                tI18nHardcoded.raw('i18nComplete.text4a01fea7c629'),
-                tI18nHardcoded.raw('i18nComplete.text14f1b7cb49a1'),
-              ]}
+              lines={AGENT_YAML}
             />
             <Cells className="lg:col-span-7 lg:grid-cols-2">
-              <IconCell
-                icon={Boxes}
-                title={tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxAttrTitleAgentsAreSandboxes6c23b7e5',
-                )}
-              >
-                {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxAttrBodyEachRunsIn8ed57783',
-                )}
+              <IconCell icon={Boxes} title={tI18nHardcoded.raw('i18nComplete.texta8c9aab244af')}>
+                {tI18nHardcoded.raw('i18nComplete.text2379daba250a')}
               </IconCell>
               <IconCell
                 icon={FileCode2}
@@ -1081,9 +1037,7 @@ export function useSlides(): SlideDef[] {
                   'autoAppPresentationSlidesPlatformJsxAttrTitleKortixInitShip24f086f1',
                 )}
               >
-                {tI18nHardcoded.raw(
-                  'autoAppPresentationSlidesPlatformJsxAttrBodyScaffoldAProject47c3905e',
-                )}
+                {tI18nHardcoded.raw('i18nComplete.text86622a48134f')}
               </IconCell>
               <IconCell
                 icon={Server}
@@ -1107,12 +1061,8 @@ export function useSlides(): SlideDef[] {
       label: tI18nHardcoded.raw('i18nComplete.text37a5d04181b5'),
       node: (
         <Slide
-          title={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrTitleSameProductEverywhere41c9494d',
-          )}
-          sub={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrLeadRunKortixOn048c2e1e',
-          )}
+          title={tI18nHardcoded.raw('i18nComplete.texta65ca6eec945')}
+          sub={tI18nHardcoded.raw('i18nComplete.text058ce8fc4578')}
         >
           <div className="grid gap-6 lg:grid-cols-12">
             <Code
@@ -1161,17 +1111,10 @@ export function useSlides(): SlideDef[] {
                 'autoAppPresentationSlidesPlatformJsxAttrTitleHardIsolationd585df5c',
               )}
             >
-              {tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxAttrBody1Session1d6ad1454')}
+              {tI18nHardcoded.raw('i18nComplete.text52f4fc0fa3a5')}
             </IconCell>
-            <IconCell
-              icon={KeyRound}
-              title={tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxAttrTitleOneToken5d68cf6a',
-              )}
-            >
-              {tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxAttrBodyYourAPIKeyscd9e6087',
-              )}
+            <IconCell icon={KeyRound} title={tI18nHardcoded.raw('i18nComplete.text5ff4e8b9bd84')}>
+              {tI18nHardcoded.raw('i18nComplete.texta65897347083')}
             </IconCell>
             <IconCell
               icon={GitBranch}
@@ -1179,9 +1122,7 @@ export function useSlides(): SlideDef[] {
                 'autoAppPresentationSlidesPlatformJsxAttrTitleAuditEverything3be9d076',
               )}
             >
-              {tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxAttrBodyEveryModelCall8c86019e',
-              )}
+              {tI18nHardcoded.raw('i18nComplete.text047f1d85b642')}
             </IconCell>
             <IconCell
               icon={Building2}
@@ -1189,20 +1130,18 @@ export function useSlides(): SlideDef[] {
                 'autoAppPresentationSlidesPlatformJsxAttrTitleOwnYourDatab56eaad9',
               )}
             >
-              {tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxAttrBodySelfHostVPC21d0cda0',
-              )}
+              {tI18nHardcoded.raw('i18nComplete.textf2d1e61c80fb')}
             </IconCell>
           </Cells>
           <Facts
             className="mt-8 flex-wrap gap-x-8 gap-y-3"
             items={[
-              tI18nHardcoded.raw('i18nComplete.text188fba3516ee'),
-              tI18nHardcoded.raw('i18nComplete.text60f41540d80e'),
+              tI18nHardcoded.raw('i18nComplete.text042d7fb7b992'),
+              tI18nHardcoded.raw('i18nComplete.textaa56c457f5a2'),
               tI18nHardcoded.raw('i18nComplete.textf23e2655e76b'),
-              tI18nHardcoded.raw('i18nComplete.text228d1d7e87d4'),
-              tI18nHardcoded.raw('i18nComplete.textf982a576e7c6'),
-              tI18nHardcoded.raw('i18nComplete.text2c4de2851235'),
+              tI18nHardcoded.raw('i18nComplete.text11bee2138e05'),
+              tI18nHardcoded.raw('i18nComplete.text93d1b9b9ab73'),
+              tI18nHardcoded.raw('i18nComplete.textc1ada08ce138'),
               tI18nHardcoded.raw('i18nComplete.text0f8c0eb8cc5e'),
             ]}
           />
@@ -1223,13 +1162,13 @@ export function useSlides(): SlideDef[] {
           <Cells className="lg:grid-cols-2">
             {(
               [
-                [Code2, 'Developers', tI18nHardcoded.raw('i18nComplete.text1b17b7fdd191')],
-                [Users, 'Companies', tI18nHardcoded.raw('i18nComplete.text82203da566c7')],
-                [Shield, 'Enterprise', tI18nHardcoded.raw('i18nComplete.text777e112466d3')],
+                [Code2, 'Developers', tI18nHardcoded.raw('i18nComplete.text505d428cbb65')],
+                [Users, 'Companies', tI18nHardcoded.raw('i18nComplete.text232d26e33414')],
+                [Shield, 'Enterprise', tI18nHardcoded.raw('i18nComplete.texta0ac83b27e05')],
                 [
                   Building2,
                   tI18nHardcoded.raw('i18nComplete.text827f9d2d8e74'),
-                  tI18nHardcoded.raw('i18nComplete.texta21221a2eef4'),
+                  tI18nHardcoded.raw('i18nComplete.text5e4491bf02bc'),
                 ],
               ] as [Glyph, string, string][]
             ).map(([Icon, title, body]) => (
@@ -1248,10 +1187,8 @@ export function useSlides(): SlideDef[] {
       label: tI18nHardcoded.raw('i18nComplete.text507e19ce6f1b'),
       node: (
         <Slide
-          title={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxAttrTitleThePlatformIsfa2254a2',
-          )}
-          sub={tI18nHardcoded.raw('autoAppPresentationSlidesPlatformJsxAttrLeadWeBuildOur3a652ae7')}
+          title={tI18nHardcoded.raw('i18nComplete.text707fbd0a9b4a')}
+          sub={tI18nHardcoded.raw('i18nComplete.textd688fa4dd718')}
         >
           <Cells className="lg:grid-cols-5">
             <IconCell
@@ -1280,9 +1217,7 @@ export function useSlides(): SlideDef[] {
               )}
             </IconCell>
             <IconCell icon={Boxes} title={tI18nHardcoded.raw('i18nComplete.textfb791d3beeee')}>
-              {tI18nHardcoded.raw(
-                'autoAppPresentationSlidesPlatformJsxAttrBodyTheComputeFloora3af4e83',
-              )}
+              {tI18nHardcoded.raw('i18nComplete.text5b67dba70787')}
             </IconCell>
           </Cells>
           <BandNote>
@@ -1298,12 +1233,8 @@ export function useSlides(): SlideDef[] {
       label: tI18nHardcoded.raw('i18nComplete.textf79ebae4aae3'),
       node: (
         <Slide
-          title={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextWeReBuildingTheda31c271',
-          )}
-          titleMuted={tI18nHardcoded.raw(
-            'autoAppPresentationSlidesPlatformJsxTextAndLetsItKeep69d7479b',
-          )}
+          title={tI18nHardcoded.raw('i18nComplete.textdc1836e9c4be')}
+          titleMuted={tI18nHardcoded.raw('i18nComplete.text48a7926df96c')}
           sub={tI18nHardcoded.raw(
             'autoAppPresentationSlidesPlatformJsxTextOpenSourceSSORBAC8718a667',
           )}
