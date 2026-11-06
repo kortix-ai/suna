@@ -432,6 +432,15 @@ const INTENDED: Intended[] = [
       BOUND.has(r.kind) && r.path.startsWith('/v1/billing/') && fenceCheck(r.base) === 'default-deny' && !r.head.startsWith('403:token-project-scope:'),
   },
   {
+    why: 'Auth stage, key expiry (C4a): a project key minting a CLI token without expires_at gets its own expiry (clampDefaultToParentExpiry) instead of 403 token_mint_exceeds_parent; a later expiry is still refused.',
+    match: (r) =>
+      r.kind === 'project_pat' &&
+      r.method === 'POST' &&
+      /^\/v1\/(projects|workspaces)\/:workspaceId\/cli-token$/.test(r.path) &&
+      r.base === '403:token_mint_exceeds_parent' &&
+      r.head === 'pass',
+  },
+  {
     why: 'Copy only (finding 20): the same denial now says "this workspace" (no_project_membership text, account denial text).',
     match: (r) => r.base.replace(/project|account/g, 'X') === r.head.replace(/workspace/g, 'X'),
   },
