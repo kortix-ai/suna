@@ -2172,12 +2172,12 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const path = new URL(req.url).pathname
-        if (req.method === 'POST' && path === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'POST' && path === '/v1/workspaces/proj-pi-test/sessions') {
           creates.push((await req.json()) as Record<string, any>)
           return Response.json({ session_id: `cloud-child-${creates.length}` }, { status: 201 })
         }
         if (path.endsWith('/transcript')) return Response.json({ messages: [{ role: 'user', text: 'go' }, { role: 'assistant', text: 'cloud report' }] })
-        if (req.method === 'GET' && path.startsWith('/v1/projects/proj-pi-test/sessions/cloud-child-')) {
+        if (req.method === 'GET' && path.startsWith('/v1/workspaces/proj-pi-test/sessions/cloud-child-')) {
           return Response.json({ status: 'running', working: { state: 'idle', since: '2026-10-24T10:00:00.000Z', pending_delivery: false } })
         }
         return new Response('not found', { status: 404 })
@@ -2225,11 +2225,11 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
           creates.push((await req.json()) as Record<string, any>)
           return Response.json({ session_id: 'bg-child-1' }, { status: 201 })
         }
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
           reads.push(`list ${url.searchParams.get('parent')}`)
           return Response.json([])
         }
@@ -2271,12 +2271,12 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
           creates.push((await req.json()) as Record<string, any>)
           return Response.json({ session_id: `front-worker-${creates.length}` }, { status: 201 })
         }
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/detail') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/detail') {
           detailReads++
           return Response.json({
             config: {
@@ -2366,12 +2366,12 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
           creates.push((await req.json()) as Record<string, any>)
           return Response.json({ session_id: `files-worker-${creates.length}` }, { status: 201 })
         }
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/detail') return Response.json({ config: { agents: [] } })
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/detail') return Response.json({ config: { agents: [] } })
         return new Response('not found', { status: 404 })
       },
     })
@@ -2420,11 +2420,11 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-7') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions/bg-child-7') {
           return Response.json({ session_id: 'bg-child-7', parent_session_id: 'sess-pi-test', status: 'stopped', metadata: { notify_parent: true }, working: { state: 'idle' } })
         }
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-7/prompts') {
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions/bg-child-7/prompts') {
           prompts.push((await req.json()) as Record<string, any>)
           return Response.json({ prompt_id: 'p1', state: 'queued' }, { status: 202 })
         }
@@ -2457,13 +2457,13 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([finished])
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') return Response.json([finished])
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
           creates.push(await req.json())
           return Response.json({ session_id: 'bg-child-10' }, { status: 201 })
         }
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-9') return Response.json(finished)
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-9/prompts') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions/bg-child-9') return Response.json(finished)
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions/bg-child-9/prompts') {
           prompts.push((await req.json()) as Record<string, any>)
           return Response.json({ prompt_id: 'p1', state: 'queued' }, { status: 202 })
         }
@@ -2493,7 +2493,7 @@ describe('pi subagents extension', () => {
     const server = Bun.serve({
       port: 0,
       fetch: (req) => {
-        if (req.method === 'POST' && new URL(req.url).pathname === '/v1/projects/proj-pi-test/sessions') creates += 1
+        if (req.method === 'POST' && new URL(req.url).pathname === '/v1/workspaces/proj-pi-test/sessions') creates += 1
         return new Response('not found', { status: 404 })
       },
     })

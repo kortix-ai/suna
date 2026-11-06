@@ -40,7 +40,7 @@ function startFakeApi() {
       const url = new URL(req.url)
       const body: any = req.method === 'GET' ? null : await req.json().catch(() => null)
       seen.push({ method: req.method, path: url.pathname, auth: req.headers.get('authorization'), body })
-      const base = `/v1/projects/${PROJECT_ID}/sessions`
+      const base = `/v1/workspaces/${PROJECT_ID}/sessions`
       if (req.method === 'GET' && url.pathname === base) return Response.json([])
       if (req.method === 'POST' && url.pathname === base) {
         creates.push(body)
@@ -203,8 +203,8 @@ describe('pi team tasks: the list', () => {
     expect(await rt.admit({ text: 'plan the review', files: [] }).done).toBe('completed')
     const posts = api.seen.filter((s) => s.method === 'POST' && s.path.endsWith('/tasks'))
     expect(posts.map((p) => [p.path, p.auth, p.body])).toEqual([
-      [`/v1/projects/${PROJECT_ID}/sessions/${LEAD}/tasks`, 'Bearer box-token', { subject: 'Review the auth module', description: 'Token handling and sessions.' }],
-      [`/v1/projects/${PROJECT_ID}/sessions/${LEAD}/tasks`, 'Bearer box-token', { subject: 'Write the summary', blocked_by: [1], owner: 'researcher' }],
+      [`/v1/workspaces/${PROJECT_ID}/sessions/${LEAD}/tasks`, 'Bearer box-token', { subject: 'Review the auth module', description: 'Token handling and sessions.' }],
+      [`/v1/workspaces/${PROJECT_ID}/sessions/${LEAD}/tasks`, 'Bearer box-token', { subject: 'Write the summary', blocked_by: [1], owner: 'researcher' }],
     ])
     expect(results(frames, 'task_create').map((r) => r.card.title)).toEqual(['Added task #1: Review the auth module', 'Added task #2: Write the summary'])
     const [list] = results(frames, 'task_list')
@@ -243,7 +243,7 @@ describe('pi team tasks: the list', () => {
     )
     expect(await rt.admit({ text: 'work the list', files: [] }).done).toBe('completed')
     const patches = api.seen.filter((s) => s.method === 'PATCH')
-    expect(patches.every((p) => p.path.startsWith(`/v1/projects/${PROJECT_ID}/sessions/${LEAD}/tasks/`))).toBe(true)
+    expect(patches.every((p) => p.path.startsWith(`/v1/workspaces/${PROJECT_ID}/sessions/${LEAD}/tasks/`))).toBe(true)
     expect(patches.map((p) => p.body)).toEqual([{ claim: true }, { claim: true }, { claim: true }, { status: 'completed' }])
     const updates = results(frames, 'task_update')
     expect(updates.map((u) => [u.ok, u.action, u.card.title])).toEqual([

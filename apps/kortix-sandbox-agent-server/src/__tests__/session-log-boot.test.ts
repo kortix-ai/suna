@@ -183,7 +183,7 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
 
     const boot = await reconcileSessionLog(store.port, RETRY)
 
-    expect(api.requests).toEqual(['GET /v1/projects/project-1/sessions/session-1/log/manifest', 'POST /v1/projects/project-1/sessions/session-1/log/restore'])
+    expect(api.requests).toEqual(['GET /v1/workspaces/project-1/sessions/session-1/log/manifest', 'POST /v1/workspaces/project-1/sessions/session-1/log/restore'])
     expect(store.restores).toHaveLength(1)
     expect(store.restores[0]!.seqMax).toEqual({ thr_root: 2 })
     expect(boot).toEqual({ generation: 1, cursors: [{ thread_id: 'thr_root', last_seq: 2, native_hashes: { m1: 'h-m1', m2: 'h-m2' } }], harness: carry(3) })
@@ -306,7 +306,7 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
     const store = fakeStore(['m1', 'm2'])
 
     expect(await reconcileSessionLog(store.port, RETRY)).toEqual({ generation: 0, cursors: [] })
-    expect(api.requests).toEqual(['GET /v1/projects/project-1/sessions/session-1/log/manifest'])
+    expect(api.requests).toEqual(['GET /v1/workspaces/project-1/sessions/session-1/log/manifest'])
     expect(store.restores).toHaveLength(0)
   })
 
@@ -464,7 +464,7 @@ describe('the boot reconcile: when the boot restores (P6.4)', () => {
   test('a brand-new session (no store, the manifest 404s): the box boots empty, as before', async () => {
     const api = fakeApi({ manifest: [new Response('{}', { status: 404 })] })
     expect(await reconcileSessionLog(fakeStore(null).port, RETRY)).toEqual({ generation: 0, cursors: [] })
-    expect(api.requests).toEqual(['GET /v1/projects/project-1/sessions/session-1/log/manifest'])
+    expect(api.requests).toEqual(['GET /v1/workspaces/project-1/sessions/session-1/log/manifest'])
   })
 
   test('a stale store and a restore that claims, then fails 3 times: the boot fails (keeping the store would post below the claim); nothing is persisted', async () => {
