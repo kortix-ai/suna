@@ -106,6 +106,8 @@ export const WORKSPACE_KEY_CLASSES = {
     'connectors',
     'gateway_api_keys',
     'project_access_requests',
+    // Goals (dev, 2026-11-06): a goal belongs to the project.
+    'project_goals',
     'project_git_connections',
     'project_git_credentials',
     'project_monitor_boxes',
@@ -155,6 +157,8 @@ export const WORKSPACE_KEY_CLASSES = {
     'usage_events',
   ],
   project_only: [
+    // A goal's event log carries project_id only (dev, 2026-11-06).
+    'project_goal_events',
     'artifact_comment_screenshot_objects',
     'artifact_comment_threads',
     'artifact_events',
