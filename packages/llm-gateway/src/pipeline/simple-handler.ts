@@ -35,7 +35,8 @@ import {
   withUpstreamHeadersTimeout,
 } from './dispatch';
 import { breakerKey, tripsBreaker, upstreamBreakers } from './circuit-breaker';
-import { clampRetryAfterSeconds, gatewayErrorResponse, providerClientErrorBody } from './error-response';
+import { clampRetryAfterSeconds, gatewayErrorResponse, providerClientErrorBody, requestTooLarge } from './error-response';
+import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
 import { conversationError, requestFieldError } from './request-fields';
 import {
@@ -299,6 +300,8 @@ export async function handleChatCompletions(
   // decide whether a stream-cut transparent retry may afford ANOTHER
   // `structuredClone` of the body — see `streamRedispatchBody` below.
   const approxRequestSize = req.rawBody?.length ?? 0;
+  // What the provider receives after the image window: what decides `request_too_large`.
+  let sentRequestBytes = approxRequestSize;
   try {
     body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
   } catch {
@@ -308,9 +311,10 @@ export async function handleChatCompletions(
   req.rawBody = '';
   if (body) {
     const window = applyImageWindow(body, imageWindow);
+    sentRequestBytes = Math.max(0, approxRequestSize - (window.bytes - window.keptBytes));
     if (window.dropped > 0) {
       logger.info(
-        `[gateway] image window ${id}: kept ${window.total - window.dropped} of ${window.total} inline images`,
+        `[gateway] image window ${id}: kept ${window.total - window.dropped} of ${window.total} inline images (${window.keptBytes} of ${window.bytes} bytes)`,
       );
     }
   }
@@ -790,7 +794,7 @@ export async function handleChatCompletions(
       } else if (admitted) upstreamBreakers.release(key);
       attempts += 1;
       candidatesTried = [...candidatesTried, `${candidate.provider}:stream-retry:${status ?? 'network_error'}`];
-      const shown = candidate.publicProvider ? publicUpstreamError(status ?? 0, message, routedModel) : null;
+      const shown = candidate.publicProvider ? publicUpstreamError(status ?? 0, message, routedModel, sentRequestBytes) : null;
       attemptFailures.push({
         attempt: attemptFailures.length + 1,
         provider: shownProvider(candidate),
@@ -866,8 +870,16 @@ export async function handleChatCompletions(
         ? `${error.message} ${error.body}`
         : error instanceof Error ? error.message : String(error);
     const publicError = served.publicProvider
-      ? publicUpstreamError(error instanceof UpstreamHttpError ? error.status : 0, errorText, routedModel)
+      ? publicUpstreamError(error instanceof UpstreamHttpError ? error.status : 0, errorText, routedModel, sentRequestBytes)
       : null;
+    // An own provider's refusal is the customer's to read: the trace keeps its text, not "upstream HTTP 400".
+    const providerFailure =
+      !publicError && error instanceof UpstreamHttpError && error.status < 500 && error.status !== 429
+        ? (requestTooLarge(error.status, error.body, sentRequestBytes) ?? {
+            code: 'upstream_error',
+            message: parseUpstreamErrorBody(error.body, error.message).message.slice(0, 500),
+          })
+        : null;
     if (publicError) {
       logger.warn(
         `[gateway] ${id}: ${served.provider} failed for ${served.resolvedModel ?? routedModel}: ${errorText.slice(0, 300)}`,
@@ -885,8 +897,8 @@ export async function handleChatCompletions(
       streaming,
       status: publicError?.status ?? (error instanceof UpstreamHttpError ? error.status : 502),
       ok: false,
-      errorCode: publicError?.code ?? 'upstream_error',
-      errorMessage: publicError?.message ?? (error instanceof Error ? error.message : String(error)),
+      errorCode: publicError?.code ?? providerFailure?.code ?? 'upstream_error',
+      errorMessage: publicError?.message ?? providerFailure?.message ?? (error instanceof Error ? error.message : String(error)),
       attempts,
       candidatesTried,
       attemptFailures,
@@ -904,7 +916,7 @@ export async function handleChatCompletions(
           error instanceof UpstreamHttpError ? clampRetryAfterSeconds(error.headers?.['retry-after']) : undefined,
       });
     }
-    if (error instanceof UpstreamHttpError) return rawProviderError(error);
+    if (error instanceof UpstreamHttpError) return rawProviderError(error, sentRequestBytes);
     // A headers timeout is "try again", not "this request is malformed".
     const timedOut = (error as { name?: unknown })?.name === 'TimeoutError' && !req.signal?.aborted;
     if (timedOut)
@@ -944,8 +956,8 @@ export async function handleChatCompletions(
     const classified = publicUpstreamError(Number.isFinite(code) ? code : 0, streamError.message ?? '', routedModel);
     return { message: classified.message, code: classified.code };
   };
-  // Set when a managed-model upstream answered non-2xx: the trace records the
-  // public error the client received.
+  // Set when an upstream answered non-2xx: the trace records the error the
+  // client received (the public one for a managed model).
   let publicFailure: { status: number; code: string; message: string } | null = null;
   const settle = async (
     reported: ExtractedUsage | null,
@@ -1079,7 +1091,7 @@ export async function handleChatCompletions(
     logger.warn(
       `[gateway] ${id}: ${served.provider} ${upstream.status} for ${served.resolvedModel ?? routedModel}: ${upstreamText.slice(0, 300)}`,
     );
-    const classified = publicUpstreamError(upstream.status, upstreamText, routedModel);
+    const classified = publicUpstreamError(upstream.status, upstreamText, routedModel, sentRequestBytes);
     publicFailure = classified;
     await settle(null);
     return gatewayErrorResponse(classified.status, {
@@ -1096,10 +1108,18 @@ export async function handleChatCompletions(
 
   if (!upstream.ok && upstream.status < 500 && upstream.status !== 429) {
     const upstreamText = await upstream.text().catch(() => '');
+    // The trace records the refusal the client receives, with the provider's own text.
+    publicFailure = {
+      status: upstream.status,
+      ...(requestTooLarge(upstream.status, upstreamText, sentRequestBytes) ?? {
+        code: 'upstream_error',
+        message: parseUpstreamErrorBody(upstreamText).message.slice(0, 500),
+      }),
+    };
     await settle(null);
     const headers = passthroughHeaders(upstream.headers);
     headers.set('content-type', 'application/json');
-    return new Response(providerClientErrorBody(upstream.status, upstreamText), { status: upstream.status, headers });
+    return new Response(providerClientErrorBody(upstream.status, upstreamText, sentRequestBytes), { status: upstream.status, headers });
   }
 
   // KRTX-3369: an answer names the model the client asked for and the model
