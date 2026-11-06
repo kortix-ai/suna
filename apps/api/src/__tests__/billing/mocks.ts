@@ -203,6 +203,7 @@ export function registerGlobalMocks() {
   }));
 
   mock.module('../../billing/repositories/account-deletion', () => ({
+    hasRunningDeletionRequest: async () => false,
     getActiveDeletionRequest: async (id: string) =>
       mockRegistry.getActiveDeletionRequest ? mockRegistry.getActiveDeletionRequest(id) : null,
     createDeletionRequest: async (...args: any[]) =>

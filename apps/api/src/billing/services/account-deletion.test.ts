@@ -288,6 +288,7 @@ mock.module('../wallet', () => ({
 
 mock.module('../repositories/account-deletion', () => ({
   getActiveDeletionRequest: async () => activeRequest,
+  hasRunningDeletionRequest: async () => false,
   createDeletionRequest: async () => ({ id: 'req-1' }),
   cancelDeletionRequest: async () => undefined,
   markDeletionCompleted: async (id: string) => { completedRequests.push(id); },

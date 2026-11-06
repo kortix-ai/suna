@@ -38,6 +38,16 @@ export async function createDeletionRequest(
   return row;
 }
 
+/** True while the worker runs the account's deletion (`processing`): it can no longer be cancelled. */
+export async function hasRunningDeletionRequest(accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: accountDeletionRequests.id })
+    .from(accountDeletionRequests)
+    .where(and(eq(accountDeletionRequests.accountId, accountId), eq(accountDeletionRequests.status, 'processing')))
+    .limit(1);
+  return Boolean(row);
+}
+
 /**
  * The request's status moves. Cancel leaves only `pending`: once the worker
  * claimed a request (`processing`), its irreversible work runs, so a cancel

@@ -64,6 +64,17 @@ describe('account deletion cancel vs worker claim (real PostgreSQL)', () => {
     expect(await statusOf(requestId)).toBe('processing');
   });
 
+  test('a cancel after the worker claimed the request answers 409, not "no request"', async () => {
+    const { accountId, requestId } = await seedRequest('processing');
+    const { cancelAccountDeletion } = await import('../billing/services/account-deletion');
+    const outcome = await cancelAccountDeletion(accountId).then(
+      () => ({ ok: true as const }),
+      (err: { statusCode?: number }) => ({ ok: false as const, statusCode: err.statusCode }),
+    );
+    expect(outcome).toEqual({ ok: false, statusCode: 409 });
+    expect(await statusOf(requestId)).toBe('processing');
+  });
+
   test('an uncontended cancel of a pending request cancels it', async () => {
     const { accountId, requestId } = await seedRequest('pending');
     const { cancelAccountDeletion } = await import('../billing/services/account-deletion');

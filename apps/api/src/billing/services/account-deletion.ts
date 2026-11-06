@@ -65,6 +65,7 @@ import { applyAdminOverride, applyStripeSync } from './account-write-owner';
 import { wallet } from '../wallet';
 import {
   getActiveDeletionRequest,
+  hasRunningDeletionRequest,
   createDeletionRequest,
   cancelDeletionRequest,
   markDeletionCompleted,
@@ -164,6 +165,8 @@ export async function getAccountDeletionStatus(accountId: string) {
 export async function cancelAccountDeletion(accountId: string) {
   const request = await getActiveDeletionRequest(accountId);
   if (!request) {
+    // The worker claimed it already: its irreversible work runs.
+    if (await hasRunningDeletionRequest(accountId)) throw new BillingError(DELETION_ALREADY_RUNNING, 409);
     throw new BillingError('No active deletion request found');
   }
 
