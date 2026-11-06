@@ -142,19 +142,20 @@ for (const { file, step } of workflows) {
       expect(out).not.toContain('gitleaks-ran');
     });
 
-    test('refuses an archive the manifest does not list', () => {
-      // The manifest's one line describes another file and carries the
-      // archive's own digest, so only the listing check can reject it: a step
-      // that skips `grep` would download and verify nothing, then extract.
+    test('refuses an archive the manifest lists with a TAB separator', () => {
+      // The manifest carries the archive's own digest, so `sha256sum -c`
+      // verifies it and the binary would run. `grep -q " ${archive}$"` sees no
+      // space before the name (a TAB) and rejects it. Deleting that line keeps
+      // this test red: the install then succeeds and prints `gitleaks-ran`.
       const archive = tarGz();
       const { status, out } = run(
         script,
-        serve({ archive, sums: `${sha256(archive)}  other.tar.gz\n` }),
+        serve({ archive, sums: `${sha256(archive)}\t${ARCHIVE}\n` }),
       );
       expect(status).toBe(1);
-      // Nothing was downloaded, so nothing was extracted or run.
+      // The listing guard stops it before the download, so nothing ran.
       expect(out).not.toContain('gitleaks-ran');
-      expect(out).not.toContain('FAILED');
+      expect(out).not.toContain(`${ARCHIVE}: OK`);
     });
   });
 }
