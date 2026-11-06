@@ -313,21 +313,19 @@ export function registerProjectsRoutes(): void {
     },
   );
 
-  // GET /v1/projects/quota
-  // Lets the frontend pre-check the account's project cap BEFORE the user hits
-  // the 403 a denied create answers, so the /new page can show the cap reason
-  // on load and keep Create disabled instead of teaching the cap through a
-  // failed submit (KRTX-2495). Same computation as the create gate's
-  // `enforceProjectQuota` — `projectQuotaState` — so the two can never
-  // disagree. Account-scoped like POST /provision: `account_id` resolves
-  // through `resolveProjectAccount`, and omitting it resolves the same default
-  // account an omitted `account_id` create would target.
+  // GET /v1/projects/quota (legacy name only; not under /v1/workspaces)
+  // The create pre-check: whether the account may create its project, from the
+  // create gate's own rule (`projectQuotaState`), so the two never disagree.
+  // `account_id` resolves through `resolveProjectAccount`; omitted, the default
+  // account an omitted-account create would target.
   projectsApp.openapi(
     createRoute({
       method: 'get',
       path: '/quota',
       tags: ['projects'],
-      summary: 'Get the project quota state for an account',
+      summary: 'Get whether an account may create its project',
+      description:
+        'The workspace rule of the create gate: `limit` is 1 on every plan; `capped` is true when the account already holds its project, and `message` is the create gate text. To make another workspace, use `POST /v1/workspaces`.',
       ...auth,
       responses: {
         200: json(

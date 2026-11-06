@@ -43,6 +43,12 @@ const tables = [
   // The SCIM chain resolves `/scim/v2/workspaces/:workspaceId` through the
   // kortix.workspaces view (middleware/workspace-account.ts).
   'workspaces',
+  // The canonical gate (same file) asks the IAM engine whether the caller may
+  // read the workspace, so the engine's tables are in the graph too.
+  'serviceAccounts',
+  'accountTokens',
+  'permissions',
+  'objectPolicies',
 ] as const;
 const tableStubs = Object.fromEntries(tables.map((name) => [name, { __table: name }]));
 

@@ -155,6 +155,7 @@ export async function buildProjectAccessView(loaded: AwaitedProjectAccessLoad) {
 
   return {
     project_id: loaded.row.projectId,
+    workspace_id: loaded.row.projectId,
     account_id: loaded.row.accountId,
     can_manage: (
       await authorize(loaded.actor, 'project.members.manage', { type: 'project', id: loaded.row.projectId })

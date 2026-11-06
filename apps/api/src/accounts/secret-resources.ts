@@ -17,6 +17,7 @@ import { readJsonObject } from '../shared/http-body';
 import { projectInAccount } from '../secrets/project-account';
 import { listLegacySubscriptionConnections, refreshLegacySubscriptionUsage } from '../llm-gateway/legacy-subscription-usage';
 import { accountIdParam } from '../shared/route-params';
+import { PATH_WORKSPACE_ID_VAR, isCanonicalWorkspacePath } from '../middleware/workspace-account';
 
 const SecretIdParam = AccountIdParam.extend({ secretId: z.string().uuid() });
 const GrantParam = SecretIdParam.extend({ userId: z.string().uuid() });
@@ -83,16 +84,34 @@ async function view(row: typeof accountSecretResources.$inferSelect, actorId: st
   };
 }
 
+/**
+ * The project these routes scope to. On a canonical path
+ * (`/v1/workspaces/:workspaceId/…`) the workspace IS the project, so an
+ * omitted `project_id` means the path workspace. On a legacy path an omitted
+ * `project_id` keeps its old meaning (account-wide rows only).
+ */
+function scopedProjectId(c: Context, queried: string | undefined): string | undefined {
+  if (queried) return queried;
+  if (!isCanonicalWorkspacePath(c.req.path)) return undefined;
+  const pathWorkspace = c.get(PATH_WORKSPACE_ID_VAR as never) as string | undefined;
+  return pathWorkspace || undefined;
+}
+
 export function registerSecretResourceRoutes() {
-  const SubscriptionQuery = z.object({ project_id: z.string().uuid() });
+  const SubscriptionQuery = z.object({
+    project_id: z.string().uuid().optional().openapi({
+      description: 'The workspace (project) to scope to. Required on `/v1/accounts/…`; defaults to the path workspace on `/v1/workspaces/…`.',
+    }),
+  });
   accountsRouter.openapi(createRoute({
     method: 'get', path: '/{workspaceId}/subscription-connections', tags: ['secrets'],
     summary: 'List subscription logins, including existing legacy connections', ...auth,
     request: { params: AccountIdParam, query: SubscriptionQuery },
-    responses: { 200: json(z.object({ subscriptions: z.array(View.extend({ storage: z.enum(['account_resource', 'project']) })) }), 'Connected subscriptions'), ...errors(403) },
+    responses: { 200: json(z.object({ subscriptions: z.array(View.extend({ storage: z.enum(['account_resource', 'project']) })) }), 'Connected subscriptions'), ...errors(400, 403) },
   }), async (c) => {
     const accountId = accountIdParam(c);
-    const { project_id: projectId } = c.req.valid('query');
+    const projectId = scopedProjectId(c, c.req.valid('query').project_id);
+    if (!projectId) return c.json({ error: 'project_id is required' }, 400);
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId)) || !(await projectInAccount(accountId, projectId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
     const rows = await db.select().from(accountSecretResources).where(and(
@@ -110,11 +129,13 @@ export function registerSecretResourceRoutes() {
     method: 'post', path: '/{workspaceId}/subscription-connections/{secretId}/usage', tags: ['secrets'],
     summary: 'Read usage from an existing subscription without reconnecting', ...auth,
     request: { params: SecretIdParam, query: SubscriptionQuery.extend({ storage: z.enum(['account_resource', 'project']) }) },
-    responses: { 200: json(z.object({ usage: SubscriptionUsageSchema.nullable(), provider_account: SubscriptionAccountSchema.nullable() }), 'Subscription usage'), ...errors(403, 404) },
+    responses: { 200: json(z.object({ usage: SubscriptionUsageSchema.nullable(), provider_account: SubscriptionAccountSchema.nullable() }), 'Subscription usage'), ...errors(400, 403, 404) },
   }), async (c) => {
     const { secretId } = c.req.valid('param');
     const accountId = accountIdParam(c);
-    const { project_id: projectId, storage } = c.req.valid('query');
+    const { storage } = c.req.valid('query');
+    const projectId = scopedProjectId(c, c.req.valid('query').project_id);
+    if (!projectId) return c.json({ error: 'project_id is required' }, 400);
     const userId = c.get('userId') as string;
     if (!(await getMembership(userId, accountId)) || !(await projectInAccount(accountId, projectId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
     if (storage !== 'account_resource') {
@@ -139,7 +160,7 @@ export function registerSecretResourceRoutes() {
     const userId = c.get('userId') as string;
     const membership = await getMembership(userId, accountId);
     if (!membership) return c.json({ error: 'Forbidden' }, 403);
-    const projectId = c.req.query('project_id') as string | undefined;
+    const projectId = scopedProjectId(c, c.req.query('project_id') as string | undefined);
     if (projectId && !(await projectInAccount(accountId, projectId))) return c.json({ error: 'Forbidden' }, 403);
     // This route authorizes the caller's own request here, so MFA counts.
     if (projectId && !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) {
