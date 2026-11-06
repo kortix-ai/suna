@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import { buildPaletteSearchText } from '@/features/workspace/command-palette';
-import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import {
   type SettingsPaletteParams,
   settingsPaletteGroups,
@@ -92,15 +91,13 @@ interface Row {
   visible: string[];
 }
 
-const navRows: Row[] = getItemsForSurface('commandPalette')
-  .filter((item) => !LEGACY_PALETTE_HIDDEN.has(item.id))
-  .map((item) => ({
-    key: `nav:${item.id}`,
-    label: item.label,
-    text: buildPaletteSearchText(item),
-    value: buildPaletteSearchText(item),
-    visible: [item.label, item.keywords ?? ''],
-  }));
+const navRows: Row[] = getItemsForSurface('commandPalette').map((item) => ({
+  key: `nav:${item.id}`,
+  label: item.label,
+  text: buildPaletteSearchText(item),
+  value: buildPaletteSearchText(item),
+  visible: [item.label, item.keywords ?? ''],
+}));
 
 const settingsRows: Row[] = settingsPaletteGroups(IN_A_PROJECT).flatMap((group) =>
   group.items.map((item) => ({

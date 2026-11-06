@@ -394,8 +394,8 @@ describe('buildRootSuggestions — the no-query root page', () => {
     expect(result).toHaveLength(ROOT_SUGGESTION_LIMIT);
     expect(result.slice(0, leading.length)).toEqual(leading);
     expect(result[0]).toBe(WORKSPACE_SWITCHER_ITEM_ID);
-    // The rare actions registry order used to put near the top are no longer there.
-    expect(result).not.toContain('compact-session');
+    // Registry order put Compact Session second; the everyday moves above now
+    // lead it, and rarer actions such as Restart Config fall past the cap.
     expect(result).not.toContain('restart-config');
   });
 

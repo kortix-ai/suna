@@ -62,10 +62,7 @@ import {
   useProjectCan,
   useProjectPageCans,
 } from '@kortix/ui/workspace';
-import {
-  LEGACY_PALETTE_HIDDEN,
-  paletteRowPermitted,
-} from '@/features/workspace/command-palette-visibility';
+import { paletteRowPermitted } from '@/features/workspace/command-palette-visibility';
 import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
 import { ChannelGlyph, useMemoryPageHref } from '@kortix/ui/workspace';
 import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
@@ -107,7 +104,6 @@ import { isBillingEnabled } from '@/lib/config';
 import type { InterfaceThemeId } from '@/lib/interface-themes';
 import {
   type MenuItemDef,
-  type SettingsTabId,
   getItemsForSurface,
   translateMenuItem,
 } from '@/lib/menu-registry';
@@ -276,50 +272,6 @@ function ThemeHighlightPreview({
 export function buildPaletteSearchText(item: { label: string; keywords?: string }): string {
   return sanitizeCmdkValue(`${item.label} ${item.keywords ?? ''}`);
 }
-
-/**
- * Legacy `SettingsTabId` (menu-registry's vocabulary) -> new `SettingsTab`
- * (settings-tabs.ts), for the command-palette items whose `kind` is
- * `'settings'`. Task 10 retired the legacy user-settings modal these items
- * used to open directly, in favor of `useSettingsPanelStore` — the same
- * overlay the `'navigate'` branch below already opens via
- * `resolveSettingsOverlayHref`.
- *
- * `tokens` -> `api-keys` and `transactions` -> `usage` mirror
- * `RENAMED_TABS` in `settings-tabs.ts` (same rename, same source
- * vocabulary). `appearance`, `sounds`, and `shortcuts` all merged into the
- * new `preferences` tab — `tabs/preferences-tab.tsx` already hosts all
- * three (wallpaper/theme, sound-pack controls, and a full "Keyboard
- * shortcuts" section with the modifier picker and shortcut list).
- *
- * NOTE: no palette entry uses `kind: 'settings'` any more — every settings
- * destination is now derived from the rail (`settings-palette-items.ts`), so
- * `handleOpenSettings` below is unreachable from the current registry. The
- * map and the branch stay because `MenuItemDef.kind` still admits
- * `'settings'` and the `userMenu` surface still declares entries with it; if
- * one is re-added to `showIn: ['commandPalette']` it must open through
- * `openSettingsTab`, not through a raw `openSettings` call.
- *
- * `referrals` is deliberately absent: there is no `referrals` member of
- * `SettingsTab`, and the API has no referral routes. Its registry entry was
- * removed rather than mapped — see `menu-registry.ts`.
- */
-export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>> = {
-  // `billing`, `tokens` and `transactions` are gone. They mapped onto the
-  // overlay's `billing` / `api-keys` / `usage` tabs, and all three tabs left
-  // the overlay for `/accounts/[id]`. There is no `SettingsTab` to map them
-  // to any more, and mapping them to a survivor would open Settings on an
-  // unrelated pane — so the registry rows that spoke those ids became plain
-  // `kind: 'navigate'` rows pointed straight at the account page instead
-  // (`account-billing`, `account-tokens`, `account-usage` in
-  // `lib/menu-registry.ts`).
-  // Since 2026-09-02 each legacy id has a tab of its own name again:
-  // theme/wallpaper live on Appearance, sound packs on Sessions, and the
-  // shortcut list stayed on Preferences.
-  appearance: 'appearance',
-  sounds: 'sessions',
-  shortcuts: 'preferences',
-};
 
 /**
  * How many rows the no-query root page offers under "Suggestions".
@@ -1259,7 +1211,6 @@ export function CommandPalette() {
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
       const item = translateMenuItem(sourceItem, tI18nComplete);
-      if (LEGACY_PALETTE_HIDDEN.has(item.id)) continue;
       if (item.id === 'toggle-sidebar' && !sidebarCtx) continue;
       if (item.requiresBilling && !billingEnabled) continue;
       if (item.requiresSession && !currentSessionId) continue;
@@ -2001,13 +1952,6 @@ export function CommandPalette() {
     [close, projectId, router],
   );
 
-  const handleOpenSettings = useCallback(
-    (tab: SettingsTabId) => {
-      openSettingsTab(LEGACY_SETTINGS_TAB_MAP[tab] ?? DEFAULT_SETTINGS_TAB);
-    },
-    [openSettingsTab],
-  );
-
   const handleOpenPlan = useCallback(() => {
     close();
     // Previously opened NewInstanceModal, which no surface mounts — this
@@ -2227,7 +2171,6 @@ export function CommandPalette() {
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
       newSession: handleNewSession,
-      openTerminal: handleOpenTerminal,
       compactSession: handleCompactSession,
       viewChanges: handleViewChanges,
       inviteMembers: handleInviteMembers,
@@ -2253,7 +2196,6 @@ export function CommandPalette() {
     }),
     [
       handleNewSession,
-      handleOpenTerminal,
       handleCompactSession,
       handleViewChanges,
       handleInviteMembers,
@@ -2335,9 +2277,6 @@ export function CommandPalette() {
           close();
           break;
         }
-        case 'settings':
-          handleOpenSettings(item.settingsTab!);
-          break;
         case 'theme':
           handleSetTheme(item.themeValue!);
           break;
@@ -2356,7 +2295,6 @@ export function CommandPalette() {
       close,
       projectId,
       openSettingsTab,
-      handleOpenSettings,
       handleSetTheme,
       handleSetWallpaper,
       actionHandlers,

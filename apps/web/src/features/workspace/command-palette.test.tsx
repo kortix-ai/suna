@@ -13,7 +13,7 @@ import {
 } from '@kortix/ui/customize/settings/settings-tabs';
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import { getItemsForSurface } from '@/lib/menu-registry';
-import { LEGACY_SETTINGS_TAB_MAP, firstChatMatchesPaletteQuery, sessionMatchesPaletteQuery } from './command-palette';
+import { firstChatMatchesPaletteQuery, sessionMatchesPaletteQuery } from './command-palette';
 import {
   PALETTE_ACCOUNT_SCOPED_TABS,
   PALETTE_NO_PROJECT_DEFAULT_TAB,
@@ -47,7 +47,7 @@ const paletteItems = getItemsForSurface('commandPalette');
  * ============================================================================
  *
  * `command-palette.test.tsx` used to check only that every VALUE in
- * `LEGACY_SETTINGS_TAB_MAP` was a real `SettingsTab`. That check passes just
+ * the legacy settings-tab map was a real `SettingsTab`. That check passes just
  * as happily when a tab has no palette entry at all, which is how nine of the
  * twenty-six tabs (profile, connected, snapshots, groups, roles, identity,
  * audit, experimental, upgrades) shipped unreachable from Cmd+K with a green
@@ -328,10 +328,6 @@ describe('search terms carried across from the removed registry entries', () => 
  * had to go, or every tab would list twice.
  */
 describe('the registry no longer carries palette settings destinations', () => {
-  test('no commandPalette entry uses kind: "settings"', () => {
-    expect(paletteItems.filter((item) => item.kind === 'settings')).toEqual([]);
-  });
-
   test('only two commandPalette hrefs still resolve to a settings tab, both deliberate', () => {
     const resolved = paletteItems
       .map((item) => ({ id: item.id, match: resolveSettingsOverlayHref(item.href ?? '') }))
@@ -395,8 +391,8 @@ describe('the registry no longer carries palette settings destinations', () => {
     // (`/projects/<id>/secrets`, the account Access pane, `?scope=channels`),
     // which the derived settings list structurally cannot produce — the same
     // arrangement `proj-triggers` and the `account-*` rows use. What must stay
-    // gone is a row that opens the OVERLAY on a tab that no longer exists; the
-    // "no commandPalette entry uses kind: 'settings'" case above pins that,
+    // gone is a row that opens the OVERLAY on a tab that no longer exists;
+    // the menu item kind type, which no longer admits `'settings'`, pins that,
     // and `menu-registry-destinations.test.ts` pins that each of these hrefs
     // is a real destination.
     for (const id of [
@@ -468,51 +464,6 @@ describe('the registry no longer carries palette settings destinations', () => {
       expect(typeof item?.accountTab).toBe('string');
       expect(item?.href).toBeUndefined();
     }
-  });
-});
-
-/**
- * `LEGACY_SETTINGS_TAB_MAP` translates the legacy `SettingsTabId` vocabulary
- * (menu-registry.ts) onto the `SettingsTab` vocabulary (settings-tabs.ts) that
- * `useSettingsPanelStore` understands. No palette entry uses `kind: 'settings'`
- * any more, but `MenuItemDef.kind` still admits it and the `userMenu` surface
- * still declares three such entries — so the map has to stay correct for the
- * day one of them is put back on the palette surface. A bug here is silent:
- * `handleOpenSettings` falls back to `DEFAULT_SETTINGS_TAB` for anything that
- * isn't a real `SettingsTab`, opening Settings on the wrong tab rather than
- * throwing.
- */
-describe('LEGACY_SETTINGS_TAB_MAP', () => {
-  test('every mapped value is a real SettingsTab', () => {
-    for (const [legacyId, tab] of Object.entries(LEGACY_SETTINGS_TAB_MAP)) {
-      expect(SETTINGS_TABS as readonly string[]).toContain(tab as string);
-      void legacyId;
-    }
-  });
-
-  test('every userMenu settings entry has a mapping', () => {
-    for (const item of getItemsForSurface('userMenu')) {
-      if (item.kind !== 'settings') continue;
-      expect(LEGACY_SETTINGS_TAB_MAP[item.settingsTab!]).toBeDefined();
-    }
-  });
-
-  test('each legacy id maps to the tab that hosts its section now', () => {
-    // Since 2026-09-02: theme/wallpaper on Appearance, sound packs on
-    // Sessions, the shortcut list (modifier picker + list) on Preferences.
-    expect(LEGACY_SETTINGS_TAB_MAP.shortcuts).toBe('preferences');
-    expect(LEGACY_SETTINGS_TAB_MAP.appearance).toBe('appearance');
-    expect(LEGACY_SETTINGS_TAB_MAP.sounds).toBe('sessions');
-  });
-
-  test('referrals has no entry and no mapping — there is no referrals tab', () => {
-    // `referrals` is not a member of `SettingsTab`, so `account-referrals`
-    // fell through to `DEFAULT_SETTINGS_TAB` and opened the project workspace
-    // General tab under a "Referrals" label. Mapping it correctly was not an
-    // option: the API has no referral routes. The entry was removed instead.
-    expect(SETTINGS_TABS as readonly string[]).not.toContain('referrals');
-    expect(LEGACY_SETTINGS_TAB_MAP.referrals).toBeUndefined();
-    expect(paletteItems.find((item) => item.id === 'account-referrals')).toBeUndefined();
   });
 });
 
