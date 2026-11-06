@@ -160,10 +160,14 @@ describe('local test runner contract', () => {
     // test. That killed the packages lane on run 35331083850, both attempts at
     // the same SHA. 28 files: 11s parallel vs 34s serial, measured in a Linux
     // container against the real disposable-PostgreSQL containers.
+    // Since #11974 (CI on Bun 1.4.3) the package runs `--isolate` anyway: a
+    // process-wide mock.module of node-pg-migrate's runner leaked into the
+    // real-runner migration tests and hung the packages-rest lane. The
+    // isolation entry below carries that reason.
     // The PostgreSQL contracts (`*.integration.test.ts`) run one file per
     // process in the `db-suites` lane of the core run, not here.
     expect(dbPackage.scripts.test).toBe(
-      guarded("bun test --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'"),
+      guarded("bun test --isolate --max-concurrency 2 --path-ignore-patterns='**/*.integration.test.ts'"),
     );
   });
 
@@ -191,6 +195,8 @@ describe('local test runner contract', () => {
       'Kortix-Computer-Frontend': '762 test files; serial is not viable',
       '@kortix/sdk': 'xargs -n1 -P4 runs one file per process: no isolate swap, no leak',
       '@kortix/ui': '236 test files from the apps/web session UI; 10 of them mock.module, which leaks across files without isolation',
+      '@kortix/db': "migrate-auto-baseline mocks node-pg-migrate's runner process-wide; without isolation it leaks into the real-runner migration tests (#11974)",
+      '@kortix/voice': 'speech.ts caches the voice catalog in module state; a file that loads it first hides the fake catalog server of speech-api.test.ts (#11976)',
     };
 
     const offenders: string[] = [];
