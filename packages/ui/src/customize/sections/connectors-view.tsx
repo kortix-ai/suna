@@ -104,7 +104,6 @@ import {
   listConnections,
   listProjectAccess,
   type OAuth2DeviceAuthorizationStartResult,
-  pollConnectionOAuth2DeviceAuthorization,
   putConnectionOAuth2Application,
   reconcileMemberConnection,
   renameConnection,
@@ -114,6 +113,7 @@ import {
   startConnectionOAuth2Authorization,
   startConnectionOAuth2DeviceAuthorization,
   updateConnectionCredential,
+  waitForConnectionOAuth2,
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
 import { AddAccountFields } from './add-account-fields';
@@ -2457,49 +2457,63 @@ export function SetCredentialModal({
   const [device, setDevice] = useState<OAuth2DeviceAuthorizationStartResult | null>(null);
   const [deviceConnectionId, setDeviceConnectionId] = useState<string | null>(null);
   const [manualSetup, setManualSetup] = useState(false);
+  // The callers pass inline lambdas. Read them through refs, so a parent
+  // re-render does not tear the poll down and fire an extra poll.
+  const onSavedRef = useRef(onSaved);
+  const onOpenChangeRef = useRef(onOpenChange);
   useEffect(() => {
-    if (!device || !deviceConnectionId) return;
-    let stopped = false;
-    const poll = async () => {
-      try {
-        const status = await pollConnectionOAuth2DeviceAuthorization(
-          projectId,
-          deviceConnectionId,
-          device.session_id,
-        );
-        if (stopped || status.status === 'pending') return;
-        stopped = true;
-        if (status.status === 'active') {
-          successToast(tI18nHardcoded.raw('i18nComplete.textc2a5f8398f12'));
-          onSaved();
-          onOpenChange(false);
-        } else {
-          errorToast(status.error_code || tI18nHardcoded.raw('i18nComplete.text911a1cde90bc'));
-        }
-      } catch (error) {
-        if (!stopped)
-          errorToast(
-            error instanceof Error
-              ? error.message
-              : tI18nHardcoded.raw('i18nComplete.textfa23c868781d'),
-          );
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), device.interval_seconds * 1000);
-    const expiryTimer = window.setTimeout(
-      () => {
-        stopped = true;
-        errorToast(tI18nHardcoded.raw('i18nComplete.text02c1d7b545ea'));
+    onSavedRef.current = onSaved;
+    onOpenChangeRef.current = onOpenChange;
+  });
+  // A closed dialog has no sign-in in progress: the code goes, and the poll
+  // below stops. It used to keep polling and call `onSaved` on a dialog the
+  // user had left.
+  useEffect(() => {
+    if (!open) setDevice(null);
+  }, [open]);
+  // The device-code wait is the SDK's (`waitForConnectionOAuth2`): it polls at
+  // the server's interval, one request at a time, keeps polling on
+  // `pending`/`ready`/`not_configured`, and fails on `expired`/`error`/
+  // `revoked`. Bounded by the code's own expiry.
+  useEffect(() => {
+    if (!open || !device || !deviceConnectionId) return;
+    const controller = new AbortController();
+    const expiresAtMs = new Date(device.expires_at).getTime();
+    waitForConnectionOAuth2(
+      projectId,
+      deviceConnectionId,
+      {
+        kind: 'device',
+        sessionId: device.session_id,
+        userCode: device.user_code,
+        url: device.verification_uri_complete ?? device.verification_uri,
+        expiresAt: device.expires_at,
+        intervalSeconds: device.interval_seconds,
       },
-      Math.max(0, new Date(device.expires_at).getTime() - Date.now()),
+      { signal: controller.signal, timeoutMs: Math.max(0, expiresAtMs - Date.now()) },
+    ).then(
+      () => {
+        if (controller.signal.aborted) return;
+        setDevice(null);
+        successToast(tI18nHardcoded.raw('i18nComplete.textc2a5f8398f12'));
+        onSavedRef.current();
+        onOpenChangeRef.current(false);
+      },
+      (error: unknown) => {
+        if (controller.signal.aborted) return;
+        // A terminal answer clears the code, so Save starts a fresh one.
+        setDevice(null);
+        errorToast(
+          Date.now() >= expiresAtMs
+            ? tI18nHardcoded.raw('i18nComplete.text02c1d7b545ea')
+            : error instanceof Error && error.message
+              ? error.message
+              : tI18nHardcoded.raw('i18nComplete.text911a1cde90bc'),
+        );
+      },
     );
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-      window.clearTimeout(expiryTimer);
-    };
-  }, [device, deviceConnectionId, onOpenChange, onSaved, projectId, tI18nHardcoded]);
+    return () => controller.abort();
+  }, [open, device, deviceConnectionId, projectId, tI18nHardcoded]);
   const resolveConnectionId = async (): Promise<string> => {
     if (connectionId) return connectionId;
     if (owner === 'me') {
