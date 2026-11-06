@@ -11,7 +11,8 @@ import Hint from '@kortix/ui/hint';
 import Loading from '@kortix/ui/loading';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { UserAvatar } from '@kortix/ui/user-avatar';
-import { ClockCounterClockwiseIcon, RobotIcon } from '@phosphor-icons/react';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
+import { ClockCounterClockwiseIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -21,7 +22,7 @@ import {
   activityVersionId,
   groupActivityDays,
 } from './artifact-discussion-logic';
-import { relativeTime } from './artifact-meta';
+import { AVATAR_SM_EDGE, relativeTime } from './artifact-meta';
 
 export interface ArtifactDiscussionActivity {
   items: readonly ArtifactActivityItem[];
@@ -103,7 +104,8 @@ export function ArtifactActivityTimeline({
                   ? people?.find((candidate) => candidate.user_id === actor.id)
                   : undefined;
               const verb = t(`events.${item.type}`);
-              const label = `${actorName} ${verb}`;
+              // One sentence per language: "Ada created a thread", "Adaがスレッドを作成しました".
+              const label = t('activityLabel', { actor: actorName, verb });
               const object =
                 item.type === 'published'
                   ? item.data.title
@@ -132,40 +134,49 @@ export function ArtifactActivityTimeline({
                       avatarUrl={person?.avatar_url}
                       size="sm"
                     />
-                  ) : (
-                    <EntityAvatar
+                  ) : actor.kind === 'session' ? (
+                    // The API names a session actor `${agent} · ${title}`: the agent is the mark.
+                    <AgentMark
+                      slug={actorName.split(' · ')[0]!}
                       label={actorName}
-                      icon={actor.kind === 'session' ? RobotIcon : ClockCounterClockwiseIcon}
-                      size="sm"
+                      tile={AVATAR_SM_EDGE}
                     />
+                  ) : (
+                    <EntityAvatar label={actorName} icon={ClockCounterClockwiseIcon} size="sm" />
                   )}
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="text-sm break-words">
-                      {actor.kind === 'session' ? (
-                        <Link
-                          href={`/projects/${projectId}/sessions/${actor.id}`}
-                          className="relative z-10 font-medium hover:underline"
-                        >
-                          {actorName}
-                        </Link>
-                      ) : (
-                        <span className="font-medium">{actorName}</span>
-                      )}{' '}
-                      {target ? (
-                        // The whole row is the target: the button's ::after covers the row.
-                        <button
-                          type="button"
-                          className="text-foreground focus-visible:after:ring-ring text-left break-words outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:ring-2"
-                          aria-label={label}
-                          onClick={() =>
-                            version ? onOpenVersion(version) : onFocusThread(threadId!)
-                          }
-                        >
-                          {verb}
-                        </button>
-                      ) : (
-                        verb
-                      )}{' '}
+                      {t.rich('activityLine', {
+                        actor: actorName,
+                        verb,
+                        name: (chunks) =>
+                          actor.kind === 'session' ? (
+                            <Link
+                              href={`/projects/${projectId}/sessions/${actor.id}`}
+                              className="relative z-10 font-medium hover:underline"
+                            >
+                              {chunks}
+                            </Link>
+                          ) : (
+                            <span className="font-medium">{chunks}</span>
+                          ),
+                        action: (chunks) =>
+                          target ? (
+                            // The whole row is the target: the button's ::after covers the row.
+                            <button
+                              type="button"
+                              className="text-foreground focus-visible:after:ring-ring text-left break-words outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:ring-2"
+                              aria-label={label}
+                              onClick={() =>
+                                version ? onOpenVersion(version) : onFocusThread(threadId!)
+                              }
+                            >
+                              {chunks}
+                            </button>
+                          ) : (
+                            chunks
+                          ),
+                      })}{' '}
                       <Hint label={absolute.format(new Date(item.at))} side="top" sideOffset={4}>
                         <time
                           // Focusable so the absolute time is reachable by keyboard.

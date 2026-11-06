@@ -35,7 +35,6 @@ export {
 export {
   isClientRequestTimeoutMessage,
   isExpectedBillingGateMessage,
-  isExpectedCompactionNoModelMessage,
   isGitMirrorUnavailableNoiseMessage,
   isModelNotServableNoise,
   isRuntimeNotReadyNoiseMessage,
@@ -98,7 +97,6 @@ export {
   isThirdPartyReactUpdateDepthNoise,
 } from './browser-noise/rules/react';
 export {
-  isAnonymousAuthRefreshRace,
   isAutoplayNotAllowedRejectionNoise,
   isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,

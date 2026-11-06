@@ -123,10 +123,15 @@ function notProjectMembers(ids: string[]): { error: MembersError } {
 export async function insertSpaceMembers(spaceId: string, userIds: readonly string[], addedBy: string): Promise<void> {
   const unique = [...new Set(userIds)];
   if (unique.length === 0) return;
-  await db
+  const added = await db
     .insert(projectSpaceMembers)
     .values(unique.map((userId) => ({ spaceId, userId, addedBy })))
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning({ userId: projectSpaceMembers.userId });
+  // A watched channel's feed (`spaces_proactive`): who joined. Off the request's path.
+  void import('./space-watch/act')
+    .then(({ recordMembersJoined }) => recordMembersJoined(spaceId, added.map((row) => row.userId)))
+    .catch(() => undefined);
 }
 
 /** The ids of `userIds` that are not people of the project; empty when all are. */

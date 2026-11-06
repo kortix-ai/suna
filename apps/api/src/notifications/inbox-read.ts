@@ -6,10 +6,10 @@
 // project role, a removed member, a deleted session or an MFA step-up the
 // sign-in has not passed hides the row; it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
-import { accountMembers, notifications, projects, roomMembers, rooms } from '@kortix/db';
+import { accountMembers, notifications, projects } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
-import { loadArtifactAccessRows, loadSessionAccessRows, mayReadProjectArtifacts, mayReadProjectRooms, mayReadProjectTriggers, maySeeArtifacts, maySeeSessions, type SessionAccessRow } from './access';
+import { loadArtifactAccessRows, loadSessionAccessRows, mayReadProjectArtifacts, mayReadProjectTriggers, maySeeArtifacts, maySeeSessions, type SessionAccessRow } from './access';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { notificationsEnabled } from './enabled';
 import { mfaWithheldAccounts } from './mfa-gate';
@@ -29,9 +29,6 @@ export interface InboxRowForFilter {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
-  /** Set on a conversation message (`kind = 'message'`). */
-  roomId?: string | null;
-  roomThreadSeq?: number | null;
   artifactId?: string | null;
   artifactThreadId?: string | null;
   kind: string;
@@ -46,6 +43,9 @@ export interface InboxReadContext {
   skipMfaGate?: boolean;
 }
 
+/** Kinds no code emits any more; their stored rows stay hidden until the 90-day sweep. `message`: Rooms, removed 2026-11. */
+const RETIRED_KINDS: ReadonlySet<string> = new Set(['message']);
+
 /** Capture fleet-health rows belong to the account, not to a project: no project flag or trigger read applies. */
 const isAccountNotification = (kind: string) => kind.startsWith('capture_device_');
 
@@ -59,7 +59,6 @@ export interface InboxNotification {
   project_name: string | null;
   session_id: string | null;
   trigger_slug: string | null;
-  room_id: string | null;
   artifact_id: string | null;
   artifact_thread_id: string | null;
   actor_user_id: string | null;
@@ -84,8 +83,6 @@ const ROW = {
   projectId: notifications.projectId,
   sessionId: notifications.sessionId,
   triggerSlug: notifications.triggerSlug,
-  roomId: notifications.roomId,
-  roomThreadSeq: notifications.roomThreadSeq,
   artifactId: notifications.artifactId,
   artifactThreadId: notifications.artifactThreadId,
   kind: notifications.kind,
@@ -136,7 +133,7 @@ async function visible<T extends InboxRowForFilter>(
   ]);
   const projectNames = new Map([...gates].filter(([, gate]) => gate.center || gate.artifactComments).map(([id, gate]) => [id, gate.name]));
   const open = rows.filter(
-    (row) => !blocked.has(row.accountId) && (isAccountNotification(row.kind) || (row.projectId !== null &&
+    (row) => !RETIRED_KINDS.has(row.kind) && !blocked.has(row.accountId) && (isAccountNotification(row.kind) || (row.projectId !== null &&
       (row.kind === 'artifact_comment' ? gates.get(row.projectId)?.artifactComments : gates.get(row.projectId)?.center))),
   );
 
@@ -147,13 +144,9 @@ async function visible<T extends InboxRowForFilter>(
   const seen = await maySeeSessions(userId, [...loaded.values()]);
   for (const id of seen) sessions.set(id, loaded.get(id)!);
 
-  // A message row: the recipient is still a person member of its room and
-  // may read the project's rooms.
-  const rooms = await readableRoomsOf(userId, open.filter((row) => row.roomId));
-
   const triggerProjects = new Map<string, Set<string>>();
   for (const row of open) {
-    if (row.kind === 'artifact_comment' || row.roomId || row.sessionId || !row.projectId) continue;
+    if (row.kind === 'artifact_comment' || row.sessionId || !row.projectId) continue;
     const ids = triggerProjects.get(row.accountId) ?? new Set<string>();
     ids.add(row.projectId);
     triggerProjects.set(row.accountId, ids);
@@ -168,24 +161,18 @@ async function visible<T extends InboxRowForFilter>(
     (row.kind === 'artifact_comment'
       ? !!row.artifactId && !!row.artifactThreadId && seenArtifacts.has(row.artifactId)
         && artifacts.get(row.artifactId)?.accountId === row.accountId && artifacts.get(row.artifactId)?.projectId === row.projectId
-      : row.roomId ? rooms.has(row.roomId) : row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
+      : row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
   );
   return { rows: kept, sessions, projectNames };
 }
 
 /**
  * The kinds that cannot reach `userId` now, so a settings screen hides their
- * rows. `message` comes only from a room, so it is hidden unless the person is
- * a member of a room in a project whose `agent_rooms` flag is on.
+ * rows: `artifact_comment` unless the person may read the artifacts of a
+ * project with Artifacts and Artifact comments on.
  */
 export async function hiddenNotificationKinds(userId: string): Promise<NotificationKindName[]> {
-  const memberships = await db
-    .select({ metadata: projects.metadata })
-    .from(roomMembers)
-    .innerJoin(rooms, eq(rooms.roomId, roomMembers.roomId))
-    .innerJoin(projects, eq(projects.projectId, rooms.projectId))
-    .where(eq(roomMembers.userId, userId));
-  const hidden: NotificationKindName[] = memberships.some((row) => resolveFeatureFlag(row.metadata, 'agent_rooms')) ? [] : ['message'];
+  const hidden: NotificationKindName[] = [];
   const candidates = await db.select({ id: projects.projectId, accountId: projects.accountId, metadata: projects.metadata })
     .from(projects).innerJoin(accountMembers, eq(accountMembers.accountId, projects.accountId)).where(eq(accountMembers.userId, userId));
   const enabled = candidates.filter((row) => resolveFeatureFlag(row.metadata, 'artifacts') && resolveFeatureFlag(row.metadata, 'artifact_comments'));
@@ -194,30 +181,6 @@ export async function hiddenNotificationKinds(userId: string): Promise<Notificat
   const accessible = await Promise.all([...groups].map(([accountId, ids]) => mayReadProjectArtifacts(userId, accountId, ids)));
   if (!accessible.some((ids) => ids.size > 0)) hidden.push('artifact_comment');
   return hidden;
-}
-
-/**
- * The rooms among `rows` whose messages `userId` may still read: a person member, with
- * project.room.read, in a project whose `agent_rooms` flag is on (off, its room rows vanish).
- */
-async function readableRoomsOf(userId: string, rows: readonly InboxRowForFilter[]): Promise<Set<string>> {
-  const roomIds = [...new Set(rows.flatMap((row) => (row.roomId ? [row.roomId] : [])))];
-  if (roomIds.length === 0) return new Set();
-  const memberships = await db
-    .select({ roomId: roomMembers.roomId, projectId: rooms.projectId, accountId: rooms.accountId, metadata: projects.metadata })
-    .from(roomMembers)
-    .innerJoin(rooms, eq(rooms.roomId, roomMembers.roomId))
-    .innerJoin(projects, eq(projects.projectId, rooms.projectId))
-    .where(and(eq(roomMembers.userId, userId), inArray(roomMembers.roomId, roomIds)));
-  const flagged = memberships.filter((row) => resolveFeatureFlag(row.metadata, 'agent_rooms'));
-  // One permission check per account, not one per room.
-  const byAccount = new Map<string, Set<string>>();
-  for (const row of flagged) byAccount.set(row.accountId, (byAccount.get(row.accountId) ?? new Set()).add(row.projectId));
-  const readable = new Set<string>();
-  await Promise.all([...byAccount].map(async ([accountId, projectIds]) => {
-    for (const projectId of await mayReadProjectRooms(userId, accountId, [...projectIds])) readable.add(projectId);
-  }));
-  return new Set(flagged.filter((row) => readable.has(row.projectId)).map((row) => row.roomId));
 }
 
 /**
@@ -317,7 +280,6 @@ export async function listInbox(
       project_name: row.projectId ? names.get(row.projectId) ?? null : null,
       session_id: row.sessionId,
       trigger_slug: row.triggerSlug,
-      room_id: row.roomId,
       artifact_id: row.artifactId,
       artifact_thread_id: row.artifactThreadId,
       actor_user_id: row.actorUserId,
@@ -326,8 +288,6 @@ export async function listInbox(
         projectId: row.projectId,
         sessionId: row.sessionId,
         triggerSlug: row.triggerSlug,
-        roomId: row.roomId,
-        roomThreadSeq: row.roomThreadSeq,
         artifactId: row.artifactId,
         artifactThreadId: row.artifactThreadId,
         kind: row.kind,
@@ -349,11 +309,6 @@ async function markWhere(userId: string, where?: SQL): Promise<number> {
     .where(and(eq(notifications.userId, userId), isNull(notifications.readAt), where))
     .returning({ id: notifications.notificationId });
   return updated.length;
-}
-
-/** The caller read a conversation: its message rows for them are read. */
-export function markRoomNotificationsRead(userId: string, roomId: string): Promise<number> {
-  return markWhere(userId, eq(notifications.roomId, roomId));
 }
 
 /** The caller opened the session: its rows for them are read. */

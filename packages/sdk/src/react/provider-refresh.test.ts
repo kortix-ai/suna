@@ -70,7 +70,7 @@ describe('refreshProjectProviderState — key wiring', () => {
 // models do not come from `['project-providers', id, 'gateway']`'s own fetcher
 // — that fetcher is a PROJECTION. The bytes come from `/model-picker`, cached
 // one key away under `qk.project.modelPicker(id)` and read through
-// `queryClient.fetchQuery` (see use-opencode-sessions/providers.ts, which
+// `queryClient.fetchQuery` (see use-runtime-sessions/providers.ts, which
 // routes through the shared entry so a session open makes ONE request instead
 // of two). `fetchQuery` honours staleTime, and `modelPicker` is the `config`
 // tier — 60s. So re-running the projection inside that window re-read the
@@ -82,7 +82,7 @@ describe('refreshProjectProviderState — the gateway catalog behind the picker'
   const PROJECT_ID = 'proj_1';
 
   /**
-   * The real shape from `use-opencode-sessions/providers.ts`: the gateway
+   * The real shape from `use-runtime-sessions/providers.ts`: the gateway
    * provider entry is `staleTime: Infinity`, and its queryFn reads the catalog
    * through the SHARED `qk.project.modelPicker` entry at the `config` tier.
    */
@@ -227,5 +227,46 @@ describe('refreshProjectProviderState — follow-up passes do not discard in-fli
 
     expect(queryClient.getQueryData<unknown>(key)).toEqual({ items: [] });
     unsubscribe();
+  });
+});
+
+// A host without `window` (the TUI on Bun, a Node script, React Native) used
+// to get the one immediate pass only: the function returned before scheduling
+// anything, so a credential saved there left the model picker on the old list.
+describe('refreshProjectProviderState — hosts without window', () => {
+  const originalWindow = (globalThis as { window?: unknown }).window;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  afterEach(() => {
+    (globalThis as { window?: unknown }).window = originalWindow;
+    globalThis.setTimeout = originalSetTimeout;
+  });
+
+  test('schedules the follow-up passes on the global timer', () => {
+    delete (globalThis as { window?: unknown }).window;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+      delays.push(ms ?? 0);
+      return 0;
+    }) as unknown as typeof setTimeout;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    refreshProjectProviderState(queryClient, 'proj_1');
+
+    expect(delays).toEqual([500, 1500, 3000, 6000]);
+  });
+
+  test('polls for the expected provider on the global timer', () => {
+    delete (globalThis as { window?: unknown }).window;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+      delays.push(ms ?? 0);
+      return 0;
+    }) as unknown as typeof setTimeout;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    refreshProjectProviderState(queryClient, 'proj_1', { expectProviderId: 'anthropic' });
+
+    expect(delays).toEqual([2500]);
   });
 });

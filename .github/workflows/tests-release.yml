@@ -26,12 +26,17 @@ on:
 # ONE gate against staging at a time, across every ref. Rehearsal 38278168762
 # (2026-10-12) ran beside two other branches' gates: staging dropped database
 # connections and boot prompts timed out, and the run proved nothing. Runs
-# queue; GitHub keeps one waiting run and a newer one replaces it, so do not
-# dispatch a rehearsal while a release gate waits. A run made stale by a newer
-# staging deploy fails its SHA assertion in seconds, so it barely delays the
-# next one.
+# queue; GitHub keeps one waiting run per group and a newer one replaces it.
+#
+# Release pull request runs and dispatched rehearsals use two groups. In one
+# group a rehearsal dispatched while a release gate waited replaced that gate:
+# the release PR's required check ended `cancelled` and nothing reran it. Now
+# only a newer release-PR run can replace a waiting one (the newer head is the
+# one that counts). The `rehearsal-guard` job keeps a rehearsal off staging
+# while a release-PR gate is queued or running. A run made stale by a newer
+# staging deploy fails its SHA assertion in seconds.
 concurrency:
-  group: tests-release-staging
+  group: ${{ github.event_name == 'pull_request' && 'tests-release-staging' || 'tests-release-rehearsal' }}
   cancel-in-progress: false
 
 # Shared by every job. Top-level env is the only way to avoid repeating this
@@ -64,6 +69,32 @@ env:
   # - KE2E_OWNER_EMAIL / KE2E_OWNER_PASSWORD: optional, not stored today.
 
 jobs:
+  # A rehearsal (workflow_dispatch) refuses to start while a release pull
+  # request's gate is queued, waiting or running: both would load the one
+  # staging. Skipped on the release pull request itself. Residual: a release
+  # gate approved after this check passes can still overlap a running
+  # rehearsal; do not rehearse while a promote is in flight.
+  rehearsal-guard:
+    name: no release gate is active
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Refuse while a release pull request gate is active
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          active="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tests-release.yml/runs?event=pull_request&per_page=30" \
+            --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending" or .status == "requested") | .html_url] | join(" ")')"
+          if [ -n "$active" ]; then
+            echo "::error::A release pull request gate is active on staging: $active. Rehearse after it ends."
+            exit 1
+          fi
+          echo "No release pull request gate is active."
+
   # Reclaim debris left by EARLIER runs. `--older-than 2h` cannot touch an
   # account this run just created, so it runs BESIDE the deployed jobs, not in
   # front of them: as a prerequisite it added ~1.5 min to every gate run
@@ -150,6 +181,8 @@ jobs:
   # ~2-3 min of flows. `--require-all` applies to the whole set.
   api:
     name: deployed api smoke
+    needs: rehearsal-guard
+    if: ${{ !cancelled() && needs.rehearsal-guard.result != 'failure' }}
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
@@ -302,7 +335,8 @@ jobs:
   # back on with `gh variable set RELEASE_BROWSER_LANES --body on`.
   browser:
     name: deployed browser shard
-    if: vars.RELEASE_BROWSER_LANES == 'on'
+    needs: rehearsal-guard
+    if: ${{ !cancelled() && needs.rehearsal-guard.result != 'failure' && vars.RELEASE_BROWSER_LANES == 'on' }}
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
@@ -562,8 +596,14 @@ jobs:
             # IaC finding whose detail exists only in the Drata dashboard, while
             # Checkov and Trivy on the same files pass. Restore it to blocking once
             # that finding is resolved.
+            # Advisory: `Strix Security Review`. Owner decision 2026-11-05 (v0.15.0):
+            # Strix reviews the whole release diff, and its findings on that diff
+            # are triaged on the thread and fixed on `dev` like any other bug; the
+            # same review also runs on each PR into `dev`. Its HIGH on the first
+            # release it reviewed was a pre-existing daemon-auth gap with its own
+            # issue, not a regression of the release.
             latest="$(RID="$RUN_ID" gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --paginate \
-              --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not) | select(.name != "compliance-as-code-action")' \
+              --jq '.check_runs[] | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not) | select(.name != "compliance-as-code-action" and .name != "Strix Security Review")' \
               | jq -s 'group_by(.name) | map(max_by(.started_at // ""))')"
             pending="$(jq -r '.[] | select(.status != "completed") | .name' <<<"$latest")"
             red="$(jq -r '.[] | select(.status == "completed") | select((.conclusion // "") | IN("success","skipped","neutral") | not) | "\(.name): \(.conclusion)"' <<<"$latest")"

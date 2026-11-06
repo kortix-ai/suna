@@ -61,7 +61,8 @@ const ThreadSchema = z.object({
 const body = <T extends z.ZodTypeAny>(schema: T) => ({ required: true, content: { 'application/json': { schema } } });
 const responses = errors(400, 401, 403, 404, 409, 413, 429, 503);
 
-async function authorizeComments(c: Context, projectId: string, target: string | { threadId: string }, write: boolean) {
+/** The comment routes' gate. `POST …/live/ticket` and `POST …/live/agent` (`artifact-live.ts`) use it too. */
+export async function authorizeComments(c: Context, projectId: string, target: string | { threadId: string }, write: boolean) {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
   for (const key of ['artifacts', 'artifact_comments'] as const) {
@@ -123,7 +124,7 @@ export function registerArtifactCommentRoutes(): void {
     summary: 'Read Artifact activity and saves from Files history', ...auth,
     request: { params: ArtifactParams, query: z.object({ limit: z.string().optional(), cursor: z.string().optional() }) },
     responses: { 200: json(z.object({
-      items: z.array(z.object({ id: z.string(), type: z.string(), at: z.string(), data: z.record(z.unknown()),
+      items: z.array(z.object({ id: z.string(), type: z.string(), at: z.string(), data: z.record(z.string(), z.unknown()),
         actor: z.object({ kind: z.enum(['user', 'session', 'system']), id: nullableId, name: z.string() }),
       })), next_cursor: nullableId, older_versions: z.boolean(),
     }), 'The activity page'), ...responses },

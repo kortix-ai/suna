@@ -719,7 +719,7 @@ export function ProjectSessionsPage({ autoFocusSearch = false }: ProjectSessions
                   <View className="items-center py-4">
                     <KortixLoader size="small" />
                   </View>
-                ) : null
+                ) : undefined
               }
               style={{ flex: 1 }}
               contentContainerStyle={{

@@ -29,20 +29,20 @@ describe("resolveSessionPin", () => {
     expect(
       resolveSessionPin({
         startPin: null,
-        initialPin: "opencode-cached",
+        initialPin: "runtime-cached",
         persistedPin: null,
       }),
-    ).toBe("opencode-cached");
+    ).toBe("runtime-cached");
   });
 
   test("replaces a stale initial pin with the authoritative start pin", () => {
     expect(
       resolveSessionPin({
-        startPin: "opencode-live",
-        initialPin: "opencode-cached",
-        persistedPin: "opencode-row",
+        startPin: "runtime-live",
+        initialPin: "runtime-cached",
+        persistedPin: "runtime-row",
       }),
-    ).toBe("opencode-live");
+    ).toBe("runtime-live");
   });
 
   test("falls back to the persisted session row when no pin was seeded", () => {
@@ -50,9 +50,9 @@ describe("resolveSessionPin", () => {
       resolveSessionPin({
         startPin: null,
         initialPin: null,
-        persistedPin: "opencode-row",
+        persistedPin: "runtime-row",
       }),
-    ).toBe("opencode-row");
+    ).toBe("runtime-row");
   });
 });
 
@@ -81,12 +81,12 @@ describe("readPersistedSessionPin / writePersistedSessionPin (localStorage stubb
   });
 
   test("round-trips a written pin, keyed by (projectId, sessionId)", () => {
-    writePersistedSessionPin("proj-1", "ses-1", "opencode-cached");
-    expect(readPersistedSessionPin("proj-1", "ses-1")).toBe("opencode-cached");
+    writePersistedSessionPin("proj-1", "ses-1", "runtime-cached");
+    expect(readPersistedSessionPin("proj-1", "ses-1")).toBe("runtime-cached");
   });
 
   test("does not leak across a different session under the same project", () => {
-    writePersistedSessionPin("proj-1", "ses-1", "opencode-a");
+    writePersistedSessionPin("proj-1", "ses-1", "runtime-a");
     expect(readPersistedSessionPin("proj-1", "ses-2")).toBeNull();
   });
 
@@ -95,22 +95,22 @@ describe("readPersistedSessionPin / writePersistedSessionPin (localStorage stubb
     // session resolves a DIFFERENT canonical id (a rare re-pin, caught by
     // /start), the next mount must read the corrected value, never the stale
     // one it painted with this time.
-    writePersistedSessionPin("proj-1", "ses-1", "opencode-stale");
-    expect(readPersistedSessionPin("proj-1", "ses-1")).toBe("opencode-stale");
+    writePersistedSessionPin("proj-1", "ses-1", "runtime-stale");
+    expect(readPersistedSessionPin("proj-1", "ses-1")).toBe("runtime-stale");
 
-    writePersistedSessionPin("proj-1", "ses-1", "opencode-correct");
-    expect(readPersistedSessionPin("proj-1", "ses-1")).toBe("opencode-correct");
+    writePersistedSessionPin("proj-1", "ses-1", "runtime-correct");
+    expect(readPersistedSessionPin("proj-1", "ses-1")).toBe("runtime-correct");
   });
 
   test("never writes a falsy id — an unresolved pin must not overwrite a good one", () => {
-    writePersistedSessionPin("proj-1", "ses-1", "opencode-good");
+    writePersistedSessionPin("proj-1", "ses-1", "runtime-good");
     writePersistedSessionPin("proj-1", "ses-1", null as unknown as string);
     writePersistedSessionPin("proj-1", "ses-1", "");
-    expect(readPersistedSessionPin("proj-1", "ses-1")).toBe("opencode-good");
+    expect(readPersistedSessionPin("proj-1", "ses-1")).toBe("runtime-good");
   });
 
   test("missing projectId/sessionId never throws and never reads/writes", () => {
-    expect(() => writePersistedSessionPin("", "ses-1", "opencode-x")).not.toThrow();
+    expect(() => writePersistedSessionPin("", "ses-1", "runtime-x")).not.toThrow();
     expect(readPersistedSessionPin("", "ses-1")).toBeNull();
   });
 });
@@ -122,20 +122,20 @@ describe("readPersistedSessionPin / writePersistedSessionPin (no localStorage gl
   });
 
   test("write is a safe no-op, never throws", () => {
-    expect(() => writePersistedSessionPin("proj-1", "ses-1", "opencode-x")).not.toThrow();
+    expect(() => writePersistedSessionPin("proj-1", "ses-1", "runtime-x")).not.toThrow();
   });
 });
 
 describe("resolvePersistedPin", () => {
   test("prefers the network-verified value once it has loaded", () => {
     expect(
-      resolvePersistedPin({ networkPin: "opencode-row", cachedPin: "opencode-cached" }),
-    ).toBe("opencode-row");
+      resolvePersistedPin({ networkPin: "runtime-row", cachedPin: "runtime-cached" }),
+    ).toBe("runtime-row");
   });
 
   test("falls back to the synchronous local cache while the network read is pending", () => {
-    expect(resolvePersistedPin({ networkPin: null, cachedPin: "opencode-cached" })).toBe(
-      "opencode-cached",
+    expect(resolvePersistedPin({ networkPin: null, cachedPin: "runtime-cached" })).toBe(
+      "runtime-cached",
     );
   });
 
@@ -150,35 +150,35 @@ describe("stale-pin convergence (end to end through resolveSessionPin)", () => {
     const paintedFirst = resolveSessionPin({
       startPin: null,
       initialPin: null,
-      persistedPin: resolvePersistedPin({ networkPin: null, cachedPin: "opencode-stale" }),
+      persistedPin: resolvePersistedPin({ networkPin: null, cachedPin: "runtime-stale" }),
     });
-    expect(paintedFirst).toBe("opencode-stale");
+    expect(paintedFirst).toBe("runtime-stale");
 
     // /start now resolves — its pin is authoritative and always wins, even
     // over a persisted/cached value that disagrees with it. No permanent
     // wrong-transcript display: the very next render already prefers the
     // fresh id.
     const converged = resolveSessionPin({
-      startPin: "opencode-correct",
+      startPin: "runtime-correct",
       initialPin: null,
-      persistedPin: resolvePersistedPin({ networkPin: null, cachedPin: "opencode-stale" }),
+      persistedPin: resolvePersistedPin({ networkPin: null, cachedPin: "runtime-stale" }),
     });
-    expect(converged).toBe("opencode-correct");
+    expect(converged).toBe("runtime-correct");
   });
 
   test("a stale cached pin is corrected by the faster REST read even before /start answers", () => {
     const beforeRest = resolveSessionPin({
       startPin: null,
       initialPin: null,
-      persistedPin: resolvePersistedPin({ networkPin: null, cachedPin: "opencode-stale" }),
+      persistedPin: resolvePersistedPin({ networkPin: null, cachedPin: "runtime-stale" }),
     });
-    expect(beforeRest).toBe("opencode-stale");
+    expect(beforeRest).toBe("runtime-stale");
 
     const afterRest = resolveSessionPin({
       startPin: null,
       initialPin: null,
-      persistedPin: resolvePersistedPin({ networkPin: "opencode-correct", cachedPin: "opencode-stale" }),
+      persistedPin: resolvePersistedPin({ networkPin: "runtime-correct", cachedPin: "runtime-stale" }),
     });
-    expect(afterRest).toBe("opencode-correct");
+    expect(afterRest).toBe("runtime-correct");
   });
 });

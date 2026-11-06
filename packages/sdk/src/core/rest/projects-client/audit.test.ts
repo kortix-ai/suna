@@ -132,7 +132,7 @@ test('AuditEvent exposes the canonical reconstruction envelope', () => {
   const event = {} as import('./audit').AuditEvent;
   const fields: Array<unknown> = [
     event.account_id,
-    event.opencode_session_id,
+    event.runtime_session_id,
     event.turn_id,
     event.message_id,
     event.tool_call_id,

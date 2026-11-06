@@ -44,7 +44,7 @@ registerPersistedStore(STORAGE_KEY, () => resetPersistedStore(useActiveSpaceStor
 
 /**
  * The active space for a project (`null` = All), and a setter for it. Spaces
- * are Work in progress under the `project_channels` flag (`SPACES_FLAG` in
+ * are Work in progress under the `chat` flag (`SPACES_FLAG` in
  * internal/lib/space-scope.ts): off, a stored space reads as `null`, so no
  * surface scopes to a space. The stored value stays for when the flag is on.
  */

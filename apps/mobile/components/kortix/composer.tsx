@@ -9,8 +9,9 @@
  * both themes. No shadow (Jay, 2026-09-21): the floating tab bar's soft shadow
  * put a grey halo around the card, so the input read darker than the page.
  * On iOS 26+ the card is Liquid Glass instead (KRTX-2928 follow-up, Jay
- * 2026-10-20): the system glass draws the surface and its rim, so the hairline
- * border, blur and tint go. Android and older iOS keep the frosted card.
+ * 2026-10-20): the system glass (`LiquidGlass`, interactive) wraps the card
+ * and draws the surface and its rim, so the hairline border, blur and tint
+ * go. Android and older iOS keep the frosted card.
  * No animation, a plain placeholder. Every control is a design-system
  * `Button`: secondary `rounded-full` for add, a `sm` chip with the agent name
  * (ghost; secondary for "Connect model", KRTX-247), and a round send button that fills with `primary` once
@@ -28,12 +29,12 @@ import {
   StyleSheet,
   TextInput,
   View,
-  type NativeSyntheticEvent,
-  type TextInputSelectionChangeEventData,
+  type TextInputSelectionChangeEvent,
+  type TextInputInstance
 } from 'react-native';
 import { requireOptionalNativeModule } from 'expo';
 import { BlurView } from 'expo-blur';
-import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
+import { LIQUID_GLASS_AVAILABLE, LiquidGlass } from '@/components/kortix/liquid-glass';
 import { useColorScheme } from 'nativewind';
 import Animated, { Easing, FadeIn, FadeOut, LayoutAnimationConfig } from 'react-native-reanimated';
 import {
@@ -54,7 +55,6 @@ import type { AttachedFile } from '@/lib/session/attachments';
 import type { ComposerChip } from '@/lib/session/composer-config';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME, withAlpha } from '@/lib/utils/theme';
-import { cn } from '@/lib/utils/utils';
 import { StopIcon } from './StopIcon';
 import { ComposerAttachmentTiles } from '@/components/session/composer-attachment-tiles';
 import { type ComposerAttachmentUpload } from '@/lib/session/composer-uploads';
@@ -141,8 +141,8 @@ interface ComposerProps {
   /** `nativeID` of the text field. The thread's `KeyboardGestureArea` names it. */
   inputNativeID?: string;
   maxLength?: number;
-  inputRef?: React.Ref<TextInput>;
-  onSelectionChange?: (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => void;
+  inputRef?: React.Ref<TextInputInstance>;
+  onSelectionChange?: (e: TextInputSelectionChangeEvent) => void;
   /** Inside the card, above the files and the text: the thread's queue and staged command. */
   header?: React.ReactNode;
   /** In the control row after the chip: the thread's AutoContinue state. */
@@ -213,166 +213,169 @@ export function Composer({
   }, [disabled, dictating, finishDictation]);
 
   return (
-    <View className={LIQUID_GLASS_AVAILABLE ? GLASS_CARD_CLASS : FROSTED_CARD_CLASS}>
-      {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule cornerRadius={CARD_RADIUS} /> : null}
-      {!LIQUID_GLASS_AVAILABLE && BLUR_AVAILABLE ? (
-        <BlurView
-          intensity={FROSTED[isDark ? 'dark' : 'light'].intensity}
-          tint={isDark ? 'dark' : 'light'}
-          // Without a `blurTarget` expo-blur falls back to "none" anyway, and warns.
-        blurMethod="none"
-          style={StyleSheet.absoluteFill}
-        />
-      ) : null}
-      {LIQUID_GLASS_AVAILABLE ? null : (
-        <View
-          pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(colors.background, FROSTED[isDark ? 'dark' : 'light'].tintAlpha) }]}
-        />
-      )}
-      {header ? <View className="px-2 pb-1 pt-1">{header}</View> : null}
-
-      {attachments.length > 0 || pastes.length > 0 ? (
-        <View className="pb-1">
-          <ComposerAttachmentTiles
-            files={attachments}
-            disabled={disabled}
-            uploads={attachmentUploads}
-            onRemove={(index) => onRemoveAttachment?.(index)}
-            pastes={pastes}
-            onRemovePaste={onRemovePaste}
-            onOpenPaste={onOpenPaste}
+    // iOS 26+: the system glass wraps the card, so a touch anywhere on it
+    // gets the system press response. Elsewhere `LiquidGlass` is a no-op.
+    <LiquidGlass radius={CARD_RADIUS}>
+      <View className={LIQUID_GLASS_AVAILABLE ? GLASS_CARD_CLASS : FROSTED_CARD_CLASS}>
+        {!LIQUID_GLASS_AVAILABLE && BLUR_AVAILABLE ? (
+          <BlurView
+            intensity={FROSTED[isDark ? 'dark' : 'light'].intensity}
+            tint={isDark ? 'dark' : 'light'}
+            // Without a `blurTarget` expo-blur falls back to "none" anyway, and warns.
+          blurMethod="none"
+            style={StyleSheet.absoluteFill}
           />
-        </View>
-      ) : null}
+        ) : null}
+        {LIQUID_GLASS_AVAILABLE ? null : (
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(colors.background, FROSTED[isDark ? 'dark' : 'light'].tintAlpha) }]}
+          />
+        )}
+        {header ? <View className="px-2 pb-1 pt-1">{header}</View> : null}
 
-      <TextInput
-        ref={inputRef}
-        nativeID={inputNativeID}
-        value={value}
-        onChangeText={onChangeText}
-        onSelectionChange={onSelectionChange}
-        maxLength={maxLength}
-        placeholder={placeholder}
-        placeholderTextColor={colors.mutedForeground}
-        multiline
-        // Words stream in while listening; typing would fight them.
-        editable={!disabled && !dictation.active}
-        autoFocus={autoFocus}
-        accessibilityLabel={placeholder}
-        className="text-foreground"
-        style={{
-          fontFamily: INPUT_FONT_FAMILY,
-          fontSize: INPUT_FONT_SIZE,
-          // 4pt here + the card's 8pt (p-2) = 12pt above the text.
-          minHeight: 40,
-          maxHeight: MAX_INPUT_HEIGHT,
-          paddingHorizontal: 8,
-          paddingTop: 6,
-          paddingBottom: 14,
-          textAlignVertical: 'top',
-        }}
-      />
+        {attachments.length > 0 || pastes.length > 0 ? (
+          <View className="pb-1">
+            <ComposerAttachmentTiles
+              files={attachments}
+              disabled={disabled}
+              uploads={attachmentUploads}
+              onRemove={(index) => onRemoveAttachment?.(index)}
+              pastes={pastes}
+              onRemovePaste={onRemovePaste}
+              onOpenPaste={onOpenPaste}
+            />
+          </View>
+        ) : null}
 
-      {/* skipEntering: the row fades only when it swaps, not when the composer mounts. */}
-      <LayoutAnimationConfig skipEntering>
-        <View style={{ height: 36 }}>
-          {dictation.active ? (
-            <Animated.View
-              key="listening"
-              entering={ROW_IN}
-              exiting={ROW_OUT}
-              style={ROW_LAYER}
-              className="flex-row items-center gap-2">
-              <ControlButton
-                variant="secondary"
-                onPress={dictation.cancel}
-                accessibilityLabel="Cancel dictation">
-                <Icon as={X} size={18} />
-              </ControlButton>
-              <DictationWaveform
-                levels={dictation.levels}
-                listening={dictation.state === 'listening'}
-              />
-              <ControlButton
-                variant="default"
-                onPress={dictation.finish}
-                disabled={dictation.state === 'stopping'}
-                accessibilityLabel="Done dictating">
-                {dictation.state === 'stopping' ? (
-                  <KortixLoader size="small" />
-                ) : (
-                  <Icon as={Check} size={18} />
+        <TextInput
+          ref={inputRef}
+          nativeID={inputNativeID}
+          value={value}
+          onChangeText={onChangeText}
+          onSelectionChange={onSelectionChange}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          placeholderTextColor={colors.mutedForeground}
+          multiline
+          // Words stream in while listening; typing would fight them.
+          editable={!disabled && !dictation.active}
+          autoFocus={autoFocus}
+          accessibilityLabel={placeholder}
+          className="text-foreground"
+          style={{
+            fontFamily: INPUT_FONT_FAMILY,
+            fontSize: INPUT_FONT_SIZE,
+            // 4pt here + the card's 8pt (p-2) = 12pt above the text.
+            minHeight: 40,
+            maxHeight: MAX_INPUT_HEIGHT,
+            paddingHorizontal: 8,
+            paddingTop: 6,
+            paddingBottom: 14,
+            textAlignVertical: 'top',
+          }}
+        />
+
+        {/* skipEntering: the row fades only when it swaps, not when the composer mounts. */}
+        <LayoutAnimationConfig skipEntering>
+          <View style={{ height: 36 }}>
+            {dictation.active ? (
+              <Animated.View
+                key="listening"
+                entering={ROW_IN}
+                exiting={ROW_OUT}
+                style={ROW_LAYER}
+                className="flex-row items-center gap-2">
+                <ControlButton
+                  variant="secondary"
+                  onPress={dictation.cancel}
+                  accessibilityLabel="Cancel dictation">
+                  <Icon as={X} size={18} />
+                </ControlButton>
+                <DictationWaveform
+                  levels={dictation.levels}
+                  listening={dictation.state === 'listening'}
+                />
+                <ControlButton
+                  variant="default"
+                  onPress={dictation.finish}
+                  disabled={dictation.state === 'stopping'}
+                  accessibilityLabel="Done dictating">
+                  {dictation.state === 'stopping' ? (
+                    <KortixLoader size="small" />
+                  ) : (
+                    <Icon as={Check} size={18} />
+                  )}
+                </ControlButton>
+              </Animated.View>
+            ) : (
+              <Animated.View
+                key="controls"
+                entering={ROW_IN}
+                exiting={ROW_OUT}
+                style={ROW_LAYER}
+                className="flex-row items-center gap-2">
+                {onAttach ? (
+                  <ControlButton
+                    variant="secondary"
+                    onPress={onAttach}
+                    disabled={disabled}
+                    accessibilityLabel={attachLabel}>
+                    <Icon as={Plus} size={18} />
+                  </ControlButton>
+                ) : null}
+                {chip ? (
+                  <Button
+                    variant={chip.variant}
+                    size="sm"
+                    className="shrink rounded-full"
+                    hitSlop={COMPOSER_CONTROL_HIT_SLOP}
+                    onPress={onChipPress}
+                    disabled={disabled}
+                    accessibilityLabel={`Agent and model, ${chip.label}`}>
+                    <Text
+                      numberOfLines={1}
+                      maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}
+                      className="shrink">
+                      {chip.label}
+                    </Text>
+                    <Icon as={CaretDown} size={14} className="text-muted-foreground" />
+                  </Button>
+                ) : null}
+                {accessory}
+                <View className="flex-1" />
+                {showMic ? (
+                  <ControlButton
+                    variant="ghost"
+                    onPress={dictation.start}
+                    disabled={disabled}
+                    accessibilityLabel="Dictate">
+                    <Icon as={Microphone} size={18} />
+                  </ControlButton>
+                ) : null}
+                {busy && onStop ? (
+                  <ControlButton
+                    variant="secondary"
+                    onPress={onStop}
+                    accessibilityLabel="Stop">
+                    <StopIcon size={12} className="text-foreground" />
+                  </ControlButton>
+                ) : null}
+                {/* Stop takes Send's place until there is something to send. With no Stop, Send stays. */}
+                {busy && onStop && !canSend ? null : (
+                  <ControlButton
+                    variant={canSend ? 'default' : 'secondary'}
+                    onPress={onSubmit}
+                    disabled={!canSend || sending}
+                    accessibilityLabel="Send">
+                    {sending ? <KortixLoader size="small" /> : <Icon as={ArrowUp} size={18} />}
+                  </ControlButton>
                 )}
-              </ControlButton>
-            </Animated.View>
-          ) : (
-            <Animated.View
-              key="controls"
-              entering={ROW_IN}
-              exiting={ROW_OUT}
-              style={ROW_LAYER}
-              className="flex-row items-center gap-2">
-              {onAttach ? (
-                <ControlButton
-                  variant="secondary"
-                  onPress={onAttach}
-                  disabled={disabled}
-                  accessibilityLabel={attachLabel}>
-                  <Icon as={Plus} size={18} />
-                </ControlButton>
-              ) : null}
-              {chip ? (
-                <Button
-                  variant={chip.variant}
-                  size="sm"
-                  className="shrink rounded-full"
-                  hitSlop={COMPOSER_CONTROL_HIT_SLOP}
-                  onPress={onChipPress}
-                  disabled={disabled}
-                  accessibilityLabel={`Agent and model, ${chip.label}`}>
-                  <Text
-                    numberOfLines={1}
-                    maxFontSizeMultiplier={BUTTON_LABEL_MAX_FONT_SCALE.sm}
-                    className="shrink">
-                    {chip.label}
-                  </Text>
-                  <Icon as={CaretDown} size={14} className="text-muted-foreground" />
-                </Button>
-              ) : null}
-              {accessory}
-              <View className="flex-1" />
-              {showMic ? (
-                <ControlButton
-                  variant="ghost"
-                  onPress={dictation.start}
-                  disabled={disabled}
-                  accessibilityLabel="Dictate">
-                  <Icon as={Microphone} size={18} />
-                </ControlButton>
-              ) : null}
-              {busy && onStop ? (
-                <ControlButton
-                  variant="secondary"
-                  onPress={onStop}
-                  accessibilityLabel="Stop">
-                  <StopIcon size={12} className="text-foreground" />
-                </ControlButton>
-              ) : null}
-              {/* Stop takes Send's place until there is something to send. With no Stop, Send stays. */}
-              {busy && onStop && !canSend ? null : (
-                <ControlButton
-                  variant={canSend ? 'default' : 'secondary'}
-                  onPress={onSubmit}
-                  disabled={!canSend || sending}
-                  accessibilityLabel="Send">
-                  {sending ? <KortixLoader size="small" /> : <Icon as={ArrowUp} size={18} />}
-                </ControlButton>
-              )}
-            </Animated.View>
-          )}
-        </View>
-      </LayoutAnimationConfig>
-    </View>
+              </Animated.View>
+            )}
+          </View>
+        </LayoutAnimationConfig>
+      </View>
+    </LiquidGlass>
   );
 }

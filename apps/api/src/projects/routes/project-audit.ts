@@ -44,8 +44,8 @@ import {
 import { AuditActorTypeSchema, AuditEventSchema, AuditListSchema } from '../../shared/audit-schema';
 import { currentInboundAuditScope } from '../../shared/audit-scope';
 import { db } from '../../shared/db';
-import { MAX_BATCH_SIZE, parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
-import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
+import { MAX_BATCH_SIZE, parseRuntimeAuditBatch } from '../../shared/runtime-audit-ingestion';
+import { applyRuntimeAuditRateLimit } from '../../shared/runtime-audit-rate-guard';
 import { isUuid } from '../../shared/validate';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -56,7 +56,7 @@ import { readSessionAuditActions } from '../lib/session-audit-read';
 import { sessionApprovalVerdict } from '../lib/http-approval-caller';
 
 /**
- * The human a session acts on behalf of, for OpenCode audit ingestion. A
+ * The human a session acts on behalf of, for runtime audit ingestion. A
  * session PAT carries it (auth middleware); a legacy sandbox key does not, so
  * the session's live agent token is read. Any failure → null.
  */
@@ -195,7 +195,7 @@ async function loadIngestSessionScope(input: { sandboxId: string; accountId: str
   const [scope] = await db
     .select({
       sessionId: sessionSandboxes.sessionId,
-      opencodeSessionId: projectSessions.runtimeSessionId,
+      runtimeSessionId: projectSessions.runtimeSessionId,
       agentName: projectSessions.agentName,
       createdBy: projectSessions.createdBy,
       origin: projectSessions.origin,
@@ -249,11 +249,11 @@ function rateLimitIngestBatch(input: {
   accountId: string;
   projectId: string;
   sessionId: string;
-  parsed: ReturnType<typeof parseOpenCodeAuditBatch>;
+  parsed: ReturnType<typeof parseRuntimeAuditBatch>;
 }) {
   const { accountId, projectId, sessionId, parsed } = input;
   // Per-session ingest ceiling. A single runaway turn emitting ~1725
-  // `opencode.message.part.delta` rows/min took staging down through
+  // `message.part.delta` rows/min took staging down through
   // audit_events index contention (release-gate run 32151213430); this bounds
   // the write rate before it reaches a 14-index table. It drops ONLY the
   // per-token delta class and never blocks the request.
@@ -263,7 +263,7 @@ function rateLimitIngestBatch(input: {
   let toInsert = parsed.values;
   let suppressed = 0;
   try {
-    const decision = applyOpenCodeAuditRateLimit({
+    const decision = applyRuntimeAuditRateLimit({
       accountId,
       projectId,
       sessionId,
@@ -295,7 +295,7 @@ async function writeIngestBatch(input: {
   projectId: string;
   sessionId: string;
   accepted: number;
-  toInsert: ReturnType<typeof parseOpenCodeAuditBatch>['values'];
+  toInsert: ReturnType<typeof parseRuntimeAuditBatch>['values'];
 }) {
   const { c, accountId, projectId, sessionId, toInsert } = input;
   const parsed = { accepted: input.accepted };
@@ -575,11 +575,11 @@ export function registerProjectAuditRoutes(): void {
       method: 'post',
       path: '/{projectId}/sessions/{sessionId}/audit/events',
       tags: ['sessions'],
-      summary: 'Ingest an idempotent OpenCode audit batch',
+      summary: 'Ingest an idempotent runtime audit batch',
       ...auth,
       request: {
         params: z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid() }),
-        // Documents the batch; `parseOpenCodeAuditBatch` owns validation and
+        // Documents the batch; `parseRuntimeAuditBatch` owns validation and
         // names the failing event index in its 400.
         body: { content: { 'application/json': { schema: RuntimeAuditBatchSchema.or(AnyObject) } } },
       },
@@ -634,14 +634,14 @@ export function registerProjectAuditRoutes(): void {
         },
       });
 
-      let parsed: ReturnType<typeof parseOpenCodeAuditBatch>;
+      let parsed: ReturnType<typeof parseRuntimeAuditBatch>;
       try {
-        parsed = parseOpenCodeAuditBatch(body, {
+        parsed = parseRuntimeAuditBatch(body, {
           accountId,
           projectId,
           sessionId,
           trustedProvenance: {
-            opencodeSessionId: scope.opencodeSessionId,
+            runtimeSessionId: scope.runtimeSessionId,
             agentId: agentIdentity?.serviceAccountId ?? null,
             agentName: scope.agentName,
             initiatorActorType: initiator.type,
@@ -738,7 +738,7 @@ export function registerProjectAuditRoutes(): void {
             count: z.number().int(),
             events: z.array(AuditEventSchema),
             next_cursor: z.string().nullable(),
-            actions: z.array(z.record(z.unknown())),
+            actions: z.array(z.record(z.string(), z.unknown())),
           }),
           'Canonical per-session reconstruction log and connector approval projection',
         ),

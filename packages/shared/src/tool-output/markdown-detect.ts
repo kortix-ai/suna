@@ -1,4 +1,4 @@
-import { isDigit, isLineTerminator, whitespaceEnd } from './scan';
+import { isDigit, isLineTerminator, nextOf, whitespaceEnd } from './scan';
 
 /**
  * Does this free-form text actually contain markdown syntax?
@@ -28,33 +28,14 @@ export function looksLikeMarkdown(text: string): boolean {
   );
 }
 
-/** The first `a` or `b` at or after a position, remembered while the queries move forward. */
-function nextOfEither(text: string, a: number, b: number): (at: number) => number {
-  let from = Number.POSITIVE_INFINITY;
-  let found = -1;
-  return (at: number): number => {
-    if (at >= from && (found === -1 || at <= found)) return found;
-    from = at;
-    found = -1;
-    for (let i = at; i < text.length; i++) {
-      const code = text.charCodeAt(i);
-      if (code === a || code === b) {
-        found = i;
-        break;
-      }
-    }
-    return found;
-  };
-}
-
 /**
  * Whether a `[text](url)` link, each part on one line, occurs, as
  * `/\[[^\]\n]+\]\([^)\n]+\)/` found it. The regex rescanned the rest of the
  * line for every `[` whose link never closed: 60k `[a](` took 8.7 s.
  */
 export function hasMarkdownLink(text: string): boolean {
-  const labelEnd = nextOfEither(text, 93, 10); // ] or \n
-  const urlEnd = nextOfEither(text, 41, 10); // ) or \n
+  const labelEnd = nextOf(text, [93, 10]); // ] or \n
+  const urlEnd = nextOf(text, [41, 10]); // ) or \n
   for (let open = text.indexOf('['); open !== -1; ) {
     const close = labelEnd(open + 1);
     // No `]` and no newline after this `[`: no link can follow.

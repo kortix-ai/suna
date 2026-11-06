@@ -3,11 +3,13 @@ import { projectSessions } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
-import type { OpencodeSessionLite } from '../opencode-session-resolver';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 
 /** A runtime session as the runtime lists it, or as an older writer stored it. */
-type RuntimeSessionLike = OpencodeSessionLite & {
+type RuntimeSessionLike = {
+  id: string;
+  parentID?: string | null;
+  time?: { created?: number; updated?: number; archived?: number };
   title?: string | null;
   fork_source_id?: string;
   parent_id?: string | null;
@@ -114,7 +116,7 @@ export function scopedRuntimeSessions(projection: Record<string, unknown>, rootI
 }
 
 /**
- * Keep `metadata.opencode_sessions` — the session's runtime conversations,
+ * Keep `metadata.runtime_sessions` — the session's runtime conversations,
  * read by clients as `runtime_sessions` — equal to a state document that was
  * just stored. Scoped to the session's pinned root, else the root the document
  * reports; a document for another root than the pin writes nothing (the
@@ -153,11 +155,11 @@ export async function writeRuntimeSessionList(input: {
     if (!scoped) return 'skipped';
     // Through the normalizer: jsonb hands keys back in its own order, so a raw
     // stringify of the stored value never equals the list it was written from.
-    const stored = normalizeRuntimeSessionSnapshots((row.metadata as Record<string, unknown> | null)?.opencode_sessions);
+    const stored = normalizeRuntimeSessionSnapshots((row.metadata as Record<string, unknown> | null)?.runtime_sessions);
     if (JSON.stringify(stored) === JSON.stringify(scoped)) return 'unchanged';
     await tx
       .update(projectSessions)
-      .set({ metadata: projectSessionMetadataMerge({ opencode_sessions: scoped }), updatedAt: new Date() })
+      .set({ metadata: projectSessionMetadataMerge({ runtime_sessions: scoped }), updatedAt: new Date() })
       .where(scope);
     return 'written';
   });
@@ -176,7 +178,7 @@ export async function registerRuntimeFork(input: {
   await db.update(projectSessions).set({
     metadata: sql`coalesce(${qualifiedColumn(projectSessions.metadata)}, '{}'::jsonb) || jsonb_build_object(
       'runtime_forks', coalesce(${qualifiedColumn(projectSessions.metadata)}->'runtime_forks', '{}'::jsonb) || ${JSON.stringify({ [fork.id]: input.sourceId })}::jsonb,
-      'opencode_sessions', coalesce((select jsonb_agg(item) from jsonb_array_elements(coalesce(${qualifiedColumn(projectSessions.metadata)}->'opencode_sessions', '[]'::jsonb)) item where item->>'id' <> ${fork.id}), '[]'::jsonb) || ${JSON.stringify([entry])}::jsonb)`,
+      'runtime_sessions', coalesce((select jsonb_agg(item) from jsonb_array_elements(coalesce(${qualifiedColumn(projectSessions.metadata)}->'runtime_sessions', '[]'::jsonb)) item where item->>'id' <> ${fork.id}), '[]'::jsonb) || ${JSON.stringify([entry])}::jsonb)`,
     updatedAt: new Date(),
   }).where(and(eq(projectSessions.sessionId, input.sessionId),
     eq(projectSessions.projectId, input.projectId), eq(projectSessions.accountId, input.accountId)));

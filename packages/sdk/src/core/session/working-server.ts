@@ -29,6 +29,20 @@ export interface SessionWorkingVerdict {
  */
 export const SERVER_WORKING_SEND_GRACE_MS = 2_000;
 
+/**
+ * How long one `kortix.control.turn` verdict decides. The server re-sends an
+ * unchanged frame every 20 s, so a verdict older than three of those comes from
+ * a stream that stopped reporting turns: the tab stops trusting it, and the
+ * `/turn` poll answers again. Without the bound a quiet connected stream held
+ * `working`, and the Stop button, for as long as it stayed open.
+ */
+export const SERVER_WORKING_VERDICT_MAX_MS = 60_000;
+
+/** Does the verdict that arrived at `atMs` (this tab's clock) still decide? */
+export function serverWorkingVerdictFresh(atMs: number | undefined, nowMs: number): boolean {
+  return typeof atMs === 'number' && nowMs - atMs < SERVER_WORKING_VERDICT_MAX_MS;
+}
+
 export interface ServerWorkingInput {
   working: SessionWorkingVerdict;
   /** This tab's clock when the frame arrived. */
@@ -85,13 +99,16 @@ export function projectServerWorking(input: ServerWorkingInput): WorkingProjecti
   };
 }
 
-/** When a receipt stops deciding, so a host re-projects then. Null: never. */
+/** When a receipt, or the verdict itself (`atMs`), stops deciding, so a host re-projects then. Null: never. */
 export function serverWorkingExpiryAtMs(input: {
   optimistic: SendReceipt | null;
   abort: AbortReceipt | null;
+  /** When the verdict arrived (this tab's clock). */
+  atMs?: number;
 }): number | null {
   const deadlines: number[] = [];
   const { optimistic, abort } = input;
+  if (typeof input.atMs === 'number') deadlines.push(input.atMs + SERVER_WORKING_VERDICT_MAX_MS);
   if (optimistic) {
     deadlines.push(optimistic.atMs + OPTIMISTIC_RECEIPT_MAX_MS);
     if (optimistic.acceptedAtMs != null) deadlines.push(optimistic.acceptedAtMs + SERVER_WORKING_SEND_GRACE_MS);

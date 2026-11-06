@@ -3,7 +3,7 @@
 // One default classifier avoids disagreement adding another fallback pause; explicit model overrides remain supported.
 import { hedged } from './hedge'
 import { chargeReply } from './cost'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 const MODELS = (process.env.VOICE_EOT_MODELS ?? 'qwen/qwen3.8-27b').split(',').filter(Boolean)
 const EOT_HEDGE = Number(process.env.VOICE_EOT_HEDGE_MS ?? 250) // its verdict takes ~150 ms
 const SYSTEM =
@@ -24,7 +24,7 @@ const SYSTEM =
 export type Verdict = 'done' | 'more' | Act | undefined
 /** What a caller did instead of taking a turn. */
 export type Act = 'ack' | 'thanks' | 'goodbye' | 'stop' | 'repeat' | 'hold'
-const off = () => process.env.VOICE_EOT === '0' || !process.env.GROQ_API_KEY || !MODELS.length
+const off = () => process.env.VOICE_EOT === '0' || !fastOn() || !MODELS.length
 /** How many verdicts finished() gives per text. */
 export const judges = () => (off() ? 1 : MODELS.length)
 

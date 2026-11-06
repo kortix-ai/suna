@@ -176,7 +176,7 @@ function projectDefaultAgentOf(metadata: unknown): string | null {
 
 /** The model this session is pinned to, as `createProjectSession` recorded it. */
 function sessionModelOf(metadata: Record<string, unknown> | null | undefined): string | null {
-  const value = metadata?.opencode_model;
+  const value = metadata?.model;
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
@@ -399,7 +399,7 @@ export async function deliverAdmittedFollowUp(
     userId,
     scope: await teamsTurnScope(input.project, activity, userId),
     session: { sessionId, ownerUserId: input.sessionOwnerId, pinnedModel: currentModel },
-    chosenModel: selection?.opencodeModel,
+    chosenModel: selection?.sessionModel,
     hasImage,
   });
   // Nothing reachable can read the image. Say so in the prompt rather than
@@ -630,7 +630,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     accountId: project.accountId,
     userId,
     scope: await teamsTurnScope(project, activity, userId),
-    chosenModel: selection?.opencodeModel,
+    chosenModel: selection?.sessionModel,
     agentName: selection?.agentName || projectDefaultAgentOf(project.metadata),
     hasImage: teamsMessageHasImage(activity),
   });
@@ -646,7 +646,7 @@ export async function createOrJoinTeamsConversationSession(input: {
     body: {
       base_ref: project.defaultBranch,
       agent_name: selection?.agentName || 'default',
-      ...(createModel ? { opencode_model: createModel } : {}),
+      ...(createModel ? { model: createModel } : {}),
       ...(start.pools ? { provider_secret_pools: start.pools } : {}),
       initial_prompt: renderAgentPrompt(activity, revived),
       // Title from the user's actual words — without the `<at>…</at>` mention

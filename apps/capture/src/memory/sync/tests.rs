@@ -473,6 +473,30 @@ fn remote_retention_purges_old_chunks_and_never_frees_their_local_copy() {
 }
 
 #[test]
+fn a_chunk_whose_local_file_is_gone_leaves_the_queue_and_the_backlog() {
+    let (lib, conn) = Lib::new();
+    let start = now_ms() - 120_000;
+    let gone = seed_chunk(&conn, &lib.0, start, "gone");
+    let kept = seed_chunk(&conn, &lib.0, start + 60_000, "kept");
+    let path_of = |id: i64| -> PathBuf {
+        let rel: String = conn.query_row("SELECT path FROM video WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        lib.0.videos_dir().join(rel)
+    };
+    std::fs::remove_file(path_of(gone)).unwrap();
+
+    assert!(!retire_if_file_gone(&conn, "video", gone, &path_of(gone), ErrorClass::Transient), "only a local read error retires");
+    assert!(!retire_if_file_gone(&conn, "video", kept, &path_of(kept), ErrorClass::Local), "a file that exists keeps retrying");
+    assert!(retire_if_file_gone(&conn, "video", gone, &path_of(gone), ErrorClass::Local));
+
+    let status: i64 = conn.query_row("SELECT status FROM video WHERE id = ?1", [gone], |r| r.get(0)).unwrap();
+    assert_eq!(status, 2, "marked deleted, like retention does");
+    let mut s = Settings::default();
+    s.sync.enabled = true;
+    let st = compute_state(&conn, &lib.0, &s, true, "dev", &Runtime::default());
+    assert_eq!((st.pending, st.bytes_pending), (1, 1000), "the gone chunk no longer counts toward the backlog");
+}
+
+#[test]
 fn state_reports_queue_depth_bytes_age_and_error_class() {
     let (lib, conn) = Lib::new();
     let start = now_ms() - 120_000;

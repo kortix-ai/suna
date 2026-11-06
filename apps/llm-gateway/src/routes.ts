@@ -1,13 +1,14 @@
 import {
+  readRequestOrigin,
   gatewayErrorResponse, gatewayOverloadedResponse, readAdmittedBody, readAdmittedBytes,
   releaseWhenResponseEnds, requestTooLargeResponse, type InflightBudget,
 } from '@kortix/llm-gateway';
-import type { AudioRequest, ClaudeCodeRequest, VoicesRequest } from '@kortix/llm-gateway';
+import type { AudioRequest, ClaudeCodeRequest, RequestOrigin, VoicesRequest } from '@kortix/llm-gateway';
 import type { Hono } from 'hono';
 import { cloudflareSafe, messagesAuthorization, perRequestCapBytes } from './server';
 
 type Protocol = 'chat' | 'messages' | 'responses' | 'images' | 'audio';
-type InferenceRequest = { authorization: string | undefined; rawBody: string; signal?: AbortSignal };
+type InferenceRequest = { authorization: string | undefined; rawBody: string; signal?: AbortSignal; origin?: RequestOrigin };
 type Gateway = {
   chatCompletions: (request: InferenceRequest) => Promise<Response>;
   messages: (request: InferenceRequest) => Promise<Response>;
@@ -67,6 +68,8 @@ function inference(
           // disconnected client left the provider generating, and billing, a
           // turn nobody would read.
           rawBody: body.body, signal: c.req.raw?.signal,
+          // The session message the call comes from, for the request log.
+          origin: readRequestOrigin((name) => c.req.header(name)),
         };
         body.body = '';
         const res = await cloudflareSafe(await call(request));

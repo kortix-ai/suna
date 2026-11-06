@@ -54,6 +54,7 @@ import {
   type CommentFilter,
 } from './artifact-discussion-logic';
 import type { ArtifactDrawingDraft } from './artifact-drawing-draft';
+import { LiveTypingLine } from './artifact-live-presence';
 
 const EMPTY_THREADS: ArtifactCommentThread[] = [];
 
@@ -216,7 +217,7 @@ export function ArtifactDiscussionSidebar({
   const setDraft = (kind: string, value: string, id = '') =>
     setDrafts((current) => ({ ...current, [draftKey(kind, id)]: value }));
   const threads = displayThreads ?? comments.data ?? EMPTY_THREADS;
-  const grouped = groupCommentThreads(threads, filter);
+  const grouped = groupCommentThreads(threads, filter, focusedThreadId);
   // The viewer header counts `comments.data`; the tab and the filter count the same list.
   const counts = threadCounts(comments.data ?? threads);
   const readableVersion = context?.version.commit_id ?? context?.version.entry_version;
@@ -297,13 +298,7 @@ export function ArtifactDiscussionSidebar({
     const thread = threads.find((thread) => thread.thread_id === focusedThreadId);
     if (!thread) return;
     setTab('comments');
-    setFilter((current) =>
-      threadDeleted(thread)
-        ? 'all'
-        : current === 'all' || current === thread.status
-          ? current
-          : thread.status,
-    );
+    setFilter(thread.status);
     const frame = requestAnimationFrame(() => {
       focusedRef.current = signature;
       const article = document.getElementById(`artifact-thread-${focusedThreadId}`);
@@ -341,16 +336,14 @@ export function ArtifactDiscussionSidebar({
   const focusThread = (threadId: string) => {
     const thread = threads.find((thread) => thread.thread_id === threadId);
     setTab('comments');
-    if (thread)
-      setFilter((current) =>
-        threadDeleted(thread)
-          ? 'all'
-          : current === 'all' || current === thread.status
-            ? current
-            : thread.status,
-      );
+    if (thread) setFilter(thread.status);
     onFocusThread(threadId);
   };
+  /** The control that had focus left with the editor: the keyboard stays on its thread. */
+  const focusCard = (threadId: string) =>
+    requestAnimationFrame(() =>
+      document.getElementById(`artifact-thread-${threadId}`)?.focus({ preventScroll: true }),
+    );
   const perform = async <T,>(
     key: string,
     action: () => Promise<T>,
@@ -371,13 +364,16 @@ export function ArtifactDiscussionSidebar({
           ? t('sendScreenshotLimit')
           : (error ?? t('commentFailed'));
       setErrors((current) => ({ ...current, [key]: message }));
-      if (
-        !key.startsWith('new') &&
-        !key.startsWith('reply') &&
-        !key.startsWith('edit') &&
-        !key.startsWith('delete')
-      )
-        errorToast(message);
+      // One report per failure. Composers and the delete dialog show theirs in place, and so does
+      // Send while it keeps its batch for Retry. A status change, a delivery retry and a final Send
+      // failure have no place of their own, so they toast.
+      const shownInPlace =
+        key.startsWith('new') ||
+        key.startsWith('reply') ||
+        key.startsWith('edit') ||
+        key.startsWith('delete') ||
+        (key === 'send' && !!sendBatchRef.current);
+      if (!shownInPlace) errorToast(message);
     } finally {
       activeRef.current.delete(key);
       setPending((current) => ({ ...current, [key]: false }));
@@ -429,12 +425,14 @@ export function ArtifactDiscussionSidebar({
       `status:${thread.thread_id}`,
       () => comments.setStatus(thread.thread_id, status),
       () => {
-        if (status !== 'resolved') return;
-        successToast(t('threadResolved'), {
-          duration: 5000, // audit:allow toast lifetime for Undo (undoToast's 5 s), not motion
-          actions: [{ label: t('undo'), onClick: () => void setStatus(thread, 'open') }],
-        });
-        // The card leaves the Open list with its focused control: keep focus in the panel.
+        // The card leaves its list either way: say where it went.
+        if (status === 'resolved')
+          successToast(t('threadResolved'), {
+            duration: 5000, // audit:allow toast lifetime for Undo (undoToast's 5 s), not motion
+            actions: [{ label: t('undo'), onClick: () => void setStatus(thread, 'open') }],
+          });
+        else successToast(t('threadReopened'));
+        // The card leaves the list with its focused control: keep focus in the panel.
         requestAnimationFrame(() => {
           if (!document.activeElement || document.activeElement === document.body)
             heading.current?.focus({ preventScroll: true });
@@ -599,7 +597,8 @@ export function ArtifactDiscussionSidebar({
       onStatus={() => void setStatus(thread, thread.status === 'open' ? 'resolved' : 'open')}
       onEdit={(comment) => {
         setEditing({ threadId: thread.thread_id, commentId: comment.comment_id });
-        setDraft('edit', comment.body, comment.comment_id);
+        // An edit left with Escape comes back as it was; otherwise it starts from the saved text.
+        if (!draft('edit', comment.comment_id)) setDraft('edit', comment.body, comment.comment_id);
       }}
       onEditChange={(value) => {
         if (editing) setDraft('edit', value, editing.commentId);
@@ -609,11 +608,22 @@ export function ArtifactDiscussionSidebar({
         void perform(
           `edit:${comment.comment_id}`,
           () => comments.edit(thread.thread_id, comment.comment_id, { body }),
-          () =>
-            setEditing((current) => (current?.commentId === comment.comment_id ? null : current)),
+          () => {
+            setDraft('edit', '', comment.comment_id);
+            setEditing((current) => (current?.commentId === comment.comment_id ? null : current));
+            focusCard(thread.thread_id);
+          },
         );
       }}
-      onCancelEdit={() => setEditing(null)}
+      onCancelEdit={() => {
+        if (editing) setDraft('edit', '', editing.commentId);
+        setEditing(null);
+        focusCard(thread.thread_id);
+      }}
+      onLeaveEdit={() => {
+        setEditing(null);
+        focusCard(thread.thread_id);
+      }}
       onDelete={(comment) => setDeleting({ threadId: thread.thread_id, comment })}
       {...retryProps(thread)}
     />
@@ -634,7 +644,16 @@ export function ArtifactDiscussionSidebar({
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
-      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col gap-0">
+      {/* One row of views: the two thread statuses, each with its count, and Activity. */}
+      <Tabs
+        value={tab === 'activity' ? 'activity' : filter}
+        onValueChange={(value) => {
+          if (value === 'activity') return setTab('activity');
+          setTab('comments');
+          setFilter(value as CommentFilter);
+        }}
+        className="flex min-h-0 flex-1 flex-col gap-0"
+      >
         <div data-artifact-discussion-header className="shrink-0">
           <div className="border-border flex h-11 items-center gap-2 border-b px-4">
             <h2 ref={heading} tabIndex={-1} className="sr-only outline-none">
@@ -646,15 +665,21 @@ export function ArtifactDiscussionSidebar({
               aria-label={t('panelTitle')}
               className="h-full gap-5 border-b-0"
             >
-              <TabsTriggerCompact value="comments" className="w-fit flex-none gap-1.5 px-0">
-                {t('comments')}
-                {counts.open > 0 ? <CountBadge count={counts.open} /> : null}
-              </TabsTriggerCompact>
+              {(['open', 'resolved'] as const).map((value) => (
+                <TabsTriggerCompact
+                  key={value}
+                  value={value}
+                  className="w-fit flex-none gap-1.5 px-0"
+                >
+                  {t(value)}
+                  {counts[value] > 0 ? <CountBadge count={counts[value]} /> : null}
+                </TabsTriggerCompact>
+              ))}
               <TabsTriggerCompact value="activity" className="w-fit flex-none px-0">
                 {t('activity')}
               </TabsTriggerCompact>
             </TabsListCompact>
-            <div className="ml-auto flex shrink-0 items-center gap-1">
+            <ButtonGroup className="ml-auto shrink-0 items-center">
               {canComment ? (
                 <Hint label={t('newComment')} side="bottom" sideOffset={4}>
                   <Button
@@ -682,31 +707,12 @@ export function ArtifactDiscussionSidebar({
                   </Button>
                 </Hint>
               ) : null}
-            </div>
+            </ButtonGroup>
           </div>
-          {tab === 'comments' ? (
-            <div className="px-4 pt-3 pb-2">
-              <Tabs value={filter} onValueChange={(value) => setFilter(value as CommentFilter)}>
-                <TabsListCompact aria-label={t('filterLabel')} className="w-full">
-                  <TabsTriggerCompact value="open" className="flex-1 gap-1.5">
-                    {t('open')}
-                    {counts.open > 0 ? <CountBadge count={counts.open} /> : null}
-                  </TabsTriggerCompact>
-                  <TabsTriggerCompact value="resolved" className="flex-1 gap-1.5">
-                    {t('resolved')}
-                    {counts.resolved > 0 ? <CountBadge count={counts.resolved} /> : null}
-                  </TabsTriggerCompact>
-                  <TabsTriggerCompact value="all" className="flex-1">
-                    {t('all')}
-                  </TabsTriggerCompact>
-                </TabsListCompact>
-              </Tabs>
-            </div>
-          ) : null}
         </div>
-        <TabsContent value="comments" className="m-0 min-h-0 flex-1 overflow-y-auto">
+        <TabsContent value={filter} className="m-0 min-h-0 flex-1 overflow-y-auto py-1">
           {readOnly || contextError || (!context && !contextLoading) ? (
-            <div className="space-y-3 px-4 pb-3">
+            <div className="space-y-3 px-4 py-3">
               {readOnly ? (
                 <p className="text-muted-foreground text-xs">{t('historicalReadOnly')}</p>
               ) : null}
@@ -723,10 +729,12 @@ export function ArtifactDiscussionSidebar({
               ) : null}
             </div>
           ) : null}
+          {/* Live: someone else writes a new comment. */}
+          <LiveTypingLine where="new" className="px-4 pb-2" />
           {composerOpen ? (
             <section
               aria-label={t('newComment')}
-              className="border-border space-y-2.5 border-b px-4 pt-1 pb-3"
+              className="border-border space-y-2.5 border-b px-4 py-3"
             >
               {selectionCapture !== 'idle' ? (
                 <div className="flex items-start gap-2">
@@ -789,6 +797,7 @@ export function ArtifactDiscussionSidebar({
                 pending={!!pending.new}
                 submitDisabled={selectionCapture !== 'idle'}
                 error={errors.new}
+                liveTyping="new"
                 autoFocus={composerAutoFocus}
                 focusKey={`${focusRevision}:${composerFocus}:${JSON.stringify(pendingAnchor)}`}
               />
@@ -816,18 +825,23 @@ export function ArtifactDiscussionSidebar({
                 </Button>
               }
             />
-          ) : !grouped.current.length && !grouped.outdated.length && !composerOpen ? (
+          ) : !grouped.current.length &&
+            !grouped.outdated.length &&
+            !composerOpen &&
+            // The context decides whether this viewer may comment: no invitation before it answers.
+            !contextError &&
+            !(contextLoading && !context) ? (
             <EmptyState
               size="sm"
               media={<EmptyArt icon={ChatCircleIcon} />}
-              title={t(
+              title={t(filter === 'resolved' ? 'noResolved' : 'noComments')}
+              description={t(
                 filter === 'resolved'
-                  ? 'noResolved'
-                  : filter === 'all'
-                    ? 'noAllComments'
-                    : 'noComments',
+                  ? 'noResolvedHint'
+                  : canComment
+                    ? 'noCommentsHint'
+                    : 'noCommentsReadOnlyHint',
               )}
-              description={t(filter === 'resolved' ? 'noResolvedHint' : 'noCommentsHint')}
             />
           ) : null}
           {grouped.current.map(renderThread)}
@@ -935,7 +949,11 @@ export function ArtifactDiscussionSidebar({
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(open) => {
-          if (!open && !pending[`delete:${deleting?.comment.comment_id}`]) setDeleting(null);
+          if (open || !deleting || pending[`delete:${deleting.comment.comment_id}`]) return;
+          // A failed delete's message belongs to that attempt: the next Delete starts clean.
+          const key = `delete:${deleting.comment.comment_id}`;
+          setErrors((current) => ({ ...current, [key]: '' }));
+          setDeleting(null);
         }}
         title={t('deleteTitle')}
         description={

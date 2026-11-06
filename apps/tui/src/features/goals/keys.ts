@@ -47,7 +47,7 @@ export const GOALS_KEYS: readonly ScreenBinding[] = [
     id: 'goals.new',
     scope: 'goals',
     chords: [{ key: 'n' }],
-    description: 'Start a goal: describe the outcome, a new session writes it.',
+    description: 'Start a goal: describe the outcome; the agent writes the done criteria.',
   },
   {
     id: 'goals.reply',
@@ -60,6 +60,18 @@ export const GOALS_KEYS: readonly ScreenBinding[] = [
     scope: 'goals',
     chords: [{ key: 's' }],
     description: 'Stop the goal (asks first).',
+  },
+  {
+    id: 'goals.pause',
+    scope: 'goals',
+    chords: [{ key: 'p' }],
+    description: 'Pause the goal, or resume a paused one.',
+  },
+  {
+    id: 'goals.restart',
+    scope: 'goals',
+    chords: [{ key: 'R' }],
+    description: 'Start a stopped goal again.',
   },
   {
     id: 'goals.web',

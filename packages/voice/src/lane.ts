@@ -3,11 +3,11 @@
 // Flash-Lite 414 ms direct and the agent's session 600-2760 ms live (41k tokens of history in front of every turn).
 // The model hands the turn to the agent, which has the tools, by replying exactly "(agent)". Off with VOICE_LANE=0.
 const MODEL = process.env.VOICE_LANE_MODEL ?? 'qwen/qwen3.8-27b'
-export const laneOn = () => process.env.VOICE_LANE !== '0' && !!process.env.GROQ_API_KEY
+export const laneOn = () => process.env.VOICE_LANE !== '0' && fastOn()
 
 import { NAME } from './name'
 import { chargeTokens } from './cost'
-import { fastFetch } from './models'
+import { fastFetch, fastOn } from './models'
 
 export type Msg = { role: 'user' | 'assistant'; content: string }
 
@@ -141,6 +141,11 @@ export async function lane(system: string, history: Msg[], user: string, context
     reasoning_format: 'hidden', // and never a <think> block in what is read aloud (seen once in 20 with history)
     messages: [{ role: 'system', content: system + LANE }, ...history, { role: 'user', content: context ? `${user}\n\n${context.trim()}` : user }],
   })
+  // What the stream decided, kept apart from leaving it: the abort that stops a stream still being sent (a hand-over
+  // before the stream's end, as the Kortix gateway sends it) makes leaving the loop throw an AbortError, and that threw
+  // away the verdict: every "(agent)" there came back 'error'.
+  let verdict: 'ok' | 'agent' | 'error' | undefined
+  const end = (v: 'ok' | 'agent' | 'error') => ((verdict = v), ac.abort(), v)
   try {
     // Once it flows: a tail that may still be the marker waits; the marker ends the reply.
     let tail = ''
@@ -156,16 +161,16 @@ export async function lane(system: string, history: Msg[], user: string, context
     }
     for await (const delta of hedged(body, ac.signal)) {
       clearTimeout(timer)
-      if (flowing) { if (flow(delta)) return ac.abort(), 'ok'; continue }
+      if (flowing) { if (flow(delta)) return end('ok'); continue }
       held += delta
       if (THINK.startsWith(held.trimStart().slice(0, THINK.length)) && !held.includes('</think>')) continue // a think block: wait it out
       held = held.replace(/^\s*<think>[\s\S]*?<\/think>/, '')
       const start = held.trimStart()
       if (!start) continue
       if (start.length < HANDOFF.length && HANDOFF.startsWith(start)) continue // may still be "(agent)"
-      if (start.startsWith(HANDOFF) || start.includes(HANDOFF)) return ac.abort(), 'agent' // the marker anywhere: a hand-over
+      if (start.startsWith(HANDOFF) || start.includes(HANDOFF)) return end('agent') // the marker anywhere: a hand-over
       if (!/[.!?\n]/.test(start) && start.length < 140) continue // the first sentence, whole, before a word goes out
-      if (NARRATION.test(start.slice(0, 200))) return ac.abort(), 'error' // its reasoning, not an answer
+      if (NARRATION.test(start.slice(0, 200))) return end('error') // its reasoning, not an answer
       flowing = true
       flow(held)
     }
@@ -174,7 +179,7 @@ export async function lane(system: string, history: Msg[], user: string, context
     if (!flowing) return rest && !HANDOFF.startsWith(rest) && !NARRATION.test(rest.slice(0, 200)) ? (on(rest), 'ok') : held.trim() && !NARRATION.test(rest.slice(0, 200)) ? 'agent' : 'error'
     return 'ok'
   } catch {
-    return flowing ? 'ok' : 'error' // cut off mid-answer: what streamed stands, like an aborted agent turn
+    return verdict ?? (flowing ? 'ok' : 'error') // cut off mid-answer: what streamed stands, like an aborted agent turn
   } finally {
     clearTimeout(timer)
     signal.removeEventListener('abort', stop)

@@ -2,7 +2,7 @@
  * 02 — Send a prompt and watch it stream, framework-free.
  *
  * `session(pid, sid).ensureReady()` provisions/resumes the session's sandbox
- * (long-polls until the runtime is up) and resolves its OpenCode session id.
+ * (long-polls until the runtime is up) and resolves its runtime session id.
  * `.send()` does that for you internally, but calling `ensureReady()` first
  * lets `.stream()` connect BEFORE the prompt goes out, so no early events are
  * missed. `narrowChatEvent` reshapes the raw ~50-variant wire union down to

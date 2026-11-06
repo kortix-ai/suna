@@ -64,7 +64,7 @@ ran under 10 ms, and 33 files of 1,188 took 262 of 388 s. Every one of the
   the slowest file is the floor of the suite. Split a file over ~10 s by
   `describe` (the kortixd OpenCode restore file was 130 s on one worker).
 - **Start no process, server, clone or `tsc` in a unit test** unless that
-  process is the contract. A real binary (OpenCode, the CLI) belongs in a few
+  process is the contract. A real binary (Claude Code, the CLI) belongs in a few
   contract tests, not in every case.
 - **List a file of 1 s or more** in `apps/api/scripts/slow-tests.txt`: the API
   suite runs those first, so no 80-file batch waits on one slow file.

@@ -19,7 +19,7 @@
 | `plan.md` (this file) | Architecture, constraints, review focus, spec deltas, file map, contracts, order, delivery | — |
 | `plan-1-sdk.md` | `@kortix/sdk/genui` + `@kortix/sdk/genui/react` + default components (9 tasks) | PR 1 |
 | `plan-2-eval.md` | Phase 0 model evaluation script and go/no-go (2 tasks) | PR 1 |
-| `plan-3-runtime.md` | `genui` project flag, kill switch, prompt injection on OpenCode and pi, channel guards (5 tasks) | PR 1 |
+| `plan-3-runtime.md` | `genui` project flag, kill switch, channel guards (3 tasks; the prompt-injection tasks are removed) | PR 1 |
 | `plan-4-web.md` | Web renderer, components, map, settings toggle, copy/export, telemetry, desktop parity (8 tasks) | PR 2 |
 | `plan-5-mobile.md` | Mobile renderer, components, map WebView, settings toggle, copy (7 tasks) | PR 3 |
 
@@ -79,7 +79,7 @@ Research and prototyping found facts the spec did not have. Each delta is reflec
 ## Architecture
 
 ```
-Agent (OpenCode or pi)                                         ┌─ apps/web ───────────────────────────────┐
+Agent (pi)                                                     ┌─ apps/web ───────────────────────────────┐
   system prompt += buildGenuiPrompt()   (flag on only)          │ markdown-code.tsx                        │
   reply text: prose + ```openui … ```                           │   genuiVersionFromClassName → GenuiBlock │
         │                                                        │   components = webGenuiComponents        │

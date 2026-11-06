@@ -1,6 +1,7 @@
 // Which agents does kortix.yaml grant one App? Split from ./routes.ts so the
 // read can be tested against a real repository without the route stack.
 
+import { isEveryGrant } from '@kortix/manifest-schema';
 import type { GitBackedProject } from '../projects/git/types';
 import { readManifest } from '../projects/triggers';
 
@@ -8,7 +9,7 @@ export type AppAgentGrant = { agent_name: string; grant: 'all' | 'listed'; path:
 
 /**
  * The agents whose `kortix.yaml` grant `agents.<name>.apps` names one App:
- * `apps: all`, or a list that contains the App's slug. Read-only — the
+ * `apps: "*"` (or `all`, or a list holding `"*"`), or a list that contains the App's slug. Read-only — the
  * manifest on the default branch is the source of truth, so this route
  * reports the declaration and never writes it. It does not decide access:
  * the App gate (`./access.ts`, `./public-proxy.ts`) also requires
@@ -26,7 +27,7 @@ export function agentsGrantingApp(
     if (!block || typeof block !== 'object') continue;
     const grant = (block as Record<string, unknown>).apps;
     const path = `${origins?.[name] ?? manifestPath}#agents.${name}`;
-    if (grant === 'all') out.push({ agent_name: name, grant: 'all', path });
+    if (isEveryGrant(grant)) out.push({ agent_name: name, grant: 'all', path });
     else if (Array.isArray(grant) && grant.some((slug) => typeof slug === 'string' && slug.toLowerCase() === appSlug)) {
       out.push({ agent_name: name, grant: 'listed', path });
     }

@@ -30,12 +30,7 @@ export {
 // =============================================================================
 // PROVIDER UTILITIES
 // =============================================================================
-export {
-  getBillingProvider,
-  shouldUseRevenueCat,
-  shouldUseStripe,
-  isRevenueCatConfigured,
-} from './provider';
+export { shouldUseRevenueCat } from './provider';
 export { canShowExternalPurchase } from './store-policy';
 export { getUpgradeSheetIncludedItems } from './upgrade-sheet-included';
 

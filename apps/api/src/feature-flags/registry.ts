@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "agent_rooms"
+ *   rg -l "reminders" --glob '!node_modules' . | xargs rg -l "voice_call"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -99,7 +99,7 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves INTERNAL-ONLY surfaces (`session_log_restore`):
+ * The same state also serves INTERNAL-ONLY surfaces (`workspace_volume`):
  * not offered in Settings, enabled per project by a
  * Kortix operator on request. Their 403 says "contact Kortix" instead of
  * naming a toggle the caller cannot see (gate.ts).
@@ -248,7 +248,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
   // `pi_harness` graduated (2026-10-23): every new session runs pi; OpenCode is
-  // sunset and serves only sessions that already run on it. No flag, no
+  // sunset (kortixd has no OpenCode harness since 2026-10-30). No flag, no
   // operator lever, no manifest `runtime:` choice. A stored
   // `experimental.pi_harness` override is inert.
   // `genui` graduated (2026-10-24): generative UI is always on. Every session
@@ -334,15 +334,15 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Off by default; a project turns it on (Marko, 2026-10-28).
     platformDefault: () => false,
-    enforcement: 'ui-only',
+    enforcement: 'routes',
     enforcementNote:
-      'BOX: off, a session box has no kortix-goals skill and its CLI hides and refuses `kortix goals` ' +
-      '(KORTIX_FEATURE_FLAGS → kortixd, apps/cli/src/command-table.ts) and kortixd runs no after-turn goal ' +
-      'check (harness/shared/on-idle-hook.ts), so a goal that already exists stops ' +
-      'being worked when the flag is turned off; its folder in Files stays. `kortix goals new` also checks the ' +
-      'flag through the API outside a box (apps/cli/src/commands/goals.ts). SERVER: off, a merged change request ' +
-      'wakes no goal (projects/lib/goal-wake.ts wakeGoal). The other server parts goals use ' +
-      '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
+      'Mixed, and every part is enforced on the server. ROUTES: every /v1/projects/:id/goals* route answers 403 ' +
+      '`feature_disabled` when off (projects/routes/goals.ts). BEHAVIORAL: the goal admission gate ' +
+      '(projects/goals/admission.ts, called from lib/trigger-fire.ts fireSessionReminder) refuses every heartbeat ' +
+      'fire and every event wake of a goal while the flag is off: no turn runs, the goal is blocked `flag_off` and ' +
+      'its heartbeat is switched off; a person resumes it after the flag is back on. A merged change request wakes ' +
+      'no goal (projects/lib/goal-wake.ts). BOX: off, a session box has no kortix-goals skill and its CLI hides ' +
+      '`kortix goals` (KORTIX_FEATURE_FLAGS → kortixd). The project_goals rows and the Goals folders in Files stay.',
   },
   {
     key: 'artifacts',
@@ -389,46 +389,38 @@ const FLAGS: readonly FeatureFlagDef[] = [
   // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
   // saved history and the v1 transcript mirror is no longer read. No flag and no
   // operator lever. A stored `experimental.session_log` override is inert.
-  {
-    key: 'session_log_restore',
-    name: 'Session log restore',
-    description:
-      'Rebuild a session from its saved session log when its computer lost the conversation. Not a Settings toggle: on by default; Kortix turns it off per project, or for a whole deployment.',
-    stability: 'experimental',
-    available: () => true,
-    // On unless the deployment sets SESSION_LOG_RESTORE_DEFAULT_ENABLED=false (on by default since 2026-10-28).
-    platformDefault: () => config.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
-    // Internal-only (2026-10-13): not a Settings toggle. A Kortix operator sets it per project
-    // (PUT /v1/admin/api/projects/:id/features). While on, Settings lists it read-only.
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. Session provisioning sets KORTIX_SESSION_LOG_RESTORE=1 in the box env ' +
-      '(projects/lib/session-sandbox-env-build.ts). On, kortixd restores the harness native store ' +
-      'from the session log at boot when the store is missing or behind the log ' +
-      '(harness/shared/session-log-boot.ts). Off, the box keeps its native state. The journal uploads ' +
-      'attachment bytes (P2.13), so a restore keeps images and files. On by default; a deployment ' +
-      'turns the default off with SESSION_LOG_RESTORE_DEFAULT_ENABLED=false. A log over SESSION_LOG_RESTORE_MAX_BYTES ' +
-      '(24 MiB) answers 413 with what the model sees of it, else the newest turns, else the D3 note alone (harness/README.md).',
-  },
+  // `session_log_restore` graduated (2026-11-05): every box reads the session-log
+  // manifest at boot and restores its native store when it is missing or behind
+  // (kortixd harness/shared/session-log-boot.ts). The only off switch is the
+  // deployment's SESSION_LOG_RESTORE_ENABLED (the restore answers 503). A stored
+  // `experimental.session_log_restore` override is inert; the serializer keeps
+  // sending `true` for older SDKs and hosts.
   // `connectors_v2` graduated (2026-10-24): the Kortix catalog (MCP apps,
   // integrations.sh, Composio), Telegram as a channel connector, the Kortix
   // app-event source (under `event_triggers`) and no seeded empty project
   // account are the only connectors path. A stored override is inert; the
   // serializer keeps sending `true` for older clients.
   {
-    key: 'project_channels',
-    name: 'Channels',
+    key: 'chat',
+    name: 'Spaces',
     description:
-      'Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar.',
+      "Spaces with Kortix, the way Slack works: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and you share spaces with people. Replaces the session list in the sidebar.",
     stability: 'experimental',
     wip: true,
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
     enforcementNote:
-      'Every /projects/:id/spaces route returns 403 feature_disabled while off. Session create/list ignore space_id while off. ' +
+      'Off ⇒ every /projects/:id/spaces route and POST /projects/:id/chat/threads answer 403 feature_disabled (projects/routes/project-spaces.ts, projects/routes/chat-threads.ts); ' +
+      'session create/list ignore space_id. On: the person\'s DM with My Kortix is their chat; each My Kortix thread in it gets the board of the other threads at turn start ' +
+      '(projects/lib/chat-threads.ts). Turning it on creates #general and files every session without a space into it (feature-flags/toggle-effects.ts). ' +
+      'THREAD FILES (memory/thread-files.ts): every session of a space thread (workers too) mounts the space\'s Files folder read-write ' +
+      '(drives/service.ts sessionSpaceFolder; a private channel\'s as before). The conversation is never copied into files: ' +
+      'each turn\'s system text names the thread\'s root session (read with `kortix sessions log <id>`), the thread folder ' +
+      '(<space folder>/threads/<slug>-<id>/ with work/ and results/) and context.md. ' +
+      'STORED OVERRIDE: experimental.chat, else the legacy experimental.project_channels, else experimental.infinichat (explicitOverride). ' +
       'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box. ' +
+      'WEB: a Chat row (/projects/:id/chat) and the spaces list replace New session and the session list; /projects/:id/chat renders FeatureGateScreen while off. ' +
       'PRIVATE CHANNELS (shared/space-access.ts) are enforced whatever this flag says, and created only with KORTIX_PRIVATE_CHANNELS_ENABLED. ' +
       'Revocation windows after a removal or a conversion: REST ≤ 10 s on another replica (access memo; busted at once on the serving one), ' +
       'proxy ≤ 10 s more (verdict cache; cleared on the serving replica), /events SSE, proxied SSE and proxied WebSockets ≤ 60 s (re-check; WebSockets of the serving replica at once). ' +
@@ -443,8 +435,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     wip: true,
     available: () => true,
-    // Off by default (Marko, 2026-11-03): Drive is My files until shared Drives are figured out.
-    platformDefault: () => false,
+    // On by default (Marko, 2026-11-05): teams share Drives out of the box; a project can still turn it off.
+    platformDefault: () => true,
     enforcement: 'routes',
     enforcementNote:
       'PUT /v1/drives/:driveId/access answers 403 feature_disabled while off. Off, driveSubjectFor gives a person no agent reach (agentIds empty) and ' +
@@ -453,25 +445,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'WEB: the Drive tree shows only My files while off (no Drives section, no All files, no Share).',
   },
   {
-    key: 'agent_rooms',
-    name: 'Rooms',
-    iamActions: ['project.room.read', 'project.room.write'],
-    description:
-      'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
-    stability: 'experimental',
-    wip: true,
-    available: () => true,
-    // Off by default again (Marko, 2026-10-27): a project turns it on.
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box. CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
-  },
-  {
     key: 'workspace_volume',
-    name: 'Workspace volume',
+    // The key keeps its name: it is in the SDK's FeatureFlagKey and stored on projects.
+    name: 'Stateless sandboxes',
     description:
-      "Keep each new Platinum session's /workspace on its own Platinum volume instead of the sandbox disk, so the sandbox is disposable: one stopped for an hour is deleted, and the next open boots a new sandbox on the same files and conversation. Not a Settings toggle: Kortix enables it per project.",
+      "Every new Platinum session keeps only /workspace, on its own Platinum volume, so the sandbox is disposable: one stopped for an hour (KORTIX_SANDBOX_IDLE_DELETE_MINUTES) is deleted, and the next open boots a new sandbox on the same files and conversation. Programs that ran in the old sandbox are not running, and the agent is told so. Not a Settings toggle: Kortix enables it per project.",
     stability: 'experimental',
     // Every workspace volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
@@ -545,7 +523,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'voice_call',
     name: 'Voice calls',
     description:
-      'Call the session\'s agent from the session page and talk it through: it hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat.',
+      'Call an agent from its page (Customize → Agents) and talk it through: a call is a session of its own on that agent, which hears you, answers in a voice and sees a screen you share; the conversation is that session\'s chat.',
     stability: 'experimental',
     wip: true,
     available: () => true,
@@ -554,7 +532,67 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcementNote:
       'Off ⇒ nothing of the voice loads. BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so ' +
       'kortixd registers no voice extension and opens no voice port; a change reaches the next new box. WEB: no call ' +
-      'button on the session page. The gateway\'s audio routes are inference like chat: billed per use, not gated here.',
+      'button on the agent page. The gateway\'s audio routes are inference like chat: billed per use, not gated here.',
+  },
+  {
+    key: 'chat_input',
+    name: 'Spaces-ChatInput',
+    description:
+      'One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'WEB ONLY, presentation. The composer (packages/ui/src/session/composer/ComposerCard.tsx) reads the flag and, on, ' +
+      'renders one chat-input control in place of the agent, model and effort pickers and the session-overrides gear. ' +
+      'It writes through the same handlers, so every prompt carries the same agent/model/variant/scope fields either way. ' +
+      'No route, box env, skill, CLI command or IAM action changes: the API enforces each override exactly as it does with the flag off.',
+  },
+  {
+    key: 'chat_front',
+    name: 'Spaces-Router',
+    description:
+      'With Spaces on, the agent you chat with in a thread is a router: it does quick work itself (an answer, a short text, a look at the thread files) and hands longer work to the Space\'s agents. It writes back like a person, in short messages. An agent saves its full result as a file in the thread, and the router links that file instead of retyping it. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Off ⇒ every thread runs as before. API: on together with `chat`, a top-level My Kortix session created in a space ' +
+      '(no parent, no fork, no session caller) gets the reserved runtime_context key `kortix.front` and the server-managed ' +
+      'metadata `kortix_front` (projects/lib/front-thread.ts); a request body cannot set either. Only such a front may start ' +
+      'a My Kortix worker, an exception to META_AGENT_RECURSION; a worker of any other project agent is a normal hand-off. ' +
+      'BOX: a front keeps its agent\'s own tools for quick work plus `agent`, `send_message` and `task_stop` (harness/pi/front.ts); ' +
+      'each `agent` call starts or continues one named background worker as an agent of the thread\'s space (the API sends ' +
+      '`space_agents`; a spawn outside it is 400 AGENT_NOT_IN_SPACE), else the project\'s agents from `/detail`. A worker writes ' +
+      'its full result to the thread\'s results/<name>-<n>.md and reports the path; the front links it. KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so a worker keeps its own ' +
+      'subagents (projects/lib/feature-flag-env.ts). Each worker prompt ends with a "Context files" block (the thread ' +
+      'folder, the thread\'s session id to read with `kortix sessions log`, context.md, the worker\'s work/<name>/ folder) from the prompt body\'s ' +
+      '`thread_files`, which only the API sets (memory/thread-files.ts, with `chat`). WEB: a front thread\'s "Open full ' +
+      'session" opens its worker.',
+  },
+  {
+    key: 'spaces_proactive',
+    name: 'Spaces-Proactive',
+    description:
+      'With Spaces on, a space can watch itself: turn on Proactive in its details, and an agent reads what happens there (finished threads, questions left open, people who join) and writes in the chat only when it matters: a result worth sharing, a decision you need to make, or something overdue. It can also start a thread that does the work. Optional daily brief at 9:00.',
+    stability: 'experimental',
+    wip: true,
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Off ⇒ nothing is recorded and no watcher wakes. API: with `chat` and this flag on and a space\'s Proactive on ' +
+      '(`project_space_watchers`, PUT /projects/:id/spaces/:spaceId/proactive), each finished turn of a top-level thread, ' +
+      'an ask open over 2 h, and a person or agent joining write one row to `project_space_events` (projects/lib/space-watch/). ' +
+      'The `space-watcher` job wakes the space\'s one watcher session (source `system:space-watcher`, private to the space\'s ' +
+      'owner, not filed in the space) at most once per 10 min and 24 times a day, at once for an overdue ask. It mirrors the ' +
+      'feed to events.md in the space folder. BOX: runtime_context `kortix.watcher` gives the watcher no tools ' +
+      '(harness/pi/watcher.ts); its answer is one JSON decision that the API carries out at turn end through the space post ' +
+      'path, in that space only, with the owner\'s rights. WEB: the Proactive and Daily brief rows in Space details.',
   },
 ];
 
@@ -584,9 +622,10 @@ function overridesOf(metadata: unknown): Record<string, unknown> {
 /** Read a single project's explicit override for a flag. Non-boolean garbage
  *  in the stored map is treated as "no override". */
 function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | undefined {
-  const fromMap = overridesOf(metadata)[key];
-  if (typeof fromMap === 'boolean') return fromMap;
-  return undefined;
+  const map = overridesOf(metadata);
+  // `chat` merged Channels (`project_channels`) and One chat (`infinichat`), 2026-11: a project keeps its old choice.
+  const stored = key === 'chat' ? [map.chat, map.project_channels, map.infinichat] : [map[key]];
+  return stored.find((value): value is boolean => typeof value === 'boolean');
 }
 
 /**

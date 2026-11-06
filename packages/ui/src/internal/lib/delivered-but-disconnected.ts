@@ -4,8 +4,8 @@ import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
  * Did the prompt reach the agent before the connection gave up?
  *
  * `POST /session/:id/command` blocks until the whole turn finishes, and two
- * proxy hops sit between the browser and opencode. Either can stop waiting
- * while opencode is still working perfectly well:
+ * proxy hops sit between the browser and the runtime. Either can stop waiting
+ * while the runtime is still working perfectly well:
  *
  *   - the sandbox daemon answers `502 {"error":"upstream unreachable"}` once its
  *     header wait elapses (`kortix-sandbox-agent-server/src/app/server.ts`)
@@ -60,11 +60,9 @@ const DELIVERED_BUT_DISCONNECTED = [
  * forwarding, so nothing was delivered and the message really is lost.
  */
 const REFUSED_BEFORE_DELIVERY = [
-  // The daemon's not-ready 503, in every spelling (code, pi, OpenCode).
+  // The daemon's not-ready 503, with or without its code.
   ...RUNTIME_NOT_READY_MARKERS,
   'initial_runtime_session',
-  // A daemon built before W4 names the same refusal this way.
-  'initial_opencode_session',
   'econnrefused',
   'connection refused',
   'unauthorized',

@@ -27,13 +27,14 @@ import { trackDetached } from '../../shared/drain';
 import { readSessionTurnState } from '../lib/session-turn-read';
 import { canStopTurns } from '../session-lifecycle/turn-stop-authority';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { capturePersonEvent } from './product-events';
 
 export function registerSessionRuntimeRoutes(): void {
   // POST /v1/projects/:projectId/sessions/:sessionId/start
   // THE unified session-open endpoint. One idempotent call that provisions a
-  // missing sandbox, resumes a hibernated/idle one, and resolves the OpenCode pin
+  // missing sandbox, resumes a hibernated/idle one, and resolves the runtime session pin
   // once reachable — returning a single readiness payload { stage, sandbox,
-  // opencode_session_id, retriable } the client polls until stage='ready'.
+  // runtime_session_id, retriable } the client polls until stage='ready'.
 
   projectsApp.openapi(
     createRoute({
@@ -108,6 +109,11 @@ export function registerSessionRuntimeRoutes(): void {
       const billing = await checkBillingAdmission(loaded.row.accountId);
       stl.mark('billing-checked');
       if (!billing.ok) {
+        capturePersonEvent(c, loaded, projectId, 'billing_gate_hit', {
+          reason: billing.reason,
+          where: 'session_start',
+          session_id: sessionId,
+        });
         return c.json(
           {
             error: billing.message,
@@ -158,7 +164,7 @@ export function registerSessionRuntimeRoutes(): void {
 
   // POST /v1/projects/:projectId/sessions/:sessionId/restart
   // Reboot the existing sandbox in place via the provider SDK (stop+start) — the
-  // box and its disk (repo clone, deps, opencode) are kept, never removed. Only
+  // box and its disk (repo clone, deps, the runtime) are kept, never removed. Only
   // when the session has no sandbox (deleted / never provisioned) do we provision
   // a fresh one to recover it from the preserved git branch.
 
@@ -207,6 +213,12 @@ export function registerSessionRuntimeRoutes(): void {
         projectId,
         sessionId,
       });
+      if (result.status < 300) {
+        capturePersonEvent(c, loaded, projectId, 'session_restarted', {
+          session_id: sessionId,
+          provider: visible.row.sandboxProvider ?? null,
+        });
+      }
       return c.json(result.body, result.status as any);
     },
   );

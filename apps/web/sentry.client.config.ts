@@ -62,7 +62,7 @@ if (SENTRY_DSN) {
       // promise rejections — drop them all here.
       'Server URL not ready',
       'sandbox is still loading',
-      // The daemon's not-ready 503, in every spelling (code, pi, OpenCode).
+      // The daemon's not-ready 503, in every spelling the SDK knows.
       ...RUNTIME_NOT_READY_MARKERS,
       // Expected billing-gate HTTP 402 outcomes (insufficient credits / no
       // account / subscription required — the exact strings emitted by
@@ -77,20 +77,6 @@ if (SENTRY_DSN) {
       /^(?:Unhandled promise rejection: )?(?:ApiError: )?Out of credits\. Top up to continue\.$/,
       /^(?:Unhandled promise rejection: )?(?:ApiError: )?No credit account found\. Complete account setup first\.$/,
       /^(?:Unhandled promise rejection: )?(?:ApiError: )?Subscribe to activate your seat\. \$40\/teammate per month includes wallet credits for compute and LLM usage\.$/,
-      // Expected "no compaction model configured" configuration state. The
-      // SDK's `useSummarizeOpenCodeSession` mutation throws a sentinel
-      // `NoCompactionModelError` (`packages/sdk/src/react/use-opencode-sessions/no-compaction-model-error.ts`)
-      // when every model-resolution fallback tier fails; the host already
-      // surfaces it via the `loadingToast` error toast, so it must never page
-      // Better Stack. It leaks as an unhandled promise rejection
-      // (`void loadingToast(...)` re-throws after the toast → Sentry
-      // `onunhandledrejection` auto-capture) and through
-      // `<ClientErrorBoundary>` / route / system-fault boundaries. The
-      // `browser-error-noise.ts` `beforeSend` hook drops it with the same
-      // anchor; this anchored regex covers frameless `onerror` captures.
-      // Anchored so a longer real mutation failure that merely mentions the
-      // wording keeps reporting.
-      /^(?:Unhandled promise rejection: )?(?:Error: )?No model available for compaction\. Please configure a model in settings\.$/,
       // External Safari / WebView video probing noise
       'webkitPresentationMode',
       "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",

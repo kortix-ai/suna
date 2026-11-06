@@ -81,6 +81,7 @@ import {
 import { setContextField } from '../lib/request-context';
 import { kickProjectTemplatePrebuilds } from '../snapshots/builder';
 import type { AccountRole, ProjectRole } from './access';
+import { captureProductEvent } from '../shared/product-analytics';
 
 export const PROVISION_PHASES = [
   'validating',
@@ -328,6 +329,26 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
       { accountId: scope.accountId, source: 'project-create' },
     );
   }
+
+  captureProductEvent({
+    userId: scope.userId,
+    accountId: scope.accountId,
+    event: 'project_created',
+    dedupeKey: row.projectId,
+    properties: {
+      project_id: row.projectId,
+      // The starter is normalized to a default; only a named one is a template.
+      origin: sourceItemId
+        ? 'marketplace'
+        : ((ctx.body as Record<string, unknown>).starter_template ?? (ctx.body as Record<string, unknown>).starterTemplate)
+          ? 'template'
+          : 'blank',
+      provider: String(provider),
+      from_marketplace: Boolean(sourceItemId),
+      starter_template: starterTemplate ? String(starterTemplate) : null,
+      seeded,
+    },
+  });
 
   return {
     status: 201,

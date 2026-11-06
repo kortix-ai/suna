@@ -8,7 +8,6 @@
  * `volumechange` events write to, so the composer never re-renders per sample.
  * Before the recogniser reports `start`, the bars rest as dots at 40% opacity.
  */
-import * as React from 'react';
 import Animated, {
   Easing,
   useAnimatedStyle,

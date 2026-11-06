@@ -248,6 +248,9 @@ function webTheme(): string {
   L.push(`/* ${vs.color.glyph.rule} */`);
   for (const fam of ['fill', 'ring'])
     for (const [k, v] of Object.entries<any>(vs.color.glyph[fam])) L.push(pair(`glyph-${fam}-${k}`, v));
+  // The solid values live on :root in theme.css (glyph-tint.ts reads them at runtime); @theme only aliases them.
+  L.push(`/* ${vs.color.glyph.solid_rule} */`);
+  for (const k of Object.keys(vs.color.glyph.ring)) L.push(`--color-glyph-solid-${k}: var(--glyph-solid-${k});`);
   L.push('/* Motion. Tailwind 4 reads duration utilities from --transition-duration-*. */');
   for (const [k, v] of Object.entries<any>(vs.motion.duration))
     L.push(`--transition-duration-${k}: var(--duration-${k}, ${v.ms}ms);`);

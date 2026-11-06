@@ -20,13 +20,15 @@ export function firstUseful(jobs: Promise<string>[]): Promise<string> {
 // The pages behind a search's top results, read in the background the moment it returns: a follow-up ("read it",
 // "what does it say", "tell me more") is answered from the page in hand instead of the agent fetching it (7.2 s in
 // a live call), and later turns on the topic carry the text, not just snippets. Firecrawl and Tavily race per page;
-// no turn ever waits for a page.
-const PAGES = Number(process.env.VOICE_PAGES ?? 2)
+// no turn ever waits for a page. VOICE_PAGES sets how many (0: off). Through the Kortix router the top result alone: a
+// page read there is Firecrawl's scrape at $0.01 (no Tavily extract), about twelve times the vendor's price, and two of
+// them were most of a dev call's search spend ($0.02 of a web turn's $0.021-0.031).
+const pages = () => Number(process.env.VOICE_PAGES ?? (router() ? 1 : 2))
 type Page = { at: number; url: string; text: string }
 const reading = new Set<string>()
 const read: Page[] = [] // pages in hand, newest last
 export function readPages(result: string) {
-  for (const url of [...result.matchAll(/\((https?:\/\/[^\s)]+)\)/g)].map((m) => m[1]!).slice(0, PAGES)) {
+  for (const url of [...result.matchAll(/\((https?:\/\/[^\s)]+)\)/g)].map((m) => m[1]!).slice(0, pages())) {
     if (reading.has(url) || read.some((p) => p.url === url && Date.now() - p.at < PAGE_TTL)) continue
     reading.add(url)
     const ac = new AbortController(), timer = setTimeout(() => ac.abort(), 15_000)

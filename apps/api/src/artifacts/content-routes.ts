@@ -14,7 +14,9 @@ import { Hono, type Context } from 'hono';
 import { config } from '../config';
 import { verifyChannelState } from '../channels/core/signed-state';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
+import { webAppFrameAncestors } from '../middleware/cors';
 import { createArtifactContentRateLimitMiddleware } from '../middleware/rate-limit';
+import { configuredCorsOrigins } from '../shared/domain-aliases';
 import { PUBLIC_SHARE_SANDBOX_CSP } from '../sandbox-proxy/routes/public-share';
 import { isUuid } from '../shared/validate';
 import { DriveStorageError } from '../drives/volumes';
@@ -63,6 +65,20 @@ function sandboxCsp(c: Context): string {
   return own ? `${PUBLIC_SHARE_SANDBOX_CSP} allow-same-origin` : PUBLIC_SHARE_SANDBOX_CSP;
 }
 
+/**
+ * The CSP of a response. An annotated page (`?annotate=1`) runs the bridge, which reports the
+ * viewer's pointer to its parent: only the Kortix web app may frame it (the origins CORS
+ * trusts and FRONTEND_URL). Any site can frame every other response.
+ */
+function contentCsp(c: Context, annotate: boolean): string {
+  if (!annotate) return sandboxCsp(c);
+  const ancestors = webAppFrameAncestors({
+    internalEnvironment: config.INTERNAL_KORTIX_ENV,
+    extraOrigins: [...configuredCorsOrigins(), config.FRONTEND_URL],
+  });
+  return `${sandboxCsp(c)}; ${ancestors}`;
+}
+
 async function serve(c: Context, row: ArtifactRow | null, at: string | null, rest: string, cache: string, annotate = false): Promise<Response> {
   if (!row || !(await projectFeatureFlagEnabled(row.projectId, ARTIFACTS_FLAG))) return notFound(c);
   const annotationEnabled = annotate && row.type === 'html' && await projectFeatureFlagEnabled(row.projectId, 'artifact_comments');
@@ -76,7 +92,7 @@ async function serve(c: Context, row: ArtifactRow | null, at: string | null, res
   if (!found) return notFound(c);
   const headers: Record<string, string> = {
     'Content-Type': contentTypeFor(found.path),
-    'Content-Security-Policy': sandboxCsp(c),
+    'Content-Security-Policy': contentCsp(c, annotate),
     'X-Content-Type-Options': 'nosniff',
     // Third parties (an embedded player) see only the API origin, never the token in the path.
     'Referrer-Policy': 'strict-origin-when-cross-origin',

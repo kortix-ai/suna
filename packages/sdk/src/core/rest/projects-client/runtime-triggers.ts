@@ -80,7 +80,11 @@ export interface CreateRuntimeTriggerInput {
     | { type: 'schedule'; every?: string | number; cron?: string; at?: string; in?: string | number; timezone?: string }
     | { type: 'webhook'; secret_env: string }
     | { type: 'event'; connector: string; event: string; config?: Record<string, unknown>; account?: string }
-    | { type: 'app'; app: string }
+    /**
+     * `expect_event_within` (5m to 30d, e.g. `1h`): no event from the App for
+     * that long alerts the trigger's owner once; the next event clears it.
+     */
+    | { type: 'app'; app: string; expect_event_within?: string }
     | { type: 'change_request'; cr_id?: string; base?: string };
   target: { session_id: string } | { agent: string };
 }

@@ -14,6 +14,7 @@ import { enrichPendingCallOnce } from '../connectors/approval-enrich-pending';
 import { approvalNotExpired, isApprovalExpired } from '../connectors/approval-expiry';
 import { captureException } from '../lib/sentry';
 import { db } from '../shared/db';
+import { type StatusRule, transitionStatus, transitionStatusAll } from '../shared/status-transition';
 import { isUuid } from '../shared/validate';
 import type { ProjectReadView } from './lib/project-read-view';
 import {
@@ -690,50 +691,64 @@ export async function insertReviewItem(input: InsertReviewItemInput) {
   return row;
 }
 
-/** Apply a human verdict to one item, recording who acted, when, and any note. */
+/**
+ * A verdict decides an open item once. It is a compare-and-set on the open
+ * statuses (`shared/status-transition.ts`): a second reviewer, a Slack click
+ * and a web click that race, or a re-click on an old card, find the item
+ * decided and change nothing, so a human decision is never silently reversed
+ * and `acted_by` / `feedback` keep the first decider's values.
+ */
+const OPEN_REVIEW_STATUSES = ['needs_you', 'waiting'] as const satisfies readonly ReviewItemRow['status'][];
+
+function verdictRule(verdict: ReviewVerdict): StatusRule {
+  return { from: OPEN_REVIEW_STATUSES, to: VERDICT_STATUS[verdict] };
+}
+
+/**
+ * Apply a human verdict to one open item, recording who acted, when, and any
+ * note. Null when the item does not exist or is already decided.
+ */
 export async function applyVerdict(
   reviewItemId: string,
   projectId: string,
   opts: { verdict: ReviewVerdict; feedback?: string | null; actingUserId: string },
-) {
+): Promise<ReviewItemRow | null> {
   // Same 22P02 contract as `getReviewItemById`: a non-uuid id is a miss (KRTX-2442).
   if (!isUuid(reviewItemId)) return null;
-  const [row] = await db
-    .update(reviewItems)
-    .set({
-      status: VERDICT_STATUS[opts.verdict],
-      actedBy: opts.actingUserId,
-      actedAt: new Date(),
-      feedback: opts.feedback ?? null,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(reviewItems.reviewItemId, reviewItemId), eq(reviewItems.projectId, projectId)))
-    .returning();
-  return row ?? null;
+  const now = new Date();
+  const moved = await transitionStatus(reviewItems, reviewItems.status, verdictRule(opts.verdict), {
+    where: and(eq(reviewItems.reviewItemId, reviewItemId), eq(reviewItems.projectId, projectId)),
+    set: { actedBy: opts.actingUserId, actedAt: now, feedback: opts.feedback ?? null, updatedAt: now },
+  });
+  return moved.applied ? moved.row : null;
 }
 
-/** Apply the same verdict to many items at once (multi-select bulk). */
+/** Apply the same verdict to many open items at once (multi-select bulk). */
 export async function bulkApplyVerdict(
   reviewItemIds: string[],
   projectId: string,
   opts: { verdict: ReviewVerdict; actingUserId: string },
-) {
+): Promise<ReviewItemRow[]> {
   // An id that is not a uuid would make the whole batch die on the uuid cast
   // (22P02, KRTX-2442): drop it and apply the verdict to the rest.
   const ids = reviewItemIds.filter((id) => isUuid(id));
   if (ids.length === 0) return [];
-  return db
-    .update(reviewItems)
-    .set({
-      status: VERDICT_STATUS[opts.verdict],
-      actedBy: opts.actingUserId,
-      actedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, ids)),
-    )
-    .returning();
+  const now = new Date();
+  return transitionStatusAll(reviewItems, reviewItems.status, verdictRule(opts.verdict), {
+    where: and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, ids)),
+    set: { actedBy: opts.actingUserId, actedAt: now, updatedAt: now },
+  });
+}
+
+/** The native ids among `ids` that exist in the project (decided or not). */
+async function existingReviewItemIds(ids: string[], projectId: string): Promise<Set<string>> {
+  const valid = ids.filter((id) => isUuid(id));
+  if (valid.length === 0) return new Set();
+  const rows = await db
+    .select({ id: reviewItems.reviewItemId })
+    .from(reviewItems)
+    .where(and(eq(reviewItems.projectId, projectId), inArray(reviewItems.reviewItemId, valid)));
+  return new Set(rows.map((row) => row.id));
 }
 
 export const BULK_MAX_IDS = 50;
@@ -778,13 +793,19 @@ export async function bulkActReview(
     ? await bulkApplyVerdict(nativeIds, projectId, { verdict: opts.verdict, actingUserId: opts.caller.callerUserId })
     : [];
   const updated = new Set(rows.map((row) => row.reviewItemId));
+  const missed = nativeIds.filter((id) => !updated.has(id));
+  const decided = missed.length ? await existingReviewItemIds(missed, projectId) : new Set<string>();
   const decision: ApprovalDecision | null =
     opts.verdict === 'approve' ? 'approve' : opts.verdict === 'reject' ? 'deny' : null;
   const results: BulkResult[] = [];
   for (const id of ids) {
     const source = adapterSourceForId(id);
     if (source === null) {
-      results.push(updated.has(id) ? { id, ok: true } : { id, ok: false, code: 'not_found' });
+      results.push(
+        updated.has(id)
+          ? { id, ok: true }
+          : { id, ok: false, code: decided.has(id) ? 'already_resolved' : 'not_found' },
+      );
       continue;
     }
     if (source === 'cr' || !decision) {

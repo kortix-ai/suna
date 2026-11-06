@@ -13,6 +13,7 @@
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { configuredTimeoutMs } from './with-timeout';
+import { awaitPlatinumWriteSlot } from './platinum-write-lane';
 
 export function isPlatinumConfigured(): boolean {
   return !!config.PLATINUM_API_KEY;
@@ -275,9 +276,11 @@ export async function platinumFetch(path: string, init: RequestInit = {}, origin
   // server-side wait_timeout_ms long-poll) and a message claiming "20000ms"
   // there would under-report the real elapsed time and mislead debugging of
   // exactly the incident class this bound exists to make observable.
+  const method = (init.method ?? 'GET').toUpperCase();
+  // A write from a worker sweep waits its turn in the background lane, before its timeout starts.
+  await awaitPlatinumWriteSlot(method);
   const usingDefault = init.signal === undefined;
   const signal = init.signal ?? AbortSignal.timeout(DEFAULT_CALL_TIMEOUT_MS);
-  const method = (init.method ?? 'GET').toUpperCase();
   const send = (base: string) =>
     fetch(`${base}${path}`, {
       ...init,
@@ -357,6 +360,17 @@ export class PlatinumHttpError extends Error {
       // not JSON: no code
     }
   }
+}
+
+/**
+ * The wait Platinum asked for when it refused a call with 429 (its org write budget,
+ * `rate_limited`): the `retry-after=<seconds>` the request helper appends, capped at
+ * `maxMs`, or `fallbackMs` without one. Null when `err` is not a 429.
+ */
+export function platinumRateLimitWaitMs(err: unknown, { fallbackMs = 1_000, maxMs = 5_000 } = {}): number | null {
+  if (Number((err as { status?: unknown } | null)?.status) !== 429) return null;
+  const seconds = /retry-after=(\d+)/.exec(err instanceof Error ? err.message : '')?.[1];
+  return seconds === undefined ? fallbackMs : Math.min(Number(seconds) * 1_000, maxMs);
 }
 
 /** A timed-out exec may already have run. Never replay it automatically. */

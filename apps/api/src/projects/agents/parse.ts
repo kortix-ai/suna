@@ -4,6 +4,7 @@ import { PROJECT_ACTIONS, VALID_ACTIONS } from '../../iam/actions';
 import type { GitBackedProject, MirrorRefresh } from '../git';
 import {
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
+  RETIRED_KORTIX_PERMISSIONS,
   isManifestSyntaxError,
   resolveGrantSet,
   SLUG_RE,
@@ -297,6 +298,8 @@ function validateKortixAction(action: string): string | null {
   // EMPTY grant (see grantFromLoadedAgents), which strips every capability it
   // holds over one outdated string.
   if (action in DEPRECATED_KORTIX_PERMISSION_ALIASES) return null;
+  // A RETIRED action (its feature is gone) grants nothing; accepted for the same reason.
+  if (RETIRED_KORTIX_PERMISSIONS.includes(action)) return null;
   if (VALID_ACTIONS.has(action)) {
     return `\`kortix_permissions\` action "${action}" is account-scoped and can never be granted to an agent — only project-scoped actions are allowed`;
   }

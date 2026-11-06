@@ -962,3 +962,135 @@ flow(
     });
   },
 );
+
+/**
+ * BILL-22 — credit codes. Staff create a code worth $100; an owner redeems it
+ * once for the account and the wallet's non-expiring bucket grows by exactly
+ * that; every refusal names its reason. The code is unique per run, so a
+ * re-run never meets a code an earlier run redeemed.
+ */
+flow(
+  'BILL-22',
+  {
+    domain: 'billing',
+    serial: true,
+    routes: [
+      'GET /v1/admin/api/credit-codes',
+      'POST /v1/admin/api/credit-codes',
+      'PATCH /v1/admin/api/credit-codes/:id',
+      'POST /v1/billing/redeem-code',
+    ],
+  },
+  async (ctx) => {
+    const code = `KE2E${randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`;
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const nonMember = ctx.client.as(ctx.P.NONMEMBER);
+
+    await ctx.step('ANON and a non-admin cannot create a code (401, 403)', async () => {
+      (await ctx.client.as(ctx.P.ANON).post('/v1/admin/api/credit-codes', { code, amount_usd: 100 })).status(401);
+      (await owner.post('/v1/admin/api/credit-codes', { code, amount_usd: 100 })).status(403);
+    });
+
+    await ctx.step('ANON cannot redeem (401); an unknown code → 404 credit_code_invalid', async () => {
+      (await ctx.client.as(ctx.P.ANON).post('/v1/billing/redeem-code', { code })).status(401);
+      (await owner.post('/v1/billing/redeem-code', { code, account_id: ctx.P.OWNER.accountId }))
+        .status(404)
+        .body()
+        .has('$.code', 'credit_code_invalid');
+    });
+
+    if (!ctx.env.capabilities.admin) return;
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, 'ADMIN_TOKEN');
+
+    let codeId = '';
+    await ctx.step('admin creates the code, lower case in, upper case stored → 201', async () => {
+      const r = await admin.post('/v1/admin/api/credit-codes', {
+        code: code.toLowerCase(),
+        amount_usd: 100,
+        max_redemptions: 1,
+        description: 'ke2e BILL-22',
+      });
+      const body = r.status(201).json<{ code: { code_id: string } }>();
+      r.body()
+        .has('$.code.code', code)
+        .has('$.code.amount_usd', 100)
+        .has('$.code.max_redemptions', 1)
+        .has('$.code.redemption_count', 0)
+        .has('$.code.active', true);
+      codeId = body.code.code_id;
+    });
+
+    await ctx.step('the same code again → 409 credit_code_exists; a bad shape → 400', async () => {
+      (await admin.post('/v1/admin/api/credit-codes', { code, amount_usd: 5 })).status(409).body().has('$.code', 'credit_code_exists');
+      (await admin.post('/v1/admin/api/credit-codes', { code: 'no spaces', amount_usd: 5 })).status(400);
+    });
+
+    let before = 0;
+    await ctx.step('read the OWNER non-expiring balance before redeeming', async () => {
+      const r = await owner.get(`/v1/billing/credit-breakdown?account_id=${ctx.P.OWNER.accountId}`);
+      before = r.status(200).json<{ non_expiring: number }>().non_expiring;
+    });
+
+    await ctx.step('OWNER redeems the code (case-insensitive, padded) → 200 amount_usd 100', async () => {
+      const r = await owner.post('/v1/billing/redeem-code', { code: `  ${code.toLowerCase()} `, account_id: ctx.P.OWNER.accountId });
+      r.status(200).body().has('$.code', code).has('$.amount_usd', 100).exists('$.balance');
+    });
+
+    await ctx.step('the non-expiring bucket grew by exactly 100, as one promotional ledger row', async () => {
+      const r = await owner.get(`/v1/billing/credit-breakdown?account_id=${ctx.P.OWNER.accountId}`);
+      const after = r.status(200).json<{ non_expiring: number }>().non_expiring;
+      if (Math.abs(after - before - 100) > 1e-6) throw new Error(`non_expiring moved ${after - before}, want 100`);
+      const t = await owner.get(`/v1/billing/transactions?account_id=${ctx.P.OWNER.accountId}&type_filter=promotional&limit=50`);
+      const rows = t.status(200).json<{ transactions: Array<{ amount: number; description: string | null }> }>().transactions;
+      const mine = rows.filter((row) => row.description === `Credit code ${code}`);
+      if (mine.length !== 1 || mine[0]!.amount !== 100) throw new Error(`want one 100 row, got ${JSON.stringify(mine)}`);
+    });
+
+    await ctx.step('a second redemption by the same account → 409 credit_code_already_redeemed, no credit', async () => {
+      (await owner.post('/v1/billing/redeem-code', { code, account_id: ctx.P.OWNER.accountId }))
+        .status(409)
+        .body()
+        .has('$.code', 'credit_code_already_redeemed');
+      const r = await owner.get(`/v1/billing/credit-breakdown?account_id=${ctx.P.OWNER.accountId}`);
+      const after = r.status(200).json<{ non_expiring: number }>().non_expiring;
+      if (Math.abs(after - before - 100) > 1e-6) throw new Error(`second redemption moved the balance to ${after}`);
+    });
+
+    await ctx.step('another account (the NONMEMBER primary account, no account_id) after the one redemption → 409 credit_code_exhausted', async () => {
+      (await nonMember.post('/v1/billing/redeem-code', { code }))
+        .status(409)
+        .body()
+        .has('$.code', 'credit_code_exhausted');
+    });
+
+    await ctx.step('the admin list shows redemption_count 1', async () => {
+      const r = await admin.get('/v1/admin/api/credit-codes');
+      const row = r.status(200).json<{ codes: Array<{ code: string; redemption_count: number }> }>().codes.find((c) => c.code === code);
+      if (row?.redemption_count !== 1) throw new Error(`redemption_count ${row?.redemption_count}, want 1`);
+    });
+
+    await ctx.step('an expired code → 410; a switched-off code → 404', async () => {
+      const expired = `${code}X`;
+      (await admin.post('/v1/admin/api/credit-codes', { code: expired, amount_usd: 1, expires_at: '2020-01-01T00:00:00Z' })).status(201);
+      (await nonMember.post('/v1/billing/redeem-code', { code: expired }))
+        .status(410)
+        .body()
+        .has('$.code', 'credit_code_expired');
+
+      const off = `${code}Y`;
+      const created = (await admin.post('/v1/admin/api/credit-codes', { code: off, amount_usd: 1 })).status(201).json<{ code: { code_id: string } }>();
+      (await admin.patch('/v1/admin/api/credit-codes/:id', { active: false }, { params: { id: created.code.code_id } }))
+        .status(200)
+        .body()
+        .has('$.code.active', false);
+      (await nonMember.post('/v1/billing/redeem-code', { code: off }))
+        .status(404)
+        .body()
+        .has('$.code', 'credit_code_invalid');
+    });
+
+    await ctx.step('cleanup: switch the run code off', async () => {
+      (await admin.patch('/v1/admin/api/credit-codes/:id', { active: false }, { params: { id: codeId } })).status(200);
+    });
+  },
+);

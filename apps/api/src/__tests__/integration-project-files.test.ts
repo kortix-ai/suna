@@ -124,7 +124,7 @@ describe('folder access in a project’s Files', () => {
     expect(folderAccess(`${anaFolder}/notes.md`, grants, agent)).toBe('none');
     expect(folderAccess(`${anaFolder}/Shared/plan.md`, grants, agent)).toBe('none');
 
-    // shared_drives off (the default): the agent's grants mount nowhere.
+    // shared_drives off: the agent's grants mount nowhere.
     await setSharedDrives(false);
     const off = await planSessionDrives({ accountId: ACCOUNT, projectId: PROJECT, sessionId: ANA_SESSION, bootingUserId: ANA, agentName: 'researcher', slots: 6 });
     expect(off.mounts.map((m) => [m.path, m.mountPath, m.readOnly])).toEqual([[anaFolder, '/drives/me', false]]);

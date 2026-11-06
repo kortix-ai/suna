@@ -39,7 +39,8 @@ export async function resolvePreviewWsUpstream(opts: {
   | { ok: true; url: string; headers: Record<string, string>; accessCheck: () => Promise<boolean> }
   | { ok: false; status: number; message: string }
 > {
-  const { sandboxId, userId, queryString } = opts;
+  const { userId, queryString } = opts;
+  let sandboxId = opts.sandboxId;
   // Same single spelling as the HTTP forwarder (`../proxy-path.ts`).
   const remainingPath = canonicalProxyPath(opts.remainingPath, carriesSessionData(opts.upstreamPort));
   if (remainingPath === null) return { ok: false, status: 400, message: 'invalid request path' };
@@ -48,6 +49,7 @@ export async function resolvePreviewWsUpstream(opts: {
 
   let record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
+  sandboxId = record.externalId;
 
   const ingressRequest = {
     port: opts.upstreamPort,

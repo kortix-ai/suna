@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { runFromChildren, WorkflowTool } from './workflow-tool';
+import { WorkflowRunRows } from './workflow-run-card';
 import { SessionIdsProvider } from '../../../providers/session-ids';
 
 // Synthetic values only: every title, id and session id below is invented.
@@ -83,24 +84,30 @@ describe('WorkflowTool registration', () => {
 });
 
 describe('WorkflowTool — running', () => {
-  test('a live run shows its title, progress, phases and one row per agent, open', () => {
+  test('a live run shows its title, progress and one closed row per phase', () => {
     const html = render(<WorkflowTool call={call({ status: 'running', metadata: run() })} />, { running: true });
     const text = textOf(html);
     expect(text).toContain('Weekly competitor review');
-    expect(text).toContain('1 of 3 done');
-    expect(text).toContain('Research');
-    expect(text).toContain('Write');
-    expect(text).toContain('Research pricing');
-    expect(text).toContain('researcher');
-    expect(text).toContain('Found 4 price changes');
-    expect(text).toContain('Draft the summary');
-    expect(text).toContain('writer');
-    // A running run opens itself: its rows are the thing to watch.
-    expect(html).toContain('aria-expanded="true"');
-    // An agent with a session opens it; one still starting has nothing to open yet.
-    expect(html).toContain('aria-label="Open Research pricing"');
-    expect(html).toContain('aria-label="Open Research features"');
-    expect(html).not.toContain('aria-label="Open Draft the summary"');
+    // The second line names the phase at work; the ring says the whole run.
+    expect(text).toContain('Write 0 of 1 done');
+    // Each phase is one row with its progress; its agents wait behind it, so the card stays short.
+    expect(text).toContain('Research1 of 2 done');
+    expect(html.match(/data-workflow-phase=/g)).toHaveLength(2);
+    expect(html.match(/aria-expanded="false"/g)).toHaveLength(2);
+    expect(text).not.toContain('Research pricing');
+    expect(text).not.toContain('Found 4 price changes');
+  });
+
+  test('the card leads with a progress ring of done and failed agents; before agents, the workflow glyph', () => {
+    const html = render(<WorkflowTool call={call({ status: 'running', metadata: run() })} />, { running: true });
+    expect(html).toContain('data-tone="run-progress"');
+    expect(html).toContain('data-done="1"');
+    expect(html).toContain('data-failed="0"');
+    expect(html).toContain('data-total="3"');
+    // Each phase leads with its own ring of its agents.
+    expect(html).toContain('data-total="2"');
+    const empty = render(<WorkflowTool call={call({ status: 'running', metadata: run({ agents: [] }) })} />, { running: true });
+    expect(empty.split('</header>')[0]).not.toContain('data-tone="run-progress"');
   });
 
   test('before the first update it says the workflow is starting', () => {
@@ -110,12 +117,12 @@ describe('WorkflowTool — running', () => {
 
   test('a call that returned while the run goes on says it runs in the background', () => {
     const html = render(<WorkflowTool call={call({ status: 'completed', output: 'Started run-1', metadata: run() })} />);
-    expect(textOf(html)).toContain('Running in the background · 1 of 3 done');
+    expect(textOf(html)).toContain('Running in the background · Write 0 of 1 done');
   });
 });
 
 describe('WorkflowTool — settled', () => {
-  test('a finished run counts its agents and stays closed', () => {
+  test('a finished run counts its agents and keeps its rows in view', () => {
     const finished = run({
       status: 'done',
       endedAt: 1_790_000_060_000,
@@ -126,7 +133,8 @@ describe('WorkflowTool — settled', () => {
     const text = textOf(html);
     expect(text).toContain('Weekly competitor review');
     expect(text).toContain('3 agents');
-    expect(html).toContain('aria-expanded="false"');
+    expect(text).toContain('Research2 of 2 done');
+    expect(text).not.toContain('Research pricing');
   });
 
   test('a failed run leads with its error and marks the failed agent', () => {
@@ -140,18 +148,22 @@ describe('WorkflowTool — settled', () => {
     });
     const html = render(<WorkflowTool call={call({ status: 'completed', output: '', metadata: failed })} defaultOpen />);
     const text = textOf(html);
-    expect(text).toContain('Research features failed: the model refused');
-    expect(text).toContain('The model refused');
-    expect(text).toContain('Failed');
+    // One sentence; the raw error folds behind Details, never shown as the message.
+    expect(text).toContain('The workflow stopped before it finished.');
+    expect(text).not.toContain('Research features failed: the model refused');
+    expect(html).toContain('aria-expanded="false"');
+    // The phase row counts the failure; the agent's reason waits behind it.
+    expect(text).toContain('Didn’t finish');
+    expect(text).toContain('1 failed');
   });
 
   test('sixteen agents are sixteen dense rows in one list, never a card each', () => {
     const agents = Array.from({ length: 16 }, (_, i) => ({ id: `a${i + 1}`, label: `Check market ${i + 1}`, agent: 'researcher', status: i < 10 ? 'done' : 'running', sessionId: `ses_m${i + 1}` }));
     const html = render(<WorkflowTool call={call({ status: 'running', metadata: run({ phases: [], agents }) })} />, { running: true });
     expect(textOf(html)).toContain('10 of 16 done');
-    expect(html.match(/aria-label="Open Check market \d+"/g)).toHaveLength(16);
-    // One scroll container holds every row.
-    expect(html.match(/data-scrollable/g)).toHaveLength(1);
+    expect(html.match(/aria-label="Open Check market \d+,/g)).toHaveLength(16);
+    // One card holds every row.
+    expect(html.match(/data-testid="workflow-card"/g)).toHaveLength(1);
   });
 
   test('a call that threw keeps its agent rows instead of the generic error row', () => {
@@ -159,7 +171,7 @@ describe('WorkflowTool — settled', () => {
     const text = textOf(html);
     expect(text).toContain('Weekly competitor review');
     expect(text).toContain('Stopped');
-    expect(html).toContain('aria-label="Open Research pricing"');
+    expect(html).toContain('data-workflow-phase="Research"');
   });
 });
 
@@ -180,19 +192,13 @@ describe('WorkflowTool — header', () => {
   test('a live run counts its failures beside its progress', () => {
     const live = run({ agents: [...run().agents, { id: 'a4', label: 'Check reviews', status: 'failed', summary: 'Rate limited' }] });
     const text = textOf(render(<WorkflowTool call={call({ status: 'running', metadata: live })} />, { running: true }));
-    expect(text).toContain('1 of 4 done · 1 failed');
+    expect(text).toContain('Write 0 of 1 done · 1 failed');
   });
 
   test('a saved workflow without a title is named by its saved name', () => {
     const text = textOf(render(<WorkflowTool call={call({ status: 'running', metadata: run({ title: '', name: 'audit-routes' }) })} />, { running: true }));
     expect(text).toContain('audit-routes');
     expect(text).not.toContain('Saved workflow');
-  });
-
-  test('a saved workflow with its own title names the saved workflow in the body, with the approved agent cap', () => {
-    const text = textOf(render(<WorkflowTool call={call({ status: 'running', metadata: run({ name: 'audit-routes', maxAgents: 12 }) })} />, { running: true }));
-    expect(text).toContain('Weekly competitor review');
-    expect(text).toContain('Saved workflow audit-routes · Up to 12 agents');
   });
 
   test('a large run carries the "Large workflow" warning chip; a relaunch carries "Resumed"', () => {
@@ -210,14 +216,17 @@ describe('WorkflowTool — header', () => {
 describe('WorkflowTool — background run', () => {
   const background = run({ agents: [], phases: [], background: { sessionId: 'ses_runner' } });
 
-  test('a background run is one row that says it runs in the background and opens the run', () => {
+  test('a background run is one card line: its title and Open run, nothing about where it runs', () => {
     const html = render(<WorkflowTool call={call({ status: 'completed', output: 'Started in the background', metadata: background })} />);
     const text = textOf(html);
     expect(text).toContain('Weekly competitor review');
-    expect(text).toContain('Running in the background');
+    expect(text).not.toContain('Running in the background');
+    expect(text).not.toContain('In its own session');
     expect(html).toContain('aria-label="Open the run&#x27;s session"');
     expect(text).toContain('Open run');
-    // No disclosure: the row itself leads to the run's session.
+    // No disclosure: one bordered card that leads to the run's session.
+    expect(html).toContain('data-testid="workflow-run-link"');
+    expect(html).toContain('rounded-lg border');
     expect(html).not.toContain('aria-expanded');
     expect(html).not.toContain('aria-label="Open Research');
   });
@@ -236,15 +245,13 @@ describe('WorkflowTool — background run read live from its runner', () => {
   test("after the parent's turn ended, the card shows the runner's live progress and keeps it open", () => {
     const html = render(<WorkflowTool call={settledCall} />, { projectId: 'proj_1', sessionId: 'ses_lead', client: runnerHolds(run()) });
     const text = textOf(html);
-    expect(text).toContain('Running in the background · 1 of 3 done');
-    expect(text).toContain('Research pricing');
-    expect(text).toContain('Draft the summary');
-    // Not folded: the run is still the thing to watch.
-    expect(html).toContain('aria-expanded="true"');
-    // The controls go to the runner: pause, stop, and a restart on a running agent row.
+    expect(text).toContain('Running in the background · Write 0 of 1 done');
+    expect(text).toContain('Research1 of 2 done');
+    // Its phases are closed rows: the card stays short while the run works on.
+    expect(html.match(/aria-expanded="false"/g)).toHaveLength(2);
+    // The controls go to the runner: Pause and Stop as words; a running agent keeps its own Restart and Stop.
     expect(html).toContain('aria-label="Pause the run"');
     expect(html).toContain('aria-label="Stop the run"');
-    expect(html).toContain('aria-label="Restart Research features"');
     expect(html).toContain('aria-label="Open the run&#x27;s session"');
   });
 
@@ -253,7 +260,7 @@ describe('WorkflowTool — background run read live from its runner', () => {
       agents: run().agents.map((agent) => ({ ...agent, status: 'done', sessionId: agent.sessionId ?? 'ses_a3' })),
     });
     const text = textOf(render(<WorkflowTool call={settledCall} />, { projectId: 'proj_1', sessionId: 'ses_lead', client: runnerHolds(later) }));
-    expect(text).toContain('Running in the background · 3 of 3 done');
+    expect(text).toContain('Running in the background · Write 1 of 1 done');
   });
 
   test('a paused run says so and offers Resume', () => {
@@ -262,7 +269,7 @@ describe('WorkflowTool — background run read live from its runner', () => {
       sessionId: 'ses_lead',
       client: runnerHolds(run({ paused: true })),
     });
-    expect(textOf(html)).toContain('Paused · 1 of 3 done');
+    expect(textOf(html)).toContain('Paused · Write 0 of 1 done');
     expect(html).toContain('aria-label="Resume the run"');
   });
 
@@ -271,8 +278,10 @@ describe('WorkflowTool — background run read live from its runner', () => {
     const html = render(<WorkflowTool call={settledCall} />, { projectId: 'proj_1', sessionId: 'ses_lead', client: runnerHolds(done) });
     expect(textOf(html)).toContain('3 agents');
     expect(html).not.toContain('aria-label="Pause the run"');
-    // A finished run folds away, as every finished run card does.
-    expect(html).toContain('aria-expanded="false"');
+    // Ended, the card says how it ended and keeps its phase rows.
+    expect(textOf(html)).toContain('Done · 3 agents');
+    expect(textOf(html)).toContain('Research2 of 2 done');
+    expect(html).toContain('aria-label="Open the run&#x27;s session"');
   });
 
   test('more than 25 agents carry the Large workflow chip', () => {
@@ -295,107 +304,38 @@ describe('WorkflowTool — phases', () => {
     ],
   });
 
-  test('each phase is a group with its agent count, its agents under it, and a pending phase listed greyed', () => {
+  test('phases are rows in order, with no rules between them; a phase not started has no caret and says what it waits for', () => {
     const html = render(<WorkflowTool call={call({ status: 'running', metadata: phased })} />, { running: true });
     const text = textOf(html);
-    expect(text).toContain('Research2 agents');
+    expect(text).toContain('Research2 of 2 done');
     expect(text).toContain('Write0 of 1 done');
-    expect(text).toContain('ReviewNot started');
-    // Agents sit under their phase, in phase order.
     const at = (needle: string) => text.indexOf(needle);
-    expect(at('Research pricing')).toBeLessThan(at('Write0 of 1 done'));
-    expect(at('Write0 of 1 done')).toBeLessThan(at('Draft the summary'));
-    expect(at('Draft the summary')).toBeLessThan(at('ReviewNot started'));
-    // A phase with agents folds; a pending phase has nothing to fold.
-    expect(html.match(/aria-expanded="true"/g)?.length).toBe(3); // the card + Research + Write
+    expect(at('Research2 of 2')).toBeLessThan(at('Write0 of 1'));
+    expect(at('Write0 of 1')).toBeLessThan(at('Review'));
+    expect(text).not.toContain('Starts after');
+    expect(text).toContain('Waits for 1 more');
+    expect(html).not.toContain('border-dashed');
+    // Two phases with agents open; the one not started is a plain row.
+    expect(html.match(/aria-expanded="false"/g)).toHaveLength(2);
   });
 });
 
 describe('WorkflowTool — agent rows', () => {
-  test('a row shows its agent, model, retry count, reuse from the last run and elapsed time', () => {
-    const rows = run({
-      phases: [],
-      agents: [
-        { id: 'a1', label: 'Research pricing', agent: 'researcher', model: 'kortix/claude-sonnet-4.6', status: 'running', sessionId: 'ses_a1', attempt: 2, startedAt: T0 },
-        { id: 'a2', label: 'Research features', status: 'done', cached: true, summary: 'Found 2 features', startedAt: T0, endedAt: T0 + 64_000 },
-      ],
-    });
-    const html = render(<WorkflowTool call={call({ status: 'running', metadata: rows })} />, { running: true });
-    const text = textOf(html);
-    expect(text).toContain('researcher · claude-sonnet-4.6 · retry 1');
-    expect(text).toContain('from last run');
-    expect(text).toContain('1m 04s');
-    // The reused agent ran no session: nothing to open.
-    expect(html).toContain('aria-label="Open Research pricing"');
-    expect(html).not.toContain('aria-label="Open Research features"');
-  });
-
-  test('a running row in a project has a Stop button; a finished row keeps an empty slot', () => {
-    const html = render(<WorkflowTool call={call({ status: 'running', metadata: run() })} />, { running: true, projectId: 'proj_1' });
-    expect(html).toContain('aria-label="Stop Research features"');
-    expect(html).not.toContain('aria-label="Stop Research pricing"');
-    // A starting agent has no session to stop yet.
-    expect(html).not.toContain('aria-label="Stop Draft the summary"');
-  });
-
   test('no Stop without a project to stop it in, and none once the call settled', () => {
     expect(render(<WorkflowTool call={call({ status: 'running', metadata: run() })} />, { running: true })).not.toContain('aria-label="Stop');
     const done = run({ status: 'done', agents: run().agents.map((a) => ({ ...a, status: 'done' })) });
     expect(render(<WorkflowTool call={call({ status: 'completed', output: '', metadata: done })} />, { projectId: 'proj_1' })).not.toContain('aria-label="Stop');
   });
 
-  test('a structured answer reads as JSON and its key count, folded', () => {
-    const rows = run({
-      phases: [],
-      agents: [
-        { id: 'a1', label: 'List files', status: 'done', sessionId: 'ses_a1', structured: true, summary: '{"files":["a.ts","b.ts"],"total":2,"truncated":false}' },
-        { id: 'a2', label: 'Count tags', status: 'done', sessionId: 'ses_a2', structured: true, summary: '["x","y"]' },
-        { id: 'a3', label: 'Cut answer', status: 'done', sessionId: 'ses_a3', structured: true, summary: '{"files":["a.ts",' },
-      ],
-    });
-    const html = render(<WorkflowTool call={call({ status: 'running', metadata: rows })} />, { running: true });
-    const text = textOf(html);
-    expect(text).toContain('JSON · 3 keys');
-    expect(text).toContain('JSON · 2 items');
-    expect(text).toContain('JSON');
-    expect(text).not.toContain('"truncated"');
-    expect(html.match(/aria-expanded="false"/g)?.length).toBe(3);
-  });
-
-  test('more than 8 agents get the status filter, with a count per status', () => {
-    const agents = Array.from({ length: 10 }, (_, i) => ({
-      id: `a${i + 1}`,
-      label: `Check market ${i + 1}`,
-      status: i < 6 ? 'done' : i < 9 ? 'running' : 'failed',
-      sessionId: `ses_m${i + 1}`,
-    }));
-    const html = render(<WorkflowTool call={call({ status: 'running', metadata: run({ phases: [], agents }) })} />, { running: true });
-    expect(html).toContain('role="tablist"');
-    expect(html).toContain('aria-label="Show agents"');
-    const text = textOf(html);
-    expect(text).toContain('All10');
-    expect(text).toContain('Running3');
-    expect(text).toContain('Failed1');
-    expect(text).toContain('Done6');
-    expect(textOf(render(<WorkflowTool call={call({ status: 'running', metadata: run() })} />, { running: true }))).not.toContain('All3');
-  });
-
   test('a phase of more than 25 agents shows 20 rows and a "Show all" button', () => {
     const agents = Array.from({ length: 30 }, (_, i) => ({ id: `a${i + 1}`, label: `Check file ${i + 1}`, status: 'done', sessionId: `ses_f${i + 1}` }));
     const html = render(<WorkflowTool call={call({ status: 'running', metadata: run({ phases: [], agents }) })} />, { running: true });
-    expect(html.match(/aria-label="Open Check file \d+"/g)).toHaveLength(20);
+    expect(html.match(/aria-label="Open Check file \d+,/g)).toHaveLength(20);
     expect(textOf(html)).toContain('Show all 30');
   });
 });
 
 describe('WorkflowTool — logs and result', () => {
-  test('the newest log lines sit above the phases', () => {
-    const html = render(<WorkflowTool call={call({ status: 'running', metadata: run({ logs: ['Found 12 files', 'Reviewing in 3 batches'] }) })} />, { running: true });
-    const text = textOf(html);
-    expect(html).toContain('aria-label="Workflow log"');
-    expect(text.indexOf('Reviewing in 3 batches')).toBeLessThan(text.indexOf('Research pricing'));
-  });
-
   test('a finished run folds its result away under "Result", without the raw tags', () => {
     const finished = run({ status: 'done', endedAt: T0 + 60_000, agents: run().agents.map((a) => ({ ...a, status: 'done' })) });
     const output = '<workflow_result>\n## Summary\nThree competitors cut prices.\n</workflow_result>\nagents: 3 (3 done)';
@@ -411,7 +351,8 @@ describe('WorkflowTool — logs and result', () => {
     const failed = run({ status: 'failed', error: 'Write failed: every writer timed out' });
     const output = '<workflow_error>\nWrite failed: every writer timed out\n</workflow_error>\nagents: 3 (1 done, 2 failed)';
     const text = textOf(render(<WorkflowTool call={call({ status: 'completed', output, metadata: failed })} defaultOpen />));
-    expect(text).toContain('Write failed: every writer timed out');
+    expect(text.match(/The workflow stopped before it finished\./g)).toHaveLength(1);
+    expect(text).not.toContain('Write failed: every writer timed out');
     expect(text).not.toContain('Show details');
     expect(text).not.toContain('workflow_error');
   });
@@ -458,5 +399,32 @@ describe('runFromChildren (a live run read from the session list)', () => {
 
   test('is null until the first child exists', () => {
     expect(runFromChildren([], Date.now(), {})).toBeNull();
+  });
+});
+
+describe('WorkflowRunRows — an open phase', () => {
+  test('nests its agents on the trunk, and a running agent keeps Restart and Stop beside its row', () => {
+    const stop = { enabled: true, pending: new Set<string>(), stop: () => {}, restart: { run: () => {} } };
+    const html = render(
+      <WorkflowRunRows run={run() as never} live now={1_790_000_100_000} onOpen={() => {}} stop={stop} openPhases={['Research']} />,
+    );
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('rounded-bl-md');
+    expect(html).toContain('aria-label="Open Research pricing,');
+    expect(html).toContain('aria-label="Restart Research features"');
+    expect(html).toContain('aria-label="Stop Research features"');
+    // The phase that stays closed shows none of its agents.
+    expect(textOf(html)).not.toContain('Draft the summary');
+  });
+});
+
+describe('WorkflowRunRows — the phase ring', () => {
+  test('a done phase draws the done check only when every agent finished', () => {
+    const stop = { enabled: false, pending: new Set<string>(), stop: () => {} };
+    const doc = (status: string) =>
+      run({ status: 'done', phases: [{ title: 'Plan', status: 'done' }], agents: [{ id: 'a', label: 'Draft', phase: 'Plan', status, sessionId: 'ses_a' }] });
+    const check = 'data-ended="done"';
+    expect(render(<WorkflowRunRows run={doc('done') as never} live={false} now={0} onOpen={() => {}} stop={stop} />)).toContain(check);
+    expect(render(<WorkflowRunRows run={doc('stopped') as never} live={false} now={0} onOpen={() => {}} stop={stop} />)).not.toContain(check);
   });
 });

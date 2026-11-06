@@ -95,8 +95,8 @@ describe('questionReleaseSentinel', () => {
 });
 
 describe('releaseRuntimeQuestion — the runtime contract', () => {
-  // OpenCode and the pi harness both serve POST /question/:id/reply:
-  // 200 `true` on the first reply, 404 once the question is answered.
+  // The box serves POST /kortix/runtime/questions/:id/reply (`runtime.actions.v1`):
+  // 200 on the first reply, 404 once the question is answered.
   let calls: Array<{ url: string; init: RequestInit }> = [];
   let status = 200;
   let resolved: { endpoint: { url: string; headers: Record<string, string> } } | null = {
@@ -104,7 +104,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
   };
 
   mock.module('../projects/session-lifecycle/runtime-client', () => ({
-    resolveSessionOpencodeEndpoint: async () => resolved,
+    resolveSessionRuntimeEndpoint: async () => resolved,
   }));
 
   const realFetch = globalThis.fetch;
@@ -128,7 +128,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
 
     expect(await releaseRuntimeQuestion('sess-1', 'que_abc', [['a sentinel']])).toBe('released');
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe('http://sandbox.internal/question/que_abc/reply?directory=%2Fworkspace');
+    expect(calls[0].url).toBe('http://sandbox.internal/kortix/runtime/questions/que_abc/reply');
     expect(JSON.parse(String(calls[0].init.body))).toEqual({ answers: [['a sentinel']] });
     const headers = calls[0].init.headers as Record<string, string>;
     expect(headers['X-Sandbox-Token']).toBe('t');
@@ -162,23 +162,7 @@ describe('releaseRuntimeQuestion — the runtime contract', () => {
     const { releaseRuntimeQuestion } = await load();
 
     await releaseRuntimeQuestion('sess-1', 'a/b?c', [['x']]);
-    expect(calls[0].url).toContain('/question/a%2Fb%3Fc/reply');
-  });
-
-  test('a box with the session-log actions is released on the native question route', async () => {
-    resolved = { endpoint: { url: 'http://sandbox.internal', headers: { 'X-Sandbox-Token': 't' } }, externalId: 'ext-actions' } as never;
-    globalThis.fetch = (async (url: string, init: RequestInit) => {
-      if (url.endsWith('/kortix/health')) return Response.json({ capabilities: ['runtime.turns.v1', 'runtime.actions.v1'] });
-      calls.push({ url, init });
-      return Response.json({ ok: true }, { status });
-    }) as unknown as typeof fetch;
-    const { releaseRuntimeQuestion } = await load();
-
-    expect(await releaseRuntimeQuestion('sess-1', 'que_abc', [['a sentinel']])).toBe('released');
-    expect(calls.map((c) => c.url)).toEqual(['http://sandbox.internal/kortix/runtime/questions/que_abc/reply']);
-    expect(JSON.parse(String(calls[0].init.body))).toEqual({ answers: [['a sentinel']] });
-    status = 404;
-    expect(await releaseRuntimeQuestion('sess-1', 'que_abc', [['x']])).toBe('already_answered');
+    expect(calls[0].url).toBe('http://sandbox.internal/kortix/runtime/questions/a%2Fb%3Fc/reply');
   });
 });
 

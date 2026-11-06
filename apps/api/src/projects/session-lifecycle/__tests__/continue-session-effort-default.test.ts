@@ -147,10 +147,16 @@ function awakeSession(extra: Record<string, unknown> = {}) {
     projectId: PROJECT_ID,
     status: 'running',
     metadata: {},
-    opencodeSessionId: OC_SESSION_ID,
+    runtimeSessionId: OC_SESSION_ID,
     ...extra,
   };
-  boxRow = { status: 'active', externalId: EXTERNAL_ID };
+  // An open proved this box at the runtime floor (#11748): only then does a
+  // delivery take the fast path instead of waiting for a full open.
+  boxRow = {
+    status: 'active',
+    externalId: EXTERNAL_ID,
+    metadata: { runtimeFloor: { current: { externalId: EXTERNAL_ID, at: new Date().toISOString() } } },
+  };
 }
 
 const lastVariant = (): unknown => forwardedBodies.at(-1)?.variant;
@@ -179,7 +185,7 @@ describe('continueSession — project default reasoning effort', () => {
   });
 
   test('no project default: the prompt carries no variant (today\u2019s behavior)', async () => {
-    awakeSession({ metadata: { opencode_model: 'kortix/gpt-5.6-sol' } });
+    awakeSession({ metadata: { model: 'kortix/gpt-5.6-sol' } });
     expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
@@ -189,7 +195,7 @@ describe('continueSession — project default reasoning effort', () => {
   test('a configured default rides the prompt when the model publishes it', async () => {
     // `deepseek/deepseek-v4-flash` (bundled catalog) publishes the
     // effort enum including `max`.
-    awakeSession({ projectDefaultEffort: 'max', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
+    awakeSession({ projectDefaultEffort: 'max', metadata: { model: 'deepseek/deepseek-v4-flash' } });
     expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
@@ -197,7 +203,7 @@ describe('continueSession — project default reasoning effort', () => {
   });
 
   test('an explicit session pick wins over the project default', async () => {
-    awakeSession({ projectDefaultEffort: 'max', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
+    awakeSession({ projectDefaultEffort: 'max', metadata: { model: 'deepseek/deepseek-v4-flash' } });
     expect(
       await continueSession({
         sessionId: SESSION_ID,
@@ -212,7 +218,7 @@ describe('continueSession — project default reasoning effort', () => {
   test('a default the session model does not publish is dropped, never sent', async () => {
     // `deepseek/deepseek-v4-flash` publishes low/high/max — `medium` is not on
     // its ladder and must not ride the prompt.
-    awakeSession({ projectDefaultEffort: 'medium', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
+    awakeSession({ projectDefaultEffort: 'medium', metadata: { model: 'deepseek/deepseek-v4-flash' } });
     expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
@@ -220,7 +226,7 @@ describe('continueSession — project default reasoning effort', () => {
   });
 
   test('a stored value no catalog model publishes changes nothing', async () => {
-    awakeSession({ projectDefaultEffort: 'ultra', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
+    awakeSession({ projectDefaultEffort: 'ultra', metadata: { model: 'deepseek/deepseek-v4-flash' } });
     expect(await continueSession({ sessionId: SESSION_ID, text: 'hello', source: 'ui' })).toBe(
       'delivered',
     );
@@ -237,7 +243,7 @@ describe('continueSession — project default reasoning effort', () => {
 
   test('the prompt\u2019s own model override selects the model the clamp checks', async () => {
     // deepseek does not publish `medium`; the prompt's own BYOK model does.
-    awakeSession({ projectDefaultEffort: 'medium', metadata: { opencode_model: 'deepseek/deepseek-v4-flash' } });
+    awakeSession({ projectDefaultEffort: 'medium', metadata: { model: 'deepseek/deepseek-v4-flash' } });
     expect(
       await continueSession({
         sessionId: SESSION_ID,

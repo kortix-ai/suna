@@ -130,7 +130,7 @@ export function GatewayOverview({
       const label = s.name ?? s.custom_name ?? null;
       if (!label) continue;
       m.set(s.session_id, label);
-      const runtimeSessionId = s.runtime_session_id ?? s.opencode_session_id;
+      const runtimeSessionId = s.runtime_session_id;
       if (runtimeSessionId) m.set(runtimeSessionId, label);
     }
     return m;

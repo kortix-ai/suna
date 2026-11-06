@@ -77,23 +77,23 @@ describe('pickedModelMetadata', () => {
       pickedModelMetadata(
         {
           name: 'kept',
-          opencode_model: 'kortix/deepseek-v4.1-flash',
-          opencode_model_source: 'fallback',
-          opencode_model_fallback_from: 'kortix/codex/gpt-6.1-sol',
-          opencode_model_fallback_from_source: 'explicit',
-          opencode_model_fallback_reason: 'provider_pool_rate_limited',
-          opencode_model_fallback_at: 1,
-          opencode_model_fallback_until: 2,
-          opencode_model_restored: true,
+          model: 'kortix/deepseek-v4.1-flash',
+          model_source: 'fallback',
+          model_fallback_from: 'kortix/codex/gpt-6.1-sol',
+          model_fallback_from_source: 'explicit',
+          model_fallback_reason: 'provider_pool_rate_limited',
+          model_fallback_at: 1,
+          model_fallback_until: 2,
+          model_restored: true,
         },
         'kortix/glm-5.3-flash',
         5_000,
       ),
     ).toEqual({
       name: 'kept',
-      opencode_model: 'kortix/glm-5.3-flash',
-      opencode_model_source: 'explicit',
-      opencode_model_picked_at: 5_000,
+      model: 'kortix/glm-5.3-flash',
+      model_source: 'explicit',
+      model_picked_at: 5_000,
     });
   });
 });

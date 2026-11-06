@@ -36,7 +36,7 @@ export const LLM_PROVIDER_CREDENTIALS: Array<{
   authRequirement: providerAuthRequirement(provider),
 }));
 
-// OpenCode must see Kortix as the single LLM provider: the LLM gateway is the
+// The runtime must see Kortix as the single LLM provider: the LLM gateway is the
 // only model path.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 

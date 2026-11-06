@@ -10,6 +10,7 @@ const open = { disabledProviders: [], disabledModels: [] };
 const reach = (names: string[], extra: Partial<ImageReach> = {}) =>
   async () => reachableImageModels({ secretNames: new Set(names), access: open, managedModels: [], ...extra });
 const neverRead = async (): Promise<string[]> => { throw new Error('reachable models read'); };
+const allowAll = async () => open;
 
 async function refusal(plan: Promise<unknown>): Promise<GatewayResolutionError> {
   const error = await plan.then(() => null, (err: unknown) => err);
@@ -78,32 +79,73 @@ describe('image model route plan', () => {
       ['kortix/xai/grok-imagine-image', 'xai/grok-imagine-image'],
       ['codex/gpt-image-2', 'codex/gpt-image-2'],
     ]) {
-      expect(await planImageRoute(requested!, neverRead)).toEqual({
+      expect(await planImageRoute(requested!, neverRead, allowAll)).toEqual({
         policyId: 'image', primaryModel: wire, fallbackModels: [], fallbackOn: 'any-error',
       });
     }
   });
 
+  test('an explicit model the project disabled falls through to the reachable models it allows', async () => {
+    // KRTX-4035: the project's model-access policy must not be planned — a disabled
+    // model would be refused downstream as provider_disabled with no fallback.
+    const access = { disabledProviders: ['openai'], disabledModels: ['google/gemini-3.1-flash-image'] };
+    const names = ['OPENAI_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY', 'XAI_API_KEY'];
+    const plan = async (requested: string) =>
+      planImageRoute(requested, reach(names, { access }), async () => access);
+    // A disabled provider's model and a disabled model.
+    for (const requested of ['openai/gpt-image-1.5', 'google/gemini-3.1-flash-image']) {
+      expect(await plan(requested), requested).toEqual({
+        policyId: 'image', primaryModel: 'google/gemini-2.5-flash-image',
+        fallbackModels: ['xai/grok-imagine-image'], fallbackOn: 'any-error',
+      });
+    }
+  });
+
+  test('an explicit model the project disabled refuses image_model_unavailable when nothing else is reachable', async () => {
+    const access = { disabledProviders: ['openai'], disabledModels: [] };
+    const error = await refusal(planImageRoute('openai/gpt-image-1.5', reach(['OPENAI_API_KEY'], { access }), async () => access));
+    expect(error.code).toBe('image_model_unavailable');
+    expect(error.suggestion).toBe('Connect ChatGPT, or add an OpenAI, Google, xAI or OpenRouter key in project settings.');
+  });
+
+  test('the access policy beats a custom provider that shares a catalog provider id', async () => {
+    // `openai/gpt-image-1.5` generates images, so it is a catalog model first: a custom
+    // provider named `openai` must not smuggle a disabled model past the policy.
+    const access = { disabledProviders: ['openai'], disabledModels: [] };
+    const names = ['GOOGLE_GENERATIVE_AI_API_KEY'];
+    expect(await planImageRoute('openai/gpt-image-1.5', reach(names, { access }), async () => access, async () => ['openai'])).toEqual({
+      policyId: 'image', primaryModel: 'google/gemini-2.5-flash-image', fallbackModels: [], fallbackOn: 'any-error',
+    });
+  });
+
+  test('an explicit model of a custom provider still bypasses the policy the catalog cannot hold', async () => {
+    // A custom provider's model is not in the catalog, so the policy names it only if the project did.
+    const access = { disabledProviders: ['openai'], disabledModels: [] };
+    expect(await planImageRoute('my-vllm/flux-dev', neverRead, async () => access, async () => ['my-vllm'])).toEqual({
+      policyId: 'image', primaryModel: 'my-vllm/flux-dev', fallbackModels: [], fallbackOn: 'any-error',
+    });
+  });
+
   test('an explicit custom-provider model is planned as the image primary', async () => {
     // The project named its own endpoint: its model is tried; resolveUpstream decides the rest.
-    expect(await planImageRoute('my-vllm/flux-dev', neverRead, async () => ['my-vllm'])).toEqual({
+    expect(await planImageRoute('my-vllm/flux-dev', neverRead, allowAll, async () => ['my-vllm'])).toEqual({
       policyId: 'image', primaryModel: 'my-vllm/flux-dev', fallbackModels: [], fallbackOn: 'any-error',
     });
   });
 
   test("a model from another project's custom provider is refused as not_an_image_model", async () => {
-    const error = await refusal(planImageRoute('other-vllm/flux-dev', reach([]), async () => ['my-vllm']));
+    const error = await refusal(planImageRoute('other-vllm/flux-dev', reach([]), allowAll, async () => ['my-vllm']));
     expect(error.code).toBe('not_an_image_model');
     // No custom-provider list at all (a principal without a project): refused too.
-    expect((await refusal(planImageRoute('my-vllm/flux-dev', reach([])))).code).toBe('not_an_image_model');
+    expect((await refusal(planImageRoute('my-vllm/flux-dev', reach([]), allowAll))).code).toBe('not_an_image_model');
   });
 
   test('auto ignores custom providers', async () => {
-    const error = await refusal(planImageRoute('auto', reach(['CUSTOM_MY_VLLM_API_KEY']), async () => ['my-vllm']));
+    const error = await refusal(planImageRoute('auto', reach(['CUSTOM_MY_VLLM_API_KEY']), allowAll, async () => ['my-vllm']));
     expect(error.code).toBe('image_model_unavailable');
     // A catalog provider's text model and a bare managed id are still refused, not taken as custom.
     for (const model of ['openai/gpt-5.5', 'glm-5.3-flash']) {
-      expect((await refusal(planImageRoute(model, reach([]), async () => ['my-vllm']))).code, model).toBe('not_an_image_model');
+      expect((await refusal(planImageRoute(model, reach([]), allowAll, async () => ['my-vllm']))).code, model).toBe('not_an_image_model');
     }
   });
 });

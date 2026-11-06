@@ -2,29 +2,21 @@
 name: kortix-system
 description: "How Kortix works and how to change a Kortix project from a session: land work through a change request, drive Kortix with the in-sandbox `kortix` CLI, keep files where they last, store or request credentials, schedule work, know the computer a session runs on (its own microVM, its desktop, what lasts) and make an installed package last for every session (a sandbox template), know what the session runtime (pi) can and cannot do, and edit or fix `kortix.yaml`. Load when the user asks what Kortix can do or how it works; asks to create or change an agent, skill, tool, command, extension, permission, model, trigger or loop; asks to save, persist, schedule or ship work; asks what machine you run on, to install software for good, or to put something on \"my desktop\"; you just sent, submitted or started something whose result comes later (a reply, an order, a deploy, a change request, a person's answer); or your system prompt lists `kortix.yaml` issues."
 ---
-
 <skill name="kortix-system">
-
 <live-skills>
 ## Skills, served live
-
 Your system prompt lists every skill your agent may load, with its path. Read
 a skill's `SKILL.md` with `read` before you work on its topic. Paths inside a
 skill are relative to its folder.
-
 The Kortix skills (`kortix-*`) come from the deployed platform, not from the
 repository, and update in a running session. Never edit or commit a copy.
 For one your list lacks, or outside a session:
-
 - `kortix system-skills` lists them; `kortix system-skills get <name>` prints
   one `SKILL.md` and its reference paths; `… file <name> <path>` one reference.
-
 A flag-gated skill exists only while its flag is on. Optional skills: `kortix marketplace search <query>` (`kortix-marketplace`).
 </live-skills>
-
 <overview>
 ## The model
-
 - A **project** is a Git repository with `kortix.yaml` at its root. Kortix
   hosts it, or the project connects one on GitHub.
 - A **session** is one unit of agent work: one sandbox and one Git branch,
@@ -38,13 +30,10 @@ A flag-gated skill exists only while its flag is on. Optional skills: `kortix ma
   checkout and cannot push.
 - Asked what Kortix can do: answer as `references/capabilities.md` says.
 </overview>
-
 <machine>
 ## Your computer and where files last
-
 Your session runs on its own microVM: a whole Linux computer, root through
 `sudo`. `/MACHINE.md` lists its tools and explains its desktop.
-
 - `/workspace`: this session's files, kept for the life of the session.
 - `/drives` (Drive): your files and the company's, kept until deleted. Save what the user keeps in `/drives/me` (`kortix-drives`). No `/drives`: Drive is off.
 - Anything else (home, `/tmp`, installed packages) can be gone when the session reopens.
@@ -53,19 +42,15 @@ Your session runs on its own microVM: a whole Linux computer, root through
 - "My desktop": a file goes to `~/Desktop` (their Drive folder); a program goes on
   your screen, which the user watches in the **Desktop** panel, or on their own
   computer. The `kortix-computer` skill decides which (`<which-desktop>`).
-
 Keep big files out of Git: every session downloads the whole repository.
 `kortix validate` warns at 10 MiB per file and at 512 MiB in total; above
 512 MiB compressed, running sessions stop picking up config changes. Put
 media and datasets in object storage; add build output to `.gitignore`.
 </machine>
-
 <change-requests>
 ## Land work through a change request
-
 A commit that stays on your session branch reaches no other session. A
 change request (CR) is the only way to the default branch. Do every step:
-
 1. Sync: `git fetch origin && git rebase origin/main` (`main` or the default
    branch `kortix projects info` names). Resolve conflicts now.
 2. Commit small, working commits. Run `kortix validate` after a `kortix.yaml`
@@ -84,7 +69,6 @@ change request (CR) is the only way to the default branch. Do every step:
 7. Wait. Merge your own CR only when the user asks. The API refuses a
    self-merge (`403 CR_SELF_MERGE_REFUSED`) unless your agent holds
    `project.gitops.merge`.
-
 - Never push to the default branch, even when your grant allows it
   (`project.gitops.ref.any`): the push skips review.
 - "Committed on my branch" is not persisted. Never ask the user to copy files
@@ -94,14 +78,11 @@ change request (CR) is the only way to the default branch. Do every step:
   `503 CR_GOVERNANCE_UNVERIFIED`: nothing merged, retry after `Retry-After`.
   For people: https://kortix.com/docs/developers#change-requests
 </change-requests>
-
 <cli>
 ## The `kortix` CLI in the sandbox
-
 `kortix` is on `$PATH` and signed in: `$KORTIX_TOKEN` is this session's
 project-scoped token, `$KORTIX_API_URL` its API. Use it for Kortix cloud
 state. Use `git` and the file tools for files and commits.
-
 - Read commands take `--json`: parse it, never scrape tables. Diagnostics go
   to stderr. Mutations take flags and never prompt.
 - `kortix <group> --help` lists every subcommand and flag. Read it before
@@ -126,6 +107,7 @@ state. Use `git` and the file tools for files and commits.
 | Agents and models | `kortix agents ls\|default\|config\|scope`, `kortix models ls\|default <model-id>` |
 | Tools, feature flags | `kortix tools ls\|eject <name>`, `kortix projects features [enable <flag>]` |
 | The manifest | `kortix validate [--scopes]`, `kortix schema` |
+| Kortix itself is broken, confusing or missing something | `kortix feedback "<what happened, what you expected>" --kind bug\|friction\|idea`: it reaches the Kortix team with this session's id. File it when it happens, once per problem, then continue with a workaround |
 </cli>
 
 <credentials>
@@ -168,7 +150,7 @@ watch), set up this session's wake-up before you end the turn. Nobody asks.
 | A change request | `kortix triggers add "…" --on cr-merged --cr <id>` |
 | A deploy, a CI run, a job | `kortix triggers add "…" --on webhook --secret-env <NAME>` when it can call a URL, else `kortix loop "…" --every 15m` |
 | A person's answer | `kortix loop "…" --in 4h --every 6h` |
-| A page, vendor or status with no events | A loop; to watch it around the clock, an App that posts App events, then `--on app --app <slug>` |
+| A page, a status or a price that changes on its own ("tell me whenever …") | A watcher App that posts App events, then `kortix triggers add "…" --on app --app <slug>`: no model runs until it changes (`references/scheduling.md` → Watch 24/7). A loop only for a wait that ends within a day |
 | A hand-off, a teammate, a workflow | Nothing: it reports back by itself |
 
 - Write the loop text for the turn that wakes: what you sent, to whom, what
@@ -246,12 +228,12 @@ agents:
     prompt_file: agents/kortix.md         # or prompt: "…"
     permission: { bash: { "git push --force *": ask, "*": allow } }
     workspace: { project_repository: true }
-    tools: all
-    skills: all                           # omitted = none, Kortix skills too
+    tools: "*"                            # "*" is every name; `all` is the same
+    skills: "*"                           # omitted = none, Kortix skills too
     subagents: [researcher]
     commands: [standup]
     extensions: [audit]
-    connectors: all
+    connectors: "*"
     secrets: [ORDERS_API_KEY]
     kortix_permissions: [project.read, project.gitops.push]
   researcher:
@@ -296,5 +278,5 @@ triggers:
 Keys, `imports:`, sandbox templates, triggers: `references/kortix/kortix-yaml.md`.
 Tools: `references/kortix/tools.md`. People: https://kortix.com/docs/developers#kortixyaml-reference
 </manifest>
-
+Model switches, agent-pin permissions and precedence: `references/session-model.md`.
 </skill>

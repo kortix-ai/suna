@@ -256,7 +256,7 @@ describe('PUT scope — secrets-only narrowing envelope', () => {
       connector_bindings_inherit_unbound: true,
       applied_live: true,
       detail:
-        'Dropped secrets are cleared from the running sandbox now; new shells and the OpenCode process no longer see them. ' +
+        'Dropped secrets are cleared from the running sandbox now; new shells and the agent runtime no longer see them. ' +
         'Values the agent already read remain in its context and in shells it already started — rotate them if that matters.',
     });
     expect(pushCalls).toBe(1);
@@ -310,7 +310,7 @@ describe('PUT scope — secrets-only narrowing envelope', () => {
     expect(body.retroactive).toBe(true);
     expect(body.applied_live).toBe(true);
     expect(body.detail).toBe(
-      'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.',
+      'Applied to the running sandbox now — the agent runtime and new shells see the new scope.',
     );
   });
 
@@ -387,21 +387,19 @@ describe('PUT scope — secrets decision refusals', () => {
   test('a body violating the schema is rejected 400 by the OpenAPI body validator', async () => {
     const response = await putScope({ secrets: 42 });
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      success: false,
-      error: {
-        issues: [
-          {
-            code: 'invalid_type',
-            expected: 'array',
-            received: 'number',
-            path: ['secrets'],
-            message: 'Expected array, received number',
-          },
-        ],
-        name: 'ZodError',
+    // This bare OpenAPIHono has no defaultHook, so it answers zod-openapi's raw result: zod 4
+    // serializes a ZodError as its name and a JSON message holding the issues.
+    const body = (await response.json()) as { success: boolean; error: { name: string; message: string } };
+    expect(body.success).toBe(false);
+    expect(body.error.name).toBe('ZodError');
+    expect(JSON.parse(body.error.message)).toEqual([
+      {
+        code: 'invalid_type',
+        expected: 'array',
+        path: ['secrets'],
+        message: 'Invalid input: expected array, received number',
       },
-    });
+    ]);
   });
 });
 

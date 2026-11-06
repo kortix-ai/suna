@@ -30,6 +30,21 @@ mock.module('../projects/session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => undefined,
 }));
 
+// A delivery that ends `pending`: the open ran, the prompt did not land. Each
+// test that needs it sets this; the rest run the real delivery.
+let pendingAfterOpen = false;
+const realDeliver = await import('../projects/session-lifecycle/deliver');
+// Captured before the mock: bun rebinds the namespace's export to the mock.
+const realDeliverAfterWake = realDeliver.deliverAfterWake;
+mock.module('../projects/session-lifecycle/deliver', () => ({
+  ...realDeliver,
+  deliverAfterWake: async (ctx: Parameters<typeof realDeliverAfterWake>[0]) => {
+    if (!pendingAfterOpen) return realDeliverAfterWake(ctx);
+    await openSessionImpl(ctx.sessionId);
+    return 'pending' as const;
+  },
+}));
+
 const { continueSession } = await import('../projects/session-lifecycle/continue-session');
 
 type Row = Record<string, unknown>;
@@ -72,10 +87,9 @@ async function statuses(sessionId: string): Promise<{ session: string; sandbox: 
   return { session: session!.status as string, sandbox: sandbox!.status as string };
 }
 
-function deliver(sessionId: string, opencodeEnv?: Record<string, string | null>) {
+function deliver(sessionId: string) {
   return continueSession({
     source: 'ui',
-    opencodeEnv,
     sessionId,
     projectId: project.project_id,
     text: 'hello',
@@ -107,7 +121,7 @@ describe('the pre-delivery wake', () => {
     let statusDuringOpen = null as string | null;
     openSessionImpl = async (id) => {
       statusDuringOpen = (await statuses(id)).session;
-      return { stage: 'failed', sandbox: null, opencode_session_id: null };
+      return { stage: 'failed', sandbox: null, runtime_session_id: null };
     };
     expect(await deliver(sessionId)).toBe('unreachable');
     // The wake itself still happens: the open ran against a `running` session.
@@ -117,16 +131,19 @@ describe('the pre-delivery wake', () => {
 
   test('a pending delivery puts the session back to stopped', async () => {
     const sessionId = await fixture('stopped');
-    // Since #11144 only explicit env overrides sync before delivery. A ready
-    // runtime without a sandbox cannot sync the override, so no POST occurs.
-    openSessionImpl = async () => ({ stage: 'ready', sandbox: null, opencode_session_id: null });
-    expect(await deliver(sessionId, { WAKE_TEST: 'override' })).toBe('pending');
+    openSessionImpl = async () => ({ stage: 'ready', sandbox: null, runtime_session_id: null });
+    pendingAfterOpen = true;
+    try {
+      expect(await deliver(sessionId)).toBe('pending');
+    } finally {
+      pendingAfterOpen = false;
+    }
     expect((await statuses(sessionId)).session).toBe('stopped');
   });
 
   test('a completed session goes back to completed', async () => {
     const sessionId = await fixture('completed');
-    openSessionImpl = async () => ({ stage: 'failed', sandbox: null, opencode_session_id: null });
+    openSessionImpl = async () => ({ stage: 'failed', sandbox: null, runtime_session_id: null });
     expect(await deliver(sessionId)).toBe('unreachable');
     expect((await statuses(sessionId)).session).toBe('completed');
   });
@@ -135,13 +152,18 @@ describe('the pre-delivery wake', () => {
     const sessionId = await fixture('stopped');
     openSessionImpl = async (id) => {
       // The wake finalized: the sandbox row is active. The delivery still ends
-      // `pending` (no sandbox in the answer), but a runtime now backs the row.
+      // `pending`, but a runtime now backs the row.
       await db.execute(
         sql`update kortix.session_sandboxes set status = 'active' where sandbox_id = ${id}::uuid`,
       );
-      return { stage: 'ready', sandbox: null, opencode_session_id: null };
+      return { stage: 'ready', sandbox: null, runtime_session_id: null };
     };
-    expect(await deliver(sessionId, { WAKE_TEST: 'override' })).toBe('pending');
+    pendingAfterOpen = true;
+    try {
+      expect(await deliver(sessionId)).toBe('pending');
+    } finally {
+      pendingAfterOpen = false;
+    }
     expect(await statuses(sessionId)).toEqual({ session: 'running', sandbox: 'active' });
   });
 
@@ -152,7 +174,7 @@ describe('the pre-delivery wake', () => {
     let opened = false;
     openSessionImpl = async () => {
       opened = true;
-      return { stage: 'ready', sandbox: null, opencode_session_id: null };
+      return { stage: 'ready', sandbox: null, runtime_session_id: null };
     };
     expect(await deliver(sessionId)).toBe('no-session');
     expect(opened).toBe(false);

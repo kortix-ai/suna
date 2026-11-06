@@ -106,6 +106,16 @@
     "access": "Access",
     "actions": "Actions",
     "coolingDown": "Cooling down",
+    "usageFiveHour": "5-hour",
+    "usageWeekly": "Weekly",
+    "usageWeeklyModel": "Weekly · {model}",
+    "usagePercent": "{percent}% used",
+    "usagePercentResets": "{percent}% · resets {time}",
+    "usageLimitReached": "Limit reached",
+    "usageLimitResets": "Limit reached · resets {time}",
+    "usageNotSeen": "Usage appears after the first request",
+    "usageObserved": "Updated {time}",
+    "usageAriaLabel": "{window}: {percent}% used",
     "member": "member",
     "members": "members",
     "actionsFor": "Actions for {label}",
@@ -665,7 +675,7 @@
           "label": "Off",
           "description": "All sounds disabled"
         },
-        "opencode": {
+        "classic": {
           "label": "Default",
           "description": "Default sound pack"
         },
@@ -1108,21 +1118,13 @@
           "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
         },
-        "session_log_restore": {
-          "name": "Session log restore",
-          "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
-        },
-        "agent_rooms": {
-          "name": "Rooms",
-          "description": "Named chat rooms where agent sessions and people post and reply in threads. A session wakes when a message is addressed to it. Adds the Rooms page, `kortix rooms`, and `kortix peers`."
-        },
         "goals": {
           "name": "Goals",
           "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on."
         },
         "workspace_volume": {
-          "name": "Workspace volume",
-          "description": "Keeps each new session's /workspace on its own volume, so a stopped sandbox can be deleted and the next open boots a new one on the same files and conversation. Kortix enables it per project."
+          "name": "Stateless sandboxes",
+          "description": "Every session keeps only /workspace, on its own volume. A sandbox stopped for an hour is deleted, and the next open starts a new one with the same files and conversation. Programs that ran in the old sandbox are not running. Kortix enables it per project."
         },
         "artifacts": {
           "name": "Artifacts",
@@ -1132,9 +1134,9 @@
           "name": "Email channel",
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
         },
-        "project_channels": {
-          "name": "Channels",
-          "description": "Organize work in channels. Each new message in a channel or a direct message with an agent starts a thread. Replaces the session list in the sidebar."
+        "chat": {
+          "name": "Spaces",
+          "description": "Spaces with Kortix, the way Slack works: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and you share spaces with people. Replaces the session list in the sidebar."
         },
         "session_groups": {
           "name": "Session groups",
@@ -1154,21 +1156,33 @@
         },
         "voice_call": {
           "name": "Voice calls",
-          "description": "Call the session's agent from the session page and talk it through. It hears you, answers in a voice, sees a screen you share, and works in the same session, so the conversation stays in the chat."
+          "description": "Call an agent from its page (Customize → Agents) and talk it through. A call is a session of its own on that agent: it hears you, answers in a voice and sees a screen you share, and the conversation is that session's chat."
         },
         "shared_drives": {
           "name": "Shared drives",
           "description": "Drives the whole team can use: an admin makes a Drive and adds agents to it. Every session of those agents mounts it, and everyone who may use one of them can open it. Off, every person has only My files."
+        },
+        "chat_input": {
+          "name": "Spaces-ChatInput",
+          "description": "One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click."
+        },
+        "chat_front": {
+          "name": "Spaces-Router",
+          "description": "With Spaces on, the agent you chat with in a thread is a router: it does quick work itself (an answer, a short text, a look at the thread files) and hands longer work to the Space's agents. It writes back like a person, in short messages. An agent saves its full result as a file in the thread, and the router links that file instead of retyping it. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "With Spaces on, a space can watch itself: turn on Proactive in its details, and an agent reads what happens there (finished threads, questions left open, people who join) and writes in the chat only when it matters: a result worth sharing, a decision you need to make, or something overdue. It can also start a thread that does the work. Optional daily brief at 9:00."
         }
       },
       "channelsSwitch": {
-        "onTitle": "Turn on Channels for {project}?",
-        "onBody": "Everyone in this project gets Channels and Direct messages instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
-        "drive": "Turn on Drive too, so channels get Files.",
+        "onTitle": "Turn on Spaces for {project}?",
+        "onBody": "Everyone in this project gets Spaces instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
+        "drive": "Turn on Drive too, so spaces get Files.",
         "turnOn": "Turn on",
         "cancel": "Cancel",
-        "offTitle": "Turn off Channels?",
-        "offBody": "Channels, memory, files and links stay saved. The session list comes back for everyone.",
+        "offTitle": "Turn off Spaces?",
+        "offBody": "Spaces, memory, files and links stay saved. The session list comes back for everyone.",
         "turnOff": "Turn off"
       },
       "wip": "Work in progress",
@@ -1547,7 +1561,6 @@
     }
   },
   "sidebar": {
-    "rooms": "Rooms",
     "goals": "Goals",
     "artifacts": "Artifacts",
     "referAndEarn": "Refer & Earn",
@@ -1839,7 +1852,7 @@
       "moved": "Session moved",
       "noGroup": "No group",
       "moveFailed": "Could not move the session",
-      "empty": "Sessions you move here will show up here.",
+      "empty": "Drag a session here",
       "groupOptions": "Group options"
     },
     "recentlyDeleted": {
@@ -1854,13 +1867,19 @@
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Search apps",
+    "searchArtifacts": "Search artifacts",
     "appsNoMatches": "No matches",
     "spaces": {
-      "channels": "Channels",
-      "directMessages": "Direct messages",
-      "addChannel": "Add channel",
-      "loadError": "Could not load channels.",
-      "newAgent": "New agent"
+      "channels": "Spaces",
+      "addChannel": "New space",
+      "loadError": "Could not load spaces.",
+      "newAgent": "New agent",
+      "review": "Review",
+      "personal": "Your space",
+      "personalNamed": "{name}'s space",
+      "private": "Private",
+      "noMessages": "No messages yet",
+      "more": "More"
     }
   },
   "dashboard": {
@@ -2105,7 +2124,8 @@
       "noCommandMatch": "No matching command, file, or action",
       "commandsAndActions": "Commands and actions",
       "toUse": "to use",
-      "use": "Use"
+      "use": "Use",
+      "noOneMatches": "No one matches"
     },
     "history": {
       "restoreTitle": "Some earlier content could not be restored",
@@ -2129,7 +2149,23 @@
       "fullTextRetry": "Try again"
     },
     "turn": {
-      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure."
+      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure.",
+      "typing": "{name} is typing…",
+      "showWork": "Show work",
+      "hideWork": "Hide work",
+      "starting": "Starting…",
+      "workingFor": "Working · {time}",
+      "agentWorking": "is working",
+      "agentWorkingFor": "is working · {time}",
+      "stopped": "Stopped",
+      "agentWorkingOn": "is working on {task}",
+      "agentWorkingOnFor": "is working on {task} · {time}",
+      "somethingWrong": "Something went wrong",
+      "notSent": "Not sent",
+      "retry": "Retry",
+      "resume": "Resume",
+      "agentIsWorking": "{agent} is working",
+      "needsYouOn": "Needs you: {header}"
     }
   },
   "agents": {
@@ -2281,6 +2317,38 @@
     "thinkingEffort": "Thinking effort",
     "sessionOverrides": "Session overrides",
     "auto": "Auto",
+    "chatInput": "Chat input",
+    "chatInputAgent": "Agent",
+    "chatInputModel": "Model",
+    "chatInputEffort": "Effort",
+    "chatInputMoreSettings": "More settings",
+    "chatInputOverrideCount": "{count, plural, one {# override} other {# overrides}}",
+    "chatInputResetToAuto": "Reset to auto",
+    "chatInputAgentDescription": "Who answers your next prompt.",
+    "chatInputModelDescription": "The model the agent uses for your next prompt.",
+    "chatInputEffortDescription": "How long the model thinks before it answers.",
+    "chatInputMore": "More",
+    "chatInputChangedCount": "{count} changed",
+    "chatInputAgentDefault": "Agent default",
+    "chatInputLoading": "Loading…",
+    "chatInputSecrets": "Secrets",
+    "chatInputSecretsDescription": "Which secrets reach this session.",
+    "chatInputSecretsAll": "{count, plural, one {The agent’s # secret} other {All # secrets the agent may use}}",
+    "chatInputSecretsEmpty": "No secrets for this agent.",
+    "chatInputSecretsUnavailable": "Secrets cannot be read here.",
+    "chatInputSecretCount": "{count, plural, one {# secret} other {# secrets}}",
+    "chatInputConnectors": "Connectors",
+    "chatInputConnectorsDescription": "Which account each app uses in this session.",
+    "chatInputConnectorsAll": "Every app on its default account",
+    "chatInputConnectorsUnavailable": "Connectors cannot be read here.",
+    "chatInputDefaultAccount": "Default",
+    "chatInputAppCount": "{count, plural, one {# app changed} other {# apps changed}}",
+    "chatInputProviderKeysDescription": "Which provider keys pay for this session’s model calls.",
+    "chatInputProviderKeysAll": "The keys the agent uses today",
+    "chatInputProviderKeysEmpty": "No provider keys to choose from.",
+    "chatInputKeyCount": "{count, plural, one {# key} other {# keys}}",
+    "chatInputMachine": "Machine",
+    "chatInputMachineDescription": "The machine template this session starts on.",
     "sending": "Sending",
     "stop": "Stop",
     "startingSession": "Starting session…",
@@ -2296,7 +2364,8 @@
     "hintNewLine": "Press Shift+Enter for a new line",
     "hintSettings": "Press {modifier}, to open settings",
     "hintCompact": "Ask to compact the session when it gets long",
-    "myKortixRoutes": "Routes each task to the right agent"
+    "myKortixRoutes": "Routes each task to the right agent",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
@@ -2355,6 +2424,27 @@
       "autoTopupOff": "Auto top-up: off",
       "autoTopupOn": "Auto top-up: adds {amount} when the balance drops below {threshold} credits",
       "ledgerBonus": "Top-up bonus"
+    },
+    "redeem": {
+      "toggle": "Redeem a credit code",
+      "codeLabel": "Credit code",
+      "placeholder": "Enter a code",
+      "action": "Redeem code",
+      "redeemed": "Code redeemed",
+      "redeemedDescription": "{credits} credits added to your balance.",
+      "invalid": "This code is not valid. Check the spelling and try again.",
+      "expired": "This code has expired.",
+      "exhausted": "This code has no redemptions left.",
+      "alreadyRedeemed": "This account already redeemed this code.",
+      "noPermission": "Only owners and admins of this account can redeem a code.",
+      "rateLimited": "Too many attempts. Wait a minute and try again.",
+      "failed": "Could not redeem the code. Try again.",
+      "pageTitle": "Redeem a credit code",
+      "pageDescription": "Credits from a code go to your account balance and never expire.",
+      "successTitle": "{credits} credits added",
+      "successDescription": "Your balance is now {balance} credits. Credits from a code never expire.",
+      "openKortix": "Open Kortix",
+      "backToKortix": "Back to Kortix"
     },
     "autoTopup": {
       "bufferError": "Enter {minimum} or more: a top-up must add at least {buffer} credits more than the threshold.",
@@ -2904,7 +2994,8 @@
         "notReceived": "Didn't receive the link?",
         "confirmNotReceived": "Didn't receive the confirmation email?",
         "resendIn": "Resend in {seconds}",
-        "resend": "Resend"
+        "resend": "Resend",
+        "checkSpam": "Not there? Check your spam or junk folder."
       },
       "credentials": {
         "signin": {
@@ -3167,6 +3258,13 @@
       "large": "Large run",
       "largeHint": "This run starts more than 25 agents. You can stop any agent from its row.",
       "openRun": "Open run",
+      "viewingAgent": "Viewing",
+      "startsAfter": "Starts after {phase}",
+      "didntFinish": "Didn’t finish",
+      "retryNow": "Retry",
+      "retryAgent": "Retry {label}",
+      "waitsFor": "Waits for {count} more",
+      "phaseProgress": "{phase} {done} of {total} done",
       "openRunLabel": "Open the run's session",
       "backgroundIdle": "In its own session",
       "savedName": "Saved workflow {name}",
@@ -3194,11 +3292,23 @@
       "stopFailed": "Could not stop {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, one {JSON · # key} other {JSON · # keys}}",
-      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}"
+      "jsonItems": "{count, plural, one {JSON · # item} other {JSON · # items}}",
+      "failedSentence": "The workflow stopped before it finished.",
+      "runningCount": "{count} running"
     },
     "agent": {
       "backgroundWorking": "Working in the background",
-      "backgroundSession": "In its own session"
+      "backgroundSession": "In its own session",
+      "open": "Open",
+      "openAgent": "Open {name}",
+      "state": {
+        "working": "Working",
+        "needs_input": "Needs you",
+        "idle": "Done",
+        "completed": "Done",
+        "failed": "Didn’t finish",
+        "stopped": "Stopped"
+      }
     }
   },
   "agentRunLimit": {
@@ -3315,7 +3425,6 @@
       "automation_recovered": "Recovery alert",
       "capture_device_down": "Capture computer stopped",
       "capture_device_recovered": "Capture computer recording again",
-      "message": "Message",
       "artifact_comment": "Artifact comments"
     },
     "kindDescription": {
@@ -3328,7 +3437,6 @@
       "automation_recovered": "A failing trigger or loop works again.",
       "capture_device_down": "A Kortix Capture computer is not recording. Sent to people who manage Capture.",
       "capture_device_recovered": "A Kortix Capture computer that stopped records again.",
-      "message": "Someone @-mentions you, or replies in a thread you posted in, in a room.",
       "artifact_comment": "Feedback, mentions, and replies on Artifacts you can view."
     },
     "bell": {
@@ -10366,7 +10474,6 @@
       "text02290f388fa8": "Register app",
       "text022bfb219bea": "Vision model, generation defaults",
       "text0230c6b1d833": "ctx",
-      "text023827a097e3": "A Kortix project is a git repo, and that repo is the company. kortix.yaml and the OpenCode config define it; agents, skills and memory are files beside your code. Every change is a commit a person approves.",
       "text024dc204d7ba": "Area",
       "text0262678d1309": "Start the stack. Point the CLI at it.",
       "text0268c03cd74c": "Credits granted",
@@ -10380,7 +10487,6 @@
       "text02a36a6f3ff0": "# Close the month",
       "text02a865a79c8b": "Tools follow the rules below again",
       "text02ade6817ae4": "Approve or deny",
-      "text02bb33646c32": "runtime: opencode",
       "text02be0250a467": "Session revoked",
       "text02c1d7b545ea": "The device authorization code expired",
       "text02c2b41a99e7": "Copy sign-in URL",
@@ -10870,7 +10976,6 @@
       "text11c520bc9f1f": "super-admin",
       "text11d1b3d47709": "sourced",
       "text11d5959da5d3": "Message ID",
-      "text11e51402c1de": "The agent — a stock OpenCode agent file. What it says lives here.",
       "text11e9a34decaa": "The agent can install, run and break anything — only commits survive",
       "text11f9d5398666": "Infra lead, six years",
       "text11fa33eb608c": "Stage 2 — systems design · interviewer kit",
@@ -11101,7 +11206,6 @@
       "text188fba3516ee": "One isolated machine per session",
       "text1898b198a7e6": "Nobody present",
       "text18a4e711991b": "Enriches leads from the CRM, researches each account and drafts tailored outreach.",
-      "text18a59ffd5fa8": "one OpenCode agent per file",
       "text18ab46abb07f": "grep the whole company, diff any change, roll any part of it back",
       "text18c99d7a5ce2": ", not from anything on this page.",
       "text18c9e5d44e37": "lastName",
@@ -11465,7 +11569,6 @@
       "text2350866daa5a": "# How this company works",
       "text235b7345c9a4": "Some invites were created without email delivery — share links manually.",
       "text235c1b41991b": "Kortix vs Glean: search or an agent platform that runs work?",
-      "text235f858bb706": ".opencode/opencode.jsonc",
       "text23605073426a": "codePoint4Body",
       "text2366b8e06afa": "Satya Nadella’s frontier-ecosystem framework reveals the most important strategic idea in AI: every company must build human capital and token capital, and they compound together.",
       "text23686ff6ba91": "Couldn't load the review inbox",
@@ -12219,7 +12322,7 @@
       "text3a3edecfddc2": "Runbooks that execute, and a platform you can review",
       "text3a42e3a0cc79": "Could not delete that token",
       "text3a4ce41428d1": "On a cron, at period end",
-      "text3a58ba23b40a": "OpenCode REST",
+      "text969bd8438500": "Runtime REST",
       "text3a5ae4d7de8e": "Pick people, or type an email to invite someone new — everyone selected gets the same role on this account.",
       "text3a5ecca188c0": "Updated",
       "text3a63271cafc1": "Catalogue unavailable",
@@ -12477,7 +12580,6 @@
       "text41232780dc9c": "when you bind a connector,",
       "text412c9a761b4a": "Your app → SSO → Group Attributes",
       "text412cc9a16edd": "'s source.",
-      "text4132201cc99c": "An OpenCode agent: markdown, plus the tools and plugins beside it",
       "text41528be66c4c": "It stops where you told it to stop",
       "text415dcc179975": "Checkout did not start",
       "text416476d59f76": "Session access updated",
@@ -12695,8 +12797,7 @@
       "text4724f344c1c0": "Scheduled",
       "text472590ae974d": "Provider",
       "text474721fbcdc7": "Ran yearly billing rotation",
-      "text474945c326bd": "A managed cloud for your OpenCode agents. kortix init, kortix ship. Bring the subscription you already pay for; every PR gets a preview you can click through.",
-      "text474d4126bce4": "powered by OpenCode",
+      "text1b17b7fdd191": "A managed cloud for your agents. kortix init, kortix ship. Bring the subscription you already pay for; every PR gets a preview you can click through.",
       "text4755e88f3955": "Your identity provider appends /Users and /Groups to this URL.",
       "text4759498ac2a7": "Create",
       "text4764560a0013": ". An explicit per-request provider always wins.",
@@ -12854,7 +12955,6 @@
       "text4b8aec6e6cd2": "Sample request",
       "text4b8fa0516b54": "Update task",
       "text4b9fba028c95": "Agents edit themselves",
-      "text4ba79f911c93": "opencode:",
       "text4ba9e26cc819": "Google sends group NAMES — and only for the groups you explicitly selected in the mapping (up to 75). A group you forgot to select is silently never sent.",
       "text4bb8f5e5d167": "A cluster is not a claim, it is a list. The document carries the tickets behind each group, so a disagreement about the synthesis is a disagreement you can settle by reading rather than by re-doing the work.",
       "text4bba4ad3c2e5": "Cloud infrastructure",
@@ -12869,7 +12969,7 @@
       "text4c07fb41dc84": "Your project and tools are ready from the start, so the agent can work without using your laptop.",
       "text4c1029697ee3": "owner",
       "text4c1804972646": "Last touch",
-      "text4c1f87ad0ffa": "The daemon clones the repo, cuts a fresh branch, and reads kortix.yaml + OpenCode config into a live runtime.",
+      "text554ee79d14bc": "The daemon clones the repo, cuts a fresh branch, and reads kortix.yaml into a live runtime.",
       "text4c25090df9ea": "Session rewound — sending a new prompt commits this path. Restore keeps the removed messages and file changes.",
       "text4c26cbeec69e": "repeat(auto-fill, minmax(160px, 1fr))",
       "text4c2cf841f117": "The workforce is in the diff.",
@@ -13750,7 +13850,6 @@
       "text65abb6edc2c0": "Admins already have access to every project in this account — nothing to grant here.",
       "text65b671062dba": "Scales effortlessly but adds a new vendor and access pattern.",
       "text65b8fb5119ec": "Good businesses don’t need moats (and why that’s fine)",
-      "text65c114ca4304": "Markdown is the floor, not the ceiling: the whole OpenCode surface sits beside it in the same repo — your own TypeScript tools, plugins that hook the runtime, the model and provider config. An agent can pin its own model, or inherit the project, account and platform default in that order.",
       "text65c55e442922": "On-prem, in your VPC, or fully isolated if that is what you need. And because it is open source, you do not have to take our word for any of it —",
       "text65c8f24daa54": "Directory sync over /scim/v2, with tokens you mint and revoke. Built against Okta and Microsoft Entra.",
       "text65ca8fb19ba8": "Assign people and push groups",
@@ -14036,7 +14135,6 @@
       "text6e2ebdab3c02": "Oldest first",
       "text6e3032b6895f": "Notification types",
       "text6e3a9a94ccd7": "Kortix Enterprise",
-      "text6e3e333d775c": "Prompts, models, tools, plugins and permissions. An agent is a stock OpenCode agent — markdown at baseline, and past that the tools, plugins and model config sitting beside it in the same repo. Read the directory and you know exactly what that agent will do.",
       "text6e3fcca472c5": "Bring your own Slack app",
       "text6e4987bfe9c3": "Sign in to install this automation",
       "text6e4b1d4137f6": "Your repo, tools, dependencies",
@@ -14246,7 +14344,6 @@
       "text74304805dca9": "The claim audit across your own site",
       "text7433280153b9": "No accounts matching \"{value0}\"",
       "text74388bcaa9c6": "- ICP and segments",
-      "text743f60d09cb7": "Has built agents, and lives on coding agents — opencode, Codex, Claude Code, Pi, whichever you reach for.",
       "text74414cb4f277": "Paste or generate a key",
       "text744b88e04bcc": "Three ways work runs",
       "text7458d4f300eb": "Reconfigure",
@@ -14432,7 +14529,6 @@
       "text7964f184beb2": "Tags ({value0})",
       "text7966b3c1d0c0": "Your app → Addons",
       "text796a79862546": "Payment issue on your plan",
-      "text797041ba00c3": "  // Docs: https://opencode.ai/docs/",
       "text797bfed2cccb": "The 1st of the month at 06:30",
       "text797c7f133915": "    --bot-token xoxb-... --signing-secret ...",
       "text7982ad72bd36": "Provisions",
@@ -14494,7 +14590,6 @@
       "text7b49132b286b": "Provider split, failover, the live fleet, and provisioning latency.",
       "text7b4b05dee831": "Account · Projects",
       "text7b56bfd47605": "Runs a thermo-nuclear review and stands up a one-click preview on every pull request to kortix-ai/kortix.",
-      "text7b6762537105": "An agent has exactly two homes. The markdown file carries how it thinks — its prompt, its mode, its model, its permission tree — and it is a stock OpenCode agent file, because Kortix adds no dialect to it. The manifest block carries what it may touch. Nothing about an agent lives in a database you cannot read.",
       "text7b68fe551085": "After",
       "text7b7e67f5f919": "Failed to disconnect the subscription",
       "text7b8fd4e94dee": "Ask a project manager if you need to change how this project is set up.",
@@ -14622,6 +14717,7 @@
       "text7f09a839ed67": "Thousands of connected apps on one side of a boundary, and the sandbox on the other, carrying a single scoped token and no credential.",
       "text7f0a12c4fdbd": "You don't have permission to read this repository.",
       "text7f33545ae2eb": "works · commits · pushes",
+      "textf2c4b4f22668": "agent harness",
       "text7f3e8bf052d3": "Reads",
       "text7f4d12168371": "A record per call, with the approver on it",
       "text7f56272b701a": "Forwarding the Northwind thread — can you pull their usage and draft the renewal?",
@@ -15149,7 +15245,6 @@
       "text8ea44187f958": "kortix self-host start registers the selfhost host for you and makes it active.",
       "text8eab22952758": "Kortix Security",
       "text8eaf7102931a": "Sign out this session?",
-      "text8eb07f243576": "OpenCode, declared in the repo",
       "text8eb1b3140390": "Copy the sign-in URL below and open it in a PRIVATE / incognito window (so your own logged-in session doesn’t auto-complete the test), enter a test user’s work email, and complete the sign-in at your identity provider.",
       "text8eb3ea9bbde6": "Auth",
       "text8eb4917bbe54": "Failed to update",
@@ -16189,7 +16284,6 @@
       "textac121e59d684": "To deactivate from Entra: set the user’s \"Block sign in\" (Account enabled = off), then provision them again — or run \"Provision on demand\" to apply it immediately.",
       "textac18d11a2f26": "Delete role",
       "textac1f3393cb4c": "Failed to upload to Google Slides",
-      "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "The assembly, not the judgement.",
       "textac318011a661": "Load older requests",
       "textac4059cfd550": "Every change versioned, reviewable, reversible",
@@ -16384,6 +16478,30 @@
       "textb1fa39a2b442": "Fridays at 17:00",
       "textb1fb183269ba": "Restrict who can start sessions",
       "textb205bb47f81a": "Open session",
+      "text76456efd96b6": "Started work",
+      "textd5a6dc64b5d4": "Held back",
+      "text95d2f57f8fa4": "Didn’t start",
+      "text6119feb6e4f5": "No trigger",
+      "text7b5f87420cb2": "No event since {value0}",
+      "textadb85cf22bfc": "None yet",
+      "text8d14f6e72de8": "Events",
+      "textc235cb1df45b": "What this App posted in the last 30 days, and what came of each event.",
+      "textbcd7586101a4": "Send test event",
+      "textb31f231088c9": "Could not load the App’s events.",
+      "text863f2373ad58": "Events this App posts show up here",
+      "text4b97770f1f09": "Send a test event to check the wiring, or post one from the App to KORTIX_APP_EVENTS_URL.",
+      "text66a6b0caa7b8": "{value0} in the last 24 hours · {value1} started work",
+      "text4e18ffd436f1": "Over the trigger’s limit: 60 events an hour, 30 a minute.",
+      "text532eaabd9574": "Test",
+      "text119ec5b50a07": "Data must be a JSON object.",
+      "text07aaf9c9f315": "Test event sent",
+      "text72b8a74d4eee": "Could not send the test event",
+      "text028284e97d7d": "Send a test event",
+      "text568b8fae25a4": "It takes the same path as an event from the App. Its ID starts with test-, so the App’s own event with the same ID still runs later.",
+      "text25bc9efedfb7": "Event name",
+      "text0760ef976f73": "Data (JSON)",
+      "texta76d8716b0ff": "Last event",
+      "textba1daad907a0": "Last event {value0}",
       "textb205c515d0be": "No hosted URL handy? Switch to \"Manual configuration\" and paste the XML from SSO → More Actions → SAML Metadata instead — it is the same metadata.",
       "textb205e3c57a77": "Open source · Any model, your keys · Self-host, VPC, or on-prem",
       "textb20e428d9c27": "Push groups: on the app’s \"Provisioning\" tab, under \"Entitlements\", click \"Refresh\" so Kortix’s groups load. Then on the \"Rules\" tab add a Rule — a condition (e.g. member of a OneLogin Role) with the action \"Set Groups in Kortix\" → the group.",
@@ -16481,7 +16599,6 @@
       "textb4c085e57f14": "Connector credentials are brokered server-side and never enter the machine",
       "textb4c137e300c0": "Not tested yet",
       "textb4c65ea8ef96": "Trial replaced",
-      "textb4d40882ef59": "A model on its own answers. The harness gives it planning, tool use and multi-step runs it actually finishes — powered by OpenCode, configured by a file in the repo.",
       "textb4e437b00de3": "Remove fallback",
       "textb5037fbea489": "Token authentication",
       "textb5068d24eb4f": "Edit secret",
@@ -16497,7 +16614,6 @@
       "textb549d2890d4b": "Say allow, ask or deny per tool — down to a single shell command",
       "textb5658fc8edda": "On this page",
       "textb5687cf04af3": "Requester",
-      "textb57f2c70525f": "Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.",
       "textb5814f05b923": "Search secrets",
       "textb581fd88ea24": ": {value0}",
       "textb5845e7eea2b": "Use transition-colors on elements",
@@ -16595,6 +16711,12 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Open the full approval page",
       "textb7ddab3f7df8": "Delete {value0} and every runtime? This action cannot be undone.",
+      "text9c583fa19f1a": "Its triggers go with it: {value0}.",
+      "text648f297b3b79": "Show in App",
+      "text8521b7841a0c": "One event: {value0}",
+      "textbede9e3c96af": "Show all events",
+      "text216e5ffc0e54": "This event is not in the log of the last 30 days.",
+      "text1ade727f7313": "Down since {value0}. Kortix stopped restarting it.",
       "textb7de71558bf4": "Selected connectors resolve this secret on the server. The sandbox receives no value.",
       "textb7e29198fc4e": "{value0} key removed",
       "textb7ef1459725d": "Failed to delete account immediately",
@@ -16603,7 +16725,6 @@
       "textb81b729b4538": "to a channel, then mention it. Each mention starts a fresh run and the agent answers in that thread.",
       "textb81c6e280de1": "Reset to Kortix",
       "textb82336ed4012": "runsPoint3Title",
-      "textb82db800b29f": "OpenCode-native · Versioned · Deny by default · Human-merged",
       "textb835b4d2630c": "You approved this 4 minutes ago — deploy in progress",
       "textb83b8a3e405c": "Most of the queue is not modelling. It is the fourth version of a question already asked, a pipeline that broke overnight, and three teams disagreeing on what \"active\" means.",
       "textb84177fa1580": "Failed to load project",
@@ -16780,7 +16901,6 @@
       "textbd2b129daf78": "Times above are read in this timezone. Daylight saving is handled for you.",
       "textbd333807715b": "Sandbox session",
       "textbd3b56d2b2da": "Balance new sandboxes across providers by weight.",
-      "textbd49211479cd": "kortix.yaml is the Kortix layer: the machine sessions boot on, the connectors, the triggers, the secret names, and what each agent is allowed to touch. The OpenCode config is the runtime the agents think in. Everything past those two is files in the repo.",
       "textbd570c66902c": "How much thinking the model does before answering",
       "textbd59cb991302": "Grant super-admin",
       "textbd5a646673af": "→ connected: slack workspace acme-hq",
@@ -17109,7 +17229,6 @@
       "textc661a1039aa0": "max out",
       "textc66b771332f5": "Read the SDK docs",
       "textc66feb5eb8f2": "Move up",
-      "textc681d401ded0": "The OpenCode config decides",
       "textc684e335b50d": "git repo",
       "textc6902b467e2d": "Couldn't display this presentation.",
       "textc69869f352bd": "It reports; it does not silently remediate",
@@ -17139,7 +17258,6 @@
       "textc725967d3988": "Deploy from GitHub",
       "textc72772b1c8d9": "Pass a PDF URL with the",
       "textc72e5d059e24": "Edit from here",
-      "textc72f8df372cb": "OpenCode runs inside the machine as the agent harness, with your models, your tools and your secrets injected at runtime. The machine is ready. The agent begins.",
       "textc730d5a71283": "A session starts. A machine boots.",
       "textc732a94d58e9": "See the Providers tab for models available to this key.",
       "textc73d5a471c50": "Approval is not a setting buried in an admin panel. It is a block in kortix.yaml, versioned with everything else, that says which tool calls run, which stop for a person, and which are refused outright.",
@@ -17172,7 +17290,6 @@
       "textc833eda3bbbb": "Showing what loaded. Retry to refresh.",
       "textc8392f8bbd61": "Retry a failed init on another provider",
       "textc84f6f77b2a3": "Created personal connector",
-      "textc859e57c7ce7": "An OpenCode agent, plus its grants",
       "textc85b0e36e937": "API Token",
       "textc85c359673e0": "Failed to download {value0}",
       "textc85c6ea416c8": "Could not create that token",
@@ -17347,7 +17464,6 @@
       "textcd165519e204": "Queued message removed",
       "textcd2434c323fa": "inviteFailed",
       "textcd2b91e36b1d": "CUA driver",
-      "textcd3a5d4a1364": "The layer that turns a model into an agent: planning, tool use, and multi-step runs it actually finishes. Fully customizable and powered by OpenCode, so the way your agents think is yours to edit.",
       "textcd3fefb94c04": "One thing this is not: a package manager. There is no lockfile, no version pin and no automatic update — an item you add becomes your own files, exactly like code you wrote. That is a deliberate trade, and it is the one we would make again.",
       "textcd4c984492ce": "PingOne Configuration tab with the IdP Metadata URL",
       "textcd4f8d39c171": "It keeps running",
@@ -18080,7 +18196,6 @@
       "texte0e2ec6768c5": "    # ignore the agent’s own outbound messages",
       "texte0e30badc30c": "Failed to stop session",
       "texte0e7d293043c": "Latency",
-      "texte0eb65e020e7": "  \"$schema\": \"https://opencode.ai/config.json\",",
       "texte0edaf920655": "Created group",
       "texte0eeb4761e83": "On the \"Browse Microsoft Entra Gallery\" page, click \"Create your own application\".",
       "texte0f1afb4c551": "a person with project.gitops.merge",
@@ -18115,7 +18230,6 @@
       "texte1d84c99737d": "Connect SAML SSO first — provisioning creates accounts, but users still need SSO to sign in.",
       "texte1e0544508e5": "Your account doesn't have admin permissions. Return to the app and contact a workspace admin if this looks wrong.",
       "texte1e7248bbb12": "AI copy reads like AI copy because nothing told it how you write. Here your voice, your claims and your banned words live in the repo, and every session loads them before writing a word.",
-      "texte1e906a3a02b": "An agent is an OpenCode agent: markdown at baseline, and past that your own tools, plugins, models and a per-capability permission tree. A grant in kortix.yaml decides what it reaches — its machine, its connectors and channels, its secrets, its skills. A skill encodes how your company does one specific job. Both are files in your repo. Both are reviewed like code.",
       "texte1ecf8a598e7": "Start with the work, not the platform.",
       "texte1f0d6f4fe26": "Account linking",
       "texte1f79758cc42": "removed",
@@ -18644,7 +18758,7 @@
       "textf06214d4673d": "Finalized LLM requests grouped by provider and model.",
       "textf063543f3336": "The repo",
       "textf084ea5cc3bf": "Your app → Configuration → SAML",
-      "textf08a83aac6c4": "An OpenCode agent — markdown at the baseline, the full lifecycle open",
+      "text1c41f3a0be11": "An agent — a markdown prompt plus its kortix.yaml block",
       "textf09247433bef": "Image preview",
       "textf096ba0a2aa6": "auto-updates",
       "textf0aea4d97b8e": "Email not connected",
@@ -18735,7 +18849,6 @@
       "textf3d331b82d30": "Failed to sync subscription",
       "textf3d4c9b3357c": "Stop building static software. Start building feedback loops.",
       "textf3d75361a203": "Now paste these into",
-      "textf3d82cf5fcc9": "OpenCode starts",
       "textf3fcc2e819e8": "Users and groups",
       "textf3fe997b8d1c": "We",
       "textf4034f3d4b32": "Subscription in Stripe",
@@ -19756,6 +19869,8 @@
       "text7a84bdb22767": "Viewed Kortix App deployment",
       "text516e80d9f8dc": "Deleted Kortix App deployment",
       "text2d430c4c81a2": "Viewed Kortix App deployment logs",
+      "text567cd42b6a31": "Viewed Kortix App events",
+      "textcd413277c842": "Sent a Kortix App test event",
       "textea0b84c2ddf0": "Viewed Kortix system skill",
       "text16faff6ae525": "Viewed Kortix system skill file",
       "text04a6fbab3598": "Viewed LLM catalog",
@@ -21172,7 +21287,19 @@
       "text507c24b6792d": "When a change request merges into {branch}, {agent} runs your instruction.",
       "text05ee1d6181f3": "When a change request merges, {agent} runs your instruction.",
       "texte608495c45ce": "Merged into {branch}",
-      "text80ca527b0d55": "Change request trigger created"
+      "text80ca527b0d55": "Change request trigger created",
+      "authEmailAlreadySent": "We sent this email less than a minute ago. Check your inbox and your spam folder before you ask for another one.",
+      "textfe0dab79db43": "Talk to Kortix in one chat: every message is a thread, and Kortix's newest reply shows under it.",
+      "text2e914b62b832": "Markdown links",
+      "text7bed093239f3": "Recognised resources show an app icon and compact label. Hover to inspect the original URL.",
+      "textaf4df8fff726": "Finish streaming",
+      "textc5bb2bbce674": "Show streaming",
+      "textfc19d1c660c8": "GitHub profiles, repositories, pull requests, issues and commits; Linear issues; Slack messages and conversations; Figma designs, boards and slides; Notion pages; Google Docs, Sheets and Slides. Labels use the URL only. Titles, permissions and live status are not fetched.",
+      "textba98740fde39": "ChatGPT subscription usage",
+      "text856bf8853b69": "Claude subscription usage",
+      "text116cd3982a9b": "Goals",
+      "textb0571ad96905": "goals goal objectives outcomes",
+      "text20d55e8c3373": "Cancelling"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -21262,6 +21389,39 @@
       "prCommitsBy": "{count, plural, one {# commit} other {# commits}} by {author}",
       "prDraft": "Draft pull request"
     },
+    "askDeck": {
+      "label": "What waits on you",
+      "remaining": "{count, plural, one {# waits on you} other {# wait on you}}",
+      "yes": "Yes",
+      "no": "No",
+      "skip": "Skip",
+      "send": "Send answer",
+      "approve": "Approve",
+      "deny": "Deny",
+      "dismiss": "Dismiss",
+      "undo": "Undo",
+      "allowSession": "Allow {tool} for the session",
+      "typeAnswer": "Or type your answer",
+      "answered": "Answer sent",
+      "dismissed": "Question dismissed",
+      "approved": "Approved",
+      "denied": "Denied",
+      "failed": "The decision did not go through",
+      "askedAgo": "Asked {time} ago",
+      "fromWorker": "from a worker session",
+      "inSession": "In {title}",
+      "permissionTitle": "Run {tool}?",
+      "approvalTitle": "Run this connector call?",
+      "emptyTitle": "Nothing waits on you",
+      "emptyDescription": "Questions and approvals from your agents show up here.",
+      "loadFailed": "Could not load what waits on you",
+      "retry": "Retry",
+      "kind": {
+        "question": "Question",
+        "permission": "Permission",
+        "approval": "Connector approval"
+      }
+    },
     "reviewBulk": {
       "approve": "Approve",
       "deny": "Deny",
@@ -21330,7 +21490,8 @@
       "aboutDescription": "About this description",
       "senderUnavailable": "Couldn't load the sending account. Check the From row.",
       "quoted": "“{text}”"
-    }
+    },
+    "promptHistory": "History {index}/{total}"
   },
   "commandPalette": {
     "title": "Command Palette",
@@ -21348,7 +21509,7 @@
     "copyFailed": "Could not copy to the clipboard",
     "threads": "Threads",
     "recentThreads": "Recent threads",
-    "searchChannels": "Search channels, threads, commands..."
+    "searchChannels": "Search spaces, threads, commands..."
   },
   "personalWelcome": {
     "dismiss": "Dismiss",
@@ -21464,11 +21625,11 @@
     "getAKey": "Get a key"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "Search model, provider or error",
+    "searchPlaceholder": "Search model, provider, error or id",
     "requestsLabel": "{count, plural, one {request} other {requests}}",
     "errorsLabel": "{count, plural, one {error} other {errors}}",
     "medianLatency": "median latency",
-    "noMatch": "No loaded request matches “{query}”",
+    "noMatch": "No request matches “{query}”",
     "histogram": "Requests over time",
     "close": "Close",
     "now": "Now",
@@ -21476,7 +21637,33 @@
     "topModel": "Top model",
     "noRequests": "No requests",
     "cardErrors": "Errors",
-    "cardMedianLatency": "Median latency"
+    "cardMedianLatency": "Median latency",
+    "noFilterMatch": "No request matches these filters",
+    "sessionColumn": "Session",
+    "untitledSession": "Untitled session",
+    "openInSession": "Open in session",
+    "openMessage": "Open at this message",
+    "onlyThisSession": "Only this session",
+    "noSession": "Not from a session",
+    "fromGatewayKey": "Sent with a gateway key, not from a session",
+    "messageLabel": "Message",
+    "turnLabel": "Turn",
+    "threadLabel": "Subagent thread",
+    "sessionIdLabel": "Session id",
+    "byTimeHint": "Sent before sessions named their messages: the link opens the turn that was running at that time.",
+    "filter": "Filter",
+    "filterTime": "Time",
+    "filterModel": "Model",
+    "filterProvider": "Provider",
+    "filterError": "Error",
+    "clearFilters": "Clear filters",
+    "facetEmptyDay": "None in the last 24 hours",
+    "facetEmptyWeek": "None in the last 7 days",
+    "windowAny": "Any time",
+    "window15m": "Last 15 minutes",
+    "window1h": "Last hour",
+    "window24h": "Last 24 hours",
+    "window7d": "Last 7 days"
   },
   "modelsList": {
     "onCount": "{on} of {total} on",
@@ -21543,9 +21730,9 @@
     "perDay": "Per day",
     "noLimit": "No limit",
     "postTo": "Post to",
-    "postToHint": "Each run starts a new thread there. With no channel, runs go to #{channel}.",
-    "postToNone": "No channel",
-    "postToUnavailable": "Unavailable channel",
+    "postToHint": "Each run starts a new thread there. With no space, runs go to #{channel}.",
+    "postToNone": "No space",
+    "postToUnavailable": "Unavailable space",
     "postToPrivate": "Private: triggers can't post here",
     "appLabel": "App",
     "appPlaceholder": "Choose an App",
@@ -22968,7 +23155,8 @@
         "status": "Status",
         "lastFrame": "Last recorded",
         "layers": "Records",
-        "actions": "Actions"
+        "actions": "Actions",
+        "version": "Version"
       },
       "layer": {
         "screen": "Screen",
@@ -23009,7 +23197,86 @@
         "sync_error": "Uploads are failing",
         "backlog": "{count, plural, one {# item} other {# items}} waiting to upload",
         "behind_version": "Update from {current} to {version}",
-        "asleep": "Asleep or off. Last seen {time}"
+        "asleep": "Asleep or off. Last seen {time}",
+        "update_failed": "Update to {version} failed"
+      },
+      "version": {
+        "current": "Up to date",
+        "behind": "Update available",
+        "failed": "Update failed",
+        "updating": "Updating",
+        "disabled": "Updates off"
+      },
+      "details": {
+        "open": "Device details",
+        "title": "{name}",
+        "description": "What this computer reports to Kortix. Copy it into a support request.",
+        "capture": "Capture",
+        "version": "Version",
+        "channel": "Channel",
+        "latest": "Newest release",
+        "lastCheck": "Last update check",
+        "lastCheckSaid": "Last check result",
+        "noUpdater": "No update service on this computer",
+        "lastResult": "Last update",
+        "reason": "Reason",
+        "skipped": "Versions skipped",
+        "skippedUntil": "{version}, tried again on {time}",
+        "none": "None",
+        "machine": "Machine",
+        "os": "Operating system",
+        "build": "Build",
+        "hostname": "Hostname",
+        "cpu": "Processor",
+        "cpuCores": "{cpu} · {count, plural, one {# core} other {# cores}}",
+        "memory": "Memory",
+        "disk": "Free disk",
+        "diskOf": "{free} free of {total}",
+        "gpus": "Graphics",
+        "booted": "Started",
+        "timezone": "Time zone",
+        "locale": "Locale",
+        "recordingSync": "Recording and sync",
+        "status": "Status",
+        "lastFrame": "Last frame",
+        "permissions": "Missing permissions",
+        "sync": "Sync",
+        "syncError": "Sync error",
+        "recordingError": "Recording error",
+        "lastUpload": "Last upload",
+        "reported": "Last report",
+        "policy": "Policy",
+        "policySource": "Policy file",
+        "noPolicy": "No account policy",
+        "policyRead": "Policy read",
+        "enrolled": "Set up by",
+        "managed": "IT rollout",
+        "personal": "The person signed in",
+        "encrypted": "Encrypted uploads",
+        "yes": "Yes",
+        "no": "No",
+        "lastCredentials": "Last credentials",
+        "deviceId": "Device ID",
+        "notReported": "Not reported",
+        "close": "Close",
+        "copy": "Copy diagnostics",
+        "copied": "Copied",
+        "copiedToast": "Diagnostics copied",
+        "copyFailed": "Could not copy the diagnostics",
+        "outcome": {
+          "updated": "Updated from {from} to {to}",
+          "rolled_back": "{to} failed its health check; rolled back to {from}",
+          "failed": "{to} failed its health check and could not be rolled back",
+          "install_failed": "The installer for {to} did not run",
+          "other": "{from} to {to}"
+        },
+        "syncState": {
+          "ok": "Up to date",
+          "queued": "{count, plural, one {# item} other {# items}} waiting",
+          "error": "Failing",
+          "off": "Off",
+          "other": "Unknown"
+        }
       }
     },
     "settings": {
@@ -23339,103 +23606,6 @@
     "enable": "Enable {name}",
     "enabling": "Enabling…"
   },
-  "rooms": {
-    "title": "Rooms",
-    "memberCount": "{count, plural, one {# member} other {# members}}",
-    "members": "Members",
-    "agent": "Agent",
-    "agentSender": "Agent {name}",
-    "empty": "Rooms you join will show up here",
-    "emptyHint": "Create a room, then add people and agents to it.",
-    "loadError": "Could not load rooms. Try again.",
-    "roomLoadError": "Could not load this room. Try again.",
-    "messagesLoadError": "Could not load messages. Try again.",
-    "retry": "Try again",
-    "back": "Back to rooms",
-    "send": "Send message",
-    "sendFailed": "Could not send the message",
-    "peopleLoadError": "Could not load people. Try again.",
-    "cardRoom": "Room {name}",
-    "digestCount": "{count, plural, one {# new message} other {# new messages}}",
-    "digestMore": "… and {count} more",
-    "cardFrom": "From",
-    "cardMessage": "Message",
-    "cardReplyTo": "Reply to",
-    "addRooms": "Add rooms",
-    "addFailed": "Could not add the member",
-    "addMembers": "Add people and agents",
-    "addMembersDescription": "Members receive the messages posted here. An agent session reads them at its next step.",
-    "addTopic": "Add a topic",
-    "agents": "Agents",
-    "browseRoomsDescription": "Every room in this project. Open one to read it or join it.",
-    "cancel": "Cancel",
-    "roomName": "Name",
-    "roomNameHint": "Lowercase letters, numbers and . _ / -, up to 64 characters.",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "Close members",
-    "copied": "Copied",
-    "copyText": "Copy message text",
-    "createRoom": "Create room",
-    "createRoomDescription": "A room holds the conversation about one topic, for people and agents.",
-    "createFailed": "Could not create the room",
-    "editTopic": "Edit topic",
-    "inThisRoom": "In this room",
-    "introRoom": "This is the start of the #{name} room.",
-    "joinRoom": "Join room",
-    "joinFailed": "Could not join the room",
-    "joined": "Joined",
-    "jumpToLatest": "Jump to latest",
-    "leaveRoom": "Leave room",
-    "memberActions": "Actions for {name}",
-    "memberAdded": "{name} added",
-    "memberRemoved": "Member removed",
-    "mentionHere": "Everyone in #{name}",
-    "mentionSomeone": "Mention someone",
-    "mentionSuggestions": "Mention suggestions",
-    "messageRoom": "Message #{name}",
-    "messages": "Messages",
-    "new": "New",
-    "newLineHint": "Shift + Enter for a new line",
-    "noRooms": "No matching rooms",
-    "noMatches": "No matches",
-    "people": "People",
-    "pickRoom": "Open a room from the list",
-    "remove": "Remove",
-    "removeAgentDescription": "The agent session stops receiving this room's messages. To restore it, add the agent again.",
-    "removeFailed": "Could not remove the member",
-    "removePersonDescription": "This member stops receiving this room's messages. To restore it, add them again.",
-    "removeTitle": "Remove {name} from this room?",
-    "searchRooms": "Search rooms",
-    "searchPeopleAndAgents": "Search people and agents",
-    "today": "Today",
-    "topic": "Topic",
-    "topicFailed": "Could not save the topic",
-    "topicOptional": "Topic (optional)",
-    "topicPlaceholder": "What this room is about",
-    "viewMembers": "View members",
-    "viewMembersCount": "View {count, plural, one {# member} other {# members}}",
-    "viewingRoom": "You are viewing #{name}",
-    "yesterday": "Yesterday",
-    "you": "{name} (you)",
-    "status": {
-      "running": "Running",
-      "starting": "Starting",
-      "stopped": "Stopped",
-      "failed": "Failed"
-    },
-    "replyInThread": "Reply in thread",
-    "thread": "Thread",
-    "closeThread": "Close thread",
-    "backToRoom": "Back to the room",
-    "replyPlaceholder": "Reply…",
-    "replyCount": "{count, plural, one {# reply} other {# replies}}",
-    "lastReply": "Last reply {time}",
-    "threadLoadError": "Could not load this thread. Try again.",
-    "join": "Join",
-    "openRoom": "Open",
-    "gateDescription": "Turn on Rooms to let agent sessions and people of this project talk in named chat rooms.",
-    "archivedNotice": "This room is archived. It keeps its messages and takes no new ones."
-  },
   "goals": {
     "title": "Goals",
     "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
@@ -23481,7 +23651,8 @@
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
       "verification_stalled": "Verification started more than 24 hours ago.",
-      "unreadable": "GOAL.md is missing or has no goal front matter."
+      "unreadable": "This folder has no goal file.",
+      "blocked": "This goal cannot go on by itself."
     },
     "sessionChip": "Goal",
     "sessionRole": {
@@ -23519,6 +23690,16 @@
       "worker": "Worker",
       "verifier": "Verifier"
     },
+    "roleTab": {
+      "founder": "Founder",
+      "sales": "Sales",
+      "marketing": "Marketing",
+      "support": "Support",
+      "finance": "Finance",
+      "operations": "Operations",
+      "people": "People",
+      "engineering": "Engineering"
+    },
     "timeline": "Timeline",
     "verification": "Verification",
     "notes": "Notes",
@@ -23541,21 +23722,786 @@
     "share": "Share",
     "stop": "Stop goal",
     "stopTitle": "Stop this goal?",
-    "stopDescription": "Nothing wakes it again. Its folder stays in Files.",
+    "stopDescription": "Nothing wakes it until you start it again. Its folder stays in Files.",
     "stopReason": "Stopped from the Goal page",
     "stoppedToast": "Goal stopped",
     "stopError": "Could not stop the goal. Try again.",
     "needsAttention": "Needs attention",
     "newGoal": "New goal",
-    "newGoalTitle": "New goal",
-    "newGoalDescription": "Describe the outcome. An agent writes the goal and its done criteria, then works it until a check confirms it is done.",
-    "newGoalPlaceholder": "For example: our docs site is live on docs.example.com",
-    "newGoalStart": "Start goal",
+    "galleryTitle": "Start a new goal",
+    "galleryDescription": "Describe an outcome, or start from a template. An agent works it until an independent check confirms it is done.",
+    "composerPlaceholder": "Describe the outcome you want",
+    "templates": {
+      "draftInvestorUpdate": {
+        "title": "Draft an investor update",
+        "description": "Pulls company metrics into an investor update draft in Files.",
+        "prompt": "Draft our investor update for [last month].\n- Metrics: [revenue, growth, burn, runway] from [Stripe and our finance sheet]\n- Highlights: [launches, wins, key hires]\n- Lowlights and risks: [what slipped or is at risk]\n- Asks: [intros, hires, advice we need]\nCompare every number with the prior period.",
+        "criterion": "Files/founder/investor-update.md contains the selected period, sourced metrics, changes from the prior period, highlights, risks, asks, and flagged data gaps.",
+        "start": "Gather metrics",
+        "done": "Update drafted"
+      },
+      "compareCompetitors": {
+        "title": "Compare the competition",
+        "description": "Compares competitors and saves a sourced positioning brief in Files.",
+        "prompt": "Compare us with [competitor A, competitor B, competitor C].\n- What we sell: [one line on the product and who buys it]\n- Compare: pricing, target buyer, key features, recent launches\n- Sources: their websites, pricing pages, docs and public reviews\nEnd with 3 positioning options for us.",
+        "criterion": "Files/founder/competitor-brief.md covers each named competitor with dated source links, target buyers, pricing or unknowns, key differences, and 3 positioning options.",
+        "start": "Research competitors",
+        "done": "Brief ready"
+      },
+      "summarizeCustomerFeedback": {
+        "title": "Find customer priorities",
+        "description": "Groups customer feedback into a ranked priorities brief in Files.",
+        "prompt": "Find what customers ask for most in [the last 90 days].\n- Sources: [support tickets, call notes, survey comments, sales notes]\n- Group by theme and rank by unique customer count\n- For each theme: 2 quotes, source links, revenue at stake\nEnd with the 3 actions you suggest.",
+        "criterion": "Files/founder/customer-priorities.md lists themes ranked by unique customer count, with quotes, source links, business impact, suggested actions, and the feedback scope.",
+        "start": "Read feedback",
+        "done": "Priorities ranked"
+      },
+      "prepareDecisionBrief": {
+        "title": "Prepare a decision brief",
+        "description": "Researches a business decision and saves options with costs and tradeoffs in Files.",
+        "prompt": "Prepare a decision brief: [should we raise prices for new customers?]\n- Deadline: [when we must decide]\n- Constraints: [budget, team, timing]\n- Compare at least 3 options, including no change\nGive costs, risks and a recommendation, with a source for every number.",
+        "criterion": "Files/founder/decision-brief.md states the decision, compares at least 3 options including no change, and lists sourced costs, tradeoffs, assumptions, and a recommendation.",
+        "start": "Gather evidence",
+        "done": "Options compared"
+      },
+      "prepareBoardPack": {
+        "title": "Prepare a board pack",
+        "description": "Builds the board meeting outline with sourced numbers in Files.",
+        "prompt": "Prepare the board meeting pack for [this quarter].\n- Sections: KPIs, financials, product, hiring, risks, decisions needed\n- Data: [Stripe, finance sheet, CRM, roadmap]\n- Decisions for the board: [what we need approved]\nKeep it to 12 slides or fewer. Mark every number with its source.",
+        "criterion": "Files/founder/board-pack.md contains an outline of 12 slides or fewer with KPIs, financials, product, hiring, risks, decisions needed, and a source for every number.",
+        "start": "Pull numbers",
+        "done": "Pack outlined"
+      },
+      "draftQuarterlyOkrs": {
+        "title": "Draft quarterly OKRs",
+        "description": "Proposes measurable objectives with baselines and owners in Files.",
+        "prompt": "Draft our OKRs for [next quarter].\n- Company focus: [the one thing that matters most]\n- Teams: [product, sales, marketing]\n- Last quarter's results: [link or Files path]\nAt most 3 objectives. Give each 2 to 4 measurable key results with a baseline and an owner role.",
+        "criterion": "Files/founder/okrs.md contains at most 3 objectives, each with 2 to 4 measurable key results that state a baseline, a target, and an owner role.",
+        "start": "Review results",
+        "done": "OKRs drafted"
+      },
+      "sizeMarket": {
+        "title": "Size the market",
+        "description": "Builds a sourced TAM, SAM and SOM estimate in Files.",
+        "prompt": "Size the market for [our product] in [region].\n- Buyer: [who buys, and their company size]\n- Price: [our average annual price]\nBuild TAM, SAM and SOM bottom-up and top-down. Cite a dated source for every input.",
+        "criterion": "Files/founder/market-size.md contains bottom-up and top-down TAM, SAM and SOM estimates, the formula for each, and a dated source for every input.",
+        "start": "Find data",
+        "done": "Market sized"
+      },
+      "buildInvestorList": {
+        "title": "Build an investor list",
+        "description": "Ranks investors by fit for a round and saves a sourced list in Files.",
+        "prompt": "Build a list of [40] investors for our [seed] round.\n- Sector and stage: [B2B software, seed]\n- Check size: [$500k to $2M]\n- Region: [US and Europe]\nFor each: firm, partner, relevant recent deals, fit reason and source links.",
+        "criterion": "Files/founder/investors.csv covers the requested count with firm, partner, relevant recent deals, fit reason, source links, and priority against the stated stage and check size.",
+        "start": "Research investors",
+        "done": "List ranked"
+      },
+      "writeTeamUpdate": {
+        "title": "Write the team update",
+        "description": "Drafts the weekly company update from real work and numbers in Files.",
+        "prompt": "Write the team update for [this week].\n- Shipped: from [GitHub, the issue tracker]\n- Deals and customers: from [our CRM]\n- Metrics: from [Stripe, product analytics]\n- Next week: [priorities]\nKeep it under 400 words. Draft only: do not send it.",
+        "criterion": "Files/founder/team-update.md is under 400 words and contains shipped work with links, customer and deal news, key metrics with sources, and next week's priorities.",
+        "start": "Collect updates",
+        "done": "Update drafted"
+      },
+      "mapCompanyRisks": {
+        "title": "Map company risks",
+        "description": "Lists the top risks to the plan with owners and mitigations in Files.",
+        "prompt": "List the top risks to [hitting our plan this year].\n- Areas: runway, customers, team, product, legal, security\n- Sources: [finance sheet, CRM, roadmap, incident log]\nFor each risk: likelihood, impact, an owner role and a mitigation.",
+        "criterion": "Files/founder/risk-register.md lists at least 8 risks across the named areas, each with likelihood, impact, owner role, mitigation, and the source that supports it.",
+        "start": "Review sources",
+        "done": "Risks mapped"
+      },
+      "researchTargetAccounts": {
+        "title": "Research target accounts",
+        "description": "Ranks target accounts by fit and saves a sourced prospect list in Files.",
+        "prompt": "Find [25] target accounts that match our ideal customer.\n- Ideal customer: [industry, company size, region]\n- Buying signals: [hiring, funding, new tools, expansion]\n- Exclude: current customers and open deals in [our CRM]\nFor each: company, website, fit reason, a signal with its source link, and priority.",
+        "criterion": "Files/sales/target-accounts.csv covers the requested account count with company, website, fit reason, buying signals, source links, and priority against the supplied buyer profile.",
+        "start": "Research accounts",
+        "done": "Prospects ranked"
+      },
+      "draftDealFollowups": {
+        "title": "Draft deal follow-ups",
+        "description": "Uses deal history to prepare unsent follow-up drafts in the connected inbox.",
+        "prompt": "Draft follow-ups for [my open deals with no reply in 7 days].\n- Deals: [CRM stage or deal names]\n- Tone: [short and direct]\n- Each draft: the last context, one clear next step, a proposed time\nSave them as drafts in the connected inbox. Do not send them.",
+        "criterion": "The connected inbox has an unsent draft per selected deal with recipient, deal context, and next step; Files/sales/follow-ups.md maps deal links to draft links.",
+        "start": "Review deals",
+        "done": "Drafts ready"
+      },
+      "enrichSelectedLeads": {
+        "title": "Enrich selected leads",
+        "description": "Fills sourced lead fields in the connected CRM and saves a change log in Files.",
+        "prompt": "Enrich [the leads created this week] in [our CRM].\n- Fields: [industry, employee count, role, website]\n- Fill only empty fields. Never overwrite a value.\nLog every change with its source. Leave a field empty when no source confirms it.",
+        "criterion": "Files/sales/lead-enrichment.csv covers each selected lead with its CRM link, field, before and after values, source link, and updated or unresolved status.",
+        "start": "Check leads",
+        "done": "Fields enriched"
+      },
+      "draftSalesProposal": {
+        "title": "Draft a sales proposal",
+        "description": "Turns discovery notes and approved pricing into a proposal draft in Files.",
+        "prompt": "Draft a proposal for [company].\n- Discovery notes: [Files path or CRM deal]\n- Scope: [what they buy]\n- Pricing: [approved price and terms]\n- Timeline: [start date]\nLink each buyer need to a note. List open questions. Mark it as a draft.",
+        "criterion": "Files/sales/proposal.md contains buyer needs linked to discovery notes, proposed scope, approved pricing, exclusions, timeline, open questions, and a draft label.",
+        "start": "Read discovery",
+        "done": "Proposal drafted"
+      },
+      "prepareCallBrief": {
+        "title": "Prepare a call brief",
+        "description": "Collects account history and news into a one-page brief in Files.",
+        "prompt": "Prepare a brief for my call with [company].\n- Meeting: [date and goal of the call]\n- Pull: CRM history, past emails, support tickets, their recent news and job posts\nEnd with 5 questions to ask and the 3 risks to watch.",
+        "criterion": "Files/sales/call-brief.md fits on one page and contains account history, recent news with source links, 5 questions to ask, and 3 risks to watch.",
+        "start": "Read history",
+        "done": "Brief ready"
+      },
+      "writeOutboundSequence": {
+        "title": "Write an outbound sequence",
+        "description": "Writes a short multi-step email sequence for one buyer role in Files.",
+        "prompt": "Write a [4]-step outbound email sequence for [buyer role].\n- Pain we solve: [one line]\n- Proof: [a customer result or case study]\n- Call to action: [a 15-minute call]\nKeep each email under 120 words. Draft only.",
+        "criterion": "Files/sales/outbound-sequence.md contains the requested number of emails, each under 120 words, with subject line, send day, the stated proof, and one call to action.",
+        "start": "Study buyer",
+        "done": "Sequence written"
+      },
+      "cleanUpPipeline": {
+        "title": "Clean up the pipeline",
+        "description": "Flags stale deals in the CRM and proposes fixes for approval in Files.",
+        "prompt": "Clean up our pipeline in [our CRM].\n- Flag deals with no activity in [30] days, past close dates, missing amounts or missing owners\n- Suggest the next action for each\nDo not change any deal. List the proposed changes for me to approve.",
+        "criterion": "Files/sales/pipeline-cleanup.csv lists each flagged deal with its CRM link, the problem, the proposed change, and the next action; no CRM record was changed.",
+        "start": "Scan pipeline",
+        "done": "Fixes proposed"
+      },
+      "analyzeLostDeals": {
+        "title": "Analyze lost deals",
+        "description": "Groups lost deals by reason and value and saves the findings in Files.",
+        "prompt": "Find why we lost deals in [the last 6 months].\n- Sources: [CRM loss reasons, call notes, emails]\n- Group by reason, with deal count and value lost\nEnd with 3 changes to product, pricing or process.",
+        "criterion": "Files/sales/lost-deals.md groups lost deals by reason with deal count, value lost and source links, and ends with 3 recommended changes.",
+        "start": "Read deals",
+        "done": "Reasons found"
+      },
+      "buildBattlecard": {
+        "title": "Build a battlecard",
+        "description": "Builds a sourced battlecard against one competitor in Files.",
+        "prompt": "Build a sales battlecard against [competitor].\n- Cover: their strengths and weaknesses, pricing, common objections with our answers, and our proof points\n- Our wins against them: [deal names or CRM filter]\nCite a dated source for every claim about them.",
+        "criterion": "Files/sales/battlecard.md covers strengths, weaknesses, pricing, objections with answers, and proof points, with a dated source for every claim about the competitor.",
+        "start": "Research rival",
+        "done": "Battlecard ready"
+      },
+      "forecastQuarter": {
+        "title": "Forecast the quarter",
+        "description": "Builds commit and best-case forecasts from the CRM in Files.",
+        "prompt": "Prepare the sales forecast for [this quarter].\n- Pipeline: [our CRM]\n- Rules: [commit = late stage, best case = mid stage]\n- Target: [quota]\nGive commit, best case and pipeline totals, compare them with the target, and list the deals that move the number.",
+        "criterion": "Files/sales/forecast.md states commit, best case and pipeline totals against the target, the stage rules used, and the deals that move the number with CRM links.",
+        "start": "Read pipeline",
+        "done": "Forecast ready"
+      },
+      "draftLaunchCampaign": {
+        "title": "Draft a launch campaign",
+        "description": "Turns a product brief into campaign copy and a launch checklist in Files.",
+        "prompt": "Draft the launch campaign for [feature or product].\n- Brief: [Files path or a short description]\n- Audience: [who it is for]\n- Channels: [email, blog, LinkedIn, X]\n- Launch date: [date]\nWrite each piece, link a source for every claim, and add a launch checklist.",
+        "criterion": "Files/marketing/launch-campaign.md contains the audience, message, drafts for each requested channel, calls to action, source links for claims, and a launch checklist.",
+        "start": "Read brief",
+        "done": "Campaign drafted"
+      },
+      "findContentGaps": {
+        "title": "Find content gaps",
+        "description": "Compares existing pages with search intent and saves ranked article briefs in Files.",
+        "prompt": "Find content gaps on [our website] for [topic].\n- Competitors: [2 or 3 websites]\n- Audience: [who searches for this]\nRank [10] topics by search intent and fit. Give a brief and an outline for each.",
+        "criterion": "Files/marketing/content-gaps.md contains the agreed number of ranked topics, audience intent, existing page gaps, dated search sources, and an outline per topic.",
+        "start": "Compare pages",
+        "done": "Briefs ready"
+      },
+      "rewriteLandingPage": {
+        "title": "Rewrite a landing page",
+        "description": "Reviews a landing page and saves revised copy with supported claims in Files.",
+        "prompt": "Rewrite our landing page at [URL].\n- Audience: [who lands there]\n- Goal: [sign-ups, demo requests]\n- Proof we can use: [customer logos, numbers, quotes]\nKeep only claims we can support. Mark each change and why.",
+        "criterion": "Files/marketing/landing-page.md contains revised copy per section, the reason for each change, and a source for every claim.",
+        "start": "Review page",
+        "done": "Copy drafted"
+      },
+      "analyzeCampaignResults": {
+        "title": "Analyze campaign results",
+        "description": "Checks campaign spend and conversions and saves a results report in Files.",
+        "prompt": "Report on the results of [campaign].\n- Data: [ad platforms, CRM, web analytics]\n- Period: [dates]\n- Target: [cost per lead or conversions]\nGive spend, leads, cost per lead and conversions by channel. Recommend what to cut and what to scale.",
+        "criterion": "Files/marketing/campaign-results.md contains spend, leads, cost per lead and conversions by channel for the period, a comparison with the target, data sources, and recommendations.",
+        "start": "Gather results",
+        "done": "Report ready"
+      },
+      "writeBlogPost": {
+        "title": "Write a blog post",
+        "description": "Researches a topic and saves a sourced draft post in Files.",
+        "prompt": "Write a blog post on [topic].\n- Reader: [who, and what they want to learn]\n- Angle: [our point of view]\n- Length: [1,200 words]\nLink a source for every fact. Add a meta description and 3 title options.",
+        "criterion": "Files/marketing/blog-post.md contains a draft near the requested length, 3 title options, a meta description under 160 characters, and a source link for every fact.",
+        "start": "Research topic",
+        "done": "Post drafted"
+      },
+      "planContentCalendar": {
+        "title": "Plan a content calendar",
+        "description": "Plans a month of content by channel, date and goal in Files.",
+        "prompt": "Plan our content calendar for [next month].\n- Channels: [blog, LinkedIn, newsletter]\n- Themes: [launches, customer stories, guides]\n- Cadence: [posts per week]\nFor each piece: date, channel, title, owner role and goal.",
+        "criterion": "Files/marketing/content-calendar.csv covers the month at the stated cadence with date, channel, title, theme, owner role, and goal for each piece.",
+        "start": "Pick themes",
+        "done": "Calendar planned"
+      },
+      "draftNewsletter": {
+        "title": "Draft a newsletter",
+        "description": "Collects product and customer news into a newsletter draft in Files.",
+        "prompt": "Draft our [monthly] newsletter.\n- Include: product updates from [the changelog], [one customer story], upcoming events\n- Reader: [customers and prospects]\nGive 3 subject lines. Keep it under 500 words. Draft only: do not send it.",
+        "criterion": "Files/marketing/newsletter.md is under 500 words and contains 3 subject lines, the product updates with links, a customer story, and upcoming events.",
+        "start": "Collect news",
+        "done": "Newsletter drafted"
+      },
+      "repurposeContent": {
+        "title": "Repurpose content",
+        "description": "Turns one long piece into social posts for each channel in Files.",
+        "prompt": "Turn [blog post or webinar link] into social posts.\n- Channels: [LinkedIn, X]\n- Count: [5 per channel]\nEach post stands alone, links back, and fits the channel's length limit.",
+        "criterion": "Files/marketing/social-posts.md contains the requested count per channel, each within the channel length limit and linking to the source piece.",
+        "start": "Read source",
+        "done": "Posts written"
+      },
+      "auditSeo": {
+        "title": "Run an SEO audit",
+        "description": "Checks key pages for search problems and ranks the fixes in Files.",
+        "prompt": "Run an SEO audit of [our website].\n- Focus pages: [home, pricing, top 10 blog posts]\nCheck titles, meta descriptions, headings, broken links, page speed and internal links. Rank the fixes by impact.",
+        "criterion": "Files/marketing/seo-audit.md lists each checked page with its problems, the evidence for each, and fixes ranked by impact.",
+        "start": "Crawl pages",
+        "done": "Fixes ranked"
+      },
+      "writeCaseStudy": {
+        "title": "Write a case study",
+        "description": "Turns customer material into a case study draft in Files.",
+        "prompt": "Write a customer case study on [customer].\n- Source material: [call recording, notes, metrics]\n- Structure: challenge, solution, results with numbers, a quote\nUse only facts from the sources. Mark the quotes that need customer approval.",
+        "criterion": "Files/marketing/case-study.md contains challenge, solution, results with sourced numbers, quotes marked for approval, and a source for every fact.",
+        "start": "Read sources",
+        "done": "Case study drafted"
+      },
+      "draftSupportReplies": {
+        "title": "Draft support replies",
+        "description": "Drafts answers to open tickets from the help center, unsent.",
+        "prompt": "Draft replies to [open tickets older than 24 hours].\n- Helpdesk: [the connected helpdesk or support inbox]\n- Tone: [friendly and short]\n- Use the help center and past answers, and cite them\nSave drafts only. Do not send. Flag the tickets you cannot answer.",
+        "criterion": "Each selected ticket has an unsent draft reply that cites a help article or past answer; Files/support/reply-drafts.md lists ticket links, draft status, and the tickets flagged as unanswerable.",
+        "start": "Read tickets",
+        "done": "Replies drafted"
+      },
+      "triageSupportBacklog": {
+        "title": "Triage the backlog",
+        "description": "Labels and prioritizes open tickets and saves the triage in Files.",
+        "prompt": "Triage our support backlog in [the connected helpdesk].\n- Labels: bug, question, feature request, billing, urgent\n- Priority rule: [paying customers first]\nGroup duplicates. List the top 5 issues by ticket count.",
+        "criterion": "Files/support/triage.csv covers every open ticket with its link, label, priority and duplicate group; Files/support/triage.md lists the top 5 issues by ticket count.",
+        "start": "Read backlog",
+        "done": "Backlog triaged"
+      },
+      "draftHelpArticle": {
+        "title": "Draft a help article",
+        "description": "Turns tickets and product behavior into a step-by-step help article in Files.",
+        "prompt": "Write a help article on [feature or question].\n- Sources: [tickets, docs, the product]\n- Reader: [new users]\nWrite step by step, with the expected result of each step and the common errors.",
+        "criterion": "Files/support/help-article.md contains numbered steps with expected results, common errors with fixes, and links to the tickets and docs it is based on.",
+        "start": "Read tickets",
+        "done": "Article drafted"
+      },
+      "flagAtRiskAccounts": {
+        "title": "Flag at-risk accounts",
+        "description": "Finds accounts with churn signals and saves a ranked list in Files.",
+        "prompt": "Find accounts at risk of churning in [the next 60 days].\n- Signals: [falling usage, open tickets, low survey scores, renewal date]\n- Data: [product analytics, helpdesk, CRM]\nRank by revenue at risk. Give the evidence and a suggested action for each.",
+        "criterion": "Files/support/at-risk-accounts.md ranks accounts by revenue at risk, with the signals, source links, and a suggested action for each.",
+        "start": "Check signals",
+        "done": "Risks flagged"
+      },
+      "buildFaqFromTickets": {
+        "title": "Build an FAQ",
+        "description": "Finds the most asked questions and saves sourced answers in Files.",
+        "prompt": "Build an FAQ from [last month's] tickets.\n- Count: [20] most asked questions\n- Answers: from the help center and past replies\nFlag each question that has no help article.",
+        "criterion": "Files/support/faq.md lists the requested number of questions ranked by ticket count, each with an answer, a source link, and a flag when no help article exists.",
+        "start": "Count questions",
+        "done": "FAQ built"
+      },
+      "reviewReplyQuality": {
+        "title": "Review reply quality",
+        "description": "Scores a sample of support replies and saves coaching notes in Files.",
+        "prompt": "Review the quality of [last week's] support replies.\n- Sample: [30] replies\n- Score: accuracy, tone, speed, resolution\nGive examples and 3 coaching points.",
+        "criterion": "Files/support/quality-review.md scores each sampled reply on the 4 criteria with ticket links, and lists 3 coaching points with examples.",
+        "start": "Sample replies",
+        "done": "Review done"
+      },
+      "writeSavedReplies": {
+        "title": "Write saved replies",
+        "description": "Writes reusable replies for the most common questions in Files.",
+        "prompt": "Write saved replies for our [10] most common questions.\n- Source: [the connected helpdesk]\n- Tone: [friendly and short]\nEach reply links the right help article and has a placeholder for the customer's name.",
+        "criterion": "Files/support/saved-replies.md contains the requested number of replies, each with the question it answers, its ticket count, and a help article link.",
+        "start": "Find questions",
+        "done": "Replies written"
+      },
+      "turnBugsIntoIssues": {
+        "title": "Turn bug reports into issues",
+        "description": "Merges bug tickets into reproducible engineering issues in Files.",
+        "prompt": "Turn [this week's] bug reports into engineering issues.\n- Source: [tickets tagged bug in the connected helpdesk]\n- For each: steps to reproduce, affected customer count, severity, ticket links\nMerge duplicates. Save the issues for me to review before anything is filed.",
+        "criterion": "Files/support/bug-issues.md contains one issue per distinct bug with steps to reproduce, affected customer count, severity, and every related ticket link.",
+        "start": "Read bug tickets",
+        "done": "Issues drafted"
+      },
+      "findOutdatedArticles": {
+        "title": "Find outdated help articles",
+        "description": "Compares the help center with the product and saves corrections in Files.",
+        "prompt": "Find outdated articles in our help center at [URL].\n- Compare with: the current product and [the changelog]\nFor each outdated statement: the article link, the old text and the corrected text.",
+        "criterion": "Files/support/outdated-articles.md lists each outdated statement with the article link, the old text, the corrected text, and the source of the correction.",
+        "start": "Read articles",
+        "done": "Fixes listed"
+      },
+      "reportSupportMetrics": {
+        "title": "Report support metrics",
+        "description": "Reports volume, speed and satisfaction for a period in Files.",
+        "prompt": "Report on support performance for [last month].\n- Data: [the connected helpdesk]\nGive first response time, resolution time, volume by category and satisfaction. Compare each with the prior period.",
+        "criterion": "Files/support/metrics.md contains first response time, resolution time, volume by category, and satisfaction for the period, each compared with the prior period.",
+        "start": "Pull data",
+        "done": "Report ready"
+      },
+      "reconcileExpenses": {
+        "title": "Reconcile expenses",
+        "description": "Matches transactions to receipts and categories in Files.",
+        "prompt": "Reconcile expenses for [last month].\n- Accounts: [bank and card accounts]\n- Receipts: [Files folder or inbox]\nMatch each transaction to a receipt and a category. List the unmatched items.",
+        "criterion": "Files/finance/expense-reconciliation.csv covers every transaction in the period with amount, category, matched receipt link or unmatched status.",
+        "start": "Read transactions",
+        "done": "Expenses matched"
+      },
+      "prepareInvoiceFollowups": {
+        "title": "Chase overdue invoices",
+        "description": "Drafts reminders for overdue invoices, unsent.",
+        "prompt": "Draft reminders for invoices overdue by more than [14 days].\n- Source: [Stripe or the accounting tool]\n- Tone: [polite, firmer after 30 days]\nSave drafts only. Do not send them.",
+        "criterion": "The connected inbox has an unsent draft per overdue invoice; Files/finance/invoice-followups.md lists invoice number, customer, amount, days overdue, and draft link.",
+        "start": "Find overdue",
+        "done": "Reminders drafted"
+      },
+      "auditSubscriptionSpend": {
+        "title": "Audit software spend",
+        "description": "Finds duplicate and unused subscriptions and ranks savings in Files.",
+        "prompt": "Audit our software subscriptions over [the last 12 months].\n- Sources: [card statements, the accounting tool]\nFind duplicates, unused seats and price increases. Rank the savings.",
+        "criterion": "Files/finance/subscription-audit.md lists each subscription with annual cost, owner, usage evidence, and ranked savings with the source of each figure.",
+        "start": "Find charges",
+        "done": "Savings ranked"
+      },
+      "prepareCashForecast": {
+        "title": "Prepare a cash forecast",
+        "description": "Builds a weekly cash forecast with three cases in Files.",
+        "prompt": "Build a [13]-week cash forecast.\n- Starting cash: [bank balance or source]\n- Inflows: [Stripe, open invoices]\n- Outflows: [payroll, rent, vendors]\nGive base, low and high cases. Flag the weeks where cash drops below [3 months of burn].",
+        "criterion": "Files/finance/cash-forecast.csv covers the requested weeks with inflows, outflows and closing cash in base, low and high cases; flagged weeks are marked.",
+        "start": "Gather balances",
+        "done": "Forecast built"
+      },
+      "prepareMonthEndClose": {
+        "title": "Prepare the month-end close",
+        "description": "Checks each close step and saves what is done and what remains in Files.",
+        "prompt": "Prepare the month-end close for [last month].\n- Steps: [bank reconciliation, accruals, deferred revenue, payroll, intercompany]\n- Tools: [the accounting tool, Stripe]\nList each step as done or open, with the evidence or what blocks it.",
+        "criterion": "Files/finance/month-end-close.md lists every close step as done or open, with evidence for done steps and the blocker for open ones.",
+        "start": "Check steps",
+        "done": "Close prepared"
+      },
+      "explainBudgetVariance": {
+        "title": "Explain budget variance",
+        "description": "Compares actuals with budget and explains the big gaps in Files.",
+        "prompt": "Compare actuals with budget for [last quarter].\n- Budget: [Files path]\n- Actuals: [the accounting tool]\nExplain each line that is off by more than [10%].",
+        "criterion": "Files/finance/budget-variance.md compares actuals with budget per line and explains every line over the threshold with the transactions behind it.",
+        "start": "Compare lines",
+        "done": "Variance explained"
+      },
+      "calculateUnitEconomics": {
+        "title": "Calculate unit economics",
+        "description": "Calculates CAC, LTV and payback with formulas in Files.",
+        "prompt": "Calculate our unit economics for [last quarter].\n- Split by: [plan or customer segment]\n- Data: [Stripe, CRM, ad spend]\nGive CAC, LTV, payback and gross margin. Show each formula and source.",
+        "criterion": "Files/finance/unit-economics.md contains CAC, LTV, payback and gross margin per segment, with the formula and data source for each.",
+        "start": "Pull data",
+        "done": "Economics calculated"
+      },
+      "collectTaxDocuments": {
+        "title": "Collect tax documents",
+        "description": "Gathers what the accountant needs and lists the gaps in Files.",
+        "prompt": "Collect the documents our accountant needs for [this year's tax filing].\n- Checklist: [the accountant's list, or a Files path]\n- Sources: [Files, inbox, the accounting tool]\nLink each document found. List what is missing.",
+        "criterion": "Files/finance/tax-documents.md lists every checklist item with a link to the document found or a missing status.",
+        "start": "Search files",
+        "done": "Documents collected"
+      },
+      "reviewRenewals": {
+        "title": "Review upcoming renewals",
+        "description": "Lists contracts renewing soon with notice dates and advice in Files.",
+        "prompt": "Review vendor contracts that renew in [the next 90 days].\n- Contracts: [Files folder or contract tool]\nFor each: renewal date, notice deadline, price, auto-renew, and a renew, renegotiate or cancel recommendation.",
+        "criterion": "Files/finance/renewals.md lists each contract renewing in the window with renewal date, notice deadline, price, auto-renew, and a recommendation.",
+        "start": "Read contracts",
+        "done": "Renewals reviewed"
+      },
+      "modelHiringCost": {
+        "title": "Model hiring cost",
+        "description": "Models the cost of a hiring plan and its runway effect in Files.",
+        "prompt": "Model the cost of [hiring 5 engineers next year].\n- Salaries: [ranges, or benchmark them]\n- Start dates: [by quarter]\n- Current burn and cash: [finance sheet]\nInclude benefits, taxes, equipment and recruiting. Show the effect on runway.",
+        "criterion": "Files/finance/hiring-cost.csv contains monthly cost per hire with salary, benefits, taxes, equipment and recruiting, and the resulting runway with and without the hires.",
+        "start": "Gather costs",
+        "done": "Cost modeled"
+      },
+      "compareVendorQuotes": {
+        "title": "Compare vendor quotes",
+        "description": "Compares quotes against requirements and saves a recommendation in Files.",
+        "prompt": "Compare quotes for [what we are buying].\n- Quotes: [Files folder or email thread]\n- Must-haves: [requirements]\nCompare price, terms, delivery and support. Recommend one.",
+        "criterion": "Files/operations/vendor-comparison.md compares each quote on price, terms, delivery, support and each must-have, with a source per value and one recommendation.",
+        "start": "Read quotes",
+        "done": "Vendor chosen"
+      },
+      "documentBusinessProcess": {
+        "title": "Document a process",
+        "description": "Writes a step-by-step process document from real sources in Files.",
+        "prompt": "Document how we [onboard a new customer].\n- Sources: [notes, tools, chat threads]\nFor each step: owner role, tool, inputs, outputs and what can go wrong.",
+        "criterion": "Files/operations/process.md contains numbered steps, each with owner role, tool, inputs, outputs, failure points, and the source it was learned from.",
+        "start": "Gather notes",
+        "done": "Process documented"
+      },
+      "reconcileInventoryRecords": {
+        "title": "Reconcile inventory",
+        "description": "Compares inventory between two systems and lists differences in Files.",
+        "prompt": "Reconcile inventory between [the store] and [the warehouse sheet].\n- Match on: [SKU]\nList every difference with both counts and the likely cause.",
+        "criterion": "Files/operations/inventory-reconciliation.csv lists every SKU with a difference, both counts, the gap, and the likely cause.",
+        "start": "Compare records",
+        "done": "Differences listed"
+      },
+      "prepareProjectHandoff": {
+        "title": "Prepare a project handoff",
+        "description": "Collects a project's state, owners and open work into a handoff in Files.",
+        "prompt": "Prepare a handoff for [project].\n- New owner: [role]\n- Sources: [Files folder, issue tracker, chat channel]\nCover the goal, the current state, open work, decisions made, contacts by role, and risks.",
+        "criterion": "Files/operations/handoff.md contains the goal, current state, open work with links, decisions made, contacts by role, and risks.",
+        "start": "Collect context",
+        "done": "Handoff ready"
+      },
+      "auditToolAccess": {
+        "title": "Audit tool access",
+        "description": "Finds risky or unused accounts across tools and lists fixes in Files.",
+        "prompt": "Audit who has access to [our workspace tools].\n- Tools: [email suite, code host, chat]\n- Compare with: [the current team list]\nFlag accounts of people who left, unused accounts and extra admins. Change nothing.",
+        "criterion": "Files/operations/access-audit.md lists each flagged account with tool, reason, and recommended action; no access was changed.",
+        "start": "List accounts",
+        "done": "Access audited"
+      },
+      "planTeamOffsite": {
+        "title": "Plan a team offsite",
+        "description": "Compares venues and builds a budget and agenda in Files.",
+        "prompt": "Plan our team offsite for [20 people] in [city, month].\n- Budget: [total]\n- Goals: [planning, team time]\nGive 3 venue options, a budget, an agenda and travel notes.",
+        "criterion": "Files/operations/offsite-plan.md contains 3 venue options with prices and links, a budget within the stated total, a day-by-day agenda, and travel notes.",
+        "start": "Find venues",
+        "done": "Offsite planned"
+      },
+      "findAutomationWork": {
+        "title": "Find work to automate",
+        "description": "Finds repeated manual tasks and estimates the time saved in Files.",
+        "prompt": "Find manual work we can automate in [finance and operations].\n- Sources: [process docs, chat threads, recurring tasks]\nFor each task: how often, time spent, the tool to automate it, and hours saved per month.",
+        "criterion": "Files/operations/automation-candidates.md ranks tasks by hours saved per month, each with frequency, time spent, the proposed tool, and its source.",
+        "start": "Find tasks",
+        "done": "Savings ranked"
+      },
+      "trackDelayedOrders": {
+        "title": "Track delayed orders",
+        "description": "Finds late orders and their causes and saves them in Files.",
+        "prompt": "Find orders delayed by more than [3 days] in [the store or order system].\nFor each: order, customer, promised date, current status and cause. Suggest a fix for the top causes.",
+        "criterion": "Files/operations/delayed-orders.csv lists each delayed order with promised date, status and cause; Files/operations/delayed-orders.md names the top causes and fixes.",
+        "start": "Check orders",
+        "done": "Delays found"
+      },
+      "prepareComplianceChecklist": {
+        "title": "Prepare a compliance checklist",
+        "description": "Maps controls to evidence and lists the gaps in Files.",
+        "prompt": "Prepare a [SOC 2] readiness checklist.\n- Scope: [systems and teams]\n- Evidence: [Files folder, tools]\nFor each control: current evidence, the gap and an owner role.",
+        "criterion": "Files/operations/compliance-checklist.md lists each control in scope with linked evidence or a gap, and an owner role.",
+        "start": "Map controls",
+        "done": "Gaps listed"
+      },
+      "writeWeeklyOpsReport": {
+        "title": "Write the ops report",
+        "description": "Pulls operations numbers into a weekly report in Files.",
+        "prompt": "Write the operations report for [this week].\n- Numbers: [orders, fulfillment time, tickets, costs]\n- Sources: [the store, helpdesk, accounting tool]\nCompare each number with last week. Name the 3 things that need attention.",
+        "criterion": "Files/operations/weekly-report.md contains each requested number with its source and change from last week, and 3 items that need attention.",
+        "start": "Pull numbers",
+        "done": "Report written"
+      },
+      "draftJobDescription": {
+        "title": "Draft a job description",
+        "description": "Writes a job description with clear outcomes and requirements in Files.",
+        "prompt": "Write a job description for [senior backend engineer].\n- Team and manager: [team, manager's role]\n- First-year outcomes: [what they will own]\n- Must-haves: [skills]\n- Location and pay range: [details]\nUse inclusive language. Keep it under 600 words.",
+        "criterion": "Files/people/job-description.md is under 600 words and contains the role summary, first-year outcomes, must-have and nice-to-have skills, location, and pay range.",
+        "start": "Define role",
+        "done": "Description drafted"
+      },
+      "buildOnboardingPlan": {
+        "title": "Build an onboarding plan",
+        "description": "Builds a 30-60-90 day onboarding plan from team docs in Files.",
+        "prompt": "Build a 30-60-90 day onboarding plan for [role].\n- Team docs: [Files folder]\n- Tools to learn: [the tools they will use]\n- Buddy: [role]\nGive goals, tasks and a check-in for each period.",
+        "criterion": "Files/people/onboarding-plan.md contains goals, tasks and a check-in for days 1-30, 31-60 and 61-90, with links to the docs each task uses.",
+        "start": "Read team docs",
+        "done": "Plan ready"
+      },
+      "prepareInterviewKit": {
+        "title": "Prepare an interview kit",
+        "description": "Writes structured interview questions and scorecards in Files.",
+        "prompt": "Build an interview kit for [role].\n- Job description: [Files path]\n- Stages: [screen, technical, team, final]\nFor each stage: questions, what a strong answer shows, and a 1 to 4 scorecard.",
+        "criterion": "Files/people/interview-kit.md covers every stage with questions, strong-answer signals, and a 1 to 4 scorecard tied to the job description.",
+        "start": "Read role",
+        "done": "Kit ready"
+      },
+      "organizePeopleHandbook": {
+        "title": "Organize the handbook",
+        "description": "Collects people policies into one handbook with gaps marked in Files.",
+        "prompt": "Organize our people handbook from [Files folder].\n- Sections: time off, benefits, expenses, remote work, conduct, security\nMark the policies that conflict, are missing or are out of date.",
+        "criterion": "Files/people/handbook.md contains every listed section with its source documents, and marks each conflicting, missing or outdated policy.",
+        "start": "Read policies",
+        "done": "Handbook organized"
+      },
+      "sourceCandidates": {
+        "title": "Source candidates",
+        "description": "Finds candidates from public sources and ranks them by fit in Files.",
+        "prompt": "Find [20] candidates for [role].\n- Must-haves: [skills and experience]\n- Location: [region or remote]\nUse public sources only. For each: profile link, fit reason and evidence.",
+        "criterion": "Files/people/candidates.csv lists the requested count with public profile link, current role, fit reason, and evidence for each must-have.",
+        "start": "Search profiles",
+        "done": "Candidates ranked"
+      },
+      "benchmarkCompensation": {
+        "title": "Benchmark pay",
+        "description": "Compares pay for a role and location with sourced market data in Files.",
+        "prompt": "Benchmark pay for [role] in [location].\n- Level: [mid, senior, staff]\n- Our current range: [range]\nGive the market range with base, bonus and equity, and a dated source for each value.",
+        "criterion": "Files/people/pay-benchmark.md contains the market base, bonus and equity ranges for the role, level and location, each with a dated source, and a comparison with our range.",
+        "start": "Find data",
+        "done": "Pay benchmarked"
+      },
+      "prepareReviewCycle": {
+        "title": "Prepare a review cycle",
+        "description": "Writes review questions, a rating scale and a timeline in Files.",
+        "prompt": "Prepare the performance review cycle for [this half].\n- Teams: [all teams]\n- Format: [self review, manager review, peer feedback]\nGive the questions, a rating scale with definitions, and a timeline with dates.",
+        "criterion": "Files/people/review-cycle.md contains questions per review type, a rating scale with a definition per level, and a dated timeline.",
+        "start": "Draft questions",
+        "done": "Cycle ready"
+      },
+      "summarizeEngagementSurvey": {
+        "title": "Summarize a survey",
+        "description": "Groups survey answers into themes and actions in Files.",
+        "prompt": "Summarize our engagement survey from [Files path].\n- Compare with: [the last survey]\nGive scores by question and team, the top themes from comments, and 3 suggested actions. Never name a person.",
+        "criterion": "Files/people/survey-summary.md contains scores by question and team with the change from the last survey, comment themes without names, and 3 actions.",
+        "start": "Read answers",
+        "done": "Themes found"
+      },
+      "draftOfferLetter": {
+        "title": "Draft an offer letter",
+        "description": "Drafts an offer letter from approved terms for review in Files.",
+        "prompt": "Draft an offer letter for [role].\n- Terms: [salary, equity, start date, location]\n- Template: [Files path to our offer template]\nUse only the approved terms. Mark it for legal review.",
+        "criterion": "Files/people/offer-letter.md uses the stated template and terms only, lists each term in one place, and is marked for legal review.",
+        "start": "Read template",
+        "done": "Offer drafted"
+      },
+      "planTeamTraining": {
+        "title": "Plan team training",
+        "description": "Builds a training plan with sessions and materials in Files.",
+        "prompt": "Plan training for [the sales team] on [topic].\n- Level: [new or experienced]\n- Time available: [hours per week]\nGive sessions, materials with links, exercises and a way to check what was learned.",
+        "criterion": "Files/people/training-plan.md contains dated sessions within the time available, materials with links, exercises, and a check per session.",
+        "start": "Find materials",
+        "done": "Plan ready"
+      },
+      "fixReportedBug": {
+        "title": "Fix a reported bug",
+        "description": "Reproduces a bug and prepares a tested fix in a change request for review.",
+        "prompt": "Fix this bug: [what happens, and where].\n- Expected: [what should happen]\n- Steps to reproduce: [steps or a ticket link]\n- Repo: [repository]\nReproduce it first, add a test that fails, then fix it in a change request.",
+        "criterion": "Files/engineering/bug-fix.md links the change request and contains reproduction steps, before and after outputs, test commands with results, and remaining limitations.",
+        "start": "Reproduce bug",
+        "done": "Fix ready"
+      },
+      "buildScopedFeature": {
+        "title": "Build a scoped feature",
+        "description": "Builds a small feature with tests and opens a change request.",
+        "prompt": "Build [feature] in [repository].\n- User story: [who needs it, and why]\n- Acceptance: [what must be true when done]\n- Out of scope: [what not to build]\nAdd tests for each acceptance point and open a change request.",
+        "criterion": "Files/engineering/feature.md links the change request and maps each acceptance point to a test and its passing output.",
+        "start": "Read scope",
+        "done": "Feature built"
+      },
+      "improveSlowFlow": {
+        "title": "Speed up a slow flow",
+        "description": "Measures a slow page or endpoint and ships a measured fix.",
+        "prompt": "Make [page or endpoint] faster.\n- Today: [how slow, or measure it]\n- Target: [time or percent]\nMeasure before and after with the same method, then open a change request.",
+        "criterion": "Files/engineering/performance.md contains the measurement method, before and after numbers, the change request link, and whether the target was met.",
+        "start": "Measure flow",
+        "done": "Speed improved"
+      },
+      "patchVulnerableDependencies": {
+        "title": "Patch vulnerable dependencies",
+        "description": "Upgrades vulnerable packages and opens a tested change request.",
+        "prompt": "Patch vulnerable dependencies in [repository].\n- Severity: [high and critical]\nUpgrade each package, run the tests, and open a change request. List the ones you could not upgrade and why.",
+        "criterion": "Files/engineering/dependency-patch.md lists each advisory with old and new versions, the test results, the change request link, and every package left with its reason.",
+        "start": "Scan packages",
+        "done": "Patches ready"
+      },
+      "addMissingTests": {
+        "title": "Add missing tests",
+        "description": "Covers an untested module with tests and opens a change request.",
+        "prompt": "Add tests for [module or flow] in [repository].\n- Focus: [the cases that broke before, edge cases]\nTest behavior through the public surface. Open a change request.",
+        "criterion": "Files/engineering/tests.md links the change request and lists each new test with the behavior it checks and its passing output.",
+        "start": "Read code",
+        "done": "Tests added"
+      },
+      "reviewChangeRequest": {
+        "title": "Review a change request",
+        "description": "Reviews a change for bugs and risks and saves findings in Files.",
+        "prompt": "Review [change request link] for bugs and risks.\n- Focus: [correctness, security, performance]\nFor each finding: file and line, the problem, and a suggested fix. Do not approve or merge.",
+        "criterion": "Files/engineering/review.md lists each finding with file and line, severity, the problem, and a suggested fix; the change request was not approved or merged.",
+        "start": "Read diff",
+        "done": "Review ready"
+      },
+      "writeTechnicalSpec": {
+        "title": "Write a technical spec",
+        "description": "Writes a spec with options and tradeoffs from the codebase in Files.",
+        "prompt": "Write a technical spec for [feature].\n- Problem: [what users cannot do today]\n- Constraints: [deadline, systems we must use]\nCompare at least 2 designs with tradeoffs. Include data changes, API changes, rollout and tests.",
+        "criterion": "Files/engineering/spec.md contains the problem, at least 2 designs with tradeoffs, the chosen design, data and API changes, rollout, and a test plan.",
+        "start": "Read code",
+        "done": "Spec written"
+      },
+      "writePostmortem": {
+        "title": "Write a postmortem",
+        "description": "Builds an incident timeline and root cause from logs in Files.",
+        "prompt": "Write a postmortem for [incident].\n- When: [start and end time]\n- Sources: [logs, alerts, chat threads, deploys]\nGive a timeline, the root cause, the impact and follow-up actions. Blame no person.",
+        "criterion": "Files/engineering/postmortem.md contains a sourced timeline, the root cause, the impact, and follow-up actions with owner roles, and names no person as the cause.",
+        "start": "Read logs",
+        "done": "Postmortem written"
+      },
+      "upgradeFramework": {
+        "title": "Upgrade a framework",
+        "description": "Upgrades a framework version and fixes what breaks in a change request.",
+        "prompt": "Upgrade [framework] from [current version] to [target version] in [repository].\nFollow the official migration guide. Fix what breaks, run the tests, and open a change request.",
+        "criterion": "Files/engineering/upgrade.md links the change request and lists each migration step, each breaking change fixed, and the test results.",
+        "start": "Read guide",
+        "done": "Upgrade ready"
+      },
+      "documentModule": {
+        "title": "Document a module",
+        "description": "Explains a service or module for new engineers in Files.",
+        "prompt": "Document [service or module] for new engineers.\n- Repository: [repository]\nExplain what it does, its main parts, how data flows, how to run and test it, and the known traps.",
+        "criterion": "Files/engineering/module-guide.md explains purpose, main parts with file links, data flow, run and test commands, and known traps.",
+        "start": "Read code",
+        "done": "Guide written"
+      }
+    },
+    "templateSteps": "{start}, then {done}",
     "cancel": "Cancel",
     "forPerson": "for {person}",
     "answerInChat": "Answer in chat",
     "forYou": "for you",
-    "forMember": "for a teammate"
+    "forMember": "for a teammate",
+    "working": "In progress",
+    "pausedGroup": "Paused",
+    "paused": "Paused",
+    "criteriaMet": "{met} of {total} done criteria met",
+    "state": {
+      "done": "Done. An independent check confirmed every criterion.",
+      "stopped": "Stopped. Nothing wakes it until you start it again.",
+      "abandoned": "Abandoned.",
+      "paused": "Paused {time}. Nothing wakes it until you resume it.",
+      "waitingOn": "Waiting for an answer.",
+      "verifying": "An independent check is verifying the result.",
+      "draft": "Getting started: the agent is writing the plan.",
+      "working": "In progress. Next check {time}.",
+      "workingNoWake": "In progress."
+    },
+    "startedToast": "Goal started",
+    "startError": "Could not start the goal. Try again.",
+    "updated": "updated {time}",
+    "attentionTitle": "Needs attention",
+    "doneWhen": "Done when",
+    "results": "Results",
+    "activity": "Activity",
+    "answerSentToast": "Answer sent",
+    "answerError": "Could not send the answer. Try again.",
+    "answerPlaceholder": "Write your answer",
+    "answerLabel": "Your answer",
+    "answerSent": "Answer sent. The agent picks it up now.",
+    "sendAnswer": "Send answer",
+    "resume": "Resume goal",
+    "resumedToast": "Goal resumed",
+    "resumeError": "Could not resume the goal. Try again.",
+    "pause": "Pause goal",
+    "pauseReason": "Paused from the Goal page",
+    "pausedToast": "Goal paused",
+    "pauseError": "Could not pause the goal. Try again.",
+    "moreActions": "More goal actions",
+    "shareTitle": "Share goal",
+    "scopeLabel": "Visible to",
+    "showReport": "Show report",
+    "openInFiles": "Open folder in Files",
+    "openFolderOf": "Open the folder of {file} in Files",
+    "hideReport": "Hide report",
+    "questionForYou": "Question for you",
+    "messagePlaceholder": "Leave a note for the agent…",
+    "messageLabel": "Note to the agent",
+    "messageSentToast": "Note sent",
+    "messageError": "Could not send the note. Try again.",
+    "messageSent": "Note sent. The agent picks it up now.",
+    "sendMessage": "Send note",
+    "send": "Send",
+    "agentLog": "Agent log",
+    "shareAccessLabel": "Who has access",
+    "shareOwner": "Owner",
+    "shareAdminsRole": "Can open",
+    "shareLoadError": "Could not load who has access.",
+    "shareVisibility": "Visible to: {scope}. Share goal",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "linkCopyError": "Could not copy the link",
+    "properties": "Properties",
+    "stateLabel": "State",
+    "nextCheck": "Next check",
+    "lastCheck": "Last check",
+    "feed": {
+      "created": "Goal created",
+      "moved": "Moved to {status}",
+      "update": "Latest update",
+      "paused": "Paused",
+      "movedPrefix": "Moved to"
+    },
+    "showMore": "Show more",
+    "showLess": "Show less",
+    "noAgent": "No agent",
+    "nextCheckAt": "Next check {time}",
+    "noCheck": "No check scheduled",
+    "lastCheckAt": "Last checked {time}",
+    "neverChecked": "Not checked yet",
+    "wakesTodayCount": "{count} of {max} wakes today",
+    "filesLabel": "Files",
+    "rolesLabel": "Templates by role",
+    "startNoFiles": "A goal starts from text. Remove the files, then send again.",
+    "startNeedsSubject": "Replace the part in [brackets] on the first line, then send.",
+    "templateFooter": "Where a part is still in [brackets], work it out from our connected tools and Files. Ask me only for what you cannot find.",
+    "restart": "Start goal again",
+    "restartReason": "Started again from the Goal page",
+    "restartedToast": "Goal started again",
+    "restartError": "Could not start the goal again. Try again.",
+    "noAccess": "You do not have access to this goal.",
+    "noAccessHint": "Ask the person it is for, or a project admin, to share it with you.",
+    "notFoundHint": "It was deleted, or the link is wrong.",
+    "chooseGoal": "More than one goal has this name. Pick one.",
+    "goalLoadError": "Could not load this goal. Try again.",
+    "eventsLoadError": "Could not load the activity.",
+    "changedToast": "This goal changed before your action landed. The page shows it as it is now.",
+    "blockedTitle": "Blocked",
+    "blocked": {
+      "credits": "It ran out of credits, so no wake can start.",
+      "wake_cap": "It used all {max} wakes for today.",
+      "session_cap": "It used all {max} sessions it may start.",
+      "owner_lost": "Its agent session failed, and no session took over.",
+      "storage": "Its folder in Files could not be read or written.",
+      "flag_off": "Goals is turned off for this project.",
+      "setup": "Kortix is still setting it up."
+    },
+    "blockedNext": {
+      "credits": "Add credits, then resume it.",
+      "wake_cap": "It goes on by itself after midnight UTC.",
+      "session_cap": "Stop it, or ask a project admin to raise its session limit.",
+      "owner_lost": "Start it again to give it a new session.",
+      "storage": "Check the folder in Files, then resume it.",
+      "flag_off": "Turn on Goals for this project, then resume it.",
+      "setup": "This finishes by itself within a minute."
+    },
+    "legacyUnverifiedTitle": "Not verified by Kortix",
+    "legacyUnverified": "This goal was imported from its folder. Kortix did not check its result.",
+    "verified": "Verified",
+    "reportedMet": "Reported met, not verified yet",
+    "reportedMetHint": "The agent reports this done. The independent check has not passed it yet.",
+    "verifiedCount": "{verified} of {total} verified",
+    "checkFailed": "Check failed: {note}",
+    "waitingOnPerson": "Waiting on {person}",
+    "waitNoCost": "No checks run while it waits for an answer.",
+    "chaseAt": "Follows up {time}"
   },
   "agentEditor": {
     "manage": "Manage",
@@ -23949,6 +24895,7 @@
     "moveFailed": "Could not move the artifact",
     "updated": "Updated {time}",
     "pinned": "Pinned",
+    "openComments": "{count, plural, one {# open comment} other {# open comments}}",
     "visibility": {
       "private": "Private",
       "project": "Project",
@@ -24052,7 +24999,6 @@
       "activity": "Activity",
       "open": "Open",
       "resolved": "Resolved",
-      "all": "All",
       "outdated": "Outdated",
       "outdatedHint": "This passage cannot be located in the current document.",
       "newComment": "New comment",
@@ -24099,7 +25045,6 @@
       "noCommentsHint": "Select a passage to comment on it, or start a new comment.",
       "noResolved": "No resolved comments",
       "noResolvedHint": "Resolved threads appear here.",
-      "noAllComments": "No comments yet",
       "noActivity": "No activity yet",
       "noActivityHint": "Saves and comments appear here.",
       "loadMore": "Load more",
@@ -24111,7 +25056,7 @@
       "composerKeys": "Enter to send · Shift+Enter for a new line",
       "closeSelection": "Discard selected passage",
       "preparingSelection": "Preparing selected passage…",
-      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a whole-Artifact comment.",
+      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a comment on the whole artifact.",
       "commentSelection": "Comment",
       "selectionTooLong": "This passage is too long to comment on. Select {max} characters or fewer.",
       "selectionUnavailable": "This passage cannot be anchored. Select another passage.",
@@ -24119,8 +25064,8 @@
       "commentSaveFailed": "Could not save the document. Try again before commenting.",
       "events": {
         "saved": "saved a version",
-        "published": "published the Artifact",
-        "renamed": "renamed the Artifact",
+        "published": "published the artifact",
+        "renamed": "renamed the artifact",
         "visibility_changed": "changed visibility",
         "shared_with_changed": "changed who can view",
         "restored": "restored a version",
@@ -24132,7 +25077,7 @@
         "sent_to_agent": "sent feedback to an agent"
       },
       "person": "Person",
-      "deleteRootDescription": "Its text is removed for everyone, and the thread becomes read-only. This cannot be undone.",
+      "deleteRootDescription": "Its text is removed for everyone, and the thread leaves the comments list. This cannot be undone.",
       "showPanel": "Show comments",
       "hidePanel": "Hide comments",
       "panelTitle": "Comments and activity",
@@ -24172,11 +25117,19 @@
       "sentToAgent": "Comments sent to {agent}",
       "newCommentFrom": "New comment from {name}",
       "newComments": "{count, plural, one {# new comment} other {# new comments}}",
-      "filterLabel": "Thread status",
       "pagePinLabel": "Comment {number}",
       "showPanelCount": "Show comments, {count} open",
       "hidePanelCount": "Hide comments, {count} open",
-      "commentSelectionHint": "Comment on the selection"
+      "commentSelectionHint": "Comment on the selection",
+      "threadReopened": "Thread reopened",
+      "noCommentsReadOnlyHint": "Comments on this artifact appear here.",
+      "commentTooLong": "A comment can be up to {max} characters. Remove {over}.",
+      "discardDrawingTitle": "Discard this drawing?",
+      "discardDrawingHint": "Your strokes are not saved. This cannot be undone.",
+      "discardDrawing": "Discard",
+      "keepDrawing": "Keep drawing",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "insertMedia": "Image or video…",
     "diagram": "Diagram",
@@ -24201,7 +25154,50 @@
     "embedCopy": "Copy link",
     "embedDelete": "Delete",
     "spaceEmpty": "No artifacts in {space} yet",
-    "showAll": "Show all"
+    "showAll": "Show all",
+    "live": {
+      "here": "Here now",
+      "hereLabel": "On this artifact now: {names}",
+      "reconnecting": "Reconnecting…",
+      "you": "You",
+      "agents": "Agents",
+      "agentsHere": "Agents in this thread",
+      "status": {
+        "viewing": "Viewing",
+        "reading": "Reading",
+        "editing": "Editing",
+        "writing": "Writing"
+      },
+      "hideCursor": "Hide my cursor",
+      "hideCursorHint": "Others still see your avatar.",
+      "typingOne": "{name} is typing…",
+      "typingTwo": "{first} and {second} are typing…",
+      "typingMany": "{count, plural, one {# person is typing…} other {# people are typing…}}",
+      "writing": "{name} is writing…"
+    },
+    "coedit": {
+      "offLarge": "Live co-editing is off: this doc is too large. Changes save as you type.",
+      "offLineEndings": "Live co-editing is off: this doc mixes two kinds of line breaks. Changes save as you type.",
+      "offShape": "Live co-editing is off: the editor cannot keep part of this doc exactly as written. Changes save as you type.",
+      "stoppedLarge": "Live co-editing stopped: one change was too large to share. Changes save as you type.",
+      "stoppedFailed": "Live co-editing stopped: the connection failed. Changes save as you type.",
+      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type.",
+      "offFailed": "Live co-editing is off: it could not connect. Changes save as you type."
+    },
+    "conflictTitle": "Someone else changed this doc",
+    "conflictReloadTitle": "Reload the newer version?",
+    "conflictReloadHint": "Your edits since the last save are discarded. This cannot be undone.",
+    "docLoadError": "Could not load this doc.",
+    "openError": "Could not open this artifact.",
+    "viewOnly": "View only",
+    "viewingOldUndated": "You are viewing an earlier version.",
+    "exportWaiting": "Saving your edits, then exporting…",
+    "exportBlocked": "Export stopped: your latest edits are not saved.",
+    "clearFilters": "Clear filters",
+    "linkCopyFailed": "Could not copy the link. Select it in the field and copy it.",
+    "shareDropsPeople": "{count, plural, one {Saving removes the person you added. Only Private keeps a list of people.} other {Saving removes the # people you added. Only Private keeps a list of people.}}",
+    "askAgentHistoryError": "Could not load earlier chats.",
+    "embedUnavailable": "This link has no preview, so it stays a link."
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",
@@ -24443,7 +25439,7 @@
       },
       "company": {
         "subtitle": "What every agent in this project knows.",
-        "gateDescription": "Company memory comes with Channels: every agent in this project starts each thread with what the team saved here.",
+        "gateDescription": "Company memory comes with Spaces: every agent in this project starts each thread with what the team saved here.",
         "title": "Memory",
         "place": "Company"
       },
@@ -24474,7 +25470,6 @@
       }
     },
     "tabs": {
-      "room": "Room",
       "goals": "Goals",
       "apps": "Apps",
       "artifacts": "Artifacts",
@@ -24499,7 +25494,7 @@
       "artifacts": "Artifacts bound to this space will show up here",
       "folder": "This folder is empty",
       "board": "Blocks on this board will show up here",
-      "boardHint": "Ask My Kortix to add a block: a note, an App, a file, an embedded page or another room."
+      "boardHint": "Ask My Kortix to add a block: a note, an App, a file or an embedded page."
     },
     "doc": "Doc",
     "page": "Page",
@@ -24537,8 +25532,8 @@
     "cancel": "Cancel",
     "edit": {
       "title": "Edit tabs",
-      "description": "The room stays first. Saving commits the tabs to kortix.yaml on the default branch.",
-      "empty": "Only the room. Add a tab with +.",
+      "description": "Saving commits the tabs to kortix.yaml on the default branch.",
+      "empty": "No tabs yet. Add a tab with +.",
       "save": "Save tabs",
       "rename": "Rename {name}",
       "moveUp": "Move {name} up",
@@ -24551,41 +25546,41 @@
       "unread": "{count, plural, one {# unread message} other {# unread messages}}"
     },
     "create": {
-      "title": "Create a channel",
-      "description": "Everyone in this project can see and use the channel.",
+      "title": "Create a space",
+      "description": "A space organises one area of work, like Marketing, Hiring or Ops. People and agents work in its threads.",
       "nameLabel": "Name",
       "name": "Name",
-      "namePlaceholder": "marketing",
-      "slugPlaceholder": "channel-name",
+      "namePlaceholder": "Marketing",
+      "slugPlaceholder": "space-name",
       "descriptionLabel": "Description (optional)",
-      "descriptionPlaceholder": "What this channel is for",
+      "descriptionPlaceholder": "What this space is for",
       "taken": "A space #{slug} exists already.",
       "about": "Description",
       "aboutPlaceholder": "What this space is for",
       "template": "Starting tabs",
-      "submit": "Create channel",
-      "created": "Channel created",
+      "submit": "Create space",
+      "created": "Space created",
       "nameRequired": "Add a name.",
       "invalidName": "Use at least one letter or number in the name.",
       "slugTaken": "<link>#{slug}</link> already exists.",
-      "failed": "Could not create the channel. Try again.",
-      "renameTitle": "Rename channel",
-      "renameDescription": "The channel's link changes with its name.",
+      "failed": "Could not create the space. Try again.",
+      "renameTitle": "Rename space",
+      "renameDescription": "The space's link changes with its name.",
       "save": "Save",
-      "renamed": "Channel renamed",
-      "renameFailed": "Could not rename the channel. Try again.",
-      "descriptionPrivate": "Only the people you add can see and use the channel.",
+      "renamed": "Space renamed",
+      "renameFailed": "Could not rename the space. Try again.",
+      "descriptionPrivate": "Only the people you add can see and use the space.",
       "privateLabel": "Private",
       "privateHint": "Only invited members can see it.",
-      "privateUnavailable": "Private channels are not available in this workspace yet.",
-      "privateLimits": "Private hides the channel from other people. Code changes (git branches) and the agents’ own tools aren’t private.",
+      "privateUnavailable": "Private spaces are not available in this workspace yet.",
+      "privateLimits": "Private hides the space from other people. Code changes (git branches) and the agents’ own tools aren’t private.",
       "error": "Could not create the space"
     },
     "view": {
       "welcomeTitle": "Welcome to #{name}",
-      "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
+      "welcomeEmpty": "A space organises one area of work. People and agents work here in threads: every message starts one.",
       "welcomeStart": "This is the start of #{name}.",
-      "dmIntro": "This conversation is just between you and {agent}.",
+      "dmIntro": "Only you and {agent} see this space.",
       "today": "Today",
       "yesterday": "Yesterday",
       "openThread": "Open thread",
@@ -24599,24 +25594,24 @@
       "messageAgent": "Message {agent}",
       "threadsEmptyTitle": "No threads yet",
       "threadsEmpty": "Threads you start will show up here.",
-      "loadError": "Could not load this channel.",
+      "loadError": "Could not load this space.",
       "threadsLoadError": "Could not load the threads.",
       "retry": "Try again",
-      "notFound": "This channel doesn't exist.",
-      "notFoundHint": "The link may be wrong, or someone renamed the channel.",
+      "notFound": "This space doesn't exist.",
+      "notFoundHint": "The link may be wrong, or someone renamed the space.",
       "openDefault": "Open #{name}",
       "archivedTitle": "#{name} is archived.",
       "archivedHint": "Unarchive it to read and start threads here again.",
       "archivedLocked": "Only its creator or a project manager can unarchive it.",
-      "unarchive": "Unarchive channel",
-      "unarchived": "Channel unarchived",
-      "unarchiveFailed": "Could not unarchive the channel. Try again.",
+      "unarchive": "Unarchive space",
+      "unarchived": "Space unarchived",
+      "unarchiveFailed": "Could not unarchive the space. Try again.",
       "dmFailed": "Could not open this conversation.",
-      "archive": "Archive channel",
+      "archive": "Archive space",
       "archiveTitle": "Archive #{name}?",
-      "archiveDescription": "The channel leaves the sidebar for every member. Its threads stay, and its creator or a project manager can unarchive it.",
-      "archived": "Channel archived",
-      "archiveFailed": "Could not archive the channel. Try again.",
+      "archiveDescription": "The space leaves the sidebar for every member. Its threads stay, and its creator or a project manager can unarchive it.",
+      "archived": "Space archived",
+      "archiveFailed": "Could not archive the space. Try again.",
       "threadTitle": "Thread",
       "closeThread": "Close thread",
       "sendFailed": "Could not start the thread. Try again.",
@@ -24648,7 +25643,7 @@
         },
         "links": {
           "title": "No links yet",
-          "description": "Links people share in {place} threads show up here. Pin one to give it to every agent in the channel."
+          "description": "Links people share in {place} threads show up here. Pin one to give it to every agent in the space."
         },
         "triggers": {
           "title": "No triggers yet",
@@ -24681,8 +25676,8 @@
         "titlePlaceholder": "What it is",
         "invalidUrl": "Enter a valid link, like example.com.",
         "addFailed": "Could not add the link. Try again.",
-        "limit": "This channel already pins 200 links. Unpin one first.",
-        "addLimit": "This channel already holds 200 added links. Remove one first.",
+        "limit": "This space already pins 200 links. Unpin one first.",
+        "addLimit": "This space already holds 200 added links. Remove one first.",
         "added": "Added",
         "remove": "Remove link",
         "removeTitle": "Remove this link?",
@@ -24702,7 +25697,7 @@
         "all": "All",
         "sharedBy": "Shared by",
         "earlier": "Earlier",
-        "pinHint": "Pin it. Every agent in the channel reads pinned links.",
+        "pinHint": "Pin it. Every agent in the space reads pinned links.",
         "unpinHint": "Unpin it. Agents stop reading it.",
         "copyLink": "Copy link",
         "linkCopied": "Link copied",
@@ -24712,7 +25707,7 @@
       "appsLoadError": "Could not load the apps.",
       "triggers": {
         "loadError": "Could not load the triggers.",
-        "privateNote": "Triggers can't post into a private channel. Ask an agent in a thread to set a loop instead."
+        "privateNote": "Triggers can't post into a private space. Ask an agent in a thread to set a loop instead."
       },
       "reply": "Reply",
       "rosterTitlePeople": "People",
@@ -24758,19 +25753,69 @@
         "rememberHint": "Notes every agent reads"
       },
       "allAgents": "All agents",
-      "join": "Join channel",
+      "join": "Join space",
       "joined": "You joined #{name}.",
-      "joinFailed": "Could not join the channel. Try again."
+      "joinFailed": "Could not join the space. Try again.",
+      "openFullSession": "Open full session",
+      "tabEdit": {
+        "kind": {
+          "file": "File",
+          "artifact": "Artifact",
+          "app": "App",
+          "folder": "Folder",
+          "link": "Link"
+        },
+        "add": "Add tab",
+        "full": "A space holds at most {max} tabs. Remove one first.",
+        "noArtifacts": "No artifacts yet",
+        "noApps": "No Apps in this project",
+        "spaceFiles": "This space’s files",
+        "otherFolder": "Another folder…",
+        "fileItem": "File…",
+        "linkItem": "Link…",
+        "linkTitle": "Add a link",
+        "linkHint": "An https page, shown inside the tab.",
+        "folderTitle": "Add a folder",
+        "folderHint": "A Drive folder, by its path.",
+        "fileTitle": "Add a file",
+        "fileHint": "Any file in Drive, by its path. An .html file shows as a page.",
+        "url": "URL",
+        "path": "Folder path",
+        "filePath": "File path",
+        "submit": "Add tab",
+        "cancel": "Cancel",
+        "options": "Options for {name}",
+        "rename": "Rename",
+        "renameTitle": "Rename tab",
+        "name": "Tab name",
+        "save": "Save",
+        "moveLeft": "Move left",
+        "moveRight": "Move right",
+        "remove": "Remove tab",
+        "removed": "Removed {name}",
+        "undo": "Undo",
+        "saveError": "The tabs could not be saved",
+        "openLink": "Open in new tab",
+        "linkCard": {
+          "description": "{host} does not allow other sites to show it inside a tab.",
+          "open": "Open"
+        },
+        "missing": {
+          "title": "This tab’s content is gone",
+          "description": "It was deleted or renamed, or it is not shared with you."
+        }
+      },
+      "spaceDetails": "{name} details"
     },
     "details": {
       "about": "About",
       "members": "Members",
-      "name": "Channel name",
+      "name": "Space name",
       "description": "Description",
       "noDescription": "Add a description",
       "created": "Created",
       "editField": "Edit {field}",
-      "archiveTitle": "Archive this channel",
+      "archiveTitle": "Archive this space",
       "archiveHint": "It leaves the sidebar for every member. Its threads stay.",
       "archive": "Archive",
       "find": "Find people or agents",
@@ -24794,9 +25839,9 @@
       "peopleFailed": "Could not update the members. Try again.",
       "personMenu": "{person} options",
       "removePerson": "Remove from #{name}",
-      "leave": "Leave channel",
+      "leave": "Leave space",
       "left": "You left #{name}.",
-      "leaveTitle": "Leave this channel",
+      "leaveTitle": "Leave this space",
       "leaveHint": "You can still read it, and join again at any time.",
       "visibilityPrivate": "Only its members",
       "privateNote": "Only members can see #{name}.",
@@ -24810,30 +25855,32 @@
       "leaveHintPrivate": "You lose access to its threads, files and memory, your own threads included. A member must add you again.",
       "leavePrivateTitle": "Leave #{name}?",
       "addMembers": "Add members",
-      "privateLimits": "Private hides the channel from other people. Code changes (git branches) and the agents’ own tools aren’t private."
+      "privateLimits": "Private hides the space from other people. Code changes (git branches) and the agents’ own tools aren’t private.",
+      "agentAdded": "{agent} added to #{name}."
     },
     "folder": {
       "memory": "Memory",
       "loadError": "Couldn't load this folder",
       "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every thread.",
-      "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every thread.",
+      "memoryNoteDm": "What {agent} remembers from this space. It reads this at the start of every thread.",
       "off": {
         "title": "No Drive here",
         "description": "Files and memory for {place} live in the Drive. This Kortix stores no Drive: it needs Platinum."
       }
     },
     "onboarding": {
-      "reenabled": "Sessions started while Channels was off are here.",
+      "reenabled": "Sessions started while Spaces was off are here.",
       "intro": {
-        "title": "Welcome to Channels",
-        "channels": "Channels group work by team.",
+        "title": "Welcome to Spaces",
+        "channels": "Spaces group work by team.",
         "threads": "Every new message starts a thread.",
-        "memory": "Agents remember what each channel agrees on.",
-        "gotIt": "Got it"
+        "memory": "Agents remember what each space agrees on.",
+        "gotIt": "Got it",
+        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
       },
       "getStarted": {
         "dismiss": "Dismiss",
-        "channel": "Create a channel for a team",
+        "channel": "Create a space for a team",
         "done": "Done"
       }
     },
@@ -24862,9 +25909,9 @@
       "noMatches": "Nothing matches “{query}”."
     },
     "privateNotIn": {
-      "row": "Private channels you are not in",
-      "title": "Private channels you are not in",
-      "description": "You can rename, archive and add people. Only members read what is in a channel, so you cannot add yourself.",
+      "row": "Private spaces you are not in",
+      "title": "Private spaces you are not in",
+      "description": "You can rename, archive and add people. Only members read what is in a space, so you cannot add yourself.",
       "meta": "{count, plural, =0 {No members} one {# member} other {# members}} · created by {name}",
       "metaNoCreator": "{count, plural, =0 {No members} one {# member} other {# members}}",
       "archived": "Archived",
@@ -24879,39 +25926,29 @@
     },
     "templates": {
       "standard": {
-        "label": "Room, Goals, Apps and Artifacts",
-        "description": "The room, then what is bound to the space."
-      },
-      "room": {
-        "label": "Room only",
-        "description": "One conversation. Add tabs later."
+        "label": "Goals, Apps and Artifacts",
+        "description": "What is bound to the space."
       },
       "board": {
-        "label": "Room and a board",
+        "label": "A board and Goals",
         "description": "A board for the brief and the links, then Goals.",
         "brief": "Brief",
         "text": "What this space is for, and how to help."
       }
     },
     "leave": "Leave {name}",
-    "openRooms": "Open rooms",
-    "roomHint": "Agents and people post updates here.",
-    "noRoom": "No room yet.",
     "agents": "Agents in this space",
     "openAgent": "Open {name}",
-    "members": "{count, plural, one {# person} other {# people}}",
     "needsYou": "need you",
     "newSession": "New session",
     "askMyKortix": "Ask My Kortix",
     "askPrompt": "I want to change the {name} space (`spaces.{slug}` in kortix.yaml): its tabs, its header or the agents in it. Ask me what to change.",
-    "roomsOff": "Rooms are off for this project",
-    "roomsOffHint": "Turn on Rooms in the project settings to talk with people and agents here.",
-    "room": {
-      "introTitle": "This is the start of #{name}",
-      "introBody": "The room for everyone who works in this space.",
-      "introAgents": "{count, plural, one {{names} posts updates here.} other {{names} post updates here.}}",
-      "introNoAgents": "Agents you add to this space post their updates here.",
-      "introMention": "Type @ to mention a person or an agent."
+    "intro": {
+      "title": "This is the start of #{name}",
+      "body": "The place for everyone who works in this space.",
+      "agents": "{count, plural, one {{names} posts updates here.} other {{names} post updates here.}}",
+      "noAgents": "Agents you add to this space post their updates here.",
+      "addTab": "Add a tab with + to pin goals, apps, files or a board here."
     },
     "filter": "Filter by space",
     "all": "All",
@@ -24922,6 +25959,77 @@
       "noApp": "No app selected yet.",
       "noFile": "No file yet.",
       "loadingApp": "Loading app…"
+    },
+    "panel": {
+      "title": "{name} details",
+      "heading": "Details",
+      "close": "Close details",
+      "private": "Private",
+      "rename": "Rename and describe",
+      "personalDescription": "Your private space with My Kortix. Only you see it.",
+      "privateDescription": "Only the people and agents in it see this space.",
+      "noDescription": "No description yet.",
+      "agents": "Agents",
+      "addAgent": "Add agent",
+      "default": "Default",
+      "projectDefault": "Project default",
+      "people": "People",
+      "addPeople": "Add people",
+      "you": "You",
+      "tabs": "Tabs",
+      "addTab": "Add tab",
+      "routines": "Routines",
+      "addRoutine": "Add routine",
+      "routinesPrivate": "A private space takes no routines yet.",
+      "proactive": "Proactive",
+      "proactiveWatch": "Watch this space",
+      "proactiveWatchHint": "An agent reads what happens here and writes only when it matters.",
+      "proactiveBrief": "Daily brief",
+      "proactiveBriefHint": "A short summary at 9:00 on days with news.",
+      "proactiveFailed": "The setting was not saved. Try again.",
+      "allSettings": "All settings",
+      "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\".",
+      "noAgentsToAdd": "Every project agent is in this space."
+    },
+    "profile": {
+      "viewProfile": "Show the profile of {name}",
+      "viewProfileShort": "View profile",
+      "agent": "Agent",
+      "openProfile": "Open profile",
+      "you": "(you)",
+      "message": "Message",
+      "messageFailed": "Could not open a private space. Try again.",
+      "dmSpaceName": "{a} and {b}",
+      "heading": "Profile",
+      "close": "Close profile",
+      "model": "Model",
+      "modelDefault": "The project's default model",
+      "connectors": "Connectors",
+      "connectorsAll": "All connectors",
+      "connectorsNone": "No connectors",
+      "projectDefault": "Project default",
+      "projectDefaultYes": "Answers new threads where no agent is set",
+      "email": "Email",
+      "sharedSpaces": "Spaces you share",
+      "yourSpaces": "Your spaces",
+      "addTo": "Add to {space}",
+      "addedTo": "{agent} added to {space}",
+      "addFailed": "Could not add the agent. Try again.",
+      "spacesIn": "Spaces it is in",
+      "spacesInNone": "Not in a space yet",
+      "default": "Default"
+    },
+    "mentions": {
+      "people": "People",
+      "agents": "Agents",
+      "addToSpace": "Not in {space}: ask to add",
+      "added": "{agent} added to {space}",
+      "addFailed": "Could not add the agent. Try again.",
+      "askAdd": "Add {agent} to {space}?",
+      "askAddConfirm": "Add",
+      "askNotNow": "Not now",
+      "askAdmin": "{agent} isn't in {space}. Ask a Space admin to add it.",
+      "dismiss": "Dismiss"
     }
   },
   "imageGen": {
@@ -25008,6 +26116,7 @@
   "voiceCall": {
     "title": "Voice call",
     "call": "Call",
+    "calling": "Calling…",
     "start": "Start a voice call",
     "end": "End call",
     "connecting": "Connecting…",
@@ -25025,6 +26134,8 @@
     "lost": "Could not reconnect the call",
     "unavailable": "This session's sandbox started before voice calls were turned on. Calls work from its next start.",
     "callAgain": "Call again",
+    "openChat": "Open the chat",
+    "turnNote": "Said in a voice call and answered by the voice.",
     "close": "Close"
   },
   "agentCapabilities": {
@@ -25116,18 +26227,38 @@
       "shutdownRequest": "Shutdown request from {from}",
       "shutdownResponse": "Shutdown answer from {from}",
       "expand": "Show the whole message",
-      "collapse": "Hide the message"
+      "collapse": "Hide the message",
+      "kind": {
+        "message": "Message",
+        "finished": "Finished",
+        "shutdownRequest": "Asks to stop",
+        "shutdownResponse": "Stop answer"
+      }
     },
     "notice": {
       "completed": "{name} finished",
       "failed": "{name} didn’t finish",
       "stopped": "{name} was stopped",
+      "viewRun": "View run",
+      "peerFinished": "{name} finished",
+      "result": "Result",
       "fallbackName": "Your agent",
       "openSession": "Open session",
       "expand": "Show the whole result",
       "collapse": "Hide the result",
       "batchTitle": "{count, plural, one {# agent finished} other {# agents finished}}",
-      "ownsTasks": "Still owns {tasks}"
+      "ownsTasks": "Still owns {tasks}",
+      "source": "Agent update",
+      "statusFailedShort": "Didn’t finish",
+      "statusStoppedShort": "Stopped",
+      "updateCount": "{count, plural, one {# agent update} other {# agent updates}}",
+      "details": "Details",
+      "failedSentence": "The agent stopped before it finished.",
+      "state": {
+        "completed": "Finished",
+        "failed": "Didn’t finish",
+        "stopped": "Stopped"
+      }
     },
     "tools": {
       "running": {
@@ -25138,6 +26269,8 @@
         "stopping": "Stopping an agent…"
       },
       "to": "To",
+      "messageTo": "Message to @{to}",
+      "messageSent": "Message sent",
       "peerStatus": {
         "delivered": "Delivered",
         "held": "Waiting for approval",
@@ -25170,7 +26303,8 @@
       "blockedBy": "blocked by {tasks}",
       "stopped": "Stopped",
       "alreadyEnded": "Already ended",
-      "openSession": "Open session"
+      "openSession": "Open session",
+      "messageToName": "To {to}"
     },
     "strip": {
       "label": "Agents",
@@ -25227,7 +26361,16 @@
       "retry": "Try again",
       "emptyTitle": "Nothing yet",
       "emptyDescription": "Its messages show here as it works.",
-      "loadOlder": "Show earlier messages"
+      "loadOlder": "Show earlier messages",
+      "runsLabel": "Workflow runs",
+      "previousAgent": "Previous agent",
+      "nextAgent": "Next agent",
+      "moreActions": "More actions",
+      "attachments": "Attached images",
+      "removeAttachment": "Remove {name}",
+      "attachImages": "Attach images",
+      "attachFailed": "Could not attach the image",
+      "scrollToBottom": "Go to the newest message"
     },
     "tasks": {
       "label": "Team tasks",
@@ -25245,10 +26388,15 @@
       "title": "Message from {from}",
       "titleShutdown": "{from} asks this session to stop",
       "waiting": "Waiting for your approval. It expires after 5 minutes.",
+      "waitingShort": "Waiting for your approval",
+      "expires": "Expires after 5 minutes",
       "deny": "Deny",
       "approve": "Approve",
       "approveFailed": "Could not deliver the message",
-      "denyFailed": "Could not deny the message"
+      "denyFailed": "Could not deny the message",
+      "wantsToSend": "wants to send this agent a message",
+      "asksStop": "asks this agent to stop",
+      "needsApproval": "Needs your approval"
     },
     "workflow": {
       "large": "Large workflow",
@@ -25256,6 +26404,9 @@
       "paused": "Paused",
       "pause": "Pause the run",
       "resume": "Resume the run",
+      "pauseShort": "Pause",
+      "resumeShort": "Resume",
+      "stopShort": "Stop",
       "pauseHint": "Pause: no new agent starts; running agents finish (p)",
       "resumeHint": "Resume the run (p)",
       "stop": "Stop the run",
@@ -25265,6 +26416,7 @@
       "savePrompt": "Save the workflow run \"{title}\" (run {runId}) as a saved workflow: write its script to {file} and open a change request for it.",
       "saveSent": "Asked to save the workflow",
       "saveFailed": "Could not ask to save the workflow",
+      "viewing": "Viewing",
       "restartHint": "Restart this agent with the same prompt (r)",
       "restartAgent": "Restart {label}",
       "failed": {
@@ -25363,5 +26515,99 @@
     "dialogTitle": "Start a fresh context?",
     "dialogDescription": "The agent continues in a fresh context and searches the full history when it needs a detail. Nothing is summarized, and the conversation stays here as it is.",
     "dialogAction": "Start a fresh context"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack message",
+    "slackConversation": "Slack conversation",
+    "notionPage": "Notion page",
+    "figmaDesign": "Figma design",
+    "figjamBoard": "FigJam board",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google Doc",
+    "googleSheet": "Google Sheet",
+    "googleSlides": "Google Slides",
+    "pullRequest": "PR #{number}",
+    "issue": "Issue #{number}"
+  },
+  "subscriptionUsage": {
+    "fiveHour": "5-hour limit",
+    "weekly": "Weekly limit",
+    "weeklyModel": "Weekly · {model}",
+    "reconnect": "Reconnect",
+    "disabledTitle": "Subscription usage is unavailable",
+    "disabledDescription": "Subscription connections are not enabled for this project.",
+    "text0": "Reconnect needed",
+    "text1": "Inactive",
+    "text2": "Refresh failed",
+    "text3": "Awaiting usage",
+    "text4": "Limit reached",
+    "text5": "Last known usage",
+    "text6": "Usage reported",
+    "text7": "Subscription",
+    "text8": "used",
+    "text9": "Reset time passed · refresh for current usage",
+    "text10": "Reset time not reported",
+    "text11": "Checking provider usage…",
+    "text12": "No usage reported yet. Refresh after using this subscription.",
+    "text13": "Could not update. Showing last known data.",
+    "text14": "Waiting for provider data",
+    "text15": "Checking…",
+    "text16": "Refresh",
+    "text17": "Subscription usage",
+    "text18": "Track the limits of your connected ChatGPT and Claude subscriptions.",
+    "text19": "Usage could not load",
+    "text20": "Try loading your connected subscriptions again.",
+    "text21": "Retry",
+    "text22": "No connected subscriptions",
+    "text23": "Connect ChatGPT or Claude in Providers to see reported usage and reset times.",
+    "text24": "Connect a subscription",
+    "text25": "Usage is shared across apps that use the same subscription. Checks automatically every minute while this tab is open.",
+    "text26": "Limits vary by plan. Only windows reported by your connection appear here; missing data does not mean unlimited usage. File limits are not reported. API spend appears in Costs.",
+    "resets": "Resets {time}",
+    "observed": "Observed {time}",
+    "meterLabel": "{label}: {percent}% used",
+    "refreshLabel": "Refresh {label} usage",
+    "fiveHourNotReported": "Five-hour window not reported by this connection.",
+    "fableIncluded": "Fable usage also counts toward your overall weekly allowance.",
+    "chatgptUsage": "ChatGPT subscription usage",
+    "claudeUsage": "Claude subscription usage",
+    "allSubscriptions": "All subscriptions"
+  },
+  "gatewayRouting": {
+    "exceptions": "Exceptions",
+    "modeLabel": "When a model fails",
+    "modeCustom": "Use my backups",
+    "modeInherit": "Let Kortix pick",
+    "modeDisabled": "Show the error",
+    "stopNote": "The error is shown right away.",
+    "addBackups": "Add backups",
+    "add": "Add",
+    "noBackups": "No backups · the error is shown",
+    "sendImages": "Send images to <model></model>",
+    "autoModel": "Auto ({model})",
+    "sameModels": "The same models",
+    "chooseModel": "Choose model",
+    "addException": "Add an exception",
+    "removeException": "Remove exception",
+    "noExceptions": "No exceptions.",
+    "modelDefaults": "Model defaults",
+    "searchModels": "Search models",
+    "noModels": "No models found",
+    "notConnected": "Provider not connected",
+    "removeModel": "Remove {model}",
+    "unsaved": "Unsaved changes",
+    "discard": "Discard",
+    "save": "Save",
+    "ifThisFails": "If this fails",
+    "tryInOrder": "Try in order",
+    "onlyOnHeader": "Only on",
+    "projectDefault": "Project default · every request",
+    "kortixPicks": "Kortix picks",
+    "useMyOwn": "Use my own"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "Agent session · {id}",
+    "human": "Human",
+    "listLabel": "Model switches"
   }
 }

@@ -5,7 +5,7 @@
 
 import type { WebNotificationType } from '../lib/web-notifications';
 import type { InboxNotification } from '@kortix/sdk';
-import { pushTypeOf } from '@kortix/shared/notification-kinds';
+import { type NotificationKindName, pushTypeOf } from '@kortix/shared/notification-kinds';
 
 /** The query key a notification link carries so the opened page marks it read. */
 export const NOTIFICATION_PARAM = 'notification';
@@ -83,7 +83,8 @@ export function planArrivals(
 
 /** The in-page notification type: the push `type` of the kind. */
 export function webNotificationType(row: InboxNotification): WebNotificationType {
-  return pushTypeOf(row.kind) as WebNotificationType;
+  // A retired `message` row never reaches the client (the API hides it): the live kinds only.
+  return pushTypeOf(row.kind as NotificationKindName) as WebNotificationType;
 }
 
 /**
@@ -93,17 +94,16 @@ export function webNotificationType(row: InboxNotification): WebNotificationType
  */
 export function notificationTag(row: InboxNotification): string {
   const subject = row.session_id ?? (row.trigger_slug ? `${row.project_id}:${row.trigger_slug}` : row.id);
-  return `${pushTypeOf(row.kind)}:${subject}`;
+  return `${pushTypeOf(row.kind as NotificationKindName)}:${subject}`;
 }
 
 /**
  * Where a row's open action goes, named by the page its `url` opens: its
- * conversation (a message), its session, the Reminders page (a reminder
+ * Artifact, its session, the Reminders page (a reminder
  * alert), or the Triggers page.
  */
-export function rowDestination(row: InboxNotification): 'artifact' | 'room' | 'session' | 'reminders' | 'triggers' {
+export function rowDestination(row: InboxNotification): 'artifact' | 'session' | 'reminders' | 'triggers' {
   if (row.artifact_id) return 'artifact';
-  if (row.room_id) return 'room';
   if (row.session_id) return 'session';
   const path = new URL(row.url, 'http://kortix.invalid').pathname;
   // `/admin/loops` since 2026-10-28; a row stored before carries `/reminders`.

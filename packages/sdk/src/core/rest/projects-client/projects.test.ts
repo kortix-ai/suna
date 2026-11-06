@@ -241,7 +241,7 @@ test('returns ok:false without hitting the network when credentials are missing'
   expect(calls).toHaveLength(0);
 });
 
-test('normalizes the provider-neutral default_agent field from legacy project config', async () => {
+test('an absent default_agent reads as null; the deprecated open_code_default_agent is not read', async () => {
   configureKortix({
     backendUrl: 'http://backend.test/v1',
     getToken: async () => 'tok',
@@ -268,8 +268,7 @@ test('normalizes the provider-neutral default_agent field from legacy project co
 
   const detail = await getProjectDetail('proj-1');
 
-  expect(detail.config.default_agent).toBe('kortix');
-  expect(detail.config.open_code_default_agent).toBe('kortix');
+  expect(detail.config.default_agent).toBeNull();
 });
 
 test('project detail carries the manifest health the API reports', async () => {
@@ -314,7 +313,7 @@ test('a project response carries the icon through the backendApi/unwrap parsing 
       JSON.stringify({
         project: { project_id: 'proj-1', name: 'Iconic', icon: '🚀' },
         config: {
-          open_code_default_agent: null,
+          default_agent: null,
           agents: [],
           commands: [],
           skills: [],
@@ -1036,10 +1035,8 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'us_region',
     'event_triggers',
     'notification_center',
-    'session_log_restore',
     'workspace_volume',
-    'project_channels',
-    'agent_rooms',
+    'chat',
     'shared_drives',
     'goals',
     'artifacts',
@@ -1049,6 +1046,9 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'chrome',
     'agent_teams',
     'voice_call',
+    'chat_input',
+    'chat_front',
+    'spaces_proactive',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);
@@ -1148,8 +1148,8 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
   const managed: FeatureFlagView = {
-    key: 'session_log_restore',
-    name: 'Session log restore',
+    key: 'workspace_volume',
+    name: 'Stateless sandboxes',
     description: 'x',
     stability: 'experimental',
     available: true,

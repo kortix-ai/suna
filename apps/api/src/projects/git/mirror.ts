@@ -418,7 +418,13 @@ export function classifyGitError(error: unknown, args: readonly string[], timeou
   }
   // Never stdout: for `show` and `cat-file` it is repository content, and the
   // message reaches logs and error reports.
-  const cleaned = stripGitProgress(stderr) || `git ${subcommand} failed${typeof err.code === 'number' ? ` (exit ${err.code})` : ''}`;
+  // A STRING code with an empty stderr is Node failing to SPAWN the child at
+  // all (`EAGAIN` under process pressure, `ENOENT` for a missing binary) — its
+  // message carries the real cause, so keep it: laundering it into the bare
+  // `git clone failed` hid the fork exhaustion a retry then never retried on.
+  // A numeric exit code still renders the long-standing `(exit N)` form.
+  const cleaned = stripGitProgress(stderr) ||
+    `git ${subcommand} failed${typeof err.code === 'number' ? ` (exit ${err.code})` : typeof err.code === 'string' ? ` (spawn ${err.code})` : ''}`;
   return new GitOperationError({
     kind: 'failed',
     message: cleaned,
@@ -451,6 +457,17 @@ export function isGitOperationError(err: unknown): err is GitOperationError {
  * transient: the mirror retries the clone, and a persistent failure surfaces as
  * a retryable 503 + Retry-After instead of an unhandled 500.
  *
+ * The same container-level pressure can also make FORKING fail: git's https
+ * helper fails its own fork (`error: cannot fork() for remote-https: Resource
+ * temporarily unavailable`), or Node's `execFile` fails to spawn git itself
+ * (code `EAGAIN`, message `spawn git EAGAIN`, no stderr). KRTX-4016 burst
+ * windows (2026-11-03/04) produced hundreds of prompts refused per burst this
+ * way because the class was treated as permanent — no retry, fail closed per
+ * prompt. It is the same transient class: bounded retries and a retryable 503,
+ * while a sustained exhaustion still answers closed after the retries.
+ * Sibling family in the signature set: fd exhaustion (`EMFILE`/`ENFILE`,
+ * "too many open files").
+ *
  * Incident 2026-09-23 (`incident-20260923T100537Z-hbcr`): the KX-HOURLY
  * heartbeat probe's `sessions new` cold-cloned the private mirror of an
  * internal project, got `fatal: repository '…/private-mirror-….git/'
@@ -464,7 +481,7 @@ export function isGitOperationError(err: unknown): err is GitOperationError {
  * local repo (`not a git repository`) do NOT match.
  */
 const TRANSIENT_MIRROR_ERROR_PATTERN =
-  /repository '[^']*' not found|could not resolve host|temporary failure in name resolution|network is unreachable|couldn't connect to server|connection (?:reset|refused|timed out|closed)|remote end hung up unexpectedly|early eof|rpc failed|the requested url returned error: 5\d\d|operation timed out|timed out|ssl_error|gnutls_handshake|tls handshake/i;
+  /repository '[^']*' not found|could not resolve host|temporary failure in name resolution|network is unreachable|couldn't connect to server|connection (?:reset|refused|timed out|closed)|remote end hung up unexpectedly|early eof|rpc failed|the requested url returned error: 5\d\d|operation timed out|timed out|ssl_error|gnutls_handshake|tls handshake|cannot fork\(\) for|resource temporarily unavailable|spawn(?: \S+)? EAGAIN|\bEMFILE\b|\bENFILE\b|too many open files/i;
 
 /**
  * A push the REMOTE rejected with its own server-side 5xx reason (KRTX-1683,

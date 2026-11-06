@@ -161,6 +161,11 @@ esac
     expect((await run(['init', '--yes'])).code).toBe(0);
     expect(readEnv().KORTIX_CAPTURE_STORE).toBe('external');
     expect(readCompose().services['capture-store']).toBeUndefined();
+
+    // doctor does not report the missing bundled store as a fault.
+    const doctor = await run(['doctor', '--json']);
+    const store = (JSON.parse(doctor.stdout).checks as { name: string; ok: boolean; detail: string }[]).find((c) => c.name === 'capture-store');
+    expect(store).toEqual({ name: 'capture-store', ok: true, detail: 'external Kortix Capture store (KORTIX_CAPTURE_STORE=external)' });
   });
 
   test('init defaults to the shared auth+sandbox defaults and the stable channel', async () => {
@@ -757,21 +762,38 @@ esac
     return { result, check };
   };
 
-  test('doctor FAILS open sign-up on a domain instance, and passes once email confirmation is on', async () => {
+  test('a domain instance without email starts invite-only, and doctor FAILS only when the operator opens sign-up', async () => {
     await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    const apiEnv = () => (readCompose().services['kortix-api'] as { environment: Record<string, string> }).environment;
+    expect(apiEnv().KORTIX_SIGNUP_MODE).toBe('invite');
+    const authEnv = (readCompose().services['supabase-auth'] as { environment: Record<string, string> }).environment;
+    expect(authEnv.GOTRUE_HOOK_BEFORE_USER_CREATED_ENABLED).toBe('true');
+    expect(authEnv.GOTRUE_HOOK_BEFORE_USER_CREATED_URI).toBe('pg-functions://postgres/kortix/before_user_created_hook');
 
+    const invite = await signUpCheck();
+    expect(invite.check?.ok).toBe(true);
+    expect(invite.check?.detail).toContain('by invitation only (KORTIX_SIGNUP_MODE=invite)');
+
+    await run(['env', 'set', 'KORTIX_SIGNUP_MODE=open']);
+    expect(apiEnv().KORTIX_SIGNUP_MODE).toBe('open');
     const open = await signUpCheck();
     expect(open.check?.ok).toBe(false);
     expect(open.check?.detail).toContain('create a confirmed account for any email address');
+    expect(open.check?.detail).toContain('kortix self-host env set KORTIX_SIGNUP_MODE=invite');
     expect(open.check?.detail).toContain('kortix self-host env set EMAIL_URL=');
-    expect(open.check?.detail).toContain('kortix self-host env set DISABLE_SIGNUP=true');
     expect(JSON.parse(open.result.stdout).ok).toBe(false);
     expect(open.result.code).not.toBe(0);
+  }, 60_000);
 
-    // An email provider turns autoconfirm off (email-wiring.ts), which closes it.
+  test('an instance that confirms email addresses defaults to open sign-up, and doctor passes', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
     await run(['env', 'set', 'EMAIL_URL=smtp://user:secret@smtp.example.com:587']);
-    const confirmed = await signUpCheck();
-    expect(confirmed.check).toEqual({ name: 'open-sign-up', ok: true, detail: 'new accounts must confirm their email' });
+    expect((readCompose().services['kortix-api'] as { environment: Record<string, string> }).environment.KORTIX_SIGNUP_MODE).toBe('open');
+    expect((await signUpCheck()).check).toEqual({
+      name: 'open-sign-up',
+      ok: true,
+      detail: 'new accounts must confirm their email; operator addresses are reserved for kortix self-host admin add',
+    });
   }, 60_000);
 
   test('doctor passes open sign-up once self sign-up is off', async () => {
@@ -779,19 +801,17 @@ esac
     await run(['env', 'set', 'DISABLE_SIGNUP=true']);
 
     const { check } = await signUpCheck();
-    expect(check).toEqual({ name: 'open-sign-up', ok: true, detail: 'self sign-up is off (DISABLE_SIGNUP=true)' });
+    expect(check).toEqual({ name: 'open-sign-up', ok: true, detail: 'self sign-up is off (DISABLE_SIGNUP=true); SSO sign-ins of new users are refused too' });
   }, 60_000);
 
   // `init` says the same thing `doctor` fails on, at the moment the operator
   // creates the instance, and `--disable-signup` closes it from the first boot.
   const SIGN_UP_RISK = 'anyone who reaches this instance can create a confirmed account for any email address';
 
-  test('init on a domain instance prints the open sign-up risk and both ways to close it', async () => {
+  test('init on a domain instance prints no sign-up risk: it starts invite-only', async () => {
     const { code, stdout } = await run(['init', '--yes', '--domain', 'kortix.example.com']);
     expect(code).toBe(0);
-    expect(stdout).toContain(SIGN_UP_RISK);
-    expect(stdout).toContain('kortix self-host env set DISABLE_SIGNUP=true');
-    expect(stdout).toContain('kortix self-host env set EMAIL_URL=');
+    expect(stdout).not.toContain(SIGN_UP_RISK);
     expect(readEnv().DISABLE_SIGNUP).toBe('false');
   }, 60_000);
 
@@ -803,7 +823,7 @@ esac
     expect((await signUpCheck()).check).toEqual({
       name: 'open-sign-up',
       ok: true,
-      detail: 'self sign-up is off (DISABLE_SIGNUP=true)',
+      detail: 'self sign-up is off (DISABLE_SIGNUP=true); SSO sign-ins of new users are refused too',
     });
 
     // Not passing the flag never resets the operator's choice.
@@ -830,6 +850,9 @@ esac
 echo "$*" >> '${log}'
 case " $* " in
   *" ps --quiet "*) echo fixture-container ;;
+  *" config --hash "*) echo "kortix-api \${FAKE_RENDERED_HASH:-same}" ;;
+  *" inspect --format "*) echo "\${FAKE_RUNNING_HASH:-same}" ;;
+  *" exec -T kortix-api bun -e "*) cat > /dev/null; if [ -n "$FAKE_ADMIN_ANSWER" ]; then echo "$FAKE_ADMIN_ANSWER"; else echo '{"status":200}'; fi ;;
 esac
 exit 0
 `, { mode: 0o755 });
@@ -887,6 +910,52 @@ exit 0
     expect(docker.recreated()).toEqual(['supabase-auth']);
   }, 60_000);
 
+  // Sign-up can never claim an operator address, so the CLI creates that
+  // account: inside the API container, with the service key, the one-time
+  // password on stdin. A new address joins KORTIX_PLATFORM_ADMIN_EMAILS.
+  test('admin add creates the account, prints a one-time password once, and lists the address as admin', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    const created = await run(['admin', 'add', 'Ops@Example.com'], docker.env);
+    expect(created.code).toBe(0);
+    expect(created.stdout).toContain('Platform admin account created: ops@example.com');
+    const password = /Password (\S+)/.exec(created.stdout)?.[1] ?? '';
+    expect(password).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    expect(created.stdout).toContain('https://kortix.example.com/auth');
+    expect(readEnv().KORTIX_PLATFORM_ADMIN_EMAILS).toContain('ops@example.com');
+    expect(docker.rolled()).toEqual(['kortix-api']);
+    // The password never appears on a command line.
+    expect(docker.calls()).not.toContain(password);
+
+    const again = await run(['admin', 'add', 'ops@example.com'], {
+      ...docker.env,
+      FAKE_ADMIN_ANSWER: '{"status":422,"code":"email_exists","message":"already been registered"}',
+    });
+    expect(again.code).toBe(0);
+    expect(again.stdout).toContain('ops@example.com already has an account and is a platform admin.');
+    expect(docker.rolled()).toEqual(['kortix-api']);
+
+    expect((await run(['admin', 'add', 'not-an-address'], docker.env)).code).toBe(2);
+  }, 60_000);
+
+  // A new version can add an API environment key. `up` would then recreate
+  // both API replicas at once (24 s without an API on 2026-11-04); the update
+  // rolls them start-first instead, and leaves an unchanged API alone.
+  test('update rolls a drifted API start-first and leaves an unchanged one to compose', async () => {
+    const docker = runningStackDocker();
+    expect((await run(['init', '--yes', '--domain', 'kortix.example.com'], docker.env)).code).toBe(0);
+
+    expect((await run(['update'], docker.env)).code).toBe(0);
+    expect(docker.rolled()).toEqual([]);
+    expect(docker.calls()).toContain('up -d --no-deps kortix-api');
+
+    const drifted = await run(['update'], { ...docker.env, FAKE_RENDERED_HASH: 'new', FAKE_RUNNING_HASH: 'old' });
+    expect(drifted.code).toBe(0);
+    expect(docker.rolled()).toEqual(['kortix-api']);
+    expect(drifted.stdout).toContain('rolled: kortix-api (configuration changed)');
+  }, 60_000);
+
   // Compose never recreates Caddy for a changed bind-mounted Caddyfile, so a
   // version that adds a route (the project snapshots' `@snapshots`) must
   // reload it, or the prefix answers the API's 404 (learnings 2026-10-20T071256Z).
@@ -917,6 +986,9 @@ exit 0
     // A tunnel URL reaches the internet like a domain does.
     const envFile = join(configRoot, instance, '.env');
     writeFileSync(envFile, `${readFileSync(envFile, 'utf8').replace(/^KORTIX_REACHABILITY_MODE=.*\n/m, '')}KORTIX_REACHABILITY_MODE=tunnel\n`);
+    // It starts invite-only, and fails once the operator opens sign-up.
+    expect((await signUpCheck()).check?.ok).toBe(true);
+    writeFileSync(envFile, `${readFileSync(envFile, 'utf8')}KORTIX_SIGNUP_MODE=open\n`);
     expect((await signUpCheck()).check?.ok).toBe(false);
   });
 

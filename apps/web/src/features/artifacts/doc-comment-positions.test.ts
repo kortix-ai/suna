@@ -13,6 +13,7 @@ import {
   docSelectionAnchor,
 } from './doc-comment-positions';
 import { LinkEmbed } from '@kortix/ui/markdown/doc-editor/doc-embed';
+import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
 import { markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
 
 const window = new Window();
@@ -175,6 +176,33 @@ describe('doc comment source positions', () => {
     ).toMatchObject({ anchor: { quote: 'After' } });
   });
 
+  test('a space the editor holds but Markdown cannot write keeps every other passage mapped', () => {
+    // Enter, a space, then text: the editor keeps " Live B."; the Markdown file holds "Live B.".
+    const markdown = 'Review final forecast.\n\nLive B. Then more.\n\nLast line.\n';
+    const doc = schema.node('doc', null, [
+      schema.node('paragraph', null, [schema.text('Review final forecast.')]),
+      schema.node('paragraph', null, [schema.text('  Live B. Then more. ')]),
+      schema.node('paragraph', null, [schema.text('Last line.')]),
+    ]);
+    const map = docMarkdownPositions(markdown, doc);
+    expect(map).not.toBeNull();
+    const final = at(doc, 'final');
+    expect(
+      docRangesForSource(map, markdown.indexOf('final'), markdown.indexOf('final') + 5),
+    ).toEqual([{ from: final, to: final + 5 }]);
+    // The passage in the spaced paragraph maps onto its own text, not onto the spaces.
+    const then = at(doc, 'Then');
+    expect(
+      docRangesForSource(map, markdown.indexOf('Then'), markdown.indexOf('Then') + 4),
+    ).toEqual([{ from: then, to: then + 4 }]);
+    const last = at(doc, 'Last');
+    expect(
+      docRangesForSource(map, markdown.indexOf('Last'), markdown.indexOf('Last') + 4),
+    ).toEqual([{ from: last, to: last + 4 }]);
+    // Different words are still a different text: no map.
+    expect(docMarkdownPositions('Review final forecast.\n\nLive C.\n', doc)).toBeNull();
+  });
+
   test('ambiguous and stale selections fail without manufacturing an anchor', () => {
     const block = `${'a'.repeat(40)}quote${'b'.repeat(40)}`;
     const duplicate = `${block}\n\n${block}\n`;
@@ -185,5 +213,56 @@ describe('doc comment source positions', () => {
     ).toEqual({ error: 'ambiguous' });
     expect(docMarkdownPositions('Before.', parse('After.'))).toBeNull();
     expect(docSelectionAnchor(null, 1, 2, 'commit-one')).toEqual({ error: 'unmapped' });
+  });
+});
+
+describe('blocks the editor keeps as the file spells them (doc-fidelity.ts)', () => {
+  // The editor's own schema: a raw block is `rawMarkdown`, a kept block carries `md`.
+  const editorSchema = getSchema(docExtensions({ editable: false, placeholder: () => '' }));
+  const open = (markdown: string) => {
+    const element = window.document.createElement('div');
+    element.innerHTML = markdownToHtml(markdown);
+    return PMParser.fromSchema(editorSchema).parse(element as unknown as HTMLElement);
+  };
+
+  test('front matter opens as a raw block; comments anchor in it and in the paragraph under it', () => {
+    const markdown = '---\ntitle: Launch plan\n---\n\n# Plan\n\nShip the importer this week.\n';
+    const doc = open(markdown);
+    expect(doc.firstChild?.type.name).toBe('rawMarkdown');
+    const map = docMarkdownPositions(markdown, doc);
+    const paragraph = at(doc, 'importer');
+    expect(docSelectionAnchor(map, paragraph, paragraph + 8, 'commit-one')).toMatchObject({
+      anchor: { quote: 'importer', prefix: 'unch plan\n---\n\n# Plan\n\nShip the ' },
+    });
+    const raw = at(doc, 'Launch');
+    expect(docSelectionAnchor(map, raw, raw + 6, 'commit-one')).toMatchObject({
+      anchor: { quote: 'Launch', prefix: '---\ntitle: ' },
+    });
+    // A stored anchor's source span highlights the same words in the editor.
+    const start = markdown.indexOf('Launch plan');
+    expect(docRangesForSource(map, start, start + 11)).toEqual([{ from: raw, to: raw + 11 }]);
+  });
+
+  test('an HTML block opens raw; the text between its parts and after it maps', () => {
+    const markdown = '<details>\n<summary>More</summary>\n\nHidden detail.\n\n</details>\n\nShip it.\n';
+    const doc = open(markdown);
+    const map = docMarkdownPositions(markdown, doc);
+    for (const word of ['summary', 'Hidden', 'Ship']) {
+      const from = at(doc, word);
+      expect(docSelectionAnchor(map, from, from + word.length, 'commit-one')).toMatchObject({
+        anchor: { quote: word },
+      });
+    }
+  });
+
+  test('a * list the editor keeps by `md` maps its items to the file', () => {
+    const markdown = '* Ship the importer\n* Fix the parser\n\nDone.\n';
+    const doc = open(markdown);
+    expect(doc.firstChild?.attrs.md?.src).toBe('* Ship the importer\n* Fix the parser');
+    const map = docMarkdownPositions(markdown, doc);
+    const from = at(doc, 'parser');
+    expect(docSelectionAnchor(map, from, from + 6, 'commit-one')).toMatchObject({
+      anchor: { quote: 'parser', prefix: '* Ship the importer\n* Fix the ' },
+    });
   });
 });

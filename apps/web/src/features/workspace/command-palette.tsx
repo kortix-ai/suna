@@ -67,7 +67,7 @@ import {
   paletteRowPermitted,
 } from '@/features/workspace/command-palette-visibility';
 import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
-import { agentLabel, ChannelGlyph, useMemoryPageHref } from '@kortix/ui/workspace';
+import { ChannelGlyph, useMemoryPageHref } from '@kortix/ui/workspace';
 import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
@@ -96,7 +96,7 @@ import {
   workspacePaletteValue,
 } from '@/features/workspace/workspace-palette';
 import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
-import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
+import { useDebounce } from '@kortix/ui';
 import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
 import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
@@ -1004,11 +1004,11 @@ export function CommandPalette() {
   const projectSessionsList = paletteSessions ?? sidebarSessions;
   // Search is the server's: `q` reaches every session the viewer may open, not
   // only the newest `PROJECT_SESSION_NAME_LOOKUP_LIMIT` the lookup above holds.
-  const serverSessionQuery = useDebounce(query.trim(), 250);
+  const { debouncedValue: debouncedQuery } = useDebounce(query.trim(), 250);
   const { sessions: serverSessionMatches } = useProjectSessions(projectId ?? '', {
-    q: serverSessionQuery,
+    q: debouncedQuery,
     limit: 20,
-    enabled: open && !!projectId && serverSessionQuery.length > 0,
+    enabled: open && !!projectId && debouncedQuery.length > 0,
   });
   // Same query key every other project surface fetches (page.tsx,
   // project-shell.tsx) — dedupes against that cache entry. Resolves the
@@ -1050,18 +1050,18 @@ export function CommandPalette() {
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
-  // Memory pages (`project_channels`): the server's search, at 2 characters
+  // Memory pages (`chat`): the server's search, at 2 characters
   // or more. Hits of an older query stay in the hook while the next loads, so
   // a query cut below 2 characters shows none.
   const tMemory = useTranslations('spaces.memory');
-  const memoryOn = open && !!projectId && projectFlags.project_channels === true && page === 'root';
+  const memoryOn = open && !!projectId && projectFlags.chat === true && page === 'root';
   const memorySearch = useProjectMemorySearch(
     projectId ?? '',
-    { q: serverSessionQuery, limit: 5 },
+    { q: debouncedQuery, limit: 5 },
     { enabled: memoryOn },
   );
   const memoryHref = useMemoryPageHref(projectId, memoryOn);
-  const memoryQueryLongEnough = query.trim().length >= 2 && serverSessionQuery.length >= 2;
+  const memoryQueryLongEnough = query.trim().length >= 2 && debouncedQuery.length >= 2;
   const rootMemoryResults = useMemo(
     () =>
       memoryOn && memoryQueryLongEnough
@@ -1267,7 +1267,7 @@ export function CommandPalette() {
       if (item.requiresProject && !projectId) continue;
       if (item.requiresFlag && !projectFlags[item.requiresFlag]) continue;
       // Channels replace New session: a thread starts from a channel's composer.
-      if (item.id === 'new-session' && projectFlags.project_channels) continue;
+      if (item.id === 'new-session' && projectFlags.chat) continue;
       // Token substitution. An href that still holds an UNRESOLVED token after
       // this is dropped, not offered: navigating to a literal
       // `/accounts/{accountId}?tab=billing` is a 404, and offering a row that
@@ -1315,7 +1315,8 @@ export function CommandPalette() {
 
   const filteredNavItems = useMemo(() => {
     if (!hasQuery) return allPaletteItems;
-    const q = query.trim().toLowerCase();
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return [];
     const words = q.split(/\s+/).filter(Boolean);
     return allPaletteItems.filter((item) => {
       // Exactly the string that becomes the cmdk `value` below, so the two
@@ -1339,7 +1340,7 @@ export function CommandPalette() {
       const haystack = buildPaletteSearchText(item).toLowerCase();
       return words.every((w) => haystack.includes(w));
     });
-  }, [allPaletteItems, hasQuery, query]);
+  }, [allPaletteItems, hasQuery, debouncedQuery]);
 
   // No `flags` argument any more: Marketplace, Review and Voice were the only
   // flag-gated rail rows and all three moved to `/projects/<id>/config`, whose
@@ -1392,7 +1393,7 @@ export function CommandPalette() {
       { providerID: string; providerName: string; models: typeof visibleModels }
     >();
     for (const m of visibleModels) {
-      // Under the gateway every model is registered as opencode provider
+      // Under the gateway every model is registered under the provider
       // `kortix`, so `m.providerName` is always "Kortix" — even for a BYOK
       // Anthropic/Bedrock model. Group/label by the resolved REAL upstream
       // provider instead. Safe to call unconditionally: for a native
@@ -1623,9 +1624,9 @@ export function CommandPalette() {
     return filteredProjectSessionsList.slice(0, 8);
   }, [hasQuery, projectId, filteredProjectSessionsList]);
 
-  // Channels (`project_channels`): sessions are threads, and channels and DMs
+  // Channels (`chat`): sessions are threads, and channels and DMs
   // are found by name, as the sidebar lists them (its DMs are the visible agents).
-  const channelsOn = projectFlags.project_channels === true;
+  const channelsOn = projectFlags.chat === true;
   const tSidebar = useTranslations('sidebar');
   const projectSpaces = useProjectSpaces(projectId, { enabled: open && channelsOn });
   const rootSpaceResults = useMemo(() => {
@@ -1635,9 +1636,10 @@ export function CommandPalette() {
       .filter((space) => space.kind === 'channel' && !space.archived_at && space.slug)
       .filter((space) => `${space.slug} ${space.name}`.toLowerCase().includes(q))
       .slice(0, 5);
-    const dms = agents.filter((agent) => `${agentLabel(agent.name)} ${agent.name}`.toLowerCase().includes(q)).slice(0, 5);
+    // Spaces only: an agent is a member of spaces, never a place of its own (no DM results).
+    const dms: typeof agents = [];
     return { channels, dms };
-  }, [query, projectId, channelsOn, projectSpaces.data, agents]);
+  }, [query, projectId, channelsOn, projectSpaces.data]);
   const sessionsHeading = channelsOn ? tPalette('threads') : 'Sessions';
 
   const tFirstChat = useTranslations('firstChat');
@@ -2375,7 +2377,7 @@ export function CommandPalette() {
   const handleSelectModel = useCallback(
     (providerID: string, modelID: string) => {
       if (!currentAgent) return;
-      // The SAME slot the composer reads/writes (use-opencode-local.ts):
+      // The SAME slot the composer reads/writes (use-runtime-local.ts):
       // scoped by provider mode + agent. The bare-agent-name slot is the
       // legacy shared fallback — writing there lets a pick made in gateway
       // mode resurface as a candidate after the project flips to native.
@@ -2772,23 +2774,6 @@ export function CommandPalette() {
                       </CommandGroup>
                     )}
 
-                    {rootSpaceResults.dms.length > 0 && projectId && (
-                      <CommandGroup heading={tSidebar('spaces.directMessages')} forceMount>
-                        {rootSpaceResults.dms.map((agent) => (
-                          <CommandItem
-                            key={agent.name}
-                            value={sanitizeCmdkValue(`dm ${agentLabel(agent.name)} ${agent.name}`)}
-                            onSelect={() => {
-                              router.push(uiRoutes().dm(projectId, agent.name));
-                              close();
-                            }}
-                          >
-                            <AgentMark slug={agent.name} />
-                            <span className="flex-1 truncate">{agentLabel(agent.name)}</span>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    )}
 
                     {hasSessionActionResults && (
                       <CommandGroup heading="Session" forceMount>

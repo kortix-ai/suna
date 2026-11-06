@@ -1,3 +1,4 @@
+import type { SessionPromptAdmissionReason } from '@kortix/api-contract';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { releaseCreateClaims } from '../../channels/core/threads';
@@ -38,7 +39,7 @@ import { heldSql, notHeldSql, notStopPausedSql, stopPausedOnDeliverySql } from '
  * Reading a display marker to make a correctness decision is how the id got
  * sent stale; the payload merge (`||`) is the durable half.
  */
-export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+export type InboxAdmissionReason = Extract<SessionPromptAdmissionReason, 'older_prompt_pending' | 'turn_active'>;
 
 /** True when a lease write matched its row; logs the loss otherwise. */
 function appliedUnderLease(lease: CommandLease, write: string, rows: unknown[]): boolean {
@@ -268,10 +269,10 @@ export async function markCommandSucceeded(
 }
 
 /**
- * The row went to OpenCode. It is NOT finished.
+ * The row went to the runtime. It is NOT finished.
  *
  * `markCommandSucceeded` used to run here, and "succeeded" was a lie in the one
- * way that matters to the person watching: OpenCode PERSISTS a prompt and
+ * way that matters to the person watching: the runtime PERSISTS a prompt and
  * queues its execution behind the turn in flight, so between the POST and the
  * turn there is a real interval in which the message exists, belongs to the
  * transcript, and has not run. Closing the row there left the composer with
@@ -303,7 +304,7 @@ export async function markCommandSucceeded(
  * the POST started, and that is the abort's job, not this row's.
  *
  * A `noReply` delivery (the non-final row of a released Stop batch) closes
- * `delivered` here, at once: OpenCode persisted the message and started no turn,
+ * `delivered` here, at once: the runtime persisted the message and started no turn,
  * so no ledger turn will ever confirm it, and leaving it `forwarded` would sit
  * in `delivering` until the sweep force-closed it. The stop mark above still
  * wins over it.
@@ -351,6 +352,34 @@ export async function markCommandForwarded(
   return appliedUnderLease(lease, 'markCommandForwarded', rows);
 }
 
+/**
+ * Why the customer-state dead-letter warn is SAMPLED.
+ *
+ * A terminal customer-state refusal dead-letters on attempt 1 with no retry
+ * (`deadLetterCause`), so one repeating offender — a cron trigger firing every
+ * ~100 s into an account that cannot pay (KRTX-4017: ~36 warns/h from ONE
+ * trigger) — logged a warn per fire, and the spike filed its own incident. The
+ * first report stands, then at most one per interval per process: the same
+ * sampled-log rule the stop-box abort miss ships (KRTX-614). The row still
+ * dead-letters and the trigger watchers still hear about the failure once per
+ * streak — only the duplicate log lines are suppressed. A platform
+ * dead-letter keeps its per-occurrence error.
+ */
+const CUSTOMER_STATE_DEAD_LETTER_LOG_INTERVAL_MS = 30 * 60_000;
+let lastCustomerStateDeadLetterLogAt = 0;
+
+/** Seam for tests: the sampler is module state and a fresh test must start fresh. */
+export function __resetCustomerStateDeadLetterSamplerForTests(): void {
+  lastCustomerStateDeadLetterLogAt = 0;
+}
+
+/** True when a customer-state dead-letter may log: the window closed and `now` opens it. */
+export function customerStateDeadLetterShouldLog(now: number = Date.now()): boolean {
+  if (now - lastCustomerStateDeadLetterLogAt < CUSTOMER_STATE_DEAD_LETTER_LOG_INTERVAL_MS) return false;
+  lastCustomerStateDeadLetterLogAt = now;
+  return true;
+}
+
 export async function markCommandFailed(
   lease: CommandLease,
   error: string,
@@ -387,27 +416,29 @@ export async function markCommandFailed(
   // console.warn deep in the drain — invisible to alerting while the user's
   // session sat "queued — agent picking up" forever. Make it a real error.
   const payload = (row.payload ?? {}) as Record<string, unknown>;
-  // Severity follows the CAUSE — see `deadLetterCause`. A terminal
-  // customer-state refusal (out of credits, a model the account is not
-  // entitled to, a workspace mode its manifest forbids) is not a platform
-  // fault and must not page; 96% of prod's dead letters are that, dominated by
-  // cron triggers firing into accounts that cannot pay. Everything else keeps
-  // the error level it was deliberately given.
   const cause = deadLetterCause(error);
-  const log = cause === 'customer_state' ? logger.warn : logger.error;
-  log('[session-lifecycle] command dead-lettered — giving up after retries', {
-    cause,
-    command_id: row.commandId,
-    command_type: row.commandType,
-    source: row.source,
-    project_id: row.projectId,
-    account_id: row.accountId,
-    session_id: row.sessionId,
-    trigger_slug: typeof payload.triggerSlug === 'string' ? payload.triggerSlug : undefined,
-    idempotency_key: row.idempotencyKey,
-    attempts: opts.attempts,
-    error,
-  });
+  // Severity follows the CAUSE — see `deadLetterCause` and the sampler above:
+  // a terminal customer-state refusal (out of credits, a model the account is
+  // not entitled to, a workspace mode its manifest forbids) is not a platform
+  // fault and must not page; it repeats on every fire of a repeating offender,
+  // so its warn is sampled. A platform dead-letter keeps the per-occurrence
+  // error level it was deliberately given.
+  if (cause !== 'customer_state' || customerStateDeadLetterShouldLog()) {
+    const log = cause === 'customer_state' ? logger.warn : logger.error;
+    log('[session-lifecycle] command dead-lettered — giving up after retries', {
+      cause,
+      command_id: row.commandId,
+      command_type: row.commandType,
+      source: row.source,
+      project_id: row.projectId,
+      account_id: row.accountId,
+      session_id: row.sessionId,
+      trigger_slug: typeof payload.triggerSlug === 'string' ? payload.triggerSlug : undefined,
+      idempotency_key: row.idempotencyKey,
+      attempts: opts.attempts,
+      error,
+    });
+  }
 
   // A prompt the USER typed must never park their session. The park exists so a
   // `session_mode: "reuse"` TRIGGER aims its next fire at a fresh session

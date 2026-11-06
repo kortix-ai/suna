@@ -1,7 +1,7 @@
 // T3: `syncSandboxEnvForPrompt` used to post `refreshModels: true`
 // unconditionally on every `/prompt_async|/message|/command` turn. The daemon
-// already no-ops a byte-identical push (routes/env.ts's
-// `result.changed || opencodeEnvChanged` gate), but the API kept asking on
+// already no-ops a byte-identical push (the
+// `result.changed || runtimeEnvChanged` gate), but the API kept asking on
 // every steady-state turn anyway. This pins the API-side half: the per-prompt
 // hot path now remembers the last config-affecting payload it delivered to
 // EACH sandbox and only sets `refreshModels: true` when that payload actually
@@ -103,7 +103,7 @@ mock.module('./network-secret-boundary', () => ({
 type PostedBody = {
   revision: unknown;
   refreshModels: unknown;
-  opencodeEnv: Record<string, unknown>;
+  runtimeEnv: Record<string, unknown>;
 };
 let posted: PostedBody[] = [];
 
@@ -193,8 +193,8 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
 
   test('a project-secret value change still asks for a reload', async () => {
     // This must NOT be narrowed to "model" fields — a rotated project secret
-    // is the daemon's ONLY signal to respawn opencode so its process env picks
-    // up the new value (see the comment on `promptModelSignature`).
+    // is the daemon's ONLY signal to reload the runtime so its env picks up
+    // the new value (see the comment on `promptModelSignature`).
     await prompt();
     snapshotEnv = { EXAMPLE: 'v2' };
     snapshotRevision = 'rev-2';
@@ -214,8 +214,8 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
   });
 
   test('a secret-capability catalog change still asks for a reload', async () => {
-    // Pushed as KORTIX_SECRET_CAPABILITIES, which is on the daemon's
-    // RESPAWN_REQUIRED_ENV_NAMES list — see opencode.ts.
+    // Pushed as KORTIX_SECRET_CAPABILITIES, which is on pi's
+    // RUNTIME_ENV_NAMES list (kortixd harness/pi/control.ts).
     await prompt();
     snapshotCapabilitiesJson =
       '{"version":1,"capabilities":[{"identifier":"WEATHER_API","delivery":"https_broker"}]}';
@@ -224,7 +224,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);
   });
 
-  test('an explicit caller opencodeEnv push still asks for a reload', async () => {
+  test('an explicit caller runtimeEnv push still asks for a reload', async () => {
     // e.g. a caller moving KORTIX_MODEL through this same call
     // (see continue-session.ts's continueSession).
     await syncSandboxEnvForPrompt({
@@ -244,7 +244,7 @@ describe('syncSandboxEnvForPrompt — refreshModels gating', () => {
       previewUrl: 'https://sandbox.test',
       providerHeaders: {},
       providerName: 'daytona',
-      opencodeEnv: { KORTIX_MODEL: 'kortix/test-model' },
+      runtimeEnv: { KORTIX_MODEL: 'kortix/test-model' },
     });
 
     expect(posted.map((p) => p.refreshModels)).toEqual([true, true]);

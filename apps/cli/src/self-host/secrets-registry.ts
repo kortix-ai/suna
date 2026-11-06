@@ -291,6 +291,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   // The API also reads ENABLE_EMAIL_AUTOCONFIRM: while it is on, a password
   // email proves nothing (KRTX-1715). Both must restart on one value.
   DISABLE_SIGNUP: ['supabase-auth'],
+  KORTIX_SIGNUP_MODE: ['kortix-api'],
   ENABLE_EMAIL_SIGNUP: ['supabase-auth'],
   ENABLE_EMAIL_AUTOCONFIRM: ['supabase-auth', 'kortix-api'],
   ENABLE_ANONYMOUS_USERS: ['supabase-auth'],

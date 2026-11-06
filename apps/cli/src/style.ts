@@ -43,6 +43,9 @@ export function trim(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
+/** An ISO instant as `YYYY-MM-DD HH:MM UTC`; a missing one renders as an em dash. */
+export const formatUtcInstant = (iso: string | null) => (iso ? `${iso.slice(0, 16).replace('T', ' ')} UTC` : '—');
+
 /** Render a USD PRICE (plan, top-up amount); a non-finite value renders as an em dash. */
 export function money(value: unknown): string {
   const n = Number(value);

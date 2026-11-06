@@ -107,6 +107,8 @@ mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
   stoppedSandboxWakePending: async () => false,
 }));
+const touchedSandboxIds: string[] = [];
+
 // Daytona ingress is a pass-through: the effective port is the addressed port.
 mock.module('../backend', () => ({
   loadSandbox: async () => ({ ...ACTIVE_RECORD }),
@@ -116,7 +118,7 @@ mock.module('../backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'http://sandbox.local', headers: {} }),
   buildSandboxUpstreamHeaders: async () => ({}),
   invalidatePreviewLink: () => {},
-  markSandboxUsed: () => {},
+  markSandboxUsed: (sandboxId: string) => { touchedSandboxIds.push(sandboxId); },
   markSandboxErrored: async () => {},
   wakeSandbox: async () => {},
 }));
@@ -156,6 +158,8 @@ mock.module('../../projects/surface', () => ({
   // module LINK error, not a null.
   missingClaudeSubscription: async () => null,
   sessionModelPin: async () => null,
+  // The turn's origin block ("## Where you are") reads the session row here; inert in this suite.
+  sessionWhereTurn: async () => null,
 }));
 
 const { forwardToSandbox } = await import('./preview');
@@ -323,7 +327,7 @@ describe('forwardToSandbox — a client abort asks who may stop the turn', () =>
   test('allowed: the stop is stamped under the stopper, then forwarded once', async () => {
     queueFetch(new Response('true', { status: 200 }));
     expect((await abort()).status).toBe(200);
-    expect(stopLog).toEqual([{ name: 'UserStop', scope: { opencodeSessionId: 'ses_root' }, by: 'u1' }]);
+    expect(stopLog).toEqual([{ name: 'UserStop', scope: { runtimeSessionId: 'ses_root' }, by: 'u1' }]);
     expect(fetchCalls).toBe(1);
   });
 
@@ -366,7 +370,7 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
     // to `{status:'duplicate'}` and the user's prompt was silently lost — the very
     // message-loss this PR exists to stop, surviving in the one path it missed.
     //
-    // Daytona rejects this BEFORE opencode ("no IP address found" means the box has
+    // Daytona rejects this BEFORE the runtime ("no IP address found" means the box has
     // no runner at all), so delivery is provably not-delivered and releasing is safe.
     const args = [
       'sb-1',
@@ -581,7 +585,7 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     const body = { messageID: stale.id, parts: [{ type: 'text', text: 'queued while busy' }] };
     const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf(body), 'http://app.local');
     expect(res.status).toBe(200);
-    expect(keepsIdsAsks).toEqual([{ externalId: 'sb-1', userId: 'u1' }]);
+    expect(keepsIdsAsks).toEqual([{ externalId: ACTIVE_RECORD.externalId, userId: 'u1' }]);
     expect(fetchLog.map((f) => f.method)).toEqual(['POST']);
     expect(fetchLog[0].body).toBe(JSON.stringify(body));
     expect(begunTurns[0]?.messageId).toBe(stale.id);
@@ -679,4 +683,20 @@ describe('forwardToSandbox — POST /kortix/env-rpc', () => {
     expect(res.status).toBe(502);
     expect(Math.max(...timerDelays)).toBeGreaterThan(PROXY_ATTEMPT_TIMEOUT_MS);
   });
+});
+
+test('UUID proxy alias uses provider ID for lifecycle but keeps the public redirect prefix', async () => {
+  touchedSandboxIds.length = 0;
+  queueFetch(new Response(null, { status: 302, headers: { location: '/login' } }));
+  const alias = '550e8400-e29b-41d4-a716-446655440000';
+  const response = await forwardToSandbox(
+    alias, 3000, principal, 'GET', '/', '', new Headers(), undefined, 'http://app.local',
+  );
+  expect(response.status).toBe(302);
+  expect(response.headers.get('location')).toBe(`/v1/p/${alias}/3000/login`);
+  queueFetch(new Response('ok'));
+  expect((await forwardToSandbox(
+    alias, 3000, principal, 'GET', '/', '', new Headers(), undefined, 'http://app.local',
+  )).status).toBe(200);
+  expect(touchedSandboxIds).toEqual([ACTIVE_RECORD.externalId]);
 });

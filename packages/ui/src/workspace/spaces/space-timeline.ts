@@ -1,4 +1,4 @@
-import type { ProjectSession } from '@kortix/sdk';
+import { parseNoticeBatch, type ProjectSession } from '@kortix/sdk';
 import { capitalizeWords, isMyKortixAgentName, MY_KORTIX_DISPLAY_NAME } from '@kortix/shared';
 
 import { relativeTime } from '../../internal/lib/relative-time';
@@ -77,7 +77,9 @@ export function lastReplyLabel(session: ProjectSession, locale: string, now = Da
 /**
  * `reply_count` from a thread's loaded transcript, by the server's rule
  * (`apps/api/.../session-reply-counts.ts`): every person message after the
- * first, plus one per person message the agent answered.
+ * first, plus one per person or `notice` message the agent answered. A
+ * `notice` is a platform notice (a worker's report): not a reply itself, but
+ * the agent's answer to it is one.
  */
 export function liveReplyCount(roles: readonly string[]): number {
   let people = 0;
@@ -87,12 +89,29 @@ export function liveReplyCount(roles: readonly string[]): number {
     if (role === 'user') {
       people += 1;
       answered = false;
+    } else if (role === 'notice') {
+      answered = false;
     } else if (role === 'assistant' && !answered) {
       answers += 1;
       answered = true;
     }
   }
   return Math.max(people - 1, 0) + answers;
+}
+
+/**
+ * A transcript message's role for `liveReplyCount`: `notice` for a platform
+ * notice the API delivered as a prompt (a worker's report), else its role.
+ */
+export function replyRole(role: string, parts: readonly unknown[] | undefined): string {
+  if (role !== 'user' || !parts) return role;
+  const text = parts
+    .map((part) => {
+      const { type, text: value } = part as { type?: unknown; text?: unknown };
+      return type === 'text' && typeof value === 'string' ? value : '';
+    })
+    .find((value) => value.trim());
+  return parseNoticeBatch(text) ? 'notice' : role;
 }
 
 /** The agent is on it: a turn runs, the first prompt waits for delivery, or the computer starts. */
@@ -103,6 +122,9 @@ export function threadIsWorking(session: ProjectSession): boolean {
 
 /** The thread's top message: its first prompt as the person wrote it, else its title. */
 export function threadMessageText(session: ProjectSession): string {
+  // A thread Kortix started (Chat): its own message is the top of the thread.
+  const kortixText = kortixRootText(session);
+  if (kortixText) return kortixText;
   let text = session.first_prompt ?? '';
   text = parseFileReferences(text).cleanText;
   text = parseSessionReferences(text).cleanText;
@@ -110,6 +132,103 @@ export function threadMessageText(session: ProjectSession): string {
   text = parseAgentMentionReferences(text).cleanText;
   text = stripReplyContexts(text).trim();
   return text || sessionDisplayLabel(session);
+}
+
+/** Chat (`chat`): the message a thread Kortix started opens with, or null for a person's thread. */
+export function kortixRootText(session: ProjectSession): string | null {
+  const value = session.metadata?.chat_root_text;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/** A space post (`chat_root_author`): the agent that wrote the thread's top message, when it is not the thread's agent. */
+export function rootPostAuthor(session: ProjectSession): string | null {
+  const value = session.metadata?.chat_root_author;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/** One run of a post's text: plain, or a mention chip. */
+export interface PostSegment {
+  text: string;
+  /** `userId` names a person, `agent` an agent, when the server resolved them. */
+  mention?: { kind: 'person' | 'agent'; label: string; userId?: string; agent?: string };
+}
+
+/**
+ * A space post's text split at its mentions (`chat_root_mentions`, resolved by
+ * the server): each `@token` it resolved becomes a chip with the person's or
+ * agent's name; every other `@word` stays text. Case-insensitive; `@` opens
+ * a word only at the start or after whitespace.
+ */
+export function postSegments(text: string, raw: unknown): PostSegment[] {
+  const mentions = new Map<string, NonNullable<PostSegment['mention']>>();
+  if (Array.isArray(raw)) {
+    for (const item of raw as Array<Record<string, unknown>>) {
+      if (!item || typeof item.token !== 'string' || typeof item.label !== 'string') continue;
+      if (item.kind !== 'person' && item.kind !== 'agent') continue;
+      mentions.set(item.token.toLowerCase(), {
+        kind: item.kind,
+        label: item.label,
+        ...(typeof item.userId === 'string' ? { userId: item.userId } : {}),
+        // An agent mention's token is the agent's name.
+        ...(item.kind === 'agent' ? { agent: item.token } : {}),
+      });
+    }
+  }
+  if (mentions.size === 0) return [{ text }];
+  const out: PostSegment[] = [];
+  let last = 0;
+  for (const match of text.matchAll(/(^|\s)@([^\s]+)/g)) {
+    const word = match[2]!.replace(/[.,;:!?)\]}'"]+$/, '');
+    const hit = mentions.get(word.toLowerCase());
+    if (!hit) continue;
+    const start = match.index! + match[1]!.length;
+    if (start > last) out.push({ text: text.slice(last, start) });
+    out.push({ text: `@${word}`, mention: hit });
+    last = start + 1 + word.length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+/** Someone a person's message may name with `@`: the token after `@` and who it is. */
+export interface MentionCandidate {
+  token: string;
+  mention: NonNullable<PostSegment['mention']>;
+}
+
+/**
+ * A person's own message split at the `@` mentions of people and agents in
+ * the space (the composer's `@` menu writes `@<email>`, `@<display name>` or
+ * `@<agent>`). The longest token wins, so `@Ana Lima` beats `@Ana`. A token
+ * matches case-insensitively at the start or after whitespace and must end
+ * at a word boundary.
+ */
+export function messageMentionSegments(text: string, candidates: readonly MentionCandidate[]): PostSegment[] {
+  const sorted = [...candidates].filter((c) => c.token).sort((a, b) => b.token.length - a.token.length);
+  if (sorted.length === 0 || !text.includes('@')) return [{ text }];
+  const lower = text.toLowerCase();
+  const out: PostSegment[] = [];
+  let last = 0;
+  let i = 0;
+  while (i < text.length) {
+    const at = text.indexOf('@', i);
+    if (at === -1) break;
+    i = at + 1;
+    if (at > 0 && !/\s/.test(text[at - 1]!)) continue;
+    const hit = sorted.find((c) => {
+      if (!lower.startsWith(c.token.toLowerCase(), at + 1)) return false;
+      const next = text[at + 1 + c.token.length];
+      return next === undefined || !/[\p{L}\p{N}_@-]/u.test(next);
+    });
+    if (!hit) continue;
+    if (at > last) out.push({ text: text.slice(last, at) });
+    out.push({ text: text.slice(at, at + 1 + hit.token.length), mention: hit.mention });
+    last = at + 1 + hit.token.length;
+    i = last;
+  }
+  if (out.length === 0) return [{ text }];
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
 }
 
 /**
@@ -174,21 +293,6 @@ export function spaceRoster(
     if (session.agent_name) agentThreads[session.agent_name] = (agentThreads[session.agent_name] ?? 0) + 1;
   }
   return { people: [...people.values()], agents: Object.keys(agentThreads), agentThreads };
-}
-
-/** A channel's tabs, in order. `?tab=` names one; Chat has no param. */
-const CHANNEL_TABS = ['chat', 'threads', 'files', 'memory', 'apps', 'links', 'triggers'] as const;
-/** A DM has no apps or links of its own. */
-const DM_TABS = ['chat', 'threads', 'files', 'memory', 'triggers'] as const;
-export type SpaceTab = (typeof CHANNEL_TABS)[number];
-
-export function spaceTabs(kind: 'channel' | 'dm'): readonly SpaceTab[] {
-  return kind === 'dm' ? DM_TABS : CHANNEL_TABS;
-}
-
-/** The `?tab=` value as a tab of this kind of space; anything else is Chat. */
-export function spaceTabFromParam(value: string | null, kind: 'channel' | 'dm'): SpaceTab {
-  return spaceTabs(kind).find((tab) => tab === value) ?? 'chat';
 }
 
 /** The Threads tab's Status filter: the states a thread row shows. */

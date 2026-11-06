@@ -92,6 +92,10 @@ export {
   projectSpaces,
   projectSpaceLinks,
   projectSpaceMembers,
+  projectSpaceWatchers,
+  projectSpaceEvents,
+  projectGoals,
+  projectGoalEvents,
   projectSpaceKindEnum,
   projectSpaceVisibilityEnum,
   // Memory ("Used memory" records)
@@ -180,6 +184,10 @@ export {
   artifactCommentScreenshotObjects,
   artifactCommentWriteLimits,
   artifactEvents,
+  artifactDocState,
+  artifactDocUpdates,
+  artifactDocRoots,
+  artifactDocClients,
   driveCommitAuthors,
   sessionSandboxIdentities,
   claudeSubscriptionLogins,
@@ -206,6 +214,7 @@ export {
   appSiteBlobs,
   appDeploymentEvents,
   sessionPendingQuestions,
+  sessionPendingPermissions,
   yoloMemberTokens,
   stripeWebhookEventsProcessed,
   // Tunnel
@@ -331,11 +340,15 @@ export {
   connectorPoliciesRelations,
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
+  selfHostSignupPolicy,
+  creditCodes,
+  creditCodeRedemptions,
 } from './schema/kortix';
 export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord, DriveVolumeMoveRecord } from './schema/kortix';
 export type { MemoryThreadLoadLayer } from './schema/kortix';
+export type { ProjectGoalCriterion, ProjectGoalSessionRef, ProjectGoalVerification } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {

@@ -394,7 +394,7 @@ describe('drawerThreadMove', () => {
     ).toBe('open');
   });
 
-  test('a row with no OpenCode pin yet on the shown session only closes', () => {
+  test('a row with no runtime pin yet on the shown session only closes', () => {
     expect(drawerThreadMove({ ...parent, targetRuntimeId: null, activeRuntimeId: 'oc-child' })).toBe('close');
   });
 });

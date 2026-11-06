@@ -112,16 +112,20 @@ export function deviceName(device: Pick<CaptureDevice, 'name' | 'os'>, fallback:
   return device.name?.trim() || fallback;
 }
 
-/** `macOS 26.0`, `Windows 11`. */
+/**
+ * `macOS 26.0`, `Windows 11`, `Ubuntu 24.04.1 LTS`. Windows 11 still reports
+ * version 10.0, so the build decides (22000 and up); an older app sent the raw
+ * `Microsoft Windows [Version 10.0.…]` line, which reads the same way.
+ */
 export function deviceOs(device: Pick<CaptureDevice, 'os' | 'os_version'>): string {
   const os = device.os?.toLowerCase();
-  const name =
-    os === 'macos' || os === 'darwin'
-      ? 'macOS'
-      : os === 'windows' || os === 'win32'
-        ? 'Windows'
-        : os === 'linux'
-          ? 'Linux'
-          : (device.os ?? '');
-  return [name, device.os_version].filter(Boolean).join(' ');
+  const version = device.os_version?.trim() ?? '';
+  if (os === 'windows' || os === 'win32') {
+    const build = /(?:^|\[Version )10\.0\.(\d+)/.exec(version)?.[1];
+    if (build) return Number(build) >= 22000 ? 'Windows 11' : 'Windows 10';
+    return ['Windows', version].filter(Boolean).join(' ');
+  }
+  if (os === 'linux') return version || 'Linux';
+  const name = os === 'macos' || os === 'darwin' ? 'macOS' : (device.os ?? '');
+  return [name, version].filter(Boolean).join(' ');
 }

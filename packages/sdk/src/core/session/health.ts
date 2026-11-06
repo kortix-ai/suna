@@ -2,8 +2,8 @@
  * Session runtime health — `GET /kortix/health` on the session's runtime.
  *
  * The host asks a session whether its runtime is ready; it never reasons about
- * "the sandbox" directly. This is the liveness probe used to gate "runtime
- * active" vs "OpenCode ready". The runtime-ready parsing rule lives here so
+ * "the sandbox" directly. This is the liveness probe used to gate "sandbox
+ * active" vs "runtime ready". The runtime-ready parsing rule lives here so
  * every consumer interprets a payload identically. It never throws on a non-ok
  * HTTP status — it surfaces `status`/`ok` so the caller applies its own failure
  * thresholds.
@@ -16,6 +16,7 @@
 
 import { authenticatedFetch } from '../http/auth';
 import { getActiveRuntimeUrl } from './server-store/active';
+import type { RuntimeCapability } from '../wire-values';
 
 export type SessionHealthResponse = {
   status?: string;
@@ -26,7 +27,7 @@ export type SessionHealthResponse = {
    * harness can take a prompt; `runtimeReady` adds the host's workspace checks.
    */
   harness?: {
-    /** `opencode` or `pi`. */
+    /** `pi`. A daemon built before 2026-10-30 can still answer `opencode`. */
     id: string;
     version: string | null;
     /** The runtime process: `starting`, `ok`, `down` or `error`. */
@@ -37,7 +38,7 @@ export type SessionHealthResponse = {
     turn: { in_flight: boolean | null; end: string | null; orphaned_prompt: boolean } | null;
     details: Record<string, unknown>;
   };
-  /** @deprecated The runtime process state before W3. Read `harness.state`. */
+  /** @deprecated The runtime process state a daemon built before W3 sends. Read `harness.state`. Removed in the next major. */
   opencode?: string | boolean;
   boot_error?: string | null;
   reason?: string | null;
@@ -51,33 +52,11 @@ export type SessionHealthResponse = {
 };
 
 /**
- * A session feature a runtime may or may not serve. Mirrors
- * `RUNTIME_CAPABILITIES` in `@kortix/api-contract/runtime-relay`.
- *
- *   - `session.rewind`    revert to a message, and restore it
- *   - `session.compact`   summarize the conversation on demand
- *   - `session.commands`  project slash commands
- *   - `session.fork`      fork a session at a message
- *   - `session.subagents` subagent child sessions
- *   - `session.mcp`       MCP servers the runtime connects itself
- *   - `session.todo`      the runtime's todo list
- *   - `session.shell`     a shell command run as a turn
- *   - `session.attach`    attach the harness's own terminal client
- *   - `session.config`    a runtime config document (`/global/config`)
- *   - `session.context_record` a full context resets onto the session's searchable record, with nothing summarized
+ * A session feature a runtime may or may not serve: `RUNTIME_CAPABILITIES`
+ * (`core/wire-values`, the contract's own list). Read one with
+ * {@link runtimeSupports}.
  */
-export type RuntimeCapability =
-  | 'session.rewind'
-  | 'session.compact'
-  | 'session.commands'
-  | 'session.fork'
-  | 'session.subagents'
-  | 'session.mcp'
-  | 'session.todo'
-  | 'session.shell'
-  | 'session.attach'
-  | 'session.config'
-  | 'session.context_record';
+export type { RuntimeCapability } from '../wire-values';
 
 /**
  * Does the session's runtime serve `capability`? Pass the health

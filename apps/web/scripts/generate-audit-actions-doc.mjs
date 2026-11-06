@@ -39,13 +39,12 @@ function isOperatorRoute(route) {
 // The actions of a feature whose flag is off by default (apps/api/src/feature-flags/registry.ts).
 // The public docs leave such a feature out until its flag is on by default.
 const FLAGGED_ACTION_PREFIXES = {
-  agent_rooms: ['project.room.', 'session.room.', 'session.idle_notice.'],
   artifacts: ['project.artifact.', 'artifact.'],
   email_channel: ['channel.email.', 'webhook.email.'],
   event_triggers: ['trigger.event_apps.', 'trigger.event_types.', 'webhook.event.'],
   notification_center: ['notification.inbox.', 'notification.web_push.', 'notification.web_push_key.', 'session.watch.'],
   pooled_provider_secrets: ['secret.account_resource.', 'session.provider_secret_pool.'],
-  project_channels: ['project.space.', 'space.'],
+  chat: ['project.space.', 'space.'],
   session_groups: ['project.session_group.', 'session.group.'],
 };
 
@@ -124,7 +123,7 @@ Every audit row carries an \`action\` of the form \`domain.resource.verb\`, for 
 - A request that matched no route records ${code(UNMATCHED_ROUTE_LABEL.action)}.
 - A row with two or more actions, such as \`secret.strategy.update\` or \`secret.strategy.changed\`, lists the route's action first. The others are events the handler records in place of the request row: only on a real change (\`secret.strategy.changed\`), or one per outcome (\`connector.approval.approved\` or \`connector.approval.denied\`). A recorded event is the request's only row.
 - An action ending in \`.*\` is a family. The rest of the action names the call, for example \`connector.github.create_issue\`.
-- An action that starts with \`opencode.\` records an agent runtime event. Every agent runtime writes it under that name.
+- An action that starts with \`agent.\` records an agent runtime event. Rows written before that name start with \`opencode.\`: filter on both prefixes to cover every row.
 
 ## Request actions
 

@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { ScrollView, View, type LayoutRectangle } from 'react-native';
+import { ScrollView, View, type LayoutRectangle, type ScrollViewInstance } from 'react-native';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
@@ -53,7 +53,7 @@ export function ShowCarousel({
   const [currentIndex, setCurrentIndex] = useState(0);
   const count = items.length;
   const labels = useMemo(() => items.map((item) => getShowCarouselItemLabel(item)), [items]);
-  const stripRef = useRef<ScrollView>(null);
+  const stripRef = useRef<ScrollViewInstance>(null);
   const stripWidth = useRef(0);
   const pillLayouts = useRef<Array<LayoutRectangle | undefined>>([]);
 

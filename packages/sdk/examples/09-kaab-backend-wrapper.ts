@@ -153,7 +153,7 @@ async function startSession(
     // NB: connector_bindings is all-or-nothing — bind every alias the agent needs.
     ...(connectionId ? { connector_bindings: { [CONNECTOR_SLUG]: { connection_id: connectionId } } } : {}),
     ...(AGENT_NAME ? { agent_name: AGENT_NAME } : {}),
-    ...(MODEL ? { opencode_model: MODEL } : {}),
+    ...(MODEL ? { model: MODEL } : {}),
     // Backend-only secret narrowing. KAAB_OVERRIDES=off omits it.
     ...(includeOverrides && SECRET_ID ? { secrets: [SECRET_ID] } : {}),
   };
@@ -181,7 +181,7 @@ async function runTurn(
   // early events are missed (see example 02).
   //
   // Streaming precondition: the sandbox must be able to reach YOUR Kortix API
-  // (its KORTIX_URL) to finish booting OpenCode. A hosted deployment satisfies
+  // (its KORTIX_URL) to finish booting the agent runtime. A hosted deployment satisfies
   // this out of the box; against a LOCAL API a cloud sandbox cannot reach
   // localhost, so front the API with a public tunnel (e.g.
   // `cloudflared tunnel --url http://localhost:8010`) and start it with

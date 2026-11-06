@@ -22,7 +22,7 @@
 
 import { isDeepStrictEqual } from 'node:util';
 import { type Document, isMap, isScalar, isSeq, type Node, type Pair, parseDocument, Scalar, type YAMLMap } from 'yaml';
-import { DEPRECATED_KORTIX_PERMISSION_ALIASES, LEGACY_SANDBOX_KEYS, RETIRED_KORTIX_TOOLS } from './constants';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES, EVERY_GRANT, EVERY_GRANT_KEYS, LEGACY_SANDBOX_KEYS, RETIRED_KORTIX_TOOLS } from './constants';
 
 export interface Deprecation {
   /** Stable id, shown as `fix: <id>`. Never reused. */
@@ -97,6 +97,13 @@ function renameAgentKey(doc: Document, from: string, to: string, map: (value: un
   return paths;
 }
 
+/** `"*"`, the canonical "every name", as a double-quoted scalar: a bare `*` is a YAML alias. */
+export function everyScalar(): Scalar<string> {
+  const node = new Scalar('*');
+  node.type = Scalar.QUOTE_DOUBLE;
+  return node;
+}
+
 export const DEPRECATIONS: readonly Deprecation[] = [
   {
     id: 'drop-kortix-version',
@@ -111,11 +118,11 @@ export const DEPRECATIONS: readonly Deprecation[] = [
   {
     id: 'tools-explicit',
     since: '2026-10-27',
-    summary: 'an agent without `tools` gets every tool. Write `tools: all` (same meaning), or list the tools it needs.',
+    summary: 'an agent without `tools` gets every tool. Write `tools: "*"` (same meaning), or list the tools it needs.',
     apply: (doc) =>
       agentBlocks(doc).flatMap(([name, block]) => {
         if (block.has('tools')) return [];
-        block.set('tools', 'all');
+        block.set('tools', everyScalar());
         return [`agents.${name}.tools`];
       }),
   },
@@ -263,20 +270,50 @@ export const DEPRECATIONS: readonly Deprecation[] = [
   },
 ];
 
+/**
+ * Rewrites of a valid shape to its canonical spelling. Only `--fix` and a
+ * legacy conversion apply them (`fixManifestText(text, { canonical: true })`);
+ * unlike `DEPRECATIONS`, validate does not warn, a reader keeps the file's
+ * value, and an ordinary write (CLI edit, API save) keeps the line, because
+ * the old spelling stays valid.
+ */
+export const CANONICAL_REWRITES: readonly Deprecation[] = [
+  {
+    id: 'every-grant-star',
+    since: '2026-11-05',
+    summary: 'every name is written `"*"`; `all` means the same.',
+    apply: (doc) =>
+      agentBlocks(doc).flatMap(([name, block]) =>
+        EVERY_GRANT_KEYS.flatMap((key) => {
+          const value = block.get(key, true);
+          if (!isScalar(value) || typeof value.value !== 'string' || value.value.trim().toLowerCase() !== 'all') return [];
+          // In place, so the line keeps its anchor and its trailing comment.
+          value.value = EVERY_GRANT;
+          value.type = Scalar.QUOTE_DOUBLE;
+          return [`agents.${name}.${key}`];
+        }),
+      ),
+  },
+];
+
 /** Apply every deprecation to `doc`, in place. */
 export function applyDeprecations(doc: Document): AppliedFix[] {
   return DEPRECATIONS.flatMap((deprecation) => deprecation.apply(doc).map((path) => ({ id: deprecation.id, path })));
 }
 
 /**
- * `text` rewritten to the latest shape, comments kept. Unchanged (the same
- * bytes) when nothing is deprecated or the YAML does not parse. Every line a
- * deprecation does not change keeps its bytes (`keepUnchangedLines`).
+ * `text` rewritten to the latest shape, comments kept. With `canonical`
+ * (`kortix validate --fix`, a legacy conversion) the canonical spellings
+ * (`CANONICAL_REWRITES`) are written too; every other writer leaves them
+ * alone. Unchanged (the same bytes) when nothing is deprecated or the YAML
+ * does not parse. Every line a deprecation does not change keeps its bytes
+ * (`keepUnchangedLines`).
  */
-export function fixManifestText(text: string): { text: string; fixed: AppliedFix[] } {
+export function fixManifestText(text: string, options: { canonical?: boolean } = {}): { text: string; fixed: AppliedFix[] } {
   const doc = parseDocument(text);
   if (doc.errors.length > 0) return { text, fixed: [] };
-  const fixed = applyDeprecations(doc);
+  const rewrites = options.canonical ? CANONICAL_REWRITES : [];
+  const fixed = [...applyDeprecations(doc), ...rewrites.flatMap((rewrite) => rewrite.apply(doc).map((path) => ({ id: rewrite.id, path })))];
   if (fixed.length === 0) return { text, fixed };
   // No folding of long lines, no padding inside `[a, b]`.
   const rendered = doc.toString({ lineWidth: 0, flowCollectionPadding: false });

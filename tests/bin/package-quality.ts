@@ -64,13 +64,12 @@ function hermeticWorkspaceEnv(): Record<string, string | undefined> {
   // ambient platform env right back. ENV covers the same hook for /bin/sh.
   delete env.BASH_ENV;
   delete env.ENV;
-  // The same CI-shape rule for the two host files a Kortix sandbox image bakes:
-  // the session env file the daemon's readiness gate reads, and the baked model
-  // catalog older images carry (OpenCode reads it). Neither exists on a laptop or a GitHub runner, so the
-  // suites are written against their absence; point the overrides at paths
-  // that do not exist instead of asking every suite to know about them.
+  // The same CI-shape rule for the session env file a Kortix sandbox image
+  // bakes and the daemon's readiness gate reads. It does not exist on a laptop
+  // or a GitHub runner, so the suites are written against its absence; point
+  // the override at a path that does not exist instead of asking every suite
+  // to know about it.
   env.KORTIX_PT_ENV_PATH = '/nonexistent/kortix-test-pt-env';
-  env.KORTIX_BAKED_LLM_CATALOG_PATH = '/nonexistent/kortix-test-llm-catalog.json';
   // Same rule for the image's baked managed-skills dir: suites assert the
   // exact skill lists their fixtures create, and CI has no baked dir.
   env.KORTIX_MANAGED_SKILLS_DIR = '/nonexistent/kortix-test-managed-skills';
@@ -229,6 +228,7 @@ if (repoChecks) {
     run(['node', '--test', 'scripts/dev-local-cleanup.test.mjs']),
     run(['node', '--test', 'scripts/test-guard.test.mjs']),
     run(['node', '--test', 'scripts/refresh-staged-web-artifacts.test.mjs']),
+    run(['node', '--test', 'scripts/gitleaks-allowlist.test.mjs']),
     // No package owns these: `./infra` discovers every edge-worker and deploy-script
     // test, and the two lockfile checks need Bun (Bun.YAML, Bun.semver), not vitest.
     run([

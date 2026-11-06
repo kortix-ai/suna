@@ -98,7 +98,7 @@ function fakeDaemon(opts: {
     },
     pushGovernance: async (input) => {
       pushes.push(input);
-      return (opts.push ?? { applied: true, opencodeReload: 'restarted', opencodeTurnEnded: false }) as never;
+      return (opts.push ?? { applied: true, runtimeReload: 'restarted', runtimeTurnEnded: false }) as never;
     },
     latestEtag: async () => 'ffff',
     sleep: async () => {},
@@ -125,7 +125,7 @@ describe('reloadSessionConfig capability gate', () => {
     expect(result).toMatchObject({
       applied: true,
       agent_files: 'updated',
-      opencode_reload: 'restarted',
+      runtime_reload: 'restarted',
       turn_ended: false,
       previous_etag: 'eeee',
       etag: 'ffff',
@@ -158,7 +158,7 @@ describe('reloadSessionConfig capability gate', () => {
     expect(result).toMatchObject({
       applied: true,
       agent_files: 'updated',
-      opencode_reload: null,
+      runtime_reload: null,
       turn_ended: null,
       previous_etag: 'eeee',
       etag: 'ffff',
@@ -281,14 +281,14 @@ describe('convergeToReloadResult', () => {
     expect(convergeToReloadResult(converge('applied', { reload: { how: 'restarted', turn_ended: true, orphaned_message_id: null } }), etags)).toMatchObject({
       applied: true,
       agent_files: 'updated',
-      opencode_reload: 'restarted',
+      runtime_reload: 'restarted',
       turn_ended: true,
       etag: 'ffff',
     });
     expect(convergeToReloadResult(converge('applied', { reload: null }), etags)).toMatchObject({
       applied: true,
       agent_files: 'updated',
-      opencode_reload: null,
+      runtime_reload: null,
       turn_ended: null,
       etag: 'ffff',
     });
@@ -300,7 +300,7 @@ describe('convergeToReloadResult', () => {
     });
     expect(convergeToReloadResult(converge('declined', { reason: 'GET /agent lacks kortix' }), etags)).toMatchObject({
       applied: false,
-      opencode_reload: 'kept-old',
+      runtime_reload: 'kept-old',
       reason: 'GET /agent lacks kortix',
     });
     expect(
@@ -322,7 +322,7 @@ function reloadResult(overrides: Partial<SessionReloadResult> = {}): SessionRelo
     repo_refreshed: true,
     commit_sha: null,
     agent_files: 'updated',
-    opencode_reload: 'restarted',
+    runtime_reload: 'restarted',
     turn_ended: false,
     ...overrides,
   };
@@ -453,7 +453,7 @@ describe('reloadSessionConfig on a daemon without config releases', () => {
     expect(result).toMatchObject({
       applied: true,
       agent_files: 'updated',
-      opencode_reload: 'disposed',
+      runtime_reload: 'disposed',
       turn_ended: false,
       config_path: 'legacy',
     });
@@ -471,7 +471,7 @@ describe('reloadSessionConfig on a daemon without config releases', () => {
     const result = await reloadSessionConfig(INPUT, daemon.deps);
 
     expect(daemon.pushes.length).toBe(1);
-    expect(result).toMatchObject({ applied: true, agent_files: 'updated', opencode_reload: 'restarted' });
+    expect(result).toMatchObject({ applied: true, agent_files: 'updated', runtime_reload: 'restarted' });
   });
 
   test('the session\'s own agent edits are kept and reported', async () => {
@@ -482,7 +482,7 @@ describe('reloadSessionConfig on a daemon without config releases', () => {
     });
     const result = await reloadSessionConfig(INPUT, daemon.deps);
 
-    expect(result).toMatchObject({ applied: false, agent_files: 'kept-yours', opencode_reload: null });
+    expect(result).toMatchObject({ applied: false, agent_files: 'kept-yours', runtime_reload: null });
   });
 
   test('agent files already on base read "already current", not the governance skip', async () => {

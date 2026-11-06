@@ -56,18 +56,18 @@ export function readPersistedSessionPin(projectId: string, sessionId: string): s
 export function writePersistedSessionPin(
   projectId: string,
   sessionId: string,
-  opencodeSessionId: string | null | undefined,
+  runtimeSessionId: string | null | undefined,
 ): void {
-  if (!projectId || !sessionId || !opencodeSessionId) return;
+  if (!projectId || !sessionId || !runtimeSessionId) return;
   try {
-    localStorage.setItem(sessionPinStorageKey(projectId, sessionId), opencodeSessionId);
+    localStorage.setItem(sessionPinStorageKey(projectId, sessionId), runtimeSessionId);
   } catch {
     // Best-effort. Worst case the next mount re-waits on the network, exactly
     // as it did before this cache existed.
   }
 }
 
-/** The network read (`getProjectSession`'s `opencode_session_id`) always wins
+/** The network read (`getProjectSession`'s `runtime_session_id`) always wins
  *  once it has loaded — it is more authoritative than a local echo of a
  *  possibly-stale prior pin. Before it loads, fall back to the synchronous
  *  local cache so there is something to paint with on the first render. */

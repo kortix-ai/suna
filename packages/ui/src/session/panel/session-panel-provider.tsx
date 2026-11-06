@@ -644,7 +644,7 @@ export function SessionPanelProvider({
 
   const { outputsDefaultOpen, pendingQuickView } = usePanelHandoffs({
     sessionId, projectId, projectSessionId, isRunning, outcome, apps, files, steps,
-    detail, handleOpenOutput, openDetail, openTerminal, openAudit, openReminders, openDesktop, openBrowser, openFiles,
+    detail, handleOpenOutput, openDetail, closeDetail, openTerminal, openAudit, openReminders, openDesktop, openBrowser, openFiles,
   });
 
   // The panel comes back with the session: what it showed is remembered while

@@ -85,6 +85,15 @@ describe('classifyDevice: reporting devices', () => {
     expect(classify(input, { latestVersion: '0.1.0' }).state).toBe('healthy');
   });
 
+  test('a failed self-update needs attention, next to the version it could not reach', () => {
+    const update = { status: 'failed', installed: '0.1.0', latest: '0.2.0', lastResult: { outcome: 'rolled_back', to: '0.2.0', detail: 'session 2: no_new_frame' } };
+    const input = { ...device({ lastFrameMs: NOW - 1000, appVersion: '0.1.0', update }), appVersion: '0.1.0' };
+    expect(classify(input, { latestVersion: '0.2.0' })).toMatchObject({ state: 'attention', reasons: ['update_failed', 'behind_version'] });
+    // Behind but not failed (the update has not run yet) is only behind.
+    const behind = { ...device({ lastFrameMs: NOW - 1000, appVersion: '0.1.0', update: { ...update, status: 'behind' } }), appVersion: '0.1.0' };
+    expect(classify(behind, { latestVersion: '0.2.0' }).reasons).toEqual(['behind_version']);
+  });
+
   test('not recording outranks attention in the reasons and the state', () => {
     const h = classify(device({ lastFrameMs: at(30), appVersion: '0.1.0', sync: { state: 'error' } }), { latestVersion: '0.2.0' });
     expect(h.state).toBe('not_recording');

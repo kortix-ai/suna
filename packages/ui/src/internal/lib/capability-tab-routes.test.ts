@@ -113,10 +113,11 @@ describe('capabilityTabHref', () => {
 });
 
 describe('reviewHref', () => {
-  test('Review is a Customize tab', () => {
-    expect(reviewHref('p1')).toBe('/projects/p1/customize/review');
-    expect(activeCapabilityTab('/projects/p1/customize/review')).toBe('review');
-    // The sidebar-era address only redirects; it lights no tab.
+  test('Review is its own page, outside Customize', () => {
+    // Since 2026-11-04 Review is a top-level page; `/customize/review` redirects to it.
+    expect(reviewHref('p1')).toBe('/projects/p1/review');
+    expect(capabilityTabHref('p1', 'review')).toBe('/projects/p1/review');
+    // The page draws no Customize bar, so it lights no Customize tab.
     expect(activeCapabilityTab('/projects/p1/review')).toBeNull();
   });
 });

@@ -1701,7 +1701,7 @@ const MARKER_PROMPT =
  * check.
  *
  * WHY. `MARKER_PROMPT` is fixed text. Asking it more than once in the SAME
- * OpenCode conversation is confounded: proven on a real box 2026-09-27, a
+ * conversation is confounded: proven on a real box 2026-09-27, a
  * model answering a LITERALLY REPEATED question sometimes echoes its own
  * PRIOR turn's answer instead of re-reading the current system prompt — the
  * exact wrong-marker signature this flow throws on — even though the daemon's
@@ -1780,7 +1780,7 @@ harnessFlow(
     try {
       // The box's session runs a managed model (spec, `boxSession`). A free-tier
       // account cannot use one at all — every turn 400s `plan_upgrade_required`
-      // before it ever reaches OpenCode, which reads exactly like a stale/empty
+      // before it ever reaches the runtime, which reads exactly like a stale/empty
       // config answer in this flow's own assertions (2026-09-27: this is what
       // actually produced "the answer does not come from the new release: "
       // on preview run 36279090948 and on #7796's control run 36287293649,
@@ -1956,10 +1956,10 @@ harnessFlow(
 
 // ── CFG-12 — a base move and a prompt in the same instant ──────────────────
 //
-// DEF-DEV-1, on a real box. A convergence retires the OpenCode process that is
-// serving the session. If a prompt lands between the turn gate and the swap,
-// the process writing that turn is killed: the client gets `HTTP 503` and the
-// assistant row stays `completed = null` for ever.
+// DEF-DEV-1, on a real OpenCode box: a convergence retired the process that
+// served the session. If a prompt landed between the turn gate and the swap,
+// the process writing that turn was killed: the client got `HTTP 503` and the
+// assistant row stayed `completed = null` for ever.
 //
 // Two ways to land in that window, both here:
 //
@@ -2005,7 +2005,7 @@ harnessFlow(
     try {
       // See CFG-11's identical step for why: a free-tier account 400s
       // `plan_upgrade_required` on the box's managed model before a prompt
-      // ever reaches OpenCode, and that reads exactly like a stale/empty
+      // ever reaches the runtime, and that reads exactly like a stale/empty
       // config answer here — the actual cause of the CFG-11/CFG-12 preview
       // failures attributed to config releases on 2026-09-26/27.
       await ctx.step('the account is entitled to the managed lineup', async () => {

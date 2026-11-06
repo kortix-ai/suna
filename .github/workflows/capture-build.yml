@@ -42,6 +42,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # versitygw, the S3 gateway the sync tests run against. CWE-494: every step
+  # that installs it verifies the archive against this release's
+  # checksums.txt before the binary runs. One version here, never inline.
+  VERSITYGW_VERSION: v1.8.0
 
 jobs:
   test:
@@ -115,8 +119,15 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          d="$RUNNER_TEMP/s3gw"; mkdir -p "$d"
-          curl -sSfL https://github.com/versity/versitygw/releases/download/v1.8.0/versitygw_v1.8.0_Linux_x86_64.tar.gz | tar -xz -C "$d"
+          d="$RUNNER_TEMP/s3gw"; mkdir -p "$d"; cd "$d"
+          # CWE-494: verify the release archive against the published checksums.txt
+          # before the binary runs (same as secret-scan.yml).
+          base="https://github.com/versity/versitygw/releases/download/${VERSITYGW_VERSION}"
+          curl -sSfL "${base}/checksums.txt" -o checksums.txt
+          curl -sSfL "${base}/versitygw_v1.8.0_Linux_x86_64.tar.gz" -o versitygw_v1.8.0_Linux_x86_64.tar.gz
+          grep -q " versitygw_v1.8.0_Linux_x86_64.tar.gz$" checksums.txt
+          sha256sum -c --ignore-missing checksums.txt
+          tar -xzf versitygw_v1.8.0_Linux_x86_64.tar.gz -C "$d"
           export KORTIX_CAPTURE_TEST_VERSITYGW="$(find "$d" -name versitygw -type f | head -1)"
           test -x "$KORTIX_CAPTURE_TEST_VERSITYGW"
           cargo test --release --features capture-engine --test sync_s3 -- --nocapture 2>&1 | tee "$RUNNER_TEMP/sync_s3.log"
@@ -289,7 +300,16 @@ jobs:
           # versitygw: the S3 gateway the Linux sync tests use (verifies SigV4 and checksums).
           # Windows has no xattrs: versitygw keeps object metadata (checksums, ETags) in a sidecar directory.
           $d = "$env:RUNNER_TEMP\s3"; New-Item -ItemType Directory -Force "$d\data", "$d\meta" | Out-Null
-          gh release download v1.8.0 --repo versity/versitygw -p "versitygw_v1.8.0_Windows_x86_64.zip" -D $d
+          gh release download "$env:VERSITYGW_VERSION" --repo versity/versitygw -p "versitygw_v1.8.0_Windows_x86_64.zip" -p "checksums.txt" -D $d
+          # CWE-494: verify the release archive against the published checksums.txt
+          # before the binary runs (same as secret-scan.yml; no sha256sum on Windows).
+          $archive = "versitygw_v1.8.0_Windows_x86_64.zip"
+          $hit = @(Select-String -Path "$d\checksums.txt" -Pattern " $([regex]::Escape($archive))$" | Select-Object -First 1)
+          if ($hit.Count -eq 0) { throw "checksums.txt does not list $archive" }
+          $want = $hit[0].Line.Split()[0]
+          $got = (Get-FileHash "$d\$archive" -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $want) { throw "$archive sha256 $got does not match checksums.txt $want" }
+          "SHA256 $archive verified against checksums.txt"
           Expand-Archive "$d\versitygw_v1.8.0_Windows_x86_64.zip" -DestinationPath "$d\bin"
           $gw = (Get-ChildItem "$d\bin" -Recurse -Filter versitygw.exe | Select-Object -First 1).FullName
           # The runner ends every process a step started when the step ends: the
@@ -787,7 +807,11 @@ jobs:
       - name: S3 (versitygw) and the CI stand-in for Kortix
         run: |
           d="$RUNNER_TEMP/s3"; mkdir -p "$d/data" "$d/bin"
-          gh release download v1.8.0 --repo versity/versitygw -p "versitygw_v1.8.0_Darwin_arm64.tar.gz" -D "$d"
+          gh release download "$VERSITYGW_VERSION" --repo versity/versitygw -p "versitygw_v1.8.0_Darwin_arm64.tar.gz" -p "checksums.txt" -D "$d"
+          # CWE-494: verify the release archive against the published checksums.txt
+          # before the binary runs (same as secret-scan.yml).
+          grep -q " versitygw_v1.8.0_Darwin_arm64.tar.gz$" "$d/checksums.txt"
+          (cd "$d" && shasum -a 256 -c --ignore-missing checksums.txt)
           tar -xzf "$d/versitygw_v1.8.0_Darwin_arm64.tar.gz" -C "$d/bin"
           gw="$(find "$d/bin" -name versitygw -type f | head -1)"
           nohup "$gw" --port 127.0.0.1:9000 --access cikortix --secret cikortix-secret-123 posix "$d/data" > "$EV/versitygw.out.log" 2> "$EV/versitygw.err.log" &
@@ -1183,7 +1207,14 @@ jobs:
       - name: S3 (versitygw) and the CI stand-in for Kortix
         run: |
           d="$RUNNER_TEMP/s3"; mkdir -p "$d/data" "$d/bin"
-          curl -sSfL https://github.com/versity/versitygw/releases/download/v1.8.0/versitygw_v1.8.0_Linux_x86_64.tar.gz | tar -xz -C "$d/bin"
+          # CWE-494: verify the release archive against the published checksums.txt
+          # before the binary runs (same as secret-scan.yml).
+          base="https://github.com/versity/versitygw/releases/download/${VERSITYGW_VERSION}"
+          curl -sSfL "${base}/checksums.txt" -o "$d/checksums.txt"
+          curl -sSfL "${base}/versitygw_v1.8.0_Linux_x86_64.tar.gz" -o "$d/versitygw_v1.8.0_Linux_x86_64.tar.gz"
+          grep -q " versitygw_v1.8.0_Linux_x86_64.tar.gz$" "$d/checksums.txt"
+          (cd "$d" && sha256sum -c --ignore-missing checksums.txt)
+          tar -xzf "$d/versitygw_v1.8.0_Linux_x86_64.tar.gz" -C "$d/bin"
           nohup "$(find "$d/bin" -name versitygw -type f | head -1)" --port 127.0.0.1:9000 --access cikortix --secret cikortix-secret-123 posix "$d/data" > "$EV/versitygw.out.log" 2> "$EV/versitygw.err.log" &
           sleep 4
           token="kortix_enr_ci$(uuidgen | tr -d - | tr A-Z a-z)"
@@ -1488,7 +1519,11 @@ jobs:
       - name: S3 (versitygw) and the CI stand-in for Kortix
         run: |
           d="$RUNNER_TEMP/s3"; mkdir -p "$d/data" "$d/bin"
-          gh release download v1.8.0 --repo versity/versitygw -p "versitygw_v1.8.0_Darwin_arm64.tar.gz" -D "$d"
+          gh release download "$VERSITYGW_VERSION" --repo versity/versitygw -p "versitygw_v1.8.0_Darwin_arm64.tar.gz" -p "checksums.txt" -D "$d"
+          # CWE-494: verify the release archive against the published checksums.txt
+          # before the binary runs (same as secret-scan.yml).
+          grep -q " versitygw_v1.8.0_Darwin_arm64.tar.gz$" "$d/checksums.txt"
+          (cd "$d" && shasum -a 256 -c --ignore-missing checksums.txt)
           tar -xzf "$d/versitygw_v1.8.0_Darwin_arm64.tar.gz" -C "$d/bin"
           gw="$(find "$d/bin" -name versitygw -type f | head -1)"
           nohup "$gw" --port 127.0.0.1:9000 --access cikortix --secret cikortix-secret-123 posix "$d/data" > "$EV/versitygw.out.log" 2> "$EV/versitygw.err.log" &
@@ -1975,7 +2010,16 @@ jobs:
       - name: S3 (versitygw) and the CI stand-in for Kortix
         run: |
           $d = "$env:RUNNER_TEMP\s3"; New-Item -ItemType Directory -Force "$d\data", "$d\meta" | Out-Null
-          gh release download v1.8.0 --repo versity/versitygw -p "versitygw_v1.8.0_Windows_x86_64.zip" -D $d
+          gh release download "$env:VERSITYGW_VERSION" --repo versity/versitygw -p "versitygw_v1.8.0_Windows_x86_64.zip" -p "checksums.txt" -D $d
+          # CWE-494: verify the release archive against the published checksums.txt
+          # before the binary runs (same as secret-scan.yml; no sha256sum on Windows).
+          $archive = "versitygw_v1.8.0_Windows_x86_64.zip"
+          $hit = @(Select-String -Path "$d\checksums.txt" -Pattern " $([regex]::Escape($archive))$" | Select-Object -First 1)
+          if ($hit.Count -eq 0) { throw "checksums.txt does not list $archive" }
+          $want = $hit[0].Line.Split()[0]
+          $got = (Get-FileHash "$d\$archive" -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $want) { throw "$archive sha256 $got does not match checksums.txt $want" }
+          "SHA256 $archive verified against checksums.txt"
           Expand-Archive "$d\versitygw_v1.8.0_Windows_x86_64.zip" -DestinationPath "$d\bin"
           $gw = (Get-ChildItem "$d\bin" -Recurse -Filter versitygw.exe | Select-Object -First 1).FullName
           function Start-Detached($name, $cmdline) {

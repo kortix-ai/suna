@@ -27,22 +27,20 @@ describe('isDeliveredButDisconnected — the turn is running, the wait expired',
 });
 
 describe('isDeliveredButDisconnected — nothing was delivered, keep failing', () => {
-  test('opencode refused before forwarding', () => {
-    expect(isDeliveredButDisconnected('opencode not ready')).toBe(false);
+  test('the daemon refused before forwarding', () => {
     expect(isDeliveredButDisconnected('sandbox runtime not ready')).toBe(false);
-    // A W6 daemon answers one code on both harnesses.
+    // A W6 daemon answers with a code.
     expect(isDeliveredButDisconnected('{"code":"runtime_not_ready","error":"upstream unreachable"}')).toBe(false);
   });
 
   test('a refusal that also mentions unreachable still counts as refused', () => {
     // Order matters: the refusal list wins, or a 503 that happens to carry both
     // phrases would be silently swallowed and the message genuinely lost.
-    expect(isDeliveredButDisconnected('opencode not ready — upstream unreachable')).toBe(false);
+    expect(isDeliveredButDisconnected('sandbox runtime not ready — upstream unreachable')).toBe(false);
   });
 
-  test('a box still pinning its initial session refused, under either reason name', () => {
-    // A W4 daemon names the reason `initial_runtime_session_*`; an older one `initial_opencode_session_*`.
-    for (const reason of ['initial_runtime_session_pending', 'initial_opencode_session_failed']) {
+  test('a box still pinning its initial session refused', () => {
+    for (const reason of ['initial_runtime_session_pending', 'initial_runtime_session_failed']) {
       expect(isDeliveredButDisconnected(`${reason} — upstream unreachable`)).toBe(false);
     }
   });

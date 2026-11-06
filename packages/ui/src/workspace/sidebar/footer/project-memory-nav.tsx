@@ -9,7 +9,7 @@ import { useUiPathname } from '../../../providers/ui-provider';
 
 /**
  * The Memory row: the project's Company memory. The sidebar draws it only
- * with `project_channels` on; a host that serves no Memory page gets no row.
+ * with `chat` on; a host that serves no Memory page gets no row.
  */
 export function ProjectMemoryNavItem({ projectId }: { projectId: string }) {
   const t = useTranslations('spaces.memory.company');

@@ -102,24 +102,24 @@ flow("CHN-32", { domain: "channels", requires: ["database"], routes: ROUTES }, a
     withDb(ctx, async (db) =>
       (
         await db.query(
-          `SELECT opencode_model, agent_name, conversation_policy FROM kortix.chat_channel_bindings
+          `SELECT model, agent_name, conversation_policy FROM kortix.chat_channel_bindings
            WHERE platform = 'slack' AND workspace_id = $1 AND channel_id = $2`,
           [world.teamId, CHANNEL],
         )
-      ).rows[0] as { opencode_model: string | null; agent_name: string | null; conversation_policy: string },
+      ).rows[0] as { model: string | null; agent_name: string | null; conversation_policy: string },
     );
 
   try {
     await ctx.step("the channel is bound to the project with a pinned model and the default policy", async () => {
       await withDb(ctx, (db) =>
         db.query(
-          `INSERT INTO kortix.chat_channel_bindings (platform, workspace_id, channel_id, project_id, opencode_model)
+          `INSERT INTO kortix.chat_channel_bindings (platform, workspace_id, channel_id, project_id, model)
            VALUES ('slack', $1, $2, $3, 'kortix/ke2e-seed-model')`,
           [world.teamId, CHANNEL, world.projectId],
         ),
       );
       const row = await binding();
-      if (row.opencode_model !== "kortix/ke2e-seed-model") throw new Error("CHN-32: the seeded binding is missing");
+      if (row.model !== "kortix/ke2e-seed-model") throw new Error("CHN-32: the seeded binding is missing");
     });
 
     await ctx.step("a linked project member without connector.write is refused a model, agent and policy change; the binding is unchanged", async () => {
@@ -137,7 +137,7 @@ flow("CHN-32", { domain: "channels", requires: ["database"], routes: ROUTES }, a
     await ctx.step("an unlinked Slack user is asked to connect, and the binding is unchanged", async () => {
       const reply = await slash(ctx, world, "UKE2EUNLINKED", "model default");
       if (!reply.includes("Connect your Kortix account first")) throw new Error(`CHN-32: an unlinked user was not refused: ${reply}`);
-      if ((await binding()).opencode_model !== "kortix/ke2e-seed-model") throw new Error("CHN-32: an unlinked user changed the model");
+      if ((await binding()).model !== "kortix/ke2e-seed-model") throw new Error("CHN-32: an unlinked user changed the model");
     });
 
     await ctx.step("the linked project manager resets the model and sets the policy; the binding records both", async () => {
@@ -146,7 +146,7 @@ flow("CHN-32", { domain: "channels", requires: ["database"], routes: ROUTES }, a
       const policy = await slash(ctx, world, world.managerSlackId, "policy owner_only");
       if (!policy.includes("policy set to")) throw new Error(`CHN-32: the manager could not set the policy: ${policy}`);
       const row = await binding();
-      if (row.opencode_model !== null || row.conversation_policy !== "owner_only") {
+      if (row.model !== null || row.conversation_policy !== "owner_only") {
         throw new Error(`CHN-32: the manager's changes were not stored: ${JSON.stringify(row)}`);
       }
     });

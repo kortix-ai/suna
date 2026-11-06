@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils/index';
 import { BottomSheetTextInput, useBottomSheetInternal } from '@gorhom/bottom-sheet';
 import { cssInterop } from 'nativewind';
-import { Platform, TextInput } from 'react-native';
+import { Platform, TextInput, type TextInputInstance } from 'react-native';
 
 // NativeWind patches only React Native's `TextInput`; give gorhom's input the
 // same className → style mapping so `Input` looks identical in and out of a sheet.
@@ -15,7 +15,7 @@ cssInterop(BottomSheetTextInput, {
  * plain `TextInput` there stays under the keyboard. Outside a sheet
  * `BottomSheetTextInput` throws, so the plain `TextInput` renders.
  */
-function Input({ className, ...props }: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInput>) {
+function Input({ className, ...props }: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInputInstance>) {
   const inSheet = useBottomSheetInternal(true) !== null;
   const Field = (inSheet ? BottomSheetTextInput : TextInput) as typeof TextInput;
   return (

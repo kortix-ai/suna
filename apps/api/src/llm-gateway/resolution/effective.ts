@@ -13,7 +13,7 @@ const KORTIX_PREFIX = 'kortix/';
 
 /**
  * The GATEWAY WIRE form of a model ref: a managed model is stored/served bare
- * (`glm-5.3-flash`), so strip the opencode-only `kortix/` namespace before it reaches
+ * (`glm-5.3-flash`), so strip the runtime's `kortix/` provider namespace before it reaches
  * the gateway (route resolution and managed-model lookup both expect the
  * bare id). BYOK (`provider/model`) and codex (`codex/<id>`) refs pass through.
  * This is what `account_model_preferences` stores and what servability checks.
@@ -24,19 +24,19 @@ export function toWireModel(ref: string): string {
 }
 
 /**
- * The OPENCODE ref form: every gateway model is registered under OpenCode's
+ * The SESSION ref form: every gateway model is registered under the runtime's
  * `kortix` provider. The remaining path is the gateway wire model, including
  * nested provider paths such as `codex/gpt-5.6-sol`.
  *
  * Every other stored model is the wire id (`toWireModel`): channel bindings,
  * triggers, account and agent defaults. Only a session's
- * `metadata.opencode_model` keeps this form, because released clients (the
+ * `metadata.model` keeps this form, because released clients (the
  * CLI, `@kortix/sdk` `send()`) split it on the first `/` into the prompt's
  * `{providerID, modelID}`; a bare wire id there would send no model, and a
  * BYOK id the wrong provider. It goes when those clients read the model from
  * the API instead of parsing the pin.
  */
-export function toOpencodeModelRef(model: string): string {
+export function toSessionModelRef(model: string): string {
   // A Claude subscription model is not a gateway model: the box reads its
   // provider from the ref itself (`claude-agent/<id>`).
   if (isClaudeAgentModelRef(model)) return model.trim();

@@ -99,6 +99,43 @@ function harness(reply: (sent: Sent, index: number) => Response | Error, overrid
 }
 
 describe('dispatch: one attempt plan', () => {
+  test('a pooled account reports the plan usage of every answer, refused or served', async () => {
+    const usage: Array<[string, number | undefined]> = [];
+    const key = (name: string) => upstream('openai-compat-pool', { apiKey: name, poolSecretId: name, billingMode: 'none', markup: 0 });
+    const { run } = harness(({ key: apiKey }) => apiKey === 'a'
+      ? json({ error: 'limit' }, 429, { 'x-codex-primary-used-percent': '100', 'x-codex-primary-window-minutes': '300' })
+      : json({ choices: [] }, 200, { 'x-codex-primary-used-percent': '7', 'x-codex-primary-window-minutes': '300' }), {
+      notePoolUsage: async (secretId, snapshot) => { usage.push([secretId, snapshot.windows[0]?.used_percent]); },
+    });
+    const outcome = await run({ model: 'm', candidates: [key('a'), key('b'), upstream('no-pool')] });
+    expect(outcome.response?.status).toBe(200);
+    expect(usage).toEqual([['a', 100], ['b', 7]]);
+  });
+
+  // The usage read runs after the upstream answered. A reset time Date cannot
+  // represent once threw RangeError there, and the served 200 was recorded as a
+  // failed attempt that moved on to the next account.
+  test('a served answer with an unrepresentable reset time stays a served answer', async () => {
+    const usage: Array<[string, number | undefined, string | null]> = [];
+    const key = (name: string) => upstream('openai-compat-pool', { apiKey: name, poolSecretId: name, billingMode: 'none', markup: 0 });
+    const { run, sent } = harness(() => json({ choices: [] }, 200, {
+      'x-codex-primary-used-percent': '41',
+      'x-codex-primary-window-minutes': '300',
+      'x-codex-primary-reset-at': '1e15',
+    }), {
+      notePoolUsage: async (secretId, snapshot) => {
+        const window = snapshot.windows[0];
+        usage.push([secretId, window?.used_percent, window?.resets_at ?? null]);
+      },
+    });
+    const outcome = await run({ model: 'm', candidates: [key('a'), key('b')] });
+    expect(outcome.response?.status).toBe(200);
+    expect(outcome.attempts).toBe(1);
+    expect(outcome.attemptFailures).toEqual([]);
+    expect(sent.map((s) => s.key)).toEqual(['a']);
+    expect(usage).toEqual([['a', 41, null]]);
+  });
+
   test('a pool key and its Bedrock inference profile compose', async () => {
     const key = (name: string) => bedrock('xai.grok-4.6', { apiKey: name, poolSecretId: name, billingMode: 'none', markup: 0 });
     const { run, sent, cooldowns } = harness(({ key: apiKey, model }) => {

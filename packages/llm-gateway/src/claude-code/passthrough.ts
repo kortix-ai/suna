@@ -15,13 +15,15 @@
  *   4. relays the response (status, type, stream) unchanged.
  *
  * A 429 rests that account and the request moves to the next one; a 401 marks
- * the account for reconnection and moves on. Nothing here translates the
+ * the account for reconnection and moves on. Every response's plan usage
+ * headers go to `notePoolUsage`. Nothing here translates the
  * request, reads the reply, logs a body or logs a token. The account token
  * never leaves the gateway and the API.
  */
 import { createHash } from 'node:crypto';
 import type { AuthedPrincipal } from '../domain/principal';
 import { upstreamFetch } from '../upstream-fetch';
+import { type SubscriptionUsage, subscriptionUsageFromHeaders } from '../usage/subscription-usage';
 
 export interface ClaudeCodeCredential {
   secretId: string;
@@ -31,7 +33,11 @@ export interface ClaudeCodeCredential {
 
 export type ClaudeCodeCredentials =
   | { credentials: ClaudeCodeCredential[] }
-  | { error: { status: number; code: string; message: string; suggestion?: string; retryAfterSeconds?: number } };
+  | { error: {
+    status: number; code: string; message: string; suggestion?: string; retryAfterSeconds?: number;
+    /** How long the first usable account still rests. Over a minute it is a plan usage limit. */
+    restSeconds?: number;
+  } };
 
 export interface ClaudeCodeHooks {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
@@ -40,6 +46,8 @@ export interface ClaudeCodeHooks {
   /** Anthropic refused this account's token (401): the host marks it for reconnection. */
   claudeRefused?: (principal: AuthedPrincipal, secretId: string, failedKeySha256: string) => Promise<void>;
   notePoolRateLimit?: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
+  /** The plan usage this account's response reported (`anthropic-ratelimit-unified-*`). */
+  notePoolUsage?: (principal: AuthedPrincipal, secretId: string, usage: SubscriptionUsage) => Promise<void>;
 }
 
 export interface ClaudeCodeRequest {
@@ -77,10 +85,32 @@ const ERROR_TYPES: Record<number, string> = {
   429: 'rate_limit_error', 503: 'overloaded_error',
 };
 
-function anthropicError(status: number, message: string, retryAfterSeconds?: number): Response {
-  const headers: Record<string, string> = { 'content-type': 'application/json' };
+function anthropicError(status: number, message: string, retryAfterSeconds?: number, extraHeaders: Record<string, string> = {}): Response {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...extraHeaders };
   if (retryAfterSeconds) headers['retry-after'] = String(retryAfterSeconds);
   return new Response(JSON.stringify({ type: 'error', error: { type: ERROR_TYPES[status] ?? 'api_error', message } }), { status, headers });
+}
+
+/** A rest longer than this is a plan usage limit, not a short rate limit (the API's `accountsResting`). */
+const USAGE_LIMIT_MIN_REST_SECONDS = 60;
+/**
+ * The representative claim of a Kortix usage-limit 429. Claude Code reads a 429 as a usage limit
+ * only when it carries `anthropic-ratelimit-unified-representative-claim`; without it, it prints
+ * "Server is temporarily limiting requests (not your usage limit)" and retries. Anthropic's own
+ * claims name a window (`five_hour`, `seven_day`, …). Kortix stores only when the account's rest
+ * ends, so this claim names no window: Claude Code 0.3.x then prints
+ * "You've hit your usage limit · resets <time>" and stops retrying.
+ */
+const KORTIX_USAGE_LIMIT_CLAIM = 'kortix_claude_accounts';
+
+/** Every usable Claude account rests on its plan limit: answer the way Anthropic answers a usage limit. */
+function usageLimitError(message: string, restSeconds: number): Response {
+  const seconds = Math.ceil(restSeconds);
+  return anthropicError(429, message, seconds, {
+    'anthropic-ratelimit-unified-status': 'rejected',
+    'anthropic-ratelimit-unified-representative-claim': KORTIX_USAGE_LIMIT_CLAIM,
+    'anthropic-ratelimit-unified-reset': String(Math.floor(Date.now() / 1000) + seconds),
+  });
 }
 
 function sessionToken(headers: Headers): string | null {
@@ -130,8 +160,10 @@ export function createClaudeCodePassthrough(hooks: ClaudeCodeHooks, deps: Claude
 
     const found = await hooks.claudeCredentials(principal, { model: requestModel(req.body) });
     if ('error' in found) {
-      const { status, message, suggestion, retryAfterSeconds } = found.error;
-      return anthropicError(status, suggestion ? `${message} ${suggestion}` : message, retryAfterSeconds);
+      const { status, message, suggestion, retryAfterSeconds, restSeconds } = found.error;
+      const text = suggestion ? `${message} ${suggestion}` : message;
+      if (status === 429 && restSeconds !== undefined && restSeconds > USAGE_LIMIT_MIN_REST_SECONDS) return usageLimitError(text, restSeconds);
+      return anthropicError(status, text, retryAfterSeconds);
     }
 
     const headers = new Headers();
@@ -144,6 +176,8 @@ export function createClaudeCodePassthrough(hooks: ClaudeCodeHooks, deps: Claude
       headers.set('authorization', `Bearer ${credential.apiKey}`);
       const response = await fetchImpl(target, { method: 'POST', headers, body: req.body as BodyInit | null, signal: req.signal });
       const more = index < found.credentials.length - 1;
+      const usage = subscriptionUsageFromHeaders(response.headers);
+      if (usage && hooks.notePoolUsage) void hooks.notePoolUsage(principal, credential.secretId, usage).catch(() => undefined);
       if (response.status === 429) {
         await hooks.notePoolRateLimit?.(principal, credential.secretId, restSeconds(response)).catch((err) => {
           logger.warn('[claude-code] could not record a Claude account rest', { secretId: credential.secretId, error: String(err) });

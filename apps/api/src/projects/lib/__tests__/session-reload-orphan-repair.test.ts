@@ -72,7 +72,7 @@ function fakeDaemon(reload: unknown) {
       }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
-    pushGovernance: async () => ({ applied: true, opencodeReload: 'restarted', opencodeTurnEnded: false }) as never,
+    pushGovernance: async () => ({ applied: true, runtimeReload: 'restarted', runtimeTurnEnded: false }) as never,
     latestEtag: async () => 'ffff',
     sleep: async () => {},
     recordReport: async () => {},

@@ -111,6 +111,15 @@ export function aliasCorsOrigins(): string[] {
   return [...aliasFrontendOrigins(), ...aliasFormsOf(apiHost).map((host) => `https://${host}`)];
 }
 
+/** The configured CORS origins beyond the built-in list: `CORS_ALLOWED_ORIGINS` and the alias domains. */
+export function configuredCorsOrigins(): string[] {
+  return [
+    ...(config.CORS_ALLOWED_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean),
+    // Self-host alias domains serve the same web app.
+    ...aliasCorsOrigins(),
+  ];
+}
+
 /**
  * A stored absolute URL on an API host this instance serves (the primary API
  * host or one of its alias forms), moved onto the API host of the current

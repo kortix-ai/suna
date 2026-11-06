@@ -2,12 +2,15 @@
 
 import { getPublicArtifact, type ArtifactDetail } from '@kortix/sdk';
 import { useArtifact } from '@kortix/sdk/react';
-import { ArrowSquareOut, BrowserIcon, FileTextIcon, X } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, BrowserIcon, ChatCircleIcon, FileTextIcon, XIcon } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 
+import { useTranslations } from '../i18n';
 import { useLocalizedUiCatalog } from '../i18n/ui-catalog/use-localized-ui-catalog';
 import { Button } from '../primitives/button';
+import { CountBadge } from '../primitives/count-badge';
 import Hint from '../primitives/hint';
+import { Skeleton } from '../primitives/skeleton';
 import { useUiComponents, useUiRouter } from '../providers/ui-provider';
 import { ArtifactFrame } from './artifact-frame';
 import { artifactFrameKey, parseArtifactUrl } from './frame-policy';
@@ -31,6 +34,8 @@ interface ShownArtifact {
   frameKey: string;
   /** The app viewer (editor for a doc), when the artifact belongs to a project. */
   href: string | null;
+  /** Open comment threads (`open_thread_count`). Absent for a public artifact or while comments are off. */
+  openThreads?: number;
 }
 
 /** The artifact a URL names, as the caller may see it: a project artifact, or a public one. */
@@ -69,6 +74,7 @@ function useShownArtifact(url: string): { artifact: ShownArtifact | null; failed
       src: detail.version.view_url,
       frameKey: artifactFrameKey(detail),
       href: `/projects/${detail.project_id}/artifacts/${detail.artifact_id}`,
+      openThreads: detail.open_thread_count,
     },
     failed: false,
   };
@@ -82,6 +88,7 @@ function useShownArtifact(url: string): { artifact: ShownArtifact | null; failed
  */
 export function ShowArtifactCard({ url, fallback }: { url: string; fallback: React.ReactNode }) {
   const copy = useLocalizedUiCatalog(COPY);
+  const t = useTranslations('artifacts');
   const { artifact, failed } = useShownArtifact(url);
   if (failed) return <>{fallback}</>;
   const Icon = artifact ? TYPE_ICON[artifact.type] : FileTextIcon;
@@ -110,8 +117,28 @@ export function ShowArtifactCard({ url, fallback }: { url: string; fallback: Rea
           <Icon className="text-muted-foreground size-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="text-foreground block truncate text-sm font-medium">{artifact?.title ?? ' '}</span>
-          <span className="text-muted-foreground block text-xs">{artifact ? (artifact.type === 'doc' ? copy.doc : copy.page) : ' '}</span>
+          {/* While the detail loads, lines in the shape of the title and the type: never a blank card. */}
+          {artifact ? (
+            <span className="text-foreground block truncate text-sm font-medium">{artifact.title}</span>
+          ) : (
+            <Skeleton className="my-0.5 h-4 w-40 max-w-full" />
+          )}
+          <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            {artifact ? (
+              <span>{artifact.type === 'doc' ? copy.doc : copy.page}</span>
+            ) : (
+              <Skeleton className="my-0.5 h-3 w-16" />
+            )}
+            {artifact?.openThreads ? (
+              <CountBadge
+                count={artifact.openThreads}
+                tone="waiting"
+                icon={<ChatCircleIcon aria-hidden />}
+                role="img"
+                aria-label={t('openComments', { count: artifact.openThreads })}
+              />
+            ) : null}
+          </span>
         </span>
         <span className="text-muted-foreground group-hover:text-foreground shrink-0 text-xs font-medium transition-colors">{copy.open}</span>
       </span>
@@ -145,13 +172,13 @@ function ArtifactPagePreview({ url, onClose }: { url: string; onClose: () => voi
         {artifact?.href ? (
           <Hint label={copy.openArtifact} side="bottom">
             <Button size="icon-sm" variant="ghost" aria-label={copy.openArtifact} onClick={() => router.push(artifact.href!)}>
-              <ArrowSquareOut className="size-3.5" />
+              <ArrowSquareOutIcon className="size-3.5" />
             </Button>
           </Hint>
         ) : null}
         <Hint label={copy.close} side="bottom">
           <Button size="icon-sm" variant="ghost" aria-label={copy.close} onClick={onClose}>
-            <X className="size-3.5" />
+            <XIcon className="size-3.5" />
           </Button>
         </Hint>
       </div>

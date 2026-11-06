@@ -23,7 +23,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { runWithContext } from '../lib/request-context';
-import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
+import { isPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import * as realProviders from '../platform/providers';
 import * as realPreviewOwnership from '../shared/preview-ownership';
 import { __resetPromptModelSignatureCacheForTests } from '../projects/lib/sandbox-env-sync';
@@ -39,6 +39,7 @@ const TEST_PORT = 8080;
 
 let mockDbSandbox: any = {
   sandboxId: TEST_SESSION_SANDBOX_ID,
+  externalId: TEST_SANDBOX_ID,
   projectId: TEST_PROJECT_ID,
   accountId: 'account-001',
   agentName: 'default',
@@ -315,7 +316,7 @@ mock.module('../platform/providers', () => ({
       const ptyWebsocket =
         name === 'platinum' &&
         request.transport === 'websocket' &&
-        classifyPtyWebSocketPath(request.path) !== null;
+        isPtyWebSocketPath(request.path);
       return {
         effectivePort:
           name === 'platinum' && (request.port === 4096 || ptyWebsocket) ? 8000 : request.port,
@@ -535,6 +536,7 @@ beforeEach(() => {
   invalidateSandbox('daytona-oc-http');
   mockDbSandbox = {
     sandboxId: TEST_SESSION_SANDBOX_ID,
+    externalId: TEST_SANDBOX_ID,
     sessionId: '22222222-2222-4222-8222-222222222222',
     projectId: TEST_PROJECT_ID,
     accountId: 'account-001',
@@ -575,24 +577,6 @@ describe('Preview proxy: websocket upstream resolution', () => {
   // asks for it, signs the user context into the URL as well as the header.
   test.each([
     {
-      name: 'a Daytona opencode PTY',
-      provider: 'daytona',
-      previewUrl: 'https://preview.daytona.io/proxy-url',
-      port: 4096,
-      path: '/pty/pty_test/connect',
-      expected: 'wss://preview.daytona.io/proxy-url/pty/pty_test/connect',
-      signedInUrl: false,
-    },
-    {
-      name: 'a Platinum opencode PTY',
-      provider: 'platinum',
-      previewUrl: 'https://8000-platinum.sbx.example',
-      port: 4096,
-      path: '/pty/pty_test/connect',
-      expected: 'wss://8000-platinum.sbx.example/pty/pty_test/connect',
-      signedInUrl: true,
-    },
-    {
       name: 'a Platinum Kortix-native PTY',
       provider: 'platinum',
       previewUrl: 'https://8000-platinum.sbx.example',
@@ -625,7 +609,7 @@ describe('Preview proxy: websocket upstream resolution', () => {
       expect(verifyKortixUserContext(queryContext!, TEST_SERVICE_KEY).ok).toBe(true);
       expect(upstream.headers[KORTIX_USER_CONTEXT_HEADER]).toBe(queryContext!);
       // The provider's query defaults ride along.
-      if (row.port === 4096) expect(url.searchParams.get('cursor')).toBe('0');
+      expect(url.searchParams.get('cursor')).toBe('0');
     } else {
       expect(queryContext).toBeNull();
     }
@@ -634,9 +618,9 @@ describe('Preview proxy: websocket upstream resolution', () => {
   test('a sandbox token may open the PTY of its OWN session', async () => {
     const upstream = await resolvePreviewWsUpstream({
       sandboxId: TEST_SANDBOX_ID,
-      upstreamPort: 4096,
+      upstreamPort: 8000,
       userId: TEST_USER_ID,
-      remainingPath: '/pty/pty_test/connect',
+      remainingPath: '/kortix/pty/kpty_test/connect',
       queryString: '',
       // The sandbox's own session id — the legitimate case, which must keep
       // working or the narrowing has broken the product.
@@ -654,9 +638,9 @@ describe('Preview proxy: websocket upstream resolution', () => {
     // path. The leg was wired and unproven.
     const upstream = await resolvePreviewWsUpstream({
       sandboxId: TEST_SANDBOX_ID,
-      upstreamPort: 4096,
+      upstreamPort: 8000,
       userId: TEST_USER_ID,
-      remainingPath: '/pty/pty_test/connect',
+      remainingPath: '/kortix/pty/kpty_test/connect',
       queryString: '',
       callerSessionId: '99999999-9999-4999-8999-999999999999',
       boundCredentialSessionId: '99999999-9999-4999-8999-999999999999',
@@ -666,9 +650,7 @@ describe('Preview proxy: websocket upstream resolution', () => {
   });
 });
 
-// The upgrade entry point. The PTY asks the box which half of the opencode
-// port pair is live: a verified config reload boots the replacement on the idle
-// half and promotes it, and a hardcoded 4096 then dials a dead socket.
+// The upgrade entry point.
 describe('Preview proxy: websocket upgrade (path form)', () => {
   const upgradeUrl = (sandboxId: string, port: number, path: string, query = '?token=ws-token') =>
     new URL(`http://api.test/v1/p/${sandboxId}/${port}${path}${query}`);
@@ -676,53 +658,9 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
 
   test('an upgrade with no token is refused', async () => {
     const res = await preparePreviewWsUpgrade(
-      upgradeUrl(TEST_SANDBOX_ID, 4096, '/pty/pty_1/connect', ''),
+      upgradeUrl(TEST_SANDBOX_ID, 8000, '/kortix/pty/kpty_1/connect', ''),
     );
     expect(res).toMatchObject({ ok: false, status: 401 });
-  });
-
-  test.each([
-    ['reports the standby port', { status: 200, body: '{"opencode_port":4097}' }, 4097],
-    ['reports a port outside the pair', { status: 200, body: '{"opencode_port":3000}' }, 4096],
-    ['reports its own daemon port', { status: 200, body: '{"opencode_port":8000}' }, 4096],
-    ['answers 500', { status: 500, body: 'boom' }, 4096],
-    ['cannot be reached', { status: 0, body: '', error: new Error('ECONNREFUSED') }, 4096],
-    ['is too old to report the field', { status: 200, body: '{"status":"ok"}' }, 4096],
-    ['names the OpenCode harness and its port', { status: 200, body: '{"harness":{"id":"opencode","details":{"port":4097}},"opencode_port":4097}' }, 4097],
-  ])('an opencode PTY dials the live port: the daemon %s', async (_label, health, port) => {
-    mockFetchResponses = [health];
-
-    const res = await preparePreviewWsUpgrade(
-      upgradeUrl(`ws-live-port-${port}-${health.status}`, 4096, '/pty/pty_1/connect'),
-    );
-
-    expect(res.ok).toBe(true);
-    if (res.ok) expect(res.data.ingress?.port).toBe(port);
-    expect(healthReads()).toHaveLength(1);
-    // Bounded, so a wedged box cannot hang the terminal.
-    expect(healthReads()[0]?.signal).toBeInstanceOf(AbortSignal);
-  });
-
-  // R7.5: pi reports `opencode_port: null`. The 4096 fallback dialed a port
-  // where nothing listens and the terminal died with close code 4502.
-  test('an opencode PTY on a pi box is refused with 409 naming the Kortix PTY, after one health read', async () => {
-    mockFetchResponses = [{ status: 200, body: '{"harness":{"id":"pi","details":{"model":"kortix/x"}},"opencode_port":null}' }];
-    const res = await preparePreviewWsUpgrade(upgradeUrl('ws-pi-box', 4096, '/pty/pty_1/connect'));
-    expect(res).toMatchObject({ ok: false, status: 409 });
-    if (!res.ok) {
-      expect(res.message).toContain('pty_unsupported_runtime');
-      expect(res.message).toContain('/kortix/pty/');
-    }
-    expect(healthReads()).toHaveLength(1);
-  });
-
-  // The value changes on exactly the event this exists for, so it is read on
-  // every connect.
-  test('the live port is read on every connect, never cached', async () => {
-    mockFetchResponses = [{ status: 200, body: '{"opencode_port":4097}' }];
-    await preparePreviewWsUpgrade(upgradeUrl('ws-live-port-uncached', 4096, '/pty/pty_1/connect'));
-    await preparePreviewWsUpgrade(upgradeUrl('ws-live-port-uncached', 4096, '/pty/pty_1/connect'));
-    expect(healthReads()).toHaveLength(2);
   });
 
   test('a Kortix-native PTY keeps the port the client addressed and asks nothing', async () => {
@@ -735,12 +673,11 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
   });
 
   test('our own credentials and wake signal never reach the upstream', async () => {
-    mockFetchResponses = [{ status: 200, body: '{"opencode_port":4096}' }];
     const res = await preparePreviewWsUpgrade(
       upgradeUrl(
         'ws-query-strip',
-        4096,
-        '/pty/pty_1/connect',
+        8000,
+        '/kortix/pty/kpty_1/connect',
         '?token=ws-token&public_share=kps_x&wake=1&cursor=5',
       ),
     );
@@ -874,6 +811,37 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
   });
 
+  // A port the API exposed a moment ago: Platinum's routes lag the expose by up
+  // to ~1.2 s, and its edge answers `404 port-not-exposed` meanwhile. The edge
+  // answered itself, so the request is sent again, and a write is safe to send.
+  test('an edge port-not-exposed 404 right after the expose is sent again', async () => {
+    mockFetchResponses = [
+      { status: 404, body: 'This sandbox URL is not active.', headers: { 'x-pt-edge-verdict': 'port-not-exposed' } },
+      { status: 200, body: 'ok' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Accept: 'text/html' },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  test('a 404 the app served itself passes through, never sent again', async () => {
+    mockFetchResponses = [
+      { status: 404, body: 'no such page', headers: { 'x-pt-edge-served': '1' } },
+      { status: 200, body: 'ok' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/missing`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe('no such page');
+    expect(mockFetchCalls).toHaveLength(1);
+  });
+
   test('a browser that gets the port-unreachable page leaves no upstream body unreleased', async () => {
     mockFetchResponses = [{ status: 502, body: 'bad gateway' }];
     const app = createProxyTestApp();
@@ -976,9 +944,7 @@ describe('Preview proxy: forwarding', () => {
       llmGatewayEnabled: true,
       llmGatewayBaseUrl: 'https://api.example.test/v1/llm',
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
-      // `runtimeEnv` for a W3 daemon, the same map as `opencodeEnv` for an older one.
       runtimeEnv: {},
-      opencodeEnv: {},
       refreshModels: true,
       revision: 'rev-OPENROUTER_API_KEY-SENTRY_DSN',
     });
@@ -1212,6 +1178,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
       'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/kortix/health',
       'https://preview.daytona.io/proxy-url/kortix/env',
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
     ]);
@@ -1244,6 +1211,7 @@ describe('Preview proxy: forwarding', () => {
     expect(mockWakeCalls).toEqual([TEST_SANDBOX_ID]);
     expect(mockFetchCalls.map((call) => call.url)).toEqual([
       'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/kortix/health',
       'https://preview.daytona.io/proxy-url/kortix/env',
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
     ]);
@@ -1336,28 +1304,6 @@ describe('Preview proxy: forwarding', () => {
         scopes: ['*'],
       });
     }
-  });
-
-  test('marks proxied session sandbox and owning session as active usage', async () => {
-    mockFetchResponses = [{ status: 200, body: 'OK' }];
-    const sandboxId = 'touch-sandbox-001';
-    const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/${sandboxId}/${TEST_PORT}/kortix/health`, {
-      headers: { Authorization: 'Bearer test' },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(res.status).toBe(200);
-    expect(
-      mockDbUpdateCalls.some(
-        (call) => call.table === sessionSandboxes && call.updates.lastUsedAt instanceof Date,
-      ),
-    ).toBe(true);
-    expect(
-      mockDbUpdateCalls.some(
-        (call) => call.table === projectSessions && call.updates.status === 'running',
-      ),
-    ).toBe(true);
   });
 
   test('creates trace headers when caller does not provide traceparent', async () => {

@@ -15,8 +15,8 @@ import { eq, sql } from 'drizzle-orm';
 
 import {
   PLACEHOLDER_TITLE_SQL_PATTERN,
-  isPlaceholderOpencodeTitle,
-} from '../projects/lib/opencode-title';
+  isPlaceholderSessionTitle,
+} from '../projects/lib/session-title-placeholder';
 import type { ProjectSessionRow } from '../projects/lib/serializers';
 import { transitionSession } from '../projects/session-lifecycle/status-transitions';
 import { persistTitle } from '../projects/session-title-generate';
@@ -226,7 +226,7 @@ describe('persistTitle — compare-and-set', () => {
 
   // The list write runs beside title generation. It merges in SQL, so a title
   // committed after the session was created survives it.
-  test('no clobber: the opencode_sessions list write keeps a title committed before it', async () => {
+  test('no clobber: the runtime_sessions list write keeps a title committed before it', async () => {
     const row = await seed({ runtime_transport: 'rest' });
     await persistTitle(row, 'Generated Title');
 
@@ -243,7 +243,7 @@ describe('persistTitle — compare-and-set', () => {
     const metadata = await metadataOf(row.sessionId);
     expect(metadata.name).toBe('Generated Title');
     expect(metadata.runtime_transport).toBe('rest');
-    expect(metadata.opencode_sessions).toEqual([
+    expect(metadata.runtime_sessions).toEqual([
       {
         id: 'ses_root',
         title: 'Runtime Title',
@@ -264,9 +264,9 @@ describe('persistTitle — compare-and-set', () => {
 });
 
 // The CAS matches placeholders with this SQL pattern; the TS `needsTitle` gate
-// uses `isPlaceholderOpencodeTitle`. If they disagree, the gate sends a row to
+// uses `isPlaceholderSessionTitle`. If they disagree, the gate sends a row to
 // the gateway that the UPDATE then refuses: a billed title on every prompt.
-describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderOpencodeTitle in PostgreSQL', () => {
+describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderSessionTitle in PostgreSQL', () => {
   test.each([
     'New session',
     'New session - Jul 29',
@@ -288,7 +288,7 @@ describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderOpencodeTitle i
     const [check] = await db.execute(
       sql`select (btrim(${title}::text) ~* ${PLACEHOLDER_TITLE_SQL_PATTERN})::bool as hit`,
     );
-    expect((check as { hit: boolean }).hit).toBe(isPlaceholderOpencodeTitle(title));
+    expect((check as { hit: boolean }).hit).toBe(isPlaceholderSessionTitle(title));
   });
 });
 
@@ -303,7 +303,7 @@ describe('writeRuntimeSessionList', () => {
     const row = await seed({});
     const tree = doc(conv('ses_a', null, 2), conv('ses_a_kid', 'ses_a', 9), conv('ses_other', null, 5));
     expect(await write(row, tree, 'ses_a')).toBe('written');
-    expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_a_kid', 'ses_a']);
+    expect(((await metadataOf(row.sessionId)).runtime_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_a_kid', 'ses_a']);
     expect(await write(row, tree, 'ses_a')).toBe('unchanged');
   });
 
@@ -316,7 +316,7 @@ describe('writeRuntimeSessionList', () => {
     const metadata = await metadataOf(row.sessionId);
     expect(metadata.name).toBe('Keep me');
     expect(metadata.runtime_forks).toEqual({ ses_one: 'ses_a', ses_two: 'ses_a' });
-    expect((metadata.opencode_sessions as Array<{ id: string }>).map((item) => item.id).sort()).toEqual(['ses_one', 'ses_two']);
+    expect((metadata.runtime_sessions as Array<{ id: string }>).map((item) => item.id).sort()).toEqual(['ses_one', 'ses_two']);
   });
 
   test('registered fork roots and descendants survive projection refresh without admitting unrelated roots', async () => {
@@ -325,7 +325,7 @@ describe('writeRuntimeSessionList', () => {
     const tree = doc(conv('ses_a', null, 1), conv('ses_fork', null, 3),
       conv('ses_nested', null, 4), conv('ses_kid', 'ses_fork', 5), conv('ses_other', null, 9));
     expect(await write(row, tree, 'ses_a')).toBe('written');
-    const inventory = (await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string; fork_source_id?: string }>;
+    const inventory = (await metadataOf(row.sessionId)).runtime_sessions as Array<{ id: string; fork_source_id?: string }>;
     expect(inventory.map((s) => s.id)).toEqual(['ses_kid', 'ses_nested', 'ses_fork', 'ses_a']);
     expect(inventory.find((s) => s.id === 'ses_fork')?.fork_source_id).toBe('ses_a');
     expect(await write(row, tree, 'ses_a')).toBe('unchanged');
@@ -345,9 +345,9 @@ describe('writeRuntimeSessionList', () => {
         source: 'daemon_push',
       });
     expect(await save('2026-10-08T10:00:00.000Z', doc(conv('ses_r', null, 1), conv('ses_r_kid', 'ses_r', 4)))).toBe('stored');
-    expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_r_kid', 'ses_r']);
+    expect(((await metadataOf(row.sessionId)).runtime_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_r_kid', 'ses_r']);
     expect(await save('2026-10-08T09:00:00.000Z', doc(conv('ses_r', null, 1)))).toBe('ignored');
-    expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_r_kid', 'ses_r']);
+    expect(((await metadataOf(row.sessionId)).runtime_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_r_kid', 'ses_r']);
   });
 
   test('a pinned session ignores a document for another root, and a document that does not know its sessions', async () => {
@@ -355,9 +355,9 @@ describe('writeRuntimeSessionList', () => {
     await db.update(projectSessions).set({ runtimeSessionId: 'ses_pinned' }).where(eq(projectSessions.sessionId, row.sessionId));
     expect(await write(row, doc(conv('ses_new', null, 1)), 'ses_new')).toBe('skipped');
     expect(await write(row, { sessions: { known: false, value: [] } }, 'ses_pinned')).toBe('skipped');
-    expect((await metadataOf(row.sessionId)).opencode_sessions).toBeUndefined();
+    expect((await metadataOf(row.sessionId)).runtime_sessions).toBeUndefined();
     // With the pin and no root in the document, the pin scopes it.
     expect(await write(row, doc(conv('ses_pinned', null, 1), conv('ses_kid', 'ses_pinned', 3)), null)).toBe('written');
-    expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_kid', 'ses_pinned']);
+    expect(((await metadataOf(row.sessionId)).runtime_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_kid', 'ses_pinned']);
   });
 });

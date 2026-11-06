@@ -2,6 +2,8 @@ export { createGateway } from './create-gateway';
 export { createClaudeCodePassthrough } from './claude-code/passthrough';
 export type { ClaudeCodeCredential, ClaudeCodeCredentials, ClaudeCodeHooks, ClaudeCodeRequest } from './claude-code/passthrough';
 export { DEFAULT_MAX_REQUEST_BYTES } from './domain/config';
+export { subscriptionUsageFromHeaders, windowId } from './usage/subscription-usage';
+export type { SubscriptionUsage, SubscriptionUsageWindow } from './usage/subscription-usage';
 export {
   gatewayOverloadedResponse,
   readAdmittedBody,
@@ -22,6 +24,7 @@ export type { AdmittedBodyResult, AdmittedBytesResult } from './pipeline/read-bo
 export { DEFAULT_IMAGE_WINDOW, applyImageWindow } from './pipeline/image-window';
 export { MAX_HOLD_SECONDS, SETUP_HOLD_SECONDS } from './pipeline/route-memory';
 export { CircuitBreakers, upstreamBreakers } from './pipeline/circuit-breaker';
+export { readRequestOrigin, REQUEST_ORIGIN_HEADERS, type RequestOrigin } from './pipeline/request-origin';
 export type { ImageWindowOptions, ImageWindowResult } from './pipeline/image-window';
 export type { AudioRequest, ChatCompletionRequest, GatewayDeps, VoicesRequest } from './pipeline';
 export {

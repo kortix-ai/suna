@@ -2,6 +2,7 @@
 
 import { CommandPaletteBoundary } from '@/features/workspace/command-palette-boundary';
 import { DriveUploadTray } from '@kortix/ui/files';
+import { VoiceCallCard } from '@kortix/ui/session/voice/voice-call-card';
 import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { ArtifactFramePreloader } from '@/features/artifacts/artifact-frame-preloader';
 import { useTranslations } from '@/i18n/use-translations';
@@ -43,7 +44,6 @@ import {
   qk,
   useFeatureFlag,
   useGatewayCatalogSync,
-  useProjectSpaces,
 } from '@kortix/sdk/react';
 import { SidebarGlyph as PanelLeft } from '@kortix/ui/icons';
 
@@ -205,17 +205,14 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     newSession();
   }, [newSession]);
 
-  // Channels on: "New session" (Mod+T, the desktop File menu) opens the
-  // default channel and focuses its composer, where a message starts a thread.
-  const channels = useFeatureFlag(projectId, 'project_channels').enabled;
-  const spaces = useProjectSpaces(projectId, { enabled: channels });
-  const defaultChannelSlug = spaces.data?.find((space) => space.kind === 'channel' && space.is_default)?.slug;
+  // Spaces on: "New session" (Mod+T, the desktop File menu) opens the
+  // person's own space and focuses its composer, where a message starts a thread.
+  const channels = useFeatureFlag(projectId, 'chat').enabled;
   const openDefaultChannel = useCallback(() => {
-    if (!defaultChannelSlug) return;
-    router.push(uiRoutes().channel(projectId, defaultChannelSlug));
-    // Already on that channel the composer does not remount; ask it for focus.
+    router.push(`${uiRoutes().project(projectId)}/chat`);
+    // Already on that space the composer does not remount; ask it for focus.
     window.dispatchEvent(new CustomEvent('focus-session-textarea'));
-  }, [defaultChannelSlug, projectId, router]);
+  }, [projectId, router]);
   useProjectShellShortcuts({ projectId, onNewSession: channels ? openDefaultChannel : handleNewSession });
 
   const params = useParams<{ sessionId?: string }>();
@@ -268,6 +265,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
             started in one folder still shows its progress after the user moves
             on. Empty, it renders nothing. */}
         <DriveUploadTray />
+
+        {/* A voice call placed from an agent's page (flag `voice_call`): it goes on wherever the person goes in the
+            project. Without a call, nothing. */}
+        <VoiceCallCard />
 
         {/* App previews load here in the background and stay loaded while
             the project is open, so the Apps page shows them at once. */}

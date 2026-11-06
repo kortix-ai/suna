@@ -106,6 +106,16 @@
     "access": "访问权限",
     "actions": "操作",
     "coolingDown": "冷却中",
+    "usageFiveHour": "5 小时",
+    "usageWeekly": "每周",
+    "usageWeeklyModel": "每周 · {model}",
+    "usagePercent": "已用 {percent}%",
+    "usagePercentResets": "{percent}% · {time} 重置",
+    "usageLimitReached": "已达上限",
+    "usageLimitResets": "已达上限 · {time} 重置",
+    "usageNotSeen": "首次请求后显示用量",
+    "usageObserved": "更新于 {time}",
+    "usageAriaLabel": "{window}：已用 {percent}%",
     "member": "成员",
     "members": "位成员",
     "actionsFor": "{label} 的操作",
@@ -843,7 +853,7 @@
           "label": "关闭",
           "description": "所有声音均已关闭"
         },
-        "opencode": {
+        "classic": {
           "label": "默认",
           "description": "默认声音包"
         },
@@ -1286,21 +1296,13 @@
           "name": "Composio 事件触发器",
           "description": "当已连接的应用中发生事件时启动智能体：新邮件、拉取请求、日历事件。事件来自 Composio。Kortix 也会自行检查你已连接的应用。"
         },
-        "session_log_restore": {
-          "name": "会话日志恢复",
-          "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
-        },
-        "agent_rooms": {
-          "name": "聊天室",
-          "description": "命名的聊天室，代理会话和用户可以在其中发帖并在话题中回复。当消息发给某个会话时，该会话会被唤醒。新增聊天室页面、`kortix rooms` 和 `kortix peers`。"
-        },
         "goals": {
           "name": "目标",
           "description": "给代理一个目标，它会一直负责，直到独立检查确认结果。它会规划、执行、等待、跟进相关人员，并把状态保存在“文件”中的 Goals 文件夹里。需要开启卷和循环。"
         },
         "workspace_volume": {
-          "name": "工作区卷",
-          "description": "将每个新会话的 /workspace 保存在独立的卷上，因此已停止的沙盒可以删除，下次打开时会用相同的文件和对话启动新沙盒。由 Kortix 按项目启用。"
+          "name": "无状态沙盒",
+          "description": "每个会话只保留 /workspace，存放在独立的卷上。停止一小时的沙盒会被删除，下次打开时会用相同的文件和对话启动新沙盒。旧沙盒中运行的程序不会继续运行。由 Kortix 按项目启用。"
         },
         "artifacts": {
           "name": "工件",
@@ -1310,9 +1312,9 @@
           "name": "电子邮件渠道",
           "description": "为智能体提供一个 Resend 邮箱：收到的邮件会启动并延续会话，智能体从该邮箱阅读、回复和发送邮件。使用你自己的 Resend API 密钥和域名。"
         },
-        "project_channels": {
-          "name": "频道",
-          "description": "在频道中组织工作。频道中的每条新消息或与智能体的私信都会开启一个话题。取代侧边栏中的会话列表。"
+        "chat": {
+          "name": "空间",
+          "description": "像 Slack 一样与 Kortix 使用空间：每条消息都是一个话题，Kortix 的最新回复显示在其下方，Kortix 也可以发起话题，空间可与他人共享。取代侧边栏中的会话列表。"
         },
         "session_groups": {
           "name": "会话分组",
@@ -1332,21 +1334,33 @@
         },
         "voice_call": {
           "name": "语音通话",
-          "description": "在会话页面直接呼叫会话的智能体并与它交谈。它能听到你的声音、用语音回答、看到你共享的屏幕，并在同一会话中工作，对话会保留在聊天里。"
+          "description": "在智能体的页面（自定义 → 智能体）呼叫它并与它交谈。每次通话都是该智能体的一个独立会话：它能听到你的声音、用语音回答并看到你共享的屏幕，对话就是该会话的聊天。"
         },
         "shared_drives": {
           "name": "共享云盘",
           "description": "整个团队都能使用的云盘：管理员创建云盘并为其添加智能体。这些智能体的每个会话都会挂载它，任何可以使用其中某个智能体的人都能打开它。关闭时，每个人只有“我的文件”。"
+        },
+        "chat_input": {
+          "name": "Spaces-ChatInput",
+          "description": "输入框下方的一个控件，决定由谁回答以及如何回答：选择智能体后，其他所有设置都保持自动，继承自该智能体。打开某一行即可为本会话覆盖模型、思考强度、密钥、提供商密钥或沙盒，并一键恢复为自动。"
+        },
+        "chat_front": {
+          "name": "Spaces-Router",
+          "description": "开启 Spaces 后，你在话题中对话的智能体是一个路由器：快速的工作它自己完成（一个回答、一段短文、查看话题文件），较长的工作交给空间的智能体。它像人一样用简短消息回复。智能体把完整结果保存为话题中的文件，路由器链接该文件，而不是重新输入。消息下方的“查看工作”会打开背后的工作。需要在 kortix.yaml 中开启 My Kortix。"
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "开启空间后，空间可以自己留意动态：在空间详情中打开“主动”，一个智能体会阅读这里发生的事（完成的话题、未回答的问题、新加入的人），只在重要时在聊天中发言：值得分享的结果、需要你做的决定或逾期事项。它也可以开启一个话题来完成工作。可选每天 9:00 的简报。"
         }
       },
       "channelsSwitch": {
-        "onTitle": "为 {project} 开启频道？",
-        "onBody": "此项目中的所有人将看到频道和私信，而不是会话列表。所有现有会话都会移入 #general。你可以随时关闭；不会删除任何内容。",
-        "drive": "同时开启云盘，让频道拥有文件。",
+        "onTitle": "为 {project} 开启空间？",
+        "onBody": "此项目中的所有人都会看到空间，而不是会话列表。所有现有会话都会移到 #general。你可以随时关闭；不会删除任何内容。",
+        "drive": "同时开启云盘，让空间拥有文件。",
         "turnOn": "开启",
         "cancel": "取消",
-        "offTitle": "关闭频道？",
-        "offBody": "频道、记忆、文件和链接都会保留。所有人都会重新看到会话列表。",
+        "offTitle": "关闭空间？",
+        "offBody": "空间、记忆、文件和链接都会保留。所有人都会重新看到会话列表。",
         "turnOff": "关闭"
       },
       "wip": "Work in progress",
@@ -1547,7 +1561,6 @@
     }
   },
   "sidebar": {
-    "rooms": "聊天室",
     "goals": "目标",
     "artifacts": "工件",
     "referAndEarn": "推荐赚取",
@@ -1839,7 +1852,7 @@
       "moved": "会话已移动",
       "noGroup": "无分组",
       "moveFailed": "无法移动会话",
-      "empty": "你移到这里的会话将显示在这里。",
+      "empty": "将会话拖到这里",
       "groupOptions": "分组选项"
     },
     "recentlyDeleted": {
@@ -1854,13 +1867,19 @@
     "drive": "云盘",
     "repo": "Repo",
     "searchApps": "搜索应用",
+    "searchArtifacts": "搜索工件",
     "appsNoMatches": "无匹配项",
     "spaces": {
-      "channels": "频道",
-      "directMessages": "私信",
-      "addChannel": "添加频道",
-      "loadError": "无法加载频道。",
-      "newAgent": "新建智能体"
+      "channels": "空间",
+      "addChannel": "新建空间",
+      "loadError": "无法加载空间。",
+      "newAgent": "新建智能体",
+      "review": "审核",
+      "personal": "你的空间",
+      "personalNamed": "{name} 的空间",
+      "private": "私密",
+      "noMessages": "还没有消息",
+      "more": "更多"
     }
   },
   "dashboard": {
@@ -2105,7 +2124,8 @@
       "noCommandMatch": "没有匹配的命令、文件或操作",
       "commandsAndActions": "命令和操作",
       "toUse": "以使用",
-      "use": "使用"
+      "use": "使用",
+      "noOneMatches": "没有匹配的人"
     },
     "history": {
       "restoreTitle": "部分较早的内容无法恢复",
@@ -2129,7 +2149,23 @@
       "fullTextRetry": "重试"
     },
     "turn": {
-      "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。"
+      "autoRetried": "Kortix 在此失败前已自动重试该模型 {count, plural, other {# 次}}。",
+      "typing": "{name} 正在输入…",
+      "showWork": "查看过程",
+      "hideWork": "隐藏过程",
+      "starting": "启动中…",
+      "workingFor": "处理中 · {time}",
+      "agentWorking": "正在处理",
+      "agentWorkingFor": "正在处理 · {time}",
+      "stopped": "已停止",
+      "agentWorkingOn": "正在处理 {task}",
+      "agentWorkingOnFor": "正在处理 {task} · {time}",
+      "somethingWrong": "出了点问题",
+      "notSent": "未发送",
+      "retry": "重试",
+      "resume": "继续",
+      "agentIsWorking": "{agent} 正在处理",
+      "needsYouOn": "需要你：{header}"
     }
   },
   "agents": {
@@ -2259,6 +2295,38 @@
     "thinkingEffort": "思考强度",
     "sessionOverrides": "会话覆盖",
     "auto": "自动",
+    "chatInput": "聊天输入",
+    "chatInputAgent": "智能体",
+    "chatInputModel": "模型",
+    "chatInputEffort": "强度",
+    "chatInputMoreSettings": "更多设置",
+    "chatInputOverrideCount": "{count, plural, other {# 项覆盖}}",
+    "chatInputResetToAuto": "恢复为自动",
+    "chatInputAgentDescription": "谁来回答你的下一条提示。",
+    "chatInputModelDescription": "智能体在下一条提示中使用的模型。",
+    "chatInputEffortDescription": "模型在回答前思考多久。",
+    "chatInputMore": "更多",
+    "chatInputChangedCount": "已更改 {count} 项",
+    "chatInputAgentDefault": "智能体默认",
+    "chatInputLoading": "加载中…",
+    "chatInputSecrets": "密钥",
+    "chatInputSecretsDescription": "哪些密钥会传给此会话。",
+    "chatInputSecretsAll": "{count, plural, other {智能体可使用的全部 # 个密钥}}",
+    "chatInputSecretsEmpty": "此智能体没有密钥。",
+    "chatInputSecretsUnavailable": "此处无法读取密钥。",
+    "chatInputSecretCount": "{count, plural, other {# 个密钥}}",
+    "chatInputConnectors": "连接器",
+    "chatInputConnectorsDescription": "此会话中每个应用使用哪个账户。",
+    "chatInputConnectorsAll": "每个应用都使用其默认账户",
+    "chatInputConnectorsUnavailable": "此处无法读取连接器。",
+    "chatInputDefaultAccount": "默认",
+    "chatInputAppCount": "{count, plural, other {已更改 # 个应用}}",
+    "chatInputProviderKeysDescription": "哪些提供商密钥为此会话的模型调用付费。",
+    "chatInputProviderKeysAll": "智能体当前使用的密钥",
+    "chatInputProviderKeysEmpty": "没有可选的提供商密钥。",
+    "chatInputKeyCount": "{count, plural, other {# 个密钥}}",
+    "chatInputMachine": "机器",
+    "chatInputMachineDescription": "此会话启动时使用的机器模板。",
     "sending": "正在发送",
     "stop": "停止",
     "startingSession": "正在启动会话…",
@@ -2296,7 +2364,8 @@
     "submitEdit": "提交",
     "collapseQueue": "收起队列",
     "expandQueue": "展开队列",
-    "myKortixRoutes": "把每个任务交给合适的智能体"
+    "myKortixRoutes": "把每个任务交给合适的智能体",
+    "chatInputReset": "Reset"
   },
   "billing": {
     "plan": {
@@ -2355,6 +2424,27 @@
       "autoTopupOff": "自动充值：关闭",
       "autoTopupOn": "自动充值：余额低于 {threshold} 积分时充入 {amount}",
       "ledgerBonus": "充值赠送"
+    },
+    "redeem": {
+      "toggle": "兑换积分码",
+      "codeLabel": "积分码",
+      "placeholder": "输入兑换码",
+      "action": "兑换",
+      "redeemed": "兑换成功",
+      "redeemedDescription": "已向你的余额添加 {credits} 积分。",
+      "invalid": "此兑换码无效。请检查拼写后重试。",
+      "expired": "此兑换码已过期。",
+      "exhausted": "此兑换码的兑换次数已用完。",
+      "alreadyRedeemed": "此账户已兑换过此兑换码。",
+      "noPermission": "只有此账户的所有者和管理员可以兑换。",
+      "rateLimited": "尝试次数过多。请等待一分钟后重试。",
+      "failed": "无法兑换此兑换码。请重试。",
+      "pageTitle": "兑换积分码",
+      "pageDescription": "兑换码的积分会存入你的账户余额，且永不过期。",
+      "successTitle": "已添加 {credits} 积分",
+      "successDescription": "你当前的余额为 {balance} 积分。兑换码的积分永不过期。",
+      "openKortix": "打开 Kortix",
+      "backToKortix": "返回 Kortix"
     },
     "autoTopup": {
       "bufferError": "请输入 {minimum} 或更多：每次充值必须比阈值至少多 {buffer} 积分。",
@@ -2904,7 +2994,8 @@
         "notReceived": "未收到链接？",
         "confirmNotReceived": "未收到确认邮件？",
         "resendIn": "{seconds} 秒后重新发送",
-        "resend": "重新发送"
+        "resend": "重新发送",
+        "checkSpam": "没有收到？请检查垃圾邮件文件夹。"
       },
       "credentials": {
         "signin": {
@@ -3167,6 +3258,13 @@
       "large": "大型运行",
       "largeHint": "此次运行会启动超过 25 个智能体。你可以在每一行停止对应的智能体。",
       "openRun": "打开运行",
+      "viewingAgent": "正在查看",
+      "startsAfter": "在 {phase} 之后开始",
+      "didntFinish": "未完成",
+      "retryNow": "重试",
+      "retryAgent": "重试 {label}",
+      "waitsFor": "还在等待 {count} 个",
+      "phaseProgress": "{phase} 已完成 {done}/{total}",
       "openRunLabel": "打开此次运行的会话",
       "backgroundIdle": "在独立会话中",
       "savedName": "已保存的工作流 {name}",
@@ -3194,11 +3292,23 @@
       "stopFailed": "无法停止 {label}",
       "json": "JSON",
       "jsonKeys": "{count, plural, other {JSON · # 个键}}",
-      "jsonItems": "{count, plural, other {JSON · # 项}}"
+      "jsonItems": "{count, plural, other {JSON · # 项}}",
+      "failedSentence": "该工作流在完成前停止了。",
+      "runningCount": "{count} 个运行中"
     },
     "agent": {
       "backgroundWorking": "正在后台工作",
-      "backgroundSession": "在独立会话中"
+      "backgroundSession": "在独立会话中",
+      "open": "打开",
+      "openAgent": "打开 {name}",
+      "state": {
+        "working": "工作中",
+        "needs_input": "需要你处理",
+        "idle": "已完成",
+        "completed": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      }
     }
   },
   "agentRunLimit": {
@@ -3270,7 +3380,6 @@
       "automation_recovered": "恢复提醒",
       "capture_device_down": "Capture 电脑已停止",
       "capture_device_recovered": "Capture 电脑恢复录制",
-      "message": "消息",
       "artifact_comment": "工件评论"
     },
     "kindDescription": {
@@ -3283,7 +3392,6 @@
       "automation_recovered": "失败的触发器或循环恢复正常。",
       "capture_device_down": "有一台 Kortix Capture 电脑未在录制。发送给管理 Capture 的人员。",
       "capture_device_recovered": "停止的 Kortix Capture 电脑已重新录制。",
-      "message": "有人在聊天室中 @ 提及你，或在你发过言的话题中回复。",
       "artifact_comment": "可查看工件的反馈、提及和回复。"
     },
     "bell": {
@@ -10321,7 +10429,6 @@
       "text02290f388fa8": "注册 App",
       "text022bfb219bea": "视觉模型、生成默认值",
       "text0230c6b1d833": "上下文",
-      "text023827a097e3": "Kortix 项目就是一个 git 仓库，而该仓库就是公司。kortix.yaml 和 OpenCode 配置定义项目；代理、技能和记忆都是代码旁的文件。每项更改都是由人员批准的提交。",
       "text024dc204d7ba": "区域",
       "text0262678d1309": "启动栈，并让 CLI 指向它。",
       "text0268c03cd74c": "授予学分",
@@ -10335,7 +10442,6 @@
       "text02a36a6f3ff0": "# 月末结账",
       "text02a865a79c8b": "工具将再次遵循以下规则",
       "text02ade6817ae4": "批准或拒绝",
-      "text02bb33646c32": "runtime: opencode",
       "text02be0250a467": "会话已撤销",
       "text02c1d7b545ea": "设备授权码已过期",
       "text02c2b41a99e7": "复制登录 URL",
@@ -10825,7 +10931,6 @@
       "text11c520bc9f1f": "超级管理员",
       "text11d1b3d47709": "已找到",
       "text11d5959da5d3": "消息 ID",
-      "text11e51402c1de": "代理——一个标准的 OpenCode 代理文件。它的内容就在这里。",
       "text11e9a34decaa": "智能体可以安装、运行并破坏任何东西——只有提交会被保留",
       "text11f9d5398666": "基础设施负责人，6 年经验",
       "text11fa33eb608c": "阶段 2 — 系统设计 · 面试官工具包",
@@ -11056,7 +11161,6 @@
       "text188fba3516ee": "每个会话使用一台独立机器",
       "text1898b198a7e6": "无人在线",
       "text18a4e711991b": "从 CRM 丰富潜在客户信息，研究每个账户并起草定制化触达内容。",
-      "text18a59ffd5fa8": "每个文件一个 OpenCode 代理",
       "text18ab46abb07f": "grep 整个公司，比较任意变更，并回滚其中任何部分",
       "text18c99d7a5ce2": "，而不是此页面上的任何设置。",
       "text18c9e5d44e37": "lastName",
@@ -11420,7 +11524,6 @@
       "text2350866daa5a": "# 公司运作方式",
       "text235b7345c9a4": "有些邀请是在没有发送电子邮件的情况下创建的 - 手动共享链接。",
       "text235c1b41991b": "Kortix vs Glean：搜索，还是能运行工作的代理平台？",
-      "text235f858bb706": ".opencode/opencode.jsonc",
       "text23605073426a": "代码点 4 正文",
       "text2366b8e06afa": "Satya Nadella 的前沿生态系统框架揭示了 AI 中最重要的战略理念：每家公司都必须构建人力资本和 token 资本，而二者会共同复利增长。",
       "text23686ff6ba91": "无法加载审核收件箱",
@@ -12174,7 +12277,7 @@
       "text3a3edecfddc2": "可执行的运行手册，以及可供你审查的平台",
       "text3a42e3a0cc79": "无法删除该令牌",
       "text3a4ce41428d1": "按 cron，在期末执行",
-      "text3a58ba23b40a": "OpenCode REST",
+      "text969bd8438500": "运行时 REST",
       "text3a5ae4d7de8e": "选择人员，或输入电子邮件来邀请新人 - 每个选定的人都会在此帐户中获得相同的角色。",
       "text3a5ecca188c0": "更新时间",
       "text3a63271cafc1": "目录不可用",
@@ -12432,7 +12535,6 @@
       "text41232780dc9c": "绑定连接器时，",
       "text412c9a761b4a": "你的应用 → SSO → Group Attributes",
       "text412cc9a16edd": "的来源。",
-      "text4132201cc99c": "OpenCode Agent：Markdown，加上旁边的工具和插件",
       "text41528be66c4c": "它会在您指定的位置停下",
       "text415dcc179975": "结账未启动",
       "text416476d59f76": "会话访问已更新",
@@ -12650,8 +12752,7 @@
       "text4724f344c1c0": "已安排",
       "text472590ae974d": "提供商",
       "text474721fbcdc7": "已执行年度计费轮换",
-      "text474945c326bd": "为你的 OpenCode 代理提供的托管云。kortix init，kortix ship。使用你已经购买的订阅；每个 PR 都会生成可点击查看的预览。",
-      "text474d4126bce4": "由 OpenCode 驱动",
+      "text1b17b7fdd191": "为你的代理提供的托管云。kortix init，kortix ship。使用你已经购买的订阅；每个 PR 都会生成可点击查看的预览。",
       "text4755e88f3955": "你的身份提供商会在此 URL 后追加 /Users 和 /Groups。",
       "text4759498ac2a7": "创建",
       "text4764560a0013": "。每个请求明确指定的提供商始终优先。",
@@ -12809,7 +12910,6 @@
       "text4b8aec6e6cd2": "示例请求",
       "text4b8fa0516b54": "更新任务",
       "text4b9fba028c95": "代理会自我编辑",
-      "text4ba79f911c93": "opencode:",
       "text4ba9e26cc819": "Google 发送组名称，而且只发送映射中明确选择的组（最多 75 个）。忘记选择的组将完全不会被发送，且不会提示。",
       "text4bb8f5e5d167": "分组不是结论，而是一份列表。文档会列出每个分组背后的工单，因此对综合结果的异议可以通过阅读来解决，而不必重新做一遍工作。",
       "text4bba4ad3c2e5": "云基础设施",
@@ -12824,7 +12924,7 @@
       "text4c07fb41dc84": "项目和工具从一开始就已准备就绪，因此代理无需使用你的笔记本电脑即可工作。",
       "text4c1029697ee3": "所有者",
       "text4c1804972646": "最近联系",
-      "text4c1f87ad0ffa": "daemon 会克隆仓库、创建新分支，并将 kortix.yaml + OpenCode 配置读取到实时运行环境中。",
+      "text554ee79d14bc": "daemon 会克隆仓库、创建新分支，并将 kortix.yaml 读取到实时运行环境中。",
       "text4c25090df9ea": "会话已回退——发送新提示词会提交此路径。恢复会保留已移除的消息和文件更改。",
       "text4c26cbeec69e": "repeat(auto-fill, minmax(160px, 1fr))",
       "text4c2cf841f117": "整个团队都在差异对比中。",
@@ -13705,7 +13805,6 @@
       "text65abb6edc2c0": "管理员已经可以访问此账号中的所有项目——无需在此授予权限。",
       "text65b671062dba": "轻松扩展，但会增加新的供应商和访问模式。",
       "text65b8fb5119ec": "优秀企业不需要护城河（这并没有问题）",
-      "text65c114ca4304": "Markdown 是基础，而不是上限：完整的 OpenCode 表面都与它并列于同一个仓库中——你自己的 TypeScript 工具、接入运行时的插件、模型和提供商配置。智能体可以固定自己的模型，也可以按项目、账户和平台默认值的顺序继承模型。",
       "text65c55e442922": "可部署在本地、你的 VPC 中，或按需完全隔离。由于它是开源的，你不必只听我们的一面之词——",
       "text65c8f24daa54": "通过 /scim/v2 进行目录同步，使用由你创建和撤销的令牌。基于 Okta 和 Microsoft Entra 构建。",
       "text65ca8fb19ba8": "分配人员并推送组",
@@ -13991,7 +14090,6 @@
       "text6e2ebdab3c02": "最旧优先",
       "text6e3032b6895f": "通知类型",
       "text6e3a9a94ccd7": "Kortix 企业版",
-      "text6e3e333d775c": "提示词、模型、工具、插件和权限。代理是标准 OpenCode 代理——基础是 markdown，除此之外还包括同一仓库中与它并列的工具、插件和模型配置。读取目录，就能确切知道代理会做什么。",
       "text6e3fcca472c5": "使用你自己的 Slack 应用",
       "text6e4987bfe9c3": "登录以安装此自动化",
       "text6e4b1d4137f6": "你的代码仓库、工具、依赖项",
@@ -14201,7 +14299,6 @@
       "text74304805dca9": "对自有网站进行声明审计",
       "text7433280153b9": "没有匹配“{value0}”的帐户",
       "text74388bcaa9c6": "- ICP 和细分市场",
-      "text743f60d09cb7": "构建过智能体，并长期使用编码智能体——opencode、Codex、Claude Code、Pi，或你顺手使用的任何工具。",
       "text74414cb4f277": "粘贴或生成密钥",
       "text744b88e04bcc": "工作运行的三种方式",
       "text7458d4f300eb": "重新配置",
@@ -14387,7 +14484,6 @@
       "text7964f184beb2": "标签 ({value0})",
       "text7966b3c1d0c0": "你的应用 → Addons",
       "text796a79862546": "您的套餐存在支付问题",
-      "text797041ba00c3": "  // 文档：https://opencode.ai/docs/",
       "text797bfed2cccb": "每月 1 日 06:30",
       "text797c7f133915": "--bot-token xoxb-... --signing-secret ...",
       "text7982ad72bd36": "配置项",
@@ -14449,7 +14545,6 @@
       "text7b49132b286b": "提供商拆分、故障转移、实时队列和配置延迟。",
       "text7b4b05dee831": "账户 · 项目",
       "text7b56bfd47605": "对 kortix-ai/kortix 的每个拉取请求执行核弹级审查，并搭建一键预览。",
-      "text7b6762537105": "一个智能体恰好有两个归属处。Markdown 文件承载它的思考方式——提示词、模式、模型和权限树——它就是标准的 OpenCode 智能体文件，因为 Kortix 不会为它添加方言。清单块承载它可以触及的内容。智能体的一切都不藏在你无法读取的数据库里。",
       "text7b68fe551085": "之后",
       "text7b7e67f5f919": "取消订阅失败",
       "text7b8fd4e94dee": "如果需要更改此项目的设置方式，请联系项目管理员。",
@@ -14577,6 +14672,7 @@
       "text7f09a839ed67": "边界一侧是数千个已连接的应用，另一侧是沙盒；沙盒携带一个受限令牌，且不包含凭据。",
       "text7f0a12c4fdbd": "您没有读取此代码仓库的权限。",
       "text7f33545ae2eb": "运行 · 提交 · 推送",
+      "textf2c4b4f22668": "代理运行框架",
       "text7f3e8bf052d3": "读取",
       "text7f4d12168371": "每次调用一条记录，并记录批准者",
       "text7f56272b701a": "正在转发 Northwind 的邮件串——你能提取他们的使用情况并起草续约方案吗？",
@@ -15104,7 +15200,6 @@
       "text8ea44187f958": "kortix self-host start 会为您注册 selfhost 主机并将其设为活动主机。",
       "text8eab22952758": "Kortix 安全",
       "text8eaf7102931a": "退出此会话？",
-      "text8eb07f243576": "在代码库中声明的 OpenCode",
       "text8eb1b3140390": "复制下面的登录 URL，在 PRIVATE / 无痕窗口中打开（避免当前登录会话自动完成测试），输入测试用户的工作 email，然后在身份提供商处完成登录。",
       "text8eb3ea9bbde6": "身份验证",
       "text8eb4917bbe54": "更新失败",
@@ -16144,7 +16239,6 @@
       "textac121e59d684": "要从 Entra 停用：将用户的“Block sign in”（Account enabled = off）设为关闭，然后再次配置该用户；或运行“Provision on demand”立即应用。",
       "textac18d11a2f26": "删除角色",
       "textac1f3393cb4c": "上传到 Google Slides 失败",
-      "textac29bffc7691": "harnesses/opencode/",
       "textac2a585fa4dd": "负责汇总，而不是做判断。",
       "textac318011a661": "加载较早的请求",
       "textac4059cfd550": "每次更改都可版本控制、审查和撤销",
@@ -16339,6 +16433,30 @@
       "textb1fa39a2b442": "周五 17:00",
       "textb1fb183269ba": "限制谁可以启动会话",
       "textb205bb47f81a": "打开会话",
+      "text76456efd96b6": "已开始工作",
+      "textd5a6dc64b5d4": "已暂缓",
+      "text95d2f57f8fa4": "未能启动",
+      "text6119feb6e4f5": "无触发器",
+      "text7b5f87420cb2": "自 {value0} 起无事件",
+      "textadb85cf22bfc": "暂无",
+      "text8d14f6e72de8": "事件",
+      "textc235cb1df45b": "此应用在过去 30 天内发送的事件及每个事件的结果。",
+      "textbcd7586101a4": "发送测试事件",
+      "textb31f231088c9": "无法加载此应用的事件。",
+      "text863f2373ad58": "此应用发送的事件会显示在这里",
+      "text4b97770f1f09": "发送测试事件以检查连接，或从应用向 KORTIX_APP_EVENTS_URL 发送事件。",
+      "text66a6b0caa7b8": "过去 24 小时 {value0} 个 · {value1} 个已开始工作",
+      "text4e18ffd436f1": "超出触发器限制：每小时 60 个事件，每分钟 30 个。",
+      "text532eaabd9574": "测试",
+      "text119ec5b50a07": "数据必须是 JSON 对象。",
+      "text07aaf9c9f315": "测试事件已发送",
+      "text72b8a74d4eee": "无法发送测试事件",
+      "text028284e97d7d": "发送测试事件",
+      "text568b8fae25a4": "它与应用发送的事件走相同的路径。其 ID 以 test- 开头，因此应用自己发送的相同 ID 的事件之后仍会运行。",
+      "text25bc9efedfb7": "事件名称",
+      "text0760ef976f73": "数据（JSON）",
+      "texta76d8716b0ff": "上次事件",
+      "textba1daad907a0": "上次事件 {value0}",
       "textb205c515d0be": "没有现成的托管 URL？切换到“Manual configuration”，然后粘贴 SSO → More Actions → SAML Metadata 中的 XML——这是相同的元数据。",
       "textb205e3c57a77": "开源 · 任意模型，使用你的密钥 · 自托管、VPC 或本地部署",
       "textb20e428d9c27": "推送群组：在应用的“Provisioning”标签页中，于“Entitlements”下点击“Refresh”，让 Kortix 加载群组。然后在“Rules”标签页添加规则——条件（例如属于 OneLogin Role），操作为“Set Groups in Kortix”→ 目标群组。",
@@ -16436,7 +16554,6 @@
       "textb4c085e57f14": "连接器凭据由服务器端代理处理，绝不会进入机器",
       "textb4c137e300c0": "尚未测试",
       "textb4c65ea8ef96": "试用已替换",
-      "textb4d40882ef59": "模型单独只能回答问题。harness 赋予它规划、工具调用和真正能完成的多步骤运行能力——由 OpenCode 驱动，通过仓库中的文件配置。",
       "textb4e437b00de3": "移除备用项",
       "textb5037fbea489": "令牌身份验证",
       "textb5068d24eb4f": "编辑机密",
@@ -16452,7 +16569,6 @@
       "textb549d2890d4b": "为每个工具设置允许、询问或拒绝——细化到单条 shell 命令",
       "textb5658fc8edda": "本页内容",
       "textb5687cf04af3": "请求者",
-      "textb57f2c70525f": "每个 Kortix 会话都有自己的计算机：一台隔离的 Linux 机器，会克隆你的仓库、创建以会话命名的分支，并运行 OpenCode。工作通过人员批准的变更请求提交。",
       "textb5814f05b923": "搜索密钥",
       "textb581fd88ea24": "：{value0}",
       "textb5845e7eea2b": "在元素上使用 transition-colors",
@@ -16550,6 +16666,12 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "打开完整批准页面",
       "textb7ddab3f7df8": "删除 {value0} 和每个运行时？此操作无法撤消。",
+      "text9c583fa19f1a": "它的触发器也会一并删除：{value0}。",
+      "text648f297b3b79": "在应用中显示",
+      "text8521b7841a0c": "单个事件：{value0}",
+      "textbede9e3c96af": "显示所有事件",
+      "text216e5ffc0e54": "此事件不在过去 30 天的日志中。",
+      "text1ade727f7313": "自 {value0} 起停止运行。Kortix 已停止重启它。",
       "textb7de71558bf4": "选定的连接器会在服务器上解析此密钥。沙盒不会接收任何值。",
       "textb7e29198fc4e": "{value0} 密钥已移除",
       "textb7ef1459725d": "立即删除账户失败",
@@ -16558,7 +16680,6 @@
       "textb81b729b4538": "加入频道，然后提及它。每次提及都会启动一次新的运行，代理会在该线程中回复。",
       "textb81c6e280de1": "重置为 Kortix",
       "textb82336ed4012": "运行点 3 标题",
-      "textb82db800b29f": "原生 OpenCode · 版本化 · 默认拒绝 · 人工合并",
       "textb835b4d2630c": "你已于 4 分钟前批准——部署进行中",
       "textb83b8a3e405c": "队列中的大多数工作都不是建模，而是已经问过的问题的第四个版本、夜间中断的流水线，以及三个团队对“active”含义的分歧。",
       "textb84177fa1580": "无法加载项目",
@@ -16735,7 +16856,6 @@
       "textbd2b129daf78": "以上时间均按此时区显示。夏令时会自动处理。",
       "textbd333807715b": "沙箱会话",
       "textbd3b56d2b2da": "按权重在各提供商之间分配新的沙箱。",
-      "textbd49211479cd": "kortix.yaml 是 Kortix 层：会话启动所使用的机器、连接器、触发器、机密名称，以及每个代理获准访问的内容。OpenCode 配置是代理进行思考的运行时。除此之外，其他一切都是代码库中的文件。",
       "textbd570c66902c": "模型在回答前的思考程度",
       "textbd59cb991302": "授予超级管理员权限",
       "textbd5a646673af": "→ 已连接：slack 工作区 acme-hq",
@@ -17064,7 +17184,6 @@
       "textc661a1039aa0": "最大化",
       "textc66b771332f5": "阅读 SDK 文档",
       "textc66feb5eb8f2": "上移",
-      "textc681d401ded0": "OpenCode 配置决定",
       "textc684e335b50d": "git 仓库",
       "textc6902b467e2d": "无法显示此演示文稿。",
       "textc69869f352bd": "它只报告，不静默修复",
@@ -17094,7 +17213,6 @@
       "textc725967d3988": "从 GitHub 部署",
       "textc72772b1c8d9": "使用",
       "textc72e5d059e24": "从此处编辑",
-      "textc72f8df372cb": "OpenCode 作为代理运行框架在计算机内运行，并在运行时注入你的模型、工具和密钥。计算机已准备就绪，代理开始工作。",
       "textc730d5a71283": "会话启动。计算机开机。",
       "textc732a94d58e9": "前往 Providers 标签页查看此密钥可用的模型。",
       "textc73d5a471c50": "审批不是埋在管理面板里的一个设置，而是 kortix.yaml 中的一段配置，与其他内容一同版本化，明确哪些工具调用直接运行、哪些需要人员审批、哪些直接拒绝。",
@@ -17127,7 +17245,6 @@
       "textc833eda3bbbb": "显示已加载的内容。重试以刷新。",
       "textc8392f8bbd61": "在另一个提供商上重试失败的初始化",
       "textc84f6f77b2a3": "已创建个人连接器",
-      "textc859e57c7ce7": "一个 OpenCode 代理及其授权",
       "textc85b0e36e937": "API Token",
       "textc85c359673e0": "下载 {value0} 失败",
       "textc85c6ea416c8": "无法创建该令牌",
@@ -17302,7 +17419,6 @@
       "textcd165519e204": "已移除排队消息",
       "textcd2434c323fa": "inviteFailed",
       "textcd2b91e36b1d": "CUA Driver",
-      "textcd3a5d4a1364": "将模型转化为智能体的层：规划、工具使用，以及真正能够完成的多步骤运行。完全可定制，由 OpenCode 驱动，因此智能体的思考方式由你编辑。",
       "textcd3fefb94c04": "有一点它不是：包管理器。没有 lockfile、版本固定或自动更新——你添加的条目会成为自己的文件，就像你亲自编写的代码一样。这是有意为之的取舍，也是我们会再次做出的选择。",
       "textcd4c984492ce": "包含 IdP Metadata URL 的 PingOne Configuration 标签页",
       "textcd4f8d39c171": "持续运行",
@@ -18035,7 +18151,6 @@
       "texte0e2ec6768c5": "    # 忽略代理自己发出的消息",
       "texte0e30badc30c": "停止会话失败",
       "texte0e7d293043c": "延迟",
-      "texte0eb65e020e7": "  \"$schema\": \"https://opencode.ai/config.json\",",
       "texte0edaf920655": "已创建群组",
       "texte0eeb4761e83": "在“Browse Microsoft Entra Gallery”页面中，点击“Create your own application”。",
       "texte0f1afb4c551": "拥有 project.gitops.merge 权限的人员",
@@ -18070,7 +18185,6 @@
       "texte1d84c99737d": "先连接 SAML SSO——provisioning 会创建账户，但用户仍需通过 SSO 登录。",
       "texte1e0544508e5": "你的账户没有管理员权限。返回应用；如果情况有误，请联系工作区管理员。",
       "texte1e7248bbb12": "AI 文案像 AI 文案，是因为没有人告诉它你是怎么写作的。在这里，你的语调、产品声明和禁用词都存储在代码库中，每个会话在动笔前都会加载它们。",
-      "texte1e906a3a02b": "代理是一个 OpenCode 代理：基础形式为 markdown，在此之上可以使用您自己的工具、插件、模型以及按能力划分的权限树。kortix.yaml 中的授权决定它能访问什么——它的机器、连接器和频道、密钥及技能。技能描述公司完成某项特定工作的方式。二者都是代码仓库中的文件，也都像代码一样经过审查。",
       "texte1ecf8a598e7": "从工作出发，而不是从平台出发。",
       "texte1f0d6f4fe26": "账户关联",
       "texte1f79758cc42": "已移除",
@@ -18599,7 +18713,7 @@
       "textf06214d4673d": "按提供商和模型分组的已完成 LLM 请求。",
       "textf063543f3336": "代码仓库",
       "textf084ea5cc3bf": "你的应用 → Configuration → SAML",
-      "textf08a83aac6c4": "OpenCode Agent——以 Markdown 为基础，完整生命周期开放",
+      "text1c41f3a0be11": "Agent——一个 Markdown 提示词，加上它在 kortix.yaml 中的配置块",
       "textf09247433bef": "图像预览",
       "textf096ba0a2aa6": "自动更新",
       "textf0aea4d97b8e": "Email 未连接",
@@ -18690,7 +18804,6 @@
       "textf3d331b82d30": "同步订阅失败",
       "textf3d4c9b3357c": "停止构建静态软件。开始构建反馈循环。",
       "textf3d75361a203": "现在将这些内容粘贴到",
-      "textf3d82cf5fcc9": "OpenCode 启动",
       "textf3fcc2e819e8": "用户和群组",
       "textf3fe997b8d1c": "周三",
       "textf4034f3d4b32": "Stripe 中的订阅",
@@ -19711,6 +19824,8 @@
       "text7a84bdb22767": "已查看 Kortix App 部署",
       "text516e80d9f8dc": "已删除 Kortix App 部署",
       "text2d430c4c81a2": "已查看 Kortix App 部署日志",
+      "text567cd42b6a31": "已查看 Kortix App 事件",
+      "textcd413277c842": "已发送 Kortix App 测试事件",
       "textea0b84c2ddf0": "已查看 Kortix 系统技能",
       "text16faff6ae525": "已查看 Kortix 系统技能文件",
       "text04a6fbab3598": "已查看 LLM 目录",
@@ -21127,7 +21242,19 @@
       "text507c24b6792d": "变更请求合并到 {branch} 时，{agent} 会执行你的指令。",
       "text05ee1d6181f3": "变更请求合并时，{agent} 会执行你的指令。",
       "texte608495c45ce": "合并到 {branch}",
-      "text80ca527b0d55": "已创建变更请求触发器"
+      "text80ca527b0d55": "已创建变更请求触发器",
+      "authEmailAlreadySent": "我们在一分钟内已发送过这封邮件。请先检查收件箱和垃圾邮件文件夹，再申请重新发送。",
+      "textfe0dab79db43": "在同一个对话中与 Kortix 交流:每条消息都是一个线程,Kortix 的最新回复会显示在其下方。",
+      "text2e914b62b832": "Markdown 链接",
+      "text7bed093239f3": "可识别的资源会显示应用图标和精简标签。悬停可查看原始 URL。",
+      "textaf4df8fff726": "完成流式输出",
+      "textc5bb2bbce674": "显示流式输出",
+      "textfc19d1c660c8": "GitHub 个人资料、仓库、拉取请求、议题和提交;Linear 议题;Slack 消息和会话;Figma 设计稿、画板和幻灯片;Notion 页面;Google Docs、Sheets 和 Slides。标签仅基于 URL 生成,不会获取标题、权限和实时状态。",
+      "textba98740fde39": "ChatGPT 订阅用量",
+      "text856bf8853b69": "Claude 订阅用量",
+      "text116cd3982a9b": "目标",
+      "textb0571ad96905": "目标 目的 成果 结果",
+      "text20d55e8c3373": "取消中"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -21217,6 +21344,39 @@
       "prCommitsBy": "{author} 的 {count, plural, other {# 个提交}}",
       "prDraft": "草稿拉取请求"
     },
+    "askDeck": {
+      "label": "等待你处理",
+      "remaining": "{count, plural, other {# 项等待你处理}}",
+      "yes": "是",
+      "no": "否",
+      "skip": "跳过",
+      "send": "发送回答",
+      "approve": "批准",
+      "deny": "拒绝",
+      "dismiss": "忽略",
+      "undo": "撤销",
+      "allowSession": "在本会话中允许 {tool}",
+      "typeAnswer": "或输入你的回答",
+      "answered": "回答已发送",
+      "dismissed": "问题已忽略",
+      "approved": "已批准",
+      "denied": "已拒绝",
+      "failed": "决定未能生效",
+      "askedAgo": "{time} 前提问",
+      "fromWorker": "来自工作会话",
+      "inSession": "在 {title} 中",
+      "permissionTitle": "运行 {tool}？",
+      "approvalTitle": "运行此连接器调用？",
+      "emptyTitle": "没有等待你处理的事项",
+      "emptyDescription": "来自智能体的问题和审批会显示在这里。",
+      "loadFailed": "无法加载等待你处理的事项",
+      "retry": "重试",
+      "kind": {
+        "question": "问题",
+        "permission": "权限",
+        "approval": "连接器审批"
+      }
+    },
     "reviewBulk": {
       "approve": "批准",
       "deny": "拒绝",
@@ -21285,7 +21445,8 @@
       "aboutDescription": "关于此描述",
       "senderUnavailable": "无法加载发送账户。请检查发件人一行。",
       "quoted": "“{text}”"
-    }
+    },
+    "promptHistory": "历史记录 {index}/{total}"
   },
   "commandPalette": {
     "title": "命令面板",
@@ -21303,7 +21464,7 @@
     "copyFailed": "无法复制到剪贴板",
     "threads": "话题",
     "recentThreads": "最近的话题",
-    "searchChannels": "搜索频道、话题、命令..."
+    "searchChannels": "搜索空间、话题、命令..."
   },
   "personalWelcome": {
     "dismiss": "关闭",
@@ -21419,11 +21580,11 @@
     "getAKey": "获取密钥"
   },
   "gatewayLogs": {
-    "searchPlaceholder": "搜索模型、提供商或错误",
+    "searchPlaceholder": "搜索模型、提供商、错误或 ID",
     "requestsLabel": "{count, plural, other {个请求}}",
     "errorsLabel": "{count, plural, other {个错误}}",
     "medianLatency": "延迟中位数",
-    "noMatch": "没有已加载的请求匹配“{query}”",
+    "noMatch": "没有与“{query}”匹配的请求",
     "histogram": "请求随时间变化",
     "close": "关闭",
     "now": "现在",
@@ -21431,7 +21592,33 @@
     "topModel": "最常用模型",
     "noRequests": "无请求",
     "cardErrors": "错误",
-    "cardMedianLatency": "延迟中位数"
+    "cardMedianLatency": "延迟中位数",
+    "noFilterMatch": "没有与这些筛选条件匹配的请求",
+    "sessionColumn": "会话",
+    "untitledSession": "未命名会话",
+    "openInSession": "在会话中打开",
+    "openMessage": "在此消息处打开",
+    "onlyThisSession": "仅此会话",
+    "noSession": "不是来自会话",
+    "fromGatewayKey": "通过网关密钥发送，而非来自会话",
+    "messageLabel": "消息",
+    "turnLabel": "轮次",
+    "threadLabel": "子代理线程",
+    "sessionIdLabel": "会话 ID",
+    "byTimeHint": "在会话为消息命名之前发送：链接会打开当时正在运行的轮次。",
+    "filter": "筛选",
+    "filterTime": "时间",
+    "filterModel": "模型",
+    "filterProvider": "提供商",
+    "filterError": "错误",
+    "clearFilters": "清除筛选",
+    "facetEmptyDay": "过去 24 小时内没有",
+    "facetEmptyWeek": "过去 7 天内没有",
+    "windowAny": "任何时间",
+    "window15m": "过去 15 分钟",
+    "window1h": "过去 1 小时",
+    "window24h": "过去 24 小时",
+    "window7d": "过去 7 天"
   },
   "modelsList": {
     "onCount": "已开启 {on} / {total}",
@@ -21498,9 +21685,9 @@
     "perDay": "每天",
     "noLimit": "不限",
     "postTo": "发布到",
-    "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #{channel}。",
-    "postToNone": "无频道",
-    "postToUnavailable": "不可用的频道",
+    "postToHint": "每次运行都会在那里开始一个新话题。未选择空间时，运行会进入 #{channel}。",
+    "postToNone": "无空间",
+    "postToUnavailable": "不可用的空间",
     "postToPrivate": "私有：触发器无法发布到这里",
     "appLabel": "应用",
     "appPlaceholder": "选择应用",
@@ -22968,7 +23155,8 @@
         "status": "状态",
         "lastFrame": "最近录制",
         "layers": "录制内容",
-        "actions": "操作"
+        "actions": "操作",
+        "version": "版本"
       },
       "layer": {
         "screen": "屏幕",
@@ -23009,7 +23197,86 @@
         "sync_error": "上传失败",
         "backlog": "{count, plural, other {# 项等待上传}}",
         "behind_version": "请从 {current} 更新到 {version}",
-        "asleep": "已休眠或关机。上次在线：{time}"
+        "asleep": "已休眠或关机。上次在线：{time}",
+        "update_failed": "更新到 {version} 失败"
+      },
+      "version": {
+        "current": "已是最新",
+        "behind": "有可用更新",
+        "failed": "更新失败",
+        "updating": "正在更新",
+        "disabled": "更新已关闭"
+      },
+      "details": {
+        "open": "设备详情",
+        "title": "{name}",
+        "description": "此电脑向 Kortix 报告的信息。可复制到支持请求中。",
+        "capture": "Capture",
+        "version": "版本",
+        "channel": "通道",
+        "latest": "最新版本",
+        "lastCheck": "上次检查更新",
+        "lastCheckSaid": "上次检查结果",
+        "noUpdater": "此电脑上没有更新服务",
+        "lastResult": "上次更新",
+        "reason": "原因",
+        "skipped": "已跳过的版本",
+        "skippedUntil": "{version}，将于 {time} 重试",
+        "none": "无",
+        "machine": "电脑",
+        "os": "操作系统",
+        "build": "内部版本",
+        "hostname": "主机名",
+        "cpu": "处理器",
+        "cpuCores": "{cpu} · {count, plural, other {# 核}}",
+        "memory": "内存",
+        "disk": "可用磁盘",
+        "diskOf": "{total} 中可用 {free}",
+        "gpus": "显卡",
+        "booted": "启动时间",
+        "timezone": "时区",
+        "locale": "区域设置",
+        "recordingSync": "录制与同步",
+        "status": "状态",
+        "lastFrame": "上一帧",
+        "permissions": "缺少的权限",
+        "sync": "同步",
+        "syncError": "同步错误",
+        "recordingError": "录制错误",
+        "lastUpload": "上次上传",
+        "reported": "上次报告",
+        "policy": "策略",
+        "policySource": "策略文件",
+        "noPolicy": "没有账户策略",
+        "policyRead": "读取策略",
+        "enrolled": "设置方式",
+        "managed": "IT 部署",
+        "personal": "本人登录",
+        "encrypted": "加密上传",
+        "yes": "是",
+        "no": "否",
+        "lastCredentials": "上次凭据",
+        "deviceId": "设备 ID",
+        "notReported": "未报告",
+        "close": "关闭",
+        "copy": "复制诊断信息",
+        "copied": "已复制",
+        "copiedToast": "诊断信息已复制",
+        "copyFailed": "无法复制诊断信息",
+        "outcome": {
+          "updated": "已从 {from} 更新到 {to}",
+          "rolled_back": "{to} 未通过健康检查，已回滚到 {from}",
+          "failed": "{to} 未通过健康检查，且无法回滚",
+          "install_failed": "{to} 的安装程序未运行",
+          "other": "{from} 到 {to}"
+        },
+        "syncState": {
+          "ok": "已同步",
+          "queued": "{count, plural, other {# 项等待中}}",
+          "error": "失败",
+          "off": "已关闭",
+          "other": "未知"
+        }
       }
     },
     "settings": {
@@ -23339,103 +23606,6 @@
     "enable": "启用{name}",
     "enabling": "正在启用…"
   },
-  "rooms": {
-    "title": "聊天室",
-    "memberCount": "{count, plural, other {# 位成员}}",
-    "members": "成员",
-    "agent": "智能体",
-    "agentSender": "智能体 {name}",
-    "empty": "你加入的聊天室会显示在这里",
-    "emptyHint": "创建一个聊天室,然后添加成员和智能体。",
-    "loadError": "无法加载聊天室。请重试。",
-    "roomLoadError": "无法加载此聊天室。请重试。",
-    "messagesLoadError": "无法加载消息。请重试。",
-    "retry": "重试",
-    "back": "返回聊天室",
-    "send": "发送消息",
-    "sendFailed": "无法发送消息",
-    "peopleLoadError": "无法加载成员。请重试。",
-    "cardRoom": "聊天室 {name}",
-    "digestCount": "{count, plural, other {# 条新消息}}",
-    "digestMore": "… 另有 {count} 条",
-    "cardFrom": "发送者",
-    "cardMessage": "消息",
-    "cardReplyTo": "回复",
-    "addRooms": "添加聊天室",
-    "addFailed": "无法添加成员",
-    "addMembers": "添加成员和智能体",
-    "addMembersDescription": "成员会收到在这里发布的消息。智能体会话会在下一步读取这些消息。",
-    "addTopic": "添加话题",
-    "agents": "智能体",
-    "browseRoomsDescription": "此项目中的所有聊天室。打开一个即可阅读或加入。",
-    "cancel": "取消",
-    "roomName": "名称",
-    "roomNameHint": "小写字母、数字和 . _ / -,最多 64 个字符。",
-    "roomNamePlaceholder": "dev",
-    "closeMembers": "关闭成员",
-    "copied": "已复制",
-    "copyText": "复制消息文本",
-    "createRoom": "创建聊天室",
-    "createRoomDescription": "聊天室汇集一个话题的对话,供成员和智能体使用。",
-    "createFailed": "无法创建聊天室",
-    "editTopic": "编辑话题",
-    "inThisRoom": "在此聊天室中",
-    "introRoom": "这是 #{name} 聊天室的开始。",
-    "joinRoom": "加入聊天室",
-    "joinFailed": "无法加入聊天室",
-    "joined": "已加入",
-    "jumpToLatest": "跳到最新",
-    "leaveRoom": "退出聊天室",
-    "memberActions": "{name} 的操作",
-    "memberAdded": "已添加 {name}",
-    "memberRemoved": "成员已移除",
-    "mentionHere": "#{name} 中的所有人",
-    "mentionSomeone": "提及某人",
-    "mentionSuggestions": "提及建议",
-    "messageRoom": "发送消息到 #{name}",
-    "messages": "消息",
-    "new": "新",
-    "newLineHint": "Shift + Enter 换行",
-    "noRooms": "没有匹配的聊天室",
-    "noMatches": "没有匹配项",
-    "people": "成员",
-    "pickRoom": "从列表中打开一个聊天室",
-    "remove": "移除",
-    "removeAgentDescription": "该智能体会话将不再接收此聊天室的消息。如需恢复,请重新添加该智能体。",
-    "removeFailed": "无法移除成员",
-    "removePersonDescription": "该成员将不再接收此聊天室的消息。如需恢复,请重新添加。",
-    "removeTitle": "要将 {name} 从此聊天室移除吗?",
-    "searchRooms": "搜索聊天室",
-    "searchPeopleAndAgents": "搜索成员和智能体",
-    "today": "今天",
-    "topic": "话题",
-    "topicFailed": "无法保存话题",
-    "topicOptional": "话题(可选)",
-    "topicPlaceholder": "此聊天室的主题",
-    "viewMembers": "查看成员",
-    "viewMembersCount": "查看 {count, plural, other {# 位成员}}",
-    "viewingRoom": "你正在查看 #{name}",
-    "yesterday": "昨天",
-    "you": "{name}(你)",
-    "status": {
-      "running": "运行中",
-      "starting": "启动中",
-      "stopped": "已停止",
-      "failed": "失败"
-    },
-    "replyInThread": "在话题中回复",
-    "thread": "话题",
-    "closeThread": "关闭话题",
-    "backToRoom": "返回聊天室",
-    "replyPlaceholder": "回复…",
-    "replyCount": "{count, plural, other {# 条回复}}",
-    "lastReply": "最后回复 {time}",
-    "threadLoadError": "无法加载此话题。请重试。",
-    "join": "加入",
-    "openRoom": "打开",
-    "gateDescription": "开启聊天室，让此项目的智能体会话和成员在命名的聊天室中交流。",
-    "archivedNotice": "此聊天室已归档。现有消息会保留，但不再接收新消息。"
-  },
   "goals": {
     "title": "目标",
     "gateDescription": "智能体负责一个目标，直到它被可验证地完成：目标保存在文件中，每日心跳唤醒它，智能体向相关人员催要所需内容，并由独立检查来关闭它。",
@@ -23480,7 +23650,8 @@
       "missed_wake": "上次唤醒已逾期。",
       "ask_overdue": "有一项请求已过期。",
       "verification_stalled": "验证已开始超过 24 小时。",
-      "unreadable": "GOAL.md 不存在或缺少目标的 front matter。"
+      "unreadable": "GOAL.md 不存在或缺少目标的 front matter。",
+      "blocked": "此目标无法自行继续。"
     },
     "sessionChip": "目标",
     "sessionRole": {
@@ -23544,10 +23715,6 @@
     "stopError": "无法停止目标。请重试。",
     "needsAttention": "需要关注",
     "newGoal": "新目标",
-    "newGoalTitle": "新目标",
-    "newGoalDescription": "描述你想要的结果。智能体会写下目标及其完成标准，并持续推进，直到检查确认已完成。",
-    "newGoalPlaceholder": "例如：我们的文档站已在 docs.example.com 上线",
-    "newGoalStart": "开始目标",
     "cancel": "取消",
     "forPerson": "负责人：{person}",
     "answerInChat": "在对话中回答",
@@ -23555,7 +23722,786 @@
     "forMember": "给团队成员",
     "spaceEmpty": "{space} 中还没有目标",
     "showAll": "显示全部",
-    "spaceScope": "{space} · {scope}"
+    "spaceScope": "{space} · {scope}",
+    "working": "进行中",
+    "pausedGroup": "已暂停",
+    "paused": "已暂停",
+    "criteriaMet": "已满足 {met}/{total} 个完成条件",
+    "state": {
+      "done": "已完成。独立检查确认了每个条件。",
+      "stopped": "已停止。不会再被唤醒。",
+      "abandoned": "已放弃。",
+      "paused": "{time}暂停。在你恢复之前不会被唤醒。",
+      "waitingOn": "等待回答。",
+      "verifying": "独立检查正在核实结果。",
+      "draft": "正在开始：智能体正在撰写计划。",
+      "working": "进行中。下次检查 {time}。",
+      "workingNoWake": "进行中。"
+    },
+    "startedToast": "目标已开始",
+    "startError": "无法开始目标。请重试。",
+    "updated": "{time}更新",
+    "attentionTitle": "需要关注",
+    "doneWhen": "完成条件",
+    "results": "成果",
+    "activity": "动态",
+    "answerSentToast": "回答已发送",
+    "answerError": "无法发送回答。请重试。",
+    "answerPlaceholder": "写下你的回答",
+    "answerLabel": "你的回答",
+    "answerSent": "回答已发送。智能体现在会处理。",
+    "sendAnswer": "发送回答",
+    "resume": "恢复目标",
+    "resumedToast": "目标已恢复",
+    "resumeError": "无法恢复目标。请重试。",
+    "pause": "暂停目标",
+    "pauseReason": "从目标页面暂停",
+    "pausedToast": "目标已暂停",
+    "pauseError": "无法暂停目标。请重试。",
+    "moreActions": "更多目标操作",
+    "shareTitle": "共享目标",
+    "scopeLabel": "可见范围",
+    "showReport": "显示报告",
+    "openInFiles": "在文件中打开文件夹",
+    "openFolderOf": "在文件中打开 {file} 所在文件夹",
+    "hideReport": "隐藏报告",
+    "questionForYou": "需要你回答",
+    "messagePlaceholder": "给智能体留一条备注…",
+    "messageLabel": "给智能体的备注",
+    "messageSentToast": "备注已发送",
+    "messageError": "无法发送备注。请重试。",
+    "messageSent": "备注已发送。智能体现在会处理。",
+    "sendMessage": "发送备注",
+    "send": "发送",
+    "agentLog": "智能体日志",
+    "shareAccessLabel": "谁有访问权限",
+    "shareOwner": "所有者",
+    "shareAdminsRole": "可打开",
+    "shareLoadError": "无法加载访问权限。",
+    "shareVisibility": "可见范围：{scope}。共享目标",
+    "copyLink": "复制链接",
+    "linkCopied": "链接已复制",
+    "linkCopyError": "无法复制链接",
+    "properties": "属性",
+    "stateLabel": "状态",
+    "nextCheck": "下次检查",
+    "lastCheck": "上次检查",
+    "feed": {
+      "created": "已创建目标",
+      "moved": "已移至{status}",
+      "update": "最新进展",
+      "paused": "已暂停",
+      "movedPrefix": "已移至"
+    },
+    "showMore": "显示更多",
+    "showLess": "收起",
+    "noAgent": "无智能体",
+    "nextCheckAt": "下次检查 {time}",
+    "noCheck": "未安排检查",
+    "lastCheckAt": "上次检查 {time}",
+    "neverChecked": "尚未检查",
+    "wakesTodayCount": "今日唤醒 {count}/{max}",
+    "filesLabel": "文件",
+    "roleTab": {
+      "founder": "创始人",
+      "sales": "销售",
+      "marketing": "市场",
+      "support": "客户支持",
+      "finance": "财务",
+      "operations": "运营",
+      "people": "人力",
+      "engineering": "工程"
+    },
+    "galleryTitle": "开始新目标",
+    "galleryDescription": "描述你想要的成果,或从模板开始。智能体会持续推进,直到独立检查确认已完成。",
+    "composerPlaceholder": "描述你想要的成果",
+    "templates": {
+      "draftInvestorUpdate": {
+        "title": "起草投资人更新",
+        "description": "将公司指标整理为投资人更新草稿,保存在 Files 中。",
+        "prompt": "起草我们[上个月]的投资人更新。\n- 指标:来自[Stripe 和我们的财务表格]的[收入、增长、烧钱、可用资金周期]\n- 亮点:[产品发布、成果、关键招聘]\n- 不足与风险:[延期或有风险的事项]\n- 需求:[引荐、招聘、我们需要的建议]\n将每个数字与上一周期对比。",
+        "criterion": "Files/founder/investor-update.md 包含所选周期、有来源的指标、与上一周期相比的变化、亮点、风险、需求,并标出数据缺口。",
+        "start": "收集指标",
+        "done": "更新已起草"
+      },
+      "compareCompetitors": {
+        "title": "对比竞争对手",
+        "description": "对比竞争对手,并将带来源的定位简报保存在 Files 中。",
+        "prompt": "将我们与[竞争对手 A、竞争对手 B、竞争对手 C]进行对比。\n- 我们的产品:[一句话说明产品及其买家]\n- 对比维度:定价、目标买家、核心功能、近期发布\n- 来源:他们的网站、定价页面、文档和公开评价\n最后给出 3 个适合我们的定位方案。",
+        "criterion": "Files/founder/competitor-brief.md 涵盖每个指定的竞争对手,包含带日期的来源链接、目标买家、定价(或标注未知)、主要差异,以及 3 个定位方案。",
+        "start": "调研竞争对手",
+        "done": "简报已就绪"
+      },
+      "summarizeCustomerFeedback": {
+        "title": "找出客户优先事项",
+        "description": "将客户反馈归类,整理成带排名的优先事项简报,保存在 Files 中。",
+        "prompt": "找出[最近 90 天]客户提得最多的需求。\n- 来源:[支持工单、通话记录、调查评论、销售笔记]\n- 按主题归类,并按独立客户数量排序\n- 每个主题需提供:2 条引用、来源链接、涉及的收入\n最后给出你建议的 3 项行动。",
+        "criterion": "Files/founder/customer-priorities.md 按独立客户数量排序列出各主题,并附引用、来源链接、业务影响、建议行动以及反馈范围。",
+        "start": "阅读反馈",
+        "done": "优先级已排序"
+      },
+      "prepareDecisionBrief": {
+        "title": "准备决策简报",
+        "description": "调研一项业务决策,并将各方案的成本与权衡保存在 Files 中。",
+        "prompt": "准备一份决策简报:[我们是否应该对新客户涨价?]\n- 截止时间:[我们必须做出决定的时间]\n- 约束条件:[预算、团队、时间]\n- 至少对比 3 个方案,包括保持不变\n给出成本、风险和建议,每个数字都要注明来源。",
+        "criterion": "Files/founder/decision-brief.md 说明待决策事项,对比至少 3 个方案(包括保持不变),并列出有来源的成本、权衡、假设和建议。",
+        "start": "收集依据",
+        "done": "方案已对比"
+      },
+      "prepareBoardPack": {
+        "title": "准备董事会材料",
+        "description": "在 Files 中生成带来源数据的董事会会议大纲。",
+        "prompt": "准备[本季度]的董事会会议材料。\n- 章节:KPI、财务、产品、招聘、风险、需决策事项\n- 数据:[Stripe、财务表格、CRM、路线图]\n- 提交董事会的决策:[我们需要获批的事项]\n控制在 12 页幻灯片以内。每个数字都要标明来源。",
+        "criterion": "Files/founder/board-pack.md 包含不超过 12 页幻灯片的大纲,涵盖 KPI、财务、产品、招聘、风险、需决策事项,且每个数字都有来源。",
+        "start": "提取数据",
+        "done": "材料已列出大纲"
+      },
+      "draftQuarterlyOkrs": {
+        "title": "起草季度 OKR",
+        "description": "在 Files 中提出带基线和负责人的可衡量目标。",
+        "prompt": "起草我们[下个季度]的 OKR。\n- 公司重点:[最重要的一件事]\n- 团队:[产品、销售、市场]\n- 上季度成果:[链接或 Files 路径]\n最多 3 个目标。每个目标给出 2 到 4 个可衡量的关键结果,并附基线和负责人角色。",
+        "criterion": "Files/founder/okrs.md 包含最多 3 个目标,每个目标有 2 到 4 个可衡量的关键结果,并注明基线、目标值和负责人角色。",
+        "start": "回顾成果",
+        "done": "OKR 已起草"
+      },
+      "sizeMarket": {
+        "title": "测算市场规模",
+        "description": "在 Files 中生成带来源的 TAM、SAM 和 SOM 估算。",
+        "prompt": "测算[我们的产品]在[地区]的市场规模。\n- 买家:[谁来购买,及其公司规模]\n- 价格:[我们的年均价格]\n分别用自下而上和自上而下的方法构建 TAM、SAM 和 SOM。每个输入都要引用带日期的来源。",
+        "criterion": "Files/founder/market-size.md 包含自下而上和自上而下的 TAM、SAM 和 SOM 估算、各自的计算公式,以及每个输入对应的带日期来源。",
+        "start": "查找数据",
+        "done": "市场规模已测算"
+      },
+      "buildInvestorList": {
+        "title": "建立投资人名单",
+        "description": "按与本轮融资的匹配度对投资人排序,并将带来源的名单保存在 Files 中。",
+        "prompt": "为我们的[种子轮]融资建立一份包含[40]位投资人的名单。\n- 行业与阶段:[B2B 软件,种子轮]\n- 单笔投资额:[$500k 至 $2M]\n- 地区:[美国和欧洲]\n每位投资人需提供:机构、合伙人、相关的近期投资、匹配理由和来源链接。",
+        "criterion": "Files/founder/investors.csv 达到要求的数量,包含机构、合伙人、相关的近期投资、匹配理由、来源链接,以及根据所述阶段和单笔投资额确定的优先级。",
+        "start": "调研投资人",
+        "done": "名单已排序"
+      },
+      "writeTeamUpdate": {
+        "title": "撰写团队更新",
+        "description": "根据真实工作和数据起草每周公司更新,保存在 Files 中。",
+        "prompt": "撰写[本周]的团队更新。\n- 已交付:来自[GitHub、议题跟踪器]\n- 交易与客户:来自[我们的 CRM]\n- 指标:来自[Stripe、产品分析]\n- 下周:[优先事项]\n控制在 400 字以内。仅起草,不要发送。",
+        "criterion": "Files/founder/team-update.md 不超过 400 字,包含附链接的已交付工作、客户与交易动态、带来源的关键指标,以及下周的优先事项。",
+        "start": "收集更新",
+        "done": "更新已起草"
+      },
+      "mapCompanyRisks": {
+        "title": "梳理公司风险",
+        "description": "在 Files 中列出计划面临的主要风险,以及负责人和缓解措施。",
+        "prompt": "列出[今年实现计划]面临的主要风险。\n- 领域:资金周期、客户、团队、产品、法务、安全\n- 来源:[财务表格、CRM、路线图、事故日志]\n每项风险需给出:可能性、影响、负责人角色和缓解措施。",
+        "criterion": "Files/founder/risk-register.md 在所列领域中列出至少 8 项风险,每项都有可能性、影响、负责人角色、缓解措施以及支撑它的来源。",
+        "start": "查看来源",
+        "done": "风险已梳理"
+      },
+      "researchTargetAccounts": {
+        "title": "调研目标客户",
+        "description": "按匹配度对目标客户排序,并将带来源的潜在客户名单保存在 Files 中。",
+        "prompt": "找出[25]个符合我们理想客户画像的目标客户。\n- 理想客户:[行业、公司规模、地区]\n- 购买信号:[招聘、融资、新工具、扩张]\n- 排除:[我们的 CRM]中的现有客户和进行中的交易\n每个客户需提供:公司、网站、匹配理由、一个信号及其来源链接,以及优先级。",
+        "criterion": "Files/sales/target-accounts.csv 达到要求的客户数量,包含公司、网站、匹配理由、购买信号、来源链接,以及根据所提供买家画像确定的优先级。",
+        "start": "调研客户",
+        "done": "潜在客户已排序"
+      },
+      "draftDealFollowups": {
+        "title": "起草交易跟进",
+        "description": "根据交易历史,在已连接的收件箱中准备未发送的跟进草稿。",
+        "prompt": "为[我 7 天内没有收到回复的进行中交易]起草跟进邮件。\n- 交易:[CRM 阶段或交易名称]\n- 语气:[简短直接]\n- 每份草稿包含:最近的沟通背景、一个明确的下一步、建议的时间\n将它们保存为已连接收件箱中的草稿。不要发送。",
+        "criterion": "已连接的收件箱中,每个选定交易都有一份未发送的草稿,包含收件人、交易背景和下一步;Files/sales/follow-ups.md 将交易链接对应到草稿链接。",
+        "start": "查看交易",
+        "done": "草稿已就绪"
+      },
+      "enrichSelectedLeads": {
+        "title": "补全选定线索",
+        "description": "在已连接的 CRM 中填入带来源的线索字段,并将变更日志保存在 Files 中。",
+        "prompt": "在[我们的 CRM]中补全[本周创建的线索]。\n- 字段:[行业、员工人数、职位、网站]\n- 只填写空字段,绝不覆盖已有的值。\n记录每项变更及其来源。若没有来源可以确认,则保持该字段为空。",
+        "criterion": "Files/sales/lead-enrichment.csv 涵盖每条选定线索,包含其 CRM 链接、字段、变更前后的值、来源链接,以及已更新或未解决的状态。",
+        "start": "检查线索",
+        "done": "字段已补全"
+      },
+      "draftSalesProposal": {
+        "title": "起草销售提案",
+        "description": "将需求调研笔记和已批准的定价整理成提案草稿,保存在 Files 中。",
+        "prompt": "为[公司]起草一份提案。\n- 需求调研笔记:[Files 路径或 CRM 交易]\n- 范围:[他们购买的内容]\n- 定价:[已批准的价格和条款]\n- 时间线:[开始日期]\n将每项买家需求关联到对应笔记。列出未决问题。标注为草稿。",
+        "criterion": "Files/sales/proposal.md 包含关联到调研笔记的买家需求、拟定范围、已批准的定价、除外项、时间线、未决问题以及草稿标记。",
+        "start": "阅读调研笔记",
+        "done": "提案已起草"
+      },
+      "prepareCallBrief": {
+        "title": "准备通话简报",
+        "description": "将客户历史和新闻整理成一页简报,保存在 Files 中。",
+        "prompt": "为我与[公司]的通话准备一份简报。\n- 会议:[通话日期和目标]\n- 调取:CRM 历史、过往邮件、支持工单、对方的近期新闻和招聘信息\n最后给出 5 个要问的问题和 3 个需要留意的风险。",
+        "criterion": "Files/sales/call-brief.md 控制在一页内,包含客户历史、附来源链接的近期新闻、5 个要问的问题以及 3 个需要留意的风险。",
+        "start": "阅读历史记录",
+        "done": "简报已就绪"
+      },
+      "writeOutboundSequence": {
+        "title": "撰写外联序列",
+        "description": "在 Files 中为某一买家角色撰写简短的多步骤邮件序列。",
+        "prompt": "为[买家角色]撰写一个[4]步的外联邮件序列。\n- 我们解决的痛点:[一句话]\n- 证明:[客户成果或案例研究]\n- 行动号召:[一次 15 分钟的通话]\n每封邮件不超过 120 字。仅起草。",
+        "criterion": "Files/sales/outbound-sequence.md 包含要求数量的邮件,每封不超过 120 字,并带有主题行、发送日、所述证明和一个行动号召。",
+        "start": "研究买家",
+        "done": "序列已撰写"
+      },
+      "cleanUpPipeline": {
+        "title": "清理销售管道",
+        "description": "标记 CRM 中的停滞交易,并在 Files 中提出待审批的修正建议。",
+        "prompt": "清理[我们的 CRM]中的销售管道。\n- 标记[30]天内没有活动、已过预计成交日期、缺少金额或缺少负责人的交易\n- 为每笔交易建议下一步行动\n不要修改任何交易。列出拟议的变更,供我审批。",
+        "criterion": "Files/sales/pipeline-cleanup.csv 列出每笔被标记的交易,包含其 CRM 链接、问题、拟议的变更和下一步行动;未修改任何 CRM 记录。",
+        "start": "扫描销售管道",
+        "done": "修正建议已提出"
+      },
+      "analyzeLostDeals": {
+        "title": "分析丢单",
+        "description": "按原因和金额对丢单分组,并将结论保存在 Files 中。",
+        "prompt": "找出我们在[最近 6 个月]丢单的原因。\n- 来源:[CRM 丢单原因、通话记录、邮件]\n- 按原因分组,并给出交易数量和丢失金额\n最后给出对产品、定价或流程的 3 项改进建议。",
+        "criterion": "Files/sales/lost-deals.md 按原因对丢单分组,并列出交易数量、丢失金额和来源链接,最后给出 3 项建议的改进。",
+        "start": "阅读交易",
+        "done": "原因已找出"
+      },
+      "buildBattlecard": {
+        "title": "制作竞争对比卡",
+        "description": "在 Files 中制作针对某个竞争对手、带来源的竞争对比卡。",
+        "prompt": "针对[竞争对手]制作一份销售竞争对比卡。\n- 内容:对方的优势和劣势、定价、常见异议及我们的应答、我们的证明点\n- 我们对其赢下的交易:[交易名称或 CRM 筛选条件]\n关于对方的每项说法都要引用带日期的来源。",
+        "criterion": "Files/sales/battlecard.md 涵盖优势、劣势、定价、异议及应答和证明点,且关于竞争对手的每项说法都有带日期的来源。",
+        "start": "调研对手",
+        "done": "对比卡已就绪"
+      },
+      "forecastQuarter": {
+        "title": "预测本季度业绩",
+        "description": "根据 CRM 在 Files 中生成确定和最佳情况预测。",
+        "prompt": "准备[本季度]的销售预测。\n- 销售管道:[我们的 CRM]\n- 规则:[确定 = 后期阶段,最佳情况 = 中期阶段]\n- 目标:[配额]\n给出确定、最佳情况和销售管道的总额,与目标对比,并列出能左右数字的交易。",
+        "criterion": "Files/sales/forecast.md 列出确定、最佳情况和销售管道总额及其与目标的对比、所用的阶段规则,以及带 CRM 链接的、能左右数字的交易。",
+        "start": "阅读销售管道",
+        "done": "预测已就绪"
+      },
+      "draftLaunchCampaign": {
+        "title": "起草发布推广活动",
+        "description": "将产品简报转化为推广文案和发布清单,保存在 Files 中。",
+        "prompt": "为[功能或产品]起草发布推广活动。\n- 简报:[Files 路径或简短描述]\n- 受众:[面向谁]\n- 渠道:[邮件、博客、LinkedIn、X]\n- 发布日期:[日期]\n撰写每一项内容,为每项说法附上来源链接,并添加发布清单。",
+        "criterion": "Files/marketing/launch-campaign.md 包含受众、核心信息、每个指定渠道的草稿、行动号召、说法对应的来源链接以及发布清单。",
+        "start": "阅读简报",
+        "done": "推广活动已起草"
+      },
+      "findContentGaps": {
+        "title": "发现内容缺口",
+        "description": "将现有页面与搜索意图对比,并将带排名的文章简报保存在 Files 中。",
+        "prompt": "找出[我们的网站]在[主题]上的内容缺口。\n- 竞争对手:[2 到 3 个网站]\n- 受众:[谁会搜索这个主题]\n按搜索意图和匹配度对[10]个主题排序。为每个主题给出简报和大纲。",
+        "criterion": "Files/marketing/content-gaps.md 包含约定数量的已排序主题、受众意图、现有页面的缺口、带日期的搜索来源,以及每个主题的大纲。",
+        "start": "对比页面",
+        "done": "简报已就绪"
+      },
+      "rewriteLandingPage": {
+        "title": "重写落地页",
+        "description": "审阅落地页,并将有依据的修改文案保存在 Files 中。",
+        "prompt": "重写我们位于 [URL] 的落地页。\n- 受众:[谁会进入该页面]\n- 目标:[注册、演示请求]\n- 可用的证明:[客户标识、数据、引用]\n只保留我们能证明的说法。标出每处修改及原因。",
+        "criterion": "Files/marketing/landing-page.md 包含每个板块的修改后文案、每处修改的原因,以及每项说法的来源。",
+        "start": "审阅页面",
+        "done": "文案已起草"
+      },
+      "analyzeCampaignResults": {
+        "title": "分析活动效果",
+        "description": "检查活动花费和转化,并将效果报告保存在 Files 中。",
+        "prompt": "汇报[活动]的效果。\n- 数据:[广告平台、CRM、网站分析]\n- 周期:[日期]\n- 目标:[单条线索成本或转化数]\n按渠道给出花费、线索数、单条线索成本和转化数。建议削减什么、扩大什么。",
+        "criterion": "Files/marketing/campaign-results.md 包含该周期内按渠道划分的花费、线索数、单条线索成本和转化数,与目标的对比、数据来源以及建议。",
+        "start": "收集效果数据",
+        "done": "报告已就绪"
+      },
+      "writeBlogPost": {
+        "title": "撰写博客文章",
+        "description": "调研一个主题,并将带来源的文章草稿保存在 Files 中。",
+        "prompt": "围绕[主题]撰写一篇博客文章。\n- 读者:[是谁,想了解什么]\n- 角度:[我们的观点]\n- 篇幅:[1,200 字]\n每个事实都附上来源链接。添加一段元描述和 3 个标题备选。",
+        "criterion": "Files/marketing/blog-post.md 包含接近要求篇幅的草稿、3 个标题备选、不超过 160 个字符的元描述,以及每个事实的来源链接。",
+        "start": "调研主题",
+        "done": "文章已起草"
+      },
+      "planContentCalendar": {
+        "title": "规划内容日历",
+        "description": "在 Files 中按渠道、日期和目标规划一个月的内容。",
+        "prompt": "规划我们[下个月]的内容日历。\n- 渠道:[博客、LinkedIn、新闻通讯]\n- 主题:[产品发布、客户故事、指南]\n- 频率:[每周发布数量]\n每条内容需给出:日期、渠道、标题、负责人角色和目标。",
+        "criterion": "Files/marketing/content-calendar.csv 按所述频率覆盖整月,每条内容都有日期、渠道、标题、主题、负责人角色和目标。",
+        "start": "选择主题",
+        "done": "日历已规划"
+      },
+      "draftNewsletter": {
+        "title": "起草新闻通讯",
+        "description": "将产品和客户动态整理成新闻通讯草稿,保存在 Files 中。",
+        "prompt": "起草我们的[月度]新闻通讯。\n- 包含:来自[更新日志]的产品更新、[一个客户故事]、近期活动\n- 读者:[客户和潜在客户]\n给出 3 个邮件主题行。控制在 500 字以内。仅起草,不要发送。",
+        "criterion": "Files/marketing/newsletter.md 不超过 500 字,包含 3 个邮件主题行、附链接的产品更新、一个客户故事和近期活动。",
+        "start": "收集动态",
+        "done": "新闻通讯已起草"
+      },
+      "repurposeContent": {
+        "title": "内容再利用",
+        "description": "在 Files 中将一篇长内容改写为适合各渠道的社交帖子。",
+        "prompt": "将[博客文章或网络研讨会链接]改写为社交帖子。\n- 渠道:[LinkedIn、X]\n- 数量:[每个渠道 5 条]\n每条帖子都能独立成文、链接回原文,并符合该渠道的字数限制。",
+        "criterion": "Files/marketing/social-posts.md 包含每个渠道要求数量的帖子,每条都在该渠道字数限制内,并链接到原内容。",
+        "start": "阅读原文",
+        "done": "帖子已撰写"
+      },
+      "auditSeo": {
+        "title": "进行 SEO 审计",
+        "description": "检查关键页面的搜索问题,并在 Files 中按优先级列出修复项。",
+        "prompt": "对[我们的网站]进行 SEO 审计。\n- 重点页面:[首页、定价页、前 10 篇博客文章]\n检查标题、元描述、标题层级、失效链接、页面速度和内部链接。按影响程度对修复项排序。",
+        "criterion": "Files/marketing/seo-audit.md 列出每个被检查的页面及其问题、每个问题的证据,以及按影响程度排序的修复项。",
+        "start": "抓取页面",
+        "done": "修复项已排序"
+      },
+      "writeCaseStudy": {
+        "title": "撰写案例研究",
+        "description": "将客户素材整理成案例研究草稿,保存在 Files 中。",
+        "prompt": "撰写一篇关于[客户]的客户案例研究。\n- 素材:[通话录音、笔记、指标]\n- 结构:挑战、解决方案、带数字的成果、一段引用\n只使用素材中的事实。标出需要客户批准的引用。",
+        "criterion": "Files/marketing/case-study.md 包含挑战、解决方案、带来源数字的成果、标记为待批准的引用,以及每个事实的来源。",
+        "start": "阅读素材",
+        "done": "案例研究已起草"
+      },
+      "draftSupportReplies": {
+        "title": "起草支持回复",
+        "description": "根据帮助中心为未结工单起草回复,不发送。",
+        "prompt": "为[超过 24 小时的未结工单]起草回复。\n- 服务台:[已连接的服务台或支持收件箱]\n- 语气:[友好简短]\n- 使用帮助中心和过往答复,并注明引用\n只保存草稿,不要发送。标出你无法回答的工单。",
+        "criterion": "每个选定的工单都有一份未发送的回复草稿,并引用某篇帮助文章或过往答复;Files/support/reply-drafts.md 列出工单链接、草稿状态,以及被标记为无法回答的工单。",
+        "start": "阅读工单",
+        "done": "回复已起草"
+      },
+      "triageSupportBacklog": {
+        "title": "分诊积压工单",
+        "description": "为未结工单打标签并排定优先级,将分诊结果保存在 Files 中。",
+        "prompt": "分诊我们在[已连接的服务台]中的支持积压工单。\n- 标签:bug、问题咨询、功能请求、账单、紧急\n- 优先级规则:[付费客户优先]\n合并重复项。按工单数量列出前 5 个问题。",
+        "criterion": "Files/support/triage.csv 涵盖每个未结工单,包含其链接、标签、优先级和重复分组;Files/support/triage.md 按工单数量列出前 5 个问题。",
+        "start": "阅读积压工单",
+        "done": "积压工单已分诊"
+      },
+      "draftHelpArticle": {
+        "title": "起草帮助文章",
+        "description": "将工单和产品行为整理成分步骤的帮助文章,保存在 Files 中。",
+        "prompt": "围绕[功能或问题]撰写一篇帮助文章。\n- 来源:[工单、文档、产品]\n- 读者:[新用户]\n分步骤撰写,说明每一步的预期结果和常见错误。",
+        "criterion": "Files/support/help-article.md 包含带预期结果的编号步骤、附解决办法的常见错误,以及所依据的工单和文档链接。",
+        "start": "阅读工单",
+        "done": "文章已起草"
+      },
+      "flagAtRiskAccounts": {
+        "title": "标记高风险客户",
+        "description": "找出有流失信号的客户,并将带排名的名单保存在 Files 中。",
+        "prompt": "找出[未来 60 天]有流失风险的客户。\n- 信号:[使用量下降、未结工单、调查评分低、续约日期]\n- 数据:[产品分析、服务台、CRM]\n按风险收入排序。为每个客户给出依据和建议行动。",
+        "criterion": "Files/support/at-risk-accounts.md 按风险收入对客户排序,并为每个客户列出信号、来源链接和建议行动。",
+        "start": "检查信号",
+        "done": "风险已标记"
+      },
+      "buildFaqFromTickets": {
+        "title": "构建常见问题",
+        "description": "找出被问得最多的问题,并将带来源的答案保存在 Files 中。",
+        "prompt": "根据[上个月]的工单构建常见问题。\n- 数量:被问得最多的[20]个问题\n- 答案:来自帮助中心和过往回复\n标出每个没有对应帮助文章的问题。",
+        "criterion": "Files/support/faq.md 按工单数量排序列出要求数量的问题,每个问题都有答案、来源链接,并在没有帮助文章时加以标记。",
+        "start": "统计问题",
+        "done": "常见问题已构建"
+      },
+      "reviewReplyQuality": {
+        "title": "评估回复质量",
+        "description": "为抽样的支持回复评分,并将辅导建议保存在 Files 中。",
+        "prompt": "评估[上周]支持回复的质量。\n- 样本:[30]条回复\n- 评分维度:准确性、语气、速度、解决情况\n给出示例和 3 条辅导要点。",
+        "criterion": "Files/support/quality-review.md 按 4 项标准为每条抽样回复评分并附工单链接,同时列出 3 条带示例的辅导要点。",
+        "start": "抽样回复",
+        "done": "评估完成"
+      },
+      "writeSavedReplies": {
+        "title": "撰写预设回复",
+        "description": "在 Files 中为最常见的问题撰写可重复使用的回复。",
+        "prompt": "为我们最常见的[10]个问题撰写预设回复。\n- 来源:[已连接的服务台]\n- 语气:[友好简短]\n每条回复都链接到对应的帮助文章,并为客户姓名预留占位符。",
+        "criterion": "Files/support/saved-replies.md 包含要求数量的回复,每条都列出其回答的问题、工单数量和帮助文章链接。",
+        "start": "查找问题",
+        "done": "回复已撰写"
+      },
+      "turnBugsIntoIssues": {
+        "title": "将 bug 报告转为议题",
+        "description": "在 Files 中将 bug 工单合并为可复现的工程议题。",
+        "prompt": "将[本周]的 bug 报告转为工程议题。\n- 来源:[已连接服务台中标记为 bug 的工单]\n- 每个议题包含:复现步骤、受影响客户数量、严重程度、工单链接\n合并重复项。先保存这些议题供我审阅,再提交任何内容。",
+        "criterion": "Files/support/bug-issues.md 为每个不同的 bug 提供一个议题,包含复现步骤、受影响客户数量、严重程度以及所有相关工单链接。",
+        "start": "阅读 bug 工单",
+        "done": "议题已起草"
+      },
+      "findOutdatedArticles": {
+        "title": "查找过时的帮助文章",
+        "description": "将帮助中心与产品对比,并将更正内容保存在 Files 中。",
+        "prompt": "找出我们位于 [URL] 的帮助中心里的过时文章。\n- 对比对象:当前产品和[更新日志]\n对每处过时的表述,给出文章链接、旧文本和更正后的文本。",
+        "criterion": "Files/support/outdated-articles.md 列出每处过时的表述,包含文章链接、旧文本、更正后的文本以及更正的依据来源。",
+        "start": "阅读文章",
+        "done": "修正项已列出"
+      },
+      "reportSupportMetrics": {
+        "title": "汇报支持指标",
+        "description": "在 Files 中汇报某一周期的工单量、响应速度和满意度。",
+        "prompt": "汇报[上个月]的支持表现。\n- 数据:[已连接的服务台]\n给出首次响应时间、解决时间、按类别划分的工单量和满意度。将每项与上一周期对比。",
+        "criterion": "Files/support/metrics.md 包含该周期的首次响应时间、解决时间、按类别划分的工单量和满意度,且每项都与上一周期对比。",
+        "start": "提取数据",
+        "done": "报告已就绪"
+      },
+      "reconcileExpenses": {
+        "title": "核对费用",
+        "description": "在 Files 中将交易与收据和类别进行匹配。",
+        "prompt": "核对[上个月]的费用。\n- 账户:[银行和信用卡账户]\n- 收据:[Files 文件夹或收件箱]\n将每笔交易匹配到一张收据和一个类别。列出未匹配的项目。",
+        "criterion": "Files/finance/expense-reconciliation.csv 涵盖该周期内的每笔交易,包含金额、类别、已匹配的收据链接或未匹配状态。",
+        "start": "阅读交易",
+        "done": "费用已匹配"
+      },
+      "prepareInvoiceFollowups": {
+        "title": "催收逾期发票",
+        "description": "为逾期发票起草催款提醒，不会发送。",
+        "prompt": "为逾期超过 [14 天] 的发票起草催款提醒。\n- 来源：[Stripe 或财务工具]\n- 语气：[礼貌，超过 30 天后更坚决]\n只保存草稿，不要发送。",
+        "criterion": "已连接的收件箱中，每张逾期发票都有一封未发送的草稿；Files/finance/invoice-followups.md 列出发票编号、客户、金额、逾期天数和草稿链接。",
+        "start": "查找逾期发票",
+        "done": "提醒已起草"
+      },
+      "auditSubscriptionSpend": {
+        "title": "审计软件支出",
+        "description": "找出重复和未使用的订阅，并在文件中按节省金额排序。",
+        "prompt": "审计我们在 [过去 12 个月] 的软件订阅。\n- 来源：[信用卡账单、财务工具]\n找出重复订阅、未使用的席位和涨价情况。按可节省金额排序。",
+        "criterion": "Files/finance/subscription-audit.md 列出每项订阅的年度费用、负责人、使用情况证据，以及按节省金额排序的建议，并注明每个数字的来源。",
+        "start": "查找扣款",
+        "done": "节省项已排序"
+      },
+      "prepareCashForecast": {
+        "title": "编制现金流预测",
+        "description": "在文件中生成包含三种情景的每周现金流预测。",
+        "prompt": "编制 [13] 周的现金流预测。\n- 期初现金：[银行余额或来源]\n- 流入：[Stripe、未结发票]\n- 流出：[工资、租金、供应商]\n给出基准、悲观和乐观三种情景。标出现金低于 [3 个月烧钱额] 的周。",
+        "criterion": "Files/finance/cash-forecast.csv 覆盖所需的周数，包含基准、悲观和乐观情景下的流入、流出和期末现金；已标记的周有明确标注。",
+        "start": "汇总余额",
+        "done": "预测已生成"
+      },
+      "prepareMonthEndClose": {
+        "title": "准备月末结账",
+        "description": "检查每个结账步骤，并在文件中保存已完成和待处理事项。",
+        "prompt": "准备 [上个月] 的月末结账。\n- 步骤：[银行对账、应计费用、递延收入、工资、关联方往来]\n- 工具：[财务工具、Stripe]\n将每个步骤列为已完成或未完成，并附上依据或阻碍原因。",
+        "criterion": "Files/finance/month-end-close.md 将每个结账步骤列为已完成或未完成，已完成的附证据，未完成的写明阻碍原因。",
+        "start": "检查步骤",
+        "done": "结账已准备"
+      },
+      "explainBudgetVariance": {
+        "title": "解释预算差异",
+        "description": "对比实际与预算，并在文件中解释较大的差异。",
+        "prompt": "对比 [上季度] 的实际与预算。\n- 预算：[Files 路径]\n- 实际：[财务工具]\n解释每一项偏差超过 [10%] 的科目。",
+        "criterion": "Files/finance/budget-variance.md 按科目对比实际与预算，并对每个超出阈值的科目给出解释及相关交易。",
+        "start": "对比科目",
+        "done": "差异已解释"
+      },
+      "calculateUnitEconomics": {
+        "title": "计算单位经济效益",
+        "description": "在文件中用公式计算 CAC、LTV 和回收期。",
+        "prompt": "计算我们 [上季度] 的单位经济效益。\n- 拆分维度：[套餐或客户细分]\n- 数据：[Stripe、CRM、广告支出]\n给出 CAC、LTV、回收期和毛利率。展示每个公式和数据来源。",
+        "criterion": "Files/finance/unit-economics.md 按细分给出 CAC、LTV、回收期和毛利率，并附每项的公式和数据来源。",
+        "start": "拉取数据",
+        "done": "经济效益已计算"
+      },
+      "collectTaxDocuments": {
+        "title": "收集税务文件",
+        "description": "收集会计师所需材料，并在文件中列出缺失项。",
+        "prompt": "收集会计师为 [今年的报税] 所需的文件。\n- 清单：[会计师的清单，或 Files 路径]\n- 来源：[文件、收件箱、财务工具]\n为找到的每份文件附上链接。列出缺失的文件。",
+        "criterion": "Files/finance/tax-documents.md 列出清单中的每一项，附上已找到文件的链接或标记为缺失。",
+        "start": "搜索文件",
+        "done": "文件已收集"
+      },
+      "reviewRenewals": {
+        "title": "审查即将到期的续约",
+        "description": "在文件中列出即将续约的合同、通知截止日期和建议。",
+        "prompt": "审查 [未来 90 天内] 续约的供应商合同。\n- 合同：[Files 文件夹或合同工具]\n每份合同给出：续约日期、通知截止日期、价格、是否自动续约，以及续约、重新谈判或取消的建议。",
+        "criterion": "Files/finance/renewals.md 列出期限内每份续约合同的续约日期、通知截止日期、价格、是否自动续约和建议。",
+        "start": "阅读合同",
+        "done": "续约已审查"
+      },
+      "modelHiringCost": {
+        "title": "测算招聘成本",
+        "description": "在文件中测算招聘计划的成本及其对资金可支撑时长的影响。",
+        "prompt": "测算 [明年招聘 5 名工程师] 的成本。\n- 薪资：[范围，或参考市场基准]\n- 入职时间：[按季度]\n- 当前烧钱额和现金：[财务表格]\n包含福利、税费、设备和招聘费用。展示对资金可支撑时长的影响。",
+        "criterion": "Files/finance/hiring-cost.csv 包含每位新员工的月度成本（薪资、福利、税费、设备和招聘费用），以及有无这些招聘时的资金可支撑时长。",
+        "start": "汇总成本",
+        "done": "成本已测算"
+      },
+      "compareVendorQuotes": {
+        "title": "比较供应商报价",
+        "description": "对照需求比较报价，并在文件中保存推荐。",
+        "prompt": "比较 [采购内容] 的报价。\n- 报价：[Files 文件夹或邮件线程]\n- 必备条件：[需求]\n比较价格、条款、交付和支持。推荐一家。",
+        "criterion": "Files/operations/vendor-comparison.md 按价格、条款、交付、支持和每项必备条件比较各报价，每个值都有来源，并给出一个推荐。",
+        "start": "阅读报价",
+        "done": "已选定供应商"
+      },
+      "documentBusinessProcess": {
+        "title": "记录流程",
+        "description": "依据真实资料，在文件中编写分步骤的流程文档。",
+        "prompt": "记录我们如何 [接入新客户]。\n- 来源：[笔记、工具、聊天线程]\n每个步骤包含：负责角色、工具、输入、输出，以及可能出错的地方。",
+        "criterion": "Files/operations/process.md 包含编号步骤，每步都有负责角色、工具、输入、输出、失败点及其信息来源。",
+        "start": "收集笔记",
+        "done": "流程已记录"
+      },
+      "reconcileInventoryRecords": {
+        "title": "核对库存",
+        "description": "比较两个系统的库存，并在文件中列出差异。",
+        "prompt": "核对 [店铺] 与 [仓库表格] 之间的库存。\n- 匹配依据：[SKU]\n列出每处差异，附上两边的数量和可能原因。",
+        "criterion": "Files/operations/inventory-reconciliation.csv 列出每个有差异的 SKU、两边的数量、差额和可能原因。",
+        "start": "比较记录",
+        "done": "差异已列出"
+      },
+      "prepareProjectHandoff": {
+        "title": "准备项目交接",
+        "description": "将项目现状、负责人和未完成工作整理为交接文档，保存在文件中。",
+        "prompt": "为 [项目] 准备交接文档。\n- 新负责人：[角色]\n- 来源：[Files 文件夹、问题跟踪器、聊天频道]\n涵盖目标、当前状态、未完成工作、已做决策、按角色列出的联系人和风险。",
+        "criterion": "Files/operations/handoff.md 包含目标、当前状态、带链接的未完成工作、已做决策、按角色列出的联系人和风险。",
+        "start": "收集背景",
+        "done": "交接已就绪"
+      },
+      "auditToolAccess": {
+        "title": "审计工具权限",
+        "description": "找出各工具中有风险或未使用的账号，并在文件中列出修复建议。",
+        "prompt": "审计谁拥有 [我们的工作区工具] 的访问权限。\n- 工具：[邮件套件、代码托管、聊天]\n- 对照：[当前团队名单]\n标出已离职人员的账号、未使用的账号和多余的管理员。不要做任何更改。",
+        "criterion": "Files/operations/access-audit.md 列出每个被标记的账号及其工具、原因和建议操作；未更改任何权限。",
+        "start": "列出账号",
+        "done": "权限已审计"
+      },
+      "planTeamOffsite": {
+        "title": "策划团队外出活动",
+        "description": "比较场地，并在文件中制定预算和日程。",
+        "prompt": "为 [20 人] 策划团队外出活动，地点和时间为 [城市，月份]。\n- 预算：[总额]\n- 目标：[规划、团队相处]\n给出 3 个场地选项、预算、日程和出行说明。",
+        "criterion": "Files/operations/offsite-plan.md 包含 3 个带价格和链接的场地选项、不超过总额的预算、逐日日程和出行说明。",
+        "start": "寻找场地",
+        "done": "活动已策划"
+      },
+      "findAutomationWork": {
+        "title": "寻找可自动化的工作",
+        "description": "找出重复的手动任务，并在文件中估算可节省的时间。",
+        "prompt": "找出 [财务和运营] 中可以自动化的手动工作。\n- 来源：[流程文档、聊天线程、周期性任务]\n每项任务给出：频率、耗时、用于自动化的工具，以及每月节省的小时数。",
+        "criterion": "Files/operations/automation-candidates.md 按每月节省小时数对任务排序，每项都有频率、耗时、建议工具及其来源。",
+        "start": "查找任务",
+        "done": "节省项已排序"
+      },
+      "trackDelayedOrders": {
+        "title": "跟踪延迟订单",
+        "description": "找出延迟订单及原因，并保存在文件中。",
+        "prompt": "在 [店铺或订单系统] 中找出延迟超过 [3 天] 的订单。\n每个订单给出：订单、客户、承诺日期、当前状态和原因。针对主要原因提出修复建议。",
+        "criterion": "Files/operations/delayed-orders.csv 列出每个延迟订单的承诺日期、状态和原因；Files/operations/delayed-orders.md 写明主要原因和修复建议。",
+        "start": "检查订单",
+        "done": "已找到延迟"
+      },
+      "prepareComplianceChecklist": {
+        "title": "准备合规清单",
+        "description": "将控制项与证据对应，并在文件中列出缺口。",
+        "prompt": "准备 [SOC 2] 就绪清单。\n- 范围：[系统和团队]\n- 证据：[Files 文件夹、工具]\n每个控制项给出：现有证据、缺口和负责角色。",
+        "criterion": "Files/operations/compliance-checklist.md 列出范围内每个控制项，附上链接的证据或缺口，以及负责角色。",
+        "start": "映射控制项",
+        "done": "缺口已列出"
+      },
+      "writeWeeklyOpsReport": {
+        "title": "撰写运营报告",
+        "description": "将运营数据汇总为文件中的每周报告。",
+        "prompt": "撰写 [本周] 的运营报告。\n- 数据：[订单、履约时长、工单、成本]\n- 来源：[店铺、服务台、财务工具]\n将每项数据与上周对比。指出需要关注的 3 件事。",
+        "criterion": "Files/operations/weekly-report.md 包含每项所需数据及其来源和相比上周的变化，以及 3 个需要关注的事项。",
+        "start": "拉取数据",
+        "done": "报告已撰写"
+      },
+      "draftJobDescription": {
+        "title": "起草职位描述",
+        "description": "在文件中撰写成果与要求明确的职位描述。",
+        "prompt": "为 [高级后端工程师] 撰写职位描述。\n- 团队和经理：[团队、经理角色]\n- 第一年成果：[将负责的事项]\n- 必备条件：[技能]\n- 地点和薪资范围：[详情]\n使用包容性语言。控制在 600 字以内。",
+        "criterion": "Files/people/job-description.md 不超过 600 字，包含职位概述、第一年成果、必备和加分技能、地点及薪资范围。",
+        "start": "定义职位",
+        "done": "描述已起草"
+      },
+      "buildOnboardingPlan": {
+        "title": "制定入职计划",
+        "description": "根据文件中的团队文档制定 30-60-90 天入职计划。",
+        "prompt": "为 [职位] 制定 30-60-90 天入职计划。\n- 团队文档：[Files 文件夹]\n- 需要学习的工具：[他们将使用的工具]\n- 入职伙伴：[角色]\n为每个阶段给出目标、任务和一次checkin。",
+        "criterion": "Files/people/onboarding-plan.md 包含第 1-30 天、31-60 天和 61-90 天的目标、任务和回顾沟通，并附上每项任务所用文档的链接。",
+        "start": "阅读团队文档",
+        "done": "计划已就绪"
+      },
+      "prepareInterviewKit": {
+        "title": "准备面试套件",
+        "description": "在文件中编写结构化面试问题和评分表。",
+        "prompt": "为 [职位] 制作面试套件。\n- 职位描述：[Files 路径]\n- 阶段：[初筛、技术面、团队面、终面]\n每个阶段给出：问题、优秀回答体现的能力，以及 1 到 4 分的评分表。",
+        "criterion": "Files/people/interview-kit.md 覆盖每个阶段，包含问题、优秀回答的信号，以及与职位描述对应的 1 到 4 分评分表。",
+        "start": "阅读职位",
+        "done": "套件已就绪"
+      },
+      "organizePeopleHandbook": {
+        "title": "整理员工手册",
+        "description": "将人事政策汇总为一份手册，并在文件中标出缺口。",
+        "prompt": "根据 [Files 文件夹] 整理我们的员工手册。\n- 章节：休假、福利、报销、远程办公、行为准则、安全\n标出相互冲突、缺失或已过期的政策。",
+        "criterion": "Files/people/handbook.md 包含所列的每个章节及其来源文档，并标出每条冲突、缺失或过期的政策。",
+        "start": "阅读政策",
+        "done": "手册已整理"
+      },
+      "sourceCandidates": {
+        "title": "搜寻候选人",
+        "description": "从公开来源寻找候选人，并在文件中按匹配度排序。",
+        "prompt": "为 [职位] 寻找 [20] 位候选人。\n- 必备条件：[技能和经验]\n- 地点：[地区或远程]\n仅使用公开来源。每位候选人给出：资料链接、匹配理由和依据。",
+        "criterion": "Files/people/candidates.csv 列出所需数量的候选人，每人包含公开资料链接、当前职位、匹配理由，以及每项必备条件的依据。",
+        "start": "搜索资料",
+        "done": "候选人已排序"
+      },
+      "benchmarkCompensation": {
+        "title": "薪酬对标",
+        "description": "用有来源的市场数据，在文件中对比某职位和地点的薪酬。",
+        "prompt": "对标 [地点] 的 [职位] 薪酬。\n- 级别：[中级、高级、资深]\n- 我们当前的范围：[范围]\n给出市场的基本工资、奖金和股权范围，并为每个值附上带日期的来源。",
+        "criterion": "Files/people/pay-benchmark.md 包含该职位、级别和地点的市场基本工资、奖金和股权范围，每项都有带日期的来源，并与我们的范围进行对比。",
+        "start": "查找数据",
+        "done": "薪酬已对标"
+      },
+      "prepareReviewCycle": {
+        "title": "准备绩效评估周期",
+        "description": "在文件中编写评估问题、评分标准和时间线。",
+        "prompt": "准备 [本半年] 的绩效评估周期。\n- 团队：[所有团队]\n- 形式：[自评、上级评估、同事反馈]\n给出评估问题、带定义的评分标准，以及带日期的时间线。",
+        "criterion": "Files/people/review-cycle.md 包含每种评估类型的问题、每个等级都有定义的评分标准，以及带日期的时间线。",
+        "start": "起草问题",
+        "done": "周期已就绪"
+      },
+      "summarizeEngagementSurvey": {
+        "title": "总结调研问卷",
+        "description": "将问卷回答归纳为主题和行动，保存在文件中。",
+        "prompt": "总结 [Files 路径] 中的员工敬业度调研。\n- 对比：[上次调研]\n给出按问题和团队划分的得分、评论中的主要主题，以及 3 条建议行动。不要点名任何人。",
+        "criterion": "Files/people/survey-summary.md 包含按问题和团队划分的得分及相比上次调研的变化、不含姓名的评论主题，以及 3 条行动建议。",
+        "start": "阅读回答",
+        "done": "已找到主题"
+      },
+      "draftOfferLetter": {
+        "title": "起草录用通知书",
+        "description": "根据已批准的条款起草录用通知书，保存在文件中供审阅。",
+        "prompt": "为 [职位] 起草录用通知书。\n- 条款：[薪资、股权、入职日期、地点]\n- 模板：[我们的录用通知书模板的 Files 路径]\n只使用已批准的条款。标记为需法务审核。",
+        "criterion": "Files/people/offer-letter.md 仅使用指定的模板和条款，在一处列出每项条款，并标记为需法务审核。",
+        "start": "阅读模板",
+        "done": "通知书已起草"
+      },
+      "planTeamTraining": {
+        "title": "规划团队培训",
+        "description": "在文件中制定包含课程和资料的培训计划。",
+        "prompt": "为 [销售团队] 规划关于 [主题] 的培训。\n- 水平：[新人或有经验者]\n- 可用时间：[每周小时数]\n给出课程、带链接的资料、练习，以及检验学习效果的方法。",
+        "criterion": "Files/people/training-plan.md 包含在可用时间内的带日期课程、带链接的资料、练习，以及每节课的检验方式。",
+        "start": "查找资料",
+        "done": "计划已就绪"
+      },
+      "fixReportedBug": {
+        "title": "修复已报告的缺陷",
+        "description": "复现缺陷，并在变更请求中准备经过测试的修复供审阅。",
+        "prompt": "修复这个缺陷：[发生了什么，在哪里]。\n- 预期：[应该发生什么]\n- 复现步骤：[步骤或工单链接]\n- 仓库：[仓库]\n先复现，再添加一个会失败的测试，然后在变更请求中修复。",
+        "criterion": "Files/engineering/bug-fix.md 链接到变更请求，并包含复现步骤、修复前后的输出、测试命令及结果，以及遗留限制。",
+        "start": "复现缺陷",
+        "done": "修复已就绪"
+      },
+      "buildScopedFeature": {
+        "title": "开发范围明确的功能",
+        "description": "开发一个小功能，附带测试并提交变更请求。",
+        "prompt": "在 [仓库] 中开发 [功能]。\n- 用户故事：[谁需要它，为什么]\n- 验收标准：[完成时必须满足什么]\n- 范围之外：[不要开发什么]\n为每条验收标准添加测试，并提交变更请求。",
+        "criterion": "Files/engineering/feature.md 链接到变更请求，并将每条验收标准对应到一个测试及其通过的输出。",
+        "start": "阅读范围",
+        "done": "功能已开发"
+      },
+      "improveSlowFlow": {
+        "title": "加速缓慢的流程",
+        "description": "测量缓慢的页面或接口，并交付经过测量的优化。",
+        "prompt": "让 [页面或接口] 更快。\n- 现状：[有多慢，或自行测量]\n- 目标：[时间或百分比]\n用相同的方法测量优化前后的数据，然后提交变更请求。",
+        "criterion": "Files/engineering/performance.md 包含测量方法、优化前后的数据、变更请求链接，以及是否达到目标。",
+        "start": "测量流程",
+        "done": "速度已提升"
+      },
+      "patchVulnerableDependencies": {
+        "title": "修补有漏洞的依赖",
+        "description": "升级有漏洞的包，并提交经过测试的变更请求。",
+        "prompt": "修补 [仓库] 中有漏洞的依赖。\n- 严重程度：[高危和严重]\n逐个升级包，运行测试，并提交变更请求。列出无法升级的包及原因。",
+        "criterion": "Files/engineering/dependency-patch.md 列出每条安全公告的新旧版本、测试结果、变更请求链接，以及每个未升级的包及其原因。",
+        "start": "扫描包",
+        "done": "补丁已就绪"
+      },
+      "addMissingTests": {
+        "title": "补充缺失的测试",
+        "description": "为未测试的模块补充测试，并提交变更请求。",
+        "prompt": "为 [仓库] 中的 [模块或流程] 添加测试。\n- 重点：[以前出过问题的场景、边界情况]\n通过公开接口测试行为。提交变更请求。",
+        "criterion": "Files/engineering/tests.md 链接到变更请求，并列出每个新测试所检查的行为及其通过的输出。",
+        "start": "阅读代码",
+        "done": "测试已添加"
+      },
+      "reviewChangeRequest": {
+        "title": "审查变更请求",
+        "description": "审查变更中的缺陷和风险，并将发现保存在文件中。",
+        "prompt": "审查 [变更请求链接]，查找缺陷和风险。\n- 重点：[正确性、安全、性能]\n每条发现给出：文件和行号、问题，以及建议的修复。不要批准或合并。",
+        "criterion": "Files/engineering/review.md 列出每条发现的文件和行号、严重程度、问题及建议的修复；变更请求未被批准或合并。",
+        "start": "阅读差异",
+        "done": "审查已就绪"
+      },
+      "writeTechnicalSpec": {
+        "title": "撰写技术方案",
+        "description": "根据代码库在文件中撰写包含选项和权衡的方案。",
+        "prompt": "为 [功能] 撰写技术方案。\n- 问题：[用户目前做不到什么]\n- 约束：[截止日期、必须使用的系统]\n比较至少 2 种设计及其权衡。包含数据变更、API 变更、上线和测试。",
+        "criterion": "Files/engineering/spec.md 包含问题、至少 2 种带权衡的设计、所选设计、数据和 API 变更、上线方案以及测试计划。",
+        "start": "阅读代码",
+        "done": "方案已撰写"
+      },
+      "writePostmortem": {
+        "title": "撰写事后复盘",
+        "description": "根据日志在文件中梳理事故时间线和根本原因。",
+        "prompt": "为 [事故] 撰写事后复盘。\n- 时间：[开始和结束时间]\n- 来源：[日志、告警、聊天线程、部署]\n给出时间线、根本原因、影响和后续行动。不要归咎于任何个人。",
+        "criterion": "Files/engineering/postmortem.md 包含有来源的时间线、根本原因、影响，以及带负责角色的后续行动，且不把任何个人列为原因。",
+        "start": "阅读日志",
+        "done": "复盘已撰写"
+      },
+      "upgradeFramework": {
+        "title": "升级框架",
+        "description": "升级框架版本，并在变更请求中修复出现的问题。",
+        "prompt": "在 [仓库] 中将 [框架] 从 [当前版本] 升级到 [目标版本]。\n遵循官方迁移指南。修复出现的问题，运行测试，并提交变更请求。",
+        "criterion": "Files/engineering/upgrade.md 链接到变更请求，并列出每个迁移步骤、每个已修复的破坏性变更和测试结果。",
+        "start": "阅读指南",
+        "done": "升级已就绪"
+      },
+      "documentModule": {
+        "title": "为模块编写文档",
+        "description": "在文件中为新工程师讲解某个服务或模块。",
+        "prompt": "为新工程师编写 [服务或模块] 的文档。\n- 仓库：[仓库]\n说明它的作用、主要组成部分、数据流向、如何运行和测试，以及已知的陷阱。",
+        "criterion": "Files/engineering/module-guide.md 说明用途、带文件链接的主要组成部分、数据流、运行和测试命令，以及已知的陷阱。",
+        "start": "阅读代码",
+        "done": "指南已撰写"
+      }
+    },
+    "templateSteps": "{start}，然后{done}",
+    "rolesLabel": "按角色选择模板",
+    "startNoFiles": "目标只能从文字开始。请移除文件后重新发送。",
+    "startNeedsSubject": "请替换第一行中 [方括号] 内的部分，然后发送。",
+    "templateFooter": "凡是仍带有 [方括号] 的部分，请根据我们已连接的工具和文件自行推断。只有找不到的信息才来问我。",
+    "restart": "重新开始目标",
+    "restartReason": "从目标页面重新开始",
+    "restartedToast": "目标已重新开始",
+    "restartError": "无法重新开始目标。请重试。",
+    "noAccess": "你无权访问此目标。",
+    "noAccessHint": "请负责人或项目管理员与你共享。",
+    "notFoundHint": "它已被删除，或链接有误。",
+    "chooseGoal": "有多个目标使用此名称。请选择一个。",
+    "goalLoadError": "无法加载此目标。请重试。",
+    "eventsLoadError": "无法加载动态。",
+    "changedToast": "在你的操作生效前，此目标已更改。页面显示的是它现在的状态。",
+    "blockedTitle": "已阻塞",
+    "blocked": {
+      "credits": "积分已用完，无法开始唤醒。",
+      "wake_cap": "今天的 {max} 次唤醒已全部用完。",
+      "session_cap": "可启动的 {max} 个会话已全部用完。",
+      "owner_lost": "其智能体会话失败，且没有会话接手。",
+      "storage": "无法读写其在文件中的文件夹。",
+      "flag_off": "此项目已关闭目标功能。",
+      "setup": "Kortix 仍在设置它。"
+    },
+    "blockedNext": {
+      "credits": "添加积分后恢复它。",
+      "wake_cap": "UTC 午夜后它会自动继续。",
+      "session_cap": "停止它，或请项目管理员提高会话上限。",
+      "owner_lost": "重新启动它以分配新会话。",
+      "storage": "检查文件中的文件夹，然后恢复它。",
+      "flag_off": "为此项目开启目标功能，然后恢复它。",
+      "setup": "一分钟内会自动完成。"
+    },
+    "legacyUnverifiedTitle": "未经 Kortix 验证",
+    "legacyUnverified": "此目标是从其文件夹导入的。Kortix 未检查其结果。",
+    "verified": "已验证",
+    "reportedMet": "已报告达成，尚未验证",
+    "reportedMetHint": "智能体报告此项已完成。独立检查尚未通过。",
+    "verifiedCount": "已验证 {verified}/{total}",
+    "checkFailed": "检查未通过：{note}",
+    "waitingOnPerson": "等待 {person}",
+    "waitNoCost": "等待回答期间不会运行检查。",
+    "chaseAt": "{time} 跟进"
   },
   "agentEditor": {
     "manage": "管理",
@@ -23945,6 +24891,7 @@
     "emptyFiltered": "没有匹配的工件",
     "updated": "更新于 {time}",
     "pinned": "已置顶",
+    "openComments": "{count, plural, other {# 条未解决的评论}}",
     "visibility": {
       "private": "私有",
       "project": "项目",
@@ -24070,7 +25017,6 @@
       "activity": "动态",
       "open": "未解决",
       "resolved": "已解决",
-      "all": "全部",
       "outdated": "已过时",
       "outdatedHint": "无法在当前文档中定位此段内容。",
       "newComment": "新建评论",
@@ -24117,7 +25063,6 @@
       "noCommentsHint": "选择一段内容进行评论，或新建一条评论。",
       "noResolved": "没有已解决的评论",
       "noResolvedHint": "已解决的讨论串会显示在这里。",
-      "noAllComments": "暂无评论",
       "noActivity": "暂无动态",
       "noActivityHint": "保存的版本和评论会显示在这里。",
       "loadMore": "加载更多",
@@ -24129,7 +25074,7 @@
       "composerKeys": "Enter 发送 · Shift+Enter 换行",
       "closeSelection": "取消所选段落",
       "preparingSelection": "正在准备所选段落…",
-      "selectionCaptureFailed": "无法准备所选段落。请放弃此选择，再对整个作品发表评论。",
+      "selectionCaptureFailed": "无法准备所选段落。请放弃此选择，再对整个工件发表评论。",
       "commentSelection": "评论",
       "selectionTooLong": "这段内容太长，无法评论。请选择不超过 {max} 个字符。",
       "selectionUnavailable": "无法将评论关联到此段内容，请选择其他段落。",
@@ -24150,7 +25095,7 @@
         "sent_to_agent": "向智能体发送了反馈"
       },
       "person": "用户",
-      "deleteRootDescription": "其文本将对所有人移除，讨论串将变为只读。此操作无法撤销。",
+      "deleteRootDescription": "其文本将对所有人删除，讨论串会从评论列表中移除。此操作无法撤销。",
       "showPanel": "显示评论",
       "hidePanel": "隐藏评论",
       "panelTitle": "评论和动态",
@@ -24190,18 +25135,69 @@
       "sentToAgent": "评论已发送给 {agent}",
       "newCommentFrom": "来自 {name} 的新评论",
       "newComments": "{count, plural, other {# 条新评论}}",
-      "filterLabel": "讨论串状态",
       "pagePinLabel": "评论 {number}",
       "showPanelCount": "显示评论，{count} 条未解决",
       "hidePanelCount": "隐藏评论，{count} 条未解决",
-      "commentSelectionHint": "评论所选内容"
+      "commentSelectionHint": "评论所选内容",
+      "threadReopened": "讨论串已重新打开",
+      "noCommentsReadOnlyHint": "关于此工件的评论会显示在这里。",
+      "commentTooLong": "评论最多 {max} 个字符。请删除 {over} 个。",
+      "discardDrawingTitle": "放弃此绘图？",
+      "discardDrawingHint": "你的笔画尚未保存。此操作无法撤销。",
+      "discardDrawing": "放弃",
+      "keepDrawing": "继续绘制",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "移至空间",
     "projectWide": "项目范围",
     "moved": "产物已移动",
     "moveFailed": "无法移动产物",
     "spaceEmpty": "{space} 中还没有产物",
-    "showAll": "显示全部"
+    "showAll": "显示全部",
+    "live": {
+      "here": "当前在线",
+      "hereLabel": "当前正在查看此工件：{names}",
+      "reconnecting": "正在重新连接…",
+      "you": "你",
+      "agents": "智能体",
+      "agentsHere": "此讨论中的智能体",
+      "status": {
+        "viewing": "查看中",
+        "reading": "阅读中",
+        "editing": "编辑中",
+        "writing": "撰写中"
+      },
+      "hideCursor": "隐藏我的光标",
+      "hideCursorHint": "其他人仍会看到你的头像。",
+      "typingOne": "{name} 正在输入…",
+      "typingTwo": "{first} 和 {second} 正在输入…",
+      "typingMany": "{count, plural, other {# 人正在输入…}}",
+      "writing": "{name} 正在撰写…"
+    },
+    "coedit": {
+      "offLarge": "实时协同编辑已关闭：此文档太大。更改会在输入时保存。",
+      "offLineEndings": "实时协同编辑已关闭：此文档混用了两种换行符。更改会在输入时保存。",
+      "offShape": "实时协同编辑已关闭：编辑器无法完全按原样保留此文档的部分内容。更改会在输入时保存。",
+      "stoppedLarge": "实时协同编辑已停止：有一处更改太大，无法共享。更改会在输入时保存。",
+      "stoppedFailed": "实时协同编辑已停止：连接失败。更改会在输入时保存。",
+      "stoppedHistory": "实时协同编辑已停止：此文档的编辑历史过大。更改会在输入时保存。",
+      "offFailed": "实时协同编辑已关闭：无法连接。更改会在输入时保存。"
+    },
+    "conflictTitle": "其他人更改了此文档",
+    "conflictReloadTitle": "加载较新的版本？",
+    "conflictReloadHint": "上次保存后的编辑将被丢弃。此操作无法撤销。",
+    "docLoadError": "无法加载此文档。",
+    "openError": "无法打开此工件。",
+    "viewOnly": "仅查看",
+    "viewingOldUndated": "你正在查看较早的版本。",
+    "exportWaiting": "正在保存你的编辑，然后导出…",
+    "exportBlocked": "导出已停止：你最近的编辑尚未保存。",
+    "clearFilters": "清除筛选",
+    "linkCopyFailed": "无法复制链接。请在输入框中选中后复制。",
+    "shareDropsPeople": "{count, plural, other {保存后将移除你添加的 # 人。只有“私密”会保留人员列表。}}",
+    "askAgentHistoryError": "无法加载之前的聊天。",
+    "embedUnavailable": "此链接没有预览，因此保持为链接。"
   },
   "emailConnect": {
     "homeTitle": "收件箱所在位置",
@@ -24487,7 +25483,7 @@
       },
       "company": {
         "subtitle": "此项目中每个智能体都知道的内容。",
-        "gateDescription": "公司记忆随频道功能提供：此项目中的每个智能体在每个线程开始时都会读取团队保存在这里的内容。",
+        "gateDescription": "公司记忆随空间功能提供：此项目中的每个智能体在每个线程开始时都会读取团队保存在这里的内容。",
         "title": "记忆",
         "place": "公司"
       },
@@ -24518,29 +25514,29 @@
       }
     },
     "create": {
-      "title": "创建频道",
-      "description": "此项目中的所有人都可以查看和使用该频道。",
+      "title": "创建空间",
+      "description": "空间用于整理一个工作领域，例如市场、招聘或运营。成员和智能体在它的话题中协作。",
       "nameLabel": "名称",
-      "namePlaceholder": "marketing",
-      "slugPlaceholder": "channel-name",
+      "namePlaceholder": "市场",
+      "slugPlaceholder": "space-name",
       "descriptionLabel": "描述（可选）",
-      "descriptionPlaceholder": "这个频道的用途",
-      "submit": "创建频道",
-      "created": "频道已创建",
+      "descriptionPlaceholder": "这个空间的用途",
+      "submit": "创建空间",
+      "created": "空间已创建",
       "nameRequired": "请添加名称。",
       "invalidName": "名称中至少要有一个字母或数字。",
       "slugTaken": "<link>#{slug}</link> 已存在。",
-      "failed": "无法创建频道。请重试。",
-      "renameTitle": "重命名频道",
-      "renameDescription": "频道链接会随名称一起改变。",
+      "failed": "无法创建空间。请重试。",
+      "renameTitle": "重命名空间",
+      "renameDescription": "空间链接会随名称一起改变。",
       "save": "保存",
-      "renamed": "频道已重命名",
-      "renameFailed": "无法重命名频道。请重试。",
-      "descriptionPrivate": "只有你添加的人可以查看和使用该频道。",
+      "renamed": "空间已重命名",
+      "renameFailed": "无法重命名空间。请重试。",
+      "descriptionPrivate": "只有你添加的人可以查看和使用该空间。",
       "privateLabel": "私密",
       "privateHint": "只有受邀成员可以看到它。",
-      "privateUnavailable": "此工作区尚未开放私密频道。",
-      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。",
+      "privateUnavailable": "此工作区尚未开放私密空间。",
+      "privateLimits": "私密会对其他人隐藏该空间。代码更改（git 分支）和代理自身的工具不是私密的。",
       "name": "名称",
       "taken": "空间 #{slug} 已存在。",
       "about": "描述",
@@ -24550,9 +25546,9 @@
     },
     "view": {
       "welcomeTitle": "欢迎来到 #{name}",
-      "welcomeEmpty": "在 #{name} 中开始第一个话题。每条消息都会开始一个新话题。",
+      "welcomeEmpty": "空间用于整理一个工作领域。成员和智能体在这里按话题协作：每条消息都会开启一个话题。",
       "welcomeStart": "这里是 #{name} 的开始。",
-      "dmIntro": "这段对话只在你和 {agent} 之间。",
+      "dmIntro": "只有你和 {agent} 能看到这个空间。",
       "today": "今天",
       "yesterday": "昨天",
       "openThread": "打开话题",
@@ -24566,24 +25562,24 @@
       "messageAgent": "发消息给 {agent}",
       "threadsEmptyTitle": "还没有话题",
       "threadsEmpty": "你开始的话题会显示在这里。",
-      "loadError": "无法加载此频道。",
+      "loadError": "无法加载此空间。",
       "threadsLoadError": "无法加载话题。",
       "retry": "重试",
-      "notFound": "此频道不存在。",
-      "notFoundHint": "链接可能有误，或者有人重命名了该频道。",
+      "notFound": "此空间不存在。",
+      "notFoundHint": "链接可能有误，或者有人重命名了该空间。",
       "openDefault": "打开 #{name}",
       "archivedTitle": "#{name} 已归档。",
       "archivedHint": "取消归档后，可以再次在这里阅读和开始话题。",
       "archivedLocked": "只有频道创建者或项目管理员可以取消归档。",
-      "unarchive": "取消归档频道",
-      "unarchived": "频道已取消归档",
-      "unarchiveFailed": "无法取消归档频道。请重试。",
+      "unarchive": "取消归档空间",
+      "unarchived": "空间已取消归档",
+      "unarchiveFailed": "无法取消归档空间。请重试。",
       "dmFailed": "无法打开此对话。",
-      "archive": "归档频道",
+      "archive": "归档空间",
       "archiveTitle": "归档 #{name}？",
-      "archiveDescription": "该频道会从所有成员的侧边栏中消失。它的话题会保留，频道创建者或项目管理员可以取消归档。",
-      "archived": "频道已归档",
-      "archiveFailed": "无法归档频道。请重试。",
+      "archiveDescription": "该空间会从所有成员的侧边栏中消失。它的话题会保留，空间创建者或项目管理员可以取消归档。",
+      "archived": "空间已归档",
+      "archiveFailed": "无法归档空间。请重试。",
       "threadTitle": "话题",
       "closeThread": "关闭话题",
       "sendFailed": "无法开始话题。请重试。",
@@ -24615,7 +25611,7 @@
         },
         "links": {
           "title": "还没有链接",
-          "description": "在 {place} 的线程中分享的链接会显示在这里。固定一个链接即可将其提供给频道中的每个智能体。"
+          "description": "在 {place} 的线程中分享的链接会显示在这里。固定一个链接即可将其提供给空间中的每个智能体。"
         },
         "triggers": {
           "title": "还没有触发器",
@@ -24648,8 +25644,8 @@
         "titlePlaceholder": "它是什么",
         "invalidUrl": "请输入有效的链接，例如 example.com。",
         "addFailed": "无法添加链接，请重试。",
-        "limit": "此频道已固定 200 个链接。请先取消固定一个。",
-        "addLimit": "此频道已添加 200 个链接。请先移除一个。",
+        "limit": "此空间已固定 200 个链接。请先取消固定一个。",
+        "addLimit": "此空间已添加 200 个链接。请先移除一个。",
         "added": "添加时间",
         "remove": "移除链接",
         "removeTitle": "移除此链接？",
@@ -24669,7 +25665,7 @@
         "all": "全部",
         "sharedBy": "分享者",
         "earlier": "更早",
-        "pinHint": "固定它。频道中的每个智能体都会读取已固定的链接。",
+        "pinHint": "固定它。空间中的每个智能体都会读取已固定的链接。",
         "unpinHint": "取消固定。智能体将不再读取它。",
         "copyLink": "复制链接",
         "linkCopied": "已复制链接",
@@ -24679,7 +25675,7 @@
       "appsLoadError": "无法加载应用。",
       "triggers": {
         "loadError": "无法加载触发器。",
-        "privateNote": "触发器无法发布到私有频道。请改为在线程中设置循环。"
+        "privateNote": "触发器无法发布到私有空间。请改为在线程中设置循环。"
       },
       "reply": "回复",
       "rosterTitlePeople": "成员",
@@ -24725,19 +25721,69 @@
         "rememberHint": "每个智能体都会读的笔记"
       },
       "allAgents": "所有智能体",
-      "join": "加入频道",
+      "join": "加入空间",
       "joined": "你已加入 #{name}。",
-      "joinFailed": "无法加入频道，请重试。"
+      "joinFailed": "无法加入空间，请重试。",
+      "openFullSession": "Open full session",
+      "tabEdit": {
+        "kind": {
+          "file": "文件",
+          "artifact": "Artifact",
+          "app": "App",
+          "folder": "Folder",
+          "link": "Link"
+        },
+        "add": "Add tab",
+        "full": "A space holds at most {max} tabs. Remove one first.",
+        "noArtifacts": "No artifacts yet",
+        "noApps": "此项目中没有应用",
+        "spaceFiles": "This space’s files",
+        "otherFolder": "Another folder…",
+        "fileItem": "文件…",
+        "linkItem": "Link…",
+        "linkTitle": "Add a link",
+        "linkHint": "一个 https 页面，将显示在标签页内。",
+        "folderTitle": "Add a folder",
+        "folderHint": "按路径指定的云盘文件夹。",
+        "fileTitle": "添加文件",
+        "fileHint": "Drive 中的任意文件，按路径指定。.html 文件以页面显示。",
+        "url": "URL",
+        "path": "Folder path",
+        "filePath": "文件路径",
+        "submit": "Add tab",
+        "cancel": "Cancel",
+        "options": "Options for {name}",
+        "rename": "Rename",
+        "renameTitle": "Rename tab",
+        "name": "Tab name",
+        "save": "Save",
+        "moveLeft": "Move left",
+        "moveRight": "Move right",
+        "remove": "Remove tab",
+        "removed": "Removed {name}",
+        "undo": "Undo",
+        "saveError": "无法保存标签页",
+        "openLink": "在新标签页中打开",
+        "linkCard": {
+          "description": "{host} 不允许其他网站在标签页中显示它。",
+          "open": "打开"
+        },
+        "missing": {
+          "title": "此标签页的内容已不存在",
+          "description": "它已被删除或重命名，或未与你共享。"
+        }
+      },
+      "spaceDetails": "{name} 详情"
     },
     "details": {
       "about": "关于",
       "members": "成员",
-      "name": "频道名称",
+      "name": "空间名称",
       "description": "描述",
       "noDescription": "添加描述",
       "created": "创建于",
       "editField": "编辑{field}",
-      "archiveTitle": "归档此频道",
+      "archiveTitle": "归档此空间",
       "archiveHint": "它会从所有成员的侧边栏中移除。其中的话题会保留。",
       "archive": "归档",
       "find": "查找成员或智能体",
@@ -24761,9 +25807,9 @@
       "peopleFailed": "无法更新成员，请重试。",
       "personMenu": "{person} 选项",
       "removePerson": "从 #{name} 移除",
-      "leave": "退出频道",
+      "leave": "退出空间",
       "left": "你已退出 #{name}。",
-      "leaveTitle": "退出此频道",
+      "leaveTitle": "退出此空间",
       "leaveHint": "退出后仍可阅读，并可随时重新加入。",
       "visibilityPrivate": "仅限成员",
       "privateNote": "只有成员可以看到 #{name}。",
@@ -24777,30 +25823,32 @@
       "leaveHintPrivate": "你将失去对其线程、文件和记忆的访问权限，包括你自己的线程。需要成员重新添加你。",
       "leavePrivateTitle": "退出 #{name}？",
       "addMembers": "添加成员",
-      "privateLimits": "私密会对其他人隐藏该频道。代码更改（git 分支）和代理自身的工具不是私密的。"
+      "privateLimits": "私密会对其他人隐藏该空间。代码更改（git 分支）和代理自身的工具不是私密的。",
+      "agentAdded": "已将 {agent} 添加到 #{name}。"
     },
     "folder": {
       "memory": "记忆",
       "loadError": "无法加载此文件夹",
       "memoryNoteChannel": "{place} 中的智能体记住的内容。智能体会在每个线程开始时阅读这些内容。",
-      "memoryNoteDm": "{agent} 在此私信中记住的内容。它会在每个线程开始时阅读这些内容。",
+      "memoryNoteDm": "{agent} 从这个空间记住的内容。它会在每个话题开始时读取。",
       "off": {
         "title": "这里没有 Drive",
         "description": "{place} 的文件和记忆存放在 Drive 中。此 Kortix 不存储 Drive：它需要 Platinum。"
       }
     },
     "onboarding": {
-      "reenabled": "频道关闭期间开始的会话都在这里。",
+      "reenabled": "空间关闭期间开始的会话都在这里。",
       "intro": {
-        "title": "欢迎使用频道",
-        "channels": "频道按团队组织工作。",
+        "title": "欢迎使用空间",
+        "channels": "空间按团队组织工作。",
         "threads": "每条新消息都会开始一个话题。",
-        "memory": "智能体会记住每个频道达成的共识。",
-        "gotIt": "知道了"
+        "memory": "智能体会记住每个空间达成的共识。",
+        "gotIt": "知道了",
+        "tabs": "每个空间都有自己的标签页。你可以添加、重命名和重新排序，也可以让 Kortix 来做。"
       },
       "getStarted": {
         "dismiss": "关闭",
-        "channel": "为团队创建一个频道",
+        "channel": "为团队创建一个空间",
         "done": "已完成"
       }
     },
@@ -24829,9 +25877,9 @@
       "noMatches": "没有与“{query}”匹配的项。"
     },
     "privateNotIn": {
-      "row": "你未加入的私有频道",
-      "title": "你未加入的私有频道",
-      "description": "你可以重命名、归档和添加成员。只有成员能阅读频道内容，因此你无法将自己加入。",
+      "row": "你未加入的私有空间",
+      "title": "你未加入的私有空间",
+      "description": "你可以重命名、归档和添加成员。只有成员能阅读空间内容，因此你无法将自己加入。",
       "meta": "{count, plural, =0 {没有成员} other {# 名成员}} · 由 {name} 创建",
       "metaNoCreator": "{count, plural, =0 {没有成员} other {# 名成员}}",
       "archived": "已归档",
@@ -24855,20 +25903,15 @@
       "board": {
         "brief": "概述",
         "text": "此空间的用途以及如何提供帮助。",
-        "label": "聊天室和看板",
+        "label": "看板和目标",
         "description": "用于简介和链接的看板，然后是目标。"
       },
       "standard": {
-        "label": "聊天室、目标、应用和产物",
-        "description": "先显示聊天室，再显示关联到此空间的内容。"
-      },
-      "room": {
-        "label": "仅聊天室",
-        "description": "一个对话。稍后可添加标签页。"
+        "label": "目标、应用和产物",
+        "description": "关联到此空间的内容。"
       }
     },
     "tabs": {
-      "room": "聊天室",
       "goals": "目标",
       "apps": "应用",
       "artifacts": "工件",
@@ -24893,7 +25936,7 @@
       "artifacts": "关联到此空间的产物会显示在这里",
       "folder": "此文件夹为空",
       "board": "此看板上的区块会显示在这里",
-      "boardHint": "让 My Kortix 添加区块：笔记、应用、文件、嵌入页面或其他聊天室。"
+      "boardHint": "让 My Kortix 添加区块：笔记、应用、文件或嵌入页面。"
     },
     "doc": "文档",
     "page": "页面",
@@ -24931,8 +25974,8 @@
     "cancel": "取消",
     "edit": {
       "title": "编辑标签页",
-      "description": "聊天室始终排在第一位。保存会将标签页提交到默认分支的 kortix.yaml 中。",
-      "empty": "只有聊天室。点击 + 添加标签页。",
+      "description": "保存会将标签页提交到默认分支的 kortix.yaml 中。",
+      "empty": "还没有标签页。点击 + 添加标签页。",
       "save": "保存标签页",
       "rename": "重命名 {name}",
       "moveUp": "上移 {name}",
@@ -24945,28 +25988,93 @@
       "unread": "{count, plural, other {# 条未读消息}}"
     },
     "leave": "离开 {name}",
-    "openRooms": "打开聊天室",
-    "roomHint": "智能体和成员在这里发布更新。",
-    "noRoom": "还没有聊天室。",
     "agents": "此空间中的智能体",
     "openAgent": "打开 {name}",
-    "members": "{count, plural, other {# 人}}",
     "needsYou": "需要你处理",
     "newSession": "新会议",
     "askMyKortix": "询问 My Kortix",
     "askPrompt": "我想修改 {name} 空间（kortix.yaml 中的 `spaces.{slug}`）：它的标签页、标题或其中的智能体。请问我想修改什么。",
-    "roomsOff": "此项目已关闭聊天室",
-    "roomsOffHint": "在项目设置中开启聊天室，即可在这里与成员和智能体交流。",
-    "room": {
-      "introTitle": "这里是 #{name} 的起点",
-      "introBody": "供所有在此空间工作的人使用的聊天室。",
-      "introAgents": "{count, plural, other {{names} 在这里发布更新。}}",
-      "introNoAgents": "添加到此空间的智能体会在这里发布更新。",
-      "introMention": "输入 @ 以提及成员或智能体。"
+    "intro": {
+      "title": "这里是 #{name} 的起点",
+      "body": "供所有在此空间工作的人使用的地方。",
+      "agents": "{count, plural, other {{names} 在这里发布更新。}}",
+      "noAgents": "添加到此空间的智能体会在这里发布更新。",
+      "addTab": "使用 + 添加标签页，即可在此固定目标、应用、文件或看板。"
     },
     "filter": "按空间筛选",
     "all": "全部",
-    "projectWide": "项目范围"
+    "projectWide": "项目范围",
+    "panel": {
+      "title": "{name} 详情",
+      "heading": "详情",
+      "close": "关闭详情",
+      "private": "私密",
+      "rename": "重命名并添加描述",
+      "personalDescription": "你与 My Kortix 的私密空间。只有你能看到。",
+      "privateDescription": "只有其中的成员和智能体能看到这个空间。",
+      "noDescription": "还没有描述。",
+      "agents": "智能体",
+      "addAgent": "添加智能体",
+      "default": "默认",
+      "projectDefault": "项目默认",
+      "people": "成员",
+      "addPeople": "添加成员",
+      "you": "你",
+      "tabs": "标签页",
+      "addTab": "添加标签页",
+      "routines": "例行任务",
+      "addRoutine": "添加例行任务",
+      "routinesPrivate": "私密空间暂不支持例行任务。",
+      "proactive": "主动",
+      "proactiveWatch": "留意这个空间",
+      "proactiveWatchHint": "智能体会阅读这里发生的事，只在重要时发言。",
+      "proactiveBrief": "每日简报",
+      "proactiveBriefHint": "有新动态的日子在 9:00 发送简短总结。",
+      "proactiveFailed": "设置未保存，请重试。",
+      "allSettings": "所有设置",
+      "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。",
+      "noAgentsToAdd": "项目的所有智能体都已在此空间中。"
+    },
+    "profile": {
+      "viewProfile": "查看 {name} 的资料",
+      "viewProfileShort": "查看资料",
+      "agent": "智能体",
+      "openProfile": "打开资料",
+      "you": "(你)",
+      "message": "发消息",
+      "messageFailed": "无法打开私密空间。请重试。",
+      "dmSpaceName": "{a} 和 {b}",
+      "heading": "资料",
+      "close": "关闭资料",
+      "model": "模型",
+      "modelDefault": "项目默认模型",
+      "connectors": "连接器",
+      "connectorsAll": "全部连接器",
+      "connectorsNone": "无连接器",
+      "projectDefault": "项目默认",
+      "projectDefaultYes": "回复未指定智能体的新话题",
+      "email": "邮箱",
+      "sharedSpaces": "共同的空间",
+      "yourSpaces": "你的空间",
+      "addTo": "添加到 {space}",
+      "addedTo": "已将 {agent} 添加到 {space}",
+      "addFailed": "无法添加智能体。请重试。",
+      "spacesIn": "所在空间",
+      "spacesInNone": "尚未加入任何空间",
+      "default": "默认"
+    },
+    "mentions": {
+      "people": "成员",
+      "agents": "智能体",
+      "addToSpace": "不在 {space} 中：请求添加",
+      "added": "已将 {agent} 添加到 {space}",
+      "addFailed": "无法添加智能体。请重试。",
+      "askAdd": "将 {agent} 添加到 {space}？",
+      "askAddConfirm": "添加",
+      "askNotNow": "暂不",
+      "askAdmin": "{agent} 不在 {space} 中。请让空间管理员添加。",
+      "dismiss": "关闭"
+    }
   },
   "imageGen": {
     "generating": "正在生成图像",
@@ -25052,6 +26160,7 @@
   "voiceCall": {
     "title": "语音通话",
     "call": "通话",
+    "calling": "正在呼叫…",
     "start": "开始语音通话",
     "end": "结束通话",
     "connecting": "正在连接…",
@@ -25069,6 +26178,8 @@
     "lost": "无法重新连接通话",
     "unavailable": "此会话的沙盒在语音通话开启之前启动。从它下次启动起即可通话。",
     "callAgain": "重新呼叫",
+    "openChat": "打开聊天",
+    "turnNote": "在语音通话中说出，并由语音回答。",
     "close": "关闭"
   },
   "agentMounts": {
@@ -25116,18 +26227,38 @@
       "shutdownRequest": "来自 {from} 的关闭请求",
       "shutdownResponse": "{from} 的关闭请求答复",
       "expand": "显示完整消息",
-      "collapse": "收起消息"
+      "collapse": "收起消息",
+      "kind": {
+        "message": "消息",
+        "finished": "已完成",
+        "shutdownRequest": "请求停止",
+        "shutdownResponse": "停止回复"
+      }
     },
     "notice": {
       "completed": "{name} 已完成",
       "failed": "{name} 未完成",
       "stopped": "{name} 已停止",
+      "viewRun": "查看运行",
+      "peerFinished": "{name} 已完成",
+      "result": "结果",
       "fallbackName": "你的智能体",
       "openSession": "打开会话",
       "expand": "显示完整结果",
       "collapse": "收起结果",
       "batchTitle": "{count, plural, other {# 个智能体已完成}}",
-      "ownsTasks": "仍负责 {tasks}"
+      "ownsTasks": "仍负责 {tasks}",
+      "source": "智能体更新",
+      "statusFailedShort": "未完成",
+      "statusStoppedShort": "已停止",
+      "updateCount": "{count, plural, other {# 条智能体更新}}",
+      "details": "详情",
+      "failedSentence": "该智能体在完成前停止了。",
+      "state": {
+        "completed": "已完成",
+        "failed": "未完成",
+        "stopped": "已停止"
+      }
     },
     "tools": {
       "running": {
@@ -25138,6 +26269,8 @@
         "stopping": "正在停止智能体…"
       },
       "to": "收件人",
+      "messageTo": "发给 @{to} 的消息",
+      "messageSent": "消息已发送",
       "peerStatus": {
         "delivered": "已送达",
         "held": "等待批准",
@@ -25170,7 +26303,8 @@
       "blockedBy": "被 {tasks} 阻塞",
       "stopped": "已停止",
       "alreadyEnded": "已结束",
-      "openSession": "打开会话"
+      "openSession": "打开会话",
+      "messageToName": "发给 {to}"
     },
     "strip": {
       "label": "智能体",
@@ -25227,7 +26361,16 @@
       "retry": "重试",
       "emptyTitle": "暂无内容",
       "emptyDescription": "它工作时的消息会显示在这里。",
-      "loadOlder": "显示更早的消息"
+      "loadOlder": "显示更早的消息",
+      "runsLabel": "工作流运行",
+      "previousAgent": "上一个代理",
+      "nextAgent": "下一个代理",
+      "moreActions": "更多操作",
+      "attachments": "已附加的图片",
+      "removeAttachment": "移除 {name}",
+      "attachImages": "附加图片",
+      "attachFailed": "无法附加图片",
+      "scrollToBottom": "转到最新消息"
     },
     "tasks": {
       "label": "团队任务",
@@ -25245,10 +26388,15 @@
       "title": "来自 {from} 的消息",
       "titleShutdown": "{from} 请求停止此会话",
       "waiting": "等待你的批准。5 分钟后过期。",
+      "waitingShort": "等待你的批准",
+      "expires": "5 分钟后过期",
       "deny": "拒绝",
       "approve": "批准",
       "approveFailed": "无法送达消息",
-      "denyFailed": "无法拒绝消息"
+      "denyFailed": "无法拒绝消息",
+      "wantsToSend": "想给这个智能体发消息",
+      "asksStop": "请求这个智能体停止",
+      "needsApproval": "需要你批准"
     },
     "workflow": {
       "large": "大型工作流",
@@ -25256,6 +26404,9 @@
       "paused": "已暂停",
       "pause": "暂停运行",
       "resume": "恢复运行",
+      "pauseShort": "暂停",
+      "resumeShort": "继续",
+      "stopShort": "停止",
       "pauseHint": "暂停：不再启动新的智能体，正在运行的智能体会完成 (p)",
       "resumeHint": "恢复运行 (p)",
       "stop": "停止运行",
@@ -25265,6 +26416,7 @@
       "savePrompt": "请将工作流运行“{title}”（运行 {runId}）保存为已保存的工作流：把它的脚本写入 {file}，并为此发起一个变更请求。",
       "saveSent": "已请求保存工作流",
       "saveFailed": "无法请求保存工作流",
+      "viewing": "正在查看",
       "restartHint": "用相同的提示词重启此智能体 (r)",
       "restartAgent": "重启 {label}",
       "failed": {
@@ -25363,5 +26515,99 @@
     "dialogTitle": "开始新的上下文？",
     "dialogDescription": "智能体在新的上下文中继续，需要细节时会搜索完整历史。不会进行任何总结，对话会原样保留在这里。",
     "dialogAction": "开始新的上下文"
+  },
+  "markdownAppLinks": {
+    "slackMessage": "Slack 消息",
+    "slackConversation": "Slack 对话",
+    "notionPage": "Notion 页面",
+    "figmaDesign": "Figma 设计",
+    "figjamBoard": "FigJam 白板",
+    "figmaSlides": "Figma Slides",
+    "googleDoc": "Google 文档",
+    "googleSheet": "Google 表格",
+    "googleSlides": "Google 幻灯片",
+    "pullRequest": "PR #{number}",
+    "issue": "议题 #{number}"
+  },
+  "subscriptionUsage": {
+    "fiveHour": "5-hour limit",
+    "weekly": "Weekly limit",
+    "weeklyModel": "Weekly · {model}",
+    "reconnect": "Reconnect",
+    "disabledTitle": "订阅用量不可用",
+    "disabledDescription": "此项目未启用订阅连接。",
+    "text0": "Reconnect needed",
+    "text1": "Inactive",
+    "text2": "Refresh failed",
+    "text3": "Awaiting usage",
+    "text4": "Limit reached",
+    "text5": "Last known usage",
+    "text6": "Usage reported",
+    "text7": "Subscription",
+    "text8": "used",
+    "text9": "重置时间已过 · 刷新以查看当前用量",
+    "text10": "未报告重置时间",
+    "text11": "Checking provider usage…",
+    "text12": "尚无用量报告。使用此订阅后请刷新。",
+    "text13": "无法更新。显示的是最近一次已知数据。",
+    "text14": "正在等待提供方数据",
+    "text15": "Checking…",
+    "text16": "Refresh",
+    "text17": "Subscription usage",
+    "text18": "跟踪你已连接的 ChatGPT 和 Claude 订阅的额度。",
+    "text19": "无法加载用量",
+    "text20": "请重新尝试加载你已连接的订阅。",
+    "text21": "Retry",
+    "text22": "No connected subscriptions",
+    "text23": "在“提供方”中连接 ChatGPT 或 Claude，即可查看已报告的用量和重置时间。",
+    "text24": "Connect a subscription",
+    "text25": "使用同一订阅的各应用共享用量。此标签页打开期间，每分钟自动检查一次。",
+    "text26": "额度因套餐而异。此处仅显示你的连接所报告的时间窗口；缺少数据并不代表用量无限制。文件额度不会被报告。API 支出显示在“费用”中。",
+    "resets": "Resets {time}",
+    "observed": "Observed {time}",
+    "meterLabel": "{label}: {percent}% used",
+    "refreshLabel": "Refresh {label} usage",
+    "fiveHourNotReported": "此连接未报告五小时窗口。",
+    "fableIncluded": "Fable 的用量也会计入你的每周总额度。",
+    "chatgptUsage": "ChatGPT subscription usage",
+    "claudeUsage": "Claude subscription usage",
+    "allSubscriptions": "All subscriptions"
+  },
+  "gatewayRouting": {
+    "exceptions": "例外",
+    "modeLabel": "模型失败时",
+    "modeCustom": "使用我的备用模型",
+    "modeInherit": "让 Kortix 选择",
+    "modeDisabled": "显示错误",
+    "stopNote": "错误会立即显示。",
+    "addBackups": "添加备用模型",
+    "add": "添加",
+    "noBackups": "没有备用模型 · 将显示错误",
+    "sendImages": "图片发送到 <model></model>",
+    "autoModel": "自动（{model}）",
+    "sameModels": "相同的模型",
+    "chooseModel": "选择模型",
+    "addException": "添加例外",
+    "removeException": "移除例外",
+    "noExceptions": "没有例外。",
+    "modelDefaults": "模型默认值",
+    "searchModels": "搜索模型",
+    "noModels": "未找到模型",
+    "notConnected": "提供商未连接",
+    "removeModel": "移除 {model}",
+    "unsaved": "未保存的更改",
+    "discard": "放弃",
+    "save": "保存",
+    "ifThisFails": "如果失败",
+    "tryInOrder": "依次尝试",
+    "onlyOnHeader": "仅在",
+    "projectDefault": "项目默认 · 所有请求",
+    "kortixPicks": "Kortix 选择",
+    "useMyOwn": "使用我的"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "智能体会话 · {id}",
+    "human": "人工",
+    "listLabel": "模型切换"
   }
 }

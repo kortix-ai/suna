@@ -16,10 +16,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@kortix/ui/dropdown-menu';
-import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import Hint from '@kortix/ui/hint';
+import { AgentMark } from '@kortix/ui/internal/components/agent-mark';
 import { InfoBanner } from '@kortix/ui/info-banner';
-import { inputFocusClasses, inputSurfaceClasses } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
 import { UserAvatar } from '@kortix/ui/user-avatar';
 import {
@@ -27,7 +26,7 @@ import {
   DotsThreeIcon,
   HandIcon,
   PencilSimpleIcon,
-  RobotIcon,
+  PaperPlaneTiltIcon,
   TrashIcon,
   WarningCircleIcon,
 } from '@phosphor-icons/react';
@@ -39,12 +38,14 @@ import { ArtifactCommentComposer, type CommentMentionOption } from './artifact-c
 import { SavedArtifactCommentImage } from './artifact-comment-image';
 import {
   collapseComments,
+  deliveryAgent,
   isOptimistic,
   resolverName,
   threadDeleted,
   threadQuote,
 } from './artifact-discussion-logic';
-import { relativeTime } from './artifact-meta';
+import { ArtifactThreadPresence } from './artifact-live-presence';
+import { AVATAR_SM_EDGE, relativeTime } from './artifact-meta';
 
 interface ComposerState {
   value: string;
@@ -143,7 +144,12 @@ function CommentTime({ at, locale }: { at: string; locale: string }) {
         new Date(at),
       )}
     >
-      <time className="text-muted-foreground shrink-0 text-xs tabular-nums" dateTime={at}>
+      <time
+        // Focusable so the full date is reachable by keyboard, as in Activity.
+        tabIndex={0}
+        className="text-muted-foreground focus-visible:ring-ring shrink-0 rounded-sm text-xs tabular-nums outline-none focus-visible:ring-2"
+        dateTime={at}
+      >
         {relativeTime(at, locale)}
       </time>
     </Hint>
@@ -151,7 +157,16 @@ function CommentTime({ at, locale }: { at: string; locale: string }) {
 }
 
 /** Long comments stop at 6 lines until "Show more". The control appears only when the text overflows. */
-function ClampedBody({ text, children }: { text: string; children: ReactNode }) {
+function ClampedBody({
+  text,
+  muted,
+  children,
+}: {
+  text: string;
+  /** A resolved thread's text recedes, so open threads lead the list. */
+  muted?: boolean;
+  children: ReactNode;
+}) {
   const t = useTranslations('artifacts.discussion');
   const ref = useRef<HTMLParagraphElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -171,7 +186,8 @@ function ClampedBody({ text, children }: { text: string; children: ReactNode }) 
       <p
         ref={ref}
         className={cn(
-          'text-foreground text-sm text-pretty break-words whitespace-pre-wrap',
+          'text-sm text-pretty break-words whitespace-pre-wrap',
+          muted ? 'text-muted-foreground' : 'text-foreground',
           !expanded && 'line-clamp-6',
         )}
       >
@@ -181,7 +197,8 @@ function ClampedBody({ text, children }: { text: string; children: ReactNode }) 
         <button
           type="button"
           aria-expanded={expanded}
-          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring mt-1 rounded-sm text-xs font-medium outline-none focus-visible:ring-2"
+          // A text-xs line is 16 px tall: the hit area reaches 28 px without moving the layout.
+          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring relative mt-1 rounded-sm text-xs font-medium outline-none after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus-visible:ring-2"
           onClick={() => setExpanded((value) => !value)}
         >
           {t(expanded ? 'showLess' : 'showMore')}
@@ -213,6 +230,7 @@ export function ArtifactCommentThreadView({
   onEditChange,
   onSaveEdit,
   onCancelEdit,
+  onLeaveEdit,
   onDelete,
   retryAgentLabel,
   onRetryDelivery,
@@ -238,7 +256,10 @@ export function ArtifactCommentThreadView({
   onEdit: (comment: ArtifactComment) => void;
   onEditChange: (value: string) => void;
   onSaveEdit: (comment: ArtifactComment) => void;
+  /** Cancel: the edit and its draft go away. */
   onCancelEdit: () => void;
+  /** Escape: the editor closes and keeps its draft for the next Edit, as every composer does. */
+  onLeaveEdit: () => void;
   onDelete: (comment: ArtifactComment) => void;
   /** The name of the agent `onRetryDelivery` sends to: the button says where the thread goes. */
   retryAgentLabel?: string;
@@ -250,15 +271,15 @@ export function ArtifactCommentThreadView({
   const deleted = threadDeleted(thread);
   const writable = !readOnly && context?.can_comment === true && !deleted;
   const canResolve = writable && thread.can_resolve === true;
-  const canReply = writable && thread.can_reply === true;
+  // A resolved thread takes no reply: Reopen is its one action.
+  const canReply = writable && thread.can_reply === true && thread.status === 'open';
   const quote = threadQuote(thread);
+  const sentAgent = thread.agent_state === 'sent' ? deliveryAgent(thread) : undefined;
   const located = !!thread.position && !thread.outdated;
   const [allComments, setAllComments] = useState(false);
   const [replyOpen, setReplyOpen] = useState(() => reply.value !== '');
   const replyControl = useRef<HTMLButtonElement>(null);
   const articleRef = useRef<HTMLElement>(null);
-  // Focus that returns to the collapsed control after Escape must not expand it again.
-  const restoringFocus = useRef(false);
   const wasPending = useRef(reply.pending);
   useEffect(() => {
     const finished = wasPending.current && !reply.pending;
@@ -271,15 +292,10 @@ export function ArtifactCommentThreadView({
   const collapseReply = (focusControl: boolean) => {
     setReplyOpen(false);
     if (!focusControl) return;
-    requestAnimationFrame(() => {
-      restoringFocus.current = true;
-      replyControl.current?.focus({ preventScroll: true });
-      restoringFocus.current = false;
-    });
+    requestAnimationFrame(() => replyControl.current?.focus({ preventScroll: true }));
   };
-  const expandReply = () => {
-    if (!restoringFocus.current) setReplyOpen(true);
-  };
+  // The reply line opens on click (or Enter/Space), never on focus: Tab passes over it.
+  const expandReply = () => setReplyOpen(true);
   const resolver =
     resolverName(thread, context, { person: t('person'), agent: t('agent') }) ??
     // An unconfirmed resolve has no resolver yet: the viewer resolved it.
@@ -332,7 +348,7 @@ export function ArtifactCommentThreadView({
               size="sm"
             />
           ) : (
-            <EntityAvatar icon={RobotIcon} label={name} size="sm" />
+            <AgentMark slug={name} tile={AVATAR_SM_EDGE} />
           )}
         </span>
         <div className="min-w-0 flex-1">
@@ -353,12 +369,13 @@ export function ArtifactCommentThreadView({
             ) : null}
             <span className="ml-auto flex shrink-0 items-center">
               {isRoot && canResolve && !unconfirmed && thread.status === 'open' ? (
-                <Hint label={t('resolve')} side="top" sideOffset={4}>
+                <Hint label={t('resolve')} side="bottom" sideOffset={4}>
                   <Button
                     type="button"
                     size="icon-sm"
                     variant="ghost"
                     aria-label={t('resolve')}
+                    className="opacity-0 group-focus-within/thread:opacity-100 group-hover/thread:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
                     disabled={statusPending}
                     aria-busy={statusPending}
                     onClick={onStatus}
@@ -379,7 +396,7 @@ export function ArtifactCommentThreadView({
                       size="icon-sm"
                       variant="ghost"
                       aria-label={t('commentActions')}
-                      className="opacity-0 group-focus-within/comment:opacity-100 group-hover/comment:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
+                      className="opacity-0 group-focus-within/thread:opacity-100 group-hover/thread:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
                     >
                       <DotsThreeIcon className="size-4" />
                     </Button>
@@ -411,7 +428,7 @@ export function ArtifactCommentThreadView({
                 onChange={onEditChange}
                 onSubmit={() => onSaveEdit(comment)}
                 onCancel={onCancelEdit}
-                onEscape={onCancelEdit}
+                onEscape={onLeaveEdit}
                 mentions={mentions}
                 agentsUnavailable={agentsUnavailable}
                 label={t('commentLabel')}
@@ -421,10 +438,11 @@ export function ArtifactCommentThreadView({
                 error={editing.error}
                 compact
                 autoFocus
+                liveTyping={{ thread_id: thread.thread_id }}
               />
             </div>
           ) : (
-            <ClampedBody text={comment.body}>
+            <ClampedBody text={comment.body} muted={thread.status === 'resolved'}>
               {commentBody(comment, mentions, t('person'))}
             </ClampedBody>
           )}
@@ -455,14 +473,11 @@ export function ArtifactCommentThreadView({
       // Focused only by code (a highlight or a deep link), never by Tab.
       tabIndex={-1}
       className={cn(
-        'border-border relative space-y-2.5 border-b px-4 py-3 outline-none',
-        focused ? 'bg-active' : 'hover:bg-hover focus-within:bg-hover',
+        'group/thread relative mx-2 space-y-2 rounded-md px-2 py-2.5 outline-none',
+        // A thread opened from its passage or a link keeps a ring in the highlight colour.
+        focused ? 'bg-active ring-kortix-yellow ring-1' : 'hover:bg-hover focus-within:bg-hover',
       )}
     >
-      {focused ? (
-        // 2px: a whole-pixel bar. w-0.5 is 1.84px (--spacing is 0.23rem) and rounds unevenly.
-        <span aria-hidden className="bg-kortix-yellow absolute inset-y-0 left-0 w-[2px]" />
-      ) : null}
       {pinNumber !== undefined || quote ? (
         <div className="flex items-start gap-2">
           {pinNumber !== undefined ? (
@@ -480,54 +495,22 @@ export function ArtifactCommentThreadView({
               <Hint label={t('focusThread')} side="top" sideOffset={4}>
                 <button
                   type="button"
-                  className="bg-kortix-yellow/15 text-foreground hover:ring-kortix-yellow focus-visible:ring-ring min-w-0 rounded-sm px-1.5 py-0.5 text-left text-xs outline-none hover:ring-1 focus-visible:ring-2"
-                  aria-label={t('focusThread')}
+                  className="border-kortix-yellow text-muted-foreground hover:text-foreground focus-visible:ring-ring min-w-0 border-l-2 pl-2 text-left text-xs outline-none focus-visible:ring-2"
                   onClick={onFocus}
                 >
+                  {/* The passage is the name a screen reader hears, then what the button does. */}
                   <span className="line-clamp-2 break-words">{quote}</span>
+                  <span className="sr-only">{`, ${t('focusThread')}`}</span>
                 </button>
               </Hint>
             ) : (
               <blockquote
-                className="bg-muted text-muted-foreground min-w-0 rounded-sm px-1.5 py-0.5 text-xs"
+                className="border-border text-muted-foreground min-w-0 border-l-2 pl-2 text-xs"
                 aria-label={t('quoteLabel')}
               >
                 <span className="line-clamp-2 break-words">{quote}</span>
               </blockquote>
             )
-          ) : null}
-        </div>
-      ) : null}
-      {thread.status === 'resolved' ? (
-        <div className="text-muted-foreground flex min-h-7 items-center gap-1.5 text-xs">
-          <div className="flex min-w-0 flex-1 items-start gap-1.5">
-            <CheckCircleIcon
-              weight="fill"
-              className="text-kortix-green mt-0.5 size-3.5 shrink-0"
-              aria-hidden
-            />
-            <p className="min-w-0 break-words">
-              {resolver ? t('resolvedBy', { name: resolver }) : t('resolved')}
-              {thread.resolved_at ? (
-                <>
-                  {' · '}
-                  <CommentTime at={thread.resolved_at} locale={locale} />
-                </>
-              ) : null}
-            </p>
-          </div>
-          {canResolve ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost"
-              disabled={statusPending}
-              aria-busy={statusPending}
-              onClick={onStatus}
-            >
-              {statusPending ? <Loading className="size-3.5 shrink-0" /> : null}
-              {t('reopen')}
-            </Button>
           ) : null}
         </div>
       ) : null}
@@ -543,7 +526,11 @@ export function ArtifactCommentThreadView({
         </p>
       ) : thread.agent_state === 'sent' ? (
         <p className="text-muted-foreground flex min-w-0 items-center gap-1.5 text-xs">
-          <RobotIcon className="size-3.5 shrink-0" aria-hidden />
+          {sentAgent ? (
+            <AgentMark slug={sentAgent} />
+          ) : (
+            <PaperPlaneTiltIcon className="size-3.5 shrink-0" aria-hidden />
+          )}
           <span className="truncate">{t('agentSent')}</span>
           {thread.sent_session_id ? (
             <>
@@ -575,7 +562,7 @@ export function ArtifactCommentThreadView({
             <span aria-hidden className="size-6 shrink-0" />
             <button
               type="button"
-              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded-sm text-xs font-medium outline-none focus-visible:ring-2"
+              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring relative rounded-sm text-xs font-medium tabular-nums outline-none after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus-visible:ring-2"
               onClick={() => setAllComments(true)}
             >
               {t('moreReplies', { count: hidden })}
@@ -584,6 +571,41 @@ export function ArtifactCommentThreadView({
         ) : null}
         {tail.map(renderComment)}
       </ol>
+      {thread.status === 'resolved' ? (
+        // The status closes the thread, aligned with the comment text.
+        <div className="text-muted-foreground flex min-w-0 items-center gap-2.5 text-xs">
+          <span aria-hidden className="flex size-6 shrink-0 items-center justify-center">
+            <CheckCircleIcon weight="fill" className="size-3.5" />
+          </span>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="min-w-0 truncate">
+              {resolver ? t('resolvedBy', { name: resolver }) : t('resolved')}
+            </span>
+            {thread.resolved_at ? (
+              <>
+                <span aria-hidden>·</span>
+                <CommentTime at={thread.resolved_at} locale={locale} />
+              </>
+            ) : null}
+          </span>
+          {canResolve ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              className="-mr-2 shrink-0"
+              disabled={statusPending}
+              aria-busy={statusPending}
+              onClick={onStatus}
+            >
+              {statusPending ? <Loading className="size-3.5 shrink-0" /> : null}
+              {t('reopen')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {/* Live: agents working here, "is writing…", "is typing…". */}
+      <ArtifactThreadPresence threadId={thread.thread_id} />
       {thread.agent_error ? (
         <InfoBanner
           tone="destructive"
@@ -612,8 +634,11 @@ export function ArtifactCommentThreadView({
         </InfoBanner>
       ) : null}
       {canReply ? (
-        replyOpen ? (
+        // A draft always shows in its box, so it never reads as a posted reply.
+        replyOpen || reply.value ? (
           <div
+            // Aligned with the comment text: the avatar column stays empty.
+            className="flex gap-2.5"
             onBlur={(event) => {
               if (
                 !event.currentTarget.contains(event.relatedTarget as Node | null) &&
@@ -623,42 +648,49 @@ export function ArtifactCommentThreadView({
                 setReplyOpen(false);
             }}
           >
-            <ArtifactCommentComposer
-              value={reply.value}
-              onChange={onReplyChange}
-              onSubmit={onReply}
-              onCancel={() => {
-                onReplyChange('');
-                collapseReply(true);
-              }}
-              onEscape={() => collapseReply(true)}
-              mentions={mentions}
-              agentsUnavailable={agentsUnavailable}
-              label={t('replyLabel')}
-              placeholder={t('replyPlaceholder')}
-              submitLabel={t('postReply')}
-              pending={reply.pending}
-              error={reply.error}
-              compact
-              autoFocus
-            />
+            <span aria-hidden className="w-6 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <ArtifactCommentComposer
+                value={reply.value}
+                onChange={onReplyChange}
+                onSubmit={onReply}
+                onCancel={() => {
+                  onReplyChange('');
+                  collapseReply(true);
+                }}
+                // Escape leaves the box and keeps the draft: a draft stays in its open box, so
+                // focus goes to the thread; an empty box closes back to the reply line.
+                onEscape={() => {
+                  if (!reply.value.trim()) return collapseReply(true);
+                  requestAnimationFrame(() => articleRef.current?.focus({ preventScroll: true }));
+                }}
+                mentions={mentions}
+                agentsUnavailable={agentsUnavailable}
+                label={t('replyLabel')}
+                placeholder={t('replyPlaceholder')}
+                submitLabel={t('postReply')}
+                pending={reply.pending}
+                error={reply.error}
+                compact
+                autoFocus
+                liveTyping={{ thread_id: thread.thread_id }}
+              />
+            </div>
           </div>
         ) : (
-          <button
-            ref={replyControl}
-            type="button"
-            aria-label={t('replyLabel')}
-            className={cn(
-              inputSurfaceClasses,
-              inputFocusClasses,
-              'flex h-8 w-full min-w-0 items-center px-3 text-left text-sm',
-              reply.value ? 'text-foreground' : 'text-muted-foreground',
-            )}
-            onClick={expandReply}
-            onFocus={expandReply}
-          >
-            <span className="truncate">{reply.value || t('replyPlaceholder')}</span>
-          </button>
+          <div className="flex gap-2.5">
+            <span aria-hidden className="w-6 shrink-0" />
+            <button
+              ref={replyControl}
+              type="button"
+              aria-label={t('replyLabel')}
+              // A quiet line, not a field: the composer opens on click.
+              className="focus-visible:ring-ring text-muted-foreground hover:text-foreground relative flex min-w-0 items-center rounded-sm text-left text-sm outline-none after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] focus-visible:ring-2"
+              onClick={expandReply}
+            >
+              <span className="truncate">{t('replyPlaceholder')}</span>
+            </button>
+          </div>
         )
       ) : null}
     </article>

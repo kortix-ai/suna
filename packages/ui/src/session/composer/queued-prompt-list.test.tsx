@@ -48,11 +48,14 @@ const render = (props: Partial<QueuedPromptListProps>) =>
 const count = (haystack: string, needle: string) => haystack.split(needle).length - 1;
 
 const noop = () => {};
-const keys = (r: QueueRow, handlers: Parameters<typeof queuedRowActions>[1] = {
-  onEdit: noop,
-  onRetry: noop,
-  onRemove: noop,
-}) => queuedRowActions(r, handlers).map((action) => action.key);
+const keys = (
+  r: QueueRow,
+  handlers: Parameters<typeof queuedRowActions>[1] = {
+    onEdit: noop,
+    onRetry: noop,
+    onRemove: noop,
+  },
+) => queuedRowActions(r, handlers).map((action) => action.key);
 
 describe('QueuedPromptList', () => {
   test('renders nothing at all when nothing is queued or held', () => {
@@ -61,21 +64,14 @@ describe('QueuedPromptList', () => {
     expect(render({})).toBe('');
   });
 
-  test('one row per entry, in order, with the full text', () => {
-    const markup = render({
-      rows: [row({ id: 'a', text: 'first line\nsecond line' }), row({ id: 'b' })],
-    });
-    expect(markup.indexOf('data-queued-prompt-id="a"')).toBeLessThan(
-      markup.indexOf('data-queued-prompt-id="b"'),
-    );
-    expect(markup).toContain('first line\nsecond line');
-    expect(markup).not.toContain('Queue paused');
-  });
-
   test('Remove only where the server will honour a removal', () => {
     expect(keys(row({ id: 'queued' }))).toContain('remove');
-    expect(keys(row({ id: 'delivering', state: 'delivering', removable: false }))).not.toContain('remove');
-    expect(keys(row({ id: 'sending', state: 'sending', removable: false }))).not.toContain('remove');
+    expect(keys(row({ id: 'delivering', state: 'delivering', removable: false }))).not.toContain(
+      'remove',
+    );
+    expect(keys(row({ id: 'sending', state: 'sending', removable: false }))).not.toContain(
+      'remove',
+    );
   });
 
   test('the row actions live in one menu per row: no inline buttons, one trigger per row with actions', () => {
@@ -83,7 +79,13 @@ describe('QueuedPromptList', () => {
       rows: [
         row({ id: 'q' }),
         // Nothing to do on this row, so it draws no menu trigger.
-        row({ id: 'd', state: 'delivering', removable: false, takeBackEligible: false, interruptible: false }),
+        row({
+          id: 'd',
+          state: 'delivering',
+          removable: false,
+          takeBackEligible: false,
+          interruptible: false,
+        }),
       ],
       onEdit: () => {},
       onStopAndSend: () => {},
@@ -114,21 +116,36 @@ describe('QueuedPromptList', () => {
     ).toEqual(['edit', 'sendNow', 'stopAndSend', 'remove']);
   });
 
-  test('the action matrix: Send now on the one queued own row only; a failed row keeps Retry and gets no second button; delivering, sending and another member\'s rows get nothing to hurry', () => {
+  test("the action matrix: Send now on the one queued own row only; a failed row keeps Retry and gets no second button; delivering, sending and another member's rows get nothing to hurry", () => {
     // One render pins the whole matrix, so the failed-row half is not a
     // vacuous pass at the base (where no Send now exists anywhere): the
     // queued row's counted Send now already fails there.
     expect(keys(row({ id: 'q' }))).toContain('sendNow');
-    expect(keys(row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false }))).toEqual([
-      'retry',
-      'remove',
-    ]);
+    expect(
+      keys(row({ id: 'f', state: 'failed', lastError: 'boom', takeBackEligible: false })),
+    ).toEqual(['retry', 'remove']);
     const hurry = (r: QueueRow) => keys(r).filter((k) => k === 'sendNow' || k === 'retry');
     expect(
-      hurry(row({ id: 'd', state: 'delivering', removable: false, takeBackEligible: false, interruptible: false })),
+      hurry(
+        row({
+          id: 'd',
+          state: 'delivering',
+          removable: false,
+          takeBackEligible: false,
+          interruptible: false,
+        }),
+      ),
     ).toEqual([]);
     expect(
-      hurry(row({ id: 's', state: 'sending', removable: false, takeBackEligible: false, interruptible: false })),
+      hurry(
+        row({
+          id: 's',
+          state: 'sending',
+          removable: false,
+          takeBackEligible: false,
+          interruptible: false,
+        }),
+      ),
     ).toEqual([]);
     expect(hurry(row({ id: 'o', fromAnotherMember: true }))).toEqual([]);
   });
@@ -140,11 +157,13 @@ describe('QueuedPromptList', () => {
     // clears the steer delivery when it writes the fallback
     // (command-transitions.ts), so the two rows here are the two shapes the
     // projection can produce.
-    expect(keys(row({ id: 'steer', steer: true as const, takeBackEligible: false }))).toEqual(['remove']);
+    expect(keys(row({ id: 'steer', steer: true as const, takeBackEligible: false }))).toEqual([
+      'remove',
+    ]);
     expect(keys(row({ id: 'fallback', steerFallback: 'turn_ended' }))).toContain('sendNow');
   });
 
-  test('a held row still offers Send now — the hold\'s per-row way out (KRTX-683 releases its batch)', () => {
+  test("a held row still offers Send now — the hold's per-row way out (KRTX-683 releases its batch)", () => {
     const markup = render({ rows: [row({ id: 'h' })], heldCount: 1 });
     expect(markup).toContain('Queue paused');
     expect(keys(row({ id: 'h' }))).toContain('sendNow');
@@ -202,9 +221,13 @@ describe('QueuedPromptList', () => {
   });
 });
 
-
 test('Queue List rows carry no waiting or sending caption', () => {
-  const markup = render({ rows: [row({ id: 'waiting' }), row({ id: 'sending', state: 'delivering', removable: false, takeBackEligible: false })] });
+  const markup = render({
+    rows: [
+      row({ id: 'waiting' }),
+      row({ id: 'sending', state: 'delivering', removable: false, takeBackEligible: false }),
+    ],
+  });
   expect(markup).toContain('aria-label="Queue List"');
   expect(markup).not.toContain('Waiting');
   expect(markup).not.toContain('Sending');
@@ -237,9 +260,88 @@ describe('steering rows', () => {
       row({ id: 'delivering', state: 'delivering', removable: false, interruptible: false }),
       row({ id: 'sending', state: 'sending', removable: false, interruptible: false }),
     ];
-    expect(rows.filter((r) => keys(r, { onStopAndSend: noop }).includes('stopAndSend')).map((r) => r.id)).toEqual([
-      'waiting',
-    ]);
+    expect(
+      rows.filter((r) => keys(r, { onStopAndSend: noop }).includes('stopAndSend')).map((r) => r.id),
+    ).toEqual(['waiting']);
     expect(rows.some((r) => keys(r).includes('stopAndSend'))).toBe(false);
   });
+});
+// Queue summaries must not expose the platform transport envelope.
+test('a platform report uses the full text and a readable summary', () => {
+  const text =
+    'A background subagent you started has finished. This message is from the platform, not from the user.\ntask_id: synthetic-child\nstatus: completed\n\n<kortix_system type="session-report" source="subagent"><session-report><session-id>synthetic-child</session-id><project>reviewer</project><prompt>Review draft</prompt><result><task_result>Review complete.</task_result></result></session-report></kortix_system>';
+  const markup = render({
+    rows: [
+      row({
+        id: 'notice',
+        synthetic: true,
+        text: text.slice(0, 100),
+        rawText: text,
+      }),
+    ],
+  });
+  expect(markup).toContain('Review draft');
+  expect(markup).toContain('Agent update');
+  expect(markup).toContain('Review complete.');
+  expect(markup).not.toContain('Review draft finished');
+  expect(markup).not.toContain('task_id:');
+  expect(markup).not.toContain('kortix_system');
+  expect(markup).toContain('aria-expanded="false"');
+});
+
+test('a shared next-step caption is stated once for the queue', () => {
+  const markup = render({
+    rows: [row({ id: 'a', steer: true }), row({ id: 'b', steer: true })],
+  });
+  expect(count(markup, 'Read at next step')).toBe(1);
+});
+
+test('child failure is an update, distinct from failed delivery', () => {
+  const text =
+    'A background subagent you started has finished.\ntask_id: synthetic-child\nstatus: failed\n\n<kortix_system type="session-report" source="subagent"><session-report><prompt>Check links</prompt><result><task_error>The site timed out.</task_error></result></session-report></kortix_system>';
+  const markup = render({ rows: [row({ id: 'child-failed', synthetic: true, rawText: text })] });
+  expect(markup).toContain('Didn’t finish');
+  expect(markup).toContain('The site timed out.');
+  expect(markup).not.toContain('Not sent');
+});
+
+test('paused rows do not claim next-step delivery', () => {
+  const markup = render({
+    heldCount: 2,
+    rows: [row({ id: 'a', steer: true }), row({ id: 'b', steer: true })],
+  });
+  expect(markup).toContain('Queue paused');
+  expect(markup).not.toContain('Read at next step');
+});
+
+test('plain messages keep FIFO render order', () => {
+  const markup = render({
+    rows: [row({ id: 'a', text: 'First message' }), row({ id: 'b', text: 'Second message' })],
+  });
+  expect(markup.indexOf('data-queued-prompt-id="a"')).toBeLessThan(
+    markup.indexOf('data-queued-prompt-id="b"'),
+  );
+});
+
+test('unrecognized synthetic context has a neutral source label', () => {
+  const markup = render({
+    rows: [
+      row({
+        id: 'unknown',
+        synthetic: true,
+        text: '<kortix_system>Internal context</kortix_system>',
+        rawText: '<kortix_system>Internal context</kortix_system>',
+      }),
+    ],
+  });
+  expect(markup).toContain('Agent update');
+  expect(markup).not.toContain('Internal context');
+  expect(markup).not.toContain('kortix_system');
+});
+
+test('an untitled report uses its excerpt only once', () => {
+  const text =
+    'A background subagent you started has finished.\ntask_id: synthetic-child\nstatus: completed\n\n<kortix_system type="session-report" source="subagent"><session-report><result><task_result>Review complete.</task_result></result></session-report></kortix_system>';
+  const markup = render({ rows: [row({ id: 'untitled', synthetic: true, rawText: text })] });
+  expect(count(markup, 'Review complete.')).toBe(1);
 });

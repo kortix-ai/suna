@@ -3,7 +3,7 @@ import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 type SandboxEndpoint = { url: string; headers: Record<string, string> };
 type QuickQueueRequest = (url: string, init: RequestInit) => Promise<Response>;
 type QuickQueueControl =
-  | { kind: 'arm'; promptId: string; opencodeSessionId: string; messageId: string }
+  | { kind: 'arm'; promptId: string; runtimeSessionId: string; messageId: string }
   | { kind: 'disarm'; promptId: string }
   | { kind: 'disarm-all' };
 
@@ -20,9 +20,7 @@ export async function sendQuickQueueControl(
   const body = control.kind === 'arm'
     ? {
         prompt_id: control.promptId,
-        runtime_session_id: control.opencodeSessionId,
-        // The pre-W3 name, for a daemon built before W3.
-        opencode_session_id: control.opencodeSessionId,
+        runtime_session_id: control.runtimeSessionId,
         turn_message_id: control.messageId,
       }
     : control.kind === 'disarm'

@@ -2,7 +2,7 @@
 // A space is a channel of the project or the caller's DM with one agent. A
 // session filed into a space carries its `space_id` (`createProjectSession`,
 // `listProjectSessions({ spaceId })`). Every route answers 403
-// `feature_disabled` while the project's `project_channels` flag is off.
+// `feature_disabled` while the project's `chat` flag is off.
 
 import { backendApi } from '../../http/api-client';
 import type { App } from './apps';
@@ -43,6 +43,35 @@ export interface ProjectSpace {
    * `public`. Absent on older APIs (read it as `public`).
    */
   visibility?: 'public' | 'private';
+  /**
+   * The space's tabs after Chat, in order. Chat is always the first tab and
+   * is never listed. Absent on older APIs (read it as `[]`).
+   */
+  tabs?: ProjectSpaceTab[];
+}
+
+/** What a space tab shows. Same values as the API's `SPACE_TAB_KINDS`. */
+export type ProjectSpaceTabKind = 'file' | 'folder' | 'artifact' | 'app' | 'link';
+
+/**
+ * One tab of a space after Chat. `ref` names its target: a Drive file path
+ * (`file`; any file, an `.html` page renders as the page), a Drive folder path
+ * (`folder`), an artifact id (`artifact`), an App slug (`app`) or an https URL
+ * (`link`).
+ */
+export interface ProjectSpaceTab {
+  /** Stable; 1–64 of `A-Za-z0-9_-`. */
+  id: string;
+  /** 1–60 characters. */
+  title: string;
+  kind: ProjectSpaceTabKind;
+  ref: string;
+  /**
+   * A `link` tab: the server fetched the page on save and it allows framing.
+   * False: show a link card, not a frame. Set by the server; a value sent in
+   * `setProjectSpaceTabs` is ignored. Absent on other kinds.
+   */
+  embeddable?: boolean;
 }
 
 export interface CreateProjectSpaceInput {
@@ -148,6 +177,62 @@ export async function createProjectSpace(projectId: string, input: CreateProject
 export async function updateProjectSpace(projectId: string, spaceId: string, input: UpdateProjectSpaceInput) {
   return unwrap(
     await backendApi.patch<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}`, input, { showErrors: false }),
+  );
+}
+
+/**
+ * Replace a space's tabs after Chat with `tabs`, in order: add, remove,
+ * rename and reorder in one call. At most 20; every tab needs a `ref` (else
+ * 400). The server sets each link tab's `embeddable`. A channel's editor (`can_edit`), a DM's
+ * owner, or a session token of a thread in the space may; anyone else rejects
+ * with 403 `forbidden`. The caller shows the error, so it never reaches the
+ * host error handler. Resolves the space with its new tabs.
+ */
+export async function setProjectSpaceTabs(projectId: string, spaceId: string, tabs: ProjectSpaceTab[]) {
+  return unwrap(
+    await backendApi.put<ProjectSpace>(`/projects/${projectId}/spaces/${spaceId}/tabs`, { tabs }, { showErrors: false }),
+  );
+}
+
+/**
+ * A space's Proactive settings (flag `spaces_proactive`, with `chat`): its
+ * watcher reads what happens in the space and writes only when it matters.
+ * Same fields as the API's `GET /spaces/:spaceId/proactive`.
+ */
+export interface ProjectSpaceProactive {
+  space_id: string;
+  /** The watcher is on. Off until someone turns it on. */
+  enabled: boolean;
+  /** A short brief at 09:00 in `brief_timezone`, on days with events. */
+  daily_brief: boolean;
+  /** IANA zone of the daily brief, such as `Europe/Berlin`. */
+  brief_timezone: string;
+  /** The caller may change these: the channel's creator, a project manager or the DM's owner. Never a session token. */
+  can_edit: boolean;
+}
+
+/** A change to {@link ProjectSpaceProactive}: only the fields given change. */
+export interface ProjectSpaceProactiveInput {
+  enabled?: boolean;
+  daily_brief?: boolean;
+  /** An IANA zone; an unknown one rejects with 400 `invalid_timezone`. */
+  brief_timezone?: string;
+}
+
+/** A space's Proactive settings. 403 `feature_disabled` while `spaces_proactive` is off. */
+export async function getProjectSpaceProactive(projectId: string, spaceId: string) {
+  return unwrap(await backendApi.get<ProjectSpaceProactive>(`/projects/${projectId}/spaces/${spaceId}/proactive`, { showErrors: false }));
+}
+
+/**
+ * Turn a space's watcher or its daily brief on or off. Anyone but the
+ * channel's creator, a project manager or the DM's owner rejects with 403
+ * `forbidden`. The caller shows the error, so it never reaches the host
+ * error handler. Resolves the stored settings.
+ */
+export async function setProjectSpaceProactive(projectId: string, spaceId: string, input: ProjectSpaceProactiveInput) {
+  return unwrap(
+    await backendApi.put<ProjectSpaceProactive>(`/projects/${projectId}/spaces/${spaceId}/proactive`, input, { showErrors: false }),
   );
 }
 

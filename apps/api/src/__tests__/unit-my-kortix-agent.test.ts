@@ -28,7 +28,7 @@ describe('My Kortix agent', () => {
         {
           name: 'mykortix',
           path: '/project/AGENTS.md',
-          source: 'opencode',
+          source: 'kortix.yaml',
           description: 'project override',
           mode: 'primary',
         },
@@ -41,10 +41,8 @@ describe('My Kortix agent', () => {
       manifest: {},
       manifest_health: manifestHealthWithout('missing'),
       env: { required: [], optional: [] },
-      open_code_raw: null,
       default_agent: null,
-      open_code_default_agent: null,
-      agent_discovery: 'opencode',
+      agent_discovery: 'declarative',
     });
 
     expect(config.agents.filter((agent) => agent.name === 'mykortix')).toHaveLength(1);
@@ -59,7 +57,6 @@ describe('My Kortix agent', () => {
         kortix_permissions: 'all',
       },
     });
-    expect(config.open_code_default_agent).toBe('mykortix');
     expect(config.default_agent).toBe('mykortix');
   });
 

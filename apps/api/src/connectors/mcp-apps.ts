@@ -43,7 +43,7 @@ import {
   variantRank,
 } from './connector-catalog';
 
-export type KortixOAuthClientName = 'google' | 'github' | 'slack' | 'hubspot' | 'asana' | 'box';
+export type KortixOAuthClientName = 'google' | 'github' | 'slack' | 'hubspot' | 'asana' | 'box' | 'x';
 
 export interface KortixClientAuth {
   kind: 'kortix_client';
@@ -160,6 +160,14 @@ export const MCP_APPS: readonly McpApp[] = [
   {
     slug: 'box', name: 'Box', description: 'Files, folders and Box AI.', domain: 'box.com', categories: ['productivity'], url: 'https://mcp.box.com', icon: true,
     auth: { kind: 'kortix_client', client: 'box', issuer: 'https://api.box.com', authorizationUrl: 'https://account.box.com/api/oauth2/authorize', tokenUrl: 'https://api.box.com/oauth2/token', revocationUrl: 'https://api.box.com/oauth2/revoke', tokenEndpointAuthMethod: 'client_secret_post', scopes: [] },
+  },
+  {
+    // X publishes RFC 9728/8414 metadata but no registration endpoint (probed
+    // 2026-11-04). A confidential client authenticates with Basic only
+    // (docs.x.com, OAuth 2.0 user access token); `offline.access` is what makes
+    // X issue a refresh token, without it the 2 h access token cannot renew.
+    slug: 'x', name: 'X', description: 'Read and post on X as you.', domain: 'x.com', categories: ['marketing', 'socialmedia'], url: 'https://api.x.com/mcp', icon: false,
+    auth: { kind: 'kortix_client', client: 'x', issuer: 'https://api.x.com', authorizationUrl: 'https://x.com/i/oauth2/authorize', tokenUrl: 'https://api.x.com/2/oauth2/token', revocationUrl: 'https://api.x.com/2/oauth2/revoke', tokenEndpointAuthMethod: 'client_secret_basic', scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'] },
   },
 ];
 
@@ -445,11 +453,18 @@ export async function connectorsV2Items(
     const key = v2AppKey(item.name);
     if (key && !domainOf.has(key)) domainOf.set(key, item.domain);
   }
-  const items = [
-    ...kortix,
-    ...direct,
-    ...toolkits.map((card) => composioCatalogItem(card, domainOf.get(v2AppKey(card.name)))),
-  ];
+  // A toolkit whose name matches no record joins the registry's `<slug>.com`:
+  // Composio's YouTube (`youtube`) is the registry's "YouTube Data"
+  // (youtube.com), Twitter is "twitter.com – current". Without this the app
+  // lists twice, and the registry card asks for an API key or OAuth client.
+  const registryDomains = new Set(direct.map((item) => item.domain));
+  const toolkitDomain = (card: ComposioCatalogCard): string | undefined => {
+    const named = domainOf.get(v2AppKey(card.name));
+    if (named) return named;
+    const slugDomain = `${card.slug.toLowerCase()}.com`;
+    return registryDomains.has(slugDomain) ? slugDomain : undefined;
+  };
+  const items = [...kortix, ...direct, ...toolkits.map((card) => composioCatalogItem(card, toolkitDomain(card)))];
   // Every record stays: a search must still find a worse surface of an app,
   // and the registry files several apps under one domain (Microsoft Graph).
   // Records come grouped by domain, best way in first, so `list` and the

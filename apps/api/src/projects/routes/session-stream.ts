@@ -113,6 +113,7 @@ import {
   parseSseFrames,
 } from '../lib/session-runtime-transport';
 import { isV1TranscriptEvent } from '@kortix/api-contract/session-log';
+import { isParkedRuntimeDownReason } from '@kortix/api-contract/wire-values';
 
 /** Our own keepalive cadence. Matches the daemon's, so a stream with no box
  *  attached still proves liveness on the same clock a healthy one does. */
@@ -621,6 +622,8 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       type: 'kortix.runtime.status',
       state: 'down',
       reason,
+      // The decision, not only the string: a client never parses `reason`.
+      parked: isParkedRuntimeDownReason(reason),
       at: Date.now(),
     });
   };
@@ -812,7 +815,7 @@ function watchRuntimeHealth(args: PumpArgs, externalId: string, signal: AbortSig
  *
  * The envelope is written back out with exactly two additions — `channel` and
  * `epoch` — and no other change. `seq` is the daemon's number and stays the
- * daemon's number; `payload` is OpenCode's `properties` verbatim, which is what
+ * daemon's number; `payload` is the runtime event's `properties` verbatim, which is what
  * lets an existing SDK reducer apply it unchanged.
  */
 async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: string): Promise<void> {
@@ -862,8 +865,8 @@ async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: s
     const runtimeSessionId =
       typeof payload.runtime_session_id === 'string'
         ? payload.runtime_session_id
-        : typeof payload.opencode_session_id === 'string'
-          ? payload.opencode_session_id
+        : typeof payload.runtime_session_id === 'string'
+          ? payload.runtime_session_id
           : null;
     if (runtimeSessionId) args.onRuntimeTurnEnd(runtimeSessionId);
   }

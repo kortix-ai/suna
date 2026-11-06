@@ -8,6 +8,7 @@ import {
   sameApiBase,
 } from '../api/auth.ts';
 import { cliDeviceRequest } from '../api/sdk.ts';
+import { pollDeviceGrant, type DevicePollAnswer } from './device-login-poll.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
 import {
@@ -331,22 +332,17 @@ async function deviceLogin(apiBase: string, dashboardUrl?: string): Promise<stri
   const deadline = Date.now() + 600_000;
   const signal = AbortSignal.timeout(600_000);
   try {
-    const grant = await cliDeviceRequest<{ device_code: string; user_code: string; expires_in: number; interval: number; verification_uri?: string }>(apiBase, 'start', {}, signal);
+    const grant = await cliDeviceRequest<{ device_code: string; user_code: string; expires_in?: number; interval?: number; verification_uri?: string }>(apiBase, 'start', {}, signal);
     const dash = dashboardUrl?.trim().replace(/\/+$/, '') || deriveFrontendFromApiBase(apiBase);
     const approvalPage = grant.verification_uri || `${dash}/cli/authorize`;
     const url = `${approvalPage}?user_code=${encodeURIComponent(grant.user_code)}`;
     process.stdout.write(`\nOpen ${url} in any browser.\nConfirm code: ${grant.user_code}\nWaiting for approval (Ctrl+C to cancel)…\n`);
     openInBrowser(url);
-    let interval = Math.max(5, grant.interval) * 1000;
-    const expires = Math.min(deadline, Date.now() + Math.min(600, grant.expires_in) * 1000);
-    while (Date.now() + interval < expires) {
-      await new Promise(resolve => setTimeout(resolve, interval));
-      const result = await cliDeviceRequest<{ token?: string; error?: string }>(apiBase, 'poll', { device_code: grant.device_code }, signal);
-      if (result.token) return result.token;
-      if (result.error === 'slow_down') interval += 5000;
-      else if (result.error !== 'authorization_pending') throw new Error(result.error || 'Invalid device login response');
-    }
-    throw new Error('Device login expired. Run kortix login --device again.');
+    return await pollDeviceGrant(grant, {
+      poll: () => cliDeviceRequest<DevicePollAnswer>(apiBase, 'poll', { device_code: grant.device_code }, signal),
+      sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+      now: Date.now,
+    }, deadline);
   } catch (error) {
     process.stderr.write(`${status.err((error as Error).message)}\n`);
     return null;

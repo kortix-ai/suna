@@ -21,10 +21,10 @@ import {
   renderAnswerPrompt,
   resolvePendingQuestion,
 } from '../lib/pending-questions';
+import { askExpiresAt, liveWaitMsFor, surfaceSessionIdOf } from '../lib/session-asks';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import {
-  normalizeRuntimeRelayBody,
   type TurnQuestionRelayBody,
   TurnQuestionRelayBodySchema,
 } from '@kortix/api-contract/runtime-relay';
@@ -43,8 +43,8 @@ export function registerTurnQuestionsRoutes(): void {
   // agent calls the `question` tool, the sandbox relays its RuntimeQuestion[]
   // (`@kortix/api-contract/transcript`) here.
   // We post a Block Kit form, block on Submit, return `answers: string[][]`,
-  // and the sandbox POSTs the same payload to opencode's
-  // /question/{requestID}/reply so the tool resumes.
+  // and the sandbox POSTs the same payload to the box's
+  // `/question/{requestID}/reply` route so the tool resumes.
 
   projectsApp.openapi(
     createRoute({
@@ -106,8 +106,7 @@ export function registerTurnQuestionsRoutes(): void {
 
       let body: Partial<TurnQuestionRelayBody>;
       try {
-        // A daemon built before W3 names the runtime session `opencode_session_id`.
-        body = normalizeRuntimeRelayBody((await c.req.json()) as typeof body);
+        body = (await c.req.json()) as typeof body;
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400);
       }
@@ -141,6 +140,7 @@ export function registerTurnQuestionsRoutes(): void {
           accountId: projectSessions.accountId,
           origin: projectSessions.origin,
           metadata: projectSessions.metadata,
+          parentSessionId: projectSessions.parentSessionId,
           projectMetadata: projects.metadata,
         })
         .from(projectSessions)
@@ -198,7 +198,7 @@ export function registerTurnQuestionsRoutes(): void {
       // extension: the reaper renews nothing for it and ends it after the wait
       // bound (`turnWaitingMaxMs`, box-reaper.ts `holdWaitingTurn`), and its box
       // is parked. The bounded-lifetime invariant depends on it. What parking
-      // used to destroy is the question itself: opencode restarts cold, so the
+      // used to destroy is the question itself: the runtime restarts cold, so the
       // user returned to a session that had forgotten what it asked. Storing it
       // out here lets the box die on time and the conversation survive it. See
       // lib/pending-questions.ts.
@@ -208,6 +208,10 @@ export function registerTurnQuestionsRoutes(): void {
       // deleted.
       const resolvedAccountId = (c as any).get('accountId') as string | undefined;
       const pendingRequestId = body.request_id?.trim() || `q-${sessionId}`;
+      // A daemon that parks says so (`parkable`): the question then outlives
+      // the turn and waits in Review until a person answers (lib/session-asks.ts).
+      const parkable = (body as { parkable?: unknown }).parkable === true;
+      const liveWaitMs = liveWaitMsFor(turnQuestionSession);
       let notify = false;
       let pendingId: string | null = null;
       if (resolvedAccountId) {
@@ -216,8 +220,11 @@ export function registerTurnQuestionsRoutes(): void {
           projectId,
           sessionId,
           requestId: pendingRequestId,
-          opencodeSessionId: body.runtime_session_id ?? null,
+          runtimeSessionId: body.runtime_session_id ?? null,
           questions,
+          parkable,
+          surfaceSessionId: await surfaceSessionIdOf(sessionId, turnQuestionSession),
+          expiresAt: parkable ? askExpiresAt() : null,
         }).catch((err) => {
           // Never fail the relay on a bookkeeping error — the agent is blocked and
           // the channel render is still worth attempting.
@@ -331,8 +338,10 @@ export function registerTurnQuestionsRoutes(): void {
       }
 
       // A trigger-started session has nobody to answer: release the call now so
-      // the turn finishes and the next fire is not queued behind it.
-      if (!channel && runtimeRequestId && isUnattendedSessionMetadata(turnQuestionSession.metadata)) {
+      // the turn finishes and the next fire is not queued behind it. A daemon
+      // that parks needs no release: `live_wait_ms: 0` parks the question at
+      // once, and it waits in Review instead of being answered by a sentinel.
+      if (!channel && runtimeRequestId && !parkable && isUnattendedSessionMetadata(turnQuestionSession.metadata)) {
         const answers = Array.from({ length: Math.max(1, questions.length) }, () => [unattendedQuestionSentinel()]);
         const released = await releaseRuntimeQuestion(sessionId, runtimeRequestId, answers);
         if (released === 'unreachable') {
@@ -347,10 +356,11 @@ export function registerTurnQuestionsRoutes(): void {
         }
       }
 
+      // `live_wait_ms` (AskRelayResponse): how long the runtime holds the call before it parks.
       if (!result.ok) {
-        return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
+        return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error, live_wait_ms: liveWaitMs });
       }
-      return c.json({ ok: true, persisted: true, answers: result.answers });
+      return c.json({ ok: true, persisted: true, answers: result.answers, live_wait_ms: liveWaitMs });
     },
   );
 
@@ -478,6 +488,8 @@ export function registerTurnQuestionsRoutes(): void {
         idempotencyKey: `question:${sessionId}:${requestId}`,
         sessionId,
         text: renderAnswerPrompt(open.questions, answers),
+        // Harness context, not the person's words: the transcript draws it as the answered question.
+        parts: [{ type: 'text', text: renderAnswerPrompt(open.questions, answers), synthetic: true }],
         userId: loaded.userId,
       });
 

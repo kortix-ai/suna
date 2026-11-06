@@ -112,6 +112,13 @@ export const SESSION_TRANSITIONS = {
    * list until the idle reaper stopped the box (~15 min, KRTX-1046).
    */
   parkTurnError: { from: ['running'], to: 'stopped' },
+  /**
+   * Proxy traffic reached a running session's box (`markSandboxUsed`): the
+   * write only refreshes `updated_at`. Traffic never moves a session INTO
+   * `running`: a parked (`parkTurnError`), failed, provisioning or deleted
+   * session keeps its status, and a prompt's `wake` is the only way back.
+   */
+  touch: { from: ['running'], to: 'running' },
 } as const satisfies Record<string, SessionTransitionRule>;
 
 export const SANDBOX_TRANSITIONS = {
@@ -162,6 +169,20 @@ export const SANDBOX_TRANSITIONS = {
   stop: { from: LIVE_SANDBOX, to: 'stopped' },
   /** A live box parked after a failed start (`parkEstablishedRuntime`). */
   park: { from: ['active'], to: 'stopped' },
+  /**
+   * Proxy traffic flowed through a stopped or errored box whose deadline is
+   * still live (`markSandboxUsed`): a provider blip, and the box runs. The
+   * caller guards on `deadline_at > now()`. A `provisioning` row belongs to
+   * its restart owner, and an `archived` row to a deleted session: neither is
+   * healed, even when the read that saw `stopped` raced their write.
+   */
+  heal: { from: ['stopped', 'error'], to: 'active' },
+  /**
+   * The proxy exhausted its retries and the provider confirmed the box dead
+   * (`markSandboxErrored`). Only an `active` row: a `provisioning` row's owner
+   * holds a lease, and a stopped or archived row is not expected to answer.
+   */
+  proxyError: { from: ['active'], to: 'error' },
 } as const satisfies Record<string, SandboxTransitionRule>;
 
 /**
@@ -321,6 +342,21 @@ export async function transitionSandbox(
     )
     .returning();
   return moved ?? null;
+}
+
+/**
+ * Account closure: every live session of the accounts goes `stopped`
+ * (`reconcileStuck`, deleted sessions included). The sessions it moved.
+ */
+export async function settleLiveSessionsOfAccounts(accountIds: readonly string[], at: Date = new Date()): Promise<string[]> {
+  if (accountIds.length === 0) return [];
+  const rule: SessionTransitionRule = SESSION_TRANSITIONS.reconcileStuck;
+  const rows = await db
+    .update(projectSessions)
+    .set({ status: rule.to, updatedAt: at })
+    .where(and(inArray(projectSessions.accountId, [...accountIds]), statusIn(projectSessions.status, rule.from, ANY_SESSION)))
+    .returning({ sessionId: projectSessions.sessionId });
+  return rows.map((row) => row.sessionId);
 }
 
 class RuntimeTransitionLost extends Error {}

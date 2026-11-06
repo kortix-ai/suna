@@ -12,7 +12,6 @@ import { Skeleton } from '../../../primitives/skeleton';
 import { errorToast, successToast } from '../../../primitives/toast';
 import { TypeToConfirmDialog } from '../../../primitives/type-to-confirm-dialog';
 import { ErrorState } from '../../../primitives/error-state';
-import { buildProjectEditPatch } from './project-edit-patch';
 import {
   ProjectIconField,
   type ProjectIconValue,
@@ -375,9 +374,12 @@ function GeneralWorkspaceCard({
   }, [debouncedName, canManage, project.name, isRenamePending, mutateName]);
 
   const iconMutation = useMutation({
-    mutationFn: (patch: Partial<ProjectInput>) => updateProject(project.project_id, patch),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
+    // The project id travels with each save: a debounced save runs after the
+    // pick, and by then this tab may be showing a different project.
+    mutationFn: ({ projectId, patch }: { projectId: string; patch: Partial<ProjectInput> }) =>
+      updateProject(projectId, patch),
+    onSuccess: (updated, { projectId }) => {
+      queryClient.setQueryData(qk.project.summary(projectId), updated);
     },
     onError: (error: Error) => errorToast(error.message || t('iconUpdateFailed')),
     // The icon is read from THREE caches and this mutation used to write back
@@ -398,20 +400,72 @@ function GeneralWorkspaceCard({
     //
     // `onSettled`, not `onSuccess`: a rejected save must re-sync too, or the
     // caches keep whatever the failed attempt left them believing.
-    onSettled: () => invalidateProjectIdentity(queryClient, project.project_id),
+    onSettled: (_data, _error, { projectId }) => invalidateProjectIdentity(queryClient, projectId),
   });
 
   // `draft.name` is always the SERVER-confirmed name (`project.name`), never
   // the local `name` draft above — so an icon pick can never accidentally
   // also send a half-typed, not-yet-debounced rename. See this file's header
   // comment.
+  // The picker stays open while you try icons and colours, so the trigger
+  // shows a local draft at once and the PATCH waits for a 400 ms pause: a
+  // colour drag sends one request, not one per pointer move.
+  //
+  // Each save sends the chosen icon outright rather than a diff against
+  // `project`: while an earlier PATCH is in flight `project` is stale, and a
+  // diff would skip going back to the stored icon. Saves chain, so they reach
+  // the server in pick order. Leaving the page sends a pending save at once
+  // instead of dropping it. The draft drops when the last save settles.
+  const [draftIcon, setDraftIcon] = useState<ProjectIconValue | undefined>(undefined);
+  const iconSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingIcon = useRef<{ projectId: string; icon: ProjectIconValue } | undefined>(undefined);
+  const iconSaveChain = useRef<Promise<unknown>>(Promise.resolve());
+  const iconSaveSeq = useRef(0);
+  const flushIcon = () => {
+    if (iconSaveTimer.current) clearTimeout(iconSaveTimer.current);
+    iconSaveTimer.current = null;
+    const pending = pendingIcon.current;
+    if (pending === undefined) return;
+    pendingIcon.current = undefined;
+    const { projectId, icon: next } = pending;
+    const seq = ++iconSaveSeq.current;
+    const patch: Partial<ProjectInput> =
+      next === null
+        ? { icon: null, icon_glyph: null }
+        : 'glyph' in next
+          ? { icon_glyph: next.glyph }
+          : { icon: next.emoji };
+    iconSaveChain.current = iconSaveChain.current
+      .catch(() => undefined)
+      .then(() => iconMutation.mutateAsync({ projectId, patch }))
+      // The mutation's own onError already toasts the failure.
+      .catch(() => undefined)
+      .finally(() => {
+        // Only the latest save may drop the draft: an earlier one settling
+        // while a later save is queued would flash the older icon.
+        if (seq === iconSaveSeq.current && pendingIcon.current === undefined) setDraftIcon(undefined);
+      });
+  };
+  const flushIconRef = useRef(flushIcon);
+  useEffect(() => {
+    flushIconRef.current = flushIcon;
+  });
+  useEffect(() => () => flushIconRef.current(), []);
+  // Switching project in place: send the pending pick to the project it was
+  // made on, and drop the draft so the new project shows its own icon.
+  const shownProjectId = project.project_id;
+  useEffect(
+    () => () => {
+      flushIconRef.current();
+      setDraftIcon(undefined);
+    },
+    [shownProjectId],
+  );
   const applyIcon = (nextIcon: ProjectIconValue) => {
-    const edit = buildProjectEditPatch(
-      { name: project.name, icon: project.icon, icon_glyph: project.icon_glyph },
-      { name: project.name, icon: nextIcon },
-    );
-    if (edit.status !== 'ready') return;
-    iconMutation.mutate(edit.patch);
+    setDraftIcon(nextIcon);
+    pendingIcon.current = { projectId: project.project_id, icon: nextIcon };
+    if (iconSaveTimer.current) clearTimeout(iconSaveTimer.current);
+    iconSaveTimer.current = setTimeout(() => flushIconRef.current(), 400);
   };
 
   const saving = isDebouncing || isRenamePending;
@@ -424,11 +478,11 @@ function GeneralWorkspaceCard({
     <SettingsRowGroup>
       <SettingsRow label={t('icon')} description={t('iconDescription')}>
         <ProjectIconField
-          value={toIconValue(project.icon, project.icon_glyph)}
+          value={draftIcon !== undefined ? draftIcon : toIconValue(project.icon, project.icon_glyph)}
           onChange={(emoji) => applyIcon({ emoji })}
           onGlyphChange={(glyph) => applyIcon({ glyph })}
           onClear={() => applyIcon(null)}
-          disabled={!canManage || iconMutation.isPending}
+          disabled={!canManage}
           align="end"
         />
       </SettingsRow>

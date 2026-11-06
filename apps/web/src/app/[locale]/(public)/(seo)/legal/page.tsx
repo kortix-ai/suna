@@ -12,7 +12,7 @@ import { Fragment, Suspense, useState, type ReactNode } from 'react';
 
 import { TERMS_LAST_UPDATED, TERMS_OF_SERVICE } from './terms-of-service';
 
-const LEGAL_LAST_UPDATED = 'September 29, 2026';
+const LEGAL_LAST_UPDATED = 'November 4, 2026';
 
 type LegalTab = 'imprint' | 'terms' | 'privacy';
 
@@ -296,12 +296,16 @@ function PrivacyPolicy() {
 
       <Section id="cookies" title={PRIVACY_TITLES['cookies']}>
         <P>
-          We use cookies that the Services need to work, such as the sign-in session. On our
-          marketing website we also use analytics (PostHog, Vercel Analytics) and, through Google
-          Tag Manager, advertising and measurement tags. A cookie banner asks for your consent
-          before we set non-essential cookies where the law requires consent, and you can change
-          your choice there at any time. We do not load advertising tags on signed-in pages of the
-          Services.
+          We use cookies that the Services need to work, such as the sign-in session. We use
+          PostHog, hosted in the European Union, for product analytics on our website and in the
+          Services: which pages and features are used, and which campaign brought a visitor to us.
+          PostHog stores an identifier in your browser only after you accept analytics in the cookie
+          banner. It receives a random account identifier, never your name or email address, and
+          never your prompts, messages, files or other project content, and it does not record your
+          screen. On our marketing website we also use Vercel Analytics and, through Google Tag
+          Manager, advertising and measurement tags. A cookie banner asks for your consent before we
+          set non-essential cookies where the law requires consent, and you can change your choice
+          there at any time. We do not load advertising tags on signed-in pages of the Services.
         </P>
       </Section>
 
@@ -562,24 +566,50 @@ function LegalContent() {
     window.history.replaceState(null, '', `${pathname}?${params.toString()}`);
   };
 
-  const documents: Record<LegalTab, { label: string; heading: string; updated: string | null; contents: string[][]; body: ReactNode }> = {
+  const documents: Record<
+    LegalTab,
+    {
+      label: string;
+      heading: string;
+      updated: string | null;
+      contents: string[][];
+      body: ReactNode;
+    }
+  > = {
     imprint: {
-      label: t.raw('i18nComplete.textd198ed30d09b'), heading: 'Imprint', updated: null,
+      label: t.raw('i18nComplete.textd198ed30d09b'),
+      heading: 'Imprint',
+      updated: null,
       contents: [
-          ['company-information', t.raw('appLegalPage.line97JsxTextCompanyInformation')],
-          ['imprint-contact', t.raw('i18nComplete.text2b5c3d26721a')],
-          ['responsible-for-content', t.raw('appLegalPage.line136JsxTextResponsibleForContent')],
-          ['disclaimer', t.raw('i18nComplete.text129c678fce59')],
-        ],
-      body: <Imprint /> },
-    terms: { label: t.raw('i18nComplete.text4afa55bf7aec'), heading: t.raw('i18nComplete.text4afa55bf7aec'), updated: TERMS_LAST_UPDATED,
-      contents: TERMS.sections.map((section) => [section.id, section.title]), body: <TermsOfService /> },
-    privacy: { label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy'), heading: t.raw('appLegalPage.line1531JsxTextPrivacyPolicy'), updated: LEGAL_LAST_UPDATED,
-      contents: Object.entries(PRIVACY_TITLES), body: <PrivacyPolicy /> },
+        ['company-information', t.raw('appLegalPage.line97JsxTextCompanyInformation')],
+        ['imprint-contact', t.raw('i18nComplete.text2b5c3d26721a')],
+        ['responsible-for-content', t.raw('appLegalPage.line136JsxTextResponsibleForContent')],
+        ['disclaimer', t.raw('i18nComplete.text129c678fce59')],
+      ],
+      body: <Imprint />,
+    },
+    terms: {
+      label: t.raw('i18nComplete.text4afa55bf7aec'),
+      heading: t.raw('i18nComplete.text4afa55bf7aec'),
+      updated: TERMS_LAST_UPDATED,
+      contents: TERMS.sections.map((section) => [section.id, section.title]),
+      body: <TermsOfService />,
+    },
+    privacy: {
+      label: t.raw('appLegalPage.line79JsxTextPrivacyPolicy'),
+      heading: t.raw('appLegalPage.line1531JsxTextPrivacyPolicy'),
+      updated: LEGAL_LAST_UPDATED,
+      contents: Object.entries(PRIVACY_TITLES),
+      body: <PrivacyPolicy />,
+    },
   };
   const selected = documents[activeTab];
   const tabs: LegalTab[] = ['imprint', 'terms', 'privacy'];
-  const toc: TocItem[] = selected.contents.map(([id, title]) => ({ title, url: `#${id}`, depth: 2 }));
+  const toc: TocItem[] = selected.contents.map(([id, title]) => ({
+    title,
+    url: `#${id}`,
+    depth: 2,
+  }));
 
   return (
     <PageFrame>
@@ -622,8 +652,7 @@ function LegalContent() {
                 </h2>
                 {selected.updated === null ? null : (
                   <p className="text-muted-foreground mt-2 text-sm tabular-nums">
-                    {t.raw('appLegalPage.line1534JsxTextLastUpdated')}{' '}
-                    {selected.updated}
+                    {t.raw('appLegalPage.line1534JsxTextLastUpdated')} {selected.updated}
                   </p>
                 )}
               </div>

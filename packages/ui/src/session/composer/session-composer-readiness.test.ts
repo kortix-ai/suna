@@ -170,7 +170,7 @@ describe('serverHoldsOpenTurn', () => {
       turn_token: 'tok_live',
       state: 'active',
       message_id: 'msg_1',
-      opencode_session_id: 'ses_1',
+      runtime_session_id: 'ses_1',
       started_at: new Date(1_000).toISOString(),
       accepted_at: null,
       ...overrides,

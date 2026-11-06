@@ -64,6 +64,7 @@ const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> 
     automation_recovered: { label: 'Обавештење о опоравку', description: 'Окидач ради.' },
     capture_device_down: { label: 'Рачунар је стао', description: 'Рачунар не снима.' },
     capture_device_recovered: { label: 'Рачунар поново снима', description: 'Рачунар снима.' },
+    // The retired `message` kind (Rooms) is still a key of the SDK type; no row renders it.
     message: { label: 'Порука', description: 'Неко вам пише у разговору.' },
     artifact_comment: { label: 'Коментари артефаката', description: 'Повратне информације и одговори о артефактима.' },
   },
@@ -85,7 +86,7 @@ const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> 
   soundsDescription: 'Звуци за догађаје сесије.',
   soundPacks: {
     off: { label: 'Искључено', description: 'Сви звуци су искључени' },
-    opencode: { label: 'Подразумевано', description: 'Подразумевани пакет' },
+    classic: { label: 'Подразумевано', description: 'Подразумевани пакет' },
     kortix: { label: 'Kortix пакет', description: 'Звиждук' },
   },
   volume: 'Јачина звука',
@@ -124,8 +125,8 @@ describe('SessionsTabView', () => {
       expect(out).toContain(label);
       expect(out).toContain(description);
     }
-    expect(out.indexOf(SERBIAN_COPY.soundPacks.off.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.opencode.label));
-    expect(out.indexOf(SERBIAN_COPY.soundPacks.opencode.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.kortix.label));
+    expect(out.indexOf(SERBIAN_COPY.soundPacks.off.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.classic.label));
+    expect(out.indexOf(SERBIAN_COPY.soundPacks.classic.label)).toBeLessThan(out.indexOf(SERBIAN_COPY.soundPacks.kortix.label));
   });
 
   test('renders injected locale body copy instead of fixed English body labels', () => {
@@ -168,7 +169,7 @@ describe('SessionsTabView', () => {
 
   test('sounds are off by default, and the volume slider only shows with a pack on', () => {
     expect(html()).not.toContain('Volume');
-    const on = renderToStaticMarkup(<SessionsTabView soundPack="opencode" />);
+    const on = renderToStaticMarkup(<SessionsTabView soundPack="classic" />);
     expect(on).toContain('Volume');
     expect(on).toContain('Task Completion');
   });
@@ -256,7 +257,7 @@ describe('SessionsTabView with the notification center', () => {
 
   test('notification types: one Push switch per kind, and Email for every kind but permission', () => {
     const out = center();
-    expect(switchCount(out)).toBe(1 + 11 + 10);
+    expect(switchCount(out)).toBe(1 + 10 + 9);
     expect(out).toContain('>Push<');
     expect(out).toContain('>Email<');
     expect(switchState(out, 'Turn finished: Push')).toBe('true');
@@ -282,7 +283,7 @@ describe('SessionsTabView with the notification center', () => {
     const out = center({ emailAvailable: false });
     expect(out).not.toContain('>Email<');
     expect(out).not.toContain(': Email"');
-    expect(switchCount(out)).toBe(1 + 11);
+    expect(switchCount(out)).toBe(1 + 10);
   });
 
   test('while the record loads the rows show, without switches', () => {

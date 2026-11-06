@@ -10,18 +10,21 @@ import { Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import Script from 'next/script';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 /** The slice of Stripe.js (loaded from js.stripe.com below) this page calls.
  *  `window.Stripe` used to type-check only because `@next/third-parties`
  *  widened `Window` with an `any` index signature; the root layout no longer
  *  imports that package. */
+interface EmbeddedCheckout {
+  mount: (target: string | HTMLElement) => void;
+  destroy: () => void;
+}
+
 declare global {
   interface Window {
     Stripe?: (publishableKey: string) => {
-      initEmbeddedCheckout: (options: { clientSecret: string }) => Promise<{
-        mount: (selector: string) => void;
-      }>;
+      initEmbeddedCheckout: (options: { clientSecret: string }) => Promise<EmbeddedCheckout>;
     };
   }
 }
@@ -69,6 +72,12 @@ function CheckoutContent() {
     };
   }, []);
 
+  // The Stripe instance, once `initEmbeddedCheckout` answered. Mounted by the
+  // effect below, after React committed the container: no timer, and no
+  // throw outside a `try` (that left a blank page).
+  const [checkout, setCheckout] = useState<EmbeddedCheckout | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     if (!clientSecret) {
       setError('No checkout session provided. Please start the checkout process again.');
@@ -76,12 +85,14 @@ function CheckoutContent() {
       return;
     }
 
-    if (!stripeLoaded) {
-      return; // Wait for Stripe to load
+    // An error is terminal: a Stripe.js that loads after the 5 s timeout must
+    // not start a checkout behind the error screen.
+    if (!stripeLoaded || error) {
+      return;
     }
 
     let disposed = false;
-    let mountTimer: ReturnType<typeof setTimeout> | null = null;
+    let instance: EmbeddedCheckout | null = null;
 
     // Initialize Stripe checkout
     const initCheckout = async () => {
@@ -95,26 +106,19 @@ function CheckoutContent() {
         const stripe = window.Stripe(stripeKey);
 
         // Initialize embedded checkout
-        const checkout = await stripe.initEmbeddedCheckout({
+        instance = await stripe.initEmbeddedCheckout({
           clientSecret: clientSecret,
         });
 
-        if (disposed) return;
+        if (disposed) {
+          instance.destroy();
+          return;
+        }
 
-        // Stop loading FIRST so the container renders
+        // Stop loading so the container renders; the mount effect runs after
+        // that commit.
+        setCheckout(instance);
         setIsLoading(false);
-
-        // Wait for DOM to update, then mount
-        mountTimer = setTimeout(() => {
-          if (disposed) return;
-          const container = document.getElementById('checkout-container');
-
-          if (!container) {
-            throw new Error('Checkout container not found in DOM');
-          }
-
-          checkout.mount('#checkout-container');
-        }, 100);
       } catch (err: any) {
         if (disposed) return;
         console.error('Checkout initialization failed:', err);
@@ -125,11 +129,29 @@ function CheckoutContent() {
 
     initCheckout();
 
+    // Stripe allows one embedded checkout per page: destroy it on unmount and
+    // before a second init (Strict Mode, a new `client_secret`).
     return () => {
       disposed = true;
-      if (mountTimer) clearTimeout(mountTimer);
+      instance?.destroy();
+      setCheckout(null);
     };
-  }, [clientSecret, stripeLoaded]);
+  }, [clientSecret, stripeLoaded, error]);
+
+  useEffect(() => {
+    if (!checkout || isLoading || error) return;
+    const container = containerRef.current;
+    if (!container) {
+      setError('Failed to load checkout. Please try again.');
+      return;
+    }
+    try {
+      checkout.mount(container);
+    } catch (err: any) {
+      console.error('Checkout mount failed:', err);
+      setError(err?.message || 'Failed to load checkout. Please try again.');
+    }
+  }, [checkout, isLoading, error]);
 
   return (
     <>
@@ -173,7 +195,7 @@ function CheckoutContent() {
       ) : (
         // Embedded checkout container
         <div className="bg-background flex min-h-svh justify-center px-4 py-10">
-          <div id="checkout-container" className="w-full max-w-4xl" />
+          <div id="checkout-container" ref={containerRef} className="w-full max-w-4xl" />
         </div>
       )}
     </>

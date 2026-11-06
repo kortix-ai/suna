@@ -32,14 +32,14 @@ import {
 import { forRequestApiUrl } from '../../shared/domain-aliases';
 
 /**
- * The relative proxy path a client uses for all OpenCode (port 8000) traffic for
+ * The relative proxy path a client uses for all daemon (port 8000) traffic for
  * a session, resolved against the SDK's configured backendUrl. Keyed by
  * `external_id` — the same id the preview proxy's `loadSandbox()` looks up — so
  * the client never has to know the proxy URL scheme. This is the one place the
  * per-session runtime URL is shaped; the SDK consumes it opaquely.
  */
 /**
- * The CONTROL transport address for a session's runtime: the OpenCode/daemon
+ * The CONTROL transport address for a session's runtime: the daemon
  * REST channel, always the path proxy.
  *
  * This is deliberately NOT a preview origin and must never be used to build
@@ -187,7 +187,7 @@ export function serializeSandboxRow(
 export function stoppedWakeResult(
   row: typeof sessionSandboxes.$inferSelect | undefined,
   agentName: string | null,
-  opencodeSessionId: string | null,
+  runtimeSessionId: string | null,
   now: Date = new Date(),
 ): SessionStartResult | null {
   if (row?.status !== 'stopped' || !row.externalId) return null;
@@ -204,7 +204,7 @@ export function stoppedWakeResult(
       agent_name: agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: opencodeSessionId,
+      runtime_session_id: runtimeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: 'runtime_waking',
     };
@@ -219,7 +219,7 @@ export function stoppedWakeResult(
       agent_name: agentName ?? 'default',
       retriable: false,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
+      runtime_session_id: null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: RUNTIME_IDENTITY_UNAVAILABLE,
     };
@@ -277,7 +277,7 @@ export function stoppedWakeResult(
       agent_name: agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: opencodeSessionId,
+      runtime_session_id: runtimeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: 'runtime_wake_cooldown',
       failure: {
@@ -301,7 +301,7 @@ export function stoppedWakeResult(
     agent_name: agentName ?? 'default',
     retriable: false,
     sandbox: serializeSandboxRow(row),
-    opencode_session_id: opencodeSessionId,
+    runtime_session_id: runtimeSessionId,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
     reason: stampReason,
     failure: {

@@ -382,6 +382,12 @@ describe('queries return the rows they name', () => {
     expect(hits('apps')).toEqual(['nav:proj-apps']);
   });
 
+  test('"goals" and "goal" reach the Goals page', () => {
+    // KRTX-4222: the Goals page had a sidebar row and no palette row.
+    expect(hits('goals')).toEqual(['nav:proj-goals']);
+    expect(hits('goal')).toEqual(['nav:proj-goals']);
+  });
+
   // The Computer row USED to answer "apps" too: PR #9992 shipped a rail
   // description that reads "the files, terminal, and apps on your computer",
   // and the palette searches every word a row shows (KRTX-2475). The
@@ -544,5 +550,24 @@ describe('terminal themes are searchable', () => {
 
   test('a full theme name finds that theme', () => {
     expect(themeHits('iceberg dark')).toEqual(['nav:theme-iceberg-dark']);
+  });
+});
+
+
+describe('subscription usage destinations', () => {
+  for (const query of ['ChatGPT subscription usage', 'codex usage', 'openai usage']) {
+    test(`${query} finds ChatGPT usage`, () => { expect(hits(query)).toEqual(['nav:proj-chatgpt-usage']); });
+  }
+  for (const query of ['Anthropic usage', 'Claude usage', 'Claude Code usage', 'Fable usage']) {
+    test(`${query} finds Claude usage`, () => { expect(hits(query)).toEqual(['nav:proj-claude-usage']); });
+  }
+  test('usage offers both subscription destinations', () => {
+    expect(hits('usage')).toContain('nav:proj-chatgpt-usage');
+    expect(hits('usage')).toContain('nav:proj-claude-usage');
+  });
+  test('subscription results select the Usage tab and matching provider', () => {
+    const items = getItemsForSurface('commandPalette');
+    expect(items.find(item => item.id === 'proj-chatgpt-usage')?.href).toBe('/projects/{projectId}/admin/models?tab=usage&provider=codex');
+    expect(items.find(item => item.id === 'proj-claude-usage')?.href).toBe('/projects/{projectId}/admin/models?tab=usage&provider=claude-agent');
   });
 });

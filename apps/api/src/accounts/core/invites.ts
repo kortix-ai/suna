@@ -14,6 +14,7 @@ import { AccountIdParam, AccountInviteSchema, type AccountRole, OkSchema, accoun
 import { grantAccountRole } from './member-role-write';
 import { logger } from '../../lib/logger';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
+import { captureProductEvent } from '../../shared/product-analytics';
 
 export function registerMemberInviteRoute(): void {
   // POST /v1/accounts/:accountId/members — invite a user by email. If the user
@@ -157,6 +158,13 @@ export function registerMemberInviteRoute(): void {
             grantedBy: userId,
           });
         }
+
+        captureProductEvent({
+          userId: targetUserId,
+          accountId,
+          event: 'member_joined',
+          properties: { via: 'direct_add', role },
+        });
 
         return c.json(
           {

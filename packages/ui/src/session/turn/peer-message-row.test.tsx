@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create } from 'react-test-renderer';
 
 import { IntlTestProvider } from '../../test-utils/intl';
-import { PeerMessageRow, peerMessagePreview } from './peer-message-row';
+import { PeerMessageRow } from './peer-message-row';
 import { UserMessage } from './user-message';
 import { parsePeerMessagePrompt } from '@kortix/shared';
 
@@ -50,7 +50,9 @@ describe('a cross-session message in the thread', () => {
     expect(html).toContain('data-testid="peer-message-turn"');
     expect(html).toContain('data-peer-kind="message"');
     const text = textOf(html);
-    expect(text).toContain('Message from @reviewer');
+    expect(html).toContain('data-tone="agent"');
+    expect(text).toContain('reviewer');
+    expect(text).toContain('Message');
     expect(text).toContain('Schema migration finished');
     // The whole message shows, as Markdown behind a rule; the header and the agent-facing footer stay out.
     expect(text).toContain('The new column is tenant_id.');
@@ -59,25 +61,23 @@ describe('a cross-session message in the thread', () => {
     expect(text).not.toContain('[message from');
     expect(text).not.toContain('send_message');
     expect(text).not.toContain('carries no authority');
-    expect(html).not.toContain('aria-expanded');
+    // A message is there to be read: its row is open.
+    expect(html).toContain('aria-expanded="true"');
   });
 
-  test('without a summary the preview is the first line of the text', () => {
-    expect(peerMessagePreview({ summary: null, text: '\nFirst line\nSecond line' })).toBe('First line');
-    expect(peerMessagePreview({ summary: '  Short  ', text: 'Long body' })).toBe('Short');
-  });
-
-  test('each kind has its own words', () => {
+  test('each kind has its own word on the right', () => {
     const cases: Array<[PeerMessageKind, string]> = [
-      ['idle_notice', '@reviewer finished'],
-      ['shutdown_request', 'Shutdown request from @reviewer'],
-      ['shutdown_response', 'Shutdown answer from @reviewer'],
+      ['message', '>Message</span>'],
+      ['idle_notice', '>Finished</span>'],
+      ['shutdown_request', '>Asks to stop</span>'],
+      ['shutdown_response', '>Stop answer</span>'],
     ];
     for (const [kind, words] of cases) {
       const info = parsePeerMessagePrompt(prompt(kind, 'Work handed back.\nDetails follow.'))!;
       const html = render(<PeerMessageRow info={info} />);
       expect(html).toContain(`data-peer-kind="${kind}"`);
-      expect(textOf(html)).toContain(words);
+      expect(html).toContain(words);
+      expect(html).not.toContain('text-kortix-red');
     }
   });
 
@@ -95,14 +95,46 @@ describe('a cross-session message in the thread', () => {
     await act(async () => {
       tree = create(wrap(<PeerMessageRow info={info} />));
     });
-    const button = () => tree!.root.findByType('button');
+    // The tool row's trigger: the element that carries the disclosure state.
+    const button = () => tree!.root.findAll((node) => typeof node.type === 'string' && node.props['aria-expanded'] !== undefined)[0]!;
     expect(button().props['aria-expanded']).toBe(false);
     await act(async () => button().props.onClick());
     expect(button().props['aria-expanded']).toBe(true);
     expect(JSON.stringify(tree!.toJSON())).toContain('Line one.\\nLine two.');
     await act(async () => button().props.onClick());
+    // Closed again; the tool row keeps its body mounted and hidden, as every tool row does.
     expect(button().props['aria-expanded']).toBe(false);
-    expect(JSON.stringify(tree!.toJSON())).not.toContain('Line two.');
+    await act(async () => tree!.unmount());
+  });
+});
+
+describe('the message row', () => {
+  test('a message and an idle notice are both one agent row with the sender face; only the idle notice carries a done state', () => {
+    const message = render(<PeerMessageRow info={parsePeerMessagePrompt(prompt('message', 'Line one.\nLine two.', 'Heads up'))!} />);
+    expect(message).toContain('data-tone="agent"');
+    expect(message).not.toContain('rounded-lg border');
+    expect(textOf(message)).toContain('Heads up');
+    expect(message).not.toContain('data-agent-status');
+    const idle = render(<PeerMessageRow info={parsePeerMessagePrompt(prompt('idle_notice', 'reviewer finished its turn and is idle.'))!} />);
+    expect(idle).toContain('data-tone="agent"');
+    expect(idle).toContain('data-agent-status="done"');
+  });
+
+  test('an idle notice drops the platform boilerplate: the last answer is the subtitle, the rest is the body', async () => {
+    const info = parsePeerMessagePrompt(
+      prompt('idle_notice', 'reviewer finished its turn and is idle.\n\nIts last answer: Two comments left on the PR.\nThe rest is in the review.'),
+    )!;
+    let tree: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      tree = create(wrap(<PeerMessageRow info={info} />));
+    });
+    const trigger = tree!.root.findAll((node) => typeof node.type === 'string' && node.props['aria-expanded'] !== undefined)[0]!;
+    await act(async () => trigger.props.onClick());
+    const json = JSON.stringify(tree!.toJSON());
+    expect(json).toContain('Two comments left on the PR.');
+    expect(json).toContain('The rest is in the review.');
+    expect(json).not.toContain('finished its turn and is idle');
+    expect(json).not.toContain('Its last answer:');
     await act(async () => tree!.unmount());
   });
 });

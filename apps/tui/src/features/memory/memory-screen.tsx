@@ -6,7 +6,7 @@
  * the SDK. Memory is read-only here: the TUI lists, searches and reads pages;
  * people and agents write them.
  *
- * The web gates the page on the project's `project_channels` flag
+ * The web gates the page on the project's `chat` flag
  * (`apps/web/.../projects/[id]/memory/page.tsx`); this screen reads the same
  * flag through `useFeatureFlag`. Every memory route also answers 403
  * `feature_disabled` while Files (`drives`) are off — that status reaches the
@@ -160,7 +160,7 @@ export function MemoryScreen({
     return () => clearTimeout(timer);
   }, [query]);
 
-  const flag = useFeatureFlag(projectId, 'project_channels');
+  const flag = useFeatureFlag(projectId, 'chat');
   const enabled = flag.enabled;
   const searchActive = debounced.length >= MIN_QUERY && query.trim().length >= MIN_QUERY;
 
@@ -209,7 +209,7 @@ export function MemoryScreen({
   if (!enabled) {
     return (
       <text fg={theme.faint}>
-        Memory is off: the project's Channels feature (project_channels) is not enabled.
+        Memory is off: the project's Chat feature (chat) is not enabled.
       </text>
     );
   }

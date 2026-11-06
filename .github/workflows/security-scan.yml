@@ -46,9 +46,14 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install checksum-verified Trivy from GitHub Releases
+        run: |
+          bash infra/scripts/install-trivy.sh "$RUNNER_TEMP/trivy-bin"
+          echo "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"
       - name: Trivy fs scan → SARIF
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
+          skip-setup-trivy: true
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,misconfig
@@ -83,7 +88,6 @@ jobs:
       # at this commit). Every other trigger scans :dev-latest. deploy-prod.yml
       # retags :X.Y.Z in parallel, so wait up to 30 min for the tag to exist.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        if: github.ref == 'refs/heads/prod'
       - name: Resolve image tag
         id: tag
         run: |
@@ -102,9 +106,14 @@ jobs:
           done
           echo "::error::${{ matrix.image }}:$V not published after 30 min"
           exit 1
+      - name: Install checksum-verified Trivy from GitHub Releases
+        run: |
+          bash infra/scripts/install-trivy.sh "$RUNNER_TEMP/trivy-bin"
+          echo "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"
       - name: Trivy image scan → SARIF
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
+          skip-setup-trivy: true
           scan-type: image
           image-ref: ${{ matrix.image }}:${{ steps.tag.outputs.tag }}
           severity: CRITICAL,HIGH
@@ -196,8 +205,15 @@ jobs:
           GITLEAKS_VERSION: 8.30.1
         run: |
           set -euo pipefail
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz -C /usr/local/bin gitleaks
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          # CWE-494: verify the release archive against the published
+          # checksums.txt before the binary runs (same as secret-scan.yml).
+          curl -sSfL "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o checksums.txt
+          grep -q " ${archive}$" checksums.txt
+          curl -sSfL "${base}/${archive}" -o "${archive}"
+          sha256sum -c --ignore-missing checksums.txt
+          tar -xzf "${archive}" -C /usr/local/bin gitleaks
           gitleaks version
       - name: Scan full history
         run: |

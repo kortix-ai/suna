@@ -50,7 +50,7 @@ async function get(path: string): Promise<{ status: number; body: string }> {
 }
 
 describe('the credential files are not readable', () => {
-  // The real paths, from opencode.ts. Written for whatever user the daemon runs
+  // The real paths a box OpenCode booted before the sunset still holds. Written for whatever user the daemon runs
   // as, so the test asserts on the ROUTE being refused rather than on a file it
   // would have to create in a real home directory.
   const CREDENTIAL_PATHS = [

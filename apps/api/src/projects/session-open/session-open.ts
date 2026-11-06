@@ -27,11 +27,12 @@ import {
 } from './session-open-provision';
 import {
   judgeBootBudget,
-  observeOpenCodeReadiness,
+  observeRuntimeReadiness,
   stampUnreachableDiagnostics,
 } from './session-open-readiness';
 import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './session-open-recovery';
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
+import { holdBelowRuntimeFloor } from './runtime-floor';
 import {
   keepStoppedRefusesWake,
   liveStopClaimAtMs,
@@ -47,7 +48,7 @@ import {
 /**
  * THE authoritative session-open path — the single call the dashboard uses to
  * bring a session's runtime up. Idempotent: provisions a missing sandbox,
- * resumes a hibernated/idle one, and resolves the canonical OpenCode pin once the
+ * resumes a hibernated/idle one, and resolves the canonical runtime session pin once the
  * box is reachable. Returns ONE readiness payload the client polls until `ready`.
  */
 export async function openSession(args: OpenSessionArgs): Promise<SessionStartResult> {
@@ -58,7 +59,7 @@ export async function openSession(args: OpenSessionArgs): Promise<SessionStartRe
   const result = await runOpenSession(args, log);
   // A RETIRED model pin is repaired here, at the open — not only when the box
   // is provisioned. A resumed box never rebuilds its env, so the model baked
-  // into OpenCode's config at its ORIGINAL provision outlives every later
+  // into the runtime's config at its ORIGINAL provision outlives every later
   // lineup rotation and every turn on it dies. See
   // `lib/session-model-repair.ts` for the measurement.
   //
@@ -161,7 +162,7 @@ async function runOpenSession(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason: 'retired_row_wake',
     };
   }
@@ -203,7 +204,7 @@ async function runOpenSession(
       agent_name: visible.row.agentName ?? 'default',
       retriable: true,
       sandbox: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       reason: 'runtime_stopping',
     };
   }
@@ -256,14 +257,14 @@ function keptStoppedAnswer(agentName: string | null): SessionStartResult {
     agent_name: agentName ?? 'default',
     retriable: false,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     failure: null,
   };
 }
 
 /**
  * The provider-running tail of the open: sync the recovering row, stage the
- * OpenCode readiness, then judge the boot budget, the runtime guarantee and
+ * runtime readiness, then judge the boot budget, the runtime guarantee and
  * admission, in the original order, returning the first answer served.
  */
 async function stageRunningOpen(
@@ -274,8 +275,21 @@ async function stageRunningOpen(
   const synced = await syncRecoveredRunningRow(args, row);
   if ('stage' in synced) return synced;
 
-  const readiness = await observeOpenCodeReadiness(args, log, synced.row, synced.runningExternalId);
+  const readiness = await observeRuntimeReadiness(args, log, synced.row, synced.runningExternalId);
   await stampUnreachableDiagnostics(synced.row, readiness.ensured, synced.runningExternalId);
+
+  // A box below the runtime floor is held until it runs the current daemon, or
+  // refused (runtime-floor-policy.ts). Before every other check: none of them
+  // may read an old daemon's routes, and no serving answer may hand over a box
+  // that restarts onto its new daemon.
+  const held = await holdBelowRuntimeFloor(
+    args,
+    synced.row,
+    synced.runningExternalId,
+    readiness.capabilities,
+    readiness.booting,
+  );
+  if (held) return held;
 
   const parked = await judgeBootBudget(
     args,
@@ -312,7 +326,7 @@ async function stageRunningOpen(
     agent_name: args.visible.row.agentName ?? 'default',
     retriable: readiness.booting,
     sandbox: serializeSandboxRow(synced.row),
-    opencode_session_id: readiness.ensured.pin,
+    runtime_session_id: readiness.ensured.pin,
     runtime_url: sessionRuntimeUrlPath(synced.runningExternalId),
     reason: readiness.ensured.reason,
     ...(readiness.capabilities ? { capabilities: readiness.capabilities } : {}),
@@ -330,9 +344,9 @@ async function observeProviderStatus(
   // Active + external_id. The provider may have idle-auto-stopped the box while
   // the row still reads 'active' (the row lies until the next health probe), so
   // confirm with a lightweight provider status check and wake it in place if
-  // needed. We deliberately do NOT do the heavy daemon round-trip (OpenCode pin
+  // needed. We deliberately do NOT do the heavy daemon round-trip (runtime pin
   // resolve) here — that would block this endpoint for ~8s on a still-booting box
-  // and it's polled every second. OpenCode readiness is the client health poll's
+  // and it's polled every second. Runtime readiness is the client health poll's
   // job; the canonical-pin hook resolves the root once the box reports healthy.
   const provider = getProvider(row.provider as SandboxProviderName);
   let providerStatus: SandboxStatus;

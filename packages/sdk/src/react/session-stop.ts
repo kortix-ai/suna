@@ -15,7 +15,7 @@ import {
   abortInFlightDeliveries,
   awaitAbortSettlement,
   type AbortSettlement,
-} from './use-opencode-sessions';
+} from './use-runtime-sessions';
 
 /**
  * Patch an "aborted" error onto the last assistant message that doesn't
@@ -93,7 +93,7 @@ export interface StopWithReceiptOptions {
   /**
    * Kortix session id whose inbox to hold. The inbox is keyed by the same
    * Kortix session `GET .../turn` answers about, so this defaults to
-   * `workingSessionId` (or `sessionId`), never to the OpenCode runtime id.
+   * `workingSessionId` (or `sessionId`), never to the runtime session id.
    */
   inboxSessionId?: string;
   /** Injectable, defaults to `holdSessionPrompts`. Lets a host or a test
@@ -116,9 +116,9 @@ export interface StopWithReceiptOptions {
  *
  * It also holds the session's server-side prompt inbox BEFORE issuing the
  * abort, the same pairing apps/web's `handleStop` does by hand
- * (`session-chat.tsx`). A prompt sent mid-turn is forwarded into OpenCode's
+ * (`session-chat.tsx`). A prompt sent mid-turn is forwarded into the runtime's
  * live queue the moment it is admitted, so at stop time the inbox can hold a
- * row OpenCode already has. The abort drops OpenCode's in-memory queue; the
+ * row the runtime already has. The abort drops the runtime's in-memory queue; the
  * reaper then sees that row unanswered and redelivers it — due now — unless
  * the hold already marked it stop-paused. AWAITED (bounded by
  * `holdDeadlineMs`) so the ordering is a fact, not a race: without it, Stop
@@ -184,7 +184,7 @@ interface CancelSessionTurnArgs {
   projectId: string;
   /** Kortix session id — the key `GET .../turn`, the receipts and the inbox use. */
   sessionId: string;
-  /** OpenCode runtime session id the abort goes to. */
+  /** Runtime session id the abort goes to. */
   runtimeSessionId: string;
   /** False until the session's runtime is bound; then nothing can be aborted. */
   runtimeActionReady: boolean;

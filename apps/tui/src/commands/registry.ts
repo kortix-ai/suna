@@ -180,6 +180,13 @@ export const COMMANDS = [
     needs: 'session',
   },
   {
+    name: 'shown',
+    description: 'What this session showed you: open, reference or copy an artifact, page or file.',
+    group: 'session',
+    binding: 'composer.outputs',
+    needs: 'session',
+  },
+  {
     name: 'export',
     args: '[file]',
     description: 'Save the conversation as Markdown in the current folder.',
@@ -310,6 +317,7 @@ export const COMMANDS = [
   // — screens —
   {
     name: 'files',
+    args: '[path]',
     description: "Browse this session's files.",
     group: 'screen',
     binding: 'screen.files',
@@ -333,6 +341,7 @@ export const COMMANDS = [
   {
     name: 'artifacts',
     aliases: ['docs'],
+    args: '[id]',
     description: 'Docs and pages the agents published.',
     group: 'screen',
     needs: 'project',
@@ -364,7 +373,7 @@ export const COMMANDS = [
     description: 'Read and search company memory pages.',
     group: 'screen',
     needs: 'project',
-    flag: 'project_channels',
+    flag: 'chat',
   },
   {
     name: 'spaces',
@@ -372,14 +381,7 @@ export const COMMANDS = [
     description: 'Channels and DMs, and the threads in them.',
     group: 'screen',
     needs: 'project',
-    flag: 'project_channels',
-  },
-  {
-    name: 'rooms',
-    description: 'Rooms where agents and people talk.',
-    group: 'screen',
-    needs: 'project',
-    flag: 'agent_rooms',
+    flag: 'chat',
   },
   {
     name: 'loops',
@@ -412,10 +414,33 @@ export const COMMANDS = [
   },
   {
     name: 'customize',
-    aliases: ['settings', 'config', 'mcp', 'connectors'],
+    aliases: ['settings', 'config', 'mcp'],
     description: 'Agents, skills, secrets, triggers, connectors.',
     group: 'screen',
     binding: 'screen.customize',
+  },
+  {
+    name: 'providers',
+    aliases: ['provider'],
+    args: '[provider]',
+    description: 'Connect model providers: ChatGPT, Claude, API keys, and who can use them.',
+    group: 'screen',
+    needs: 'project',
+  },
+  {
+    name: 'connectors',
+    aliases: ['connector', 'integrations'],
+    args: '[app]',
+    description: 'Connect apps and tools: browse the catalogue, add accounts, sign in, and share them.',
+    group: 'screen',
+    needs: 'project',
+  },
+  {
+    name: 'connect',
+    args: '[provider or app]',
+    description: 'Connect a model provider or a connector.',
+    group: 'screen',
+    needs: 'project',
   },
   {
     name: 'account',

@@ -42,7 +42,7 @@ describe('detectForwardablePorts', () => {
     expect(detectForwardablePorts('http://localhost:443')).toEqual([443]);
   });
 
-  test('ignores the OpenCode/Kortix Master control port (8000)', () => {
+  test('ignores the daemon control port (8000)', () => {
     expect(detectForwardablePorts('curl http://localhost:8000/global/health')).toEqual([]);
   });
 

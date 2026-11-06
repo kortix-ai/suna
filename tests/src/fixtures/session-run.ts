@@ -3,11 +3,11 @@
  *
  * They speak the Kortix session routes — `POST /start`, `POST /prompts`,
  * `GET /turn`, `GET /transcript`, `GET /events` — so one flow body runs
- * unchanged on OpenCode and on pi (`harnessFlow` in core/flow.ts). Two calls
+ * unchanged on any harness (`harnessFlow` in core/flow.ts). Two calls
  * still go to the session runtime behind the preview proxy, because no Kortix
  * route exists for them yet: the abort the web Stop button sends
  * (`POST /session/<root>/abort`) and the daemon's own `GET /kortix/health`.
- * Both harnesses serve both.
+ * The box serves both.
  */
 import { SessionStartResultSchema } from '@kortix/api-contract';
 import { isKe2eRetryableError } from '../core/client';
@@ -159,7 +159,7 @@ export async function bootSession(
   opts?: {
     prompt?: string;
     readinessTimeoutMs?: number;
-    opencodeModel?: string;
+    sessionModel?: string;
     /** A project already on `harness`; the shared seeded one by default. */
     project?: CreatedProject;
     agentName?: string;
@@ -169,7 +169,7 @@ export async function bootSession(
     const project = opts?.project ?? (await ctx.fixtures.sharedSeededProject());
     const session = await ctx.fixtures.session(project, {
       prompt: opts?.prompt ?? 'say hello',
-      opencodeModel: opts?.opencodeModel,
+      sessionModel: opts?.sessionModel,
       agentName: opts?.agentName,
     });
     const started = await waitForSessionReady(ctx, project.id, session.id, opts?.readinessTimeoutMs);
@@ -261,7 +261,7 @@ export interface Transcript {
   available: boolean;
   source: 'live' | 'mirror' | 'none';
   reason: string | null;
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   messages: TranscriptMessage[];
 }
 
@@ -525,7 +525,7 @@ export function streamedReplies(frames: SseFrame[]): string[] {
     .flatMap((p) => [p.text, p.deltas]);
 }
 
-/** The root conversation the server pinned for this session (`opencode_session_id`). */
+/** The root conversation the server pinned for this session (`runtime_session_id`). */
 export async function pinnedRoot(
   ctx: FlowContext,
   projectId: string,
@@ -537,17 +537,17 @@ export async function pinnedRoot(
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
       r.status(200);
-      return r.json<{ opencode_session_id?: string | null }>();
+      return r.json<{ runtime_session_id?: string | null }>();
     },
     {
-      until: (s) => typeof s?.opencode_session_id === 'string' && s.opencode_session_id.length > 0,
+      until: (s) => typeof s?.runtime_session_id === 'string' && s.runtime_session_id.length > 0,
       timeoutMs: 60_000,
       intervalMs: 2_000,
       description: `a pinned root conversation for session ${sessionId}`,
       retryOnError: isKe2eRetryableError,
     },
   );
-  return row.opencode_session_id!;
+  return row.runtime_session_id!;
 }
 
 /**

@@ -17,6 +17,8 @@ import {
   kortixOAuthClients,
   mcpAppForUrl,
 } from './mcp-apps';
+import { createStoredDelegatedCredential, resolveStoredDelegatedCredential } from './oauth2-delegated';
+import { buildOAuth2AuthorizationRequest, exchangeOAuth2AuthorizationCode } from './oauth2-lifecycle';
 import { discoverProtectedResourceOAuth2, mcpSignInCheck } from './oauth2-resource-discovery';
 
 const ICONS = join(import.meta.dir, '../../../web/public/connector-icons');
@@ -173,6 +175,49 @@ describe('the ways to connect one app (catalogue detail)', () => {
     expect(v2AppKey('API')).toBe('');
   });
 
+  test('YouTube is one app: the toolkit whose name matches no record joins the registry\'s <slug>.com', async () => {
+    const catalog = createConnectorCatalog({
+      source: {
+        items: () =>
+          connectorsV2Items({
+            apps: () => [],
+            index: async () => [
+              record('curated/google-youtube-data', 'openapi', 'YouTube Data', 'youtube.com'),
+              record('openapi/acme', 'openapi', 'Acme Platform', 'acme.com'),
+            ],
+            toolkits: async () => [
+              toolkit('youtube', 'YouTube'),
+              toolkit('youtube_transcript', 'YouTube Transcript'),
+              toolkit('zeta', 'Zeta'),
+            ],
+          }),
+        surfaces: async () => [],
+      },
+    });
+    const ids = async (q: string) => (await catalog.list({ q })).items.map((item) => [item.id, item.domain]);
+    // One YouTube card, and it is the one-click toolkit, not the API that asks for a key.
+    expect(await ids('youtube')).toEqual([
+      ['composio:youtube', 'youtube.com'],
+      ['composio:youtube_transcript', 'youtube_transcript.composio'],
+    ]);
+    // No registry domain for the slug: the toolkit keeps its own card.
+    expect(await ids('zeta')).toEqual([['composio:zeta', 'zeta.composio']]);
+    // The API stays one more way on the app page, after the toolkit.
+    const ways = await connectorsV2Surfaces('youtube.com', {
+      items: () =>
+        connectorsV2Items({
+          apps: () => [],
+          index: async () => [record('curated/google-youtube-data', 'openapi', 'YouTube Data', 'youtube.com')],
+          toolkits: async () => [toolkit('youtube', 'YouTube')],
+        }),
+      surfaces: async () => [variant('youtube-data-api', 'openapi', null, true)],
+    });
+    expect(ways.map((way) => [way.id, way.recommended === true])).toEqual([
+      ['composio:youtube', true],
+      ['youtube-data-api', false],
+    ]);
+  });
+
   test('an app with no one-click server recommends its managed toolkit; a registry record on another domain still counts', async () => {
     const items = async () => [
       { ...record('jira-openapi', 'openapi', 'Bitbucket', 'bitbucket.org') },
@@ -307,5 +352,100 @@ describe('a catalogue source that is down', () => {
     expect(catalogDegraded()).toEqual(['composio']);
     await connectorsV2Items({ apps: () => [], index: async () => [], toolkits: async () => [] });
     expect(catalogDegraded()).toEqual([]);
+  });
+});
+
+describe('X: one-click sign-in with Kortix’s own X client', () => {
+  const X_MCP = 'https://api.x.com/mcp';
+  const X_CLIENT = new Map([['x', { client_id: 'kortix-x', client_secret: 'kortix-x-secret' }]]);
+  const CALLBACK = 'https://api.kortix.test/v1/connectors/oauth2/callback';
+  // What api.x.com published on 2026-11-04: RFC 9728 + RFC 8414, no registration endpoint.
+  const xServer = async (input: string | URL | Request): Promise<Response> => {
+    const url = String(input);
+    if (url === X_MCP) {
+      return new Response('{}', { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="https://api.x.com/.well-known/oauth-protected-resource"' } });
+    }
+    if (url.startsWith('https://api.x.com/.well-known/oauth-protected-resource')) {
+      return Response.json({ resource: X_MCP, authorization_servers: ['https://api.x.com'], scopes_supported: ['tweet.read', 'offline.access'] });
+    }
+    if (url.startsWith('https://api.x.com/.well-known/')) {
+      return Response.json({
+        issuer: 'https://api.x.com',
+        authorization_endpoint: 'https://x.com/i/oauth2/authorize',
+        token_endpoint: 'https://api.x.com/2/oauth2/token',
+        code_challenge_methods_supported: ['S256'],
+        token_endpoint_auth_methods_supported: ['none', 'client_secret_basic'],
+      });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  async function withClients<T>(clients: string, run: () => Promise<T>): Promise<T> {
+    const previous = config.KORTIX_OAUTH_CLIENTS;
+    (config as { KORTIX_OAUTH_CLIENTS: string }).KORTIX_OAUTH_CLIENTS = clients;
+    try {
+      return await run();
+    } finally {
+      (config as { KORTIX_OAUTH_CLIENTS: string }).KORTIX_OAUTH_CLIENTS = previous;
+    }
+  }
+
+  test('without an X client the server is not one click: it publishes endpoints but no registration (the 404 cause)', async () => {
+    const discovery = await withClients('', () => discoverProtectedResourceOAuth2({ resourceUrl: X_MCP, provider: 'mcp' }, { fetchImpl: xServer }));
+    expect(discovery.metadata?.token_url).toBe('https://api.x.com/2/oauth2/token');
+    expect(discovery.registration_endpoint).toBeUndefined();
+    expect(discovery.kortix_client).toBeUndefined();
+    expect(mcpSignInCheck(discovery)).toEqual({ requires_sign_in: true, one_click: false });
+    expect(availableMcpApps(new Map()).map((app) => app.slug)).not.toContain('x');
+  });
+
+  test('with an X client the sign-in is one click, from the catalogue, without probing the server', async () => {
+    const discovery = await withClients(JSON.stringify({ x: { client_id: 'kortix-x', client_secret: 'kortix-x-secret' } }), () =>
+      discoverProtectedResourceOAuth2({ resourceUrl: X_MCP, provider: 'mcp' }, { fetchImpl: async () => { throw new Error('the server must not be probed'); } }),
+    );
+    expect(discovery).toMatchObject({ kortix_client: true, authorization_server: 'https://api.x.com', scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'] });
+    expect(JSON.stringify(discovery)).not.toContain('kortix-x-secret');
+    expect(mcpSignInCheck(discovery)).toEqual({ requires_sign_in: true, one_click: true });
+    expect(availableMcpApps(X_CLIENT).map((app) => app.slug)).toContain('x');
+  });
+
+  test('authorize, code exchange, stored credential and refresh follow X’s confidential-client contract', async () => {
+    const application = kortixClientApplication(X_MCP, X_CLIENT);
+    expect(application).toMatchObject({ client_id: 'kortix-x', token_endpoint_auth_method: 'client_secret_basic', token_url: 'https://api.x.com/2/oauth2/token' });
+    if (!application) throw new Error('no X application');
+
+    const started = buildOAuth2AuthorizationRequest(application, { callbackUrl: CALLBACK });
+    const authorize = new URL(started.authorizationUrl);
+    expect(authorize.origin + authorize.pathname).toBe('https://x.com/i/oauth2/authorize');
+    expect(authorize.searchParams.get('scope')).toBe('tweet.read tweet.write users.read offline.access');
+    expect(authorize.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(authorize.searchParams.get('redirect_uri')).toBe(CALLBACK);
+    expect(started.authorizationUrl).not.toContain('kortix-x-secret');
+
+    const requests: Array<{ url: string; auth: string | null; body: URLSearchParams }> = [];
+    let issued = 0;
+    const tokenEndpoint = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      requests.push({ url: String(input), auth: new Headers(init?.headers).get('authorization'), body: new URLSearchParams(String(init?.body)) });
+      issued += 1;
+      return Response.json({ token_type: 'bearer', expires_in: 7200, access_token: `access-${issued}`, refresh_token: `refresh-${issued}`, scope: 'tweet.read tweet.write users.read offline.access' });
+    };
+    const t0 = 1_800_000_000_000;
+    const token = await exchangeOAuth2AuthorizationCode(application, { code: 'code-1', callbackUrl: CALLBACK, pkceVerifier: started.pkceVerifier }, { fetchImpl: tokenEndpoint, now: () => t0 });
+    expect(token).toMatchObject({ access_token: 'access-1', refresh_token: 'refresh-1', expires_at: t0 + 7_200_000 });
+    const basic = `Basic ${Buffer.from('kortix-x:kortix-x-secret').toString('base64')}`;
+    expect(requests[0]).toMatchObject({ url: 'https://api.x.com/2/oauth2/token', auth: basic });
+    expect(Object.fromEntries(requests[0]?.body ?? [])).toEqual({ grant_type: 'authorization_code', code: 'code-1', redirect_uri: CALLBACK, code_verifier: started.pkceVerifier });
+
+    const stored = createStoredDelegatedCredential(application, token);
+    // Still valid: no token request.
+    expect(await resolveStoredDelegatedCredential(stored, { fetchImpl: tokenEndpoint, now: () => t0 + 60 * 60_000 })).toEqual({ accessToken: 'access-1', updatedValue: null });
+    expect(requests).toHaveLength(1);
+    // Inside the last minute of the 2 h lifetime: refresh, and keep X's rotated refresh token.
+    const refreshed = await resolveStoredDelegatedCredential(stored, { fetchImpl: tokenEndpoint, now: () => t0 + 7_150_000 });
+    expect(refreshed.accessToken).toBe('access-2');
+    expect(requests[1]).toMatchObject({ url: 'https://api.x.com/2/oauth2/token', auth: basic });
+    expect(requests[1]?.body.get('grant_type')).toBe('refresh_token');
+    expect(requests[1]?.body.get('refresh_token')).toBe('refresh-1');
+    expect(requests[1]?.body.has('client_secret')).toBe(false);
+    expect(JSON.parse(refreshed.updatedValue ?? '{}').token.refresh_token).toBe('refresh-2');
   });
 });

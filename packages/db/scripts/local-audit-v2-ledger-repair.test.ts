@@ -7,7 +7,7 @@ const complete = {
     'agent_id', 'agent_name', 'authoritative_source', 'causation_id', 'client_reported_source',
     'delegation_depth', 'error_code', 'error_message', 'execution_id', 'initiator_actor_id',
     'initiator_actor_type', 'input_sha256', 'input_summary', 'integrity_hash',
-    'integrity_previous_hash', 'message_id', 'opencode_session_id', 'output_sha256',
+    'integrity_previous_hash', 'message_id', 'runtime_session_id', 'output_sha256',
     'output_summary', 'parent_event_id', 'phase', 'session_sequence', 'source_ledger',
     'source_record_id', 'source_revision', 'tool_call_id', 'turn_id',
   ],

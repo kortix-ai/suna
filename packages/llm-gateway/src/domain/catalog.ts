@@ -44,8 +44,8 @@ export interface ModelInfo {
   // The REAL upstream provider this model resolves against — 'anthropic',
   // 'openai', 'codex' (ChatGPT subscription), 'kortix' (managed/auto), etc.
   // Every wire model served by the gateway is registered under the single
-  // synthetic `kortix` opencode provider (see the sandbox agent server's
-  // `buildKortixProvider`), so this is the one field a client can group/brand
+  // `kortix` provider in the box (kortixd `createPiModels`,
+  // `harness/pi/model.ts`), so this is the one field a client can group/brand
   // by WITHOUT parsing the wire model id — never drop it; a client that has
   // to fall back to string-splitting `<provider>/<model>` is exactly the
   // fragile path this field exists to replace.

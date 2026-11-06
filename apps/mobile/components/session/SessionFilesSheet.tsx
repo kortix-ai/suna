@@ -44,7 +44,6 @@ import {
   deriveSessionFiles,
   filterSessionFiles,
   isSupportingFile,
-  previewsInline,
   sessionFileKindLabel,
   type SessionFile,
 } from '@/lib/session/session-files';

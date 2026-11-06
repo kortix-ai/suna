@@ -8,10 +8,6 @@ import { isMyKortixAgentName } from '@kortix/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { revokeSessionConnectorTokens } from '../../repositories/account-tokens';
 import { revokeAllPublicSharesForSession } from '../../shared/session-public-shares';
-import {
-  legacyRehydrateSpec,
-  rehydrateSessionChat,
-} from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
 import { refreshResumedSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
@@ -297,19 +293,14 @@ async function provisionReplacementRuntime(
       ? (session.metadata.initial_prompt as string)
       : null;
   const initialTurn = initialPrompt ? prepareInitialSandboxTurn() : null;
-  const opencodeModel =
-    typeof session.metadata?.opencode_model === 'string'
-      ? (session.metadata.opencode_model as string)
+  const sessionModel =
+    typeof session.metadata?.model === 'string'
+      ? (session.metadata.model as string)
       : null;
 
   await transitionSession('provision', sessionId, { error: null, sandboxUrl: null });
 
   const runtimeMetadata = { restarted_at: new Date().toISOString() };
-  const rehydrate = legacyRehydrateSpec(
-    session.metadata,
-    loaded.row.metadata,
-    loaded.row.projectId,
-  );
   allocateSessionRuntime({
     sessionId,
     accountId: loaded.row.accountId,
@@ -336,7 +327,7 @@ async function provisionReplacementRuntime(
         repoUrl: loaded.row.repoUrl,
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
-        opencodeModel,
+        sessionModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         // A restarted My Kortix session must keep its runtime: without this
@@ -347,15 +338,6 @@ async function provisionReplacementRuntime(
         restoreSessionBranch: true,
       }),
     resolveGitProject: async () => withProjectGitAuth(loaded.row as any),
-    beforeActive: rehydrate
-      ? (externalId) =>
-          rehydrateSessionChat({
-            sessionId,
-            externalId,
-            provider: providerName,
-            spec: rehydrate,
-          })
-      : undefined,
   });
 }
 
@@ -676,9 +658,9 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   // beats one parked because a git read failed.
   //
   // This used to push the compiled config alone. That moved the etag and
-  // left the agent unchanged, because opencode reads the agent `.md` files
+  // left the agent unchanged, because OpenCode read the agent `.md` files
   // from the working tree and a restart never touched them. The
-  // convergence syncs those files first, and skips the second opencode
+  // convergence syncs those files first, and skips the second runtime
   // restart entirely when the box is already current.
   //
   // A restart resumes the SAME VM, so the daemon's boot-time reconcile
@@ -694,7 +676,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   // now also fetches the live managed-model lineup and rewrites the
   // overlay file (see `convergeManagedModelCatalog`, `allowRestart:
   // false`), and config convergence right below is what actually
-  // RESPAWNS opencode. Racing the two left a real dev box restarting
+  // RESPAWNS the runtime. Racing the two left a real dev box restarting
   // straight back onto its stale managed lineup 2026-09-26: the config
   // convergence's respawn read whatever catalog file was on disk at THAT
   // instant, and the runtime-asset refresh's write had not landed yet.

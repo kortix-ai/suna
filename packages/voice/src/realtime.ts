@@ -2,6 +2,9 @@
 // gpt-realtime; they differ only in URL, auth header and session shape. A tool result is held until the model is idle, then spoken.
 import { type Hooks, type Opts, type Provider, b64, unb64 } from './model'
 
+// A vendor's error text reaches stderr verbatim: drop line breaks so it cannot forge log lines (CodeQL js/log-injection).
+const oneline = (v: unknown) => String(v).replace(/[\r\n]+/g, ' ')
+
 const vendors = {
   xai: {
     url: (_: string) => 'wss://api.x.ai/v1/realtime',
@@ -83,7 +86,7 @@ export const realtime =
 
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data))
-      if (process.env.DEBUG && !m.type.endsWith('.delta')) console.error(vendor, performance.now() | 0, m.type)
+      if (process.env.DEBUG && !m.type.endsWith('.delta')) console.error(vendor, performance.now() | 0, oneline(m.type))
       switch (m.type) {
         case 'session.created':
           return send({ type: 'session.update', session: v.session(o) })
@@ -112,7 +115,7 @@ export const realtime =
         case 'response.function_call_arguments.done':
           return h.tool(m.call_id, m.name, JSON.parse(m.arguments || '{}'))
         case 'error':
-          return console.error(`[${vendor}]`, m.error?.message ?? m)
+          return console.error(`[${vendor}]`, oneline(m.error?.message ?? m))
       }
     }
     ws.onclose = (e) => h.close(`${vendor} ${e.code} ${e.reason}`)

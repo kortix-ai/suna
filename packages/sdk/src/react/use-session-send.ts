@@ -47,7 +47,7 @@ import {
   type AbortSettlement,
   type PromptPart,
   type SendMessageOptions,
-} from './use-opencode-sessions';
+} from './use-runtime-sessions';
 import { readStartStash, writeStartStash, type StartStash } from './session-start-stash';
 // The Stop primitives live in `session-stop.ts` so `useSession().cancel()` can
 // share them without importing this module (which imports FROM `use-session`).
@@ -171,7 +171,7 @@ export function abandonOptimisticSend(sessionId: string, messageId: string): voi
 // duplicated `handleSendError`/`handlePromptError`.
 // ============================================================================
 
-/** The minimal slice of `OpencodeClient` the recovery rehydrate needs. */
+/** The minimal slice of the runtime client the recovery rehydrate needs. */
 export interface RuntimeMessagesClient {
   session: {
     messages: (args: { sessionID: string; limit?: number }) => Promise<{ data?: unknown }>;
@@ -198,7 +198,7 @@ export interface SendRecoveryOptions {
    * Does the durable prompt inbox already hold this send?
    *
    * A prompt that goes to `POST .../prompts` becomes a CONTROL-PLANE row
-   * waiting for admission. It is not in OpenCode's transcript and will not be
+   * waiting for admission. It is not in the runtime's transcript and will not be
    * until the gate delivers it — so the message rehydrate below, which asks the
    * RUNTIME, always answers "no such message" for one. Acting on that answer
    * deleted the user's bubble while the row it could not see was already
@@ -364,7 +364,7 @@ export async function sendAndRecover(args: SendAndRecoverArgs): Promise<SendAndR
 // ============================================================================
 // Stash-replay orchestration — framework-free write-race retry + readiness
 // poll + failure stash-restore, extracted from apps/web's new-session
-// hand-off effect (same pattern as `state/event-stream.ts`'s framework-free
+// hand-off effect (same pattern as `core/stream/event-stream.ts`'s framework-free
 // SSE machine: an injectable timer seam so tests can drive it deterministically).
 // ============================================================================
 
@@ -560,7 +560,7 @@ export interface SendWithReceiptArgs extends SendAndRecoverArgs {
   /**
    * The KORTIX session id, when it differs from `sessionId`.
    *
-   * Two ids, deliberately: `sessionId` addresses the OpenCode runtime the
+   * Two ids, deliberately: `sessionId` addresses the runtime the
    * prompt is POSTed to, while `useSessionWorking` — and therefore the receipt
    * store — is keyed by the Kortix session `GET .../turn` answers about.
    * Filing under the wrong one is filing under nothing. Defaults to
@@ -616,7 +616,7 @@ export interface UseSessionSendOptions {
   /**
    * The KORTIX session id, when it differs from the hook's `sessionId`.
    *
-   * `sessionId` addresses the OpenCode runtime this hook POSTs to; the send and
+   * `sessionId` addresses the runtime this hook POSTs to; the send and
    * abort receipts belong to the Kortix session `useSessionWorking` reads. Pass
    * it whenever the two ids differ, or the receipts are filed under a key
    * nothing reads. See `SendWithReceiptArgs.workingSessionId`.
@@ -713,6 +713,3 @@ export function useSessionSend(
   return { send, stop, isSending, isStopping: abortMutation.isPending, sendError };
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `RuntimeMessagesClient`. Removed in the next major. */
-export type OpenCodeMessagesClient = RuntimeMessagesClient;

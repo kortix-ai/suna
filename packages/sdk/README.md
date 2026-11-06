@@ -306,10 +306,8 @@ Install the optional peers before you use the React entry:
 npm install @kortix/sdk react @tanstack/react-query
 ```
 
-Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
-`@deprecated`. Import from the root instead — see **Entry points** below, and
-the [SDK reference](https://kortix.com/docs/#deprecated-names) for the full
-list of aliases (21 of them).
+The older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) were removed in
+0.15.0. Import from the root instead — see **Entry points** below.
 
 > **React Native / Expo:** REST works. Live streaming works with a host
 > transport: pass `configureKortix({ eventStreamTransport })` (one connection's
@@ -655,6 +653,47 @@ Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.
 
+## Goals
+
+A goal is what a person wants plus a definition of done (project flag
+`goals`, off by default). The API owns its state, pause, owner and verifier
+sessions, limits and verification; the goal's Drive folder holds the brief
+(`GOAL.md`), `log.md` and `evidence/`. Lifecycle fields written into
+`GOAL.md` change nothing.
+
+```ts
+import { createProjectGoal, listProjectGoals, pauseProjectGoal, ProjectGoalConflictError } from '@kortix/sdk';
+
+// goalId is the idempotency key: retry with the same id, get the same goal.
+const { goal } = await createProjectGoal(projectId, { outcome: 'EU billing live', goalId });
+
+const [first] = await listProjectGoals(projectId);
+if (first?.capabilities.pause) {
+  try {
+    const { projectGoal } = await pauseProjectGoal(projectId, first, 'Paused from my app.');
+    console.log(projectGoal.revision); // the new revision
+  } catch (error) {
+    // Someone changed the goal first: error.goal is the goal as it is now.
+    if (error instanceof ProjectGoalConflictError) console.log(error.goal.record.state);
+    else throw error;
+  }
+}
+```
+
+- Show a control only when `goal.capabilities` allows it. A read-only viewer
+  gets every capability `false`.
+- `criteria[].verified` is set only by a passed independent verification;
+  `criteria[].reported_met` is the agent's claim.
+- `blockedReason` says why a goal cannot go on (`credits`, `wake_cap`,
+  `session_cap`, `owner_lost`, `storage`, `flag_off`, `setup`).
+- `replyToProjectGoal(projectId, goal, text, { answerId })` answers as the
+  caller; one answer per `answerId`.
+- React: `useProjectGoals`, `useProjectGoal`, `useProjectGoalEvents`,
+  `useProjectGoalFiles`, `useSessionGoal`, and `useProjectGoalControl` (one
+  request per double submit, the cache updated on success and on a `409`).
+- Deprecated: `ProjectGoal.heartbeat` is always `null`;
+  `CreateProjectGoalInput.sessionId` is sent as the goal id.
+
 ## Artifact comments and activity
 
 Projects enable `artifacts` and `artifact_comments` before using comments.
@@ -716,7 +755,13 @@ change every loaded thread list at once, and a failed write undoes only its own
 change. A thread or comment that the server has not confirmed yet carries
 `optimistic: true`; a new one also has an `optimistic-` id, an empty author
 (`user_id: ''`) and every `can_*` action false. Hosts render it as pending.
-Mounted Comments and Activity queries refetch after the last concurrent write.
+Mounted Comments and Activity queries, the `useArtifacts` list and the current
+`useArtifact` read refetch after the last concurrent write.
+
+`listArtifacts` and `getArtifact` return `open_thread_count` while the project
+has `artifact_comments` on: the threads with status `open` whose first comment
+is not deleted. The field is absent while the flag is off, and from older APIs.
+Hosts show it on an Artifact card before the person opens it.
 `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? })`
 returns one activity page. Both hooks poll every 10 seconds while mounted and
 visible. A missing project or Artifact id disables reads. Comment reads never
@@ -752,6 +797,179 @@ owns cursor pages and exposes ordered, deduplicated `items`, `olderVersions`,
 a second copy of activity pages. Its mounted polling and write invalidation
 match the one-page hook.
 
+### Live presence
+
+An open Artifact has one WebSocket per viewer. It carries who is here, their
+cursor, selection, typing and open thread, and a ping when comments, activity
+or content change. It carries no comment text and no Artifact content: those
+stay on REST. It needs `artifacts` and `artifact_comments`.
+
+```ts
+// React: one hook per open Artifact.
+const live = useArtifactLive(projectId, artifactId, {
+  enabled: artifactCommentsOn, // never connects while false
+  view: 'doc',                 // or 'page'
+  version: artifact.entry_version,
+  hidden: document.hidden,
+});
+live.status;        // 'connecting' | 'live' | 'reconnecting' | 'closed' | 'access_lost'
+live.participants;  // ArtifactLiveParticipant[], this tab included (id === live.you)
+live.setCursor({ kind: 'doc', quote: 'Churn fell', prefix: 'quarter. ', offset: 5 });
+live.setTyping({ thread_id: threadId }, true);
+
+// Without React (any runtime with a WebSocket, or pass `webSocket`).
+const connection = kortix.project(projectId).artifacts.live.connect(artifactId, {
+  view: 'page',
+  onEvent: (event) => { /* status, welcome, presence, changed, resync */ },
+});
+connection.setFocus(threadId);
+connection.close();
+```
+
+`useArtifactLive` refetches on a `changed` ping: `comments` refetches the
+Artifact's comment reads (not screenshots; deferred while a comment write is
+in flight), `activity` the activity reads, and `content` the current
+Artifact, its versions and the `useArtifacts` list. After a reconnect it
+refetches all of them once (`resync`). It closes on unmount, when `enabled`
+turns false, or when the project or Artifact changes. A `version` change does
+not reconnect; a `hidden` change sends one frame.
+
+`createArtifactLiveConnection({ projectId, artifactId, view, version?, hidden?,
+getTicket?, webSocket?, backendUrl?, onEvent? })` is the framework-free
+client. Each attempt mints a one-use ticket (`createArtifactLiveTicket`, a
+60 s ticket from `POST …/live/ticket`) and opens `GET …/live?ticket=` on the
+`ws(s)://` form of `backendUrl`. It sends `hello`, pings every 25 s, and
+replaces a socket that missed a pong or got no welcome in 20 s. It sends at
+most 8 frames a second: each field coalesces to its newest value, so a fast
+pointer never builds a backlog. A setter returns `false` and sends nothing for
+a value the protocol refuses (a doc cursor quote over 64 characters, a frame
+over 1024 UTF-8 bytes, an id that is not a UUID). Reconnects back off 1, 2,
+4, 8, 16, 30 s (plus up to 50 % jitter, at most 30 s), with a new ticket each
+time. Close code `4403`, or a ticket refused with `403` or `404`, ends the
+connection with `access_lost`. Every server frame is validated; an invalid
+frame is dropped.
+
+`signalArtifactLiveAgent(projectId, artifactId, { status, thread_id?, quote? })`
+names an agent session's place: `reading`, `editing` or `writing` a thread or
+near a quote, or `idle` to leave. Only a session-bound token may call it; a
+person's token answers `403`. The CLI form is `kortix artifacts focus`.
+
+### Co-editing a doc
+
+Several people and agents edit one doc Artifact (`type = 'doc'`) at the same
+time over Yjs. It needs `artifacts` and `artifact_comments`. Updates travel
+over REST, not the live socket: a tab POSTs its updates, the server stores
+each under a per-Artifact `seq` and pings the socket with `changed doc`, and
+every tab GETs the updates after its last seq. One tab holds a 15 s lease and
+writes the Markdown file with the save route; the file stays the truth for
+agents, versions and readers. The Yjs state is disposable: every seed starts a
+new `epoch`, and a reset or the GC of an idle doc deletes it. The next open
+seeds it again from the file.
+
+The SDK has no yjs dependency. `createArtifactDocSync` works on bytes; the host
+owns the `Y.Doc`:
+
+```ts
+import * as Y from 'yjs';
+import { createArtifactDocSync } from '@kortix/sdk';
+
+const remote = Symbol('remote');
+let doc = new Y.Doc();
+let known: string | null = null;                       // the last flushed Markdown this tab knew
+const bind = () => doc.on('update', (update, origin) => { if (origin !== remote) sync.push(update); });
+// The seed is ALWAYS built from the current file, in a scratch Y.Doc.
+const fromFile = async () => {
+  const file = await readFile();
+  return { update: seedFromMarkdown(file.text), markdown: file.text, version: file.entry_version };
+};
+
+const sync = createArtifactDocSync({
+  projectId, artifactId,
+  holder: crypto.randomUUID(),                          // this tab's lease id
+  apply: (update) => Y.applyUpdate(doc, update, remote), // always the current doc
+  merge: (updates) => Y.mergeUpdates(updates),
+  onLeader: (leader) => { /* the leader writes the file 2 s after the last edit */ },
+  onStatus: (status) => { /* 'failed': fall back to single-writer autosave */ },
+  onReset: async ({ reason }) => {
+    const mine = editorMarkdown();                      // the person's text
+    const before = known;                               // the last flushed Markdown this tab knew
+    doc.destroy();
+    doc = new Y.Doc();                                  // never reuse the old doc
+    bind();
+    known = (await sync.start(fromFile)).base?.markdown ?? known;
+    if (canWrite && before !== null && mine !== before) applyOutsideEdit(editor, before, mine);
+  },
+});
+bind();
+const { created, base } = await sync.start(fromFile);
+known = base?.markdown ?? null;                         // update it after each flush and base()
+
+useArtifactLive(projectId, artifactId, { view: 'doc', onDoc: (seq) => sync.notify(seq) });
+
+// The leader serializes the doc, captures covered at that moment, saves the file, then:
+const seq = sync.covered;
+const saved = await save(serialize(doc));
+await sync.flushed({ version: saved.entry_version, markdown: saved.text, seq });
+sync.close(); // on unmount: sends what is unsent, releases the lease
+```
+
+- `start(buildSeed)` reads every stored update (`after=0&base=true`) and applies
+  it. An unseeded doc is seeded with `buildSeed()`: build that update from the
+  current Markdown file, in a scratch `Y.Doc`, never from live state. The
+  engine applies the seed only once the server accepts it: on `409 doc_seeded`
+  another tab won, and its doc is pulled instead. `start` runs once, and again
+  only after `onReset`; `buildSeed` then gets `restart: true`, and the seed
+  still comes from the file.
+- **Reset.** Every push, lease call and flush names the `epoch` the tab
+  loaded. A pull that finds the doc unseeded or under another `epoch`, or a
+  push, lease renewal or flush answered `409 doc_not_seeded` or `409
+  epoch_mismatch`, means the doc this tab loaded is gone. An epoch is adopted
+  only when `start` saw none (a doc seeded before epochs); any other change is
+  a reset. The engine stops, drops its unacknowledged pushes, rejects
+  waiting `flushed` and `base` calls with code `doc_reset`, calls
+  `onLeader(false)`, sets the status `reset`, and calls `onReset({ reason })`
+  once (`'not_seeded'`, `'epoch'` or `'poisoned'`). The host keeps its editor's
+  Markdown (`mine`) and the last flushed Markdown it knew, builds a fresh
+  `Y.Doc`, calls `start` again, and then merges `mine` into the new doc. The
+  person's unsynced edits survive through that text merge, not through Yjs. A
+  read-only viewer rebuilds and merges nothing. The reset ping
+  (`changed doc`, version `'0'`) and any ping below the highest seq here
+  (seqs restart at 1 after a re-seed), except this tab's own echoes, pull at
+  once, so a reset is seen within one round trip.
+- **Poison.** When `apply` throws for a stored update, the engine stops
+  applying, sets `retrying`, and resets the doc on the server
+  (`resetArtifactDoc`). When another tab holds the lease (`409 not_leader`),
+  it checks every 3 s until that tab has reset it. Then it reports
+  `onReset({ reason: 'poisoned' })`.
+- `push(update)` batches for 50 ms, merges the batch with `merge`, and keeps
+  one push in flight, in order. A failed push retries after 1, 2, 4, 8, 16,
+  30 s (plus up to 50 % jitter, at most 30 s) with the later updates merged
+  behind it; no update is dropped while the doc lives. A merged batch over
+  512 KiB is split. A refusal (`400`, `403`, `404`, one update over 512 KiB,
+  `413 doc_too_large` when the doc's stored updates pass their limit) calls
+  `onError` and sets `failed`, a final status: the host falls back to autosave.
+- `notify(seq)` pulls when that seq is not here yet. Pulls are serial. Without
+  a notify for 3 s the engine polls every 3 s.
+- `covered` is the highest seq such that every update up to it is in the local
+  doc. `flushed({ version, markdown, seq? })` waits for the updates pushed
+  before it, then records `seq`: the `covered` the host captured when it
+  serialized that Markdown, else `covered` now. `409 not_leader` rejects and
+  calls `onLeader(false)`. `base()` returns the last flushed Markdown.
+- The lease renews every 5 s. A leader whose renewals fail steps down 13 s
+  after its last renewal was sent. A viewer without write access gets `403`
+  on the lease and never leads; it still pulls.
+
+`getArtifactDoc`, `seedArtifactDoc`, `pushArtifactDocUpdate`,
+`leaseArtifactDoc`, `markArtifactDocFlushed` and `resetArtifactDoc` are the
+REST calls (also `kortix.project(id).artifacts.doc.{get, seed, push, lease,
+flushed, reset}`). They take and return `Uint8Array`; base64 is the wire form
+only. `getArtifactDoc` and `seedArtifactDoc` report the `epoch`. They never
+call the global `onError`. The live connection never emits a `changed` event
+for `doc`, and `ArtifactLiveChange` stays `'comments' | 'activity' |
+'content'`: `createArtifactLiveConnection({ onDoc })` and
+`useArtifactLive(…, { onDoc })` receive the seq, and the hook refetches nothing
+for it.
+
 ## The facade surface
 
 `createKortix(config)` returns one client. The table below is illustrative, not
@@ -760,8 +978,8 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
-| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `subscriptions.{list,usage}` (project-authorized usage for named and legacy ChatGPT logins; reads credentials in place) · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,redeem,autoTopupSettings,configureAutoTopup}` (`redeem({ code, accountId })` adds a credit code's amount to the non-expiring credits, once per account). `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}`. A project installs an item through `createMarketplaceInstallSession(projectId, itemId)`, which starts a session whose agent merges the item into the project and opens a change request; it resolves `{ session_id }` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
@@ -1284,11 +1502,11 @@ learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
-| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks. Its deprecated aliases are listed in the [SDK reference](https://kortix.com/docs/#deprecated-names) | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the error classes, and every domain type | — |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/genui/fence`, `@kortix/sdk/genui`, `@kortix/sdk/genui/react` | Generative UI: split `openui` blocks out of text, parse them, render them (see **Generative UI** below) | `genui` and `genui/react` need the optional peers `zod` and `@openuidev/lang-core`; `genui/fence` loads neither |
-| `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers are `@deprecated` | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers (`wireIdClockDelta`, `mintWireMessageIdAbove`, …) place ids on the 48-bit clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/workspace-search` | `createWorkspaceSearchClient` and its ranking helpers | isolated from the root on purpose |
 | `@kortix/sdk/capture-rules` | the Kortix Capture constants (`CAPTURE_LAYERS`, `CAPTURE_DEVICE_DEFAULTS`, …) | the root exports the same names; this module loads alone |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
@@ -1297,7 +1515,7 @@ The root really is canonical, and that is a test rather than a promise:
 `src/root-canonical.test.ts` asserts that every name exported by every other
 isomorphic subpath is also exported from `@kortix/sdk`. The only subpaths it
 permits to be missing are `react`, `server`, the three `genui` entries,
-`workspace-search` and the browser-only stores above — `zustand` is a
+`workspace-search` and the browser-only `./internal/*` modules above — `zustand` is a
 forbidden import in the root's `isomorphic-core` tier, so they cannot live
 there.
 
@@ -1306,18 +1524,15 @@ import { createKortix, classifyTurn, listFiles, openEventStream } from '@kortix/
 import { useSession } from '@kortix/sdk/react';
 ```
 
-### Legacy aliases — do not use in new code
+### Removed subpaths (0.15.0)
 
-`package.json` still declares 21 more subpaths, for example `/turns`, `/files`,
-`/session`, `/projects-client`, `/event-stream` and the un-prefixed store
-aliases. The full list is in the
-[SDK reference](https://kortix.com/docs/#deprecated-names).
-
-Twenty of them are one-line `export *` re-exports under `src/deprecated/`, and
-`/message-queue` is a deprecated module of its own. They stay only so an
-existing `npm install` does not break. **They add nothing
-the root does not already export.** They are removed at the next major; new
-code imports the root.
+0.15.0 removed 25 legacy subpaths: `/turns`, `/files`, `/session`,
+`/session/url`, `/projects-client`, `/platform-client`, `/api-client`,
+`/config`, `/auth`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`,
+`/event-stream`, `/opencode-client`, `/opencode-errors`, `/idb-sync-cache`,
+`/message-queue`, the four un-prefixed store aliases and the four
+`/internal/*` session stores. Every name they exported (except the message
+queue and the stores) is exported from the root. See `CHANGELOG.md`.
 
 ## Configuration
 
@@ -1742,3 +1957,28 @@ an unavailable origin creates a root with `metadata.origin_session_id`.
 same-project parent. This groups the new session without inheriting the parent's
 sharing or automation identity. A session-bound credential retains its own
 server-derived parent regardless of that field.
+
+### Durable session model controls
+
+`session.setModel()` remains a local preference for later sends from that SDK handle.
+`session.getModel()` reads the durable pin (`{ model: string | null }`).
+`session.changeModel(model)` saves the pin without sending a prompt.
+Pi reconfigures without restarting; the running turn finishes before the next turn uses the new model.
+
+```ts
+await session.switchModel({
+  model: 'kortix/glm-5.3-flash',
+  prompt: 'Continue verification with the new model.',
+  idempotency_key: 'verification-model-1',
+});
+```
+
+The switch saves the pin and queues the continuation in one database transaction.
+Reuse the same key and payload after a transport failure. A different payload with the same key is refused.
+Self-switches are limited to three per hour. A queued continuation waits for the current turn.
+The response contains `prompt_id` and `deduped`; inspect `push_failed` before reporting live application.
+
+CLI: `kortix sessions model get [session-id]`, `set [session-id] <model>`,
+and `switch [session-id] <model> --prompt "Continue verification" --idempotency-key verification-model-1`.
+The new verbs default to `KORTIX_SESSION_ID`. The existing `sessions model <session-id> <model>` remains supported.
+Never send a peer message to yourself to continue a model switch.

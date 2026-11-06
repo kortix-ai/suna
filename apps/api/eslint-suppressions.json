@@ -1500,7 +1500,7 @@
       "count": 12
     },
     "no-console": {
-      "count": 20
+      "count": 19
     },
     "no-restricted-properties": {
       "count": 1
@@ -1709,11 +1709,6 @@
   "src/projects/lib/session-runtime-projection-refresh.ts": {
     "kortix-api/replica-local": {
       "count": 3
-    }
-  },
-  "src/projects/lib/session-runtime-transport.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
     }
   },
   "src/projects/lib/session-sandbox-env-build.ts": {
@@ -1927,9 +1922,6 @@
   "src/projects/routes/change-request-actions.ts": {
     "no-console": {
       "count": 3
-    },
-    "no-restricted-imports": {
-      "count": 2
     },
     "no-restricted-syntax": {
       "count": 3
@@ -2409,7 +2401,7 @@
   },
   "src/projects/session-lifecycle/deliver.ts": {
     "no-console": {
-      "count": 4
+      "count": 2
     }
   },
   "src/projects/session-lifecycle/forwarded-placement.ts": {
@@ -2702,7 +2694,7 @@
       "count": 2
     },
     "no-console": {
-      "count": 2
+      "count": 1
     }
   },
   "src/sandbox-proxy/forward/wake.ts": {
@@ -2944,11 +2936,6 @@
       "count": 1
     }
   },
-  "src/shared/opencode-audit-rate-guard.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/shared/pg-broadcast.ts": {
     "kortix-api/layers": {
       "count": 1
@@ -2984,6 +2971,11 @@
     },
     "no-console": {
       "count": 2
+    }
+  },
+  "src/shared/runtime-audit-rate-guard.ts": {
+    "no-restricted-properties": {
+      "count": 1
     }
   },
   "src/shared/self-host-operator.ts": {

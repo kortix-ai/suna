@@ -21,10 +21,20 @@ export interface RuntimePromptInput {
   /** Persist the message and start no turn. */
   noReply?: boolean
   /**
-   * Text added to this turn's system prompt only (`project_channels`: the
+   * Text added to this turn's system prompt only (`chat`: the
    * thread's memory file list). The next turn without it runs without it.
    */
   system?: string
+  /**
+   * The thread's files in this box (`thread_files`, `chat`): the API sets it;
+   * a router names them in its worker prompts (harness/pi/front.ts).
+   */
+  threadFiles?: unknown
+  /**
+   * The thread's space agents (`space_agents`, `chat`): the API sets it; a
+   * router routes only to them (harness/pi/front-space.ts).
+   */
+  spaceAgents?: unknown
 }
 
 /** The HTTP answer a verb produced; the route sends it as it is. */
@@ -44,10 +54,6 @@ export interface HarnessTurnService {
    */
   steer(runtimeSessionId: string, input: RuntimePromptInput): Promise<HarnessTurnResponse>
   abort(runtimeSessionId: string): Promise<HarnessTurnResponse>
-  /** 200 `{ info, parts }` or 404. */
-  readMessage(runtimeSessionId: string, messageId: string): Promise<HarnessTurnResponse>
-  /** 2xx on removal, 404 when already gone, 409 while the message runs. */
-  removeMessage(runtimeSessionId: string, messageId: string): Promise<HarnessTurnResponse>
   /**
    * Take back a user message no model call has read: an unread steered
    * message, a prompt queued behind the running work, a `no_reply` message no
@@ -66,6 +72,8 @@ export interface HarnessTurnService {
   replyQuestion(requestId: string, answers: string[][]): Promise<HarnessTurnResponse>
   /** 200 `{ ok: true }`; 404 when no such question waits. */
   rejectQuestion(requestId: string): Promise<HarnessTurnResponse>
+  /** 200 `{ parked }`: every question and permission ask that waits on a person stops holding its call. */
+  parkAsks(): Promise<HarnessTurnResponse>
   /** 202 `{ ok: true }`: the summary runs as a turn of its own. */
   compact(runtimeSessionId: string): Promise<HarnessTurnResponse>
   /** 202 `{ message_id }`; 400 unknown command; 403 `{ error: 'command_not_enabled', command, agent }`. */

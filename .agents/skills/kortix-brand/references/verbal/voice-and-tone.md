@@ -53,7 +53,7 @@ The in-product agent speaks as "I'm Kortix" in the first chat (`apps/web/transla
 | GitHub | Github | Brand casing. The live homepage icon title says "Github". |
 | Microsoft Teams | MS Teams | Full name in copy. "Teams" after first use. |
 | Claude Cowork, ChatGPT Work | Claude Work, ChatGPT Cowork | See `positioning.md` section 4. |
-| OpenCode | Opencode, open code | The harness. |
+| OpenCode | Opencode, open code | The brand of the OpenCode Zen and OpenCode Go model providers. Never the Kortix harness (D39). |
 
 ### Product nouns
 
@@ -68,8 +68,7 @@ capitalized only at the start of a sentence or as a UI label.
 | cloud computer | The disposable, isolated machine a session runs on. Use when the point is that agents work on a real machine. | "Every session gets its own cloud computer." | container, VM |
 | sandbox | The same machine. Use when the point is isolation. | "One isolated sandbox per session." | container, blanket microVM |
 | Agent Computer | The name of one marketing page and nav item. Not a product noun. | "Agent Computer" (page name only) | "agent computer" in prose, "Kortix Agent Computer" |
-| `kortix.yaml` | The Kortix layer of a project: sandbox image, triggers, connectors, secret names and grants, where agent config lives. | `kortix.yaml` in mono | kortix config, manifest file (in marketing) |
-| OpenCode config | The runtime config: agents, skills, commands, tools, plugins, models, providers. | "the OpenCode config" | — |
+| `kortix.yaml` | The project's one config file: sandbox image, agents, skills, tools, commands, triggers, connectors, secret names and grants. It names the files that hold prompts and skills. | `kortix.yaml` in mono | kortix config, manifest file (in marketing), OpenCode config |
 | change request | The reviewed merge back toward `main`. CLI: `kortix cr`. | "The agent opens a change request you approve." | PR, pull request (in product copy), "the agent deploys" |
 | agent | A markdown persona with a prompt and a scoped reach into tools and resources. | "an agent", "install an agent" | bot, assistant, worker, AI worker |
 | skill | Markdown plus scripts that encode how the company does one job. | "a skill" | plugin, prompt template |

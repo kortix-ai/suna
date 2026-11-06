@@ -15,7 +15,7 @@ const session = (status: string) =>
 
 function snapshot(over: Partial<MirrorSnapshot> = {}): MirrorSnapshot {
   return {
-    opencode_session_id: 'ses_mirror',
+    runtime_session_id: 'ses_mirror',
     captured_at: '2026-08-26T06:00:00.000Z',
     total: 2,
     head_complete: true,
@@ -66,7 +66,7 @@ describe('the digest is the stored session log, for a running or a stopped sessi
     expect(digest.messages[1].parent_id).toBe('msg_1');
     expect(digest.messages[1].completed).toBe(new Date(1200).toISOString());
     expect(digest.captured_at).toBe('2026-08-26T06:00:00.000Z');
-    expect(digest.opencode_session_id).toBe('ses_mirror');
+    expect(digest.runtime_session_id).toBe('ses_mirror');
     expect(digest.runtime_session_id).toBe('ses_mirror');
   });
 
@@ -91,7 +91,7 @@ describe('with no mirror, the old honest answer is unchanged', () => {
     expect(digest.complete).toBe(false);
     expect(digest.messages).toEqual([]);
     expect(digest.reason).toBe('nothing is saved for this session yet');
-    expect(digest.opencode_session_id).toBe('ses_pin');
+    expect(digest.runtime_session_id).toBe('ses_pin');
     expect(digest.runtime_session_id).toBe('ses_pin');
   });
 });
@@ -278,15 +278,15 @@ describe("a sub-agent's saved transcript is its own window", () => {
     const envelope = await buildSessionTranscriptSyncEnvelope(
       { session: session('stopped'), limit: 40, child: 'ses_child' },
       {
-        readMirror: async (_id, _limit, _before, opencodeSessionId) => {
-          asked.push(opencodeSessionId);
-          return snapshot({ opencode_session_id: 'ses_child' });
+        readMirror: async (_id, _limit, _before, runtimeSessionId) => {
+          asked.push(runtimeSessionId);
+          return snapshot({ runtime_session_id: 'ses_child' });
         },
       },
     );
     expect(asked).toEqual(['ses_child']);
     expect(envelope.available).toBe(true);
-    expect(envelope.opencode_session_id).toBe('ses_child');
+    expect(envelope.runtime_session_id).toBe('ses_child');
     expect(envelope.runtime_session_id).toBe('ses_child');
   });
 
@@ -295,8 +295,8 @@ describe("a sub-agent's saved transcript is its own window", () => {
     await buildSessionTranscriptSyncEnvelope(
       { session: session('stopped'), limit: 40 },
       {
-        readMirror: async (_id, _limit, _before, opencodeSessionId) => {
-          asked.push(opencodeSessionId);
+        readMirror: async (_id, _limit, _before, runtimeSessionId) => {
+          asked.push(runtimeSessionId);
           return snapshot();
         },
       },
@@ -311,7 +311,7 @@ describe("a sub-agent's saved transcript is its own window", () => {
     );
     expect(envelope.available).toBe(false);
     expect(envelope.source).toBe('none');
-    expect(envelope.opencode_session_id).toBe('ses_child');
+    expect(envelope.runtime_session_id).toBe('ses_child');
     expect(envelope.runtime_session_id).toBe('ses_child');
   });
 });
@@ -324,13 +324,13 @@ describe('early history requires the current server-owned root', () => {
     );
     expect(envelope.available).toBe(false);
     expect(envelope.messages).toEqual([]);
-    expect(envelope.opencode_session_id).toBe('ses_pin');
+    expect(envelope.runtime_session_id).toBe('ses_pin');
     expect(envelope.runtime_session_id).toBe('ses_pin');
   });
   test('a matching root serves completed messages without reading the runtime', async () => {
     const envelope = await buildSessionTranscriptSyncEnvelope(
       { session: session('stopped'), limit: 40, requireCurrentRoot: true },
-      { readMirror: async () => snapshot({ opencode_session_id: 'ses_pin' }) },
+      { readMirror: async () => snapshot({ runtime_session_id: 'ses_pin' }) },
     );
     expect(envelope.available).toBe(true);
     expect(envelope.messages[1].info.time).toEqual({ created: 1100, completed: 1200 });

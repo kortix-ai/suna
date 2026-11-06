@@ -6,9 +6,13 @@ import { Hint } from '../../../primitives/hint';
 import { ToolResultCard } from '../shared/result-card';
 import { SubagentDialog } from '../../agents/subagent-view';
 import { useTranslations } from '../../../i18n';
+import { cn } from '../../../lib/utils';
 import { AgentStateMark } from '../../agents/agent-state-mark';
 import { subagentTitle } from '../../agents/agent-model';
 import { agentDisplayName } from '../../../internal/components/agent-mark';
+import { AgentFace, AgentHandle, AgentRowBody, AgentRowScope, AgentStatus, AgentTrigger, SmallGlyph, taskGlyphStatus } from '../../agents/agent-surface';
+import type { SessionDisplayStatus } from '../../actions/session-label';
+import { BasicTool } from '../shared/infrastructure';
 import {
   ArrowSquareOutIcon,
   ArrowUpRightIcon,
@@ -26,13 +30,13 @@ import {
   parseStoppedChild,
   parseTasks,
   type StoppedChild,
-  type AgentBoardState,
-  type PeerSendStatus,
+  type SessionBoardState,
+  type PeerMessageStatus,
   type PeerSendSummary,
   type ReachableAgentRow,
   type TeamTaskRow,
-  type TeamTaskStatus,
-} from './multi-agent-tool-data';
+  type SessionTaskStatus,
+} from '@kortix/sdk';
 
 /**
  * The card bodies of the multi-agent tools (`send_message`, `list_agents`,
@@ -71,22 +75,13 @@ export function runningKey(tool: MultiAgentTool): 'sending' | 'checkingAgents' |
   }
 }
 
-const PEER_VARIANT: Record<PeerSendStatus, BadgeVariant> = {
-  delivered: 'success',
-  held: 'warning',
-  refused: 'warning',
-  denied: 'warning',
-  expired: 'muted',
-  dropped: 'muted',
-};
-
-const TASK_VARIANT: Record<TeamTaskStatus, BadgeVariant> = {
+const TASK_VARIANT: Record<SessionTaskStatus, BadgeVariant> = {
   pending: 'muted',
   in_progress: 'info',
   completed: 'success',
 };
 
-const STATE_KEY: Record<AgentBoardState, string> = {
+const STATE_KEY: Record<SessionBoardState, string> = {
   working: 'working',
   needs_input: 'needsInput',
   idle: 'idle',
@@ -95,7 +90,7 @@ const STATE_KEY: Record<AgentBoardState, string> = {
   stopped: 'stopped',
 };
 
-const TASK_KEY: Record<TeamTaskStatus, string> = {
+const TASK_KEY: Record<SessionTaskStatus, string> = {
   pending: 'pending',
   in_progress: 'inProgress',
   completed: 'completed',
@@ -103,27 +98,56 @@ const TASK_KEY: Record<TeamTaskStatus, string> = {
 
 const ROW_CLASS = 'flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-xs';
 
-function PeerSendBody({ send }: { send: PeerSendSummary }) {
+/** An agent's face as a tool row's 16px icon: its pixel mark on its own tile. */
+export const AgentAvatarIcon = AgentFace;
+
+/** The state a send ended in, as a session-list glyph: delivered is done, held waits on a person. */
+const PEER_GLYPH: Record<PeerMessageStatus, SessionDisplayStatus> = {
+  delivered: 'done',
+  held: 'needs-you',
+  refused: 'stopped',
+  denied: 'stopped',
+  expired: 'stopped',
+  dropped: 'stopped',
+};
+
+/**
+ * `send_message`: one agent row, the receiver's face as its icon:
+ *
+ *   [face] To reviewer  Migration finished                  ✓ Delivered
+ *          │ the whole message
+ *          │ why it did not arrive, when it did not
+ *
+ * The state is a glyph and a muted word: a held message waits on a person, it did not fail.
+ */
+export function PeerSendRow({ send, defaultOpen, forceOpen, locked }: { send: PeerSendSummary; defaultOpen?: boolean; forceOpen?: boolean; locked?: boolean }) {
   const t = useTranslations('multiAgent.tools');
-  const preview = send.summary ?? send.message;
+  const delivered = send.status === 'delivered';
+  const preview = send.summary || firstLineOf(send.message) || undefined;
+  const hasBody = !!send.message || (!delivered && !!send.note);
   return (
-    <ToolResultCard bodyClassName="space-y-1 px-2 py-1.5 text-xs">
-      <div className="flex min-w-0 items-center gap-1.5" data-testid="peer-send-body">
-        {send.to && (
-          <>
-            <span className="text-muted-foreground shrink-0">{t('to')}</span>
-            <span className="text-foreground min-w-0 truncate font-medium">@{send.to}</span>
-          </>
-        )}
-        <span className="flex-1" />
-        <Badge variant={PEER_VARIANT[send.status]} size="sm" className="shrink-0">
-          {t(`peerStatus.${send.status}`)}
-        </Badge>
-      </div>
-      {preview && <p className="text-muted-foreground line-clamp-3 whitespace-pre-wrap wrap-break-word">{preview}</p>}
-      {send.note && send.status !== 'delivered' && <p className="text-muted-foreground">{send.note}</p>}
-    </ToolResultCard>
+    <AgentRowScope>
+      <BasicTool
+        icon={send.to ? <AgentFace handle={send.to} /> : undefined}
+        trigger={<AgentTrigger title={send.to ? t('messageToName', { to: send.to }) : t('messageSent')} subtitle={preview} />}
+        triggerAction={<AgentStatus status={PEER_GLYPH[send.status]} label={t(`peerStatus.${send.status}`)} opens={hasBody} />}
+        defaultOpen={defaultOpen}
+        forceOpen={forceOpen}
+        locked={locked}
+      >
+        {hasBody ? (
+          <AgentRowBody>
+            {send.message && <p className="text-foreground whitespace-pre-wrap wrap-break-word">{send.message}</p>}
+            {!delivered && send.note && <p className="text-muted-foreground">{send.note}</p>}
+          </AgentRowBody>
+        ) : undefined}
+      </BasicTool>
+    </AgentRowScope>
   );
+}
+
+function firstLineOf(text: string | null): string {
+  return text?.split('\n').find((line) => line.trim())?.trim() ?? '';
 }
 
 /** Row actions: shown on hover and on keyboard focus, always on a touch screen (as in the agents line). */
@@ -192,10 +216,12 @@ function AgentLine({ agent }: { agent: ReachableAgentRow }) {
 
 function TaskLine({ task }: { task: TeamTaskRow }) {
   const t = useTranslations('multiAgent.tools');
+  const done = task.status === 'completed';
   return (
     <div className={ROW_CLASS} data-task-seq={task.seq}>
+      <SmallGlyph status={task.blocked && !done ? 'stopped' : taskGlyphStatus(task.status)} label={t(`taskStatus.${TASK_KEY[task.status]}`)} />
       <span className="text-muted-foreground shrink-0 tabular-nums">#{task.seq}</span>
-      <span className="text-foreground min-w-0 flex-1 truncate" title={task.subject}>
+      <span className={cn('min-w-0 flex-1 truncate', done ? 'text-muted-foreground' : 'text-foreground')} title={task.subject}>
         {task.subject}
       </span>
       {task.blockedBy.length > 0 && task.blocked && (
@@ -203,14 +229,7 @@ function TaskLine({ task }: { task: TeamTaskRow }) {
           {t('blockedBy', { tasks: task.blockedBy.map((n) => `#${n}`).join(', ') })}
         </span>
       )}
-      {task.owner && (
-        <Badge variant="outline" size="sm" className="shrink-0">
-          @{task.owner}
-        </Badge>
-      )}
-      <Badge variant={TASK_VARIANT[task.status]} size="sm" className="shrink-0">
-        {t(`taskStatus.${TASK_KEY[task.status]}`)}
-      </Badge>
+      {task.owner && <AgentHandle handle={task.owner} />}
     </div>
   );
 }
@@ -274,7 +293,7 @@ export function multiAgentBody(tool: MultiAgentTool, result: KortixToolResult): 
   switch (tool) {
     case 'send_message': {
       const send = parsePeerSend(result.data);
-      return send ? <PeerSendBody send={send} /> : null;
+      return send ? <PeerSendRow send={send} /> : null;
     }
     case 'list_agents': {
       const agents = parseReachable(result.data);

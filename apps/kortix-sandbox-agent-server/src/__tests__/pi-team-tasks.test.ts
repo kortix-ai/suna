@@ -119,7 +119,7 @@ afterEach(async () => {
   resetKortixEventBusForTests()
 })
 
-const TEAMS = { KORTIX_FEATURE_FLAGS: 'agent_rooms,agent_teams' }
+const TEAMS = { KORTIX_FEATURE_FLAGS: 'chat,agent_teams' }
 /** A teammate box: one level deep, its lead in its runtime context. */
 const TEAMMATE = {
   ...TEAMS,
@@ -168,7 +168,7 @@ const TASK_TOOLS = ['task_create', 'task_list', 'task_get', 'task_update']
 
 describe('pi team tasks: who has them', () => {
   test('flag off: no task tools and no session.team_tasks, also at depth 0', async () => {
-    const { rt, service } = await boot([], { KORTIX_FEATURE_FLAGS: 'agent_rooms' })
+    const { rt, service } = await boot([], { KORTIX_FEATURE_FLAGS: 'chat' })
     for (const tool of TASK_TOOLS) expect(rt.toolNames()).not.toContain(tool)
     expect(await service.diagnostics.capabilities()).not.toContain('session.team_tasks')
   })
@@ -296,7 +296,7 @@ describe('pi agent teams: the teammate spawn', () => {
 
   test('team: true is refused with the reason: the flag off, a session below the top, no name, or a fork', async () => {
     const team = (args: Record<string, unknown>) => ({ tool: 'agent', args: { description: 'Research', prompt: 'Research it.', subagent_type: 'general', name: 'researcher', team: true, ...args } })
-    const off = await boot([team({}), { text: 'done' }], { KORTIX_FEATURE_FLAGS: 'agent_rooms' })
+    const off = await boot([team({}), { text: 'done' }], { KORTIX_FEATURE_FLAGS: 'chat' })
     await off.rt.admit({ text: 'team', files: [] }).done
     expect(finalState(off.frames)).toMatchObject({ status: 'error' })
     expect(finalState(off.frames).error).toContain('Agent teams are off in this project: team: true needs the agent_teams feature. Omit team to start a plain subagent')

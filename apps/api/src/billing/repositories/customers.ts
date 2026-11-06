@@ -25,6 +25,12 @@ async function listKortixCustomersByAccountId(accountId: string): Promise<Billin
     .where(eq(billingCustomers.accountId, accountId));
 }
 
+/** Every Stripe customer id the account has, active or not (account closure cancels them all). */
+export async function listStripeCustomerIdsByAccountId(accountId: string): Promise<string[]> {
+  const rows = await listKortixCustomersByAccountId(accountId);
+  return [...new Set(rows.filter((row) => (row.provider ?? 'stripe') === 'stripe').map((row) => row.id))];
+}
+
 async function deactivateConflictingCustomers(accountId: string, canonicalId: string, provider?: string | null) {
   const conditions = [
     eq(billingCustomers.accountId, accountId),

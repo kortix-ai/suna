@@ -21,7 +21,7 @@ import { sessionInitiatorLabel } from './session-initiator';
 import { sessionRestoreUntil } from '../session-log-purge';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
-import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
+import { buildFeatureFlagCatalog, resolveFeatureFlag, resolveFeatureFlags } from '../../feature-flags/registry';
 // The request reader `requestAuditContext` lives in `middleware/request-audit.ts`.
 // Re-exported here so every importer and mock keeps working.
 export { requestAuditContext } from '../../middleware/request-audit';
@@ -40,7 +40,7 @@ import type { ProjectRole } from '../access';
 import type { ProjectConfigSummary } from '../git/types';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
 import { parseGitHubRepoUrl } from './git';
-import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
+import { isPlaceholderSessionTitle, runtimeRootTitleFromSnapshot } from './session-title-placeholder';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
 import { probeProjectSecret } from '../secrets/envelope';
@@ -126,6 +126,8 @@ export function serializeSession(
     conversationModel?: string | null;
     /** `reply_count`: set by a channel or DM thread list only. */
     replyCount?: number | null;
+    /** `active_child_agent`: set by a channel or DM thread list only (`session-active-child.ts`). */
+    activeChildAgent?: string | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -166,16 +168,16 @@ export function serializeSession(
   },
 ): ProjectSession {
   // Computed BEFORE the metadata-derived fields below, because name,
-  // custom_name and opencode_sessions are all derived FROM metadata — redacting
-  // the metadata object alone would still have leaked the OpenCode-synced title
+  // custom_name and runtime_sessions are all derived FROM metadata — redacting
+  // the metadata object alone would still have leaked the runtime-synced title
   // (which summarises the conversation) and the conversation-tree snapshot.
   const canAccess = ctx?.canAccess ?? true;
-  const opencodeSessions = canAccess
-    ? normalizeRuntimeSessionSnapshots(row.metadata?.opencode_sessions)
+  const runtimeSessions = canAccess
+    ? normalizeRuntimeSessionSnapshots(row.metadata?.runtime_sessions)
     : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
-  // over the auto title (metadata.name) mirrored from OpenCode server-side
+  // over the auto title (metadata.name) mirrored from the runtime server-side
   // during session reads. `name` is the resolved display value;
   // `custom_name` is exposed separately so clients can tell an override apart
   // from the auto title.
@@ -186,16 +188,16 @@ export function serializeSession(
   // display chain instead of a junk title (heals old rows with no backfill).
   const rawAutoName =
     canAccess && typeof row.metadata?.name === 'string' ? row.metadata.name : null;
-  const autoName = isPlaceholderOpencodeTitle(rawAutoName) ? null : rawAutoName;
+  const autoName = isPlaceholderSessionTitle(rawAutoName) ? null : rawAutoName;
   // The runtime's own root-conversation title (already access-gated: the
   // snapshot above is [] when canAccess is false). It outranks the generated
   // auto title so list reads resolve the SAME string the session header shows
   // live, but never a user rename.
-  const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
+  const runtimeTitle = runtimeRootTitleFromSnapshot(runtimeSessions, row.runtimeSessionId);
   return {
     model: canAccess
-      ? (ctx?.conversationModel ?? (typeof row.metadata?.opencode_model === 'string'
-        ? row.metadata.opencode_model.trim() || null
+      ? (ctx?.conversationModel ?? (typeof row.metadata?.model === 'string'
+        ? row.metadata.model.trim() || null
         : null))
       : null,
     session_id: row.sessionId,
@@ -208,7 +210,6 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: forRequestApiUrl(row.sandboxUrl),
     runtime_session_id: row.runtimeSessionId,
-    opencode_session_id: row.runtimeSessionId,
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
@@ -225,8 +226,7 @@ export function serializeSession(
         ? trimSessionMetadataForList(row.metadata ?? {})
         : (row.metadata ?? {})
       : {},
-    runtime_sessions: opencodeSessions,
-    opencode_sessions: opencodeSessions,
+    runtime_sessions: runtimeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
     owner_email: ctx?.ownerEmail ?? null,
@@ -240,6 +240,7 @@ export function serializeSession(
     group_id: row.groupId ?? null,
     first_prompt: canAccess && typeof row.metadata?.first_prompt === 'string' ? row.metadata.first_prompt : null,
     reply_count: canAccess ? (ctx?.replyCount ?? null) : null,
+    ...(ctx?.activeChildAgent !== undefined ? { active_child_agent: canAccess ? ctx.activeChildAgent : null } : {}),
     initiator: row.initiatorType
       ? {
           type: row.initiatorType,
@@ -344,7 +345,8 @@ export function serializeProject(
     // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
     // and SDKs from before then read false as the removed native model mode.
     // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
-    // and mobile builds read false as "serve the v1 transcript". `pi_harness`
+    // and mobile builds read false as "serve the v1 transcript". `session_log_restore`
+    // graduated on 2026-11-05 and stays `true`: every box restores from the log. `pi_harness`
     // graduated on 2026-10-23: every new session runs pi. `genui` graduated on
     // 2026-10-24: older web, SDK and mobile clients render blocks only while it is true.
     // `connectors_v2` and `connectors_api_discover` graduated on 2026-10-24: older SDKs and
@@ -356,11 +358,14 @@ export function serializeProject(
     // `volumes` and `drives` graduated on 2026-11-02: every project has a Drive
     // where the platform stores one. Both keys stay, equal to that availability,
     // because older web, SDK, TUI and CLI builds show the Drive only while they read true.
+    // `project_channels` merged into `chat` (2026-11) and stays, equal to `chat`:
+    // released TUI, mobile and CLI builds show Channels only while they read true.
     experimental: {
       ...resolveFeatureFlags(row.metadata),
       apps: true,
       llm_gateway: true,
       session_log: true,
+      session_log_restore: true,
       pi_harness: true,
       genui: true,
       connectors_v2: true,
@@ -369,6 +374,7 @@ export function serializeProject(
       warm_sessions: false,
       volumes: isPlatinumConfigured(),
       drives: isPlatinumConfigured(),
+      project_channels: resolveFeatureFlag(row.metadata, 'chat'),
     },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
@@ -491,15 +497,9 @@ function grantAdmits(list: string[], identifier: string): boolean {
  * identifier, never by the env-var `name` — several identifiers may share one
  * name.
  *
- * The tri-state forbids guessing, so read `agent_discovery` for what
- * `resolveConfigAgents` (../git/config.ts) actually means by it:
+ * The tri-state forbids guessing. `agent_discovery` is `declarative` for every
+ * project (`resolveConfigAgents`, ../git/config.ts), so the agents decide:
  *
- *   `opencode`   — the manifest yielded NO agent specs AND NO parse errors, i.e.
- *                  it declared no `agents:` at all (or there is no manifest).
- *                  `grantFromLoadedAgents` then resolves to a null grant, which
- *                  `resolveSecretDelivery` withholds. CERTAIN: no session can
- *                  ever receive this secret. A native `.opencode` agent does not
- *                  rescue it — grants come only from manifest specs.
  *   `declarative`, agents non-empty — the manifest parsed and its declarations
  *                  are the complete grant set. CERTAIN either way.
  *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached
@@ -519,8 +519,7 @@ export function secretDeliveryBlockedReason(
 ): SecretDeliveryBlockedReason | null {
   if (strategy !== 'egress' && strategy !== 'broker') return null;
   if (!config) return null;
-  if (config.agent_discovery === 'opencode') return 'no_agent_grant';
-  // Anything other than the two known modes is a config we do not understand —
+  // Anything other than `declarative` is a config we do not understand —
   // including a partial object from a caller that resolved only part of it.
   if (config.agent_discovery !== 'declarative') return null;
   const agents = config.agents;
@@ -649,7 +648,6 @@ export function buildSecretView(input: {
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
     agents: strategy === 'denied' ? []
       : !input.agentGrants ? null
-      : input.agentGrants.agent_discovery === 'opencode' ? (strategy === 'runtime' ? 'all' : [])
       : input.agentGrants.agent_discovery !== 'declarative' || !input.agentGrants.agents.length ? null
       : input.agentGrants.agents.filter((agent) => {
           if (agent.enabled === false) return false;

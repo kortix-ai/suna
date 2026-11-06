@@ -198,6 +198,8 @@ export const ADMIN_SECTION: Partial<Record<CapabilityTab['key'], string>> = {
 
 /** The tab's URL: its Project admin section, else the host's `customize` route. */
 export function capabilityTabHref(projectId: string, key: CapabilityTab['key']): string {
+  // Review is its own page, outside Customize (Marko, 2026-11-04).
+  if (key === 'review') return uiRoutes().review?.(projectId) ?? customizePath(projectId, CAPABILITY_SEGMENT.review);
   const section = ADMIN_SECTION[key];
   return section ? adminPath(projectId, section) : customizePath(projectId, CAPABILITY_SEGMENT[key]);
 }
@@ -210,14 +212,19 @@ export function capabilityTabHref(projectId: string, key: CapabilityTab['key']):
  * `capabilityTabHref` is the customize pages' own tab URL and never null.
  */
 export function capabilityLinkHref(projectId: string, key: CapabilityTab['key']): string | null {
+  if (key === 'review') {
+    // A host that serves no customize pages serves no Review page either, unless it routes one.
+    const routes = uiRoutes();
+    return routes.review ? routes.review(projectId) : routes.customize(projectId, CAPABILITY_SEGMENT.review);
+  }
   const section = ADMIN_SECTION[key];
   return section ? uiRoutes().admin(projectId, section) : uiRoutes().customize(projectId, CAPABILITY_SEGMENT[key]);
 }
 
 /**
- * The Review Center: the Customize Review tab, or null when the host serves no
- * customize pages. `/projects/<id>/review`, its address from 2026-10-02 to
- * 2026-10-17, redirects here.
+ * Review: its own page at `/projects/<id>/review` (since 2026-11-04), or null
+ * when the host serves no Review page. `/customize/review`, its address from
+ * 2026-10-17, redirects there.
  */
 export function reviewHref(projectId: string): string | null {
   return capabilityLinkHref(projectId, 'review');

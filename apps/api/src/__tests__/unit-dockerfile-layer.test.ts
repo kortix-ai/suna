@@ -86,7 +86,7 @@ describe('buildLayeredDockerfile', () => {
 
   test('runs build-time and runtime tools as the standard kortix user', () => {
     const merged = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04', ...COMMON });
-    expect(merged).toContain('useradd --create-home --shell /bin/bash --user-group kortix');
+    expect(merged).toContain('useradd $(getent passwd 1000 >/dev/null || echo --uid 1000) --create-home --shell /bin/bash --user-group kortix');
     expect(merged).toContain("echo 'kortix ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kortix");
     expect(merged).not.toContain("NOPASSWD:ALL\\n");
     expect(merged).toContain('chown -R kortix:kortix /workspace /opt/kortix /home/kortix');
@@ -385,7 +385,7 @@ describe('container_runtime', () => {
     expect(off).not.toContain('KORTIX_CONTAINER_RUNTIME');
     expect(off).not.toContain('kmod');
     // Runs as root, after the kortix user exists, before the image drops to it.
-    expect(on.indexOf('KORTIX_CONTAINER_RUNTIME')).toBeGreaterThan(on.indexOf('useradd --create-home'));
+    expect(on.indexOf('KORTIX_CONTAINER_RUNTIME')).toBeGreaterThan(on.indexOf('useradd '));
   });
 });
 

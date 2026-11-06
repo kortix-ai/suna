@@ -138,8 +138,8 @@ afterAll(async () => {
   await removeSeeded([project]);
 });
 
-describe('the turn record names its runtime session under both keys during W4', () => {
-  test('begin and accept write runtimeSessionId and the pre-W4 opencodeSessionId', async () => {
+describe('the turn record names its runtime session under the neutral key', () => {
+  test('begin and accept write runtimeSessionId only', async () => {
     await setLifecycleState({});
     const identity = { runtimeSessionId: 'ses_root', messageId: 'msg_dual' };
     expect(
@@ -150,14 +150,13 @@ describe('the turn record names its runtime session under both keys during W4', 
     expect((await turns())[t('dual')]).toMatchObject({
       state: 'delivering',
       runtimeSessionId: 'ses_root',
-      opencodeSessionId: 'ses_root',
     });
     expect(await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, t('dual'), identity)).toBe(true);
     expect((await turns())[t('dual')]).toMatchObject({
       state: 'active',
       runtimeSessionId: 'ses_root',
-      opencodeSessionId: 'ses_root',
     });
+    expect((await turns())[t('dual')]).not.toHaveProperty('opencodeSessionId');
   });
 
   test("the record keeps its prompt's source through acceptance; a turn begun with none records null", async () => {
@@ -211,14 +210,14 @@ describe('per-turn terminal isolation', () => {
         [t('first')]: {
           token: t('first'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_first',
           startedAtMs: 1,
         },
         [t('second')]: {
           token: t('second'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_second',
           startedAtMs: 2,
         },
@@ -239,7 +238,7 @@ describe('per-turn terminal isolation', () => {
       [t('second')]: {
         token: t('second'),
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_second',
         startedAtMs: 2,
       },
@@ -253,7 +252,7 @@ describe('per-turn terminal isolation', () => {
         [t('only')]: {
           token: t('only'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_only',
           startedAtMs: 1,
         },
@@ -279,7 +278,7 @@ describe('per-turn terminal isolation', () => {
         [t('only')]: {
           token: t('only'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_only',
           startedAtMs: 1,
         },
@@ -299,7 +298,7 @@ describe('per-turn terminal isolation', () => {
         [t('newer')]: {
           token: t('newer'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_newer',
           startedAtMs: 2,
         },
@@ -328,7 +327,7 @@ describe('per-turn terminal isolation', () => {
         [t('another-root')]: {
           token: t('another-root'),
           state: 'active',
-          opencodeSessionId: 'ses_current_root',
+          runtimeSessionId: 'ses_current_root',
           messageId: 'msg_current_root',
           startedAtMs: 2,
         },
@@ -432,14 +431,14 @@ describe('per-turn terminal isolation', () => {
         [t('command')]: {
           token: t('command'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: null,
           startedAtMs: 1,
         },
         [t('exact')]: {
           token: t('exact'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_exact',
           startedAtMs: 2,
         },
@@ -455,7 +454,7 @@ describe('per-turn terminal isolation', () => {
       [t('command')]: {
         token: t('command'),
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: null,
         startedAtMs: 1,
       },
@@ -468,14 +467,14 @@ describe('per-turn terminal isolation', () => {
         [t('older')]: {
           token: t('older'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: null,
           startedAtMs: 1,
         },
         [t('newer')]: {
           token: t('newer'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: null,
           startedAtMs: 2,
         },
@@ -491,7 +490,7 @@ describe('per-turn terminal isolation', () => {
       [t('newer')]: {
         token: t('newer'),
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: null,
         startedAtMs: 2,
       },
@@ -504,14 +503,14 @@ describe('per-turn terminal isolation', () => {
         [t('older')]: {
           token: t('older'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_older',
           startedAtMs: 1,
         },
         [t('newer')]: {
           token: t('newer'),
           state: 'delivering',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_newer',
           startedAtMs: 2,
         },
@@ -524,7 +523,7 @@ describe('per-turn terminal isolation', () => {
       [t('older')]: {
         token: t('older'),
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_older',
         startedAtMs: 1,
       },
@@ -537,7 +536,7 @@ describe('per-turn terminal isolation', () => {
         [t('first')]: {
           token: t('first'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_first',
           startedAtMs: 1,
         },
@@ -563,7 +562,7 @@ describe('per-turn terminal isolation', () => {
                jsonb_build_object(
                  'token', ${t('second')}::text,
                  'state', 'active',
-                 'opencodeSessionId', 'ses_root',
+                 'runtimeSessionId', 'ses_root',
                  'messageId', 'msg_second',
                  'startedAtMs', 2)),
              true)
@@ -582,7 +581,7 @@ describe('per-turn terminal isolation', () => {
       [t('second')]: {
         token: t('second'),
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_second',
         startedAtMs: 2,
       },
@@ -595,7 +594,7 @@ describe('per-turn terminal isolation', () => {
         [t('first')]: {
           token: t('first'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_first',
           startedAtMs: 1,
         },
@@ -621,7 +620,7 @@ describe('per-turn terminal isolation', () => {
                jsonb_build_object(
                  'token', ${t('second')}::text,
                  'state', 'active',
-                 'opencodeSessionId', 'ses_root',
+                 'runtimeSessionId', 'ses_root',
                  'messageId', 'msg_second',
                  'startedAtMs', 2)),
              true)
@@ -643,7 +642,7 @@ describe('per-turn terminal isolation', () => {
       [t('second')]: {
         token: t('second'),
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_second',
         startedAtMs: 2,
       },
@@ -756,7 +755,7 @@ describe('prompt-versus-stop linearization', () => {
         [t('manual-live')]: {
           token: t('manual-live'),
           state: 'active',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_live',
           startedAtMs: 1,
         },
@@ -800,7 +799,7 @@ describe('prompt-versus-stop linearization', () => {
           [t('turn-active')]: {
             token: t('turn-active'),
             state: 'active',
-            opencodeSessionId: 'ses_root',
+            runtimeSessionId: 'ses_root',
             messageId: 'msg_active',
             startedAtMs: 1,
           },
@@ -831,7 +830,7 @@ describe('session_turns ledger', () => {
       sandbox_id: SANDBOX_ID,
       project_id: PROJECT_ID,
       account_id: ACCOUNT_ID,
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_id: 'msg_ledger_begin',
       state: 'delivering',
       end_reason: null,
@@ -869,7 +868,7 @@ describe('session_turns ledger', () => {
         [t('ledger-boot')]: {
           token: t('ledger-boot'),
           state: 'delivering',
-          opencodeSessionId: null,
+          runtimeSessionId: null,
           messageId: 'msg_ledger_boot',
           startedAtMs: 1,
         },
@@ -886,7 +885,7 @@ describe('session_turns ledger', () => {
     expect(await readTurn(t('ledger-boot'))).toMatchObject({
       session_id: SESSION_ID,
       state: 'active',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_id: 'msg_ledger_boot',
     });
   });
@@ -899,7 +898,7 @@ describe('session_turns ledger', () => {
       activeTurn: {
         token: t('ledger-legacy-accept'),
         state: 'delivering',
-        opencodeSessionId: null,
+        runtimeSessionId: null,
         messageId: 'msg_ledger_legacy_accept',
         startedAtMs: 1,
       },
@@ -1002,7 +1001,7 @@ describe('session_turns ledger', () => {
     expect(await readTurn(t('ledger-abandon'))).toMatchObject({
       state: 'ended',
       end_reason: 'abandoned',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_id: 'msg_ledger_abandon',
     });
   });
@@ -1016,7 +1015,7 @@ describe('session_turns ledger', () => {
         [t('ledger-boot-abandon')]: {
           token: t('ledger-boot-abandon'),
           state: 'delivering',
-          opencodeSessionId: null,
+          runtimeSessionId: null,
           messageId: 'msg_boot_abandon',
           startedAtMs: 1,
         },
@@ -1041,7 +1040,7 @@ describe('session_turns ledger', () => {
         [t('ledger-boot-complete')]: {
           token: t('ledger-boot-complete'),
           state: 'delivering',
-          opencodeSessionId: null,
+          runtimeSessionId: null,
           messageId: 'msg_boot_complete',
           startedAtMs: 1,
         },
@@ -1076,7 +1075,7 @@ describe('session_turns ledger', () => {
       activeTurn: {
         token: t('ledger-legacy'),
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_ledger_legacy',
         startedAtMs: 1,
       },
@@ -1106,7 +1105,7 @@ describe('session_turns ledger', () => {
         [t('ledger-race')]: {
           token: t('ledger-race'),
           state: 'delivering',
-          opencodeSessionId: 'ses_root',
+          runtimeSessionId: 'ses_root',
           messageId: 'msg_ledger_race',
           startedAtMs: 1,
         },
@@ -1149,7 +1148,7 @@ describe('session_turns ledger', () => {
     );
 
     // This function only ever sees turns still in `delivering` — turns NOTHING
-    // has confirmed reached OpenCode. `terminal` is only turn_in_flight ===
+    // has confirmed reached the runtime. `terminal` is only turn_in_flight ===
     // false, which the daemon answers for a prompt it never received exactly as
     // for one that finished, so with no reason from it the honest record is the
     // delivery that was never confirmed.
@@ -1161,7 +1160,7 @@ describe('session_turns ledger', () => {
 
   test('a delivering turn the daemon says completed keeps that reason', async () => {
     // The other half of the same rule: a lost promotion write leaves a turn
-    // stuck in `delivering` while OpenCode really did run it to completion.
+    // stuck in `delivering` while the runtime really did run it to completion.
     await beginSandboxTurn(
       { sandboxId: SANDBOX_ID },
       {
@@ -1236,8 +1235,8 @@ describe('session_turns ledger', () => {
 });
 
 describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
-  // OpenCode starts turns of its own (synthetic `<pty_exited>` wake-ups) that
-  // no control-plane prompt announced. The daemon relays `turn_begin` for
+  // A box can start turns of its own (OpenCode's synthetic `<pty_exited>`
+  // wake-ups) that no control-plane prompt announced. The daemon relays `turn_begin` for
   // them; this write is what turns that relay into `GET .../turn` truth and a
   // deadline grant (live incident 2026-08-20, a prod session).
   const SYNTH = 'msg_synthetic_pty_1';
@@ -1362,18 +1361,18 @@ describe('end_error: causes, requested stops, and which one wins', () => {
   const GUARD = { name: 'SandboxMemoryGuard', message: 'sandbox memory at 97%' };
 
   /** One running turn: authority in the sandbox metadata, and its open ledger row. */
-  async function openTurn(token = t('running'), messageId = MSG, opencodeSessionId = ROOT) {
+  async function openTurn(token = t('running'), messageId = MSG, runtimeSessionId = ROOT) {
     await setLifecycleState({
       activeTurns: {
-        [token]: { token, state: 'active', opencodeSessionId, messageId, startedAtMs: 1 },
+        [token]: { token, state: 'active', runtimeSessionId, messageId, startedAtMs: 1 },
       },
     });
     await db.execute(sql`
       INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+         runtime_session_id, message_id, state, started_at, created_at, updated_at)
       VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
-              ${ACCOUNT_ID}::uuid, ${opencodeSessionId}, ${messageId}, 'active',
+              ${ACCOUNT_ID}::uuid, ${runtimeSessionId}, ${messageId}, 'active',
               now(), now(), now())`);
     return token;
   }
@@ -1390,7 +1389,7 @@ describe('end_error: causes, requested stops, and which one wins', () => {
 
   test('a requested stop survives the abort it caused', async () => {
     const token = await openTurn();
-    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT });
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { runtimeSessionId: ROOT });
     await end(ABORT);
     expect((await readTurn(token))?.end_error).toEqual({ name: 'UserStop', message: null });
   });
@@ -1401,16 +1400,16 @@ describe('end_error: causes, requested stops, and which one wins', () => {
   test('a stamp that lands after the abort closed the turn cannot rescue it', async () => {
     const token = await openTurn();
     await end(ABORT); // the settle's unstamped abort
-    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy, too late
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { runtimeSessionId: ROOT }); // proxy, too late
     await end(ABORT); // the client's abort
     expect((await readTurn(token))?.end_error).toEqual(ABORT);
   });
 
   test('the hold stamps first, so every later abort of the same Stop keeps it a stop', async () => {
     const token = await openTurn();
-    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // hold route
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { runtimeSessionId: ROOT }); // hold route
     await end(ABORT); // the settle's abort
-    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT }); // proxy
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { runtimeSessionId: ROOT }); // proxy
     await end(ABORT); // the client's abort
     const row = await readTurn(token);
     expect(row?.end_reason).toBe('failed');
@@ -1420,14 +1419,14 @@ describe('end_error: causes, requested stops, and which one wins', () => {
   test('a named cause beats a requested stop: the mark never hides a real failure', async () => {
     // Stop pressed, the abort never landed, and the memory guard fired later.
     const token = await openTurn();
-    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: ROOT });
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { runtimeSessionId: ROOT });
     await end(GUARD);
     expect((await readTurn(token))?.end_error).toEqual(GUARD);
   });
 
   test('a turn that completes drops the request that never fired', async () => {
     const token = await openTurn();
-    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { opencodeSessionId: ROOT, messageId: MSG });
+    await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { runtimeSessionId: ROOT, messageId: MSG });
     await end(undefined, 'idle');
     const row = await readTurn(token);
     expect(row?.end_reason).toBe('completed');
@@ -1451,7 +1450,7 @@ describe('end_error: causes, requested stops, and which one wins', () => {
 
   test('a request is scoped: another OpenCode session or another message is untouched', async () => {
     const token = await openTurn();
-    await markTurnStopRequested(SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_child' });
+    await markTurnStopRequested(SESSION_ID, 'UserStop', { runtimeSessionId: 'ses_child' });
     expect((await readTurn(token))?.end_error).toBeNull();
     await markTurnStopRequested(SESSION_ID, 'QueueInterrupt', { messageId: 'msg_other' });
     expect((await readTurn(token))?.end_error).toBeNull();
@@ -1498,13 +1497,13 @@ describe('recordUnidentifiedTurnCause: a cause frame that does not name its turn
   async function openTurn(token: string, messageId: string) {
     await setLifecycleState({
       activeTurns: {
-        [token]: { token, state: 'active', opencodeSessionId: ROOT, messageId, startedAtMs: 1 },
+        [token]: { token, state: 'active', runtimeSessionId: ROOT, messageId, startedAtMs: 1 },
       },
     });
     await db.execute(sql`
       INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+         runtime_session_id, message_id, state, started_at, created_at, updated_at)
       VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
               ${ACCOUNT_ID}::uuid, ${ROOT}, ${messageId}, 'active', now(), now(), now())`);
     return token;
@@ -1603,13 +1602,13 @@ describe('clearSandboxTurn: the reaper names what it saw', () => {
   async function openTurn(token: string, messageId: string) {
     await setLifecycleState({
       activeTurns: {
-        [token]: { token, state: 'active', opencodeSessionId: ROOT, messageId, startedAtMs: 1 },
+        [token]: { token, state: 'active', runtimeSessionId: ROOT, messageId, startedAtMs: 1 },
       },
     });
     await db.execute(sql`
       INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+         runtime_session_id, message_id, state, started_at, created_at, updated_at)
       VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
               ${ACCOUNT_ID}::uuid, ${ROOT}, ${messageId}, 'active', now(), now(), now())`);
     return token;

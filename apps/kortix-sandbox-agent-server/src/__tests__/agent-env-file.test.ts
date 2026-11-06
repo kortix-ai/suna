@@ -168,7 +168,7 @@ describe('writeAgentEnvFile', () => {
   })
 
   test('emits the per-session cred allowlist (no-restart hot-swap fix) but NOT daemon-internal KORTIX_*', () => {
-    // The no-restart hot-swap reuses the seed opencode, so its env never gets the
+    // The no-restart hot-swap reuses the running daemon, so its env never gets the
     // per-session creds; this file (BASH_ENV) must carry them to the agent's shells.
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',

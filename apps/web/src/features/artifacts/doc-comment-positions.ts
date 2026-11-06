@@ -20,6 +20,8 @@ type SourceRun = { value: string; start: number; end: number; preserve: boolean 
 type PositionRun = { from: number; to: number; start: number; end: number };
 export type DocMarkdownPositions = { markdown: string; runs: PositionRun[] };
 const parser = unified().use(remarkParse).use(remarkGfm);
+/** The doc editor's raw block (`RawMarkdown`, `@kortix/ui/markdown/doc-editor/doc-extensions`). */
+const RAW_BLOCK = 'rawMarkdown';
 let entityDecoder: HTMLTextAreaElement | undefined;
 
 function append(runs: SourceRun[], value: string, start: number, end: number, preserve = false) {
@@ -220,22 +222,82 @@ export function docMarkdownPositions(markdown: string, doc: PMNode): DocMarkdown
     else for (const child of node.children ?? []) visit(child);
   };
   visit(parser.parse(markdown) as MdNode);
-  const rendered: Array<{ value: string; pos: number }> = [];
-  doc.descendants((node, pos) => {
-    if (node.isText) rendered.push({ value: node.text!, pos });
+  const rendered: Array<{ value: string; pos: number; raw?: true }> = [];
+  doc.descendants((node, pos, parent) => {
+    if (node.isText)
+      rendered.push(parent?.type.name === RAW_BLOCK ? { value: node.text!, pos, raw: true } : { value: node.text!, pos });
     else if (node.type.name === 'hardBreak') rendered.push({ value: '\n', pos });
   });
   const runs: PositionRun[] = [];
   let index = 0;
   let offset = 0;
-  for (const run of source) {
+  let next = 0;
+  // Where the Markdown mapped so far ends.
+  let cursor = 0;
+  /**
+   * A raw block shows its Markdown as written (front matter, an HTML block): its text is the
+   * next copy of that Markdown in the file (LF in the editor, CRLF in a CRLF file), mapped
+   * character for character. Every source run inside that copy is the block's own syntax.
+   */
+  const placeRaw = () => {
+    while (offset === 0 && rendered[index]?.raw) {
+      const { value, pos } = rendered[index]!;
+      let written = value;
+      let start = markdown.indexOf(written, cursor);
+      if (start === -1 && markdown.includes('\r\n')) {
+        written = value.replace(/\n/g, '\r\n');
+        start = markdown.indexOf(written, cursor);
+      }
+      if (start === -1) return false;
+      const end = start + written.length;
+      for (; next < source.length && source[next]!.start < end; next++)
+        // Text before the block that the doc does not show.
+        if (source[next]!.start < start) return false;
+      let from = pos;
+      for (const part of literal(written, start, true)) {
+        runs.push({ from, to: from + part.value.length, start: part.start, end: part.end });
+        from += part.value.length;
+      }
+      cursor = end;
+      index++;
+    }
+    return true;
+  };
+  /** Skip one rendered character that has no source (it maps nowhere). */
+  const skipRendered = () => {
+    offset++;
+    if (offset === rendered[index]!.value.length) {
+      index++;
+      offset = 0;
+    }
+  };
+  for (;;) {
+    if (!placeRaw()) return null;
+    const run = source[next++];
+    if (!run) break;
+    cursor = run.end;
     let used = 0;
     while (used < run.value.length) {
       const target = rendered[index];
       if (!target) return null;
-      const length = Math.min(run.value.length - used, target.value.length - offset);
-      if (run.value.slice(used, used + length) !== target.value.slice(offset, offset + length))
-        return null;
+      let length = Math.min(run.value.length - used, target.value.length - offset);
+      const want = run.value.slice(used, used + length);
+      const have = target.value.slice(offset, offset + length);
+      if (want !== have) {
+        // The editor can hold whitespace Markdown cannot write (a paragraph's leading or trailing
+        // space), and the reverse. Map the matching prefix, skip that whitespace on the side that
+        // has it, and go on: one such paragraph must not unmap every passage in the doc. Any other
+        // difference is another text.
+        let same = 0;
+        while (same < length && want[same] === have[same]) same++;
+        if (same === 0) {
+          if (/\s/.test(have[0]!)) skipRendered();
+          else if (/\s/.test(want[0]!)) used++;
+          else return null;
+          continue;
+        }
+        length = same;
+      }
       const linear = run.value.length === run.end - run.start;
       runs.push({
         from: target.pos + offset,
@@ -250,6 +312,11 @@ export function docMarkdownPositions(markdown: string, doc: PMNode): DocMarkdown
         offset = 0;
       }
     }
+  }
+  // Whitespace the editor holds after the last mapped text (a trailing space) maps nowhere.
+  while (index < rendered.length && /^\s*$/.test(rendered[index]!.value.slice(offset))) {
+    index++;
+    offset = 0;
   }
   return index === rendered.length ? { markdown, runs } : null;
 }

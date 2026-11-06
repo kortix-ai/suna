@@ -1,9 +1,5 @@
-import { ledgerExists } from '../src/ledger-exists';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type pg from 'pg';
-import { withClient, withTransaction } from '../src/with-client';
+import { verifyMigrationChecksum, withLedgerLock } from './ledger-repair';
 
 const MIGRATION_NAME = '20260807221200000_centralized_audit_v2';
 const MIGRATION_FILE = `${MIGRATION_NAME}.sql`;
@@ -26,7 +22,7 @@ const AUDIT_EVENT_COLUMNS = [
   'integrity_hash',
   'integrity_previous_hash',
   'message_id',
-  'opencode_session_id',
+  'runtime_session_id',
   'output_sha256',
   'output_summary',
   'parent_event_id',
@@ -168,39 +164,28 @@ export async function repairLocalAuditV2Ledger(
   databaseUrl: string,
   migrationsDir: string,
 ): Promise<boolean> {
-  const migration = readFileSync(join(migrationsDir, MIGRATION_FILE));
-  const actualSha256 = createHash('sha256').update(migration).digest('hex');
-  if (actualSha256 !== MIGRATION_SHA256) {
-    throw new Error(
-      `${MIGRATION_FILE} checksum mismatch: expected ${MIGRATION_SHA256}, received ${actualSha256}`,
+  verifyMigrationChecksum(migrationsDir, { filename: MIGRATION_FILE, sha256: MIGRATION_SHA256 });
+
+  return withLedgerLock(databaseUrl, false, async (client) => {
+    const applied = await client.query(
+      'select 1 from kortix_migrations.pgmigrations where name = $1 limit 1',
+      [MIGRATION_NAME],
     );
-  }
-
-  return withClient(databaseUrl, async (client) => {
-    if (!(await ledgerExists(client))) return false;
-
-    return withTransaction(client, async () => {
-      await client.query('lock table kortix_migrations.pgmigrations in exclusive mode');
-      const applied = await client.query(
-        'select 1 from kortix_migrations.pgmigrations where name = $1 limit 1',
-        [MIGRATION_NAME],
-      );
-      const repair = planLocalAuditV2LedgerRepair(applied.rowCount === 1, await readSignature(client));
-      if (!repair) {
-        return false;
-      }
-      const inserted = await client.query(
-        `insert into kortix_migrations.pgmigrations (name, run_on)
-         select $1::varchar, clock_timestamp()
-          where not exists (
-            select 1 from kortix_migrations.pgmigrations where name = $1::varchar
-          )`,
-        [MIGRATION_NAME],
-      );
-      if (inserted.rowCount !== 1) {
-        throw new Error(`Could not record ${MIGRATION_NAME} in the local migration ledger.`);
-      }
-      return true;
-    });
+    const repair = planLocalAuditV2LedgerRepair(applied.rowCount === 1, await readSignature(client));
+    if (!repair) {
+      return false;
+    }
+    const inserted = await client.query(
+      `insert into kortix_migrations.pgmigrations (name, run_on)
+       select $1::varchar, clock_timestamp()
+        where not exists (
+          select 1 from kortix_migrations.pgmigrations where name = $1::varchar
+        )`,
+      [MIGRATION_NAME],
+    );
+    if (inserted.rowCount !== 1) {
+      throw new Error(`Could not record ${MIGRATION_NAME} in the local migration ledger.`);
+    }
+    return true;
   });
 }

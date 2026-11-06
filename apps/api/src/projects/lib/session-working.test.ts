@@ -6,7 +6,6 @@ const turn = (token: string, startedAt: string, runtime = 'ses_root') => ({
   state: 'active' as const,
   message_id: null,
   runtime_session_id: runtime,
-  opencode_session_id: runtime,
   started_at: startedAt,
   accepted_at: null,
 });

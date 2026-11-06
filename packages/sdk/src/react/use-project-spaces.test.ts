@@ -36,7 +36,10 @@ const {
   useProjectSpaceLinks,
   useProjectSpaces,
   useRemoveProjectSpaceLink,
+  useSetProjectSpaceTabs,
   useUpdateProjectSpace,
+  useProjectSpaceProactive,
+  useSetProjectSpaceProactive,
 } = await import('./use-project-spaces');
 const { qk } = await import('./query-keys');
 const { configureKortix } = await import('../core/http/config');
@@ -92,6 +95,40 @@ describe('space mutations', () => {
     // Creating a channel or opening a DM completes a "Get started" row.
     const onboarding = [...qk.project.channelsOnboarding('P1')];
     expect(invalidated).toEqual([key, onboarding, key, key, onboarding]);
+  });
+});
+
+describe('useSetProjectSpaceTabs', () => {
+  test('PUTs the whole tab list and waits for the spaces list to refetch', async () => {
+    const setTabs = useSetProjectSpaceTabs('P1') as any;
+    const tabs = [{ id: 'notes', title: 'Notes', kind: 'file', ref: '/Company/Channels/general/notes.md' }];
+    await setTabs.mutationFn({ spaceId: 'S1', tabs });
+    expect(calls).toEqual([{ url: 'http://test.local/projects/P1/spaces/S1/tabs', method: 'PUT', body: { tabs } }]);
+    const pending = setTabs.onSuccess();
+    expect(pending).toBeInstanceOf(Promise);
+    expect(refetched).toEqual([]);
+    await pending;
+    expect(refetched).toEqual([[...qk.project.spaces('P1')]]);
+  });
+});
+
+describe('Proactive (spaces_proactive)', () => {
+  test('reads one space\'s watcher settings under its own key, disabled without ids or when the caller disables it', async () => {
+    const query = useProjectSpaceProactive('P1', 'S1') as any;
+    expect(query.queryKey).toEqual([...qk.project.spaceProactive('P1', 'S1')]);
+    expect(query.enabled).toBe(true);
+    await query.queryFn();
+    expect(calls).toEqual([{ url: 'http://test.local/projects/P1/spaces/S1/proactive', method: 'GET', body: undefined }]);
+    expect((useProjectSpaceProactive('P1', null) as any).enabled).toBe(false);
+    expect((useProjectSpaceProactive('P1', 'S1', { enabled: false }) as any).enabled).toBe(false);
+  });
+
+  test('a change PUTs only the fields given and refreshes that key', async () => {
+    const set = useSetProjectSpaceProactive('P1', 'S1') as any;
+    await set.mutationFn({ enabled: true });
+    expect(calls).toEqual([{ url: 'http://test.local/projects/P1/spaces/S1/proactive', method: 'PUT', body: { enabled: true } }]);
+    await set.onSuccess();
+    expect(refetched).toEqual([[...qk.project.spaceProactive('P1', 'S1')]]);
   });
 });
 

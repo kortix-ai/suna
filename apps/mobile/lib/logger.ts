@@ -50,13 +50,6 @@ export function setLoggerUserId(userId: string | null): void {
 }
 
 /**
- * Get the current user ID (for testing/debugging)
- */
-export function getLoggerUserId(): string | null {
-  return currentUserId;
-}
-
-/**
  * Format user ID for log prefix
  */
 function formatUserId(): string {
@@ -120,58 +113,38 @@ function format(args: unknown[]): unknown[] {
   return formatArgs(args, __DEV__ ? DEV_ARG_MAX_CHARS : RELEASE_ARG_MAX_CHARS);
 }
 
+type Sink = 'log' | 'info' | 'debug' | 'warn' | 'error';
+
+/**
+ * One `log` entry: `console[sink]` behind the structured prefix. Only the
+ * error sink still writes in release builds; every other entry returns early.
+ */
+function make(sink: Sink, level: string, component?: string) {
+  return (...args: unknown[]) => {
+    if (sink !== 'error' && !__DEV__) return;
+    console[sink](buildPrefix(level, component), ...format(args));
+  };
+}
+
 export const log = {
   /** Standard log (level: info) */
-  log: (...args: unknown[]) => {
-    if (!__DEV__) return;
-    console.log(buildPrefix('info'), ...format(args));
-  },
-
+  log: make('log', 'info'),
   /** Info level */
-  info: (...args: unknown[]) => {
-    if (!__DEV__) return;
-    console.info(buildPrefix('info'), ...format(args));
-  },
-
+  info: make('info', 'info'),
   /** Debug level */
-  debug: (...args: unknown[]) => {
-    if (!__DEV__) return;
-    console.debug(buildPrefix('debug'), ...format(args));
-  },
-
+  debug: make('debug', 'debug'),
   /** Warning level */
-  warn: (...args: unknown[]) => {
-    if (!__DEV__) return;
-    console.warn(buildPrefix('warn'), ...format(args));
-  },
-
+  warn: make('warn', 'warn'),
   /** Error level */
-  error: (...args: unknown[]) => {
-    console.error(buildPrefix('error'), ...format(args));
-  },
-
+  error: make('error', 'error'),
   /** RevenueCat-specific logs (level: info) */
-  rc: (...args: unknown[]) => {
-    if (!__DEV__) return;
-    console.log(buildPrefix('info', 'RC'), ...format(args));
-  },
-
+  rc: make('log', 'info', 'RC'),
   /** RevenueCat debug */
-  rcDebug: (...args: unknown[]) => {
-    if (!__DEV__) return;
-    console.debug(buildPrefix('debug', 'RC'), ...format(args));
-  },
-
+  rcDebug: make('debug', 'debug', 'RC'),
   /** RevenueCat warning */
-  rcWarn: (...args: unknown[]) => {
-    if (!__DEV__) return;
-    console.warn(buildPrefix('warn', 'RC'), ...format(args));
-  },
-
+  rcWarn: make('warn', 'warn', 'RC'),
   /** RevenueCat error */
-  rcError: (...args: unknown[]) => {
-    console.error(buildPrefix('error', 'RC'), ...format(args));
-  },
+  rcError: make('error', 'error', 'RC'),
 };
 
 export default log;

@@ -4,7 +4,7 @@ import {
   useRuntimeLocal,
   type RuntimeLocal,
   type UseRuntimeLocalOptions,
-} from './use-opencode-local';
+} from './use-runtime-local';
 import {
   useModelDefaults,
   type UseModelDefaults,

@@ -231,8 +231,9 @@ async function render(value: ArtifactDiscussionSidebarProps) {
   });
 }
 function button(text: string) {
+  // A button's name: its text, or its aria-label for an icon button (the round Send).
   const found = [...browser.document.querySelectorAll('button')].find(
-    (button) => button.textContent === text,
+    (button) => button.textContent === text || button.getAttribute('aria-label') === text,
   );
   if (!found) throw new Error(`Missing button ${text}`);
   return found;
@@ -268,7 +269,7 @@ async function type(label: string, text: string) {
   return input;
 }
 
-test('one header holds the view tabs and the counted filter, and both counts agree', async () => {
+test('one header row holds Open, Resolved and Activity, each status with its count', async () => {
   const resolved = { ...item, thread_id: 'done', status: 'resolved' as const };
   const value = props();
   value.comments.data = [item, resolved];
@@ -276,20 +277,17 @@ test('one header holds the view tabs and the counted filter, and both counts agr
   const header = browser.document.querySelector('[data-artifact-discussion-header]');
   expect(header).not.toBeNull();
   expect([...header!.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
-    'Comments1',
-    'Activity',
     'Open1',
     'Resolved1',
-    'All',
-  ]);
-  await tab('Activity');
-  expect([...header!.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
-    'Comments1',
     'Activity',
   ]);
+  expect(header!.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe('Open1');
+  await tab('Resolved');
+  expect(container.querySelector('[data-thread-id="done"]')).not.toBeNull();
+  expect(container.querySelector(`[data-thread-id="${item.thread_id}"]`)).toBeNull();
 });
 
-test('a failed comment retains its draft through tabs and filters', async () => {
+test('a failed comment retains its draft through tabs', async () => {
   const value = props();
   value.comments.create = mock(async () => {
     throw new Error('offline');
@@ -304,9 +302,7 @@ test('a failed comment retains its draft through tabs and filters', async () => 
     anchor: { type: 'none', version: 'version' },
   });
   await tab('Activity');
-  await tab('Comments');
-  await tab('Resolved');
-  await tab('All');
+  await tab('Open');
   expect(
     (
       browser.document.querySelector('textarea[aria-label="Comment"]') as InstanceType<
@@ -389,7 +385,7 @@ test('missing context and historical reads expose no write controls or Send fall
   expect(container.textContent).toContain('Comments on this version are read-only');
 });
 
-test('a deleted root has no open count; Activity focuses its tombstone in All', async () => {
+test('a deleted root has no open count; Activity focuses its tombstone in its own status', async () => {
   const deleted = {
     ...item,
     comments: [{ ...item.comments[0]!, body: '', deleted_at: '2026-10-29T12:01:00Z' }],
@@ -409,7 +405,7 @@ test('a deleted root has no open count; Activity focuses its tombstone in All', 
   value.onFocusThread = (id) => focused.push(id);
   await render(value);
   expect(
-    [...container.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === 'Comments'),
+    [...container.querySelectorAll('[role="tab"]')].find((tab) => tab.textContent === 'Open'),
   ).toBeDefined();
   expect(container.querySelector('[data-thread-id="thread"]')).toBeNull();
   await tab('Activity');
@@ -419,10 +415,11 @@ test('a deleted root has no open count; Activity focuses its tombstone in All', 
     >,
   );
   expect(focused).toEqual(['thread']);
+  // The viewer passes the focused thread back down, as it does in the page.
+  await render({ ...value, focusedThreadId: 'thread', focusRevision: 1 });
   expect(container.textContent).toContain('This thread was deleted.');
-  expect(container.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe(
-    'Comments',
-  );
+  // The tombstone shows in its own status, so a status tab stays selected.
+  expect(container.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe('Open');
 });
 
 test('the delete menu requires confirmation; Cancel writes nothing', async () => {
@@ -674,7 +671,7 @@ test('selection capture blocks only new comments and preserves the draft until t
   expect(replied).toBe(1);
   await render({ ...value, selectionCapture: 'failed' });
   expect(container.textContent).toContain(
-    'Could not prepare the selected passage. Discard it to leave a whole-Artifact comment.',
+    'Could not prepare the selected passage. Discard it to leave a comment on the whole artifact.',
   );
   expect(input.value).toBe('Keep this draft');
   expect(button('Comment').disabled).toBe(true);

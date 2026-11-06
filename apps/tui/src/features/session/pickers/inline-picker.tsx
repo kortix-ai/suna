@@ -12,14 +12,15 @@
  *
  * So this is the in-flow equivalent, built from the same parts the modal picker
  * uses — `ui/List` for navigation and windowing, `filterItems` for the query —
- * and it reads like opencode's own slash menu: a bordered block that grows
- * upward out of the input.
+ * and it reads as a slash menu: a bordered block that grows upward out of the
+ * input.
  *
  * `headerIds` marks rows that are section titles (the model picker's provider
  * groups). They render dim, `j`/`k` skip over them, and Enter on one does
  * nothing — a group name is a label, never a choice.
  */
 
+import type { KeyEvent } from '@opentui/core';
 import { useKeyboard } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -49,6 +50,11 @@ export interface InlinePickerProps {
   /** Visible rows, excluding the border, the filter line and the rule. */
   maxRows?: number;
   hint?: string;
+  /**
+   * A row action key (`Tab`, `Ctrl+Y`) on the selected choice, read before the
+   * filter. Return true when the key was the caller's.
+   */
+  onKey?: (key: KeyEvent, item: ListItem) => boolean;
 }
 
 /** The nearest selectable row at or after `from`, searching in `step`. */
@@ -84,6 +90,7 @@ export function InlinePicker({
   width,
   maxRows = 8,
   hint = 'Enter pick · Esc close',
+  onKey,
 }: InlinePickerProps) {
   const [query, setQuery] = useState(initialQuery);
   const filtered = useMemo(() => {
@@ -134,6 +141,11 @@ export function InlinePicker({
     if (key.name === 'down' || (key.name === 'n' && key.ctrl)) {
       key.preventDefault();
       return move(1);
+    }
+    const selected = filtered[index];
+    if (onKey && selected && !headerIds.has(selected.id) && onKey(key, selected)) {
+      key.preventDefault();
+      return;
     }
     if (key.name === 'return') {
       key.preventDefault();

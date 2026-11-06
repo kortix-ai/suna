@@ -31,9 +31,11 @@ import {
   type ExtensionV3,
   KORTIX_SKILL_NAMES,
   type ManifestV3,
-  OPENCODE_BUILTIN_AGENTS_V3,
+  RUNTIME_BUILTIN_AGENTS,
   excludedNamesV3,
   grantedNamesV3,
+  isEveryGrant,
+  normalizePermissionConfig,
   type ManifestIssue,
   parseManifestText,
   type PermissionActionV2,
@@ -86,7 +88,7 @@ const BEHAVIOR_KEYS = ['description', 'mode', 'model', 'variant', 'temperature',
 /** The agent-config editor's wire schema for the `behavior` half of a PUT
  *  body: the behavior keys of an `agents.<name>` block, typed for their real
  *  shapes, plus `prompt` (the prompt text). */
-export const OpencodeAgentConfigSchema = z
+export const AgentBehaviorConfigSchema = z
   .object({
     description: z.string().max(2000).optional(),
     mode: z.enum(['primary', 'subagent', 'all']).optional(),
@@ -152,10 +154,13 @@ function projectTools(tools: unknown): Record<string, string> {
 
 /** `agents.<name>.tools` as the map a harness reads (`CompiledAgent.tools`): tool name → visible, `*` for every tool not named. Undefined: every tool. */
 function agentToolsMap(value: AgentToolsV3 | undefined): Record<string, boolean> | undefined {
-  if (value === undefined || value === 'all') return undefined;
+  // `"*"`, `all` and a list that holds `"*"`: every tool.
+  if (value === undefined || isEveryGrant(value)) return undefined;
   if (value === 'none') return { '*': false };
-  if (Array.isArray(value)) return value.includes('*') ? undefined : Object.fromEntries([['*', false], ...value.map((name) => [name, true])]);
-  return Object.fromEntries(value.exclude.map((name) => [name, false]));
+  if (Array.isArray(value)) return Object.fromEntries([['*', false], ...value.map((name) => [name, true])]);
+  const excluded = excludedNamesV3(value);
+  // A shape `validateManifest` rejects (the agent is then off) never throws here.
+  return excluded ? Object.fromEntries(excluded.map((name) => [name, false])) : { '*': false };
 }
 
 /** Every action of a rule is `deny`: the tool is off, not just filtered by pattern. */
@@ -313,7 +318,7 @@ function compileManifest(
     throw new CompileAgentConfigError(`Agent "${selected}" is off. ${manifestIssueSummary(issues.filter((i) => i.severity === 'error' && !i.unknownKey && i.path.startsWith(`agents.${selected}.`)))}`, selected);
   }
   // Only declared agents run: OpenCode's own build/plan/general/explore are off.
-  for (const builtin of OPENCODE_BUILTIN_AGENTS_V3) {
+  for (const builtin of RUNTIME_BUILTIN_AGENTS) {
     if (!blocks[builtin]) agent[builtin] = { disable: true };
   }
 
@@ -331,7 +336,13 @@ function compileManifest(
   }
 
   const used = new Set(names.flatMap((name) => agent[name]!.extensions ?? []));
-  const compiledExtensions = Object.fromEntries(Object.entries(extensions).filter(([name]) => used.has(name)));
+  // Only pi's implementation compiles: kortix.yaml still accepts an extension's
+  // `opencode` module with a deprecation warning, and no session loads it.
+  const compiledExtensions = Object.fromEntries(
+    Object.entries(extensions)
+      .filter(([name]) => used.has(name))
+      .map(([name, entry]) => [name, entry.pi === undefined ? {} : { pi: entry.pi }]),
+  );
   const tools = projectTools(m.tools);
 
   const primary = selected ?? (typeof m.default_agent === 'string' ? m.default_agent : undefined);
@@ -377,7 +388,8 @@ function compileAgent(
   if (tools) out.tools = tools;
 
   // Omitted permission is `allow`: a tool never waits for an answer unless the agent says `ask`.
-  let permission = withPermissionRule(block.permission ?? 'allow', 'skill', skillsRule(block.skills, universe.skills));
+  // `"*"` and `all` as an action are `allow`: the harness sees only allow, ask and deny.
+  let permission = withPermissionRule(normalizePermissionConfig(block.permission) ?? 'allow', 'skill', skillsRule(block.skills, universe.skills));
   permission = withPermissionRule(permission, 'task', allowlistRule(grantedNames(block.subagents, universe.subagents)));
   out.permission = orderPermissionRules(denyToolsBehindDeniedPermission(permission));
 

@@ -22,6 +22,7 @@ import { handBackClaims } from './projects/surface';
 // live in replica/. The scheduled jobs live in worker/jobs/ and run only on the
 // lease holder (bootServices below).
 import { startAccessControlCache, stopAccessControlCache } from './replica/access-control-cache';
+import { startArtifactLiveSweep, stopArtifactLiveSweep } from './replica/artifact-live';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './replica/event-loop-lag';
 import { startJobWorker, stopJobWorker } from './replica/job-queue';
 import { loadManagedLineupAtBoot, startManagedLineupRefresh, stopManagedLineupRefresh } from './replica/managed-lineup';
@@ -170,6 +171,8 @@ async function startReplicaServices(kind: ProcessKind) {
   startAccessControlCache();
   if (config.KORTIX_WORKERS_ENABLED) startManagedLineupRefresh();
   if (serving) startTunnelService();
+  // Live presence on Artifacts: each serving process sweeps the rooms of the sockets it holds.
+  if (serving) startArtifactLiveSweep();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
   // toggles (warm_snapshot / provider_fallback) are honored from
   // request #1. Without this a fresh pod serves the cold-cache defaults for the
@@ -189,6 +192,15 @@ async function startReplicaServices(kind: ProcessKind) {
   await import('./platform/services/managed-git-backend')
     .then((m) => m.refreshGitBackend())
     .catch(() => {});
+  // Self-host: the sign-up policy the auth service's hook reads. A failure
+  // leaves the previous policy row in force.
+  await import('./shared/self-host-signup-policy')
+    .then((m) => m.syncSelfHostSignupPolicy())
+    .catch((err) =>
+      appLogger.error('[startup] Self-host sign-up policy not written', {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
   // Warm the maintenance config, so a fresh pod serves the stored config from
   // request #1, not the cold-cache default.
   await maintenanceSetting.refresh().catch(() => {});
@@ -378,6 +390,7 @@ async function runShutdown(signal: string): Promise<void> {
   stopManagedLineupRefresh();
   stopTmpReaper();
   stopTriggerEventPollWorker();
+  stopArtifactLiveSweep();
   await handBack;
   // A build claim this task holds would block peers until its lease lapses.
   await within(import('./snapshots/build-claim').then((m) => m.releaseAllSnapshotBuilds()), 5_000, 'snapshot claims');
@@ -389,7 +402,12 @@ async function runShutdown(signal: string): Promise<void> {
   // Flush observability data last, after the drain: audit rows are buffered off
   // the request path, and requests that finished during the drain wrote some.
   await within(
-    Promise.allSettled([shutdownAuditEvents(), appLogger.flush(), flushSentry()]),
+    Promise.allSettled([
+      shutdownAuditEvents(),
+      appLogger.flush(),
+      flushSentry(),
+      import('./shared/product-analytics').then((m) => m.shutdownProductAnalytics()),
+    ]),
     WORKER_STOP_BUDGET_MS,
     'flush',
   );

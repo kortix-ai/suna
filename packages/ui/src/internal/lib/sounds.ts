@@ -7,10 +7,10 @@
  * -----------------------------------------------------------------------
  * FILE PLACEMENT:
  *
- *   public/sounds/opencode/completion.mp3
- *   public/sounds/opencode/error.mp3
- *   public/sounds/opencode/notification.mp3
- *   public/sounds/opencode/send.mp3
+ *   public/sounds/classic/completion.mp3
+ *   public/sounds/classic/error.mp3
+ *   public/sounds/classic/notification.mp3
+ *   public/sounds/classic/send.mp3
  *
  *   public/sounds/kortix/completion.mp3
  *   public/sounds/kortix/error.mp3

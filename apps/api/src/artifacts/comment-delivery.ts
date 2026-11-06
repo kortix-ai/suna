@@ -15,6 +15,7 @@ import { config } from '../config';
 import { screenshotReferences, screenshotQueuedParts, screenshotTargetCapability, assertScreenshotReferences, SCREENSHOT_LIMIT_MESSAGE } from './comment-screenshot-parts';
 import { ArtifactCommentScreenshotError } from './comment-screenshot-validation';
 import { wakeArtifactCommentLifecycle } from './comment-lifecycle-wake';
+import { announceArtifactLiveDelivery, publishArtifactLiveChange } from './live-publish';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const PEOPLE = 'artifact-comment-people';
@@ -366,83 +367,108 @@ async function markSent(tx: Tx, job: Job, payload: ArtifactCommentAgentPayload, 
     });
 }
 
+/**
+ * After a delivery run: viewers refetch the threads (their agent state) and the
+ * activity (`sent_to_agent`), and each session that got the hand-off shows its
+ * agent reading at the first thread.
+ */
+function announceDeliveryProgress(payload: ArtifactCommentAgentPayload, loaded: Awaited<ReturnType<typeof source>>, before: ArtifactCommentTarget['status'][]) {
+  const moved = payload.targets!.filter((target, index) => target.status !== before[index]);
+  if (!moved.length) return;
+  publishArtifactLiveChange(payload.artifactId, 'comments');
+  const sent = moved.filter((target) => target.status === 'sent');
+  if (!sent.length) return;
+  publishArtifactLiveChange(payload.artifactId, 'activity');
+  const first = loaded.threads.find((thread) => thread.threadId === payload.threadIds[0]) ?? loaded.threads[0];
+  if (!first) return;
+  for (const target of sent) {
+    announceArtifactLiveDelivery({ artifactId: loaded.artifact.artifactId, projectId: loaded.artifact.projectId, sessionId: target.sessionId,
+      agentName: target.agentName, threadId: first.threadId, anchor: first.anchor as ArtifactCommentAnchor });
+  }
+}
+
 export async function runArtifactCommentAgentJob(job: Job): Promise<void> {
   const payload = job.payload as ArtifactCommentAgentPayload;
   const loaded = await source(payload);
   await initializeTargets(job, payload, loaded);
-  const { ArtifactCommentAuthorityError, authorizeArtifactCommentAgent, assertArtifactCommentDeliveryAccess } = await import('./comment-authority');
-  let version: string | null = null;
-  let text = '';
-  let retry: unknown;
-  for (const target of payload.targets!) {
-    if (target.status !== 'pending') continue;
-    const stillMentioned = (!payload.commentId || target.implicit || mentionRecipients(loaded.comment!.mentions).some((recipient) => recipient.recipientKey === target.recipientKey))
-      && await artifactCommentOriginIsCurrent(loaded.artifact, payload.threadIds, target);
-    if (!stillMentioned) {
-      target.status = 'skipped';
-      await db.transaction(async (tx) => { await saveProgress(tx, job, payload); await updateThreadDeliveryState(tx, payload); });
-      continue;
-    }
-    try {
-      let session = (await db.select().from(projectSessions).where(and(eq(projectSessions.accountId, loaded.artifact.accountId),
-        eq(projectSessions.projectId, loaded.artifact.projectId), eq(projectSessions.sessionId, target.sessionId)))).at(0);
-      const authority = await authorizeArtifactCommentAgent(payload.actor, loaded.project, target.agentName, session);
-      if (authority.callerSessionId !== payload.callerSessionId) throw new ArtifactCommentAuthorityError();
-      await assertArtifactCommentDeliveryAccess(authority.actor, loaded.artifact, authority.callerSessionId);
-      if (!target.initialized || (!target.created && (!session || !authority.canPromptExisting))) {
-        if (!target.created && session && !authority.canPromptExisting) target.createKey = undefined;
-        await initializeTarget(job, payload, target, loaded, session, authority.canPromptExisting);
-        if (session?.sessionId !== target.sessionId) session = undefined;
+  const before = payload.targets!.map((target) => target.status);
+  try {
+    const { ArtifactCommentAuthorityError, authorizeArtifactCommentAgent, assertArtifactCommentDeliveryAccess } = await import('./comment-authority');
+    let version: string | null = null;
+    let text = '';
+    let retry: unknown;
+    for (const target of payload.targets!) {
+      if (target.status !== 'pending') continue;
+      const stillMentioned = (!payload.commentId || target.implicit || mentionRecipients(loaded.comment!.mentions).some((recipient) => recipient.recipientKey === target.recipientKey))
+        && await artifactCommentOriginIsCurrent(loaded.artifact, payload.threadIds, target);
+      if (!stillMentioned) {
+        target.status = 'skipped';
+        await db.transaction(async (tx) => { await saveProgress(tx, job, payload); await updateThreadDeliveryState(tx, payload); });
+        continue;
       }
-      if (!version) {
-        version = await entryVersion(loaded.artifact);
-        if (!version) throw invalid('The Artifact entry no longer exists');
-        text = makePrompt(loaded, loaded.artifact, version);
-      }
-      if (target.created || target.createKey) {
-        await assertScreenshotReferences(loaded.artifact, screenshotReferences(loaded.artifact, loaded.comments, config.KORTIX_URL), text);
-        const key = target.createKey ?? target.key;
-        if (target.created) {
-          const { createSession } = await import('../projects/surface');
-          const result = await createSession({ source: 'system:artifact-comment', project: loaded.project, userId: authority.actor.userId,
-            artifactId: loaded.artifact.artifactId,
-            requestingPrincipalType: authority.actor.credential.kind === 'service_account' ? 'service_account' : 'human',
-            body: { session_id: target.sessionId, agent_name: target.agentName, pending_prompt: { text, agent: target.agentName } },
-            idempotencyKey: key, queuePolicy: 'always', parentActor: authority.actor, callerSessionId: authority.callerSessionId,
-            inSession: !!authority.callerSessionId, metadata: { artifactCommentDelivery: { job_id: job.jobId, target_key: target.key } },
-          });
-          if (result.status === 'failed') {
-            if (result.retryable) throw new Error('The agent session creation can be retried');
-            throw invalid('The agent session could not be created');
-          }
+      try {
+        let session = (await db.select().from(projectSessions).where(and(eq(projectSessions.accountId, loaded.artifact.accountId),
+          eq(projectSessions.projectId, loaded.artifact.projectId), eq(projectSessions.sessionId, target.sessionId)))).at(0);
+        const authority = await authorizeArtifactCommentAgent(payload.actor, loaded.project, target.agentName, session);
+        if (authority.callerSessionId !== payload.callerSessionId) throw new ArtifactCommentAuthorityError();
+        await assertArtifactCommentDeliveryAccess(authority.actor, loaded.artifact, authority.callerSessionId);
+        if (!target.initialized || (!target.created && (!session || !authority.canPromptExisting))) {
+          if (!target.created && session && !authority.canPromptExisting) target.createKey = undefined;
+          await initializeTarget(job, payload, target, loaded, session, authority.canPromptExisting);
+          if (session?.sessionId !== target.sessionId) session = undefined;
         }
-        const [command] = await db.select({ status: sessionLifecycleCommands.status, idempotencyKey: sessionLifecycleCommands.idempotencyKey,
-          availableAt: sessionLifecycleCommands.availableAt }).from(sessionLifecycleCommands)
-          .where(and(eq(sessionLifecycleCommands.idempotencyKey, key), eq(sessionLifecycleCommands.artifactId, payload.artifactId),
-            eq(sessionLifecycleCommands.projectId, loaded.artifact.projectId), eq(sessionLifecycleCommands.accountId, loaded.artifact.accountId)));
-        if (command?.status === 'queued' && command.idempotencyKey) wakeArtifactCommentLifecycle({ idempotencyKey: command.idempotencyKey, availableAt: command.availableAt });
-        if (command && ['failed', 'cancelled', 'dead_lettered'].includes(command.status)) throw invalid('The agent session could not be created');
-        if (!session || command?.status !== 'succeeded') throw new Error('The agent session is still being created');
-        if (target.created) { await db.transaction((tx) => markSent(tx, job, payload, target, loaded.artifact)); target.status = 'sent'; continue; }
+        if (!version) {
+          version = await entryVersion(loaded.artifact);
+          if (!version) throw invalid('The Artifact entry no longer exists');
+          text = makePrompt(loaded, loaded.artifact, version);
+        }
+        if (target.created || target.createKey) {
+          await assertScreenshotReferences(loaded.artifact, screenshotReferences(loaded.artifact, loaded.comments, config.KORTIX_URL), text);
+          const key = target.createKey ?? target.key;
+          if (target.created) {
+            const { createSession } = await import('../projects/surface');
+            const result = await createSession({ source: 'system:artifact-comment', project: loaded.project, userId: authority.actor.userId,
+              artifactId: loaded.artifact.artifactId,
+              requestingPrincipalType: authority.actor.credential.kind === 'service_account' ? 'service_account' : 'human',
+              body: { session_id: target.sessionId, agent_name: target.agentName, pending_prompt: { text, agent: target.agentName } },
+              idempotencyKey: key, queuePolicy: 'always', parentActor: authority.actor, callerSessionId: authority.callerSessionId,
+              inSession: !!authority.callerSessionId, metadata: { artifactCommentDelivery: { job_id: job.jobId, target_key: target.key } },
+            });
+            if (result.status === 'failed') {
+              if (result.retryable) throw new Error('The agent session creation can be retried');
+              throw invalid('The agent session could not be created');
+            }
+          }
+          const [command] = await db.select({ status: sessionLifecycleCommands.status, idempotencyKey: sessionLifecycleCommands.idempotencyKey,
+            availableAt: sessionLifecycleCommands.availableAt }).from(sessionLifecycleCommands)
+            .where(and(eq(sessionLifecycleCommands.idempotencyKey, key), eq(sessionLifecycleCommands.artifactId, payload.artifactId),
+              eq(sessionLifecycleCommands.projectId, loaded.artifact.projectId), eq(sessionLifecycleCommands.accountId, loaded.artifact.accountId)));
+          if (command?.status === 'queued' && command.idempotencyKey) wakeArtifactCommentLifecycle({ idempotencyKey: command.idempotencyKey, availableAt: command.availableAt });
+          if (command && ['failed', 'cancelled', 'dead_lettered'].includes(command.status)) throw invalid('The agent session could not be created');
+          if (!session || command?.status !== 'succeeded') throw new Error('The agent session is still being created');
+          if (target.created) { await db.transaction((tx) => markSent(tx, job, payload, target, loaded.artifact)); target.status = 'sent'; continue; }
+        }
+        if (!session || !authority.canPromptExisting) throw invalid('The agent session is no longer available to this commenter');
+        await deliverToExisting(job, payload, target, loaded, authority.actor, text, version);
+      } catch (error) {
+        if (error instanceof ArtifactCommentDeliveryError && error.message === 'The comment delivery claim expired') throw error;
+        const terminal = error instanceof ArtifactCommentDeliveryError || (error instanceof ArtifactCommentScreenshotError && error.status === 413) || (error instanceof Error && error.name === 'ArtifactCommentAuthorityError');
+        if (terminal) {
+          target.status = 'failed';
+          if (error instanceof ArtifactCommentScreenshotError) target.errorCode = error.code;
+          target.error = error instanceof ArtifactCommentScreenshotError && error.code === 'artifact_comment_screenshot_limit' ? SCREENSHOT_LIMIT_MESSAGE : FAILURE;
+          await db.transaction(async (tx) => {
+            await saveProgress(tx, job, payload);
+            await updateThreadDeliveryState(tx, payload);
+          });
+        } else retry ??= error;
       }
-      if (!session || !authority.canPromptExisting) throw invalid('The agent session is no longer available to this commenter');
-      await deliverToExisting(job, payload, target, loaded, authority.actor, text, version);
-    } catch (error) {
-      if (error instanceof ArtifactCommentDeliveryError && error.message === 'The comment delivery claim expired') throw error;
-      const terminal = error instanceof ArtifactCommentDeliveryError || (error instanceof ArtifactCommentScreenshotError && error.status === 413) || (error instanceof Error && error.name === 'ArtifactCommentAuthorityError');
-      if (terminal) {
-        target.status = 'failed';
-        if (error instanceof ArtifactCommentScreenshotError) target.errorCode = error.code;
-        target.error = error instanceof ArtifactCommentScreenshotError && error.code === 'artifact_comment_screenshot_limit' ? SCREENSHOT_LIMIT_MESSAGE : FAILURE;
-        await db.transaction(async (tx) => {
-          await saveProgress(tx, job, payload);
-          await updateThreadDeliveryState(tx, payload);
-        });
-      } else retry ??= error;
     }
+    if (payload.targets!.some((target) => target.status === 'pending')) throw retry ?? new Error('The agent session is still being created');
+    if (payload.targets!.some((target) => target.status === 'failed')) throw invalid(FAILURE);
+  } finally {
+    announceDeliveryProgress(payload, loaded, before);
   }
-  if (payload.targets!.some((target) => target.status === 'pending')) throw retry ?? new Error('The agent session is still being created');
-  if (payload.targets!.some((target) => target.status === 'failed')) throw invalid(FAILURE);
 }
 
 async function people(job: Job): Promise<void> {
@@ -479,7 +505,10 @@ registerJobHandler(AGENTS, agents, 5 * 60_000);
 export async function dispatchArtifactCommentJobs(key: string): Promise<void> {
   const jobs = await db.update(jobQueue).set({ attempts: sql`${jobQueue.attempts} + 1`, lockedUntil: sql`now() + interval '5 minutes'`, updatedAt: new Date() })
     .where(and(inArray(jobQueue.queue, [PEOPLE, AGENTS]), eq(jobQueue.jobKey, key), eq(jobQueue.status, 'queued'),
-      sql`${jobQueue.runAt} <= now()`, sql`(${jobQueue.lockedUntil} is null or ${jobQueue.lockedUntil} < now())`)).returning();
+      sql`${jobQueue.runAt} <= now()`, sql`(${jobQueue.lockedUntil} is null or ${jobQueue.lockedUntil} < now())`,
+      // A job whose attempts are spent is the queue runner's to end `dead`
+      // (shared/job-queue.ts runJob): an inline dispatch never claims it again.
+      sql`${jobQueue.attempts} < ${jobQueue.maxAttempts}`)).returning();
   for (const job of jobs) {
     try { await (job.queue === PEOPLE ? people(job) : agents(job)); await completeJob(job); }
     catch { await failJob(job, new Error(job.queue === PEOPLE ? 'Artifact notification delivery failed' : FAILURE)); }

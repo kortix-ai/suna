@@ -10,16 +10,36 @@
  */
 import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
 
+/** The canonical spelling of "every name" in kortix.yaml. `all` is its accepted alias. */
+export const EVERY_GRANT = '*';
+
+/** The `agents.<name>` keys whose value may be "every name". */
+export const EVERY_GRANT_KEYS = ['tools', 'skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets', 'apps', 'kortix_permissions'] as const;
+
+/**
+ * True when a grant value means "every name": `"*"` (canonical), `all` in any
+ * case (alias), or a list that holds `"*"`. The one test for it: code that
+ * reads a grant from kortix.yaml calls this, never `=== 'all'`. `{ exclude }`
+ * is not this form (it names what is left out); `excludedNamesV3` reads it.
+ */
+export function isEveryGrant(value: unknown): boolean {
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    return v === '*' || v === 'all';
+  }
+  return Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim() === '*');
+}
+
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE so every space slug is also a valid room name: the space's room is the project room with that name. */
+/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE: at most 63 characters. */
 export const SPACE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
-/** The tab types of a space. The room tab is implicit: always first, never listed. */
+/** The tab types of a space. */
 export const SPACE_TAB_TYPES = ['goals', 'apps', 'artifacts', 'files', 'board', 'app', 'artifact', 'link'] as const;
 
 /** What a space header shows, in order. Absent = every item. */
@@ -114,6 +134,13 @@ export const EVENT_FORBIDDEN_KEYS = [
 
 /** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
 export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
+/**
+ * Floor for an app trigger's `expect_event_within`: the silence alert. The
+ * check runs once a minute; a shorter window would alert on ordinary jitter.
+ */
+export const TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Ceiling for `expect_event_within`: 30 days. A watcher quiet that long is not a watcher. */
+export const TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS = 30 * 86_400;
 /**
  * A trigger starts at most this many runs in any 60 minutes when its
  * `max_runs_per_hour` is unset (KRTX-1721). Twice the busiest production
@@ -285,9 +312,6 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.review.read',
   'project.review.submit',
   'project.review.act',
-  // Rooms: read = list rooms and read messages; write = post, join, leave.
-  'project.room.read',
-  'project.room.write',
   // Artifacts: read = gallery and viewer; write = publish and edit; manage =
   // anyone's sharing; public = public links.
   'project.artifact.read',
@@ -337,6 +361,17 @@ export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, reado
     'project.agent.write',
   ],
 };
+
+/**
+ * Actions retired with their feature. A manifest that still grants one keeps
+ * validating with a warning, and the grant holds nothing: rejecting it would
+ * fail the agent's parse and give it an EMPTY grant. `project.room.*`: Rooms,
+ * removed 2026-11.
+ */
+export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write'];
+
+/** Kortix skills retired with their feature. An agent that still grants one validates with a warning. `kortix-rooms`: Rooms, removed 2026-11. */
+export const RETIRED_KORTIX_SKILL_NAMES: readonly string[] = ['kortix-rooms'];
 
 export const LEGACY_TOLERATED_KORTIX_PERMISSIONS: readonly string[] = [
   'project.session.exec',
@@ -518,7 +553,6 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-marketplace',
   'kortix-memory',
   'kortix-onboarding',
-  'kortix-rooms',
   'kortix-slack',
   'kortix-system',
   'kortix-teams',
@@ -535,6 +569,6 @@ export const CONTEXT_VALUES = ['record', 'summary'] as const;
 export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
 /**
  * OpenCode's built-in agents that v3 disables unless the manifest declares the name.
- * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only: OpenCode is deleted (2026-10-30). See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
-export const OPENCODE_BUILTIN_AGENTS_V3 = ['build', 'plan', 'general', 'explore'] as const;
+export const RUNTIME_BUILTIN_AGENTS = ['build', 'plan', 'general', 'explore'] as const;

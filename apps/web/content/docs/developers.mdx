@@ -107,7 +107,7 @@ my-agent/
 ```
 
 - `kortix.yaml` turns on My Kortix (`builtin_agents: { my_kortix: true }`) and sets `default_agent: mykortix`. A session that names no agent runs My Kortix, and My Kortix hands the work to `worker` unless you name another agent.
-- `worker` is a general-purpose agent. Every grant it has is `all`. A project created before `worker` existed keeps its `kortix` agent.
+- `worker` is a general-purpose agent. Every grant it has is `"*"`: every name. A project created before `worker` existed keeps its `kortix` agent.
 - `worker` sets `workspace: { project_repository: true }`, so each session gets a checkout of the repository on its own branch in `/workspace`.
 - `kortix-cli` is the one Kortix skill in the folder. The other `kortix-*` skills are always registered and come with every session. The `skills` key in `kortix.yaml` lists the other 10.
 
@@ -153,7 +153,7 @@ git pull              # bring the merged work into your clone
 
 `1` is the change request number from `kortix cr ls`. To send the work back, run `kortix cr request-changes 1 --message "…"`. The note goes to the change request's session and wakes it if it sleeps. In the web app, use the project's **Review** page.
 
-The starter `worker` agent holds `kortix_permissions: all`, so the API lets it merge its own change request. The `kortix-system` skill tells it to wait until you ask. Who may merge: [Agents that merge](/docs/developers#agents-that-merge).
+The starter `worker` agent holds `kortix_permissions: "*"`, so the API lets it merge its own change request. The `kortix-system` skill tells it to wait until you ask. Who may merge: [Agents that merge](/docs/developers#agents-that-merge).
 
 ### Check your setup
 
@@ -379,7 +379,7 @@ IP allowlist and MFA policies of the account apply to git requests too.
 - A session pushes only its own branch, the branch named after its `session_id`.
 - Any other branch needs `project.gitops.ref.any` in the agent's `kortix_permissions`. Deleting a branch needs `project.gitops.ref.delete`.
 - A push to the default branch also needs `project.agent.write`, `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`.
-- The agent's `kortix_permissions` must list the permission, or be `all`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/guide#agents).
+- The agent's `kortix_permissions` must list the permission, or be `"*"`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/guide#agents).
 
 By default, agents land work through [change requests](#change-requests). [Agents](/docs/guide#agents) shows how to grant permissions.
 
@@ -727,8 +727,8 @@ agents:
   assistant:
     description: Answers questions about the project.
     prompt: You answer questions about this project. Read the files before you answer.
-    tools: all                               # omitted: all, with a warning
-    skills: all                              # omitted: no skills
+    tools: "*"                               # every tool; omitted: every tool, with a warning
+    skills: "*"                              # every skill; omitted: no skills
     workspace: { project_repository: true }  # omitted: no repository in /workspace
 ```
 
@@ -819,7 +819,7 @@ Each row still works. `kortix validate --fix` writes the replacement with the sa
 | --- | --- | --- |
 | `legacy-format` | A `kortix_version: 2` file, or a `kortix.toml` | The converted files: run `kortix validate --fix` (see [Older formats](#older-formats)). |
 | `drop-kortix-version` | `kortix_version: 3` | Nothing: delete the line. |
-| `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: all`, or the list of tools it needs |
+| `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: "*"`, or the list of tools it needs |
 | `agent-disable` | `disable: true` | `enabled: false` |
 | `agent-env` | An agent's `env` | `secrets` |
 | `agent-kortix-cli` | `kortix_cli` | `kortix_permissions` |
@@ -911,10 +911,10 @@ agents:
       bash:
         "*": allow
         "git push *": ask
-    tools: all
+    tools: "*"
     skills: [refund-policy, kortix-cli]
     subagents: [researcher]
-    commands: all
+    commands: "*"
     extensions: [web-access]
     connectors: [helpdesk]
     secrets: [HELPDESK_TOKEN]
@@ -984,13 +984,13 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `apps`: Apps | `apps` |
 | `agents`: other agents | `subagents` |
 
-- **A grant** is `all` (or `*`), `none` (or `""`), or a list of names. A list that contains `*` means all.
+- **A grant** is `"*"` (every name), `none` (or `""`), or a list of names. Quote the `*`: a bare `*` is a YAML alias, and `kortix validate` prints the quoted line. `all` is the accepted alias of `"*"`, and a list that contains `"*"` is every name too.
 - **Omitted means none.** An omitted `skills`, `subagents`, `commands`, `extensions`, `connectors`, `secrets`, `apps` or `kortix_permissions` grants nothing.
-- **Three keys are open by default:** `tools` is `all` (`kortix validate` warns when an agent omits it), `permission` is `allow`, and `codemode` is `on`.
+- **Three keys are open by default:** `tools` is `"*"` (`kortix validate` warns when an agent omits it), `permission` is `allow`, and `codemode` is `on`.
 - **`workspace.project_repository` defaults to `false`.** Set `true` on every agent that reads or changes the repository, runs its scripts, or opens change requests.
 - **Names must exist.** A listed skill, command, extension, subagent or tool that is not registered or built in is an error.
 - **`secrets` reaches the sandbox.** A granted secret is an environment variable or a network-enforced secret in the agent's sandbox. Model logins, connector and git credentials stay with Kortix services: the agent's model and connector settings decide their use.
-- **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
+- **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `"*"`.
 - **My Kortix runs only when the file turns it on.** `builtin_agents: { my_kortix: true }` turns it on, and the starter sets it. No key, `false`, or a file Kortix cannot read leaves it off. With it off, a request for the agent `mykortix` returns `409 builtin_agent_disabled`.
 - **Which agent a session runs.** A session or trigger that names no agent runs `default_agent`. With My Kortix on and no `default_agent`, it runs My Kortix. When My Kortix starts a session and names no agent, the session runs `default_agent`, or the first enabled agent with `mode` `primary` or `all` when `default_agent` is `mykortix`. The starter manifest sets `builtin_agents.my_kortix: true`, `default_agent: mykortix` and one project agent, `worker`, so a new project runs My Kortix, and My Kortix hands work to `worker`. A project made before `worker` existed keeps its `kortix` agent.
 - **A file with an error** still runs My Kortix when it sets `my_kortix: true`, so My Kortix can fix the file.
@@ -1019,7 +1019,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `policy` | map | — | The decision for a connector call that no rule matches. See [policy keys](#policy-keys). |
 | `policies` | list | — | Connector rules for the whole project. They run before every policy set and base rule. See [policy keys](#policy-keys). |
 | `approvals` | map | — | How long a held connector call waits for a decision. See [policy keys](#policy-keys). |
-| `spaces` | map | — | Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`. |
+| `spaces` | map | — | Spaces: channels with configured tabs. Agents join one with `agents.<name>.space`. |
 | `builtin_agents` | map | — | Built-in agents the platform adds to this project. Each is off unless set to true. |
 | `agents` | map | — | Agent name → agent block, here or in an imported file. A name is lowercase letters, digits, `-` and `_`, at most 128 characters. See [Agent keys](#agent-keys). |
 
@@ -1037,17 +1037,17 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `color` | string or `primary`, `secondary`, `accent`, `success`, `warning`, `error`, `info` | — | Accepted. Sessions do not use it. |
 | `hidden` | boolean | `false` | `true`: agent pickers do not list the agent. |
 | `options` | map | — | Accepted. Sessions do not use it. |
-| `permission` | `ask`, `allow`, `deny` or map | `allow` | Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`. See [Permission rules](#permission-rules). |
+| `permission` | `ask`, `allow`, `deny` or map | `allow` | Which tool calls run, ask a person, or never run: `allow`, `ask` or `deny` (`"*"` and `all` also mean `allow`). `skill` and `task` belong to `skills` and `subagents`. See [Permission rules](#permission-rules). |
 | `prompt` | string | — | The system prompt. Set `prompt` or `prompt_file`, not both. |
 | `prompt_file` | string | — | A repository path to a `.md` file. The whole file is the system prompt. |
 | `enabled` | boolean | `true` | `false`: no session starts with the agent, and no agent starts it as a subagent. |
 | `codemode` | `on`, `only`, `off` | `on` | `on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`. |
 | `context` | `record`, `summary` | `record` | What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it. |
-| `tools` | `all`, `none`, list or map | `all` | The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
-| `skills` | grant or map | — | Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
+| `tools` | grant | `"*"` | The tools the agent may call: built-in tools, Kortix tools and registered tools. `"*"` (quoted; `all` is its alias) is every tool, `none` is none. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
+| `skills` | grant or map | — | Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. "*" (every name; alias `all`), "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
 | `subagents` | grant | `none` | Agents this agent may start with the `agent` tool (alias `task`): declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent. |
 | `commands` | grant | `none` | Registered commands the agent runs. |
-| `extensions` | grant or map | — | Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
+| `extensions` | grant or map | — | Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. "*" (every name; alias `all`), "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
 | `connectors` | grant | `none` | Connector slugs the agent may call. |
 | `connectors_required` | list | — | Connector slugs, a subset of `connectors`. Sessions do not check it. |
 | `policy_sets` | map | the base rules | Connector slug → the name of a policy set on that connector. See [Connector rules and approvals](#connector-rules-and-approvals). |
@@ -1136,6 +1136,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `max_runs_per_hour` | integer, 1 or more | `60` | Runs the trigger starts in any 60 minutes. |
 | `max_runs_per_day` | integer, 1 or more | — | Runs the trigger starts in a UTC day. |
 | `max_lateness` | string | — | Schedules only, `60s` or more. A missed fire later than this does not run. |
+| `expect_event_within` | string | — | App events only, `5m` or more. No event for this long tells the trigger's watchers once; the next event clears it. |
 | `overlap` | `skip`, `allow` | `skip` for a schedule, `allow` for others | `skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. |
 | `on` | map | required | What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event. |
 | `on.cron` | string | — | A 6-field cron expression, seconds first: `"0 0 9 * * 1"` is 09:00 every Monday. A trigger fires at most once every 60 seconds. |
@@ -1232,7 +1233,7 @@ permission:
   webfetch: ask
 ```
 
-- **Value.** One action for every tool: `allow`, `ask` or `deny`. Or a map of key → action, or of key → map of glob → action.
+- **Value.** One action for every tool: `allow`, `ask` or `deny`. Or a map of key → action, or of key → map of glob → action. `"*"` and `all` as an action also mean `allow`.
 - **Keys.** A capability: `read`, `edit`, `glob`, `grep`, `bash`, `external_directory`, `question`, `webfetch`, `websearch`. Or a tool's own name, which wins over its capability.
 - **Tools that follow a capability.** `write` follows `edit`. A project's own `memory` tool (the ejected copy of the retired Kortix tool) follows `edit`, or `read` when it only views. `image_gen` follows `edit`. `web_search` and `image_search` follow `websearch`. `scrape_webpage` follows `webfetch`.
 - **Action only.** `question`, `webfetch` and `websearch` take an action, not a glob map.
@@ -1433,7 +1434,7 @@ A session a person started is an orchestrator: nothing it starts blocks the sess
 
 #### Workflows
 
-The `workflow` tool runs a JavaScript script that starts and coordinates many agents. The script holds the plan and the intermediate results. The model receives only the script's return value. Every session has the tool. It starts only from a person's own message: a turn that a message from another session, a room message, a trigger or a reminder started refuses it.
+The `workflow` tool runs a JavaScript script that starts and coordinates many agents. The script holds the plan and the intermediate results. The model receives only the script's return value. Every session has the tool. It starts only from a person's own message: a turn that a message from another session, a trigger or a reminder started refuses it.
 
 The call takes `script` (required), `description`, `args`, `max_agents`, `resume_run_id`, `fresh`, and `name`. To run a saved workflow by `name`, or to resume a run with its own script, the call passes `script: ""`.
 
@@ -1497,7 +1498,7 @@ A result that arrives later must wake the session that waits for it. Every agent
 | A change request | `kortix triggers add "<text>" --on cr-merged --cr <id>` | `wake_on` with `cr_merged` |
 | A deploy, a CI run, a job | `--on webhook --secret-env <NAME>` (prints the URL to give the system), else a loop every 10 to 30 minutes | `wake_on` with `webhook` (returns the URL) |
 | A person's answer, a slow vendor | A loop | `follow_up` |
-| A page or a status with no events | A loop, or a watcher App and `--on app --app <slug>` | `wake_on` with `app_event` |
+| A page, a status or a price with no events | A watcher App and `--on app --app <slug> --expect-event-within 1h`: no model runs until it changes. A loop only for a wait that ends within a day | `wake_on` with `app_event` and `expect_event_within` |
 | A hand-off, a teammate, a workflow | Nothing: each reports back by itself | nothing |
 
 - **The fallback loop.** When the event may never come, the agent also sets a loop. The cadence fits the wait: a reply is checked first 2 to 4 hours later in the recipient's working hours, then 2 to 4 times a day; a deploy every 10 to 30 minutes; a slow vendor daily.
@@ -2241,6 +2242,33 @@ The commands below are `kortix sessions <subcommand>`. `kortix sessions --help` 
 | `scope <session_id>` | Read or replace the session's secrets and connections. The change applies to the next prompt. |
 | `links <session_id>` | Public links to one preview port or one file: `ls`, `create`, `revoke <share-id>`. |
 | `open <session_id>` | Open the session in the web app. |
+
+### Artifact commands
+
+The commands below are `kortix artifacts <subcommand>`. `kortix artifacts --help` lists every flag. They need the `artifacts` feature flag, which is on by default. The comment commands also need `artifact_comments`, which is off by default. What an Artifact is: [Artifacts](/docs/guide#artifacts).
+
+| Command | Effect |
+| --- | --- |
+| `types [<type>]` | The two types, `doc` and `html`. With a type: its format rules and a starter. `--starter` prints only the starter. |
+| `publish <file\|dir>` | Upload and share a new Artifact, in your folder in Drive under `Artifacts/`. A `.md` file or a folder with an `index.md` is a doc. An `.html` file or a folder with an `index.html` is a page. `--title`, `--description`, `--visibility private\|project\|public` (default `private`). Prints the link. |
+| `publish <file\|dir> --id <artifact>` | Save the files into that Artifact. `--base-version <v>` refuses the save with exit `3` when someone saved after version `<v>` (the `entry_version` from `info` or `pull`). |
+| `add <path>` | Share a folder that is already in Drive. It holds an `index.md` or an `index.html`. Same options as `publish`. |
+| `ls` | The Artifacts you may open, newest first. `--mine`, `--shared`, `--pinned`, `--type doc\|html`, `--search "<text>"`. |
+| `info <artifact>`, `open <artifact>` | `info` prints the title, type, path in Drive, files and links. `open` prints only the links. |
+| `cat <artifact> [<path>]`, `pull <artifact> <dir>` | `cat` prints one file, by default the entry. `--version <id>` reads an old version. `pull` downloads the files, to edit and publish again. |
+| `share <artifact>` | `--visibility private\|project\|public`. `--with <email\|user-id>` adds a person to a private Artifact. Repeat it, or pass `--with ""` to clear the list. |
+| `rename <artifact> "<title>"` | Rename it. |
+| `pin <artifact>`, `unpin <artifact>` | Pin it in your own list, or unpin it. |
+| `versions <artifact>`, `restore <artifact> <version-id>` | `versions` lists every save, newest first. `restore` writes one save back as a new save. |
+| `rm <artifact>` | Stop sharing it. Its comments are deleted. Its files stay in Drive. |
+| `comments <artifact>` | The open threads. `--all` adds the resolved threads. `--resolved` shows only them. A thread that waits for a person says so. |
+| `comment <artifact> "<text>"` | Open a thread on the whole Artifact. `--quote "<text>"` anchors it to an exact passage of up to 500 characters. A quote that is not in the file exits nonzero and posts nothing. `--selector "<css>"` anchors it to an element of a page. |
+| `reply <thread-id> "<text>"` | Reply to a thread, by its full ID. |
+| `resolve <thread-id>`, `reopen <thread-id>` | Resolve a thread, or open it again. |
+| `activity <artifact>` | Saves and events, newest first. `--limit` takes 1 to 100. |
+| `focus <artifact>` | Agent sessions only. Shows the people viewing the Artifact where the agent works: `--thread <thread-id>` (a thread it answers) or `--quote "<text>"` (a passage it changes, up to 500 characters). `--status reading\|editing\|writing\|idle`, default `editing`. `idle` removes the agent from the viewers. A person's token exits `1`. |
+
+`<artifact>` is an Artifact ID or its first 8 characters from `ls`. `--json` prints machine-readable output. Exit codes: `0` success, `1` API error, `2` usage error, `3` version conflict.
 
 ### Check and validate
 
@@ -3291,11 +3319,11 @@ agents:
   report-writer:
     prompt: Write the weekly report from the reports App.
     kortix_permissions: [project.app.read]
-    apps: [reports]    # App slugs, all, or none (the default)
+    apps: [reports]    # App slugs, "*", or none (the default)
 ```
 
 Set the list in `kortix.yaml`, with `kortix agents scope report-writer --apps reports`
-(also `all` and `none`), or in **Customize** → **Agents** → the agent → **Apps**.
+(also `all` for every App, and `none`), or in **Customize** → **Agents** → the agent → **Apps**.
 The App's access dialog lists the agents granted to it. From code, call `apps.access.agents(appId)`. See
 [Agents](/docs/guide#agents).
 
@@ -3319,19 +3347,83 @@ An App can start agents, and triggers can call it.
 | The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#triggers). |
 | The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#triggers). |
 
-To react to the outside world, try a webhook first, then a connector event,
-then a schedule. Build a watcher App when the source sends nothing and must be
-watched around the clock: an `every` trigger calls the App's `/tick`, the App
-posts an App event only when the source changed (an `id` built from the content
-fires once per trigger for 30 days), and a session trigger
-(`kortix triggers add "<text>" --on app --app <slug>`) wakes the session that
-waits, or a `kortix.yaml` trigger starts an agent. An App never starts an agent
+To react to the outside world, try a webhook first, then a connector event.
+Build a watcher App when the source sends nothing (a page, a status, a price,
+an API): an `every` trigger calls the App's `/tick`, the App posts an App event
+only when the source changed (an `id` built from the content fires once per
+trigger for 30 days), and a session trigger
+(`kortix triggers add "<text>" --on app --app <slug> --expect-event-within 1h`)
+wakes the session that waits, or a `kortix.yaml` trigger starts an agent. No
+App event within the `expect_event_within` window tells the person once. An App never starts an agent
 itself: it posts events, and a trigger decides. Deploy a watcher App unlisted
-and on demand: it belongs in the Background list. A complete example is in the
-`kortix-system` skill, `references/scheduling.md` → Watch 24/7.
+and on demand: it belongs in the Background list.
+
+`kortix apps launch --template watcher --name status-watch` writes such an App
+to `apps/status-watch/` and deploys it. You edit one function in `watch.js`:
+`check()` returns what is true now as `[{ name, data }]`. On each `POST /tick`
+the runner posts those events with ids built from their name and data, so the
+same state never fires twice. With nothing to report it posts
+`{"name":"kortix.heartbeat"}`, which keeps `expect_event_within` satisfied and
+is never stored. Other names starting with `kortix.` are Kortix's own
+(see "Repair it" below). The
+next steps it prints add the work trigger, prove it with a test event, and add
+the check.
 
 App events and runs are REST only. They authenticate with the App token, not
-a Kortix token.
+a Kortix token. An App may send 120 requests a minute; past that it gets `429`
+with `retry_after_seconds`.
+
+**See what happened.** `GET /v1/projects/<project_id>/apps/<app_id>/events`
+(`project.app.deploy`) lists the App's events from the last 30 days, newest
+first, one row per trigger an event reached: `fired` (with `session_id`),
+`skipped` (with `reason`: a filter, a disabled trigger, a paused project, a
+run cap), `suppressed`, `failed` or `pending`. An event no enabled trigger
+listens to is kept as `unmatched` (up to 60 per App an hour), and the App's
+`POST` answer says so in `unmatched` and `hint`. Filter with `status`,
+`trigger` and `id`; page with `cursor`. CLI: `kortix apps events <app>`.
+
+**Test the wiring.** `POST /v1/projects/<project_id>/apps/<app_id>/events/test`
+(`project.app.deploy`, your own credential) sends events as if the App posted
+them, through the same log, limits and triggers. Every id starts with `test-`,
+so the App's real event with the same id still fires later. The prompt reads
+`{{ event.test }}` as `true` and starts with a TEST line. CLI:
+`kortix apps events emit <app> <name> --data '{"status":"down"}' --wait`
+waits up to 60 s for the outcome and exits `0` only when a trigger fired.
+`trigger` (CLI `--trigger <slug>`) sends the test to that one trigger, so a
+test of one automation starts no other on the same event.
+
+**Know when a watcher stops.** Add `expect_event_within` (5m to 30d) to the
+App trigger: `on: { event: status.changed, app: status-watch }` plus
+`expect_event_within: 30m`, or `kortix triggers add … --expect-event-within
+30m`. It watches the App, not one event name: when the App posts nothing at
+all for that long, the trigger's watchers get one "automation failed" notice,
+with the `notification_center` flag on or off; the App's next post sends
+"recovered". Every post counts, whatever its name, including one Kortix
+deduplicates and `kortix.heartbeat`, so a watcher that sees no change still
+counts as alive. A test event does not count.
+
+**Repair it.** Kortix writes three events about an App to its log:
+`kortix.app.silent` when a silence alert opens (`data.trigger`,
+`data.last_heard_at`), `kortix.app.crashed` when an always-on App stopped 3
+times in an hour and Kortix stopped restarting it, and `kortix.app.recovered`
+when the App posts again or runs again. Each reaches only a trigger whose event
+is that exact name, never `event: "*"`, and none counts as the App posting:
+
+```yaml
+- slug: status-watch-repair
+  on: { event: kortix.app.silent, app: status-watch }
+  run: { prompt: "status-watch went quiet. Read kortix apps logs status-watch, fix it, deploy again." }
+```
+
+An always-on App that keeps crashing also alerts its work triggers' watchers
+once, and each restart is a `supervisor_restarted` event of the release.
+Test a repair trigger with
+`kortix apps events emit status-watch kortix.app.silent --wait`.
+
+**Post from elsewhere.** `kortix apps events credentials <app>` (project
+admins) prints `KORTIX_APP_EVENTS_URL` and `KORTIX_APP_TOKEN` for code that
+runs outside the App, such as your laptop while you build it. The token posts
+events as that App: keep it out of chat, files and commits.
 
 ### Environment inside an App
 
@@ -3427,7 +3519,7 @@ Delete one release, or the whole App:
 
 ```bash
 kortix apps delete my-site --deployment v1 --yes   # one release and its image
-kortix apps delete my-site --yes                   # the App, its machines and images
+kortix apps delete my-site --yes                   # the App, its machines, images and triggers
 ```
 
 - The live release cannot be deleted (`409 deployment_live`). Roll back first.
@@ -3438,6 +3530,14 @@ kortix apps delete my-site --yes                   # the App, its machines and i
 - Deleting an App needs `project.app.write`. An App with volumes also needs
   `project.app.admin`. Each volume keeps a `final` snapshot for 7 days, then
   Kortix purges it. Export data you need first.
+- The project's triggers that name the App go with it: the ones its events
+  start (`on: { event, app }`) and the ones that call it (`run: { app, path }`).
+  They are removed from `kortix.yaml` in the same commit as the App's block,
+  and the answer lists them in `triggers_removed`. A session trigger on the
+  App belongs to its session: it stays until that session's owner removes it,
+  and it never fires or alerts without the App.
+  Removing them needs `project.trigger.delete`; without it the delete answers
+  `403 app_triggers_need_delete` and changes nothing.
 
 ### Template: Convex backend
 
@@ -3751,10 +3851,10 @@ curl -fsSL https://raw.githubusercontent.com/kortix-ai/CompanyOS/dev/scripts/kor
 <Step title="Answer the setup questions">
 If the bootstrap added you to the `docker` group, open a new shell first. Run `kortix self-host configure` and give your admin email. Enter keeps every other answer, including the Platinum API key the bootstrap set. Then run `kortix self-host start` to apply the answers.
 </Step>
-<Step title="Sign up as the admin">
-Open `https://kortix.example.com` and sign up with the admin email. Connect GitHub at `/admin/git`, create the team account and a project, then add a model key. See [First sign-in and setup](#first-sign-in-and-setup).
+<Step title="Create the admin account">
+Run `kortix self-host admin add you@example.com`. It creates the account and prints a one-time password. Sign in at `https://kortix.example.com/auth`, change the password, then connect GitHub at `/admin/git`, create the team account and a project, and add a model key. See [First sign-in and setup](#first-sign-in-and-setup).
 
-Do this as soon as the stack starts. Until you set `EMAIL_URL` or `DISABLE_SIGNUP=true`, anyone who reaches the instance can create a confirmed account for any address, the admin address included.
+Nobody can claim an admin address by signing up. Until you set `EMAIL_URL`, the instance accepts a sign-up only from an address with a pending invitation. See [Who can sign up](#who-can-sign-up).
 </Step>
 <Step title="Move Apps and previews to wildcard certificates">
 Run `kortix self-host tls wildcard`, add the DNS records it prints, and run it again. This keeps App and preview host names out of the public certificate logs. It needs UDP and TCP port 53 open. See [Certificates and security filters](#certificates-and-security-filters).
@@ -3954,7 +4054,7 @@ Other rules that keep a domain clear of these filters:
 
 ### First sign-in and setup
 
-1. **Sign up as the admin.** Open `https://<domain>` and sign up with an address in `KORTIX_PLATFORM_ADMIN_EMAILS`. A password, email-code or social sign-in matches that list. A SAML sign-in never does. To change the admins later, set the full comma-separated list: `kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com,ops@example.com`. The value replaces the list.
+1. **Create the admin account.** Run `kortix self-host admin add you@example.com`. It creates a confirmed account, adds the address to `KORTIX_PLATFORM_ADMIN_EMAILS` when it is missing, and prints a one-time password. Sign in at `https://<domain>/auth` and change the password. A password, email-code or social sign-in matches the admin list. A SAML sign-in never does. Run the command again for each further admin. To remove an admin, set the full comma-separated list: `kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com`. The value replaces the list.
 2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/developers#git).
 3. **Create the team account.** Your sign-up account is personal. It cannot hold SAML SSO (`403` `sso_personal_account`), and a project cannot move to another account. The menu that creates accounts lives inside a project, so first create one project at `/new`. In it, open the project menu → **Switch Project** → **Create an account…**. Only platform admins can create accounts by default. Invite your team and set up SSO in this account.
 4. **Create a project** in the team account. After **Create an account…**, Kortix opens `/new` with the new account selected.
@@ -3966,7 +4066,24 @@ Other rules that keep a domain clear of these filters:
    ```
 
    Kortix then sends sign-in and invitation mail through it, requires email confirmation for new accounts, and adds magic-link sign-in. `EMAIL_FROM` defaults to `Kortix <noreply@<domain>>`. Other forms: `smtps://user:password@host:465`, `resend://<api-key>`, `ses://<key-id>:<secret>@<region>`, `ses://<region>`, `mailtrap://<api-token>`. Separate several with commas for a fallback chain, tried left to right.
-7. **Close sign-up.** When your team has signed up, run `kortix self-host env set DISABLE_SIGNUP=true`, then `kortix self-host start` so the auth service reads it.
+7. **Choose who can sign up.** See [Who can sign up](#who-can-sign-up).
+
+#### Who can sign up
+
+Before the auth service creates an account from a sign-up, a magic link, a social or SAML sign-in, or an invite, it asks the instance's sign-up policy. `KORTIX_SIGNUP_MODE` sets the policy:
+
+| `KORTIX_SIGNUP_MODE` | Who can create an account by signing up |
+|---|---|
+| `invite` | Only an address with a pending invitation (**Members** → **Invite**, or a SCIM user). The default on a domain or tunnel instance without `EMAIL_URL`. |
+| `open` | Anyone. The default on a laptop instance and on an instance with `EMAIL_URL`, where every new account must confirm its address. |
+| `closed` | Nobody. |
+
+Two rules apply in every mode:
+
+- An SSO (SAML) sign-in always creates the account. Your identity provider decides who that is.
+- Nobody can claim an address in `KORTIX_PLATFORM_ADMIN_EMAILS` by signing up. `kortix self-host admin add` creates those accounts.
+
+Change the mode with `kortix self-host env set KORTIX_SIGNUP_MODE=closed`. The API restarts without downtime and applies it. `DISABLE_SIGNUP=true` is stricter: the auth service then also refuses the first SSO sign-in of a new person, so use it only when every account already exists.
 
 A new instance starts with these defaults:
 
@@ -3993,12 +4110,12 @@ A new instance starts with these defaults:
 | `email-url` | `EMAIL_URL` is set but does not parse | Correct the value. |
 | `preview-origins` | Domain mode and `KORTIX_PREVIEW_BASE_DOMAIN` is empty | Point `*.p.<domain>` at the server, then `kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=p.<domain> KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true`. |
 | `wildcard-tls` | Domain mode and an Apps or preview base still gets one certificate per host | Run `kortix self-host tls wildcard` and add the records it prints. See [Certificates and security filters](#certificates-and-security-filters). |
-| `open-sign-up` | A domain or tunnel instance has sign-up open and email confirmation off | Set `EMAIL_URL`, or set `DISABLE_SIGNUP=true` once your team is in. |
+| `open-sign-up` | A domain or tunnel instance has `KORTIX_SIGNUP_MODE=open` and email confirmation off | Set `KORTIX_SIGNUP_MODE=invite`, or set `EMAIL_URL`. |
 
 <Callout type="warning">
-A new instance confirms every sign-up without an email. Until you fix `open-sign-up`, anyone who reaches the instance can create a confirmed account for any address, an admin address included. Sign up as the admin first, then set `EMAIL_URL` or `DISABLE_SIGNUP=true`. `kortix self-host init` prints the same warning on a domain or tunnel instance.
+Without `EMAIL_URL`, an instance confirms every sign-up without an email. That is why a domain or tunnel instance without email starts with `KORTIX_SIGNUP_MODE=invite`. If you set `KORTIX_SIGNUP_MODE=open` there, anyone who reaches the instance can create a confirmed account for any address that is not an admin address, and `doctor` fails `open-sign-up`.
 
-`init --disable-signup` turns sign-up off from the first start, for an install that creates its accounts another way. While it is off, nobody can sign up, the admin included.
+`init --disable-signup` turns sign-up off from the first start, for an install that creates its accounts another way. While it is off, nobody can sign up and no new person can sign in with SSO.
 </Callout>
 
 What the stack does by itself:
@@ -4022,7 +4139,7 @@ A connector credential shows no mark: a call through it returns `credential_unde
 | SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. A password login does not see that invite, and accepting or declining it returns `403` `email_unconfirmed`. The invite page then shows **Continue with single sign-on**. It signs in through the account's SAML provider, also for an address outside the provider's domain, and the person joins. An admin can instead click **Resend** on the pending invite: it is then an invite a person sent. |
 | **Members** → **Invite** for that address | Creates a pending invite instead of adding the login. |
 | An invite a person sent or resent (**Members** → **Invite** or **Resend**, a project invite) | The login that holds the address sees it in the project chooser and the **Switch Project** menu, and can accept it. That login is whoever signed up first with the address, so it may not be the person you invited. |
-| `KORTIX_PLATFORM_ADMIN_EMAILS` | Matches a password login with the address. Whoever signs up first with an allowlisted address is platform admin. |
+| `KORTIX_PLATFORM_ADMIN_EMAILS` | Matches a password login with the address. Sign-up never creates such a login: `kortix self-host admin add` does. |
 
 A login that is already a member of the account, and a login through the account's own SAML provider, still match inside that account. `KORTIX_PLATFORM_ADMIN_EMAILS` never matches a SAML login. Setting `EMAIL_URL` turns `ENABLE_EMAIL_AUTOCONFIRM` off and restores the matching. A login created while it was on is not confirmed again: after you add email, its address matches invites and SCIM like a confirmed one.
 
@@ -4063,7 +4180,7 @@ Set these with `kortix self-host env set`. Each row says what the variable turns
 | Variables | Effect |
 |---|---|
 | `COMPOSIO_API_KEY` | The connector app catalog. Without it, Easy connect, the `/connections` page and the onboarding apps step are hidden. Custom connectors work without it. |
-| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/guide#connectors) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
+| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [app catalog](/docs/guide#connectors) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`, `x`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Channels](/docs/guide#channels). |
 | `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
 | `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`; optional `DISCORD_REDIRECT_URI` | **Add to Discord** with your own Discord application. In the Discord Developer Portal, create the app, turn on **Requires OAuth2 Code Grant**, and add `<api>/v1/webhooks/discord/oauth/callback` as an OAuth2 redirect. Store the bot token and the client secret, then run `apps/api/scripts/discord-app-setup.ts` (steps in its header): it checks the portal settings, writes the application ID and public key, and, once the API runs with them, sets the Interactions Endpoint URL to `<api>/v1/webhooks/discord`. Without all four values, Discord shows as not set up. `DISCORD_MESSAGE_CONTENT=true` (with the **Message Content** intent turned on for the application) lets every message in a Kortix thread reach the agent; without it, a thread message must mention the app. When Discord refuses the intent, Kortix logs an error and runs without it: mentions and direct messages keep working. Discord requires verification for an application in 100 servers or more; Kortix logs a warning from 75. See [Channels](/docs/guide#channels). |
@@ -4081,6 +4198,7 @@ Some MCP servers in the catalog do not let Kortix register itself. Kortix signs 
 1. At the vendor, create an OAuth app with the redirect URI `<KORTIX_URL>/v1/connectors/oauth2/callback`.
    - Google: a **Web application** client. Select **Use this client for an AI-powered agent**. Enable the Gmail, Calendar, Drive, Docs and Sheets APIs and their MCP services. Add the scopes from Google's [MCP server guide](https://developers.google.com/workspace/guides/configure-mcp-servers). The Workspace MCP servers are a Google developer preview.
    - GitHub: an OAuth app (not a GitHub App).
+   - X: in the X Developer Console, set up **User authentication** with OAuth 2.0, the app type **Web App, Automated App or Bot** (a confidential client) and the permission **Read and write**. Kortix requests `tweet.read tweet.write users.read offline.access`.
 2. Store the clients as one JSON value:
 
    ```sh
@@ -4094,6 +4212,25 @@ Some MCP servers in the catalog do not let Kortix register itself. Kortix signs 
 Some toolkits have no Composio-managed sign-in. Syncing one fails with `422` `composio_auth_config_required`. In the Composio dashboard, open **Auth Configs** and create one with your own OAuth app.
 
 Then sync again. No restart is needed.
+
+#### Your own OAuth app for a Composio toolkit
+
+Composio's managed sign-in uses Composio's OAuth app, so its rate limits and quotas are shared with every Composio customer. An enabled auth config of your own with the `OAuth2` scheme replaces it: from then on, each new account signs in with your app and uses its quota. An API-key or other auth config does not replace the managed sign-in.
+
+- Kortix reads the auth config at each connect. No restart is needed.
+- An account that signed in before keeps the app it signed in with. To move it, remove the account and add it again.
+- When you keep more than one enabled `OAuth2` config for a toolkit, the newest wins. Disable the old one to rotate an app.
+
+YouTube needs this for regular uploads: Google gives each Google Cloud project its own daily upload quota, 100 uploads by default.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project. Enable **YouTube Data API v3**.
+2. Configure the OAuth consent screen: user type **External**, your app name, a homepage and privacy policy on a domain you verified in Google Search Console. Add the scopes `https://www.googleapis.com/auth/youtube`, `youtube.upload`, `youtube.readonly` and `youtube.force-ssl`. Set the publishing status to **In production**: in **Testing**, Google ends every sign-in after 7 days.
+3. Create an OAuth client: **Web application**, with the redirect URI `https://backend.composio.dev/api/v1/auth-apps/add`.
+4. In the Composio dashboard, open **Auth Configs**, create one for **YouTube** with **OAuth2** and your own app, and paste the client ID and client secret. Enter the four scopes from step 2.
+5. Submit the app for Google's verification. Until Google verifies it, people see an "unverified app" screen before the consent screen, and at most 100 new users can sign in. YouTube scopes are sensitive, not restricted: verification needs a demo video and a justification per scope, but no security assessment.
+6. For more than 100 uploads a day, file the [quota extension form](https://support.google.com/youtube/contact/yt_api_form).
+
+Composio's default YouTube scopes also include `youtubepartner` and `youtube.channel-memberships.creator`. Leave them out unless you need the partner or channel-membership actions: every scope you request needs its own justification at verification.
 
 ### Updates and versions
 
@@ -4185,6 +4322,7 @@ People see the effect of these values in [Computers](/docs/guide#computers).
 | Variable | Default | Effect |
 |---|---|---|
 | `KORTIX_APPS_BASE_DOMAIN` | `apps.<domain>` on a new domain instance | The domain [Apps](/docs/developers#apps-reference) are served on, for example `apps.kortix.example.com`. It needs a `*.apps.kortix.example.com` DNS record. `kortix self-host configure` sets it. Caddy serves Apps only when it is set. |
+| `KORTIX_SIGNUP_MODE` | `invite` on a domain or tunnel instance without `EMAIL_URL`, else `open` | Who can create an account by signing up: `open`, `invite` or `closed`. An SSO sign-in always passes, and admin addresses are never claimable. See [Who can sign up](#who-can-sign-up). |
 | `KORTIX_ACME_DNS_ZONE` | none | The zone the bundled acme-dns answers for, for example `acme.kortix.example.com`. `kortix self-host tls wildcard` sets it with `KORTIX_ACME_DNS_PUBLIC_IP` (the address in its records) and `KORTIX_ACME_DNS_LISTEN_IP` (the address port 53 binds). See [Certificates and security filters](#certificates-and-security-filters). |
 | `KORTIX_WILDCARD_TLS_BASES` | none | The Apps and preview bases on one wildcard certificate each. `kortix self-host tls wildcard` adds a base when its DNS records work. |
 | `KORTIX_APPS_RETAINED_DEPLOYMENTS` | `5` | The ready releases each App keeps as rollback targets, beside the live one. At least `1`. |
@@ -4296,6 +4434,7 @@ Every subcommand takes `--instance <name>` (default `default`).
 | `domain move <domain>` | Makes `<domain>` primary. The current domain stays as an alias. `--skip-dns-check` skips the DNS check. |
 | `tls show` | How each host gets its TLS certificate. |
 | `tls wildcard` | Moves Apps and previews to wildcard certificates. `--zone`, `--public-ip`, `--listen-ip`. |
+| `admin add <email>` | Creates a confirmed platform admin account, adds the address to `KORTIX_PLATFORM_ADMIN_EMAILS`, and prints a one-time password. The stack must be running. |
 | `uninstall` | Deletes the stack, its data and its directory. |
 | `connect-github` | Deprecated. Prints where to connect GitHub. Use `/admin/git`. |
 
@@ -4471,7 +4610,7 @@ Each run creates a new session, and the session appears in the web app with the 
 - These entry points follow semver: `@kortix/sdk`, `/react`, `/server`, `/genui`, `/genui/fence`, `/genui/react`, `/wire-message-id`, `/workspace-search` and `/capture-rules`.
 - Exported names, types included, are the public contract. A renamed export keeps a `@deprecated` alias until the next major version.
 - `@kortix/sdk/internal/*` serves the Kortix web app and has no semver. It can change in any release.
-- Other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`, are deprecated aliases of root names. They resolve until the next major version. The list is in the [SDK reference](/docs/developers#sdk-reference).
+- 0.15.0 removed the other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`. Import the same names from the root. The list is in [Removed in 0.15.0](/docs/developers#removed-in-0150).
 - A runtime does not serve every session control. Check a control with `runtimeSupports` before you show it: see [Gate on runtime capabilities](/docs/developers#gate-on-runtime-capabilities).
 - Changes per release are in the [CHANGELOG](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/sdk/CHANGELOG.md). Runnable examples are in [packages/sdk/examples](https://github.com/kortix-ai/CompanyOS/tree/dev/packages/sdk/examples) on GitHub. The npm package does not include them.
 
@@ -5531,7 +5670,7 @@ The session's computer can have a desktop, streamed on port `6901`. The daemon l
 const { applied_live, push_failed } = await s.changeModel('glm-5.3-flash');
 ```
 
-- `changeModel()` restarts the runtime when the model changes on a running session. A running turn ends.
+- `changeModel()` reconfigures pi without restarting. A running turn finishes on its current model.
 - `applied_live: true`: the running session took the model now. `false`: it applies at the next start.
 - `push_failed: true`: the model is stored, but the running runtime still uses the old one.
 - On a `stopped`, `failed` or `completed` session it returns `409` `SESSION_NOT_RUNNING`. Only the session owner or a project manager may call it; anyone else gets `403`.
@@ -5911,6 +6050,43 @@ A Composio tool's file field (for example YouTube's `videoFile` or a Gmail `atta
 ```bash
 kortix connectors call youtube multipart_upload_video '{"title":"Demo","videoFile":"https://example.com/demo.mp4"}'
 ```
+
+##### Upload a video to YouTube
+
+Connect YouTube with one click: Install YouTube from the catalogue, then sign in with Google. No API key, client id or client secret.
+
+`youtube.upload_video` uploads a file from the session at any size, up to YouTube's 256 GB. Kortix runs this action itself. It starts a YouTube resumable upload on the connected account and answers:
+
+| Field | Value |
+| --- | --- |
+| `caller_only.upload_url` | The upload session URL. It serves this one video only and expires after about a week. |
+| `caller_only.upload_command` | A `curl` command that sends the file to the upload URL. It prints the video resource: `id` is the video, `https://youtu.be/<id>`. |
+| `caller_only.resume_status_command` | Asks how many bytes YouTube has. HTTP `308` with `Range: bytes=0-N` means: send the rest from byte `N+1`. |
+| `video` | The title, privacy status and schedule YouTube received. |
+
+The file goes from the session straight to Google. The Google token stays with the sign-in provider and never enters the session. The upload URL is a credential for one video. When a policy holds the call for approval, the stored outcome reviewers read leaves out `caller_only`; only the resume prompt to the calling session carries it.
+
+Build the arguments with `jq --arg`. A file path pasted into a JSON string lets a quote in the file name add fields.
+
+```bash
+F=/workspace/output/video.mp4
+jq -n --arg file "$F" --argjson size "$(stat -c %s "$F")" \
+  '{title:"Launch demo", privacy_status:"private", file_path:$file, file_size:$size, mime_type:"video/mp4"}' \
+  > /tmp/yt-args.json
+kortix connectors call youtube upload_video @/tmp/yt-args.json --out /tmp/yt-upload.json
+bash -c "$(jq -r '.data.result.caller_only.upload_command' /tmp/yt-upload.json)"
+```
+
+Arguments: `title` (required, at most 100 characters), `description`, `tags`, `category_id`, `privacy_status` (`private` by default, `unlisted`, `public`), `publish_at` (an ISO 8601 time; needs `private`), `made_for_kids`, `contains_synthetic_media`, `notify_subscribers` (default `true`), `default_language`, `file_path` and `file_size` (written into `upload_command`), `mime_type` (default `video/*`).
+
+| Answer | Meaning |
+| --- | --- |
+| `400` | An argument is wrong. The message names it. |
+| `upstream_429` with `rateLimitExceeded` or `quotaExceeded` | The Google app the account signed in with has used its uploads for today. `retry_after_seconds` (and `Retry-After`) says when it resets, at midnight Pacific time. Schedule one retry then: every earlier retry fails. |
+| `upstream_429` with `uploadLimitExceeded` | The channel reached YouTube's own daily upload limit. Retry in 24 hours. Another Google app does not lift it. |
+| `upstream_502` with `youtubeSignupRequired` | The Google account has no YouTube channel. Create one at youtube.com/create_channel. |
+
+Google counts uploads per Google app (Cloud project), not per channel. Composio's managed YouTube app shares one daily quota across every Composio customer: on 2026-11-04 it allowed 966 uploads a day in total and was used up hours before the next reset. An instance that uploads often needs its own Google app: see [Your own OAuth app for a Composio toolkit](#your-own-oauth-app-for-a-composio-toolkit).
 
 `kortix connectors types --out kortix-connectors.d.ts` generates types for `run`, `call` and `paginate`. Without the file, args are any object and outputs are `unknown`.
 
@@ -6821,7 +6997,7 @@ The fence tags `openui` and `openui-lang` mean schema version 1. The tag `openui
 
 Generative UI has no project flag and no kill switch. Every session lists the `kortix-genui` system skill by name and a one-line description. The agent loads the full catalog only when an answer needs a block, so a turn without blocks does not load it.
 
-An agent sees the skill only when its `skills` grant in `kortix.yaml` is `all` or names `kortix-genui`. The starter agents grant `all`. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
+An agent sees the skill only when its `skills` grant in `kortix.yaml` is `"*"` or names `kortix-genui`. The starter agents grant `"*"`. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
 The viewer has a separate switch. Pass `enabled={false}` to `GenuiBlock` and the block renders as markdown.
 
@@ -7205,7 +7381,7 @@ Every option is optional. Pass objects with a stable identity.
 | `useViewerId` | A hook that returns the signed-in user's id. Without a viewer, a session several people write in names no sender. |
 | `useViewer` | A hook that returns the signed-in user as `{ id, email?, metadata? }`. The UI reads `name`, `full_name` and `avatar_url` from `metadata`. |
 | `updateViewerMetadata` | Saves UI preferences on the signed-in user, so they follow the user across devices. Without it, they stay in the browser. |
-| `components` | Host features the session UI opens but does not own: `ShareSessionModal` (exported by `@kortix/ui/workspace`), `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`, `ArtifactViewer`, `RoomPanel`, `HomeAnnouncement`, `Wallpaper`. A control whose slot is missing is hidden. |
+| `components` | Host features the session UI opens but does not own: `ShareSessionModal` (exported by `@kortix/ui/workspace`), `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`, `ArtifactViewer`, `HomeAnnouncement`, `Wallpaper`. A control whose slot is missing is hidden. |
 | `resolvePreviewUrl` | `(request) => Promise<string \| null>`. Returns the URL the session browser frames, with your host's own credentials. `null` keeps the SDK preview URL. Use it when the browser must not hold a Kortix token. |
 | `config` | Host feature switches. See the next table. |
 
@@ -7349,7 +7525,7 @@ Every URL the components link to or navigate to comes from one route table. Call
 
 - Return your own path for a page you serve at another URL.
 - Return `null` for a page you do not serve. Every link to it is hidden and no navigation goes there.
-- `project`, `session`, `channel` and `dm` cannot return `null`. The sidebar links `channel` and `dm` only while the project's `project_channels` flag is on.
+- `project`, `session`, `channel` and `dm` cannot return `null`. The sidebar links `channel` and `dm` only while the project's `chat` flag is on.
 - A host that maps `customize` and says nothing about `admin` gets the same mapping for `admin`.
 
 | Route | Arguments | Default |
@@ -7360,7 +7536,6 @@ Every URL the components link to or navigate to comes from one route table. Call
 | `files` | `projectId`, `panel?: 'proposed-changes'` | `/projects/<id>/files`, `?panel=<panel>` |
 | `drive` | `projectId` | `/projects/<id>/drive` |
 | `apps` | `projectId` | `/projects/<id>/apps` |
-| `rooms` | `projectId` | `/projects/<id>/rooms` |
 | `goals` | `projectId` | `/projects/<id>/goals` |
 | `artifacts` | `projectId` | `/projects/<id>/artifacts` |
 | `space` | `projectId`, `slug` | `/projects/<id>/spaces/<slug>` |
@@ -7827,7 +8002,6 @@ setUiRoutes({
   sessions: () => null,
   drive: () => null,
   apps: () => null,
-  rooms: () => null,
   goals: () => null,
   artifacts: () => null,
   space: () => null,
@@ -7880,7 +8054,7 @@ createRoot(document.getElementById('root')!).render(
 
 ### For agents
 
-`@kortix/ui` ships the `kortix-ui` skill at `packages/ui/skills/kortix-ui/SKILL.md`. Every Kortix project gets it as a managed skill. An agent loads it when its `skills` grant in `kortix.yaml` is `all` or names `kortix-ui`. It tells an agent how to set up the package, which component to compose, which primitives are banned and how to verify a page. Its references:
+`@kortix/ui` ships the `kortix-ui` skill at `packages/ui/skills/kortix-ui/SKILL.md`. Every Kortix project gets it as a managed skill. An agent loads it when its `skills` grant in `kortix.yaml` is `"*"` or names `kortix-ui`. It tells an agent how to set up the package, which component to compose, which primitives are banned and how to verify a page. Its references:
 
 | File | Holds |
 | --- | --- |
@@ -7914,8 +8088,8 @@ Conventions in this section:
 | `@kortix/sdk/wire-message-id` | Stable | `mintWireMessageId` and `WIRE_MESSAGE_ID` in one module with no imports. The root exports the same names. |
 | `@kortix/sdk/workspace-search` | Stable | `createWorkspaceSearchClient` and its ranking helpers (see [Workspace search](#workspace-search)). |
 | `@kortix/sdk/capture-rules` | Stable | The Kortix Capture constants: `CAPTURE_LAYERS`, `CAPTURE_EXCLUSION_GROUPS`, `CAPTURE_RETENTION_LIMITS`, `CAPTURE_FRAME_INTERVALS_MS`, `CAPTURE_MAX_HEIGHTS`, `CAPTURE_DEVICE_DEFAULTS`, `normalizeCaptureAppId`, `normalizeCaptureDomain`. |
-| `@kortix/sdk/internal/*` | Internal | State stores of the Kortix web app, for example `sync-store`, `server-store`, `sandbox-connection-store`, `opencode-pending-store`, `idb-sync-cache`, `diagnostics-store`, `managed-storage`. No semver. Do not import. The first four are also deprecated. |
-| Other subpaths | Deprecated | Aliases that resolve until the next major. See [Deprecated names](#deprecated-names). |
+| `@kortix/sdk/internal/*` | Internal | State stores of the Kortix web app: `idb-sync-cache`, `diagnostics-store`, `managed-storage`. No semver. Do not import. |
+| Other subpaths | Removed | 0.15.0 removed them. See [Removed in 0.15.0](#removed-in-0150). |
 
 Stable entry points follow semver. A deep path into `dist/` has no semver.
 
@@ -8026,6 +8200,7 @@ Arguments, `HeadlessAuthError` codes and limits are in [Sign users in headlessly
 | `tokens.list(accountId?, { mine? })` · `tokens.create({ accountId?, name, expiresAt?, projectId? })` · `tokens.revoke(tokenId, accountId?)` | Personal access keys (`kortix_pat_…`). `mine: true` lists only the caller's keys. `projectId` binds the key to one project. |
 | `connectedApps.list()` · `connectedApps.revoke(…)` | OAuth and MCP clients the person approved, across all accounts. Route `/oauth/grants`. |
 | `secretResources.list` · `.create` · `.rotate` · `.retry` · `.remove` · `.grant` · `.revoke` · `.setAccess` | Account-level provider secrets and the projects that may use them. |
+| `subscriptions.list(accountId, projectId)` · `.usage(accountId, secretId, projectId, storage)` | Read subscription usage for named accounts and existing ChatGPT logins. `storage` identifies `account_resource` or `project`; credentials stay in their original store. |
 | `branding.get(accountId)` · `.update(accountId, { app_name })` · `.uploadAsset(accountId, kind, file)` · `.removeAsset(accountId, kind)` · `.reset(accountId)` | Organization branding. `kind`: `logo`, `icon`, `favicon`, `logo_dark`, `icon_dark`, `favicon_dark`. |
 | `audit.log(accountId, filters?)` · `audit.export(accountId, { format: 'csv' \| 'jsonl', …filters })` | The audit log, filtered by project, session, actor, source, outcome, request, resource, action or time · the same events as a file. |
 | `audit.activity(accountId, { since?, until?, projectId?, actor?, client?, actorType?, credentialKind? })` | Activity per UTC day: per user, the active days, distinct active hours and events. `client: 'browser'` keeps only a person in a web page. |
@@ -8082,7 +8257,7 @@ A connector call carries `can_resolve` (on a `SessionAuditAction`) or `canResolv
 | `acceptEnterpriseOffer(…)` | A Stripe Checkout link for the open Enterprise offer. Needs `billing.write`. `404` when no offer is open, `409` when the offer is invoiced. |
 | `contactSales(…)` | Sends a contact request to Kortix sales. |
 | `subscription.createPortalSession(returnUrl, accountId?)` · `.cancel(feedback?, accountId?)` · `.reactivate(accountId?)` | Manage the subscription. |
-| `credits.purchase(input)` · `credits.autoTopupSettings(accountId?)` · `credits.configureAutoTopup(input)` | Buy credits · read and set auto top-up. |
+| `credits.purchase(input)` · `credits.redeem({ code, accountId })` · `credits.autoTopupSettings(accountId?)` · `credits.configureAutoTopup(input)` | Buy credits · redeem a credit code (once per account; a refusal throws an `ApiError` with `code` `credit_code_invalid`, `credit_code_expired`, `credit_code_exhausted` or `credit_code_already_redeemed`) · read and set auto top-up. |
 
 `canOfferTopup(state)` and `canManageBilling(state)` (root exports) read an account state. `canOfferTopup` is `true` only when the plan may buy credits and the caller may change billing. Both return `false` while `state` is `undefined` or `null`. Retired billing calls are in [Deprecated names](#deprecated-names).
 
@@ -8106,7 +8281,7 @@ Capture belongs to the account. `kortix.capture.account(accountId)` binds one ac
 | Method | What it does |
 | --- | --- |
 | `account(id).workspace.get()` · `.workspace.setEnabled(on)` | `{ account_id, enabled, can_read_all, can_manage, updated_at }` · turn Capture on or off. |
-| `account(id).devices.list({ userId?, scope? })` | Devices with live status: `recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status. `scope: 'account'` lists every member's devices. |
+| `account(id).devices.list({ userId?, scope? })` | Devices with live status: `recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status. `scope: 'account'` lists every member's devices. Each device carries `health` (reasons include `update_failed` and `behind_version`) and `diagnostics` (`CaptureDeviceDiagnostics`: OS name and build, the update state with `last_result.detail`, sync, policy, hardware). |
 | `account(id).devices.revoke(deviceId)` · `.devices.link(deviceId, userId \| null)` · `.devices.assetUrl(deviceId, name)` | Revoke a device's token · link a device to a member, or unlink it · a 5-minute signed URL of an action screenshot. |
 | `account(id).enrollment.tokens.list()` · `.tokens.create(input)` · `.tokens.revoke(tokenId)` | IT rollout tokens. |
 | `account(id).enrollment.list({ status? })` · `.enrollment.approve(enrollmentId, userId?)` · `.enrollment.deny(enrollmentId)` | Computers that presented a rollout token. |
@@ -8135,7 +8310,7 @@ Capture belongs to the account. `kortix.capture.account(accountId)` binds one ac
 | `onboardingComplete(…)` | Marks project onboarding done. |
 | `updateFeatureFlag(key, enabled)` | Sets one flag for the project (`PATCH /projects/{projectId}/features`). `key` is one of `FEATURE_FLAG_KEYS`. `enabled: null` clears the override. Needs `project.settings.write`. |
 | `claudeSubscription.get()` · `.startLogin(target?)` · `.completeLogin(input)` · `.setToken(token, target?)` | The caller's Claude Pro or Max accounts. The API never returns a token. |
-| `artifacts.activity(…)` · `artifacts.comments.*` | Artifact activity, and artifact comment threads: `list`, `get`, `create`, `reply`, `edit`, `remove`, `setStatus`, `send`, `context`, `snapshot`, `readScreenshot`. |
+| `artifacts.activity(…)` · `artifacts.comments.*` | Artifact activity and comment threads. See [Artifacts](#artifacts). |
 | `connector(slug)` · `session(sessionId)` | One connector handle · the session handle. |
 
 A route behind a flag that is off returns `403` with `code: 'feature_disabled'` and `feature`. Test it with `isFeatureDisabledError(error)`. Read the key with `featureDisabledKey(error)`.
@@ -8267,6 +8442,82 @@ All trigger fields are in [Run triggers](/docs/developers#run-triggers) and [Tri
 
 Routes: `/projects/{projectId}/apps/…`. See [Deploy and operate Apps](/docs/developers#deploy-and-operate-apps) and the [Apps reference](/docs/developers#apps-reference).
 
+#### Artifacts
+
+`p.artifacts` holds the comment and activity calls. The Artifact calls are root exports that take `projectId` first. Every `/projects/{projectId}/artifacts…` route returns `403 feature_disabled` while the `artifacts` flag is off. The comment and activity routes also need `artifact_comments`, which is off by default.
+
+| Root export | What it does |
+| --- | --- |
+| `listArtifacts(projectId, { scope?, type?, q?, limit? }?)` | The Artifacts the caller may open, newest change first, as `Artifact[]`. `scope`: `all`, `mine`, `shared` or `pinned`. `type`: `doc` or `html`. While `artifact_comments` is on, each row carries `open_thread_count`. |
+| `getArtifact(projectId, artifactId, { version? }?)` | `ArtifactDetail`: `can_edit`, `entry_version`, the files and a signed `view_url`, valid 12 h. `version` reads the Artifact at one save. |
+| `createArtifact(projectId, { files, title?, description?, visibility? })` | Publishes new files as an Artifact in the caller's `Artifacts` folder in Drive. `files` maps a path to `{ content }` or `{ content_base64 }`. `index.md` makes a doc, `index.html` a page. `visibility` defaults to `private`. Errors: `400 missing_entry`, `413 file_too_large` (a file over 16 MB), `413 publish_too_large` (over 32 MB). |
+| `shareArtifactPath(projectId, { path, title?, description?, visibility? })` | Shares a folder that is already in Drive. `409 already_shared` when the path is an Artifact already. |
+| `saveArtifact(projectId, artifactId, { files, base_version?, title?, description? })` | Writes files into the Artifact as one save. With `base_version`, a newer save by someone else returns `409 version_conflict`. Without write access to its folder: `403 artifact_read_only`. |
+| `updateArtifact(projectId, artifactId, { title?, description?, visibility?, shared_with_user_ids? })` | Rename or share. `shared_with_user_ids` replaces the people on a private Artifact. Needs the creator or `project.artifact.manage`, else `403 artifact_read_only`. A public link without `project.artifact.public` returns `403 public_link_forbidden`. |
+| `deleteArtifact(projectId, artifactId)` | Stops sharing. Deletes the Artifact's comments and screenshots. The files stay in Drive. |
+| `setArtifactPinned(projectId, artifactId, pinned)` | The caller's own pin. |
+| `listArtifactVersions(projectId, artifactId)` · `restoreArtifactVersion(projectId, artifactId, version)` | Every save from the Drive history, newest first, as `ArtifactVersion[]` · writes one save back as a new save. |
+| `readArtifactFile(projectId, artifactId, { path?, version?, signal? }?)` | One file's source as a `Blob`. Default: the entry file now. |
+| `listArtifactTypes(projectId)` | `doc` and `html`, each with its format rules and a starter. |
+| `getPublicArtifact(artifactId, options?)` | A public Artifact's title, type and `content_url`, with no token. Throws `HostBoundaryError` with `status` 404 when the Artifact is not public. |
+| `parseArtifactUrl(url)` | `{ projectId, artifactId }` from an app link, or `{ projectId: null, artifactId }` from a public link. `null` for any other URL. |
+
+| Method | What it does |
+| --- | --- |
+| `artifacts.comments.list(artifactId, { status?, version? }?)` | The threads with their comments, as `ArtifactCommentThread[]`. `status`: `open` (default), `resolved` or `all`. `version` reads one Files commit; its rows allow no action. Root export: `listArtifactComments`. |
+| `artifacts.comments.get(threadId)` | One thread by its ID, with the same visibility checks. Root export: `getArtifactCommentThread`. |
+| `artifacts.comments.create(artifactId, { anchor, body, marks?, screenshot_base64? })` | Opens a thread and returns it. `anchor.type` is `none`, `text`, `point` or `region`. A `text` anchor's `quote` holds up to 500 UTF-16 code units, its `prefix` and `suffix` up to 32 each. `body` holds 1 to 10,000 characters. Errors: `400 invalid_anchor`, `400 invalid_comment`. Root export: `createArtifactComment`. |
+| `artifacts.comments.reply(artifactId, threadId, { body, marks?, screenshot_base64? })` | Adds a comment and returns it. `409 thread_deleted` when the thread's first comment is deleted. Root export: `replyArtifactComment`. |
+| `artifacts.comments.setStatus(artifactId, threadId, 'open' \| 'resolved')` | Reopens or resolves a thread. Root export: `setArtifactCommentStatus`. |
+| `artifacts.comments.edit(artifactId, threadId, commentId, { body })` · `.remove(artifactId, threadId, commentId)` | Changes the caller's own comment · deletes a comment and leaves a tombstone. A caller with `project.artifact.manage` may delete any comment. Otherwise: `403 artifact_comment_forbidden`. Root exports: `editArtifactComment`, `deleteArtifactComment`. |
+| `artifacts.comments.send(artifactId, { thread_ids, batch_id?, agent? })` | Hands 1 to 100 threads to an agent in one turn. Returns `{ session_id, created }`. Reuse `batch_id` to retry the same hand-off; the SDK makes one when you leave it out. `409 artifact_comment_paused` when an agent session sends a thread that waits for a person. `413 artifact_comment_screenshot_limit` when a model that reads images would get more than 20 screenshots, 100 MiB of decoded images or 12 MiB of image parts. Root export: `sendArtifactComments`. |
+| `artifacts.comments.context(artifactId, { version?, agent? }?)` | The caller's rights, the people and agents to mention with their insertion tokens, the Send target, and the threads Send would take: `send_thread_ids` (the first 100) and `send_thread_count`. Root export: `getArtifactCommentContext`. |
+| `artifacts.comments.snapshot(artifactId, { version? }?)` · `.readScreenshot(artifactId, commentId)` | The saved text that text anchors point into, as `{ version, text }` · one comment's screenshot as a `Blob`. Root exports: `readArtifactCommentSnapshot`, `readArtifactCommentScreenshot`. |
+| `artifacts.activity(artifactId, { limit?, cursor? }?)` | One page of saves and events, newest first: `{ items, next_cursor, older_versions }`. `limit` is 1 to 100. Pass `next_cursor` as `cursor`. Root export: `listArtifactActivity`. |
+| `artifacts.live.connect(artifactId, { view, version?, hidden?, webSocket?, onEvent?, onDoc? })` | Opens the Artifact's live WebSocket and returns an `ArtifactLiveConnection`: `status`, `participants`, `you`, `setCursor`, `setSelection`, `setTyping`, `setFocus`, `setHidden`, `close`. It reconnects by itself, 1 to 30 s apart, with a new ticket each time. Close code `4403` ends it with status `access_lost`. `onDoc(seq)` receives the co-editing pings (`changed doc`); they never reach `onEvent`. Root export: `createArtifactLiveConnection`. React: `useArtifactLive(projectId, artifactId, { enabled, view, version?, hidden?, onDoc? })`. |
+| `artifacts.live.ticket(artifactId)` · `.signal(artifactId, { status, thread_id?, quote? })` | A one-use WebSocket ticket, valid 60 s · an agent session's place in the Artifact: `reading`, `editing`, `writing` or `idle`. `signal` needs a session-bound token; a person's token returns `403`. Root exports: `createArtifactLiveTicket`, `signalArtifactLiveAgent`. |
+| `artifacts.doc.get(artifactId, { after?, base? }?)` | The co-editing state of a doc: `{ seeded, latest_seq, updates, has_more, flushed, lease }`. `updates` holds the Yjs updates with `seq > after`, ascending, as `Uint8Array`; a page stops near 8 MiB with `has_more`. `base: true` adds the Markdown of the last flush. Needs view access and `artifact_comments`; an HTML Artifact answers `400 not_a_doc`. Root export: `getArtifactDoc`. |
+| `artifacts.doc.seed(artifactId, { update, markdown, version })` · `.push(artifactId, update)` | Store the first state of the doc · one more Yjs update; both return `{ seq }`. `seed` answers `409 doc_seeded` when another tab won; `push` answers `409 doc_not_seeded`, `413 update_too_large` past 512 KiB, `400 invalid_update` for bytes Yjs cannot read. Needs write access. Root exports: `seedArtifactDoc`, `pushArtifactDocUpdate`. |
+| `artifacts.doc.lease(artifactId, { holder, release? })` · `.flushed(artifactId, { holder, seq, version, markdown })` | Take, renew or release the 15 s lease of the tab that writes the Markdown file, as `{ leader, holder, expires_at }` · record the leader's save of the file, as `{ flushed_seq }`; `409 not_leader` from any other holder. Root exports: `leaseArtifactDoc`, `markArtifactDocFlushed`. |
+| `createArtifactDocSync({ projectId, artifactId, holder, apply, merge, onLeader?, onStatus?, onError? })` | The co-editing engine over those calls. It works on bytes; your app owns the `Y.Doc` (`apply` = `Y.applyUpdate`, `merge` = `Y.mergeUpdates`). `start(buildSeed)`, `push(update)` (batched for 50 ms, in order, retried 1 to 30 s apart, never dropped), `notify(seq)` (from `onDoc`), `flushed({ version, markdown })`, `base()`, `close()`. It polls every 3 s without pings. The SDK has no Yjs dependency. See the SDK README, "Co-editing a doc". |
+
+A thread carries its delivery state: `agent_state` is `none`, `pending`, `sent` or `paused`, and `sent_session_id` names the session that received it. `agent_error` holds a delivery failure. It is `null` when the loop guard paused the thread. On one Artifact, one author makes at most 60 comment writes per minute, and one session writes at most 30 comments per hour. Past either limit: `429 artifact_comment_rate_limited`.
+
+When the project's agent manifest cannot be read, `context` still answers: `agents` is empty, `send_target` is `null` and `agents_unavailable` is `true`. People keep commenting. A comment with an explicit `@agent.` mention is refused until the manifest reads again.
+
+Routes: `/projects/{projectId}/artifacts…`, `/projects/{projectId}/artifact-comment-threads/{threadId}`, and `/artifacts/meta/{artifactId}` for `getPublicArtifact`. See [Artifacts](/docs/guide#artifacts).
+
+#### Goals
+
+Goals are root exports that take `projectId` first. Kortix keeps each goal as a record and is the only authority for its state, pause, owner and verifier sessions, limits and verification. A goal's Drive folder holds the brief (`GOAL.md`), `log.md` and `evidence/`. Writing a state into `GOAL.md` changes nothing. Every `/projects/{projectId}/goals…` route returns `403 feature_disabled` while the `goals` flag is off, and `listProjectGoals` returns `[]` then.
+
+| Root export | What it does |
+| --- | --- |
+| `listProjectGoals(projectId)` | Every goal the caller may read: their own, the ones assigned to them, the ones in folders shared with them, every goal for a project admin. |
+| `getProjectGoal(projectId, goalId)` | One goal by `goal_id`. `ApiError` 404: no such goal. 403: no access. |
+| `listProjectGoalEvents(projectId, goalId, { cursor? })` | The audit trail, oldest first: `{ events, nextCursor }`. |
+| `createProjectGoal(projectId, { outcome, criteria?, agent?, assignedUser?, goalId? })` | Creates a goal in the caller's own folder and starts its owner session. `goalId` is the idempotency key: a retry with the same id returns the same goal. `sessionId` is deprecated and is sent as the goal id. |
+| `pauseProjectGoal(projectId, goal, reason)` · `resumeProjectGoal(projectId, goal)` · `stopProjectGoal(projectId, goal, reason)` · `restartProjectGoal(projectId, goal, reason)` | Person controls. Pause keeps the state and starts no new turn. Stop closes the goal and stops the owner's running turn; a retry on a stopped goal succeeds. |
+| `replyToProjectGoal(projectId, goal, text, { answerId? })` | Answers the goal as the caller. `answerId` is the idempotency key: the owner gets one answer per id. A goal that waits on a person goes back to active. |
+| `setProjectGoalBinding(goal, { space?, agent? })` | Groups the goal under a space or an agent. `null` clears a field. It grants nothing. |
+| `getProjectGoalFiles(driveId, folder)` | `GOAL.md` (`brief`), `log.md`, `notes.md` and `evidence/verification.md` as text, `null` when absent. |
+| `goalHealth(goalOrRecord, heartbeat, now?)` | `healthy`, `attention` or `closed`, with issues. For a record it reads `blocked_reason` (issue `blocked`), `next_wake_at` (`missed_wake` after 15 minutes, `no_heartbeat` for an active goal with no wake) and a pending verification older than 24 hours (`verification_stalled`). |
+
+Every write sends the `revision` the caller read. A stale revision throws `ProjectGoalConflictError` (`409 goal_conflict`), whose `goal` is the goal as it is now: show it, and let the person act again. Every write returns the document as before plus `projectGoal`, the goal with its new revision.
+
+A `ProjectGoal` keeps its older fields and adds the server's: `goalId`, `projectId`, `revision`, `capabilities`, `blockedReason`, `verification`, `criteria` and `record`. Read these rules:
+
+- **Capabilities.** `capabilities` (`pause`, `resume`, `stop`, `restart`, `answer`, `edit`, `edit_criteria`) says what the caller may do on this goal now. Show only those controls. A session credential gets none of them.
+- **Verified vs reported.** In `criteria`, `reported_met` is the owner agent's claim and `verified` is set only by a passed verification of the current criteria. `goal.success_criteria[].met` is `reported_met`.
+- **Blocked.** `blockedReason` is `credits`, `wake_cap`, `session_cap`, `owner_lost`, `storage`, `flag_off` or `setup`, else `null`.
+- **Waiting costs no turns.** While `waiting_on_user`, no heartbeat runs; `next_wake_at` is the `chase_at` time the owner asked for, or `null`.
+- **Limits.** `max_wakes_per_day` and `max_sessions` are checked before a turn starts; `wakes_today` counts this UTC day.
+- **Deprecated.** `heartbeat` is always `null` (the API owns the heartbeat); `items`, `transitions` and `links` of `goal` are empty (read the events).
+
+React: `useProjectGoals(projectId)`, `useProjectGoal(projectId, goalId)`, `useProjectGoalEvents(projectId, goalId)`, `useProjectGoalFiles(projectId, goal)` and `useSessionGoal(projectId, sessionId)` read; `useProjectGoalControl(projectId)` runs `pause`, `resume`, `stop`, `restart` and `answer` as one mutation. It sends one request for a double submit, writes the result into the cache, and on a conflict writes the current goal before it rethrows.
+
+Routes: `/projects/{projectId}/goals`, `/projects/{projectId}/goals/{goalId}` and its `events`, `pause`, `resume`, `stop`, `restart` and `answer`. See [Outcomes](/docs/guide#outcomes).
+
 #### Gateway and models
 
 | Method | What it does |
@@ -8346,10 +8597,10 @@ See [Computers](/docs/guide#computers).
 | Conversation | `rewind(messageId)` · `restoreRewind()` | Rewind to a message · undo the rewind. Needs the `session.rewind` capability; pi does not serve it. |
 | Stored reads | `turn()` | The current turn, read on the server. |
 | Stored reads | `log({ thread?, before_seq?, limit? }?)` | One page of the stored session log, or `null` when the session has none. It answers while the sandbox is stopped. |
-| Stored reads | `liveLog({ thread?, before_seq?, limit? }?)` | One page of a thread of the sandbox's own session log, ahead of `log()` while a turn runs. `null` on a sandbox without the session-log actions. |
+| Stored reads | `liveLog({ thread?, before_seq?, limit? }?)` | One page of a thread of the sandbox's own session log, ahead of `log()` while a turn runs. |
 | Stored reads | `messageAuthors()` · `modelUsage()` · `usage()` · `cost()` · `audit(limit?, options?)` | Who wrote each message · which model answered each turn and what Kortix billed · what the session and every session it started cost, in USD · the session's usage record · the session's audit actions. |
 | Model and agent | `setModel({ providerID, modelID } \| undefined)` · `setAgent(agent)` | The model or agent of every later `send` on this handle. `send(text, { model, agent })` overrides it for one prompt. |
-| Model and agent | `changeModel('provider/model')` | Persists the model and restarts the runtime. |
+| Model and agent | `changeModel('provider/model')` | Persists the model without restarting pi. |
 | Scope | `scope()` · `rescope(scope)` | Read · change the session's scope. |
 | Scope | `providerSecretPool.list()` · `.get(providerId)` · `.set(providerId, secretIds \| null)` | The pooled provider secrets this session may use. |
 | Config | `configState()` · `reloadConfig(input?)` · `reloadConfigStream(…)` | Whether the session runs the config the manifest compiles to · reload it · reload with progress. |
@@ -8427,8 +8678,14 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | `useGatewayLogs` · `useGatewayLog` · `useGatewayBudgets` · `useSetGatewayBudget` · `useDeleteGatewayBudget` · `useGatewayKeys` · `useCreateGatewayKey` · `useRevokeGatewayKey` · `useGatewayRoutingPolicy(projectId)` | Gateway logs, budgets, keys and routing policy. |
 | `useProjectName(projectId)` | The project's display name, from one cached source. |
 | `useKortixViewer({ basePath? })` | In an app that signs in with Kortix: the viewer from `<basePath>/me`, and `reload()`. See [Sign in with Kortix](/docs/developers#sign-in-with-kortix). |
-| `useArtifacts` · `useArtifact` · `useArtifactTypes` · `useArtifactVersions` · `useArtifactText` · `useArtifactActivity` · `useInfiniteArtifactActivity` · `useArtifactComments` · `useArtifactCommentContext` · `useArtifactCommentScreenshot` · `useArtifactMutations` | Artifacts, their versions, activity and comment threads. Artifact comments are experimental and off by default. Turn them on in **Project admin** → **Feature flags**. |
-| `useProjectGoals` · `useSessionGoal` · `useProjectGoalFiles` | Goals, the goal a session works on, and one goal's files. Goals are experimental and off by default. Turn them on in **Project admin** → **Feature flags**. |
+| `useArtifacts(projectId, { scope?, type?, q?, limit? }?)` · `useArtifact(projectId, artifactId, version?)` · `useArtifactText(projectId, artifact)` | The Artifact list · one Artifact, now or at a save · a doc's Markdown. `prefetchArtifact(queryClient, projectId, artifactId)` loads one Artifact, and a doc's Markdown, before a click. See [Artifacts](#artifacts). |
+| `useArtifactVersions(projectId, artifactId, enabled?)` · `useArtifactTypes(projectId)` | The saves · the two types. |
+| `useArtifactMutations(projectId)` | The mutations `create`, `share`, `save`, `update`, `remove`, `pin` and `restore`. Each one refreshes the list and the open Artifact. |
+| `useArtifactComments(projectId, artifactId, { status?, version?, enabled? }?)` | The threads (default `open`), with `create`, `reply`, `setStatus`, `edit`, `remove`, `send` and `isWriting`. Writes are optimistic: every loaded thread list shows the change at once, and a failed write undoes only its own change. Until the server confirms it, a thread or comment carries `optimistic: true`. A new one also has an `optimistic-` ID, an empty author (`user_id: ''`) and every `can_*` field `false`: render it as pending. With `version`, the hook rejects every write. |
+| `useArtifactCommentContext(projectId, artifactId, { version?, agent?, enabled? }?)` | The comment context: rights, mention tokens, the Send target and `agents_unavailable`. A comment write refreshes it. |
+| `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? }?)` · `useInfiniteArtifactActivity(projectId, artifactId, { limit?, enabled? }?)` | One activity page · every page, as ordered and deduplicated `items`, with `olderVersions` and `fetchNextPage`. |
+| `useArtifactCommentScreenshot(projectId, artifactId, commentId)` | One comment's screenshot as a `Blob`. The hook keeps no copy after unmount. |
+| `useProjectGoals` · `useProjectGoal` · `useProjectGoalEvents` · `useSessionGoal` · `useProjectGoalFiles` · `useProjectGoalControl` | Goals, one goal by id, its events, the goal a session works on, one goal's files, and the person controls. See [Goals](#goals). Goals are experimental and off by default. Turn them on in **Project admin** → **Feature flags**. |
 | `useProjectTriggerEventApps` · `useProjectTriggerEventTypes` | The connectors and event types for `event` triggers. |
 | `useConnectorLinkInfo(token, options)` | The `ConnectorSetupLinkInfo` behind a connect token, for a card. `undefined` while it loads, `null` when the request failed. |
 | `useCaptureWorkspace` · `useSetCaptureEnabled` · `useCaptureDevices` · `useRevokeCaptureDevice` · `useCapturePolicy` · `useSetCapturePolicy` · `useCaptureDays` · `useCaptureTimeline` · `useCaptureTimelineItems` · `useCaptureSearch` · `useCaptureChunkMedia` · `useCaptureDeviceGrant` · `useApproveCaptureDevice` · `useDenyCaptureDevice` · `useCaptureStorage` · `useSetCaptureStorage` · `useCaptureEnrollments` · `useCaptureEnrollmentTokens` and their create, approve, deny and revoke hooks · `useLinkCaptureDevice` | Kortix Capture. Each account hook takes the account id first. A `null` id sends no request. `useCaptureDevices` polls every 10 s. |
@@ -8437,6 +8694,7 @@ Rules for several hooks:
 
 - `useCan` and its siblings decide what to show. The API checks every write again. Probe the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict stays cached for 5 minutes otherwise.
 - After a runtime restart or a config reload, call `resetRuntimeQueries(queryClient)`.
+- The Artifact comment, context and activity hooks poll every 10 s while mounted and visible. They need the `artifact_comments` flag, which is experimental and off by default. Turn it on in **Project admin** → **Feature flags** → **Artifact comments**.
 
 #### Query keys and cache helpers
 
@@ -8621,7 +8879,7 @@ export function standaloneCalls(thread: SessionLogThread, busy: boolean) {
 
 #### The image card
 
-What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sdk` and `@kortix/sdk/turns`. An `image_gen` call is a deliverable: it is a `standalone` segment and is hoisted above the final text like `show`.
+What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sdk`. An `image_gen` call is a deliverable: it is a `standalone` segment and is hoisted above the final text like `show`.
 
 | Name | What it does |
 | --- | --- |
@@ -8686,25 +8944,29 @@ Pure functions over v1 messages (`MessageWithParts`, `kortix.transcript.v1`, `KO
 
 The grouping and status functions accept the structural types `PartLike`, `MessageInfoLike`, `TurnLike`, `ToolStateLike` and `SessionStatusLike`, so your own message shapes work.
 
+### Removed in 0.15.0
+
+0.15.0 is a breaking release. It removed these subpaths and names. Every session runs pi, so nothing removed here reached a route a current box serves.
+
+| Removed | Use instead |
+| --- | --- |
+| Subpaths `/config`, `/auth`, `/api-client`, `/projects-client`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`, `/platform-client`, `/event-stream`, `/files`, `/session`, `/session/url`, `/turns`, `/opencode-client`, `/opencode-errors` | The same names from the root `@kortix/sdk`. |
+| Subpaths `/sync-store`, `/server-store`, `/sandbox-connection-store`, `/opencode-pending-store`, `/idb-sync-cache` and `/internal/sync-store`, `/internal/server-store`, `/internal/sandbox-connection-store`, `/internal/opencode-pending-store` | No replacement. Read session state with `useSession`. |
+| Subpath `/message-queue` and its root names (`createSessionQueue`, `enqueue`, `claimNext`, …) | `s.send`, or `useSession().send`. Kortix orders prompts on the server. |
+| Every name that contains `OpenCode` (for example `useOpenCodeSessions`, `opencodeKeys`, `OpencodeClient`, `OpenCodeEvent`) | The same name with `Runtime` (`useRuntimeSessions`, `runtimeKeys`, `RuntimeClient`, `RuntimeEvent`). |
+| The OpenCode-only hooks: MCP (`useAddMcpServer`, `useMcpAuthStart`, …), `useShareSession`, `useUnshareSession`, `useUpdatePart`, `useDeletePart`, `useRuntimeTools`, `useUpdateRuntimeSession`, `useRuntimeSessionDiff`, `useInitSession`, `useSendRuntimeMessage`, `useRuntimeAgent`, `useUpdateRuntimeConfig`, the provider auth calls (`authorizeRuntimeProvider`, …), `getRuntimeConfig`, `updateRuntimeConfig`, `refreshRuntimeConfiguration`, `logRuntimeEvent`, the `RuntimeConfigInvalidError` helpers, `NoCompactionModelError` | No replacement: pi does not serve these routes. Send a prompt with `useSession().send`; read the diff with `useRuntimeVcsDiff`. |
+| The retired admin hooks (`use-admin-analytics`, `use-admin-feedback`, `use-system-status`, `use-admin-billing`, the per-sandbox admin hooks, `useAdminAccountSandboxes`, `useAdminSetManagedModels`, `useAdminSetEnterpriseDemo`, `useAdminSetEnterpriseEntitled`) and the tunnel permission hooks (`useTunnelPermissions`, `useTunnelAuditLogs`, …) | No replacement: the API removed the routes. |
+| Field aliases `opencode_session_id`, `opencode_sessions`, `opencode_version`, `opencode_model`, `opencode_reload` on sessions, turns, transcripts, audit events and session starts, and `opencodeModel` on channel bindings | The neutral field with the same value: `runtime_session_id`, `runtime_sessions`, `harness_version`, `model`, `runtime_reload`, and `model` on channel bindings. The API no longer sends the old names. |
+| Session `metadata` keys `opencode_model`, `opencode_model_source`, `opencode_model_*` and `opencode_sessions` | `model`, `model_source`, `model_*` and `runtime_sessions`. A migration renamed the keys on every stored session. |
+
 ### Deprecated names
 
-Each name below carries `@deprecated` and resolves until the next major version. Your editor flags each use. The list is not complete: your editor flags every other deprecated name too, and its `@deprecated` tag names the replacement when one exists.
-
-#### Subpaths
-
-These subpaths re-export names that the root or `@kortix/sdk/react` already exports, or wrap internal stores.
-
-| Subpaths | Use instead |
-| --- | --- |
-| `/config`, `/auth`, `/api-client`, `/projects-client`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`, `/platform-client`, `/event-stream`, `/files`, `/session`, `/session/url`, `/turns` | The same names from the root `@kortix/sdk`. |
-| `/sync-store`, `/server-store`, `/sandbox-connection-store`, `/idb-sync-cache`, `/internal/sync-store`, `/internal/server-store`, `/internal/sandbox-connection-store` | No replacement. Read session state with `useSession`. |
-| `/message-queue` | `s.send`, or `useSession().send`. Kortix orders prompts on the server. |
+Each name below carries `@deprecated` and resolves until a later major version. Your editor flags each use. The list is not complete: your editor flags every other deprecated name too, and its `@deprecated` tag names the replacement when one exists.
 
 #### Names
 
 | Deprecated | Use instead |
 | --- | --- |
-| `claimNext`, `completeInFlight`, `createSessionQueue`, `editQueued`, `enqueue`, `failInFlight`, `removeQueued`, `reorderQueued`, `retryFailed`, `QueuedMessage`, `QueuedMessageInput`, `SessionQueue` | `s.send`, or `useSession().send`. |
 | `wireIdClock`, `wireIdClockAt`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`, `newestWireIdClock`, `mintWireMessageIdAbove`, `MintWireMessageIdAboveInput`, `MintedWireMessageId`, `WIRE_ID_TIME_SCALE`, `WIRE_ID_TIME_MASK`, `WIRE_ID_CLOCK_TOLERANCE`, `WIRE_ID_BACKDATE_MS` | `mintWireMessageId` and `WIRE_MESSAGE_ID`, which stay current. Message ids are opaque. |
 | `s.runtime` | The session methods: `messages`, `pendingRequests`, `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind`. |
 | `s.transcript()` · `s.transcriptSync()` | `s.log(query)`. |
@@ -8723,3 +8985,44 @@ These subpaths re-export names that the root or `@kortix/sdk/react` already expo
 | `billing.subscription.scheduleDowngrade` · `.cancelScheduledChange` · `.prorationPreview` | `billing.setPlan(input)` or `billing.subscription.createPortalSession`. They reject with `ENDPOINT_RETIRED`. |
 
 Other deprecated root names wrap routes that the API does not serve. They reject with `ENDPOINT_RETIRED`, resolve `null`, or return `404`, and have no replacement.
+
+### Durable session model controls
+
+`session.setModel()` remains a local preference for later sends from that SDK handle.
+`session.getModel()` reads the durable pin (`{ model: string | null }`).
+`session.changeModel(model)` saves the pin without sending a prompt.
+Pi reconfigures without restarting; the running turn finishes before the next turn uses the new model.
+
+**Agent pins, permissions and precedence.** An agent's configured `model` is a
+default, not a lock: an authorized caller may replace it with a durable session
+pin. Changing that pin requires session-owner or project-manager lifecycle
+permission; a scoped agent token also needs `project.session.stop`. Project
+visibility alone grants no override permission. The requested model must pass
+account/model availability and provider-key access checks; changing a pin does
+not bypass those checks.
+
+The durable pin takes precedence over the default agent/project model when pi
+initializes or reconfigures. For a turn, an explicit prompt model wins; otherwise
+an explicitly selected agent's configured model wins, then the current session
+selection applies. A per-prompt override does not rewrite the durable pin.
+`switchModel` queues its continuation with the requested model explicitly, so
+that continuation uses the switch model even if the agent has a model default.
+The running turn keeps its model; the new selection applies to a later turn.
+
+```ts
+await session.switchModel({
+  model: 'kortix/glm-5.3-flash',
+  prompt: 'Continue verification with the new model.',
+  idempotency_key: 'verification-model-1',
+});
+```
+
+The switch saves the pin and queues the continuation in one database transaction.
+Reuse the same key and payload after a transport failure. A different payload with the same key is refused.
+Self-switches are limited to three per hour. A queued continuation waits for the current turn.
+The response contains `prompt_id` and `deduped`; inspect `push_failed` before reporting live application.
+
+CLI: `kortix sessions model get [session-id]`, `set [session-id] <model>`,
+and `switch [session-id] <model> --prompt "Continue verification" --idempotency-key verification-model-1`.
+The new verbs default to `KORTIX_SESSION_ID`. The existing `sessions model <session-id> <model>` remains supported.
+Never send a peer message to yourself to continue a model switch.

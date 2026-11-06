@@ -54,6 +54,8 @@ export function bindCommerce() {
     /** One-off credit purchases + recurring auto-topup configuration. */
     credits: {
       purchase: (input: Parameters<typeof P.purchaseCredits>[0]) => P.purchaseCredits(input),
+      /** Redeem a credit code (e.g. a campaign code) for an account. */
+      redeem: (input: Parameters<typeof P.redeemCreditCode>[0]) => P.redeemCreditCode(input),
       autoTopupSettings: (accountId?: string) => P.getAutoTopupSettings(accountId),
       configureAutoTopup: (input: Parameters<typeof P.configureAutoTopup>[0]) =>
         P.configureAutoTopup(input),

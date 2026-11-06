@@ -19,28 +19,25 @@ import { bodyLimit } from 'hono/body-limit';
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayPerform, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
-import { requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { callerKortixSessionId } from '../../middleware/caller-session';
-import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
+import { projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
+import { authorizeArtifactCaller as authorize, loadArtifactForCaller as loadArtifact } from '../lib/artifact-access';
 import { projectsApp } from '../lib/app';
 import { loadProjectRosterIds } from '../lib/project-access-view';
 import { buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
 import { DriveStorageError, legacyDriveStatus } from '../../drives/volumes';
-import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
 import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/formats';
+import { openArtifactThreadCounts } from '../../artifacts/comment-counts';
 import { BINDING_AGENT_RE, SPACE_SLUG_RE } from '@kortix/shared/app-config';
 import {
-  ARTIFACTS_FLAG,
   ARTIFACT_VISIBILITIES,
   ArtifactError,
   artifactPublicContentUrl,
   artifactViewUrl,
   canManage,
-  canView,
   contentTypeFor,
   entryVersion,
-  getArtifact,
   isTextType,
   listArtifacts,
   listFiles,
@@ -133,6 +130,9 @@ const ArtifactSchema = z.object({
   public_content_url: z.string().nullable().openapi({ description: 'The raw page without Kortix chrome, when public.' }),
   space: z.string().nullable().openapi({ description: 'The space it is grouped in, or null. Grouping only.' }),
   agent: z.string().nullable().openapi({ description: 'The owning agent, or null. Grouping only.' }),
+  open_thread_count: z.number().int().optional().openapi({
+    description: 'Open comment threads: status open and a root comment that is not deleted. The list and GET of one artifact only, and only while the project has artifact_comments on.',
+  }),
   created_at: z.string(),
   updated_at: z.string(),
 }).openapi('Artifact');
@@ -166,8 +166,19 @@ function frontendBase(): string {
   return (config.FRONTEND_URL ?? '').replace(/\/+$/, '');
 }
 
-async function serialize(rows: ArtifactRow[], viewer: Viewer) {
-  const people = await resolveUserIdentities(rows.map((r) => r.createdByUserId));
+/**
+ * The open comment threads of `rows`, while the project has `artifact_comments`
+ * on (it requires `artifacts`); undefined otherwise, so the field stays absent.
+ */
+function openThreadCounts(projectMetadata: unknown, projectId: string, rows: ArtifactRow[]) {
+  return resolveFeatureFlag(projectMetadata, 'artifact_comments')
+    ? openArtifactThreadCounts(projectId, rows.map((row) => row.artifactId))
+    : undefined;
+}
+
+/** `counts`: `openThreadCounts`. Given, each artifact carries `open_thread_count`. */
+async function serialize(rows: ArtifactRow[], viewer: Viewer, counts?: Promise<ReadonlyMap<string, number>>) {
+  const [people, open] = await Promise.all([resolveUserIdentities(rows.map((r) => r.createdByUserId)), counts]);
   const person = (userId: string) => {
     const who = people.get(userId);
     return { user_id: userId, name: who?.displayName ?? null, email: who?.email ?? null, avatar_url: who?.avatarUrl ?? null };
@@ -194,67 +205,17 @@ async function serialize(rows: ArtifactRow[], viewer: Viewer) {
       public_content_url: isPublic ? artifactPublicContentUrl(row.artifactId) : null,
       space: row.space,
       agent: row.agent,
+      ...(open ? { open_thread_count: open.get(row.artifactId) ?? 0 } : {}),
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
     };
   });
 }
 
-/** Load the project, require the flag, and assert the read or write leaf. */
-async function authorize(c: Context, projectId: string, mode: 'read' | 'write') {
-  // Loaded for read: the leaves below are the gate ('session' would assert
-  // project.session.start, which artifacts do not use).
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return { ok: false as const, response: c.json({ error: 'Not found' }, 404) };
-  const disabled = requireFeatureFlag(c, loaded.row.metadata, ARTIFACTS_FLAG);
-  if (disabled) return { ok: false as const, response: disabled };
-  const can = async (leaf: string) => agentMayPerform(getAgentGrant(c), leaf) && projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, leaf);
-  let action: string = mode === 'read' ? PROJECT_ACTIONS.PROJECT_ARTIFACT_READ : PROJECT_ACTIONS.PROJECT_ARTIFACT_WRITE;
-  if (mode === 'read' && !(await can(action)) && await can(PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT)) {
-    action = PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT;
-  }
-  assertAgentScope(c, action);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
-  const [projectWrite, manageAny] = await Promise.all([can(PROJECT_ACTIONS.PROJECT_WRITE), can(PROJECT_ACTIONS.PROJECT_ARTIFACT_MANAGE)]);
-  // A private channel's files: only its members, and a session token only from its own thread (the one Drive rule).
-  const bound = callerKortixSessionId(c);
-  const [folders, channelFolder] = await Promise.all([
-    privateChannelFoldersFor(projectId, loaded.userId as string, bound),
-    bound ? sessionPrivateChannelFolder(bound) : Promise.resolve(null),
-  ]);
-  const viewer: Viewer = {
-    userId: loaded.userId as string,
-    projectWrite,
-    manageAny,
-    privateFolders: folders.visible,
-    allPrivateFolders: folders.all,
-    channelFolder,
-  };
-  return { ok: true as const, loaded, viewer, can };
-}
-
 /** A public link needs project.artifact.public (the role and an agent's grant): 403 otherwise. */
 async function refusePublic(c: Context, access: { can: (leaf: string) => Promise<boolean> | boolean }, visibility: string | undefined) {
   if (visibility !== 'public' || (await access.can(PROJECT_ACTIONS.PROJECT_ARTIFACT_PUBLIC))) return null;
   return c.json({ error: 'You cannot give an artifact a public link (project.artifact.public)', code: 'public_link_forbidden' }, 403);
-}
-
-/**
- * The artifact the caller may view (404 otherwise). `write` also needs write
- * access to its path in Files; `manage` needs the creator or project.artifact.manage.
- */
-async function loadArtifact(c: Context, projectId: string, artifactId: string, mode: 'read' | 'pin' | 'write' | 'manage') {
-  const access = await authorize(c, projectId, mode === 'read' || mode === 'pin' ? 'read' : 'write');
-  if (!access.ok) return access;
-  const row = await getArtifact(projectId, artifactId);
-  if (!row || !canView(row, access.viewer)) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
-  if (mode === 'manage' && !canManage(row, access.viewer)) {
-    return { ok: false as const, response: c.json({ error: 'Only its creator or a project manager can change how this artifact is shared', code: 'artifact_read_only' }, 403) };
-  }
-  if (mode === 'write' && !(await mayWrite(row, access.viewer))) {
-    return { ok: false as const, response: c.json({ error: 'You can only view this artifact: its files are not writable for you in Files', code: 'artifact_read_only' }, 403) };
-  }
-  return { ...access, row };
 }
 
 function author(c: Context, userId: string) {
@@ -289,8 +250,8 @@ async function participants(c: Context, access: { loaded: { userId: string | nul
 }
 
 /** The artifact now, or at one commit: its files and a signed URL that shows exactly that. */
-async function detail(row: ArtifactRow, viewer: Viewer, at?: string) {
-  const [base] = await serialize([row], viewer);
+async function detail(row: ArtifactRow, viewer: Viewer, at?: string, counts?: Promise<ReadonlyMap<string, number>>) {
+  const [base] = await serialize([row], viewer, counts);
   const [canEdit, version, files] = await Promise.all([mayWrite(row, viewer), entryVersion(row), listFiles(row, at)]);
   return {
     ...base!,
@@ -350,7 +311,8 @@ export function registerArtifactRoutes(): void {
       scope: q.scope ?? 'all', type: q.type, q: q.q, limit: q.limit ?? 100,
       space: q.space, agents, unbound: q.unbound !== undefined,
     });
-    return c.json({ artifacts: await serialize(rows, access.viewer) }, 200);
+    const counts = openThreadCounts(access.loaded.row.metadata, projectId, rows);
+    return c.json({ artifacts: await serialize(rows, access.viewer, counts) }, 200);
   });
 
   projectsApp.use('/:projectId/artifacts', PUBLISH_LIMIT);
@@ -411,7 +373,8 @@ export function registerArtifactRoutes(): void {
     const loaded = await loadArtifact(c, projectId, artifactId, 'read');
     if (!loaded.ok) return loaded.response;
     try {
-      const [body, people] = await Promise.all([detail(loaded.row, loaded.viewer, c.req.valid('query').version), participants(c, loaded)]);
+      const counts = openThreadCounts(loaded.loaded.row.metadata, projectId, [loaded.row]);
+      const [body, people] = await Promise.all([detail(loaded.row, loaded.viewer, c.req.valid('query').version, counts), participants(c, loaded)]);
       return c.json({ ...body, participants: people }, 200);
     } catch (err) {
       return failure(c, err);

@@ -41,7 +41,8 @@ const V1_NAMES = new Set([
   'getChildSessionToolParts', 'getChildSessionError', 'isToolPart', 'isTextPart', 'isReasoningPart',
   'isPatchPart', 'isSnapshotPart', 'isCompactionPart', 'toolCallBlock',
   // v1 row hooks
-  'useRuntimeMessages', 'useOpenCodeMessages',
+  // useOpenCodeMessages left the SDK with the OpenCode-era surface (#11821): nothing can import it.
+  'useRuntimeMessages',
 ]);
 
 /** Each entry is `<file>: <name>` with the reason it stays. Remove it with the reason. */

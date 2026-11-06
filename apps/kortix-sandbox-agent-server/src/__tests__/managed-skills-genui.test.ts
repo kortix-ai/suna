@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { withheldManagedSkills } from '@/services/skills/managed-skills'
 
 const SHIPPED = join(import.meta.dir, '../../../../packages/starter/templates/managed/skills')
-const FLAG_ERA_OFF = { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'agent_rooms' }
+const FLAG_ERA_OFF = { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'chat' }
 
 describe('the kortix-genui managed skill is never withheld', () => {
   test.each([['no flag env', {}], ['flag-era off env', FLAG_ERA_OFF]] as const)('%s', async (_, env) => {

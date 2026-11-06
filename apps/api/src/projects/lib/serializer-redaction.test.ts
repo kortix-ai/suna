@@ -45,9 +45,9 @@ describe('serializeSession redaction', () => {
   });
 
   test('an inaccessible row leaks no CONVERSATION-DERIVED field either', () => {
-    // name / custom_name / opencode_sessions are all computed FROM metadata
+    // name / custom_name / runtime_sessions are all computed FROM metadata
     // before the redaction, so redacting the metadata object alone left the
-    // OpenCode-synced title (which summarises the conversation) and the
+    // runtime-synced title (which summarises the conversation) and the
     // conversation-tree snapshot exposed.
     const out = serializeSession(
       row({
@@ -55,20 +55,20 @@ describe('serializeSession redaction', () => {
           initial_prompt: 'secret',
           name: 'Migrating the payroll database',
           custom_name: 'Payroll migration',
-          opencode_sessions: [{ id: 'oc1', title: 'Migrating the payroll database' }],
+          runtime_sessions: [{ id: 'oc1', title: 'Migrating the payroll database' }],
         },
       }),
       { canAccess: false },
     ) as Record<string, unknown>;
     expect(out.name).toBeNull();
     expect(out.custom_name).toBeNull();
-    expect(out.opencode_sessions).toEqual([]);
+    expect(out.runtime_sessions).toEqual([]);
     expect(out.runtime_sessions).toEqual([]);
   });
 
   test('an ACCESSIBLE row keeps its title and conversation tree', () => {
     const out = serializeSession(
-      row({ metadata: { name: 'Migrating the payroll database', opencode_sessions: [{ id: 'oc1' }] } }),
+      row({ metadata: { name: 'Migrating the payroll database', runtime_sessions: [{ id: 'oc1' }] } }),
       { canAccess: true },
     ) as Record<string, unknown>;
     expect(out.name).toBe('Migrating the payroll database');
@@ -76,7 +76,7 @@ describe('serializeSession redaction', () => {
     const tree = [
       { id: 'oc1', title: null, parent_id: null, project_id: null, created_at: null, updated_at: null, archived_at: null },
     ];
-    expect(out.opencode_sessions).toEqual(tree);
+    expect(out.runtime_sessions).toEqual(tree);
     expect(out.runtime_sessions).toEqual(tree);
   });
 
@@ -85,7 +85,7 @@ describe('serializeSession redaction', () => {
       canAccess: true,
     }) as Record<string, unknown>;
     expect(out.runtime_session_id).toBe('ses_root');
-    expect(out.opencode_session_id).toBe('ses_root');
+    expect(out.runtime_session_id).toBe('ses_root');
   });
 
   test('defensive redaction preserves only non-content identity fields', () => {

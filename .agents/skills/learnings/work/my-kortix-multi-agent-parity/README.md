@@ -54,7 +54,7 @@ metadata key. The delivered message text is
    depth 0. Deeper children and workflow `agent()` calls stay foreground.
 3. Agent teams sit behind a new feature flag `agent_teams` (experimental, off
    by default) with a new `session_tasks` table. Messaging ships unflagged: it
-   reaches only sessions the person may prompt, with room limits.
+   reaches only sessions the person may prompt, with the cross-session message limits.
 4. Inbound default `accept`; message cap 16,000 characters; `list_agents`
    covers this project, another project only with an explicit `project_id`.
 
@@ -69,7 +69,7 @@ metadata key. The delivered message text is
 - **Sessions are always cloud sessions.** Every child and teammate has its own
   computer and survives the parent's box. Nothing is local to one machine, so
   there is no socket inbox and no cross-machine mode.
-- **Rate limits are the room limits:** 30 messages per minute per sender, a
+- **Rate limits:** 30 messages per minute per sender, a
   duplicate within 60 s is dropped.
 
 ## Async model (the live gate)
