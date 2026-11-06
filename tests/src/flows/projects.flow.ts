@@ -564,16 +564,13 @@ flow(
       quota.body().has("$.capped", true).has("$.limit", 1).has("$.count", 1);
       if (/upgrade/i.test(String(quota.json<any>().message))) throw new Error(`quota offers an upgrade: ${quota.json<any>().message}`);
     });
-    await ctx.step("archiving the one project frees the account → the create passes the gate and stops at the GitHub App check (409, another code)", async () => {
-      (await owner.del("/v1/workspaces/:projectId", { params: { projectId: first.id } })).status(200);
-      const r = await create();
-      r.status(409);
-      if (r.json<any>()?.code === "workspace_has_project") throw new Error("an archived project still held the account");
-    });
-    await ctx.step("a paid plan does not change the rule → 409 workspace_has_project again once the account holds a project", async () => {
-      await team.project();
+    await ctx.step("a paid plan does not change the rule → 409 workspace_has_project", async () => {
       await fundDatabaseAccount(ctx.env, team.id);
       (await create()).status(409).body().has("$.code", "workspace_has_project");
+    });
+    await ctx.step("deleting the one project closes the workspace (K2) → a create into it → 403 workspace_closed, never a second project", async () => {
+      (await owner.del("/v1/workspaces/:projectId", { params: { projectId: first.id } })).status(200);
+      (await create()).status(403).body().has("$.code", "workspace_closed");
     });
   },
 );
