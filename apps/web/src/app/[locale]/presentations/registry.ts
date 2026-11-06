@@ -19,6 +19,7 @@
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
+import { useSlides as useHowToKortixSlides } from './decks/how-to-kortix';
 import { useSlides as usePlatformSlides } from './decks/platform';
 import { useSlides as useSalesSlides } from './decks/sales';
 import { useSlides as useSecuritySlides } from './decks/security';
@@ -46,6 +47,15 @@ export const DECKS: readonly DeckDef[] = [
     kind: 'Product',
     tags: ['Built to present', 'Diagram-led'],
     useSlides: useSecuritySlides,
+  },
+  {
+    slug: 'how-to-kortix',
+    title: 'How to Kortix',
+    description:
+      'The Frontier Hackathon talk: put agents in a loop. A trigger starts a session on its own sandbox and branch, and the work lands as a change request. Three loops: a software factory, a GEO/SEO writer, an X bot.',
+    kind: 'Product',
+    tags: ['Hackathon', 'Diagram-led'],
+    useSlides: useHowToKortixSlides,
   },
   {
     slug: 'platform',

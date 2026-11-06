@@ -156,6 +156,9 @@ const ignoredPathParts = [
   // is still being cut. Remove these three entries and move the copy into i18n
   // keys when /launch is announced (the #8023 rollout step).
   '/src/app/[locale]/presentations/film/',
+  // The Frontier Hackathon talk: one live event, presented in English. Exact
+  // file, so every other deck stays audited.
+  '/src/app/[locale]/presentations/decks/how-to-kortix.tsx',
   '/src/features/marketing/launch/',
   '/src/app/[locale]/(public)/(marketing)/launch/',
   // Legal texts are English only by design: one authoritative version, like

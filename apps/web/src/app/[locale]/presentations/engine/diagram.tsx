@@ -2,7 +2,7 @@
 
 import type { SecurityDiagramContent } from '../decks/security-diagram-content';
 /**
- * Mechanism diagrams for the security walkthrough.
+ * Mechanism diagrams for the security walkthrough and the how-to-kortix deck.
  *
  * These are drawn rather than screenshotted for three reasons: they theme
  * correctly, they stay sharp at any projection size, and — the reason they
@@ -54,8 +54,12 @@ const TONE_TEXT: Record<Tone, string> = {
   danger: 'text-kortix-red',
 };
 
-/** A build-aware wrapper: ghosted until `on`, then lit. Never changes layout. */
-function Reveal({
+/**
+ * A build-aware wrapper: ghosted until `on`, then lit. Never changes layout.
+ * Exported so a deck can build non-diagram blocks (a code excerpt, a column)
+ * with the same ghost instead of writing its own opacity.
+ */
+export function Reveal({
   on,
   children,
   className,
@@ -222,7 +226,11 @@ export function Link({
             <m.span
               initial={{ x: back ? '100%' : '0%', opacity: 0 }}
               animate={{ x: back ? '0%' : '100%', opacity: [0, 1, 1, 0] }}
-              exit={{ opacity: 0 }}
+              // The exit needs its own finite transition. It used to inherit the
+              // packet's `repeat: Infinity`, so it never finished, the packet
+              // never unmounted, and it kept pulsing on a rail a later step
+              // had left.
+              exit={{ opacity: 0, transition: { duration: 0.2, ease: EASE } }}
               transition={{ duration: 1.1, ease: 'easeInOut', repeat: Infinity, repeatDelay: 0.35 }}
               className="absolute inset-0"
             >
@@ -701,6 +709,117 @@ export function LedgerDiagram({
             {content.text254f1565c507}
           </Chip>
           <span className="text-muted-foreground text-xs">{content.textc7affccb91f2}</span>
+        </div>
+      </Reveal>
+    </Stage>
+  );
+}
+
+/* ── 6 · the loop ───────────────────────────────────────────────────────────
+   The how-to-kortix deck. Steps: 0 the trigger · 1 a fresh session · 2 the
+   change request · 3 the merge, and the rail back to the next fire. Grounded
+   in apps/web/content/docs/developers.mdx: "triggers keys" (`run.session`
+   defaults to `fresh`), "Session branches" (cut from the default branch),
+   "Agents that merge", and "Config comes from the base branch" (each merge is
+   a new config release, so the next fire runs what merged). The deck passes
+   every string in, so this file holds no copy. */
+
+export type LoopNode = {
+  readonly label: string;
+  readonly title: string;
+  readonly chips: readonly string[];
+};
+
+export type LoopDiagramContent = {
+  readonly captions: readonly ReactNode[];
+  readonly trigger: LoopNode;
+  readonly session: LoopNode;
+  readonly change: LoopNode;
+  readonly main: LoopNode;
+  /** Rail labels, left to right: trigger → session → change request → main. */
+  readonly rails: readonly [string, string, string];
+  /** The rail back: `from` (main) feeds `to` (the next session). */
+  readonly back: { readonly label: string; readonly from: string; readonly to: string };
+};
+
+function NodeChips({
+  chips,
+  on,
+  tone = 'idle',
+}: {
+  chips: readonly string[];
+  on: boolean;
+  tone?: Tone;
+}) {
+  return (
+    <div className="mt-3 flex flex-col gap-1.5">
+      {chips.map((chip) => (
+        <Chip key={chip} on={on} tone={tone}>
+          {chip}
+        </Chip>
+      ))}
+    </div>
+  );
+}
+
+export function LoopDiagram({ step, content }: { step: number; content: LoopDiagramContent }) {
+  const { captions, trigger, session, change, main, rails, back } = content;
+
+  return (
+    <Stage caption={captions[Math.min(step, captions.length - 1)]}>
+      <Row className="gap-0">
+        <Box
+          label={trigger.label}
+          title={trigger.title}
+          tone={step === 0 ? 'active' : 'idle'}
+          className="max-w-52"
+        >
+          <NodeChips chips={trigger.chips} on />
+        </Box>
+
+        <Link on={step >= 1} fire={step === 1} label={rails[0]} />
+
+        <Box
+          label={session.label}
+          title={session.title}
+          tone={step === 1 ? 'active' : 'idle'}
+          dashed
+          on={step >= 1}
+        >
+          <NodeChips chips={session.chips} on={step >= 1} />
+        </Box>
+
+        <Link on={step >= 2} fire={step === 2} label={rails[1]} />
+
+        <Box
+          label={change.label}
+          title={change.title}
+          tone={step === 2 ? 'warn' : 'idle'}
+          on={step >= 2}
+        >
+          <NodeChips chips={change.chips} on={step >= 2} tone={step === 2 ? 'warn' : 'idle'} />
+        </Box>
+
+        <Link on={step >= 3} fire={step === 3} label={rails[2]} />
+
+        <Box
+          label={main.label}
+          title={main.title}
+          tone={step >= 3 ? 'ok' : 'idle'}
+          on={step >= 3}
+          className="max-w-52"
+        >
+          <NodeChips chips={main.chips} on={step >= 3} />
+        </Box>
+      </Row>
+
+      {/* the rail back: the next fire starts from what merged */}
+      <Reveal on={step >= 3} className="mt-5">
+        <div className="border-border bg-background flex flex-wrap items-center gap-3 rounded-sm border border-dashed p-4">
+          <span className="text-muted-foreground font-mono text-xs">{back.label}</span>
+          <Chip tone="active">{back.to}</Chip>
+          <Link on back className="w-16 min-w-0" />
+          <Chip tone="ok">{back.from}</Chip>
         </div>
       </Reveal>
     </Stage>
