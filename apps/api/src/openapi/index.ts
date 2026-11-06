@@ -207,6 +207,54 @@ export function markWorkspaceAliases<T extends { paths?: object }>(doc: T): T {
   return { ...doc, paths };
 }
 
+/** Canonical workspace prefixes: the only paths that publish `{workspaceId}`. */
+const CANONICAL_WORKSPACE_PATH = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|scim\/v2\/workspaces)(\/|$)/;
+
+/** The id name a legacy path published before Workspaces: account paths say `accountId`, every other `projectId`. */
+function legacyIdName(path: string): string {
+  return /^\/(v1|scim\/v2)\/accounts\//.test(path) ? 'accountId' : 'projectId';
+}
+
+function renamePathParams(params: unknown, to: string): unknown {
+  if (!Array.isArray(params)) return params;
+  return params.map((param) =>
+    param && typeof param === 'object' && (param as { in?: string }).in === 'path' && (param as { name?: string }).name === 'workspaceId'
+      ? { ...param, name: to }
+      : param,
+  );
+}
+
+/**
+ * Publish every legacy path with the parameter names it had before
+ * Workspaces: `/v1/projects/{projectId}/…`, `/v1/connectors/projects/{projectId}/…`,
+ * `/v1/webhooks/…/{projectId}`, `/v1/accounts/{accountId}/…`,
+ * `/scim/v2/accounts/{accountId}/…`. The route templates name the id
+ * `:workspaceId` everywhere, but a client generated from the older spec names
+ * its arguments after the published names, so they stay. Canonical paths keep
+ * `{workspaceId}`. Run after markWorkspaceAliases, which maps legacy keys to
+ * canonical ones by the template name. Pure + exported for unit tests.
+ */
+export function restoreLegacyParamNames<T extends { paths?: object }>(doc: T): T {
+  if (!doc.paths) return doc;
+  const paths: Record<string, Record<string, unknown>> = {};
+  for (const [path, item] of Object.entries(doc.paths as Record<string, Record<string, unknown>>)) {
+    if (CANONICAL_WORKSPACE_PATH.test(path) || !path.includes('{workspaceId}')) {
+      paths[path] = item;
+      continue;
+    }
+    const to = legacyIdName(path);
+    const renamed: Record<string, unknown> = { ...item };
+    if ('parameters' in item) renamed.parameters = renamePathParams(item.parameters, to);
+    for (const method of OPENAPI_METHODS) {
+      const op = item[method] as Record<string, unknown> | undefined;
+      if (op) renamed[method] = { ...op, parameters: renamePathParams(op.parameters, to) };
+      if (op && op.parameters === undefined) delete (renamed[method] as Record<string, unknown>).parameters;
+    }
+    paths[path.replaceAll('{workspaceId}', `{${to}}`)] = renamed;
+  }
+  return { ...doc, paths };
+}
+
 /** Register security + serve the spec (/v1/openapi.json) and Scalar UI (/v1/docs). */
 export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: string): void {
   app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', {
@@ -228,7 +276,7 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
   let cachedSpec: { body: string; etag: string } | undefined;
   app.get('/v1/openapi.json', (c) => {
     if (!cachedSpec) {
-      const body = JSON.stringify(markWorkspaceAliases(filterSpecPaths(buildSpec(version))));
+      const body = JSON.stringify(restoreLegacyParamNames(markWorkspaceAliases(filterSpecPaths(buildSpec(version)))));
       cachedSpec = { body, etag: computeEtag(body) };
     }
     c.header('ETag', cachedSpec.etag);
