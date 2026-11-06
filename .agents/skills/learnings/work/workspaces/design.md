@@ -209,11 +209,26 @@ change here asks the orchestrator first; the change lands in this file before th
 
 #### C2. The workspaces store (`apps/api/src/workspaces/surface.ts`)
 
-The only import path for workspace identity and lifecycle. A new lint rule
+The only import path for workspace identity and lifecycle. The lint rule
 (`kortix-api/workspace-store-only`, `apps/api/eslint.config.mjs`) refuses an import of
-`accounts`, `projects` or `workspaces` from `@kortix/db` outside `apps/api/src/workspaces/**`,
-tests and `apps/api/scripts/**`. The ~190 files that import them today go into
-`eslint-suppressions.json`; the count only shrinks.
+`accounts`, `projects` or `workspaces` from `@kortix/db` outside `apps/api/src/workspaces/**`
+(static, `await import('@kortix/db')` destructuring, and re-exports). Tests and
+`apps/api/src/scripts/**` are outside the API lint. It has no suppression (2026-11-06).
+
+Account and project ROWS go through `apps/api/src/workspaces/rows.ts`, a leaf module in
+the shared lint layer:
+
+- Reads compose `projectsView` / `accountsView`. At runtime each is the table object, so a
+  read renders the same SQL; to the compiler each is a view, so `db.update(projectsView)`
+  does not compile (`rows.test.ts` holds that with `@ts-expect-error`).
+- Writes are functions: `updateProjectRows[Returning]`, `insertProjectRow`,
+  `deleteProjectRows`, `moveProjectRowAccount` (the transfer and the split), and the account
+  equivalents. A project write's `metadata` is SQL by type (`ProjectRowSet`): the FIX-J
+  merge helpers (`metadataMerge`, `metadataMergeSubtree`, `metadataClearSubtreeKey`) or
+  `metadataReplace` under a `FOR UPDATE` lock.
+- Release 2 changes these write functions to write `kortix.workspaces` (and the reads keep
+  working against `accounts` / `projects` as compatibility views). No other module writes
+  the two tables.
 
 ```ts
 // kept as they are: asWorkspaceId, asWorkspaceAccountKey, isUuid, WorkspaceId,
