@@ -41,7 +41,8 @@ mock.module('../../shared/supabase', () => ({
   }),
 }));
 mock.module('../../shared/stripe', () => ({
-  getStripe: () => ({ subscriptions: { cancel: async () => undefined } }),
+  // Closure lists every subscription of the account's customers, then cancels.
+  getStripe: () => ({ subscriptions: { cancel: async () => undefined, list: async () => ({ data: [], has_more: false }) } }),
 }));
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits.

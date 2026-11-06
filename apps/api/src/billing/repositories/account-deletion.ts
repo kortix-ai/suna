@@ -1,6 +1,7 @@
 import { eq, and, gt, lte, or, sql, asc } from 'drizzle-orm';
 import { accountDeletionRequests } from '@kortix/db';
 import { db } from '../../shared/db';
+import { type StatusRule, transitionStatus } from '../../shared/status-transition';
 
 export async function getActiveDeletionRequest(accountId: string) {
   const [row] = await db
@@ -37,27 +38,48 @@ export async function createDeletionRequest(
   return row;
 }
 
-export async function cancelDeletionRequest(requestId: string) {
-  await db
-    .update(accountDeletionRequests)
-    .set({
-      status: 'cancelled',
-      cancelledAt: new Date().toISOString(),
-    })
-    .where(eq(accountDeletionRequests.id, requestId));
+/** True while the worker runs the account's deletion (`processing`): it can no longer be cancelled. */
+export async function hasRunningDeletionRequest(accountId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: accountDeletionRequests.id })
+    .from(accountDeletionRequests)
+    .where(and(eq(accountDeletionRequests.accountId, accountId), eq(accountDeletionRequests.status, 'processing')))
+    .limit(1);
+  return Boolean(row);
 }
 
-export async function markDeletionCompleted(requestId: string) {
-  await db
-    .update(accountDeletionRequests)
-    .set({
-      status: 'completed',
+/**
+ * The request's status moves. Cancel leaves only `pending`: once the worker
+ * claimed a request (`processing`), its irreversible work runs, so a cancel
+ * that lost that race must not read `cancelled` over it. Completion leaves
+ * only an open request: it never overwrites a `cancelled` one.
+ */
+export const DELETION_TRANSITIONS = {
+  cancel: { from: ['pending'], to: 'cancelled' },
+  complete: { from: ['pending', 'processing'], to: 'completed' },
+} as const satisfies Record<string, StatusRule>;
+
+/** Cancel a pending request. False when the worker claimed it first (or it is no longer pending). */
+export async function cancelDeletionRequest(requestId: string): Promise<boolean> {
+  const moved = await transitionStatus(accountDeletionRequests, accountDeletionRequests.status, DELETION_TRANSITIONS.cancel, {
+    where: eq(accountDeletionRequests.id, requestId),
+    set: { cancelledAt: new Date().toISOString() },
+  });
+  return moved.applied;
+}
+
+/** Record the deletion as done. False when the request was cancelled or already completed. */
+export async function markDeletionCompleted(requestId: string): Promise<boolean> {
+  const moved = await transitionStatus(accountDeletionRequests, accountDeletionRequests.status, DELETION_TRANSITIONS.complete, {
+    where: eq(accountDeletionRequests.id, requestId),
+    set: {
       completedAt: new Date().toISOString(),
       // The row outlives the account as the deletion receipt; the user's
       // free-text reason does not.
       reason: null,
-    })
-    .where(eq(accountDeletionRequests.id, requestId));
+    },
+  });
+  return moved.applied;
 }
 
 /** A `processing` claim older than this belongs to a dead worker. */
@@ -125,6 +147,31 @@ export async function claimDeletionRequest(requestId: string) {
     .update(accountDeletionRequests)
     .set({ status: 'processing', processingStartedAt: sql`now()` })
     .where(and(eq(accountDeletionRequests.id, requestId), dueRequest()))
+    .returning();
+  return row ?? null;
+}
+
+/**
+ * Take a request for the immediate path (`deleteAccountImmediately`), whatever
+ * its date: `pending`, or a `processing` claim a dead worker left. Null when a
+ * cancel, the worker or another immediate run got there first.
+ */
+export async function claimDeletionRequestNow(requestId: string) {
+  const [row] = await db
+    .update(accountDeletionRequests)
+    .set({ status: 'processing', processingStartedAt: sql`now()` })
+    .where(
+      and(
+        eq(accountDeletionRequests.id, requestId),
+        or(
+          eq(accountDeletionRequests.status, 'pending'),
+          and(
+            eq(accountDeletionRequests.status, 'processing'),
+            lte(accountDeletionRequests.processingStartedAt, sql`now() - ${STALE_CLAIM_INTERVAL}`),
+          ),
+        ),
+      ),
+    )
     .returning();
   return row ?? null;
 }

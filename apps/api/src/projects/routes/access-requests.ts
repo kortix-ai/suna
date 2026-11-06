@@ -14,7 +14,11 @@ import {
   loadProjectForUser,
   assertProjectCapability,
 } from '../lib/access';
-import { notifyProjectAccessRequestManagers } from '../lib/access-requests';
+import {
+  notifyProjectAccessRequestManagers,
+  releaseProjectAccessApproval,
+  reviewProjectAccessRequest,
+} from '../lib/access-requests';
 import { projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/user-identity';
 import { readJsonObject } from '../../shared/http-body';
@@ -238,31 +242,40 @@ export function registerAccessRequestsRoutes(): void {
       return c.json({ error: 'Access request has already been reviewed' }, 409);
     }
 
-    const targetAccountRole = await ensureOrgMembership(
-      loaded.row.accountId,
-      request.requesterUserId,
-    );
-
-    if (!isAccountManager(targetAccountRole)) {
-      await grantProjectRole({
-        accountId: loaded.row.accountId,
-        projectId,
-        userId: request.requesterUserId,
-        role,
-        grantedBy: loaded.userId,
-      });
+    // Claim the request first. A reject (or a second approve) that raced
+    // this one between the read above and here loses the claim, and the
+    // loser grants nothing: the request state and the membership agree.
+    const claimed = await reviewProjectAccessRequest({
+      requestId: request.requestId,
+      projectId,
+      verdict: 'approve',
+      reviewedBy: loaded.userId,
+    });
+    if (!claimed.applied) {
+      return c.json({ error: 'Access request has already been reviewed' }, 409);
     }
+    const updated = claimed.row;
 
-    const [updated] = await db
-      .update(projectAccessRequests)
-      .set({
-        status: 'approved',
-        reviewedBy: loaded.userId,
-        reviewedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(projectAccessRequests.requestId, requestId))
-      .returning();
+    let targetAccountRole: Awaited<ReturnType<typeof ensureOrgMembership>>;
+    try {
+      targetAccountRole = await ensureOrgMembership(
+        loaded.row.accountId,
+        request.requesterUserId,
+      );
+
+      if (!isAccountManager(targetAccountRole)) {
+        await grantProjectRole({
+          accountId: loaded.row.accountId,
+          projectId,
+          userId: request.requesterUserId,
+          role,
+          grantedBy: loaded.userId,
+        });
+      }
+    } catch (error) {
+      await releaseProjectAccessApproval(request.requestId, loaded.userId);
+      throw error;
+    }
 
     return c.json({
       request: serializeProjectAccessRequest(updated),
@@ -316,16 +329,16 @@ export function registerAccessRequestsRoutes(): void {
       return c.json({ error: 'Access request has already been reviewed' }, 409);
     }
 
-    const [updated] = await db
-      .update(projectAccessRequests)
-      .set({
-        status: 'rejected',
-        reviewedBy: loaded.userId,
-        reviewedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(projectAccessRequests.requestId, requestId))
-      .returning();
+    const rejected = await reviewProjectAccessRequest({
+      requestId: request.requestId,
+      projectId,
+      verdict: 'reject',
+      reviewedBy: loaded.userId,
+    });
+    if (!rejected.applied) {
+      return c.json({ error: 'Access request has already been reviewed' }, 409);
+    }
+    const updated = rejected.row;
 
     return c.json({ request: serializeProjectAccessRequest(updated) });
   },

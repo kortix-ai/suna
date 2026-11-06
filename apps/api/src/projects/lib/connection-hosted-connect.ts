@@ -10,6 +10,7 @@ import { connectedAsOf, relabelToIdentity, resolveConnectedAs } from '../../conn
 import { composioConnectionMetadata } from '../../connectors/db-deps';
 import { finalizePipedreamConnectionAuthorization, pipedreamConnectUrl } from '../../connectors/pipedream';
 import { db } from '../../shared/db';
+import { completeConnection, connectConnection } from '../../connectors/connection-status';
 
 type Connection = NonNullable<Awaited<ReturnType<typeof import('./connection-mutation').loadMutableConnection>>>['connection'];
 
@@ -29,8 +30,8 @@ export async function startComposioConnect(projectId: string, connectionId: stri
     projectId, slug: connection.connectorAlias, app, connectionId, stableUserId,
     redirects: parseRedirects(body),
   });
-  await db.update(connectorConnections).set({
-    status: 'active',
+  // A person starts the authorization now: a deliberate (re)connect.
+  await connectConnection(connectionId, {
     metadata: composioConnectionMetadata({
       toolkit: app, stableUserId, sessionId: result.sessionId,
       authRequestId: result.authRequestId, connectedAccountId: result.connectedAccountId,
@@ -38,8 +39,7 @@ export async function startComposioConnect(projectId: string, connectionId: stri
       connectedAs: result.connectedAccountId && result.connectedAccountId === metadata.connected_account_id
         ? connectedAsOf(metadata) : null,
     }),
-    updatedAt: sql`now()`,
-  }).where(eq(connectorConnections.connectionId, connectionId));
+  });
   return { app, connectUrl: result.connectUrl, connected: result.connected, isNoAuth: result.isNoAuth };
 }
 
@@ -57,15 +57,16 @@ export async function finalizeComposioConnect(projectId: string, connectionId: s
         previous: metadata, connectedAccountId: result.connectedAccountId, isNoAuth: result.isNoAuth,
         probe: () => probeComposioIdentity({ app, sessionId: result.sessionId, connectedAccountId: result.connectedAccountId! }),
       }) : null;
-  await db.update(connectorConnections).set({
-    status: 'active',
+  // An in-flight completion: a revoke that landed while the person was
+  // signing in wins, and the account stays revoked.
+  const live = await completeConnection(connectionId, null, {
     metadata: composioConnectionMetadata({
       toolkit: app, stableUserId, sessionId: result.sessionId,
       authRequestId: result.authRequestId, connectedAccountId: result.connectedAccountId,
       isNoAuth: result.isNoAuth, previous: metadata, connectedAs,
     }),
-    updatedAt: sql`now()`,
-  }).where(eq(connectorConnections.connectionId, connectionId));
+  });
+  if (!live) return { connected: false };
   const label = connectedAs ? await relabelToIdentity({ connectionId, identity: connectedAs }) : null;
   return {
     connected: result.connected, accountId: result.connectedAccountId,

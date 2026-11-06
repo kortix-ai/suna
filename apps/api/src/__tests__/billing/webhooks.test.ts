@@ -562,6 +562,9 @@ describe('invoice.payment_failed', () => {
     const invoice = createMockStripeInvoice();
     const event = createMockStripeEvent('invoice.payment_failed', invoice);
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+    // Stripe moves a subscription whose renewal failed to past_due.
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      createMockStripeSubscription({ status: 'past_due' });
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
@@ -573,6 +576,13 @@ describe('invoice.payment_failed', () => {
 });
 
 describe('RevenueCat', () => {
+  // A store lifecycle event speaks only for an account billed through the
+  // store, on the product the event names.
+  beforeEach(() => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ provider: 'revenuecat' });
+  });
+
   test('INITIAL_PURCHASE: maps product to tier, grants credits', async () => {
     const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
       product_id: 'kortix_pro_monthly',
