@@ -235,12 +235,13 @@ flow(
       });
     }
 
-    await ctx.step("a 2nd project in the same account → 409 workspace_has_project naming the workspace; quota says capped, limit 1", async () => {
+    await ctx.step("a 2nd project naming the same account (the published CLI's shape) → 201, a new workspace in its own account; the first account's quota stays capped, limit 1", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-2"), account_id: accountId });
-      // The gate runs before any repository is provisioned.
-      r.status(409).body().has("$.code", "workspace_has_project").exists("$.workspace_id");
+        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-2"), account_id: accountId }, { query: { account_id: accountId! } });
+      r.status(201).body().exists("$.workspace_id");
+      ctx.track("project", r.json<any>().project_id);
+      if (r.json<any>().account_id === accountId) throw new Error("the 2nd project landed in the occupied account");
       (await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/quota", { query: { account_id: accountId! } }))
         .status(200)
         .body()
@@ -573,6 +574,40 @@ flow(
       await team.project();
       await fundDatabaseAccount(ctx.env, team.id);
       (await create()).status(409).body().has("$.code", "workspace_has_project");
+    });
+  },
+);
+
+// PROJ-48 — the published CLI (<= 0.14) names its active account on
+// `kortix projects create` and `kortix ship`. On the legacy provision route a
+// person naming an occupied account they may create in gets a new workspace,
+// never the 409; a workspace key never does. The local profile has no managed
+// Git, so the new workspace stops at 503 there; PROJ-18 proves the 201.
+flow(
+  "PROJ-48",
+  {
+    domain: "projects",
+    routes: ["POST /v1/projects/provision", "POST /v1/workspaces/:workspaceId/tokens"],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    await ctx.step("the owner names the occupied account in the body and the query → never 409 workspace_has_project", async () => {
+      const r = await owner.post("/v1/projects/provision", { name: ctx.fixtures.name("cli-compat"), account_id: team.id }, { query: { account_id: team.id } });
+      if (r.statusCode === 409) throw new Error(`409: ${r.text().slice(0, 300)}`);
+      if (r.statusCode === 201) {
+        ctx.track("project", r.json<any>().project_id);
+        if (r.json<any>().account_id === team.id) throw new Error("the new project landed in the occupied account");
+      } else {
+        r.status(503);
+      }
+    });
+    await ctx.step("a workspace key of the account names it → 403, nothing is created", async () => {
+      const minted = await owner.post(`/v1/workspaces/${w.id}/tokens`, { name: "proj48-key", expires_at: new Date(Date.now() + 3_600_000).toISOString() });
+      minted.status(201);
+      const key = ctx.client.withBearer(minted.json<{ secret_key: string }>().secret_key, "PROJ48_KEY");
+      (await key.post("/v1/projects/provision", { name: ctx.fixtures.name("cli-compat-key"), account_id: team.id })).status([403, 409]);
     });
   },
 );

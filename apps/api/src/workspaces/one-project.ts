@@ -16,13 +16,14 @@
  * (`projects/new-workspace.ts`): it picks an empty account or creates one, so
  * it never meets this refusal.
  *
- * Compatibility: a provision request that names NO account (every client
- * before Workspaces 1:1) never meets it either. When the caller's active
- * account is taken (`accountTakenForNewProject`), or the caller has no
- * workspace, the route runs the `new_workspace` path and answers 201. Only a
- * request that names an occupied `account_id`, or a caller that may not create
- * a workspace (an API key, a scoped token, an impersonating operator), gets
- * the 409.
+ * Compatibility: a legacy provision request (`POST /v1/projects/provision`,
+ * `/provision-stream`) from a person never meets it either. When the account
+ * is taken (`accountTakenForNewProject`), or the caller has no workspace, the
+ * route runs the `new_workspace` path and answers 201: for a request that
+ * names no account, and for one that names an occupied account the person may
+ * create in (the published CLI <= 0.14 sends `account_id`). A caller that may
+ * not create a workspace (an API key, a scoped token, an impersonating
+ * operator) gets the 409, and so does every other create route.
  */
 import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';

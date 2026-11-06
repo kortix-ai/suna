@@ -63,7 +63,7 @@ export function newWorkspaceCallerOf(c: Context): NewWorkspaceCaller {
  * a caller (either route) can still 403 before any provisioning work starts.
  */
 async function buildProvisionContext(c: Context): Promise<{ result: ProvisionResult } | { ctx: ProvisionContext }> {
-  const body = await readJsonObject(c);
+  let body = await readJsonObject(c);
   const caller = newWorkspaceCallerOf(c);
   const newWorkspace = async () => {
     const built = await buildNewWorkspaceProvisionContext(body, caller);
@@ -74,25 +74,39 @@ async function buildProvisionContext(c: Context): Promise<{ result: ProvisionRes
   // (../new-workspace.ts). The caller sends no account_id.
   if (wantsNewWorkspace(body)) return newWorkspace();
 
-  // A request that names no account (every client before Workspaces 1:1: the
-  // published CLI, cached web and mobile bundles, the SDK's provisionProject)
-  // always created a project. It still does: when the caller's active account
-  // already holds its one project, or the caller has no workspace yet, the
-  // request becomes a new workspace (201, the project's own account_id). A
-  // request that names an occupied account keeps the 409 workspace_has_project.
+  // Compatibility: every client before Workspaces 1:1 always created a project
+  // with this route, and it still does. A request that names no account (cached
+  // web and mobile bundles, the SDK's provisionProject) becomes a new workspace
+  // when the caller's active account already holds its one project, or when the
+  // caller has no workspace yet. A request that names an occupied account (the
+  // published CLI <= 0.14 sends `account_id` in the body and the query on
+  // `kortix projects create` and `kortix ship`) becomes a new workspace too,
+  // when the caller is a person who may create a project in that account. An
+  // API key, a scoped token or an impersonating operator keeps the 409
+  // workspace_has_project. POST /v1/workspaces never reaches this route.
   const namesAccount = Boolean(
     normalizeString(c.req.query('account_id') ?? c.req.query('accountId') ?? body.account_id ?? body.accountId),
   );
-  const mayBecomeNewWorkspace = !namesAccount && newWorkspaceCallerDenial(caller) === null;
+  const person = newWorkspaceCallerDenial(caller) === null;
   let scope: Awaited<ReturnType<typeof resolveProjectAccount>>;
   try {
     scope = await resolveProjectAccount(c, body);
   } catch (err) {
-    if (mayBecomeNewWorkspace && isNoWorkspaceError(err)) return newWorkspace();
+    if (person && !namesAccount && isNoWorkspaceError(err)) return newWorkspace();
     throw err;
   }
-  if (mayBecomeNewWorkspace && (await accountTakenForNewProject(scope.accountId, normalizeString(body.idempotency_key ?? body.idempotencyKey) ?? null))) return newWorkspace();
-  return { ctx: { body, scope } };
+  if (!person) return { ctx: { body, scope } };
+  const idempotencyKey = normalizeString(body.idempotency_key ?? body.idempotencyKey) ?? null;
+  if (!(await accountTakenForNewProject(scope.accountId, idempotencyKey))) return { ctx: { body, scope } };
+  if (!namesAccount) return newWorkspace();
+  // The named account must be one the person may create in: without that the
+  // request keeps its old 403, and never turns into a workspace elsewhere.
+  if (!(await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+    return { ctx: { body, scope } };
+  }
+  const { account_id: _a, accountId: _b, ...rest } = body;
+  body = rest;
+  return newWorkspace();
 }
 
 /** `new_workspace` on the two provision routes. */
