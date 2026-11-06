@@ -25972,7 +25972,7 @@
       "proactiveFailed": "Die Einstellung wurde nicht gespeichert. Versuchen Sie es erneut.",
       "allSettings": "Alle Einstellungen",
       "askHint": "Du kannst auch im Chat fragen: „füge hier einen Agenten hinzu“, „heft das Launch-Dokument als Tab an“.",
-      "noAgentsToAdd": "Jeder Agent des Projekts ist schon in diesem Space."
+      "noAgentsToAdd": "Jeder Agent des Workspace ist schon in diesem Space."
     },
     "profile": {
       "viewProfile": "Profil von {name} anzeigen",

@@ -25972,7 +25972,7 @@
       "proactiveFailed": "L'impostazione non è stata salvata. Riprova.",
       "allSettings": "Tutte le impostazioni",
       "askHint": "Puoi anche chiederlo in chat: «aggiungi un agente qui», «fissa il documento del lancio come scheda».",
-      "noAgentsToAdd": "Tutti gli agenti del progetto sono già in questo spazio."
+      "noAgentsToAdd": "Tutti gli agenti del workspace sono già in questo spazio."
     },
     "profile": {
       "viewProfile": "Mostra il profilo di {name}",

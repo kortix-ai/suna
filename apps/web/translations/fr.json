@@ -25972,7 +25972,7 @@
       "proactiveFailed": "Le réglage n’a pas été enregistré. Réessayez.",
       "allSettings": "Tous les réglages",
       "askHint": "Vous pouvez aussi le demander dans le chat : « ajoute un agent ici », « épingle le document du lancement en onglet ».",
-      "noAgentsToAdd": "Tous les agents du projet sont déjà dans cet espace."
+      "noAgentsToAdd": "Tous les agents de l’espace de travail sont déjà dans cet espace."
     },
     "profile": {
       "viewProfile": "Afficher le profil de {name}",

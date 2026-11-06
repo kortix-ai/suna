@@ -25972,7 +25972,7 @@
       "proactiveFailed": "设置未保存，请重试。",
       "allSettings": "所有设置",
       "askHint": "你也可以在聊天中直接说：“在这里添加一个智能体”、“把发布文档固定为标签页”。",
-      "noAgentsToAdd": "项目的所有智能体都已在此空间中。"
+      "noAgentsToAdd": "工作区的所有智能体都已在此空间中。"
     },
     "profile": {
       "viewProfile": "查看 {name} 的资料",

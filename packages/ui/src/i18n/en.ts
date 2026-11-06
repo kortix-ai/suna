@@ -9305,7 +9305,7 @@ const catalog = {
       "proactiveFailed": "The setting was not saved. Try again.",
       "allSettings": "All settings",
       "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\".",
-      "noAgentsToAdd": "Every project agent is in this space."
+      "noAgentsToAdd": "Every workspace agent is in this space."
     },
     "profile": {
       "viewProfile": "Show the profile of {name}",

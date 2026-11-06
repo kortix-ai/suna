@@ -25972,7 +25972,7 @@
       "proactiveFailed": "Podešavanje nije sačuvano. Pokušajte ponovo.",
       "allSettings": "Сва подешавања",
       "askHint": "Можеш и да питаш у ћаскању: „додај агента овде“, „закачи документ за лансирање као картицу“.",
-      "noAgentsToAdd": "Сви агенти пројекта су већ у овом простору."
+      "noAgentsToAdd": "Сви агенти радног простора су већ у овом простору."
     },
     "profile": {
       "viewProfile": "Прикажи профил: {name}",

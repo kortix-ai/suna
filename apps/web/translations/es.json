@@ -25972,7 +25972,7 @@
       "proactiveFailed": "No se guardó el ajuste. Inténtalo de nuevo.",
       "allSettings": "Todos los ajustes",
       "askHint": "También puedes pedirlo en el chat: «añade un agente aquí», «fija el documento del lanzamiento como pestaña».",
-      "noAgentsToAdd": "Todos los agentes del proyecto ya están en este espacio."
+      "noAgentsToAdd": "Todos los agentes del espacio de trabajo ya están en este espacio."
     },
     "profile": {
       "viewProfile": "Ver el perfil de {name}",
