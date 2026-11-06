@@ -65,7 +65,8 @@ export function createPublicEdgeRateLimitMiddleware(): MiddlewareHandler {
     await next();
     // A route that answers with a Response it built (proxies, streams) drops the
     // headers set above; set them again on the final response (KRTX-4302).
-    // An upgrade response is not rebuilt.
-    if (c.res.status !== 101) setBudgetHeaders();
+    // An upgrade response is not rebuilt, and an inner limiter's own budget
+    // headers stay.
+    if (c.res.status !== 101 && !c.res.headers.has('X-RateLimit-Limit')) setBudgetHeaders();
   };
 }

@@ -130,6 +130,21 @@ test('a route that answers with a raw Response still carries the rate-limit head
   expect(response.headers.get('Content-Type')).toBe('text/plain');
 });
 
+test('an inner limiter keeps its own rate-limit headers on the response', async () => {
+  setSystemTime(new Date('2026-11-06T12:00:00Z'));
+  const app = new Hono();
+  app.use('*', createPublicEdgeRateLimitMiddleware());
+  app.all('*', (c) => {
+    c.header('X-RateLimit-Limit', '2');
+    c.header('X-RateLimit-Remaining', '0');
+    return c.json({ error: 'rate_limited' }, 429);
+  });
+  const response = await app.request('/v1/llm/x', { headers: { 'X-Forwarded-For': '198.51.100.9' } });
+  expect(response.status).toBe(429);
+  expect(response.headers.get('X-RateLimit-Limit')).toBe('2');
+  expect(response.headers.get('X-RateLimit-Remaining')).toBe('0');
+});
+
 test('an upgrade response is returned untouched', async () => {
   setSystemTime(new Date('2026-11-06T12:00:00Z'));
   const app = new Hono();
