@@ -77,6 +77,8 @@ beforeAll(async () => {
   await seed('repair', 'status-watch', { event: 'kortix.app.silent' });
   await seed('back', 'status-watch', { event: 'kortix.app.recovered' });
   await seed('crashed', 'status-watch', { event: 'kortix.app.crashed' });
+  // A repair trigger with a window of its own: Kortix never stamps it, so no window applies.
+  await seed('repair-window', 'status-watch', { event: 'kortix.app.recovered', expect: 600, heardMinutesAgo: 25 });
   await seed('quiet-work', 'quiet-watch', { event: 'tick', expect: 600, heardMinutesAgo: 25 });
 });
 
@@ -97,6 +99,7 @@ test('the test route may send a kortix.app.* name; an App may not, and no other 
 test('a silence alert writes kortix.app.silent to the trigger on that name only, once per episode', async () => {
   const pass = await checkAppTriggerSilence(new Date(), true);
   expect(pass?.raised).toBe(2); // work, quiet-work
+  expect((await runtime('repair-window')).alertFailingSince).toBeNull();
   const repair = await rows('repair');
   expect(repair.map((row) => row.name)).toEqual(['kortix.app.silent']);
   expect(repair[0]!.line).toMatchObject({ platform: true, data: { trigger: 'work', expect_event_within_seconds: 600 } });
@@ -131,7 +134,7 @@ test('a crashing App: one crash alert per work trigger, kortix.app.crashed once,
   expect((await runtime('work')).alertSource).toBe('crash');
   expect((await runtime('any')).alertSource).toBe('crash');
   // The repair listeners get the event, not an alert.
-  for (const slug of ['repair', 'back', 'crashed']) expect((await runtime(slug)).alertFailingSince).toBeNull();
+  for (const slug of ['repair', 'back', 'crashed', 'repair-window']) expect((await runtime(slug)).alertFailingSince).toBeNull();
   const work = await inbox('work');
   expect(work.at(-1)).toMatchObject({ kind: 'automation_failed', body: expect.stringContaining(crashMessage('status-watch', 3)) });
   expect((await rows('crashed')).map((row) => row.name)).toEqual(['kortix.app.crashed']);

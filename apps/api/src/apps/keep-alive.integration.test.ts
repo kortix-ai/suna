@@ -64,7 +64,7 @@ mock.module('../billing/services/compute-metering', () => ({
 }));
 
 const { db } = await import('../shared/db');
-const { runAppIdleReaper, runAppKeepAlive, KEEP_ALIVE_REFRESHES_PER_PASS, APPD_REVIVES_PER_HOUR, resetAppdRevivesForTest } = await import('./idle-reaper');
+const { runAppIdleReaper, runAppKeepAlive, KEEP_ALIVE_REFRESHES_PER_PASS, APPD_REVIVES_PER_HOUR, resetAppdRevivesForTest, resetCrashEpisodesForTest, crashVerdict } = await import('./idle-reaper');
 const { APP_RUNTIME_VERSION, REFRESH_RETRY_AFTER_MS } = await import('./deployment-worker');
 
 const confirmed = Boolean(
@@ -159,6 +159,7 @@ function reset(): void {
   appdStatus = {};
   revivals.length = 0;
   resetAppdRevivesForTest();
+  resetCrashEpisodesForTest();
   unfundedAccounts = new Set();
 }
 
@@ -212,6 +213,49 @@ withDb('always-on Apps', () => {
     expect((await work()).alertFailingSince).toBeNull();
     const after = await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, PROJECT_ID));
     expect(after.map((row) => (row.line as { name: string }).name).sort()).toEqual(['kortix.app.crashed', 'kortix.app.recovered']);
+  });
+
+  test('crashVerdict: any machine past its budget is a crash; every machine ready ends it; anything else changes nothing', () => {
+    expect(crashVerdict(['ready', 'spent'])).toBe('crashed');
+    expect(crashVerdict(['ready', 'ready'])).toBe('ready');
+    expect(crashVerdict(['ready', 'other'])).toBe('unknown');
+    expect(crashVerdict([])).toBe('unknown');
+  });
+
+  test('two machines, one down past its budget: the crash alert stays open (no flapping), and a second crash after recovery is a new event', async () => {
+    await seed(ALWAYS, { alwaysOn: true, status: 'running' });
+    const second = { rt: '00000000-0000-4000-a000-0000000e0399' };
+    await db.insert(appRuntimes).values({
+      runtimeId: second.rt, deploymentId: ALWAYS.dep, accountId: ACCOUNT_ID, provider: 'platinum',
+      externalId: box(second), status: 'running', controlTokenHash: 'test',
+    });
+    const slug = `keep-alive-${ALWAYS.app.slice(-3)}`;
+    await db.insert(projectTriggerRuntime).values({
+      projectId: PROJECT_ID, slug: 'status-work', triggerType: 'app', enabled: true, scheduleRevision: 'a'.repeat(64),
+      scheduleSpec: { slug: 'status-work', type: 'app', agent: 'default', enabled: true, app: slug, filter: { 'event.name': 'status.changed' } },
+    });
+    const work = async () => (await db.select().from(projectTriggerRuntime).where(and(eq(projectTriggerRuntime.projectId, PROJECT_ID), eq(projectTriggerRuntime.slug, 'status-work'))))[0]!;
+    const crashedEvents = async () => (await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, PROJECT_ID)))
+      .filter((row) => (row.line as { name: string }).name === 'kortix.app.crashed');
+    appdStatus[box(ALWAYS)] = 'down';
+    for (let pass = 0; pass < APPD_REVIVES_PER_HOUR + 1; pass += 1) await runAppKeepAlive(new Date(), true);
+    const opened = (await work()).alertFailingSince;
+    expect((await work()).alertSource).toBe('crash');
+    // The healthy machine does not clear what the crashed one raised.
+    await runAppKeepAlive(new Date(), true);
+    await runAppKeepAlive(new Date(), true);
+    expect((await work()).alertFailingSince).toEqual(opened);
+    expect(await crashedEvents()).toHaveLength(1);
+
+    // Both ready: it ends. Down again within the hour (budget still spent): a new episode, a new event.
+    appdStatus[box(ALWAYS)] = { status: 'running', ready: true };
+    await runAppKeepAlive(new Date(), true);
+    expect((await work()).alertFailingSince).toBeNull();
+    appdStatus[box(ALWAYS)] = 'down';
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await runAppKeepAlive(new Date(), true);
+    expect((await work()).alertSource).toBe('crash');
+    expect(await crashedEvents()).toHaveLength(2);
   });
 
   test('a healthy supervisor, and one failed for a named reason a restart cannot fix, are left alone', async () => {

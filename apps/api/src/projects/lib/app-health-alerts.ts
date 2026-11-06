@@ -55,8 +55,13 @@ export async function raiseAppCrashAlerts(input: {
   return raised;
 }
 
-/** End the App's crash streaks (it runs again) and write `kortix.app.recovered` once. Returns the streaks ended. */
-export async function clearAppCrashAlerts(input: { projectId: string; appSlug: string; now?: Date }): Promise<number> {
+/**
+ * End the App's crash streaks and, when it runs again, write
+ * `kortix.app.recovered` once. A person who stops the App ends them too
+ * (`running: false`): nothing will run it again, so nothing would clear them.
+ * Returns the streaks ended.
+ */
+export async function clearAppCrashAlerts(input: { projectId: string; appSlug: string; now?: Date; running?: boolean }): Promise<number> {
   const rows = await db
     .select({ slug: projectTriggerRuntime.slug })
     .from(projectTriggerRuntime)
@@ -70,7 +75,7 @@ export async function clearAppCrashAlerts(input: { projectId: string; appSlug: s
   for (const row of rows) {
     if (await clearTriggerAlert({ projectId: input.projectId, slug: row.slug, source: 'crash' })) cleared += 1;
   }
-  if (cleared > 0) {
+  if (cleared > 0 && input.running !== false) {
     const now = input.now ?? new Date();
     await emitAppPlatformEvent({
       projectId: input.projectId, appSlug: input.appSlug, name: 'kortix.app.recovered', id: `recovered:crash:${input.appSlug}:${now.getTime()}`,
