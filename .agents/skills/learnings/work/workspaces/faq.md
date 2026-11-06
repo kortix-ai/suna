@@ -24,12 +24,23 @@ compute, storage and BYOK fees only. Prod: 34,980 accounts hold a grant
   workspace a person creates. Every further workspace that person creates
   starts on Free with 0 credits and asks for credits before it runs a
   session. Self-host (billing off) is unaffected.
+- **How a second workspace says so (built):** `GET /v1/billing/account-state`
+  returns `credits.free_grant {eligible:false, claimed_workspace_id}`,
+  `tier.monthly_credits: 0` and `credits.expires_at: null`. The Plan card, the
+  billing pane and the billing modal print one line ("This workspace has no
+  free credits. Your monthly free credits are on <workspace>."), and the modal
+  opens on the top-up for a Free workspace below the run floor (flow
+  `BILL-WS-1`).
+- **Exception, the split:** a project split off a free legacy account keeps
+  free-credit eligibility and gets one Free grant (no `free_credit_claims`
+  row): the person did not choose a second workspace.
 
-**What about the plan caps?** Free allows 1 project per account, Credits 200
-(`shared/account-limits.ts:16`, `tiers.ts:105`). With 1 project per workspace
-the project cap never binds. The real per-workspace limits are Apps, Files and
-the model rate budget. PR 1 removes "Up to 200 projects" from pricing copy
-(`apps/web/src/features/billing/pricing-plans.ts:61`, `pricing/page.tsx:93`).
+**What about the plan caps?** No plan caps workspaces or projects: one
+workspace holds one project, and a person may create any number of
+workspaces on Free (only the first gets the free credits). The real
+per-workspace limits are Apps, Files and the model rate budget. Pricing copy
+says "500 credits a month on your first workspace" and no longer names a
+project or workspace count (finding 33).
 
 **One company, several workspaces, one bill?** Not today: N workspaces are N
 Stripe customers, N subscriptions, N wallets, N contracts. Prod has 1 active
@@ -37,13 +48,35 @@ enterprise contract, on 1 account. Decision: no layer above workspaces until a
 customer asks (the Slack Enterprise Grid step). When one does: an org that owns
 workspaces, with one contract, pooled credits and one SSO domain.
 
-**Mobile purchases (RevenueCat)?** The app user id is the person, and the
-webhook credits the person's earliest-joined account
-(`revenuecat-webhooks.ts:96`), which can be a workspace they do not own. This
-is a pre-existing bug. Later (P1 follow-up): the app sends the current
-workspace's account id as a RevenueCat subscriber attribute at purchase; the
-webhook uses it, else the person's earliest owned workspace. A person with no
-workspace: PR 1 acknowledges the event and grants nothing.
+**Mobile purchases (RevenueCat)?** The app user id is the person. The webhook
+(`resolveRevenueCatAccountId`) bills, in order: the account that already holds
+the store subscription (renewals, cancellations), the workspace named in the
+`kortix_workspace_id` subscriber attribute when the person is a member of it,
+else the person's default account. The mobile app sets that attribute to the
+current workspace before a purchase (web stream). A person with no workspace:
+the event is acknowledged and grants nothing.
+
+**Can the legacy Stripe sync move a subscription between workspaces?** No
+(finding 8). It never matches customers by email. It adopts only a
+subscription of the account's own customer, or of an unmapped customer whose
+subscription names this account; never one whose `metadata.account_id` names
+another live account, and never one another `credit_accounts` row holds (I11).
+It runs only from `POST /v1/billing/sync-subscription`, never on the request
+path.
+
+**What does a split-off workspace pay?** A free source: Free with free-credit
+eligibility and one Free grant. A paying source (paid plan): the keeper's plan
+comped, no Stripe subscription, until min(the keeper's period end, now + 31 d)
+(`credit_accounts.comp_plan_until`), with the plan credits pro-rated to that
+window; then Free with free credits (`billing/services/split-off-billing.ts`).
+account-state shows `plan_comp`; the Plan card reads "No charge until <date>,
+then Free" (flow `BILL-WS-2`).
+
+**Where does a moved project's cost history go?** The ledgers stay with the
+account that paid. Workspace and session cost views read by `project_id`, so
+the moved workspace sees its full history, each row marked `billed_elsewhere`.
+The payer's per-project rollup labels it "Moved to another workspace"
+(finding 31).
 
 ## Migrating existing accounts
 
