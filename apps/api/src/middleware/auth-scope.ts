@@ -57,7 +57,7 @@ export async function enforceTokenProjectScope(
     method,
     path,
     { workspaceId, sessionBound: Boolean(opts.sessionBound) },
-    { sandboxWorkspace: resolveSandboxProjectId, accountWorkspace },
+    { sandboxWorkspace: resolveSandboxProjectId, accountWorkspace, workspaceSplitPending },
     readsWorkspaceParams(method, path) ? { ids: await requestWorkspaceParams(c) } : undefined,
   );
   if (verdict.allowed) return;
@@ -91,6 +91,11 @@ async function accountWorkspace(accountId: string): Promise<AccountWorkspace> {
     if (err instanceof WorkspaceAmbiguousError) return 'ambiguous';
     throw err;
   }
+}
+
+/** The key's own workspace belongs to a split_pending legacy account. */
+async function workspaceSplitPending(workspaceId: string): Promise<boolean> {
+  return (await resolveWorkspace(workspaceId))?.splitPending === true;
 }
 
 /**

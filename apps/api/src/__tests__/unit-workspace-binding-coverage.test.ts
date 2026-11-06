@@ -189,6 +189,18 @@ describe('the fence decides each credential × route class', () => {
   }
 });
 
+describe('a key of a split_pending workspace never reaches the shared account rows', () => {
+  const splitDeps = { ...deps, workspaceSplitPending: async (id: string) => id === WS };
+  test('account families answer account-wider-than-workspace; the workspace own routes pass', async () => {
+    for (const path of [`/v1/workspaces/${WS}/members`, `/v1/workspaces/${WS}/iam/groups`, `/v1/accounts/${WS}/members`, `/v1/workspaces/${WS}/tokens`]) {
+      expect(await workspaceFenceVerdict('GET', path, projectPat, splitDeps)).toMatchObject({ allowed: false, check: 'account-wider-than-workspace' });
+    }
+    for (const path of [`/v1/workspaces/${WS}`, `/v1/workspaces/${WS}/sessions`, `/v1/workspaces/${WS}/audit`]) {
+      expect(await workspaceFenceVerdict('GET', path, projectPat, splitDeps)).toEqual({ allowed: true });
+    }
+  });
+});
+
 describe('path bindings read a param their pattern declares', () => {
   // scripts/codemods/workspace-route-params.ts renames `:projectId` in every
   // route literal, this table included. A path binding that names a param its

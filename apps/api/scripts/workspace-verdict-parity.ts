@@ -406,12 +406,30 @@ const INTENDED: Intended[] = [
     match: (r) => BOUND.has(r.kind) && r.ctx === 'one' && r.base === '403:token_out_of_scope',
   },
   {
-    why: 'Membership is access (C3, findings 3, 4): an account member of a 1:1 workspace reaches it at the member tier (no_project_membership → passes, or project_role_insufficient above the member tier).',
+    why: 'Membership is access (C3, findings 3, 4): an account member of a 1:1 workspace reaches it at the member tier, so the project gate passes and the route\'s own next gate answers (pass, a role/leaf denial, a feature flag, an agent-session rule).',
     match: (r) =>
       r.ctx === 'one' &&
       ['member', 'manager', 'project_member', 'group_grant', 'custom_role'].includes(r.role) &&
       /no_project_membership|You do not have access to this project/.test(r.base) &&
-      (r.head === 'pass' || /project_role_insufficient|doesn.t let you|permission to/.test(r.head) || r.head.startsWith('404')),
+      !/no_project_membership|do not have access to this workspace/.test(r.head),
+  },
+  {
+    why: 'K1, budgets: an inherited agent session sets and deletes gateway budgets as its person (the route answered its own "You do not have permission to set budgets").',
+    match: (r) => r.kind === 'session_pat' && r.path.includes('/gateway/budgets') && /permission to set budgets/.test(r.base) && r.head === 'pass',
+  },
+  {
+    why: 'Membership is access (C3) on routes with their own denial wording: the connector gateway (403 forbidden), the sandbox proxy (Not authorized to access this sandbox), a hidden-artifact 404 that now reaches its feature gate.',
+    match: (r) =>
+      r.ctx === 'one' &&
+      r.role === 'member' &&
+      /^(403:forbidden|403:Not authorized to access this sandbox|404)$/.test(r.base) &&
+      /^\/v1\/(connectors\/(projects|workspaces)|p|projects|workspaces)\//.test(r.path) &&
+      (r.head === 'pass' || r.head === '403:feature_disabled'),
+  },
+  {
+    why: 'C4 reach param: a workspace-bound key reaches the billing surface of its own workspace (the account_id it names, or none); the route answers for itself.',
+    match: (r) =>
+      BOUND.has(r.kind) && r.path.startsWith('/v1/billing/') && fenceCheck(r.base) === 'default-deny' && !r.head.startsWith('403:token-project-scope:'),
   },
   {
     why: 'Copy only (finding 20): the same denial now says "this workspace" (no_project_membership text, account denial text).',

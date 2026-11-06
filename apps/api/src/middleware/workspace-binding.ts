@@ -64,6 +64,8 @@
  * `[check=token-project-scope:<check> …]` for log searches.
  */
 
+import { WORKSPACE_ACCOUNT_FAMILIES } from '@kortix/shared/workspace-routes';
+
 export type WorkspaceBindingKind = 'path' | 'resource' | 'ambient' | 'platform' | 'person' | 'none';
 
 /** The `check=` name a refusal reports. */
@@ -79,8 +81,13 @@ export type WorkspaceFenceCheck =
 export const CREDENTIAL_FENCE_REFUSED_CODE = 'credential_fence_refused';
 
 export type WorkspaceBinding =
-  /** `via: 'account'` = the param may be a legacy account key, resolved through the bijection. */
-  | { kind: 'path'; param: 'workspaceId'; via?: 'account' }
+  /**
+   * `via: 'account'` = the param may be a legacy account key, resolved through
+   * the bijection. `family: true` = the route acts on the account's shared rows
+   * (members, IAM, billing settings, …): wider than one workspace while the
+   * account is split_pending, so a key of one of its workspaces is refused.
+   */
+  | { kind: 'path'; param: 'workspaceId'; via?: 'account'; family?: boolean }
   | { kind: 'resource'; resource: 'sandbox' | 'drive' | 'own-session' }
   | { kind: 'ambient'; reach: 'credential' | 'param' }
   | { kind: 'platform' }
@@ -103,6 +110,7 @@ export interface WorkspaceBindingRule {
 
 const PATH: WorkspaceBinding = { kind: 'path', param: 'workspaceId' };
 const PATH_OR_ACCOUNT: WorkspaceBinding = { kind: 'path', param: 'workspaceId', via: 'account' };
+const ACCOUNT_FAMILY: WorkspaceBinding = { kind: 'path', param: 'workspaceId', via: 'account', family: true };
 const OWN_WORKSPACE: WorkspaceBinding = { kind: 'ambient', reach: 'credential' };
 const PARAM: WorkspaceBinding = { kind: 'ambient', reach: 'param' };
 const PLATFORM: WorkspaceBinding = { kind: 'platform' };
@@ -167,8 +175,13 @@ export const WORKSPACE_BINDINGS: readonly WorkspaceBindingRule[] = [
   { pattern: '/v1/me/*', binding: PERSON },
 
   // ── path: the workspace is in the URL ──────────────────────────────────
-  // Legacy account routes take a workspace id or an account key.
-  ...both('/v1/accounts/:workspaceId', PATH_OR_ACCOUNT),
+  // Legacy account routes take a workspace id or an account key; they act on
+  // the account's shared rows, so a split_pending account is wider than a key.
+  ...both('/v1/accounts/:workspaceId', ACCOUNT_FAMILY),
+  // The account families under the canonical name (design.md §3.2 C5). The
+  // workspace audit log (`GET …/audit`) is the workspace's own, not a family.
+  { pattern: '/v1/workspaces/:workspaceId/audit', methods: ['GET'], binding: PATH_OR_ACCOUNT },
+  ...WORKSPACE_ACCOUNT_FAMILIES.flatMap((family) => both(`/v1/workspaces/:workspaceId/${family}`, ACCOUNT_FAMILY)),
   ...both('/v1/projects/:workspaceId', PATH),
   ...both('/v1/connectors/projects/:workspaceId', PATH),
   // The canonical families also accept the account key of a 1:1 workspace
@@ -294,6 +307,8 @@ export type AccountWorkspace = string | 'ambiguous' | null;
 export interface WorkspaceFenceDeps {
   /** The workspace that owns a sandbox, or null when unknown. */
   sandboxWorkspace(sandboxId: string): Promise<string | null>;
+  /** True when the workspace belongs to a split_pending legacy account. Optional: absent = never. */
+  workspaceSplitPending?(workspaceId: string): Promise<boolean>;
   /** The workspace of a legacy account key (`workspace_id_of_account`). */
   accountWorkspace(accountId: string): Promise<AccountWorkspace>;
 }
@@ -357,8 +372,13 @@ export async function workspaceFenceVerdict(
       return refuse('platform-route');
     case 'person':
       return refuse('person-route');
-    case 'path':
-      return namesOwnWorkspace(matched.params[b.param]!, credential, deps, b.via === 'account');
+    case 'path': {
+      const verdict = await namesOwnWorkspace(matched.params[b.param]!, credential, deps, b.via === 'account');
+      if (verdict.allowed && b.family && (await deps.workspaceSplitPending?.(credential.workspaceId))) {
+        return refuse('account-wider-than-workspace');
+      }
+      return verdict;
+    }
     case 'resource': {
       if (b.resource === 'own-session' || b.resource === 'drive') return ALLOWED;
       const owner = await deps.sandboxWorkspace(matched.params.sandboxId!);
