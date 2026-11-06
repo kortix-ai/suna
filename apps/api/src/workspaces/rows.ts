@@ -19,7 +19,7 @@
  * `@kortix/db` and `shared/db`), so `shared/` modules can read rows too.
  */
 import { accounts, projects, type Database } from '@kortix/db';
-import { getTableColumns, sql, type ColumnsSelection, type SQL } from 'drizzle-orm';
+import { sql, type ColumnsSelection, type SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource, PgViewWithSelection } from 'drizzle-orm/pg-core';
 
 import { db } from '../shared/db';
@@ -32,8 +32,12 @@ export const projectsView = projects as unknown as ReadHandle<'projects', typeof
 /** Read-only handle on `kortix.accounts`. */
 export const accountsView = accounts as unknown as ReadHandle<'accounts', typeof accounts._.columns>;
 
-/** Every `projectsView` column, for a nested selection (`select({ project: projectFields })`). */
-export const projectFields = getTableColumns(projects);
+/**
+ * Every `projectsView` column, for a nested selection
+ * (`select({ project: projectFields })`). At runtime the table, which a
+ * selection expands into its columns.
+ */
+export const projectFields = projects as unknown as typeof projects._.columns;
 
 export type ProjectRow = typeof projects.$inferSelect;
 export type ProjectRowInsert = typeof projects.$inferInsert;
