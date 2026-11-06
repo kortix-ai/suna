@@ -589,6 +589,12 @@ describe('kortix_schedules automations', () => {
     expect(skip.card.title).toBe('any-event skipped the test event')
     expect(skip.data).toMatchObject({ event: 'test.event', outcome: 'skipped', reason: 'throttled', session_id: null })
     expect(argvs().some((argv) => argv.includes('--dry-run'))).toBe(false)
+    // An event name is an App event name, never a flag: "--trigger=other" cannot pick another automation.
+    const before = argvs().length
+    const flag = await run('kortix_schedules', { action: 'test', name: 'status-alert', payload: { event: { name: '--trigger=any-event' } } })
+    expect(flag.ok).toBe(false)
+    expect(flag.error?.kind).toBe('invalid')
+    expect(argvs().slice(before).some((argv) => argv.startsWith('apps events emit'))).toBe(false)
   })
 
   test('runs: the recent runs with a tally of what started, skipped and failed, and no cost', async () => {
