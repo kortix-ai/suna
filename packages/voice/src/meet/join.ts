@@ -81,6 +81,9 @@ export function joinMeet(o: MeetOptions): Meeting {
     // Keychain prompt). --channel=chrome|chromium to choose.
     const CHANNEL = o.channel ?? (o.executable ? undefined : process.platform === 'linux' && existsSync('/opt/google/chrome/chrome') ? 'chrome' : undefined)
     let quitting = false
+    // The bot is done with this meeting: leaving it (goodbye said) or shut down (left, ended, failed). The relay is
+    // never dialed again: shut() closes the relay, and its close was taken for a relay restart, every 2 s, forever.
+    const over = () => leaving || quitting
     // The relay and the browser closed, the timers stopped: a browser left behind stays in the meeting as a silent bot.
     shut = async () => {
       quitting = true
@@ -259,11 +262,11 @@ export function joinMeet(o: MeetOptions): Meeting {
         // bot leaves the meeting. Before, the socket's close was taken for a relay restart and it rejoined 2 s later.
         if (m.type === 'closed' && (m as { why?: string }).why === 'goodbye') void leaveMeeting()
       }
-      r.onclose = () => void (!leaving && relay === r && (log('relay closed; reconnecting'), setTimeout(again, 2000)))
+      r.onclose = () => void (!over() && relay === r && (log('relay closed; reconnecting'), setTimeout(again, 2000)))
       return new Promise<void>((ok, fail) => ((r.onopen = () => ok()), (r.onerror = () => fail(new Error(`relay ${RELAY} not reachable`)))))
     }
     // Back to the relay after it closed: tried every 2 s until it answers (a restart can take longer than one try).
-    const again = () => void (!leaving && connect(false).then(() => log('relay back'), () => (log('relay not back yet; trying again'), setTimeout(again, 2000))))
+    const again = () => void (!over() && connect(false).then(() => log('relay back'), () => (!over() && (log('relay not back yet; trying again'), setTimeout(again, 2000)))))
     await connect(true)
 
     await cameraOffMicOn() // in the call too: Meet may have kept either as it was
