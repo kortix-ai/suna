@@ -84,12 +84,19 @@ async function pickWithReads(
       })
       .catch(() => undefined),
   ]);
-  return pickWorkspaceForAccount({
+  const picked = pickWorkspaceForAccount({
     accountId,
     routeProjectId,
     routeProjectAccountId: routeProject?.account_id ?? null,
     projects,
   });
+  if (picked) return picked;
+  // An old link may name the WORKSPACE id in `accountId` (a 1:1 workspace's
+  // two ids are easy to mix up): it is its own settings target.
+  const named = await client
+    .fetchQuery({ queryKey: qk.project.summary(accountId), queryFn: () => getProject(accountId), ...contract('config') })
+    .catch(() => null);
+  return named?.project_id === accountId ? accountId : null;
 }
 
 export function AccountHubRouter() {
@@ -109,7 +116,10 @@ export function AccountHubRouter() {
     return () => setAccountHubNavigator(null);
   }, [queryClient, routeProjectId, router]);
 
-  const accountParam = searchParams.get(ACCOUNT_PANEL_PARAM);
+  // `?accountTab=` with no `accountId` (an old link) means the workspace on
+  // screen.
+  const accountParam =
+    searchParams.get(ACCOUNT_PANEL_PARAM) ?? (searchParams.has('accountTab') && routeProjectId ? routeProjectId : null);
   const hubQuery = accountParam === null ? '' : hubParamsFromUrl(searchParams).toString();
   useEffect(() => {
     if (accountParam === null) return;
