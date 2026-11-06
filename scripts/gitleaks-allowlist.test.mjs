@@ -23,7 +23,8 @@ import { join, resolve } from 'node:path';
 // trailing comment was exempted and the scan reported "no leaks found". The
 // test drives both directions: a plaintext value next to such a mention is
 // caught, and every genuine dotenvx artifact (encrypted values, the public
-// key lines) stays exempt.
+// key lines) stays exempt. The public-key exemption is shape-pinned too: a
+// credential pasted into the DOTENV_PUBLIC_KEY slot is caught.
 import { test } from 'node:test';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -141,6 +142,18 @@ test('a plaintext secret on a line that mentions DOTENV_PUBLIC_KEY is caught', (
       'apps/api/.env.prod': `DOTENV_PUBLIC_KEY_PROD="${PUBLIC_KEY}"\nSTRIPE_SECRET_KEY=${PLAINTEXT} ${PUBLIC_KEY}\n`,
     }),
     ['apps/api/.env.prod:2', 'apps/web/.env.staging:1'],
+  );
+});
+
+test('a plaintext value in the public-key slot is caught', () => {
+  // The exemption pins the dotenvx public-key shape (66 lowercase hex), not
+  // just the variable name: a credential pasted into that slot still fails.
+  assert.deepEqual(
+    scan({
+      'apps/web/.env.dev': `DOTENV_PUBLIC_KEY_DEV="${PUBLIC_KEY}"\nDOTENV_PUBLIC_KEY="${PLAINTEXT}"\n`,
+      'apps/api/.env.prod': `export DOTENV_PUBLIC_KEY_PROD=${PLAINTEXT}\n`,
+    }),
+    ['apps/api/.env.prod:1', 'apps/web/.env.dev:2'],
   );
 });
 

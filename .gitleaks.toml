@@ -19,7 +19,7 @@
 useDefault = true
 
 [[allowlists]]
-description = "dotenvx-ENCRYPTED apps/{api,web} profiles. condition=AND + regexTarget=line means a line is exempt ONLY if it is a dotenvx artifact: an assignment whose VALUE starts with `encrypted:` or the DOTENV_PUBLIC_KEY assignment itself. A PLAINTEXT value committed to these same files still fails the scan, even on a line that mentions `encrypted:` or DOTENV_PUBLIC_KEY in a comment. (Before 2026-08-29 this allowlist was path-only, so any secret in these six files was exempt unconditionally. Until 2026-11-06 the bare substrings matched anywhere on the line, so a trailing `# encrypted: yes` comment exempted a plaintext secret.)"
+description = "dotenvx-ENCRYPTED apps/{api,web} profiles. condition=AND + regexTarget=line means a line is exempt ONLY if it is a dotenvx artifact: an assignment whose VALUE starts with `encrypted:` or a DOTENV_PUBLIC_KEY assignment whose VALUE is a public key (66 lowercase hex characters). A PLAINTEXT value committed to these same files still fails the scan, even on a line that mentions `encrypted:` or DOTENV_PUBLIC_KEY in a comment, and even in the public-key slot. (Before 2026-08-29 this allowlist was path-only, so any secret in these six files was exempt unconditionally. Until 2026-11-06 the bare substrings matched anywhere on the line, so a trailing `# encrypted: yes` comment exempted a plaintext secret.)"
 condition = "AND"
 regexTarget = "line"
 paths = [
@@ -38,9 +38,10 @@ regexes = [
   # private key), so a comment mentioning the word cannot exempt a plaintext
   # value.
   '''^\s*(export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*"?encrypted:''',
-  # The public-key assignment only (one per profile: _DEV/_STAGING/_PROD). Not
-  # any line that happens to name the variable.
-  '''^\s*(export\s+)?DOTENV_PUBLIC_KEY(_[A-Z]+)?\s*=''',
+  # The public-key assignment only (one per profile: _DEV/_STAGING/_PROD), and
+  # its value must be a dotenvx public key: 66 lowercase hex characters. Not any
+  # line that names the variable, and not a credential pasted into its slot.
+  '''^\s*(export\s+)?DOTENV_PUBLIC_KEY(_[A-Z]+)?\s*=\s*"?[0-9a-f]{66}"?\s*(#.*)?$''',
 ]
 
 [[allowlists]]
