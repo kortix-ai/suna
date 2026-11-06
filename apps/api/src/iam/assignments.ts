@@ -227,11 +227,11 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
   const scopeId = scopeType === 'project' ? (input.scope.id ?? null) : null;
 
   if (scopeType === 'project' && !scopeId) {
-    throw new HTTPException(400, { message: 'an assignment with scope type `project` must name its workspace in scope.id' });
+    throw new HTTPException(400, { message: 'an assignment with scope type `project` must name its workspace in scope_id' });
   }
   if (scopeType === 'account' && input.scope.id) {
     throw new HTTPException(400, {
-      message: 'an assignment with scope type `account` covers the whole workspace and must not set scope.id',
+      message: 'an assignment with scope type `account` covers the whole workspace and must not set scope_id',
     });
   }
   if (input.object && scopeType !== 'project') {
@@ -419,7 +419,7 @@ export async function updateAssignment(
   const scopeType = input.scope.type;
   const scopeId = scopeType === 'project' ? (input.scope.id ?? null) : null;
   if (scopeType === 'project' && !scopeId) {
-    throw new HTTPException(400, { message: 'an assignment with scope type `project` must name its workspace in scope.id' });
+    throw new HTTPException(400, { message: 'an assignment with scope type `project` must name its workspace in scope_id' });
   }
   if (scopeId) await assertProjectInAccount(accountId, scopeId);
   assertAccountRoleHolder(writer, role, scopeType, {
