@@ -2424,14 +2424,94 @@ The token decides who the request acts as. Every Kortix credential starts with
 a prefix that names its kind. Create and manage them on
 [Security](/docs/guide#security).
 
-| Prefix | Credential | Acts as |
+| Prefix | Credential | Reach | Acts as |
+|---|---|---|---|
+| `kortix_pat_` | Workspace key (**Workspace settings** → **API keys**, `POST /v1/workspaces/<id>/tokens`, `kortix tokens new --scope …`) | One workspace. Every other workspace answers `403 credential_fence_refused`. | You, with your current role, narrowed by the key's scope. |
+| `kortix_pat_` | Personal key (`kortix login`, **Preferences** → **Personal keys**, `POST /v1/accounts/tokens` without `project_id`) | Every workspace you belong to. | You, with your role in each workspace. |
+| `kortix_sa_` | Service account key (**Workspace settings** → **Tokens & automation**, `kortix tokens service-accounts new`) | The service account's workspace. | The service account. It has no access until someone assigns it a role. |
+| `kortix_oat_` | OAuth access token from [Sign in with Kortix](/docs/developers#sign-in-with-kortix). It lasts 1 hour. A `kortix_ort_` refresh token gets a new one. | The workspace you chose on the consent screen. A token issued before 2026-11-06 reaches every workspace. | The person who approved the app. |
+| `kortix_gw_` | Workspace gateway key (`kortix gateway keys new`) | The LLM gateway inference routes of one workspace, and nothing else. See [Call the LLM gateway from your own app](#call-the-llm-gateway-from-your-own-app). | The workspace. |
+| `kortix_scim_` | SCIM token (**Workspace settings** → **Identity & directory**) | Directory sync under `/scim/v2` for one account. | The directory. |
+| `kortix_pat_` in `KORTIX_TOKEN` | Session token. Kortix sets it in every session sandbox. | The session's workspace. It ends with the session. | The agent of that one session. |
+
+#### Workspace key scopes
+
+A workspace key has a scope. The scope narrows the key inside its creator's
+role. It never widens it.
+
+| Scope | `scopes` on mint | The key may |
 |---|---|---|
-| `kortix_pat_` | Personal access key (**Settings** → **Personal access keys**, `kortix tokens new`, `kortix login`) | You, with your roles. A key bound to one workspace gets `403` everywhere else. |
-| `kortix_sa_` | Service account key (**Workspace settings** → **Tokens & automation**, `kortix tokens service-accounts new`) | The service account. It has no access until someone assigns it a role. |
-| `kortix_oat_` | OAuth access token from [Sign in with Kortix](/docs/developers#sign-in-with-kortix). It lasts 1 hour. A `kortix_ort_` refresh token gets a new one. | The person who approved the app. |
-| `kortix_gw_` | Workspace gateway key (`kortix gateway keys new`) | The LLM gateway inference routes of one workspace, and nothing else. See [Call the LLM gateway from your own app](#call-the-llm-gateway-from-your-own-app). |
-| `kortix_scim_` | SCIM token (**Workspace settings** → **Identity & directory**) | Directory sync under `/scim/v2` for one account. |
-| `kortix_pat_` in `KORTIX_TOKEN` | Session token. Kortix sets it in every session sandbox. | The agent of that one session, limited to its workspace. It ends with the session. |
+| Full | `"full"`, or omitted | Everything your role allows. |
+| Read only | `"read"` | Every permission whose name ends in `.read`. The key sends `GET` and `HEAD` requests only; any other method answers `403 key_scope_read_only`. |
+| Custom | a list, such as `["workspace.session.read", "workspace.session.start"]` | Exactly the listed permissions, in either spelling (`workspace.*` or the older name). |
+
+```bash
+curl -X POST "$KORTIX_API/v1/workspaces/$WORKSPACE_ID/tokens" \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"name": "dashboard", "scopes": "read", "expires_at": "2027-01-31T00:00:00Z"}'
+```
+
+- Kortix checks the creator's **current** role on every request. A key whose
+  creator loses a permission loses it at once.
+- A custom list that names a permission your role lacks answers
+  `403 key_scope_exceeds_role` with the `permissions` it refused.
+- An action outside the scope answers `403 key_scope_insufficient` with the
+  `workspace_action` it needs.
+- A scoped key mints only keys inside its own scope (`403
+  key_scope_exceeds_parent`). A key it mints without `scopes` gets its scope.
+- A key that cannot start sessions (`read`, or a list without
+  `workspace.session.start`) cannot call a model through the LLM gateway.
+- Every key row in `GET /v1/workspaces/<id>/tokens` carries `scope`,
+  `permissions`, `workspace_permissions`, `expires_at`, `last_used_at` and
+  `expiry_renews`.
+
+#### Key expiry
+
+- A key you mint without `expires_at` expires in 90 days.
+- A key expires at most 365 days out, or at the workspace's maximum
+  (`max_lifetime_days` on `GET /v1/workspaces/<id>/iam/pat-policy`).
+- `expires_at: null` mints a key with no expiry. The workspace allows it only
+  when an admin sets `allow_no_expiry: true` with
+  `PATCH /v1/workspaces/<id>/iam/pat-policy`. Otherwise it answers
+  `400 expiry_required`.
+- A key minted by another key never outlives that key: without `expires_at` it
+  gets the minting key's own expiry.
+- The CLI login (`kortix login`) is a personal key that expires 90 days after
+  its last use (`expiry_renews: true`). A CLI you use stays signed in.
+- Keys minted before 2026-11-06 keep their expiry, none included. They list
+  with `expires_at: null`.
+
+#### When a key stops working
+
+- **The person leaves the workspace.** Removing a member, a member leaving and
+  a directory (SCIM) deprovision revoke every key that person created in that
+  workspace. The next request answers `401`.
+- **It is revoked.** `DELETE /v1/workspaces/<id>/tokens/<token_id>`, or for a
+  personal key `DELETE /v1/me/tokens/<token_id>`.
+- **It expires**, or is unused past the workspace's `idle_revoke_days`.
+
+#### How Kortix decides a request
+
+A request passes only when every check passes. The fence and the session
+policy run first, in the authentication middleware. The others run in the one
+authorization engine.
+
+1. **Credential fence.** A credential bound to one workspace (a workspace key,
+   a session token, an OAuth token bound on consent) reaches only routes of
+   that workspace: `403 credential_fence_refused` with `check`.
+2. **Session policy.** A browser session past the workspace's maximum lifetime
+   or idle timeout answers `401 session_token_revoked`.
+3. **Role, grant and scope.** Your role in the workspace (or a service
+   account's assigned roles, or an agent's kortix.yaml grant ∩ its bound
+   role), narrowed by the key's scope: `403` with `code` and `workspace_action`.
+4. **People-only actions.** No agent session mints credentials or moves money,
+   whatever its grant: `403 agent_human_only_action`.
+5. **Support access.** A Kortix operator acting as your workspace never writes
+   IAM and never deletes the workspace.
+
+`POST /v1/accounts/tokens` is deprecated for new automation keys. It stays
+for the CLI login and for CLIs released before workspace keys. Mint automation
+keys with `POST /v1/workspaces/<id>/tokens`.
 
 An OAuth token without the `kortix` scope reaches only `/v1/me` (older name `/v1/accounts/me`),
 `/v1/oauth/userinfo`, and `/v1/oauth/revoke`. Other routes answer `403`, and

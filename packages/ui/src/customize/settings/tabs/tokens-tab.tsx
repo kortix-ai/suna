@@ -40,14 +40,14 @@
 import { type ReactNode, useRef, useState } from 'react';
 
 import {
-  NEVER_EXPIRES,
-  defaultExpiryOption,
-  expiresAtIso,
-  expiryOptions,
+  defaultKeyExpiryOption,
+  keyExpiresAt,
+  keyExpiryOptions,
 } from '../../../access/iam/api-key-expiry';
 import { type ApiKeyRow, type ApiKeyStatus, buildApiKeyRows } from '../../../access/iam/api-key-rows';
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
+import { Checkbox } from '../../../primitives/checkbox';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
 import { InfoBanner } from '../../../primitives/info-banner';
 import { Input } from '../../../primitives/input';
@@ -90,11 +90,13 @@ import {
   listAccountTokens,
   listPersonalTokens,
   listProjectsForAccount,
+  listPermissions,
   listWorkspaceTokens,
   revokeAccountToken,
   revokePersonalToken,
   revokeWorkspaceToken,
   type AccountToken,
+  type Permission,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { KeyIcon, PlusIcon, ProhibitIcon, TrashIcon } from '@phosphor-icons/react';
@@ -141,6 +143,10 @@ function isMfaRequired(error: unknown): boolean {
 export interface ApiKeyMetaCopy {
   neverUsed: string;
   neverExpires: string;
+  /** The access label of a key row (`Full access`, `Read only`, `Custom · 3`); null hides it. */
+  access?: (row: ApiKeyRow) => string | null;
+  /** Shown instead of the expiry for a key whose expiry moves out on every use. */
+  renewsOnUse?: string;
   lastUsed: (time: string) => string;
   expired: (time: string) => string;
   expires: (time: string) => string;
@@ -163,8 +169,12 @@ export function apiKeyMetaParts(
 ): string[] {
   const parts = [row.hint];
   if (row.scopeLabel) parts.push(row.scopeLabel);
+  const access = copy.access?.(row);
+  if (access) parts.push(access);
   parts.push(row.lastUsedAt ? copy.lastUsed(copy.relativeTime(row.lastUsedAt)) : copy.neverUsed);
-  if (row.expiresAt) {
+  if (row.expiryRenews && copy.renewsOnUse && row.status === 'active') {
+    parts.push(copy.renewsOnUse);
+  } else if (row.expiresAt) {
     const ms = new Date(row.expiresAt).getTime();
     if (Number.isFinite(ms)) {
       const time = copy.relativeTime(row.expiresAt);
@@ -233,6 +243,8 @@ export function TokensTab({
     expired: (time) => t('expiredAt', { time }),
     expires: (time) => t('expiresAt', { time }),
     relativeTime: (input) => localizedRelativeTime(input, locale, renderedAt),
+    access: (row) => accessLabel(row, tWorkspaces),
+    renewsOnUse: tWorkspaces('keyExpiryRenews'),
   };
 
   // Every row here is the caller's OWN hand-minted key (`mine: true`), so the
@@ -602,11 +614,29 @@ function ApiKeyDetailModal({
   onConfirm: (row: ApiKeyRow, action: 'revoke' | 'delete') => void;
 }) {
   const t = useTranslations('settings.tokens');
+  const tWorkspaces = useTranslations('workspaces.settings');
   const fields: Array<{ label: string; value: ReactNode }> = row
     ? [
         { label: t('keyName'), value: row.name },
         { label: t('keyPrefix'), value: <span className="font-mono">{row.hint}</span> },
         { label: t('scope'), value: row.scopeLabel ?? t('wholeWorkspace') },
+        ...(row.access
+          ? [{ label: tWorkspaces('keyAccess'), value: accessLabel(row, tWorkspaces) ?? tWorkspaces('keyAccessFull') }]
+          : []),
+        ...(row.permissions && row.permissions.length > 0
+          ? [
+              {
+                label: tWorkspaces('keyPermissions'),
+                value: (
+                  <span className="flex flex-col gap-0.5 font-mono text-xs">
+                    {row.permissions.map((permission) => (
+                      <span key={permission}>{permission}</span>
+                    ))}
+                  </span>
+                ),
+              },
+            ]
+          : []),
         {
           label: t('statusLabel'),
           value: (
@@ -621,7 +651,11 @@ function ApiKeyDetailModal({
         },
         {
           label: t('expires'),
-          value: row.expiresAt ? formatLongDate(row.expiresAt, locale) : metaCopy.neverExpires,
+          value: row.expiresAt
+            ? row.expiryRenews && metaCopy.renewsOnUse
+              ? `${formatLongDate(row.expiresAt, locale)} · ${metaCopy.renewsOnUse}`
+              : formatLongDate(row.expiresAt, locale)
+            : metaCopy.neverExpires,
         },
       ]
     : [];
@@ -708,8 +742,20 @@ export function CreateApiKeyDialog({
   const common = useTranslations('common');
   const [name, setName] = useState('');
   const [scope, setScope] = useState<string>(WHOLE_WORKSPACE);
-  const [expiry, setExpiry] = useState<string>(NEVER_EXPIRES);
+  const [expiry, setExpiry] = useState<string>('');
+  const [access, setAccess] = useState<KeyAccess>('full');
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const [created, setCreated] = useState<{ name: string; secret: string } | null>(null);
+
+  // The permission catalog, for a custom key only. The API refuses a permission
+  // the creator's role lacks (`key_scope_exceeds_role`) and names it.
+  const permissionsQuery = useQuery({
+    queryKey: ['iam-permissions', workspaceId ?? accountId],
+    queryFn: () => listPermissions(workspaceId ?? accountId),
+    enabled: open && !!workspaceId && access === 'custom',
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   // Both queries are dialog-scoped: nothing fetches until someone opens the form.
   const projectsQuery = useQuery({
@@ -731,10 +777,12 @@ export function CreateApiKeyDialog({
     retry: false,
   });
   const policy = policyQuery.data ?? null;
-  const expiryChoices = expiryOptions(policy, tI18nComplete).map((choice) => ({
+  // A key always expires (90 days preselected, 365 at most) unless the
+  // workspace key policy allows no expiry (`allow_no_expiry`).
+  const expiryChoices = keyExpiryOptions(policy, tI18nComplete).map((choice) => ({
     ...choice,
     label:
-      choice.value === NEVER_EXPIRES
+      Number.isNaN(Number(choice.value))
         ? t('expiryNever')
         : Number(choice.value) === 365
           ? t('expiryOneYear')
@@ -745,22 +793,24 @@ export function CreateApiKeyDialog({
   // rather than submitting one the backend will reject.
   const selectedExpiry = expiryChoices.some((o) => o.value === expiry)
     ? expiry
-    : defaultExpiryOption(policy, tI18nComplete);
+    : defaultKeyExpiryOption(policy, tI18nComplete);
+  const customEmpty = !!workspaceId && access === 'custom' && picked.size === 0;
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const expiresAt = expiresAtIso(selectedExpiry);
+      const expiresAt = keyExpiresAt(selectedExpiry);
       if (workspaceId) {
         const token = await createWorkspaceToken(workspaceId, {
           name: name.trim(),
-          ...(expiresAt ? { expiresAt } : {}),
+          expiresAt,
+          scopes: access === 'custom' ? [...picked] : access,
         });
         return { name: token.name, secret: token.secret_key };
       }
       const token = await createAccountToken({
         name: name.trim(),
         accountId,
-        ...(expiresAt ? { expiresAt } : {}),
+        expiresAt,
         ...(scope === WHOLE_WORKSPACE ? {} : { projectId: scope }),
       });
       return { name: token.name, secret: token.secret_key };
@@ -788,7 +838,9 @@ export function CreateApiKeyDialog({
     setTimeout(() => {
       setName('');
       setScope(WHOLE_WORKSPACE);
-      setExpiry(NEVER_EXPIRES);
+      setExpiry('');
+      setAccess('full');
+      setPicked(new Set());
       setCreated(null);
     }, 200);
   }
@@ -832,7 +884,7 @@ export function CreateApiKeyDialog({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                if (!name.trim() || mutation.isPending || submitInFlight.current) return;
+                if (!name.trim() || customEmpty || mutation.isPending || submitInFlight.current) return;
                 submitInFlight.current = true;
                 mutation.mutate();
               }}
@@ -854,7 +906,48 @@ export function CreateApiKeyDialog({
                 </div>
 
                 {workspaceId ? (
-                  <p className="text-muted-foreground text-xs">{tWorkspaces('keyScopeWorkspaceHint')}</p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="workspace-api-key-access">{tWorkspaces('keyAccess')}</Label>
+                    <Select
+                      value={access}
+                      onValueChange={(value) => setAccess(value as KeyAccess)}
+                      disabled={mutation.isPending}
+                    >
+                      <SelectTrigger id="workspace-api-key-access" size="md" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">{tWorkspaces('keyAccessFull')}</SelectItem>
+                        <SelectItem value="read">{tWorkspaces('keyAccessRead')}</SelectItem>
+                        <SelectItem value="custom">{tWorkspaces('keyAccessCustom')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-muted-foreground text-xs">
+                      {tWorkspaces(
+                        access === 'read'
+                          ? 'keyAccessReadHint'
+                          : access === 'custom'
+                            ? 'keyAccessCustomHint'
+                            : 'keyAccessFullHint',
+                      )}{' '}
+                      {tWorkspaces('keyScopeWorkspaceHint')}
+                    </p>
+                    {access === 'custom' ? (
+                      <PermissionPicker
+                        query={permissionsQuery}
+                        picked={picked}
+                        onToggle={(action, on) =>
+                          setPicked((prev) => {
+                            const next = new Set(prev);
+                            if (on) next.add(action);
+                            else next.delete(action);
+                            return next;
+                          })
+                        }
+                        disabled={mutation.isPending}
+                      />
+                    ) : null}
+                  </div>
                 ) : (
                 <div className="space-y-1.5">
                   <Label htmlFor="personal-api-key-scope">{t('scope')}</Label>
@@ -916,7 +1009,7 @@ export function CreateApiKeyDialog({
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={!name.trim() || mutation.isPending}
+                  disabled={!name.trim() || customEmpty || mutation.isPending}
                   className="gap-1.5"
                 >
                   {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
@@ -929,4 +1022,97 @@ export function CreateApiKeyDialog({
       </ModalContent>
     </Modal>
   );
+}
+
+/** What a new workspace key may do inside its creator's role. */
+type KeyAccess = 'full' | 'read' | 'custom';
+
+/** The access label of a key row; null for a row without one (a service account). */
+function accessLabel(row: ApiKeyRow, tWorkspaces: ReturnType<typeof useTranslations>): string | null {
+  if (!row.access) return null;
+  if (row.access === 'read') return tWorkspaces('keyAccessRead');
+  if (row.access === 'custom') return tWorkspaces('keyAccessCustomCount', { count: row.permissions?.length ?? 0 });
+  return tWorkspaces('keyAccessFull');
+}
+
+/**
+ * The permissions of a custom key: the catalog grouped by area, one checkbox
+ * per permission, the workspace name in mono. Only what the creator's role
+ * holds can be minted; the API names any other.
+ */
+function PermissionPicker({
+  query,
+  picked,
+  onToggle,
+  disabled,
+}: {
+  query: { data?: Permission[]; isLoading: boolean; isError: boolean; refetch: () => unknown };
+  picked: ReadonlySet<string>;
+  onToggle: (action: string, on: boolean) => void;
+  disabled: boolean;
+}) {
+  const tWorkspaces = useTranslations('workspaces.settings');
+  if (query.isLoading) {
+    return (
+      <div className="space-y-1">
+        <Skeleton className="h-7 rounded-md" />
+        <Skeleton className="h-7 rounded-md" />
+        <Skeleton className="h-7 rounded-md" />
+      </div>
+    );
+  }
+  if (query.isError || !query.data) {
+    return (
+      <ErrorState
+        size="sm"
+        title={tWorkspaces('keyPermissionsLoadFailed')}
+        action={
+          <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+            {tWorkspaces('keyPermissionsRetry')}
+          </Button>
+        }
+      />
+    );
+  }
+  const byArea = new Map<string, Permission[]>();
+  for (const permission of query.data) {
+    const list = byArea.get(permission.area) ?? [];
+    list.push(permission);
+    byArea.set(permission.area, list);
+  }
+  return (
+    <div className="bg-popover max-h-64 space-y-4 overflow-y-auto rounded-md border px-4 py-3">
+      {[...byArea.entries()].map(([area, permissions]) => (
+        <div key={area} className="space-y-2">
+          <p className="text-muted-foreground text-xs font-medium">{area}</p>
+          {permissions.map((permission) => {
+            const action = workspacePermissionName(permission);
+            return (
+              <Checkbox
+                key={permission.action}
+                id={`key-permission-${permission.action}`}
+                checked={picked.has(action)}
+                disabled={disabled}
+                onCheckedChange={(state) => onToggle(action, state === true)}
+                label={
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-foreground text-sm">{permission.description || action}</span>
+                    <span className="text-muted-foreground font-mono text-xs">{action}</span>
+                  </span>
+                }
+              />
+            );
+          })}
+        </div>
+      ))}
+      {picked.size === 0 ? (
+        <p className="text-muted-foreground text-xs">{tWorkspaces('keyAccessPickOne')}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** The workspace spelling of a catalog row (`workspace_action`), else its stored name. */
+function workspacePermissionName(permission: Permission): string {
+  return (permission as Permission & { workspace_action?: string }).workspace_action ?? permission.action;
 }

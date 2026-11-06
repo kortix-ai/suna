@@ -22272,7 +22272,9 @@
   "oauthConsent": {
     "unverifiedTitle": "App não verificado",
     "unverifiedBody": "{client} se registrou sozinho no Kortix. O Kortix não verificou quem o opera. Permita apenas se você mesmo estiver conectando agora.",
-    "redirectsTo": "Leva você de volta para"
+    "redirectsTo": "Leva você de volta para",
+    "workspaceLabel": "Espaço de trabalho",
+    "workspaceHint": "{client} acessa somente este espaço de trabalho."
   },
   "reminders": {
     "title": "Ciclos",
@@ -26739,6 +26741,19 @@
       "keyScopeWorkspace": "Este espaço de trabalho",
       "keyScopePersonal": "Todos os espaços de trabalho",
       "keyScopeWorkspaceHint": "A chave age como você somente neste espaço de trabalho.",
+      "keyAccess": "Acesso",
+      "keyAccessFull": "Acesso total",
+      "keyAccessFullHint": "Tudo o que sua função permite.",
+      "keyAccessRead": "Somente leitura",
+      "keyAccessReadHint": "Todas as permissões de leitura. A chave não altera nada.",
+      "keyAccessCustom": "Personalizado",
+      "keyAccessCustomHint": "Somente as permissões que você escolher. Cada uma precisa estar na sua função.",
+      "keyAccessCustomCount": "{count, plural, one {Personalizado · # permissão} other {Personalizado · # permissões}}",
+      "keyAccessPickOne": "Escolha pelo menos uma permissão.",
+      "keyPermissions": "Permissões",
+      "keyPermissionsLoadFailed": "Não foi possível carregar as permissões",
+      "keyPermissionsRetry": "Tentar novamente",
+      "keyExpiryRenews": "Renova com o uso",
       "personalKeysEmpty": "Nenhuma chave pessoal. kortix login cria uma; chaves para um script são criadas em Configurações › Chaves de API de um espaço de trabalho.",
       "securityDescription": "Regras de login, quem pode abrir as sessões de quem e as regras de cada chave de API.",
       "rolesDescription": "Funções integradas e personalizadas. Atribua-as em Membros.",

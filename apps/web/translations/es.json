@@ -22272,7 +22272,9 @@
   "oauthConsent": {
     "unverifiedTitle": "App no verificada",
     "unverifiedBody": "{client} se registró sola en Kortix. Kortix no ha verificado quién la gestiona. Permítela solo si la estás conectando tú mismo ahora.",
-    "redirectsTo": "Te devuelve a"
+    "redirectsTo": "Te devuelve a",
+    "workspaceLabel": "Espacio de trabajo",
+    "workspaceHint": "{client} solo accede a este espacio de trabajo."
   },
   "reminders": {
     "title": "Bucles",
@@ -26739,6 +26741,19 @@
       "keyScopeWorkspace": "Este espacio de trabajo",
       "keyScopePersonal": "Todos los espacios de trabajo",
       "keyScopeWorkspaceHint": "La clave actúa como tú solo en este espacio de trabajo.",
+      "keyAccess": "Acceso",
+      "keyAccessFull": "Acceso completo",
+      "keyAccessFullHint": "Todo lo que permite tu rol.",
+      "keyAccessRead": "Solo lectura",
+      "keyAccessReadHint": "Todos los permisos de lectura. La clave no cambia nada.",
+      "keyAccessCustom": "Personalizado",
+      "keyAccessCustomHint": "Solo los permisos que elijas. Cada uno debe estar en tu rol.",
+      "keyAccessCustomCount": "{count, plural, one {Personalizado · # permiso} other {Personalizado · # permisos}}",
+      "keyAccessPickOne": "Elige al menos un permiso.",
+      "keyPermissions": "Permisos",
+      "keyPermissionsLoadFailed": "No se pudieron cargar los permisos",
+      "keyPermissionsRetry": "Intentar de nuevo",
+      "keyExpiryRenews": "Se renueva con el uso",
       "personalKeysEmpty": "No hay claves personales. kortix login crea una; las claves para un script se crean en Configuración › Claves de API de un espacio de trabajo.",
       "securityDescription": "Reglas de inicio de sesión, quién puede abrir qué sesiones y las reglas de cada clave de API.",
       "rolesDescription": "Roles integrados y personalizados. Asígnalos desde Miembros.",

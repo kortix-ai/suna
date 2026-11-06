@@ -329,8 +329,8 @@ the table row (shadow). A difference logs `[workspaces] shadow_mismatch` with
   session tokens `KORTIX_TOKEN` including agent sessions), service-account bearers (W =
   their account's workspace), workspace gateway keys.
 - **Person credentials**: the Supabase JWT; personal keys (`account_tokens.project_id IS
-  NULL`: the CLI device login, legacy `POST /v1/accounts/tokens`); OAuth access tokens
-  (binding them per workspace is a follow-up). They act as the person in each workspace;
+  NULL`: the CLI device login, legacy `POST /v1/accounts/tokens`); unbound OAuth access tokens (a consent binds a new token to one
+  workspace since 2026-11-06, C4a). They act as the person in each workspace;
   `authorize` decides per workspace. The fence does not judge them.
 - **The rule**: a workspace-bound credential reaches a request iff the request's workspace
   is its own. Binding kinds in `middleware/workspace-binding.ts`:
@@ -361,6 +361,92 @@ the table row (shadow). A difference logs `[workspaces] shadow_mismatch` with
 - Session policy: `actorOf(c, accountId)` evaluates the account's session policy for a
   Supabase session (`loadPolicyAndActivity` + `evaluateSessionGate`) and throws
   `401 session_token_revoked`. One choke point for every authorized route.
+
+#### C4a. The credential model (Auth stage, 2026-11-06)
+
+Every credential, what it reaches, and what decides a request. Accurate to the
+code on `workspaces` at the Auth stage.
+
+| Credential | Stored in | Bound to | Reach | Acts as |
+|---|---|---|---|---|
+| Browser session (Supabase JWT) | Supabase | the person | every workspace of the person | the person's role per workspace |
+| Workspace key (`kortix_pat_`, `project_id = W`) | `account_tokens` | W | W only (fence) | the creator's CURRENT role ∩ `scopes` |
+| Personal key (`kortix_pat_`, `project_id IS NULL`): CLI login, legacy `POST /v1/accounts/tokens` | `account_tokens` | the person | every workspace of the person | the person's role per workspace |
+| Session token (`KORTIX_TOKEN`, `session_id` set) | `account_tokens` | W and the session | W, own-session sinks | the launcher (inherited) or `grant ∩ ceiling` (governed), minus HUMAN_ONLY |
+| Service account key (`kortix_sa_`) | `service_accounts` | its account | its account's workspace (`resolvePrincipal`) | its assigned roles |
+| OAuth token, bound (`kortix_oat_`, `bound_workspace_id = W`) | `oauth_access_tokens` | W, chosen on consent | W only (fence, as a workspace key) | the approving person |
+| OAuth token, unbound (`bound_workspace_id IS NULL`, every token before 2026-11-06) | `oauth_access_tokens` | the person | every workspace of the person | the approving person |
+| Gateway key (`kortix_gw_`) | `gateway_api_keys` | W | the LLM gateway inference routes of W | W |
+| SCIM token (`kortix_scim_`) | `scim_tokens` | the account | `/scim/v2/accounts/<id>` | the directory |
+
+**Workspace key scopes** (`account_tokens.scopes`, migration
+`20261106153430000_account_tokens_key_scopes.sql`, logic `apps/api/src/iam/key-scope.ts`):
+
+- `NULL` = full: the creator's whole role. Every key minted before is full.
+- `{"preset":"read"}` = every action whose legacy name ends in `.read`, evaluated at use (a new
+  read action joins it). The auth middleware also refuses every non-GET/HEAD/OPTIONS request of
+  a key whose scope holds only read actions (`403 key_scope_read_only`), so a write route that
+  gates on `project.read` alone cannot be reached with it.
+- `{"permissions":[…]}` = exactly the list (legacy spelling, either spelling accepted on input).
+  `project.read` passes every scope: it is the gate every workspace route opens with.
+- `authorize` step 1c denies an action outside the scope (`key_scope_insufficient`), above the
+  super-admin bypass. The same call then decides the creator's current role, so a key never
+  exceeds the role its creator holds now (WS-AUTH-10 demotes an admin and the key loses invite).
+- Mint (`POST /v1/workspaces/:id/tokens {name, scopes?, expires_at?}`): a custom list must sit in
+  the creator's current role (`403 key_scope_exceeds_role`, `permissions` names the rest); a
+  scoped key mints only inside its scope (`403 key_scope_exceeds_parent`) and a child without
+  `scopes` inherits the parent's; scopes need a workspace key (`400 invalid_scopes`).
+- The person minting their own workspace key needs `project.read` on W (was
+  `project.credentials.issue`): a workspace key is narrower than the personal key every member
+  mints with `token.personal.create`. A key minting a key keeps `project.credentials.issue`.
+- The LLM gateway and the router proxy refuse a scoped key that cannot `project.session.start`
+  (a model call is work). The git proxy authorizes through `authorize`, so scopes apply.
+
+**Expiry** (`resolveMintExpiry`, `apps/api/src/repositories/account-tokens.ts`):
+
+- No `expires_at` → now + min(90, policy maximum) days. Maximum = `pat_max_lifetime_days`, else
+  365. `expires_at: null` (or `"never"`) → no expiry only when `accounts.pat_allow_no_expiry`
+  (migration `20261106153440000_accounts_pat_allow_no_expiry.sql`, `PATCH …/iam/pat-policy
+  {allow_no_expiry}`) and not `pat_require_expiry`; else `400 expiry_required`.
+- A key minted by a key without `expires_at` gets the earlier of the default and the parent's
+  expiry (`clampDefaultToParentExpiry`); `checkTokenMintExpiry` still refuses a later one.
+- The CLI login (device grant and the browser login `renews: true`) is a personal key with
+  `expiry_renew_days = 90` (bounded by the policy maximum): the throttled last-used write moves
+  `expires_at` to now + 90 days, so a CLI in use stays signed in.
+- Keys minted before keep their stored expiry, none included; they list with `expires_at: null`.
+- `pat_idle_revoke_days` now covers workspace keys too; only session tokens are exempt.
+- **Release 2:** `kortix.workspaces` does not mirror `pat_allow_no_expiry` (its row type is the
+  SETOF of `workspaces_expected`). Release 2 adds the column with the other `pat_*` columns.
+
+**Revocation.** `offboardMember` (remove, leave, SCIM deprovision) revokes every
+`account_tokens` row of the person in the account: workspace keys, project CLI tokens, session
+tokens. WS-AUTH-12 proves remove and leave over HTTP (key 200 → 401).
+
+**OAuth binding.** `GET /v1/oauth/authorize/consent/:id` answers `asks_workspace` (false only for
+the Kortix browser extension, whose surfaces are person routes). `POST /authorize/consent
+{workspace_id}` checks the person may open W (`project.read`), before the request is consumed,
+and writes `bound_workspace_id` on the code; the code exchange and every refresh copy it onto the
+access and refresh tokens (migrations `…153450000`, `…153460000`). `applyOAuthAccessTokenPrincipal`
+runs the fence for a bound token and sets `tokenProjectId`; the preview proxy and Chrome socket
+refuse it outside W. A consent without `workspace_id` stays unbound (older web, rollout).
+
+**Decision order for one request.**
+
+1. Credential fence (`middleware/workspace-binding.ts`, in the auth middleware): a workspace-bound
+   credential (workspace key, session token, bound OAuth token) reaches only W.
+   `403 credential_fence_refused`.
+2. Read-only method gate (auth middleware): a read-only key sends GET/HEAD/OPTIONS only.
+3. Session policy (`actorOf` → `enforceSessionPolicy`): browser sessions only. `401 session_token_revoked`.
+4. `authorize` (`iam/authorize.ts`), fixed precedence: 1 impersonation act-as and confinement →
+   1b HUMAN_ONLY for every agent session → 1c the key's scope → 2–3 the token binding and the
+   acting principal → 3b closing workspace → 4 token workspace scope → 4a SSO-only → 5
+   super-admin → 5a agent principal (grant ∩ ceiling) → 6 MFA → 7–9 role and object grants →
+   10 role ∩ agent grant backstop.
+5. Support access writes no IAM and deletes no workspace (`middleware/impersonation.ts`, WS-AUTH-6).
+
+Steps 1b and 1c never meet: an agent session carries no key scope, and a key scope is never an
+agent's. So "role/grant/scope, then HUMAN_ONLY" and the code's order give the same verdict for
+every request.
 
 #### C5. Canonical routes, ids, response shapes, error codes
 

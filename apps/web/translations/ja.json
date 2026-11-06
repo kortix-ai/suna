@@ -22272,7 +22272,9 @@
   "oauthConsent": {
     "unverifiedTitle": "未確認のアプリ",
     "unverifiedBody": "{client} は自分で Kortix に登録しました。Kortix は運営者を確認していません。今あなた自身が接続している場合のみ許可してください。",
-    "redirectsTo": "戻り先"
+    "redirectsTo": "戻り先",
+    "workspaceLabel": "ワークスペース",
+    "workspaceHint": "{client} がアクセスできるのはこのワークスペースだけです。"
   },
   "reminders": {
     "title": "ループ",
@@ -26739,6 +26741,19 @@
       "keyScopeWorkspace": "このワークスペース",
       "keyScopePersonal": "すべてのワークスペース",
       "keyScopeWorkspaceHint": "このキーはこのワークスペースだけであなたとして動作します。",
+      "keyAccess": "アクセス",
+      "keyAccessFull": "フルアクセス",
+      "keyAccessFullHint": "あなたのロールで許可されているすべて。",
+      "keyAccessRead": "読み取り専用",
+      "keyAccessReadHint": "すべての読み取り権限。このキーは何も変更しません。",
+      "keyAccessCustom": "カスタム",
+      "keyAccessCustomHint": "選んだ権限のみ。どれもあなたのロールに含まれている必要があります。",
+      "keyAccessCustomCount": "{count, plural, other {カスタム · # 件の権限}}",
+      "keyAccessPickOne": "権限を 1 つ以上選んでください。",
+      "keyPermissions": "権限",
+      "keyPermissionsLoadFailed": "権限を読み込めませんでした",
+      "keyPermissionsRetry": "再試行",
+      "keyExpiryRenews": "使用するたびに更新",
       "personalKeysEmpty": "個人キーはありません。kortix login で作成されます。スクリプト用のキーはワークスペースの設定 › API キーで作成します。",
       "securityDescription": "サインインのルール、誰が誰のセッションを開けるか、各 API キーのルール。",
       "rolesDescription": "組み込みロールとカスタムロール。メンバーから割り当てます。",

@@ -241,7 +241,8 @@ function CliAuthorizeInner() {
     try {
       const name = label ? `CLI · ${label}` : `CLI · ${new Date().toLocaleString()}`;
       const minted = await withTimeout(
-        createAccountToken({ name, accountId: targetAccountId }),
+        // A CLI login renews on use: 90 days out, moved out again on every call.
+        createAccountToken({ name, accountId: targetAccountId, renews: true }),
         MINT_TIMEOUT_MS,
         'Timed out asking the Kortix API to mint an API key. Is the API reachable?',
         // The timeout does not cancel the mint. A key that arrives after it

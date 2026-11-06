@@ -22272,7 +22272,9 @@
   "oauthConsent": {
     "unverifiedTitle": "Nicht verifizierte App",
     "unverifiedBody": "{client} hat sich selbst bei Kortix registriert. Kortix hat nicht geprüft, wer sie betreibt. Erlaube den Zugriff nur, wenn du sie gerade selbst verbindest.",
-    "redirectsTo": "Leitet dich zurück zu"
+    "redirectsTo": "Leitet dich zurück zu",
+    "workspaceLabel": "Workspace",
+    "workspaceHint": "{client} erreicht nur diesen Workspace."
   },
   "reminders": {
     "title": "Schleifen",
@@ -26739,6 +26741,19 @@
       "keyScopeWorkspace": "Dieser Workspace",
       "keyScopePersonal": "Jeder Workspace",
       "keyScopeWorkspaceHint": "Der Schlüssel handelt nur in diesem Workspace als du.",
+      "keyAccess": "Zugriff",
+      "keyAccessFull": "Voller Zugriff",
+      "keyAccessFullHint": "Alles, was deine Rolle erlaubt.",
+      "keyAccessRead": "Nur lesen",
+      "keyAccessReadHint": "Jede Leseberechtigung. Der Schlüssel ändert nichts.",
+      "keyAccessCustom": "Benutzerdefiniert",
+      "keyAccessCustomHint": "Nur die Berechtigungen, die du auswählst. Jede muss in deiner Rolle sein.",
+      "keyAccessCustomCount": "{count, plural, one {Benutzerdefiniert · # Berechtigung} other {Benutzerdefiniert · # Berechtigungen}}",
+      "keyAccessPickOne": "Wähle mindestens eine Berechtigung.",
+      "keyPermissions": "Berechtigungen",
+      "keyPermissionsLoadFailed": "Die Berechtigungen konnten nicht geladen werden",
+      "keyPermissionsRetry": "Erneut versuchen",
+      "keyExpiryRenews": "Verlängert sich bei Nutzung",
       "personalKeysEmpty": "Keine persönlichen Schlüssel. kortix login erstellt einen; Schlüssel für ein Skript erstellst du in den Einstellungen eines Workspace › API-Schlüssel.",
       "securityDescription": "Anmelderegeln, wer welche Sitzungen öffnen darf, und die Regeln für jeden API-Schlüssel.",
       "rolesDescription": "Integrierte und eigene Rollen. Weise sie unter Mitglieder zu.",

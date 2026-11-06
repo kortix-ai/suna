@@ -22272,7 +22272,9 @@
   "oauthConsent": {
     "unverifiedTitle": "App non verificata",
     "unverifiedBody": "{client} si è registrata da sola su Kortix. Kortix non ha verificato chi la gestisce. Consentila solo se la stai collegando tu in questo momento.",
-    "redirectsTo": "Ti rimanda a"
+    "redirectsTo": "Ti rimanda a",
+    "workspaceLabel": "Workspace",
+    "workspaceHint": "{client} accede solo a questo workspace."
   },
   "reminders": {
     "title": "Cicli",
@@ -26739,6 +26741,19 @@
       "keyScopeWorkspace": "Questo workspace",
       "keyScopePersonal": "Ogni workspace",
       "keyScopeWorkspaceHint": "La chiave agisce come te solo in questo workspace.",
+      "keyAccess": "Accesso",
+      "keyAccessFull": "Accesso completo",
+      "keyAccessFullHint": "Tutto ciò che il tuo ruolo consente.",
+      "keyAccessRead": "Sola lettura",
+      "keyAccessReadHint": "Tutti i permessi di lettura. La chiave non modifica nulla.",
+      "keyAccessCustom": "Personalizzato",
+      "keyAccessCustomHint": "Solo i permessi che scegli. Ognuno deve far parte del tuo ruolo.",
+      "keyAccessCustomCount": "{count, plural, one {Personalizzato · # permesso} other {Personalizzato · # permessi}}",
+      "keyAccessPickOne": "Scegli almeno un permesso.",
+      "keyPermissions": "Permessi",
+      "keyPermissionsLoadFailed": "Impossibile caricare i permessi",
+      "keyPermissionsRetry": "Riprova",
+      "keyExpiryRenews": "Si rinnova con l'uso",
       "personalKeysEmpty": "Nessuna chiave personale. kortix login ne crea una; le chiavi per uno script si creano in Impostazioni › Chiavi API di un workspace.",
       "securityDescription": "Regole di accesso, chi può aprire le sessioni di chi e le regole di ogni chiave API.",
       "rolesDescription": "Ruoli predefiniti e personalizzati. Assegnali da Membri.",

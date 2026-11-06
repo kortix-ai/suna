@@ -22272,7 +22272,9 @@
   "oauthConsent": {
     "unverifiedTitle": "Neverifikovana aplikacija",
     "unverifiedBody": "{client} se sama registrovala u Kortix-u. Kortix nije proverio ko je pokreće. Dozvoli je samo ako je upravo ti povezuješ.",
-    "redirectsTo": "Vraća te na"
+    "redirectsTo": "Vraća te na",
+    "workspaceLabel": "Radni prostor",
+    "workspaceHint": "{client} pristupa samo ovom radnom prostoru."
   },
   "reminders": {
     "title": "Петље",
@@ -26739,6 +26741,19 @@
       "keyScopeWorkspace": "Ovaj radni prostor",
       "keyScopePersonal": "Svaki radni prostor",
       "keyScopeWorkspaceHint": "Ključ deluje u vaše ime samo u ovom radnom prostoru.",
+      "keyAccess": "Pristup",
+      "keyAccessFull": "Pun pristup",
+      "keyAccessFullHint": "Sve što vaša uloga dozvoljava.",
+      "keyAccessRead": "Samo čitanje",
+      "keyAccessReadHint": "Sve dozvole za čitanje. Ključ ništa ne menja.",
+      "keyAccessCustom": "Prilagođeno",
+      "keyAccessCustomHint": "Samo dozvole koje izaberete. Svaka mora biti u vašoj ulozi.",
+      "keyAccessCustomCount": "{count, plural, one {Prilagođeno · # dozvola} few {Prilagođeno · # dozvole} other {Prilagođeno · # dozvola}}",
+      "keyAccessPickOne": "Izaberite bar jednu dozvolu.",
+      "keyPermissions": "Dozvole",
+      "keyPermissionsLoadFailed": "Dozvole nije moguće učitati",
+      "keyPermissionsRetry": "Pokušajte ponovo",
+      "keyExpiryRenews": "Obnavlja se pri korišćenju",
       "personalKeysEmpty": "Нема личних кључева. kortix login прави један; кључеви за скрипту праве се у подешавањима радног простора › API кључеви.",
       "securityDescription": "Pravila prijave, ko sme da otvori čije sesije i pravila za svaki API ključ.",
       "rolesDescription": "Ugrađene i prilagođene uloge. Dodelite ih iz Članova.",

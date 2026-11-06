@@ -22272,7 +22272,9 @@
   "oauthConsent": {
     "unverifiedTitle": "Application non vérifiée",
     "unverifiedBody": "{client} s’est enregistrée elle-même auprès de Kortix. Kortix n’a pas vérifié qui l’exploite. Autorisez-la uniquement si vous la connectez vous-même en ce moment.",
-    "redirectsTo": "Vous renvoie vers"
+    "redirectsTo": "Vous renvoie vers",
+    "workspaceLabel": "Espace de travail",
+    "workspaceHint": "{client} accède uniquement à cet espace de travail."
   },
   "reminders": {
     "title": "Boucles",
@@ -26739,6 +26741,19 @@
       "keyScopeWorkspace": "Cet espace de travail",
       "keyScopePersonal": "Tous les espaces de travail",
       "keyScopeWorkspaceHint": "La clé agit en votre nom dans cet espace de travail uniquement.",
+      "keyAccess": "Accès",
+      "keyAccessFull": "Accès complet",
+      "keyAccessFullHint": "Tout ce que votre rôle autorise.",
+      "keyAccessRead": "Lecture seule",
+      "keyAccessReadHint": "Toutes les permissions de lecture. La clé ne modifie rien.",
+      "keyAccessCustom": "Personnalisé",
+      "keyAccessCustomHint": "Uniquement les permissions que vous choisissez. Chacune doit faire partie de votre rôle.",
+      "keyAccessCustomCount": "{count, plural, one {Personnalisé · # permission} other {Personnalisé · # permissions}}",
+      "keyAccessPickOne": "Choisissez au moins une permission.",
+      "keyPermissions": "Permissions",
+      "keyPermissionsLoadFailed": "Impossible de charger les permissions",
+      "keyPermissionsRetry": "Réessayer",
+      "keyExpiryRenews": "Se renouvelle à l'usage",
       "personalKeysEmpty": "Aucune clé personnelle. kortix login en crée une ; les clés pour un script se créent dans Paramètres › Clés API d'un espace de travail.",
       "securityDescription": "Règles de connexion, qui peut ouvrir quelles sessions et les règles de chaque clé API.",
       "rolesDescription": "Rôles intégrés et personnalisés. Attribuez-les depuis Membres.",

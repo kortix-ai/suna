@@ -22272,7 +22272,9 @@
   "oauthConsent": {
     "unverifiedTitle": "未验证的应用",
     "unverifiedBody": "{client} 自行在 Kortix 注册。Kortix 尚未验证其运营方。仅当你正在亲自连接它时才允许。",
-    "redirectsTo": "完成后返回至"
+    "redirectsTo": "完成后返回至",
+    "workspaceLabel": "工作区",
+    "workspaceHint": "{client} 只能访问此工作区。"
   },
   "reminders": {
     "title": "循环",
@@ -26739,6 +26741,19 @@
       "keyScopeWorkspace": "此工作区",
       "keyScopePersonal": "所有工作区",
       "keyScopeWorkspaceHint": "该密钥仅在此工作区中以你的身份操作。",
+      "keyAccess": "访问权限",
+      "keyAccessFull": "完全访问",
+      "keyAccessFullHint": "你的角色允许的一切。",
+      "keyAccessRead": "只读",
+      "keyAccessReadHint": "所有读取权限。该密钥不会更改任何内容。",
+      "keyAccessCustom": "自定义",
+      "keyAccessCustomHint": "仅限你选择的权限。每项权限都必须在你的角色内。",
+      "keyAccessCustomCount": "{count, plural, other {自定义 · # 项权限}}",
+      "keyAccessPickOne": "至少选择一项权限。",
+      "keyPermissions": "权限",
+      "keyPermissionsLoadFailed": "无法加载权限",
+      "keyPermissionsRetry": "重试",
+      "keyExpiryRenews": "使用时自动续期",
       "personalKeysEmpty": "没有个人密钥。kortix login 会创建一个;用于脚本的密钥在工作区的设置 › API 密钥中创建。",
       "securityDescription": "登录规则、谁可以打开谁的会话,以及每个 API 密钥遵循的规则。",
       "rolesDescription": "内置角色和自定义角色。在成员中分配。",
