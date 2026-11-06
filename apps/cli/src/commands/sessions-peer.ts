@@ -1,8 +1,8 @@
 /**
  * Messages between sessions: `kortix sessions message`, `sessions reachable`
  * and `sessions inbound`. The wire contract is
- * `@kortix/api-contract/multi-agent` (routes, bodies, limits); the types below
- * are the fields this file reads from it. The server resolves `to`, checks
+ * `@kortix/api-contract/multi-agent` (routes, bodies, limits); every route is
+ * called through `@kortix/sdk`, which owns the types. The server resolves `to`, checks
  * that the caller may prompt the receiver, applies the receiver's inbound
  * mode and the limits, and delivers the text (`peerMessagePromptText` in
  * `@kortix/shared`). This file is argument parsing and output.
@@ -10,8 +10,21 @@
  * A message always has a sender session: the session this CLI runs in
  * ($KORTIX_SESSION_ID), or `--from <session>` outside a session.
  */
-import type { ApiClient } from '../api/client.ts';
-import { ApiError } from '../api/client.ts';
+import {
+  approvePeerMessage,
+  denyPeerMessage,
+  getProjectSession,
+  getSessionReachableAgents,
+  listPeerMessages,
+  PEER_MESSAGE_MAX_CHARS,
+  type PeerMessageSendBody,
+  type ReachableAgent,
+  type ReachableScope,
+  sendPeerMessage,
+  type SessionInbound,
+  setSessionInbound,
+} from '@kortix/sdk';
+import { type ApiClient, ApiError, withCliErrors } from '../api/client.ts';
 import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
@@ -20,6 +33,7 @@ import {
   missing,
   resolveProjectContext,
   SESSION_UUID_RE,
+  shortId,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -27,47 +41,16 @@ import {
 import { machineErrors, writeMachineError } from '../token-denial.ts';
 import { C, help, pad, status } from '../style.ts';
 
-/** Same values as `PEER_MESSAGE_MAX_CHARS` / `PEER_MESSAGE_SUMMARY_MAX_CHARS` in the contract. */
-export const PEER_MESSAGE_MAX_CHARS = 16_000;
-export const PEER_MESSAGE_SUMMARY_MAX_CHARS = 200;
+/** Same value as `PEER_MESSAGE_SUMMARY_MAX_CHARS` in the contract (the SDK does not export it). */
+const PEER_MESSAGE_SUMMARY_MAX_CHARS = 200;
 
-type Inbound = 'accept' | 'hold' | 'refuse';
-const INBOUND: readonly Inbound[] = ['accept', 'hold', 'refuse'];
+const INBOUND: readonly SessionInbound[] = ['accept', 'hold', 'refuse'];
 
-export interface ReachableAgent {
-  handle: string;
-  session_id: string;
-  short_id: string;
-  project_id: string;
-  agent_name: string | null;
-  title: string | null;
-  relation: string;
-  state: string;
-  inbound: Inbound;
-  can_receive: boolean;
+function isInbound(value: unknown): value is SessionInbound {
+  return INBOUND.some((mode) => mode === value);
 }
 
-interface PeerMessage {
-  id: string;
-  from_handle: string;
-  from_session_id: string;
-  to_handle: string;
-  to_session_id: string;
-  type: string;
-  message: string;
-  summary: string | null;
-  status: string;
-  created_at: string;
-}
-
-interface PeerMessageSendResult {
-  status: 'delivered' | 'held' | 'refused' | 'denied' | 'expired' | 'dropped';
-  message: PeerMessage | null;
-  to: ReachableAgent | null;
-  note: string;
-}
-
-export const MESSAGE_HELP = help`Usage: kortix sessions message <to> ["<text>"] [options]
+const MESSAGE_HELP = help`Usage: kortix sessions message <to> ["<text>"] [options]
 
 Send a message from one session to another session of the workspace. The
 receiving agent reads it at its next step, or a new turn starts when it is
@@ -104,7 +87,7 @@ Examples:
   echo "$REPORT" | kortix sessions message parent --summary "Test run: 2 failures"
 `;
 
-export const REACHABLE_HELP = help`Usage: kortix sessions reachable [options]
+const REACHABLE_HELP = help`Usage: kortix sessions reachable [options]
 
 List the sessions a session can message: its parent, its children, its lead
 and teammates, and with --scope workspace every live session of the workspace.
@@ -121,7 +104,7 @@ Options:
   -h, --help              Show this help.
 `;
 
-export const INBOUND_HELP = help`Usage: kortix sessions inbound <session> [accept|hold|refuse|ls|approve <id>|deny <id>]
+const INBOUND_HELP = help`Usage: kortix sessions inbound <session> [accept|hold|refuse|ls|approve <id>|deny <id>]
 
 Choose what a session does with messages from other sessions, and decide the
 messages it holds.
@@ -191,8 +174,6 @@ async function readStdinText(): Promise<string> {
   return chunks.join('');
 }
 
-const short = (id: string) => id.slice(0, 8);
-
 // ── sessions message ─────────────────────────────────────────────────────
 
 export async function runSessionsMessage(argv: string[]): Promise<number> {
@@ -234,7 +215,7 @@ export async function runSessionsMessage(argv: string[]): Promise<number> {
   const sender = await senderSession(ctx.client, ctx.projectId, from, 'a message');
   if (typeof sender === 'number') return sender;
 
-  const body = {
+  const body: PeerMessageSendBody = {
     to,
     message: text,
     ...(summary?.trim() ? { summary: summary.trim() } : {}),
@@ -242,9 +223,9 @@ export async function runSessionsMessage(argv: string[]): Promise<number> {
     ...(shutdown ? { type: 'shutdown_request' } : {}),
     ...(toProject ? { project_id: toProject } : {}),
   };
-  let result: PeerMessageSendResult;
+  let result: Awaited<ReturnType<typeof sendPeerMessage>>;
   try {
-    result = await ctx.client.post<PeerMessageSendResult>(`/projects/${ctx.projectId}/sessions/${sender}/peer-messages`, body);
+    result = await withCliErrors(ctx.auth, () => sendPeerMessage(ctx.projectId, sender, body));
   } catch (err) {
     if (err instanceof ApiError && err.status === 409) return ambiguous(err, to, common.json);
     return surfaceApiError(err);
@@ -271,7 +252,7 @@ export async function runSessionsMessage(argv: string[]): Promise<number> {
 
 /** `409 ambiguous_recipient`: name the candidates so the caller can pick one. */
 function ambiguous(err: ApiError, to: string, json: boolean): number {
-  const body = (err.body ?? {}) as { message?: string; candidates?: ReachableAgent[] };
+  const body: { message?: string; candidates?: ReachableAgent[] } = err.details ?? {};
   const candidates = body.candidates ?? [];
   if (json) emitJson({ error: true, code: 'ambiguous_recipient', message: body.message ?? err.message, candidates });
   if (machineErrors()) {
@@ -304,16 +285,17 @@ export async function runSessionsReachable(argv: string[]): Promise<number> {
     return fail((err as Error).message);
   }
   if (rest.length > 0) return fail(`Unexpected argument ${rest[0]}. Run kortix sessions reachable --help.`);
-  if (scope !== undefined && scope !== 'mine' && scope !== 'project') return fail('--scope is mine or workspace.');
+  const asked: ReachableScope | undefined = scope === 'mine' || scope === 'project' ? scope : undefined;
+  if (scope !== undefined && asked === undefined) return fail('--scope is mine or workspace.');
 
   const ctx = await resolveProjectContext({ projectArg: common.projectArg, hostArg: common.hostArg });
   if (!ctx) return 1;
   const self = await senderSession(ctx.client, ctx.projectId, from, 'reachable');
   if (typeof self === 'number') return self;
 
-  let data: { self: ReachableAgent; agents: ReachableAgent[] };
+  let data: Awaited<ReturnType<typeof getSessionReachableAgents>>;
   try {
-    data = await ctx.client.get(`/projects/${ctx.projectId}/sessions/${self}/reachable?scope=${scope ?? 'mine'}`);
+    data = await withCliErrors(ctx.auth, () => getSessionReachableAgents(ctx.projectId, self, { scope: asked }));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -355,55 +337,60 @@ export async function runSessionsInbound(argv: string[]): Promise<number> {
   if (extra.length > 0) return fail(`Unexpected argument ${extra[0]}. Run kortix sessions inbound --help.`);
   const known = [...INBOUND, 'ls', 'approve', 'deny'];
   if (action !== undefined && !known.includes(action)) return fail(`"${action}" is not one of ${known.join(', ')}.`);
-  if ((action === 'approve' || action === 'deny') && !id) return missing(`the message id to ${action}`);
+  let held: { action: 'approve' | 'deny'; id: string } | null = null;
+  if (action === 'approve' || action === 'deny') {
+    if (!id) return missing(`the message id to ${action}`);
+    held = { action, id };
+  }
 
   const ctx = await resolveProjectContext({ projectArg: common.projectArg, hostArg: common.hostArg });
   if (!ctx) return 1;
   const sessionId = await resolveSessionRef(ctx.client, ctx.projectId, ref);
   if (typeof sessionId === 'number') return sessionId;
-  const base = `/projects/${ctx.projectId}/sessions/${sessionId}`;
 
   try {
+    if (held) {
+      const decide = held.action === 'approve' ? approvePeerMessage : denyPeerMessage;
+      const decided = await withCliErrors(ctx.auth, () => decide(ctx.projectId, sessionId, held.id));
+      if (common.json) emitJson(decided);
+      else process.stdout.write(`${status.ok(`${held.action === 'approve' ? 'Delivered' : 'Declined'} the message from ${decided.from_handle}`)}\n`);
+      return 0;
+    }
     if (action === undefined) {
-      const session = await ctx.client.get<{ inbound?: Inbound; metadata?: Record<string, unknown> }>(base);
-      const mode = session.inbound ?? (INBOUND.includes(session.metadata?.inbound as Inbound) ? (session.metadata?.inbound as Inbound) : 'accept');
+      const session = await withCliErrors(ctx.auth, () => getProjectSession(ctx.projectId, sessionId));
+      const stored = session.metadata?.inbound;
+      const mode = session.inbound ?? (isInbound(stored) ? stored : 'accept');
       if (common.json) emitJson({ session_id: sessionId, inbound: mode });
-      else process.stdout.write(`  ${C.dim}${short(sessionId)}${C.reset} takes messages: ${C.bold}${mode}${C.reset}\n`);
+      else process.stdout.write(`  ${C.dim}${shortId(sessionId)}${C.reset} takes messages: ${C.bold}${mode}${C.reset}\n`);
       return 0;
     }
-    if (INBOUND.includes(action as Inbound)) {
-      const out = await ctx.client.put<{ inbound: Inbound }>(`${base}/inbound`, { inbound: action });
+    if (isInbound(action)) {
+      const out = await withCliErrors(ctx.auth, () => setSessionInbound(ctx.projectId, sessionId, action));
       if (common.json) emitJson({ session_id: sessionId, inbound: out.inbound });
-      else process.stdout.write(`${status.ok(`${short(sessionId)} now ${describeInbound(out.inbound)}`)}\n`);
+      else process.stdout.write(`${status.ok(`${shortId(sessionId)} now ${describeInbound(out.inbound)}`)}\n`);
       return 0;
     }
-    if (action === 'ls') {
-      const { messages } = await ctx.client.get<{ messages: PeerMessage[] }>(`${base}/peer-messages?direction=in`);
-      if (common.json) {
-        emitJson({ messages });
-        return 0;
-      }
-      if (messages.length === 0) {
-        process.stdout.write(`  ${C.dim}No messages to ${short(sessionId)}.${C.reset}\n`);
-        return 0;
-      }
-      for (const m of messages) {
-        const preview = (m.summary ?? m.message).replace(/\s+/g, ' ').slice(0, 80);
-        const state = m.status === 'held' ? `${C.yellow}held${C.reset}` : m.status;
-        process.stdout.write(`  ${C.cyan}${pad(m.id, 10)}${C.reset} ${pad(state, 9)} ${C.dim}from${C.reset} ${pad(m.from_handle, 16)} ${preview}\n`);
-      }
+    const { messages } = await withCliErrors(ctx.auth, () => listPeerMessages(ctx.projectId, sessionId, { direction: 'in' }));
+    if (common.json) {
+      emitJson({ messages });
       return 0;
     }
-    const decided = await ctx.client.post<PeerMessage>(`${base}/peer-messages/${encodeURIComponent(id!)}/${action}`);
-    if (common.json) emitJson(decided);
-    else process.stdout.write(`${status.ok(`${action === 'approve' ? 'Delivered' : 'Declined'} the message from ${decided.from_handle}`)}\n`);
+    if (messages.length === 0) {
+      process.stdout.write(`  ${C.dim}No messages to ${shortId(sessionId)}.${C.reset}\n`);
+      return 0;
+    }
+    for (const m of messages) {
+      const preview = (m.summary ?? m.message).replace(/\s+/g, ' ').slice(0, 80);
+      const state = m.status === 'held' ? `${C.yellow}held${C.reset}` : m.status;
+      process.stdout.write(`  ${C.cyan}${pad(m.id, 10)}${C.reset} ${pad(state, 9)} ${C.dim}from${C.reset} ${pad(m.from_handle, 16)} ${preview}\n`);
+    }
     return 0;
   } catch (err) {
     return surfaceApiError(err);
   }
 }
 
-function describeInbound(mode: Inbound): string {
+function describeInbound(mode: SessionInbound): string {
   if (mode === 'hold') return 'holds each message for a person to approve.';
   if (mode === 'refuse') return 'refuses messages from other sessions.';
   return 'accepts messages from other sessions.';
