@@ -304,9 +304,9 @@ jobs:
           # CWE-494: verify the release archive against the published checksums.txt
           # before the binary runs (same as secret-scan.yml; no sha256sum on Windows).
           $archive = "versitygw_v1.8.0_Windows_x86_64.zip"
-          $hit = Select-String -Path "$d\checksums.txt" -Pattern " $([regex]::Escape($archive))$"
-          if (-not $hit) { throw "checksums.txt does not list $archive" }
-          $want = $hit.Line.Split()[0]
+          $hit = @(Select-String -Path "$d\checksums.txt" -Pattern " $([regex]::Escape($archive))$" | Select-Object -First 1)
+          if ($hit.Count -eq 0) { throw "checksums.txt does not list $archive" }
+          $want = $hit[0].Line.Split()[0]
           $got = (Get-FileHash "$d\$archive" -Algorithm SHA256).Hash.ToLower()
           if ($got -ne $want) { throw "$archive sha256 $got does not match checksums.txt $want" }
           "SHA256 $archive verified against checksums.txt"
@@ -2014,9 +2014,9 @@ jobs:
           # CWE-494: verify the release archive against the published checksums.txt
           # before the binary runs (same as secret-scan.yml; no sha256sum on Windows).
           $archive = "versitygw_v1.8.0_Windows_x86_64.zip"
-          $hit = Select-String -Path "$d\checksums.txt" -Pattern " $([regex]::Escape($archive))$"
-          if (-not $hit) { throw "checksums.txt does not list $archive" }
-          $want = $hit.Line.Split()[0]
+          $hit = @(Select-String -Path "$d\checksums.txt" -Pattern " $([regex]::Escape($archive))$" | Select-Object -First 1)
+          if ($hit.Count -eq 0) { throw "checksums.txt does not list $archive" }
+          $want = $hit[0].Line.Split()[0]
           $got = (Get-FileHash "$d\$archive" -Algorithm SHA256).Hash.ToLower()
           if ($got -ne $want) { throw "$archive sha256 $got does not match checksums.txt $want" }
           "SHA256 $archive verified against checksums.txt"
