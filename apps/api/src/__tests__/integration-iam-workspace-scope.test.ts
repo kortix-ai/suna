@@ -16,7 +16,7 @@ import { eq } from 'drizzle-orm';
 import { accountMembers, accountTokens, accounts, projectMembers, projects, serviceAccounts } from '@kortix/db';
 import { toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { db } from '../shared/db';
-import { authorize, type Obj } from '../iam/authorize';
+import { authorize, workspaceRoleFor, type Obj } from '../iam/authorize';
 import { actorForUser, type Actor } from '../iam/actor';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam';
 import { insertIntoView } from './helpers/compat-views';
@@ -106,11 +106,26 @@ describe('one workspace scope: the workspace shape equals the legacy shapes', ()
 });
 
 describe('reach rule', () => {
-  test('1:1: owner and admin reach the workspace; a plain member does not', async () => {
+  test('1:1: owner and admin reach the workspace; a plain member reaches it at the member tier (membership is access)', async () => {
     expect((await authorize(actorForUser(people.owner, ONE_ACCOUNT), 'workspace.members.manage', ws(ONE_WS))).allowed).toBe(true);
     expect((await authorize(actorForUser(people.admin, ONE_ACCOUNT), 'workspace.write', ws(ONE_WS))).allowed).toBe(true);
-    const plain = await authorize(actorForUser(people.member, ONE_ACCOUNT), 'workspace.read', ws(ONE_WS));
-    expect(plain).toEqual({ allowed: false, reason: 'no_project_membership' });
+    const plain = actorForUser(people.member, ONE_ACCOUNT);
+    expect(await authorize(plain, 'workspace.read', ws(ONE_WS))).toEqual({ allowed: true, reason: 'role' });
+    expect(await authorize(plain, 'workspace.session.start', ws(ONE_WS))).toEqual({ allowed: true, reason: 'role' });
+    // The member tier, not more: managing people stays with managers.
+    expect(await authorize(plain, 'workspace.members.manage', ws(ONE_WS))).toEqual({
+      allowed: false,
+      reason: 'project_role_insufficient',
+    });
+    expect(await workspaceRoleFor(plain, ONE_WS)).toBe('member');
+    expect(await workspaceRoleFor(actorForUser(people.owner, ONE_ACCOUNT), ONE_WS)).toBe('owner');
+  });
+
+  test('split_pending: a plain account member reaches no project without a grant', async () => {
+    const plain = actorForUser(people.member, LEGACY_ACCOUNT);
+    for (const projectId of [LEGACY_A, LEGACY_B]) {
+      expect(await authorize(plain, 'workspace.read', ws(projectId))).toEqual({ allowed: false, reason: 'no_project_membership' });
+    }
   });
 
   test('split_pending: an account-scope grant reaches every project of the account', async () => {
@@ -145,7 +160,7 @@ describe('reach rule', () => {
   });
 });
 
-describe('agents never inherit workspace administration', () => {
+describe('one agent wall: HUMAN_ONLY (an inherited session acts as its person otherwise)', () => {
   const SA = uid();
   const AGENT_TOKEN = uid();
   const PLAIN_TOKEN = uid();
@@ -203,28 +218,32 @@ describe('agents never inherit workspace administration', () => {
     }
   });
 
-  test('the agent session is refused administration the owner holds', async () => {
-    for (const action of [
-      'workspace.members.manage',
-      'project.members.manage',
-      'workspace.delete',
-      'workspace.gateway.keys.manage',
-      'workspace.gateway.budget.set',
-      'workspace.credentials.issue',
-    ]) {
+  test('the inherited session administers the workspace as its person: members, budget (K1)', async () => {
+    for (const action of ['workspace.members.manage', 'project.members.manage', 'workspace.gateway.budget.set']) {
+      expect({ action, allowed: (await authorize(agentActor(), action, ws(ONE_WS))).allowed }).toEqual({ action, allowed: true });
+    }
+    // The workspace's own account surface is in scope for its bound token.
+    for (const action of ['workspace.billing.read', 'workspace.member.invite', 'workspace.group.read']) {
+      expect((await authorize(agentActor(), action)).allowed).toBe(true);
+    }
+  });
+
+  test('HUMAN_ONLY is refused to the agent session, whatever the launcher holds', async () => {
+    for (const action of ['workspace.delete', 'workspace.gateway.keys.manage', 'workspace.credentials.issue']) {
       expect({ action, ...(await authorize(agentActor(), action, ws(ONE_WS))) }).toEqual({
         action,
         allowed: false,
         reason: 'agent_human_only_action',
       });
     }
+    for (const action of ['workspace.token.create', 'workspace.billing.write', 'workspace.account.delete']) {
+      expect({ action, ...(await authorize(agentActor(), action)) }).toEqual({ action, allowed: false, reason: 'agent_human_only_action' });
+    }
   });
 
-  test('account-scope administration stays out of reach of a workspace-bound token (unchanged reason)', async () => {
-    expect(await authorize(agentActor(), 'workspace.billing.read', ws(ONE_WS))).toEqual({
-      allowed: false,
-      reason: 'token_out_of_scope',
-    });
+  test("a workspace-bound token never reaches another account's surface", async () => {
+    const otherAccount = { ...agentActor(), accountId: LEGACY_ACCOUNT };
+    expect((await authorize(otherAccount, 'workspace.member.read')).allowed).toBe(false);
   });
 
   test('a human project PAT of the same owner keeps workspace administration', async () => {
