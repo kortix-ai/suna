@@ -1,19 +1,19 @@
 /**
  * Machines, scale, exec and volumes of an App:
  *
- *   GET    /projects/:projectId/apps/:appId/machines                         read
- *   POST   /projects/:projectId/apps/:appId/machines/:machineId/{start|stop|restart}  deploy
- *   DELETE /projects/:projectId/apps/:appId/machines/:machineId              deploy
- *   PUT    /projects/:projectId/apps/:appId/scale                            deploy
- *   POST   /projects/:projectId/apps/:appId/exec                             admin
- *   GET    /projects/:projectId/apps/:appId/volumes                          read
- *   POST   /projects/:projectId/apps/:appId/volumes                          deploy
- *   PATCH  /projects/:projectId/apps/:appId/volumes/:volumeId                deploy
- *   DELETE /projects/:projectId/apps/:appId/volumes/:volumeId?confirm=<name> admin
- *   GET    /projects/:projectId/apps/:appId/volumes/:volumeId/snapshots      read
- *   POST   /projects/:projectId/apps/:appId/volumes/:volumeId/snapshots      deploy
- *   POST   /projects/:projectId/apps/:appId/volumes/:volumeId/restore        admin
- *   POST   /projects/:projectId/apps/:appId/volumes/:volumeId/fork           deploy
+ *   GET    /projects/:workspaceId/apps/:appId/machines                         read
+ *   POST   /projects/:workspaceId/apps/:appId/machines/:machineId/{start|stop|restart}  deploy
+ *   DELETE /projects/:workspaceId/apps/:appId/machines/:machineId              deploy
+ *   PUT    /projects/:workspaceId/apps/:appId/scale                            deploy
+ *   POST   /projects/:workspaceId/apps/:appId/exec                             admin
+ *   GET    /projects/:workspaceId/apps/:appId/volumes                          read
+ *   POST   /projects/:workspaceId/apps/:appId/volumes                          deploy
+ *   PATCH  /projects/:workspaceId/apps/:appId/volumes/:volumeId                deploy
+ *   DELETE /projects/:workspaceId/apps/:appId/volumes/:volumeId?confirm=<name> admin
+ *   GET    /projects/:workspaceId/apps/:appId/volumes/:volumeId/snapshots      read
+ *   POST   /projects/:workspaceId/apps/:appId/volumes/:volumeId/snapshots      deploy
+ *   POST   /projects/:workspaceId/apps/:appId/volumes/:volumeId/restore        admin
+ *   POST   /projects/:workspaceId/apps/:appId/volumes/:volumeId/fork           deploy
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
@@ -33,6 +33,7 @@ import {
   restoreAppVolume,
 } from './fleet';
 import { authorizedProject, visibleApp, type AppPermission } from './route-access';
+import { workspaceIdParam } from '../shared/route-params';
 import {
   AppVolumeError,
   createAppVolume,
@@ -84,7 +85,8 @@ function refusal(c: RouteContext, error: unknown): Response | null {
 }
 
 async function gate(c: RouteContext, permission: AppPermission) {
-  const { projectId, appId } = c.req.param() as { projectId: string; appId: string };
+  const projectId = workspaceIdParam(c);
+  const appId = c.req.param('appId') as string;
   const loaded = await authorizedProject(c, projectId, permission);
   if (loaded instanceof Response) return loaded;
   const app = await visibleApp(projectId, appId, loaded.userId);

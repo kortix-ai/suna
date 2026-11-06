@@ -49,6 +49,7 @@ import {
 } from '../../artifacts/doc-service';
 import { entryVersion } from '../../artifacts/service';
 import { loadArtifactForCaller } from '../lib/artifact-access';
+import { workspaceIdParam } from '../../shared/route-params';
 import { projectsApp } from '../lib/app';
 
 const ArtifactParams = z.object({ workspaceId: z.string().uuid(), artifactId: z.string().uuid() });
@@ -141,7 +142,8 @@ function markdownTooLarge(c: Context, markdown: string) {
 
 /** The doc the caller may read or write, gated like the comment routes; 400 `not_a_doc` for a page. */
 async function loadDoc(c: Context, mode: 'read' | 'write') {
-  const { projectId, artifactId } = c.req.param() as { projectId: string; artifactId: string };
+  const projectId = workspaceIdParam(c);
+  const artifactId = c.req.param('artifactId') as string;
   const loaded = await loadArtifactForCaller(c, projectId, artifactId, mode, COMMENT_FLAGS);
   if (!loaded.ok) return loaded;
   if (loaded.row.type !== 'doc') return { ok: false as const, response: c.json({ error: 'Only a doc Artifact has a live document', code: 'not_a_doc' }, 400) };
