@@ -241,6 +241,14 @@ export async function sandboxDaemonRequest(
   return { status: res.status, text: await res.text() };
 }
 
+/** A non-2xx answer from /cli/device/*: the status decides retry (5xx, 429) or stop (other 4xx). */
+export class DeviceRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Device login failed (HTTP ${status}). Retry or use kortix login --token <key>.`);
+    this.name = 'DeviceRequestError';
+  }
+}
+
 /** Public device bootstrap cannot use the authenticated SDK transport: there
  * is deliberately no credential until approval. Keep it in the transport seam. */
 export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll', body: unknown, signal: AbortSignal): Promise<T> {
@@ -248,6 +256,6 @@ export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kortix-Client-Version': 'cli/dev' },
     body: JSON.stringify(body), signal,
   });
-  if (!response.ok) throw new Error(`Device login failed (HTTP ${response.status}). Retry or use kortix login --token <key>.`);
+  if (!response.ok) throw new DeviceRequestError(response.status);
   return await response.json() as T;
 }
