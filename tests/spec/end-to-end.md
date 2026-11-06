@@ -271,6 +271,7 @@ Route params are `:workspaceId` (`:projectId` / `:accountId` before 2026-11-05).
 `WS-AUTH-6` A platform admin acting as the team (`x-kortix-impersonate`): `POST /workspaces/:w/iam/assignments` → 403, `DELETE /workspaces/:w` → 403, `GET /workspaces/:w/iam/assignments` → 200; the workspace still answers its owner 200.
 `WS-AUTH-7` `GET /workspaces/:w/iam/roles` system rows are exactly `owner, admin, manager, member` (`ladder: true`, `scope: workspace`); a custom role reads `ladder: false`, `scope: workspace`; `GET /accounts/:team/iam/roles` keeps every stored row (`agent-user`, two `member`). `GET /iam/permissions` rows carry `workspace_action` (`project.read` → `workspace.read`) and `scope: workspace`. `GET /iam/assignments`: the owner's account row has `scope: workspace`, `workspace_id: w`, `scope_type: account`.
 `WS-AUTH-8` A session token with the My Kortix grant and no service account (a workspace key bound to a live session): `GET /workspaces/:w/members` → 200; `POST /workspaces/:w/iam/service-accounts`, `POST /billing/auto-topup/configure` and `DELETE /workspaces/:w` → 403 `agent_human_only_action`. The owner's browser session: `POST /iam/service-accounts` → 201.
+`WS-AUTH-9` A service account (`POST /workspaces/:w/iam/service-accounts`) on `GET /oauth/grants` and `GET /accounts/tokens` → 403, never 409 `no_workspace`; the owner's browser session → 200 on both.
 
 ---
 

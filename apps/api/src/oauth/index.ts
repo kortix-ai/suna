@@ -11,6 +11,7 @@
  * Confidential clients present `client_secret`; public clients (a browser or
  * native app) rely on PKCE alone and must not send a secret.
  */
+import { isNoWorkspaceError } from '../shared/no-workspace';
 import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -1178,9 +1179,20 @@ const GrantSchema = z.object({
 });
 
 async function requireFullIdentity(c: Context): Promise<Response | null> {
-  const userId = c.get('userId') as string;
-  const actor = await actorOf(c, await resolveAccountId(userId));
-  if (actsAsFullIdentity(c.get('authType') as string | undefined, actor)) return null;
+  // Decided on the credential first: a service account or a workspace key is
+  // refused here (403), never as a person with no workspace (409), and a
+  // person with no workspace still manages their connected apps.
+  const authType = c.get('authType') as string | undefined;
+  const person = authType === 'supabase'
+    || (authType === 'pat' && !c.get('tokenProjectId') && !c.get('sessionId') && !c.get('agentGrant'));
+  if (person) {
+    const userId = c.get('userId') as string;
+    const accountId = await resolveAccountId(userId).catch((err: unknown) => {
+      if (isNoWorkspaceError(err)) return null;
+      throw err;
+    });
+    if (!accountId || actsAsFullIdentity(authType, await actorOf(c, accountId))) return null;
+  }
   return c.json(
     {
       error:

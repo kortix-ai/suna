@@ -505,3 +505,30 @@ flow(
     }
   },
 );
+
+// ── WS-AUTH-9 — person-only routes refuse a machine credential first (403) ──
+flow(
+  'WS-AUTH-9',
+  {
+    domain: 'workspaces',
+    routes: ['POST /v1/workspaces/:workspaceId/iam/service-accounts', 'GET /v1/oauth/grants', 'GET /v1/accounts/tokens'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    let sa!: ReturnType<typeof ctx.client.withBearer>;
+    await ctx.step('the owner creates a service account → 201 with its secret', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${w.id}/iam/service-accounts`, { name: 'wsa9-sa' });
+      r.status(201);
+      sa = ctx.client.withBearer(r.json<{ secret: string }>().secret, 'WSA9_SA');
+    });
+    await ctx.step('the service account on GET /oauth/grants and GET /accounts/tokens → 403, never 409 no_workspace', async () => {
+      (await sa.get('/v1/oauth/grants')).status(403);
+      (await sa.get('/v1/accounts/tokens')).status(403);
+    });
+    await ctx.step('the owner in the browser reads both → 200', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/oauth/grants')).status(200);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens', { query: { account_id: team.id } })).status(200);
+    });
+  },
+);

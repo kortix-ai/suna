@@ -309,6 +309,11 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
+  // A service account lists no person's keys: refused as a non-member (403),
+  // before the account lookup, which would answer it 409 no_workspace.
+  if (c.get('authType') === 'service_account') {
+    return c.json({ error: 'A service account cannot list access tokens', code: 'not_a_member' }, 403);
+  }
   const queryAccount = pathAccountOf(c) ?? c.req.query('account_id') ?? undefined;
 
   let accountId: string;
