@@ -22,7 +22,7 @@ test.describe("37 — A new user lands on create-or-join", () => {
   // invite, or choose to create a project. Onboarding belongs to a project.
   // Workspaces (2026-11-05): sign-up creates no account, so a new user has 0
   // workspaces and the selector is "Create a workspace" with the invite hint.
-  test("lands on /projects with create-or-join, no account, no redirect to /new", async ({
+  test("lands on /workspaces with create-or-join, no account, no redirect to /workspaces/new", async ({
     page,
   }) => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
@@ -33,14 +33,17 @@ test.describe("37 — A new user lands on create-or-join", () => {
 
     try {
       const session = await signIn(email, authOptions);
-      await installBrowserSessionDirect(page, session, "/projects/start", authOptions);
+      await installBrowserSessionDirect(page, session, "/workspaces/start", authOptions);
 
-      await test.step("The landing door opens the selector on /projects", async () => {
-        await expect(page).toHaveURL(/\/projects(\?|$)/, { timeout: 60_000 });
+      await test.step("The landing door opens the selector on /workspaces", async () => {
+        await expect(page).toHaveURL(/\/workspaces(\?|$)/, { timeout: 60_000 });
         await expect(
           page.getByRole("heading", { name: "Create a workspace" }),
         ).toBeVisible({ timeout: 60_000 });
-        await expect(page.getByTestId("selector-create")).toBeVisible();
+        // The create form is on the page: a suggested name and one submit button.
+        await expect(page.getByTestId("selector-create-form")).toBeVisible();
+        await expect(page.getByLabel("Workspace name")).not.toHaveValue("");
+        await expect(page.getByTestId("selector-create")).toHaveAttribute("type", "submit");
         await expect(page.getByText(`ask an admin to invite ${email}`)).toBeVisible();
         await expect(page.getByLabel("Account name")).toHaveCount(0);
         const members = await queryDatabaseRows<{ n: string }>(
@@ -50,14 +53,14 @@ test.describe("37 — A new user lands on create-or-join", () => {
         expect(members[0]?.n).toBe("0");
       });
 
-      await test.step("The selector stays: nothing forwards the user to /new", async () => {
+      await test.step("The selector stays: nothing forwards the user to /workspaces/new", async () => {
         await page.waitForTimeout(3_000);
-        await expect(page).toHaveURL(/\/projects(\?|$)/);
+        await expect(page).toHaveURL(/\/workspaces(\?|$)/);
       });
 
-      await test.step("The create card is the user's own way to /new", async () => {
-        await page.getByTestId("selector-create").click();
-        await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+      await test.step("More options is the user's own way to /workspaces/new", async () => {
+        await page.getByTestId("selector-create-more").click();
+        await expect(page).toHaveURL(/\/workspaces\/new(\?|$)/, { timeout: 60_000 });
         await expect(page).not.toHaveURL(/account=/);
       });
     } finally {

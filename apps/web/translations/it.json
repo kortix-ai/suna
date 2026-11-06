@@ -26555,6 +26555,7 @@
       "createBody": "Un workspace è il luogo in cui la tua azienda lavora con Kortix: persone, agenti e tutto ciò che creano.",
       "createAction": "Crea workspace",
       "invitedHint": "Hai ricevuto un invito? Apri il link d'invito nella tua email, oppure chiedi a un amministratore di invitare {email}.",
+      "moreOptions": "Altre opzioni",
       "restrictedTitle": "Ancora nessun workspace",
       "restrictedBody": "Chiedi a un amministratore di invitare {email}.",
       "listTitle": "Scegli un workspace",

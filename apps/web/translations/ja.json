@@ -26555,6 +26555,7 @@
       "createBody": "ワークスペースは、会社が Kortix と働く場所です。メンバー、エージェント、そして彼らが作るすべてがここにあります。",
       "createAction": "ワークスペースを作成",
       "invitedHint": "招待されましたか？メールの招待リンクを開くか、管理者に {email} の招待を依頼してください。",
+      "moreOptions": "その他のオプション",
       "restrictedTitle": "ワークスペースはまだありません",
       "restrictedBody": "管理者に {email} の招待を依頼してください。",
       "listTitle": "ワークスペースを選択",

@@ -26555,6 +26555,7 @@
       "createBody": "Un espace de travail est l'endroit où votre entreprise travaille avec Kortix : les personnes, les agents et tout ce qu'ils créent.",
       "createAction": "Créer un espace de travail",
       "invitedHint": "Invité ? Ouvrez le lien d'invitation reçu par e-mail, ou demandez à un administrateur d'inviter {email}.",
+      "moreOptions": "Plus d'options",
       "restrictedTitle": "Pas encore d'espace de travail",
       "restrictedBody": "Demandez à un administrateur d'inviter {email}.",
       "listTitle": "Choisir un espace de travail",

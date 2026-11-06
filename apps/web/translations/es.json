@@ -26555,6 +26555,7 @@
       "createBody": "Un espacio de trabajo es donde tu empresa trabaja con Kortix: personas, agentes y todo lo que crean.",
       "createAction": "Crear espacio de trabajo",
       "invitedHint": "¿Te invitaron? Abre el enlace de invitación de tu correo o pide a un administrador que invite a {email}.",
+      "moreOptions": "Más opciones",
       "restrictedTitle": "Aún no tienes un espacio de trabajo",
       "restrictedBody": "Pide a un administrador que invite a {email}.",
       "listTitle": "Elige un espacio de trabajo",

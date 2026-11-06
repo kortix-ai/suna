@@ -1,15 +1,16 @@
 'use client';
 
-import { acceptAccountInviteAndLand, type MyAccountInvite } from '@kortix/sdk';
+import { acceptAccountInviteAndLand, type MyAccountInvite, type ProvisionPhase } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { ArrowRightIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 
 import { Button } from '@kortix/ui/button';
 import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { Field, FieldLabel } from '@kortix/ui/field';
 import { InlineMeta } from '@kortix/ui/inline-meta';
 import { Input } from '@kortix/ui/input';
 import { KortixLogo } from '@kortix/ui/kortix-logo';
@@ -35,15 +36,25 @@ import {
   inviteLandingPath,
   type WorkspaceRow,
 } from '@kortix/ui/workspace/project-selector/project-selector-model';
+import { INITIAL_FORM_STATE, isSubmittable } from '@kortix/ui/workspace/new/new-workspace-form';
+import { useCreateWorkspace } from '@kortix/ui/workspace/new/use-create-workspace';
+import { WorkspaceHandoff } from '@kortix/ui/workspace/new/workspace-handoff';
+import {
+  WORKSPACE_NAME_MAX_LENGTH,
+  suggestWorkspaceName,
+  validateWorkspaceName,
+} from '@kortix/ui/workspace/new/workspace-name';
 import { useProjectSelectorData } from './use-project-selector-data';
 
 /**
- * `/projects` — create a workspace or join one, Slack-style.
+ * `/workspaces` — create a workspace or join one, Slack-style.
  *
  * One column, three states (`project-selector-model.ts`):
  *
- *  - 0 workspaces, 0 invites — "Create a workspace", one primary button, and
- *    one quiet line for the person who expected an invite;
+ *  - 0 workspaces, 0 invites — "Create a workspace" with the create form on
+ *    the page: the name (a suggested one prefilled) and one primary button in
+ *    a narrow column, "More options" to `/workspaces/new` for the icon and the
+ *    repository, and one quiet line for the person who expected an invite;
  *  - invites pending        — the invitations first, each with Join, then
  *    the create action;
  *  - 1+ workspaces          — one flat list, one row per workspace, search
@@ -63,7 +74,7 @@ export interface ProjectSelectorViewProps {
   partialFailure?: boolean;
   workspaces: WorkspaceRow[];
   invites: MyAccountInvite[];
-  /** `/new`, or null when this caller may not create a workspace. */
+  /** `/workspaces/new`, or null when this caller may not create a workspace. */
   createHref: string | null;
   joiningInviteId: string | null;
   openingProjectId: string | null;
@@ -72,6 +83,27 @@ export interface ProjectSelectorViewProps {
   onOpenProject: (event: MouseEvent<HTMLAnchorElement>, row: WorkspaceRow) => void;
   onRetryAll: () => void;
   onLogOut: () => void;
+  /**
+   * The create form shown on the page when there is no workspace and no
+   * invite. Absent: the empty state links to `createHref` instead.
+   */
+  inlineCreate?: InlineCreateProps;
+}
+
+/** The inline create form's state, owned by `ProjectSelector`. */
+export interface InlineCreateProps {
+  name: string;
+  nameError: string | null;
+  canSubmit: boolean;
+  /** The create is in flight: the page shows the handoff instead. */
+  submitting: boolean;
+  phase: ProvisionPhase | null;
+  error: string | null;
+  canRetry: boolean;
+  onNameChange: (name: string) => void;
+  onNameBlur: () => void;
+  onSubmit: () => void;
+  onRetry: () => void;
 }
 
 export function ProjectSelectorView(props: ProjectSelectorViewProps) {
@@ -86,6 +118,7 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
   const hasWorkspaces = workspaces.length > 0;
   const hasInvites = invites.length > 0;
   const restricted = !createHref && !hasWorkspaces && !hasInvites;
+  const inlineCreate = createHref && !hasWorkspaces && !hasInvites ? props.inlineCreate : undefined;
 
   const [title, description] = restricted
     ? [t('restrictedTitle'), t('restrictedBody', { email: email ?? '' })]
@@ -103,7 +136,13 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
           it start at the top and scroll once the list is taller. Blank while
           the reads resolve (one round trip): a centered block that changes
           height would slide the header down under the eye. */}
-      {loading ? null : (
+      {loading ? null : inlineCreate?.submitting ? (
+        // The page turns over to the handoff, as `/workspaces/new` does: the
+        // heading "Create a workspace" above a create in flight is stale.
+        <div className="my-auto w-full">
+          <WorkspaceHandoff workspaceName={inlineCreate.name.trim()} phase={inlineCreate.phase} />
+        </div>
+      ) : (
         <div className="my-auto w-full">
           <header className="flex flex-col items-center gap-2 text-center">
             <KortixLogo size={28} variant="icon" className="mb-3" />
@@ -184,11 +223,17 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
                 </div>
               ) : null}
 
-              {createHref ? (
+              {createHref && inlineCreate ? (
+                <div className="flex flex-col items-center gap-6">
+                  <InlineCreateForm createHref={createHref} form={inlineCreate} />
+                  <p className="text-muted-foreground max-w-sm text-center text-xs text-balance">
+                    {t('invitedHint', { email: email ?? '' })}
+                  </p>
+                </div>
+              ) : createHref ? (
                 <div className="space-y-3">
                   <Button
                     asChild
-                    size="lg"
                     variant={hasWorkspaces || hasInvites ? 'outline' : 'default'}
                     className="w-full gap-1.5"
                   >
@@ -209,6 +254,72 @@ export function ProjectSelectorView(props: ProjectSelectorViewProps) {
         </div>
       )}
     </main>
+  );
+}
+
+/**
+ * Create the first workspace on the chooser itself: the name and one primary
+ * button, the width of the field. The icon and the repository source stay on
+ * `/workspaces/new` ("More options"); a name-only create is a managed
+ * workspace, the same default that page submits.
+ */
+function InlineCreateForm({ createHref, form }: { createHref: string; form: InlineCreateProps }) {
+  const t = useTranslations('workspaces.chooser');
+  const tNew = useTranslations('newWorkspace');
+  return (
+    <form
+      className="flex w-full max-w-sm flex-col gap-3"
+      data-testid="selector-create-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        form.onSubmit();
+      }}
+    >
+      <Field>
+        <FieldLabel htmlFor="selector-workspace-name">{tNew('name.label')}</FieldLabel>
+        <Input
+          id="selector-workspace-name"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          value={form.name}
+          onChange={(event) => form.onNameChange(event.target.value)}
+          onBlur={form.onNameBlur}
+          placeholder={tNew('name.placeholder')}
+          aria-invalid={form.nameError ? true : undefined}
+          aria-describedby={form.nameError ? 'selector-workspace-name-error' : undefined}
+        />
+      </Field>
+      {form.nameError ? (
+        <p id="selector-workspace-name-error" className="text-destructive text-xs">
+          {form.nameError}
+        </p>
+      ) : null}
+      <Button type="submit" disabled={!form.canSubmit} className="w-full" data-testid="selector-create">
+        {t('createAction')}
+      </Button>
+      {form.error ? (
+        <div role="alert" className="flex flex-col items-center gap-1.5">
+          <p className="text-destructive text-center text-xs">{form.error}</p>
+          {form.canRetry ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={form.onRetry}
+            >
+              {tNew('actions.tryAgain')}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <Button asChild variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground self-center">
+        <Link href={createHref} prefetch data-testid="selector-create-more">
+          {t('moreOptions')}
+        </Link>
+      </Button>
+    </form>
   );
 }
 
@@ -285,7 +396,7 @@ function WorkspaceRowLink({
   return (
     <li>
       <Link
-        href={`/projects/${project.project_id}${connectComputer ? '/settings/computer' : ''}`}
+        href={`/workspaces/${project.project_id}${connectComputer ? '/settings/computer' : ''}`}
         onClick={(event) => onOpen(event, row)}
         data-testid="selector-project"
         className="group bg-popover hover:bg-hover focus-visible:ring-ring duration-fast flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors outline-none focus-visible:ring-2"
@@ -330,8 +441,10 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
     isPlatformAdmin: Boolean(adminRole?.isAdmin),
     reusableAccount: data.reusableAccount,
   })
-    ? '/new'
+    ? '/workspaces/new'
     : null;
+
+  const inlineCreate = useInlineCreate(data.reusableAccount?.account_id ?? null, Boolean(createHref));
 
   const join = useMutation({
     mutationFn: (invite: MyAccountInvite) => acceptAccountInviteAndLand(invite.invite_id, invite),
@@ -373,10 +486,56 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
         writeLastProjectId(user?.id, row.workspaceId);
       }}
       onRetryAll={data.retryAll}
+      inlineCreate={inlineCreate}
       onLogOut={() => {
         setSigningOut(true);
         void performSignOut();
       }}
     />
   );
+}
+
+/**
+ * The inline create's state: a suggested name (seeded after mount, so server
+ * and client render the same first frame), the same validation and submit as
+ * `/workspaces/new`, and its `useCreateWorkspace` orchestration, which opens
+ * the created workspace.
+ */
+function useInlineCreate(reusableAccountId: string | null, allowed: boolean): InlineCreateProps {
+  const tNew = useTranslations('newWorkspace');
+  const [name, setName] = useState('');
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    setName((current) => current || suggestWorkspaceName());
+  }, []);
+  const { create, status, error, retry, canRetry, phase } = useCreateWorkspace();
+  const state = { ...INITIAL_FORM_STATE, name, accountId: reusableAccountId };
+  const submitting = status === 'creating';
+
+  const result = validateWorkspaceName(name);
+  let nameError: string | null = null;
+  if (!result.ok && result.error.startsWith('Name must be')) {
+    nameError = tNew('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH });
+  } else if (touched && !result.ok) {
+    nameError =
+      result.error === 'Name is required' ? tNew('validation.nameRequired') : tNew('validation.nameCharacters');
+  }
+  const canSubmit = allowed && isSubmittable(state) && !submitting;
+
+  return {
+    name,
+    nameError,
+    canSubmit,
+    submitting,
+    phase,
+    error: status === 'error' ? error : null,
+    canRetry,
+    onNameChange: setName,
+    onNameBlur: () => setTouched(true),
+    onSubmit: () => {
+      setTouched(true);
+      if (canSubmit) void create(state);
+    },
+    onRetry: retry,
+  };
 }

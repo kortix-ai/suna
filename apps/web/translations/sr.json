@@ -26555,6 +26555,7 @@
       "createBody": "Radni prostor je mesto gde vaša kompanija radi sa Kortixom: ljudi, agenti i sve što naprave.",
       "createAction": "Napravi radni prostor",
       "invitedHint": "Pozvani ste? Otvorite link za poziv iz e-pošte ili zamolite administratora da pozove {email}.",
+      "moreOptions": "Više opcija",
       "restrictedTitle": "Još nema radnog prostora",
       "restrictedBody": "Zamolite administratora da pozove {email}.",
       "listTitle": "Izaberi radni prostor",

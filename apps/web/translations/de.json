@@ -26555,6 +26555,7 @@
       "createBody": "In einem Workspace arbeitet dein Unternehmen mit Kortix: Menschen, Agents und alles, was sie erstellen.",
       "createAction": "Workspace erstellen",
       "invitedHint": "Eingeladen? Öffne den Einladungslink aus deiner E-Mail oder bitte einen Admin, {email} einzuladen.",
+      "moreOptions": "Weitere Optionen",
       "restrictedTitle": "Noch kein Workspace",
       "restrictedBody": "Bitte einen Admin, {email} einzuladen.",
       "listTitle": "Workspace auswählen",

@@ -26555,6 +26555,7 @@
       "createBody": "工作区是你的公司使用 Kortix 工作的地方：成员、智能体以及他们创建的一切。",
       "createAction": "创建工作区",
       "invitedHint": "收到邀请了吗？打开邮件中的邀请链接，或请管理员邀请 {email}。",
+      "moreOptions": "更多选项",
       "restrictedTitle": "还没有工作区",
       "restrictedBody": "请管理员邀请 {email}。",
       "listTitle": "选择工作区",

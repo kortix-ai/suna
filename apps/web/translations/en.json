@@ -26555,6 +26555,7 @@
       "createBody": "A workspace is where your company works with Kortix: people, agents and everything they make.",
       "createAction": "Create workspace",
       "invitedHint": "Invited? Open the invite link from your email, or ask an admin to invite {email}.",
+      "moreOptions": "More options",
       "restrictedTitle": "No workspace yet",
       "restrictedBody": "Ask an admin to invite {email}.",
       "listTitle": "Choose a workspace",
