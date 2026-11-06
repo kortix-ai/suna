@@ -14,7 +14,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { connectionCredentials, connectorConnections, connectors } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { upsertConnectionCredential } from '../connectors/credentials';
-import { revokeConnections } from '../connectors/connection-status';
+import { completeConnection, revokeConnections } from '../connectors/connection-status';
 import { db } from '../shared/db';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
 import { interleave } from './helpers/interleave';
@@ -107,6 +107,7 @@ describe('a connector connection revoke is sticky', () => {
     // The 2026-09-17 migration set `status = 'revoked'` without a `revokedAt`.
     // A missing stamp is not the epoch, so no completion is trusted to be newer.
     const conn = await seedConnection('revoke-sticky-unstamped', 'revoked');
+    expect(await completeConnection(conn.connectionId, minutesAgo(5))).toBe(false);
     await expect(
       upsertConnectionCredential({ ...conn, value: 'stale-token', kind: 'oauth2_delegated', startedAt: minutesAgo(5) }),
     ).rejects.toThrow(/revoked/);
@@ -115,6 +116,7 @@ describe('a connector connection revoke is sticky', () => {
 
   test('a malformed revoke time keeps the account revoked', async () => {
     const conn = await seedConnection('revoke-sticky-malformed', 'revoked', 'not-a-date');
+    expect(await completeConnection(conn.connectionId, minutesAgo(5))).toBe(false);
     await expect(
       upsertConnectionCredential({ ...conn, value: 'stale-token', kind: 'oauth2_delegated', startedAt: minutesAgo(5) }),
     ).rejects.toThrow(/revoked/);
