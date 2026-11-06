@@ -88,6 +88,25 @@ export function legacyWorkspaceRoute(path: string): string | null {
   return null;
 }
 
+/**
+ * Legacy routes with no canonical name (same as `WORKSPACE_LEGACY_ONLY_ROUTES`
+ * in `@kortix/shared`, method-free): the current API serves them on
+ * `/v1/projects` only. An unknown-route 404 on their canonical spelling says
+ * nothing about the server's age, so the fallback retries them once without
+ * remembering the base.
+ */
+const LEGACY_ONLY_PATHS: readonly RegExp[] = [
+  /^\/v1\/projects\/(provision|provision-stream|quota|link-repository|create-repo)$/,
+  /^\/v1\/projects\/[^/]+\/transfer$/,
+];
+
+function isLegacyOnly(legacyUrl: string): boolean {
+  const path = legacyUrl.replace(/[?#].*$/, '');
+  const v1 = path.indexOf('/v1/');
+  if (v1 === -1) return false;
+  return LEGACY_ONLY_PATHS.some((re) => re.test(path.slice(v1)));
+}
+
 // ── The fallback ────────────────────────────────────────────────────────────
 
 type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -187,7 +206,7 @@ export function withWorkspaceRouteFallback(fetchImpl: Fetch, apiBase?: string): 
     const response = await fetchImpl(input, init);
     if (oneShot || !(await isUnknownRoute(response))) return response;
 
-    legacyBases.add(split.base);
+    if (!isLegacyOnly(split.legacyUrl)) legacyBases.add(split.base);
     const next = retarget(input, init, split.legacyUrl, bodyCopy);
     return fetchImpl(next.input, next.init);
   };

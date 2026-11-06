@@ -143,7 +143,7 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
     try {
       const base = stripTrailingSlashes(options.backendUrl);
       const res = await fetchImpl(
-        `${base}/workspaces/${encodeURIComponent(accountId)}/iam/members/${encodeURIComponent(userId)}/groups`,
+        `${base}/accounts/${encodeURIComponent(accountId)}/iam/members/${encodeURIComponent(userId)}/groups`,
         { headers: { accept: 'application/json', authorization: `Bearer ${token}` } },
       );
       if (!res.ok) return none;

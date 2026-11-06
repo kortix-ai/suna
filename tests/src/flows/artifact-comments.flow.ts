@@ -14,8 +14,8 @@ const SCREENSHOT = `${COMMENTS}/:commentId/screenshot`;
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAE0lEQVQImWP4z8DwnwGM/zMwAAAf7gP9qS/A4gAAAABJRU5ErkJggg==';
 const WEBP = 'UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoCAAIAAUAmJaACdLoB+AADsAD+8ut//NgVzXPv9//S4P0uD9Lg/9KQAAA=';
 const FEATURES = '/v1/workspaces/:projectId/features';
-const ROLES = '/v1/workspaces/:accountId/iam/roles';
-const POLICIES = '/v1/workspaces/:accountId/iam/policies';
+const ROLES = '/v1/accounts/:accountId/iam/roles';
+const POLICIES = '/v1/accounts/:accountId/iam/policies';
 
 type Comment = {
   comment_id: string;

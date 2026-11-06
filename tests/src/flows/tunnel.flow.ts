@@ -526,10 +526,10 @@ async function departedOwnerComputers(ctx: FlowContext, exit: "removed" | "left"
   await ctx.step(exit === "removed" ? "OWNER removes the member → 200" : "the member leaves → 200", async () => {
     const r =
       exit === "removed"
-        ? await owner.del("/v1/workspaces/:accountId/members/:userId", {
+        ? await owner.del("/v1/accounts/:accountId/members/:userId", {
             params: { accountId: team.id, userId: member.userId! },
           })
-        : await asMember.post("/v1/workspaces/:accountId/leave", {}, { params: { accountId: team.id } });
+        : await asMember.post("/v1/accounts/:accountId/leave", {}, { params: { accountId: team.id } });
     r.status(200);
   });
 
@@ -566,7 +566,7 @@ flow(
     domain: "tunnel",
     timeoutMs: 180_000,
     serial: true,
-    routes: [...DEPARTED_OWNER_ROUTES, "DELETE /v1/workspaces/:accountId/members/:userId"],
+    routes: [...DEPARTED_OWNER_ROUTES, "DELETE /v1/accounts/:accountId/members/:userId"],
   },
   (ctx) => departedOwnerComputers(ctx, "removed"),
 );
@@ -577,7 +577,7 @@ flow(
     domain: "tunnel",
     timeoutMs: 180_000,
     serial: true,
-    routes: [...DEPARTED_OWNER_ROUTES, "POST /v1/workspaces/:accountId/leave"],
+    routes: [...DEPARTED_OWNER_ROUTES, "POST /v1/accounts/:accountId/leave"],
   },
   (ctx) => departedOwnerComputers(ctx, "left"),
 );

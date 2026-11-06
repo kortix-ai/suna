@@ -314,7 +314,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/iam/groups',
+          '/v1/accounts/:accountId/iam/groups',
           { name: ctx.fixtures.name('grp') },
           { params: { accountId: team.id } },
         );
@@ -538,7 +538,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/members',
+          '/v1/accounts/:accountId/members',
           { email: inviteEmail, role: 'member' },
           { params: { accountId: team.id } },
         );
@@ -631,7 +631,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/members',
+          '/v1/accounts/:accountId/members',
           { email: inviteEmail, role: 'member' },
           { params: { accountId: team.id } },
         );
@@ -678,7 +678,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/members',
+          '/v1/accounts/:accountId/members',
           { email: inviteEmail, role: 'member' },
           { params: { accountId: team.id } },
         );
@@ -722,7 +722,7 @@ flow(
     domain: 'projects',
     serial: true,
     routes: [
-      'POST /v1/workspaces/:accountId/members',
+      'POST /v1/accounts/:accountId/members',
       'POST /v1/invites/:inviteId/accept',
       'GET /v1/invites/:inviteId',
     ],
@@ -737,7 +737,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/members',
+          '/v1/accounts/:accountId/members',
           { email: inviteEmail, role: 'member' },
           { params: { accountId: team.id } },
         );
@@ -809,9 +809,9 @@ flow(
     serial: true,
     requires: ['database'],
     routes: [
-      'POST /v1/workspaces/:accountId/members',
-      'GET /v1/workspaces/:accountId/invites',
-      'POST /v1/workspaces/:accountId/invites/:inviteId/resend',
+      'POST /v1/accounts/:accountId/members',
+      'GET /v1/accounts/:accountId/invites',
+      'POST /v1/accounts/:accountId/invites/:inviteId/resend',
       'POST /v1/invites/:inviteId/accept',
     ],
   },
@@ -822,12 +822,12 @@ flow(
     const email = `${ctx.fixtures.name('inv9')}@${ctx.env.testEmailDomain}`.toLowerCase();
     let inviteId = '';
     const listed = async () => {
-      const r = await owner.get('/v1/workspaces/:accountId/invites', { params });
+      const r = await owner.get('/v1/accounts/:accountId/invites', { params });
       r.status(200);
       return r.json<Array<{ invite_id: string }>>().some((i) => i.invite_id === inviteId);
     };
     await ctx.step('create a pending invite, then age it past its expiry', async () => {
-      const r = await owner.post('/v1/workspaces/:accountId/members', { email, role: 'member' }, { params });
+      const r = await owner.post('/v1/accounts/:accountId/members', { email, role: 'member' }, { params });
       r.status(201).body().has('$.status', 'pending');
       inviteId = r.json<{ invite_id: string }>().invite_id;
       await withDb(ctx, (db) =>
@@ -841,7 +841,7 @@ flow(
       if (await listed()) throw new Error('an expired invite is still listed');
     });
     await ctx.step('resend renews the expiry → 200 with a future expires_at; the invite is listed again', async () => {
-      const r = await owner.post('/v1/workspaces/:accountId/invites/:inviteId/resend', {}, { params: { ...params, inviteId } });
+      const r = await owner.post('/v1/accounts/:accountId/invites/:inviteId/resend', {}, { params: { ...params, inviteId } });
       r.status(200).body().has('$.ok', true);
       if (Date.parse(r.json<{ expires_at: string }>().expires_at) <= Date.now()) throw new Error('resend did not renew the expiry');
       if (!(await listed())) throw new Error('a renewed invite is not listed');
@@ -971,7 +971,7 @@ flow(
     domain: 'projects',
     serial: true,
     routes: [
-      'POST /v1/workspaces/:accountId/members',
+      'POST /v1/accounts/:accountId/members',
       'POST /v1/invites/:inviteId/accept',
       'POST /v1/invites/:inviteId/decline',
       'GET /v1/invites/:inviteId',
@@ -986,7 +986,7 @@ flow(
       const cr = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/members',
+          '/v1/accounts/:accountId/members',
           { email: emailA, role: 'member' },
           { params: { accountId: teamA.id } },
         );
@@ -1019,7 +1019,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/members',
+          '/v1/accounts/:accountId/members',
           { email: emailB, role: 'member' },
           { params: { accountId: teamB.id } },
         );
@@ -1117,7 +1117,7 @@ flow(
         );
       r.status(400);
     });
-    await ctx.step('NONMEMBER cannot invite → 403 (not a member of the account)', async () => {
+    await ctx.step('NONMEMBER cannot invite → 404 workspace_not_found (not a member of the workspace)', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
@@ -1125,7 +1125,7 @@ flow(
           { email: 'stranger@example.com', role: 'user' },
           { params: { projectId: p.id } },
         );
-      r.status(403);
+      r.status(404).body().has('$.code', 'workspace_not_found');
     });
   },
 );

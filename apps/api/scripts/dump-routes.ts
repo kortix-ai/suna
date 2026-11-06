@@ -33,7 +33,7 @@
  * config validation before the app imports. They do not change the route table.
  */
 import { resolve } from "node:path";
-import { canonicalWorkspaceRoute, WORKSPACE_MERGED_LEGACY_ROUTES } from "@kortix/shared/workspace-routes";
+import { workspaceAliasOf } from "@kortix/shared/workspace-routes";
 import { app } from "../src/index";
 
 interface RouteEntry {
@@ -63,10 +63,10 @@ for (const r of (app as any).routes as Array<{ method: string; path: string; han
   routes.push({ method, path: r.path });
 }
 
-const merged = new Set(WORKSPACE_MERGED_LEGACY_ROUTES);
+// One alias rule for the manifest and the OpenAPI spec (`workspaceAliasOf`).
 for (const r of routes) {
-  const canonical = canonicalWorkspaceRoute(r.path);
-  if (canonical && seen.has(`${r.method} ${canonical}`) && !merged.has(`${r.method} ${r.path}`)) r.aliasOf = canonical;
+  const canonical = workspaceAliasOf(r.method, r.path, (m, p) => seen.has(`${m} ${p}`));
+  if (canonical) r.aliasOf = canonical;
 }
 
 routes.sort((a, b) => (a.path === b.path ? a.method.localeCompare(b.method) : a.path.localeCompare(b.path)));

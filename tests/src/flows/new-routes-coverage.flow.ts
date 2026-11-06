@@ -826,10 +826,14 @@ flow(
     });
 
     await ctx.step('a malformed session id is rejected before any lookup', async () => {
-      const read = await owner.get('/v1/workspaces/:projectId/sessions/:sessionId/config', {
+      // The legacy name: the canonical name answers the unknown workspace id first (404 workspace_not_found).
+      const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId/config', {
         params: { projectId: ZERO_UUID, sessionId: 'not-a-uuid' },
       });
       read.status(400);
+      (await owner.get('/v1/workspaces/:projectId/sessions/:sessionId/config', {
+        params: { projectId: ZERO_UUID, sessionId: 'not-a-uuid' },
+      })).status(404).body().has('$.code', 'workspace_not_found');
     });
   },
 );

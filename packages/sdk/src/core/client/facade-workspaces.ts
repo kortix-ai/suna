@@ -1,10 +1,17 @@
 import * as P from '../rest/projects-client';
 import type { DropFirst } from './binding-types';
 
+/**
+ * The `project(id)` members whose workspace meaning replaces the project
+ * meaning on `kortix.workspace(id)`. The project CLI tokens move to
+ * `cliTokens`. Internal: `workspace-handle.test.ts` holds the handle to it.
+ */
+export const WORKSPACE_HANDLE_OVERRIDES = ['get', 'update', 'tokens'] as const;
+
 /** `kortix.workspaces`: the caller's workspaces. */
 export function bindWorkspaces() {
   return {
-    /** Every workspace the caller can open, most recently opened first. */
+    /** Every workspace the caller can open, across accounts, in one request. */
     list: P.listWorkspaces,
     /** One workspace with the caller's role and its settings. */
     get: P.getWorkspace,
@@ -12,6 +19,10 @@ export function bindWorkspaces() {
     update: P.updateWorkspace,
     /** Create a whole workspace in one call. */
     create: P.createWorkspace,
+    /** Delete a workspace; its owners can restore it until it is erased. */
+    delete: P.deleteWorkspace,
+    /** Restore a deleting workspace. */
+    restore: P.restoreWorkspace,
   };
 }
 
@@ -26,6 +37,12 @@ export function bindWorkspaceCore(workspaceId: string) {
     id: workspaceId,
     get: () => P.getWorkspace(workspaceId),
     update: (input: P.WorkspaceUpdateInput) => P.updateWorkspace(workspaceId, input),
+    /** Delete the workspace; its owners can restore it until it is erased. */
+    delete: () => P.deleteWorkspace(workspaceId),
+    /** Restore the workspace while it is deleting (owners). */
+    restore: () => P.restoreWorkspace(workspaceId),
+    /** Create the repository of a `setup_required` workspace. */
+    setup: (input?: P.SetupWorkspaceInput) => P.setupWorkspace(workspaceId, input),
     /** The account behind the workspace, for an older `Account*` call. */
     accountId: () => P.resolveWorkspaceAccountId(workspaceId),
     members: {
@@ -45,8 +62,8 @@ export function bindWorkspaceCore(workspaceId: string) {
         P.getWorkspaceBillingState(workspaceId, options),
     },
     /**
-     * The workspace's personal access tokens (`kortix_pat_…`). The narrower
-     * project-scoped CLI tokens a session gets stay at `kortix.project(id).tokens`.
+     * The workspace keys (`kortix_pat_…` bound to this workspace). The
+     * project CLI tokens are `cliTokens`.
      */
     tokens: {
       list: (options?: DropFirst<Parameters<typeof P.listWorkspaceTokens>>[0]) =>

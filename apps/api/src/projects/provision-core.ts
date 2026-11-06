@@ -112,10 +112,8 @@ const FAST_BOOT_SEED_HINT_TIMEOUT_MS = 8_000;
  * declared OpenAPI responses (`201` + `errors(400, 403, 409, 502, 503)`).
  * Kept as a literal union, not `number`, so `c.json(result.body,
  * result.status)` is checked against the route's declared responses instead
- * of a route silently casting the mismatch away with `as never`. 403 is
- * produced here too — `projectQuotaDenial` (`lib/project-quota.ts`) returns the
- * 403 body when the account is at its project limit, not only from each
- * route's own pre-`runProvision` `authorize()` gate.
+ * of a route silently casting the mismatch away with `as never`. 403 comes
+ * from the new-workspace caller rule and each route's own `authorize()` gate.
  */
 export type ProvisionResultStatus = 201 | 400 | 403 | 409 | 502 | 503;
 
@@ -592,9 +590,8 @@ async function replayOrEnforceProjectQuota(
   }
 
   // 409 `workspace_has_project` (the account already holds its one active
-  // project), else 403 `project_limit_reached` — the bodies
-  // `enforceProjectQuota` sends (see `lib/project-quota.ts`). Above
-  // `createRepo`, so a refused create mints no repo.
+  // project) — the body `enforceProjectQuota` sends (`lib/project-quota.ts`).
+  // Above `createRepo`, so a refused create mints no repo.
   const denial = await projectCreationDenial(scope.accountId);
   if (denial) return denial;
   return null;

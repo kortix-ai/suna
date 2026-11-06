@@ -12,8 +12,8 @@ flow(
   {
     domain: "accounts",
     routes: [
-      "POST /v1/workspaces/:accountId/invites/:inviteId/resend",
-      "DELETE /v1/workspaces/:accountId/invites/:inviteId",
+      "POST /v1/accounts/:accountId/invites/:inviteId/resend",
+      "DELETE /v1/accounts/:accountId/invites/:inviteId",
     ],
   },
   async (ctx) => {
@@ -21,7 +21,7 @@ flow(
     let inviteId = "";
     await ctx.step("create a pending invite (new email)", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/workspaces/:accountId/members",
+        "/v1/accounts/:accountId/members",
         { email: `inv-${Date.now()}@ke2e.kortix.test`, role: "member" },
         { params: { accountId: team.id } },
       );
@@ -32,14 +32,14 @@ flow(
       if (!inviteId) return;
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/workspaces/:accountId/invites/:inviteId/resend", {}, { params: { accountId: team.id, inviteId } });
+        .post("/v1/accounts/:accountId/invites/:inviteId/resend", {}, { params: { accountId: team.id, inviteId } });
       r.status([200, 201]);
     });
     await ctx.step("delete invite → ok", async () => {
       if (!inviteId) return;
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/workspaces/:accountId/invites/:inviteId", { params: { accountId: team.id, inviteId } });
+        .del("/v1/accounts/:accountId/invites/:inviteId", { params: { accountId: team.id, inviteId } });
       r.status([200, 204]);
     });
   },

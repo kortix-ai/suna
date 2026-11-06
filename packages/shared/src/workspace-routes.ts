@@ -18,13 +18,22 @@
  * | `/scim/v2/workspaces/:workspaceId/…`        | `/scim/v2/accounts/:workspaceId/…`       |
  *
  * `<family>` is one of {@link WORKSPACE_ACCOUNT_FAMILIES}: the settings the
- * account key holds (IAM, members, audit, billing requests, Capture, …). A
- * family route resolves the path id to the account key, so it accepts either
- * id. Two names are NOT aliases, because the canonical route merges two old
- * ones: `GET /v1/workspaces/:workspaceId/audit` (the workspace audit log) and
- * `GET /v1/workspaces/:workspaceId` (the project record plus the workspace
- * settings), see {@link WORKSPACE_MERGED_LEGACY_ROUTES}. `/v1/accounts`,
- * `/v1/accounts/:accountId` and `/v1/accounts/tokens` keep their own handlers.
+ * account key holds (IAM, members, audit, billing requests, Capture, …).
+ *
+ * Ids: a canonical path takes the workspace id ONLY. An account id, an unknown
+ * id or a workspace the caller cannot read answers
+ * `404 { code: 'workspace_not_found' }` on every sub-path. A legacy path keeps
+ * accepting either id. Uuids are case-insensitive.
+ *
+ * Not every legacy route is an alias. {@link WORKSPACE_MERGED_LEGACY_ROUTES}
+ * names the legacy routes whose canonical name is a DIFFERENT route (the
+ * workspace resource: list, create, record, update; the workspace audit log).
+ * {@link WORKSPACE_LEGACY_ONLY_ROUTES} names the legacy routes with no
+ * canonical name at all (account-scoped create, quota, transfer).
+ * {@link workspaceAliasOf} applies both: the route manifest and the OpenAPI
+ * spec read the alias relation from it, so they cannot disagree.
+ * `/v1/accounts`, `/v1/accounts/:accountId` and `/v1/accounts/tokens` keep
+ * their own handlers.
  *
  * Route templates written before 2026-11-05 name the id `:projectId` or
  * `:accountId` ({@link renameWorkspaceRouteParams}).
@@ -126,16 +135,64 @@ export function legacyWorkspaceRoute(path: string): string | null {
 }
 
 /**
- * Legacy routes whose canonical name answers more than they do, so they are
- * not an alias of it: `GET /v1/workspaces/:workspaceId` adds the `workspace`
- * settings block to the project record, and `GET /v1/workspaces/:workspaceId/audit`
- * is the workspace audit log (the account log of the workspace), not the
- * project slice. Each `METHOD /path` names the legacy route.
+ * Legacy routes whose canonical name is a different route, so they are not an
+ * alias of it. Each `METHOD /path` names the legacy route:
+ *
+ * - `GET /v1/projects` lists ONE account's projects; `GET /v1/workspaces` lists
+ *   every workspace of the caller, across accounts.
+ * - `POST /v1/projects` imports a GitHub repository into an account;
+ *   `POST /v1/workspaces` creates a new workspace.
+ * - `GET /v1/projects/:workspaceId` is the project record;
+ *   `GET /v1/workspaces/:workspaceId` adds the role, the state and the
+ *   workspace settings block.
+ * - `PATCH /v1/projects/:workspaceId` ignores unknown keys;
+ *   `PATCH /v1/workspaces/:workspaceId` refuses a settings key with 400
+ *   `workspace_setting_read_only` and answers the Workspace.
+ * - `GET /v1/workspaces/:workspaceId/audit` is the workspace audit log (the
+ *   account log of the workspace), not the project slice.
  */
 export const WORKSPACE_MERGED_LEGACY_ROUTES: readonly string[] = [
+  'GET /v1/projects',
+  'POST /v1/projects',
   'GET /v1/projects/:workspaceId',
+  'PATCH /v1/projects/:workspaceId',
   'GET /v1/projects/:workspaceId/audit',
 ];
+
+/**
+ * Legacy routes with no canonical name (K3): they act on an account, not on a
+ * workspace. `POST /v1/workspaces` creates a workspace; the account-scoped
+ * create routes, the quota read and the transfer stay on `/v1/projects` only.
+ */
+export const WORKSPACE_LEGACY_ONLY_ROUTES: readonly string[] = [
+  'POST /v1/projects/provision',
+  'POST /v1/projects/provision-stream',
+  'GET /v1/projects/quota',
+  'POST /v1/projects/link-repository',
+  'POST /v1/projects/create-repo',
+  'POST /v1/projects/:workspaceId/transfer',
+];
+
+const NOT_ALIASES: ReadonlySet<string> = new Set([...WORKSPACE_MERGED_LEGACY_ROUTES, ...WORKSPACE_LEGACY_ONLY_ROUTES]);
+
+/**
+ * The canonical route a legacy route is a permanent alias of, or `null`.
+ * `path` is a route template (`/v1/projects/:workspaceId/sessions`); `has`
+ * says whether a `METHOD path` route exists. A legacy route is an alias when
+ * its canonical name exists and it is not in {@link WORKSPACE_MERGED_LEGACY_ROUTES}
+ * or {@link WORKSPACE_LEGACY_ONLY_ROUTES}. The one alias rule of the route
+ * manifest (`apps/api/scripts/dump-routes.ts`) and the OpenAPI spec.
+ */
+export function workspaceAliasOf(
+  method: string,
+  path: string,
+  has: (method: string, path: string) => boolean,
+): string | null {
+  const m = method.toUpperCase();
+  if (NOT_ALIASES.has(`${m} ${path}`)) return null;
+  const canonical = canonicalWorkspaceRoute(path);
+  return canonical && has(m, canonical) ? canonical : null;
+}
 
 /** `legacyWorkspaceRoute(path) ?? path`: the name pre-workspace path checks understand. */
 export function asLegacyWorkspaceRoute(path: string): string {

@@ -112,7 +112,7 @@ export interface Permission {
 export async function listAssignments(accountId: string, filter?: ListAssignmentsFilter) {
   return unwrap(
     await iamGet<{ assignments: RoleAssignment[] }>(
-      `/workspaces/${accountId}/iam/assignments${assignmentQuery(filter)}`,
+      `/accounts/${accountId}/iam/assignments${assignmentQuery(filter)}`,
     ),
   ).assignments;
 }
@@ -128,7 +128,7 @@ export async function listAssignments(accountId: string, filter?: ListAssignment
  */
 export async function createAssignment(accountId: string, input: AssignmentInput) {
   return unwrap(
-    await backendApi.post<RoleAssignment>(`/workspaces/${accountId}/iam/assignments`, assignmentBody(input)),
+    await backendApi.post<RoleAssignment>(`/accounts/${accountId}/iam/assignments`, assignmentBody(input)),
   );
 }
 
@@ -137,7 +137,7 @@ export async function createAssignment(accountId: string, input: AssignmentInput
 export async function revokeAssignment(accountId: string, assignmentId: string) {
   return unwrap(
     await backendApi.delete<{ revoked: boolean; assignment: RoleAssignment }>(
-      `/workspaces/${accountId}/iam/assignments/${assignmentId}`,
+      `/accounts/${accountId}/iam/assignments/${assignmentId}`,
     ),
   ).assignment;
 }
@@ -150,6 +150,6 @@ export async function listPermissions(
 ) {
   const qs = options?.scopeType ? `?scope_type=${options.scopeType}` : '';
   return unwrap(
-    await iamGet<{ permissions: Permission[] }>(`/workspaces/${accountId}/iam/permissions${qs}`),
+    await iamGet<{ permissions: Permission[] }>(`/accounts/${accountId}/iam/permissions${qs}`),
   ).permissions;
 }

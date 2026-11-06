@@ -80,7 +80,6 @@ const WORKSPACE_EQUIVALENTS: Record<string, string> = {
   resendAccountInvite: 'resendWorkspaceInvite',
   leaveAccount: 'leaveWorkspace',
   listAccountTokens: 'listWorkspaceTokens',
-  createAccountToken: 'createWorkspaceToken',
   revokeAccountToken: 'revokeWorkspaceToken',
 };
 
@@ -160,7 +159,10 @@ describe('deprecated exports', () => {
     expect(isDeprecated(name)).toBe(false);
   });
 
-  test.each(['getProject', 'listProjectsForAccount', 'KortixAccount', 'listAccounts'])(
+  // createAccountToken mints a PERSONAL key (acts as the person in every
+  // workspace); createWorkspaceToken mints a key bound to one workspace.
+  // Different reach: not an equivalent.
+  test.each(['getProject', 'listProjectsForAccount', 'KortixAccount', 'listAccounts', 'createAccountToken'])(
     '%s has no exact workspace equivalent and stays current',
     (name) => {
       expect(isDeprecated(name)).toBe(false);

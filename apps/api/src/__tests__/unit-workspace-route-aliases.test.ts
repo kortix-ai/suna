@@ -8,8 +8,9 @@
  *   1. every `aliasOf` pair dispatches the SAME handler function, so an old
  *      and a new URL can never drift apart;
  *   2. every canonical route has its legacy alias, and every legacy route under
- *      an aliased prefix has its canonical twin, except the two merged routes
- *      and the retired 410 routes;
+ *      an aliased prefix has its canonical twin, except the merged routes (the
+ *      canonical name is another route), the legacy-only routes (no canonical
+ *      name, K3) and the retired 410 routes;
  *   3. the committed manifest's `aliasOf` rows are exactly what the name map
  *      in `@kortix/shared/workspace-routes` computes.
  */
@@ -18,7 +19,9 @@ import { readFileSync } from 'node:fs';
 import {
   canonicalWorkspaceRoute,
   legacyWorkspaceRoute,
+  WORKSPACE_LEGACY_ONLY_ROUTES,
   WORKSPACE_MERGED_LEGACY_ROUTES,
+  workspaceAliasOf,
 } from '@kortix/shared/workspace-routes';
 
 const { app } = await import('../index');
@@ -53,6 +56,7 @@ const manifest = JSON.parse(
 const ALIASED_PREFIX = /^(\/v1\/projects|\/v1\/accounts\/:workspaceId\/|\/v1\/accounts\/me|\/v1\/account-invites|\/v1\/connectors\/projects\/|\/scim\/v2\/accounts\/)/;
 const CANONICAL_PREFIX = /^(\/v1\/workspaces|\/v1\/me(\/|$)|\/v1\/invites|\/v1\/connectors\/workspaces\/|\/scim\/v2\/workspaces\/)/;
 const merged = new Set(WORKSPACE_MERGED_LEGACY_ROUTES);
+const legacyOnly = new Set(WORKSPACE_LEGACY_ONLY_ROUTES);
 const retired = new Set(RETIRED_ROUTES.map(([m, p]) => `${m} ${p}`));
 
 describe('workspace route aliases', () => {
@@ -93,7 +97,7 @@ describe('workspace route aliases', () => {
     const legacyWithoutCanonical = manifest.routes
       .filter((r) => ALIASED_PREFIX.test(r.path) && !r.aliasOf)
       .map((r) => `${r.method} ${r.path}`)
-      .filter((key) => !merged.has(key) && !retired.has(key))
+      .filter((key) => !merged.has(key) && !legacyOnly.has(key) && !retired.has(key))
       // GET/PATCH /v1/accounts/:workspaceId: the account record, its own route.
       .filter((key) => !/^(GET|PATCH) \/v1\/accounts\/:workspaceId$/.test(key));
     expect(legacyWithoutCanonical).toEqual([]);
@@ -102,15 +106,19 @@ describe('workspace route aliases', () => {
   test('the committed aliasOf rows match the shared name map', () => {
     const keys = new Set(manifest.routes.map((r) => `${r.method} ${r.path}`));
     for (const row of manifest.routes) {
-      const canonical = canonicalWorkspaceRoute(row.path);
-      const expected =
-        canonical && keys.has(`${row.method} ${canonical}`) && !merged.has(`${row.method} ${row.path}`)
-          ? canonical
-          : undefined;
+      const expected = workspaceAliasOf(row.method, row.path, (m, p) => keys.has(`${m} ${p}`)) ?? undefined;
       expect({ route: `${row.method} ${row.path}`, aliasOf: row.aliasOf }).toEqual({
         route: `${row.method} ${row.path}`,
         aliasOf: expected,
       });
+    }
+  });
+
+  test('a legacy-only route has no canonical name served', () => {
+    for (const key of legacyOnly) {
+      const [method, path] = key.split(' ') as [string, string];
+      expect({ key, canonical: endpoints.has(`${method} ${canonicalWorkspaceRoute(path)}`) }).toEqual({ key, canonical: false });
+      expect({ key, legacy: endpoints.has(key) }).toEqual({ key, legacy: true });
     }
   });
 

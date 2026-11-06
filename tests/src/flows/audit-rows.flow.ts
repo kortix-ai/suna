@@ -46,7 +46,7 @@ flow(
       'POST /v1/git/:project/git-upload-pack',
       'POST /v1/git/:project/git-receive-pack',
       'GET /v1/workspaces/:projectId',
-      'GET /v1/workspaces/:accountId/audit',
+      'GET /v1/accounts/:accountId/audit',
     ],
   },
   async (ctx) => {
@@ -110,7 +110,7 @@ flow(
       waitFor(
         async () => {
           if (send) await send();
-          return ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
+          return ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
             params: { accountId: team.id },
             query: { project_id: project.id, limit: '50', ...query },
           });
@@ -269,7 +269,7 @@ flow(
       });
 
       await ctx.step('the actor_type filter still refuses an unknown type → 400', async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
           params: { accountId: team.id },
           query: { actor_type: 'robot' },
         });
@@ -303,9 +303,9 @@ flow(
     domain: 'audit',
     routes: [
       'GET /v1/workspaces/:projectId',
-      'POST /v1/workspaces/:accountId/iam/groups',
-      'DELETE /v1/workspaces/:accountId/iam/groups/:groupId',
-      'GET /v1/workspaces/:accountId/audit',
+      'POST /v1/accounts/:accountId/iam/groups',
+      'DELETE /v1/accounts/:accountId/iam/groups/:groupId',
+      'GET /v1/accounts/:accountId/audit',
     ],
   },
   async (ctx) => {
@@ -317,7 +317,7 @@ flow(
     let forwardedGroupId: string | null = null;
     const auditRows = (query: Record<string, string>, description: string) =>
       waitFor(
-        () => owner.get('/v1/workspaces/:accountId/audit', { params, query: { limit: '50', ...query } }),
+        () => owner.get('/v1/accounts/:accountId/audit', { params, query: { limit: '50', ...query } }),
         {
           until: (res) => res.statusCode === 200 && (res.json<{ events?: unknown[] }>().events?.length ?? 0) > 0,
           timeoutMs: 20_000,
@@ -353,7 +353,7 @@ flow(
 
       await ctx.step("creating a group writes one row: the handler's own `iam.group.create` event", async () => {
         const created = await owner.post(
-          '/v1/workspaces/:accountId/iam/groups',
+          '/v1/accounts/:accountId/iam/groups',
           { name: ctx.fixtures.name('aud8-group') },
           { params },
         );
@@ -384,7 +384,7 @@ flow(
           };
 
           const created = await owner.post(
-            '/v1/workspaces/:accountId/iam/groups',
+            '/v1/accounts/:accountId/iam/groups',
             { name: ctx.fixtures.name('aud8-xff') },
             { params, headers: forwarded },
           );
@@ -423,7 +423,7 @@ flow(
     } finally {
       for (const id of [groupId, forwardedGroupId]) {
         if (!id) continue;
-        await owner.del('/v1/workspaces/:accountId/iam/groups/:groupId', {
+        await owner.del('/v1/accounts/:accountId/iam/groups/:groupId', {
           params: { ...params, groupId: id },
         });
       }
@@ -442,7 +442,7 @@ flow(
     domain: 'audit',
     routes: [
       'GET /v1/workspaces/:projectId',
-      'GET /v1/workspaces/:accountId/audit',
+      'GET /v1/accounts/:accountId/audit',
       'POST /v1/accounts/tokens',
     ],
   },
@@ -461,7 +461,7 @@ flow(
       (await send(correlationId)).status(200);
       const r = await waitFor(
         async () =>
-          ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
+          ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
             params: { accountId: team.id },
             query: { project_id: project.id, correlation_id: correlationId, action: 'project.read' },
           }),
@@ -533,7 +533,7 @@ flow(
     });
 
     await ctx.step('credential_kind filter selects the PAT rows only', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/audit', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
         params: { accountId: team.id },
         query: { project_id: project.id, action: 'project.read', credential_kind: 'personal_access_token' },
       });

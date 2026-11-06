@@ -100,7 +100,7 @@ describe('an App reaching the Kortix API through its own origin', () => {
 
     await kortix.projects.list();
 
-    expect(seen).toEqual([{ url: '/_kortix/api/v1/workspaces', credentials: 'same-origin', auth: 'Bearer kortix_oat_1' }]);
+    expect(seen).toEqual([{ url: '/_kortix/api/v1/projects', credentials: 'same-origin', auth: 'Bearer kortix_oat_1' }]);
   });
 
   test('an absolute backendUrl still sends no cookies', async () => {

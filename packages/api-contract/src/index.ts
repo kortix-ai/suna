@@ -2732,6 +2732,8 @@ export const SecretSchema = z.object({
   /** The env var KEY injected into the sandbox. Not unique. */
   name: z.string(),
   project_id: z.string(),
+  /** The workspace id: the same value as `project_id`. Optional: older servers omit it. */
+  workspace_id: z.string().optional(),
   secret_id: z.string().nullable(),
   created_by: z.string().nullable(),
   created_at: z.string().nullable(),

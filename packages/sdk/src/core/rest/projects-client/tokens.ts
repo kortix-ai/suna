@@ -18,6 +18,8 @@ export interface AccountToken {
   /** Set when this token was minted project-scoped (still visible from the
    *  account-wide list). */
   project_id: string | null;
+  /** The workspace the key is bound to: the same value as `project_id`. Absent on older APIs. */
+  workspace_id?: string | null;
   public_key: string;
   status: string;
   expires_at: string | null;
@@ -97,8 +99,9 @@ export async function approveCliDevice(userCode: string, options?: { accountId?:
 /** Mint a new account-scoped CLI PAT. The `secret_key` is returned once — the
  *  caller must persist it immediately; subsequent reads only ever see `public_key`.
  *
- * @deprecated Use `createWorkspaceToken(workspaceId, input)`, which binds the
- * token to that workspace. Kept permanently. Account-wide, as before.
+ * A key minted here without `projectId` is a PERSONAL key: it acts as the
+ * person in every workspace of theirs (listed by `listPersonalTokens`). A key
+ * for one workspace only is `createWorkspaceToken(workspaceId, input)`.
  */
 export async function createAccountToken(input: CreateAccountTokenInput) {
   const { accountId, expiresAt, projectId, name } = input;

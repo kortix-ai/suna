@@ -65,7 +65,7 @@ test('concurrent distinct single probes on one (account, user) share ONE batch P
   expect(calls.filter((x) => x.method === 'GET')).toEqual([]);
   expect(posts).toHaveLength(1);
   const [firstPost] = posts;
-  expect(firstPost?.url).toContain('/workspaces/acc-1/iam/members/u1/effective:batch');
+  expect(firstPost?.url).toContain('/accounts/acc-1/iam/members/u1/effective:batch');
   expect(firstPost?.body).toEqual({
     probes: [{ action: 'project.create' }, { action: 'member.update' }, { action: 'role.create' }],
   });

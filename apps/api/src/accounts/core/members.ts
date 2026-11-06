@@ -269,7 +269,7 @@ export function registerMemberRoutes(): void {
       const projectGrantCountByUser = new Map<string, number>();
       const projectsByUser = new Map<
         string,
-        Array<{ project_id: string; name: string; role: string }>
+        Array<{ project_id: string; workspace_id: string; name: string; role: string }>
       >();
       // The ladder role on the workspace's one project (1:1); a split_pending
       // account has no single workspace project, so a member reads `member`.
@@ -281,7 +281,7 @@ export function registerMemberRoutes(): void {
       for (const r of projectGrantRows) {
         projectGrantCountByUser.set(r.userId, (projectGrantCountByUser.get(r.userId) ?? 0) + 1);
         const list = projectsByUser.get(r.userId) ?? [];
-        list.push({ project_id: r.projectId, name: r.name, role: r.role });
+        list.push({ project_id: r.projectId, workspace_id: r.projectId, name: r.name, role: r.role });
         projectsByUser.set(r.userId, list);
       }
 

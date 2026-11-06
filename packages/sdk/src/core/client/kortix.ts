@@ -105,12 +105,20 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   /**
    * Id-bound handle for one workspace. It carries every member of
    * `project(id)` (sessions, secrets, connectors, agents: the workspace id IS
-   * the project id) plus the workspace itself, its members, billing,
-   * personal access tokens and IAM.
+   * the project id) plus the workspace itself: its record, lifecycle,
+   * members, billing, keys and IAM.
+   *
+   * Three project members have a workspace meaning here
+   * (`WORKSPACE_HANDLE_OVERRIDES`): `get` and `update` read and change the
+   * Workspace, and `tokens` manages workspace keys. The project's CLI tokens
+   * stay reachable as `cliTokens`.
    */
   function workspace(workspaceId: string) {
+    const { get: _projectGet, update: _projectUpdate, tokens: cliTokens, ...shared } = project(workspaceId);
     return {
-      ...project(workspaceId),
+      ...shared,
+      /** The project CLI tokens (`/workspaces/:id/cli-token`): `project(id).tokens`. */
+      cliTokens,
       ...bindWorkspaceCore(workspaceId),
     };
   }

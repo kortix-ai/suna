@@ -15,15 +15,15 @@ import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixture
 // NONMEMBER are denied by PROJECT_CREATE (403). We assert the boundary only —
 // a real 201 needs a GitHub App install + reachable repo, which the harness
 // can't guarantee.
-flow('PROJ-2', { domain: 'projects', routes: ['POST /v1/workspaces'] }, async (ctx) => {
+flow('PROJ-2', { domain: 'projects', routes: ['POST /v1/projects'] }, async (ctx) => {
   await ctx.step('missing repo_url → 400 repo_url is required', async () => {
-    (await ctx.client.as(ctx.P.OWNER).post('/v1/workspaces', { name: ctx.fixtures.name('byo') }))
+    (await ctx.client.as(ctx.P.OWNER).post('/v1/projects', { name: ctx.fixtures.name('byo') }))
       .status(400).body().has('$.error', 'repo_url is required');
   });
   await ctx.step('non-GitHub repo_url → 400', async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .post('/v1/workspaces', {
+      .post('/v1/projects', {
         name: ctx.fixtures.name('byo'),
         repo_url: 'https://gitlab.com/acme/widget',
       });
@@ -32,7 +32,7 @@ flow('PROJ-2', { domain: 'projects', routes: ['POST /v1/workspaces'] }, async (c
   await ctx.step('http:// (non-HTTPS) repo_url → 400', async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .post('/v1/workspaces', {
+      .post('/v1/projects', {
         name: ctx.fixtures.name('byo'),
         repo_url: 'http://github.com/acme/widget',
       });
@@ -43,7 +43,7 @@ flow('PROJ-2', { domain: 'projects', routes: ['POST /v1/workspaces'] }, async (c
     // cross-tenant 403 isn't the boundary here — unauth is.)
     const r = await ctx.client
       .as(ctx.P.ANON)
-      .post('/v1/workspaces', {
+      .post('/v1/projects', {
         name: ctx.fixtures.name('byo'),
         repo_url: 'https://github.com/acme/widget',
       });
@@ -692,14 +692,14 @@ flow(
 // account may be free or paid on any deployment.
 flow(
   'PROJ-43',
-  { domain: 'projects', routes: ['GET /v1/workspaces/quota'] },
+  { domain: 'projects', routes: ['GET /v1/projects/quota'] },
   async (ctx) => {
     await ctx.step('ANON → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/workspaces/quota');
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/quota');
       r.status(401);
     });
     await ctx.step('OWNER (default account) → 200 with the cap shape', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/quota');
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/quota');
       r.status(200).body().exists('$.capped').exists('$.limit');
       const body = r.json<any>();
       if (typeof body.capped !== 'boolean') {
@@ -728,17 +728,17 @@ flow(
         (await db.query('SELECT account_id FROM kortix.projects WHERE project_id = $1', [p.id])).rows[0]
           .account_id as string,
       );
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/quota', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/quota', {
         query: { account_id: accountId },
       });
       r.status(200).body().exists('$.capped').exists('$.limit');
     });
     await ctx.step('an account the caller is not a member of → 403; a malformed id → 400', async () => {
-      const denied = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/quota', {
+      const denied = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/quota', {
         query: { account_id: '00000000-0000-4000-a000-000000000009' },
       });
       denied.status(403);
-      const bad = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/quota', {
+      const bad = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/quota', {
         query: { account_id: '00000000-0000-4000-a000-00000000notre' },
       });
       bad.status(400);
@@ -892,9 +892,9 @@ flow(
       (await put(user, project.id)).status(403);
       (await del(user, project.id)).status(403);
     });
-    await ctx.step('NONMEMBER → PUT and DELETE both 403', async () => {
-      (await put(ctx.P.NONMEMBER, project.id)).status(403);
-      (await del(ctx.P.NONMEMBER, project.id)).status(403);
+    await ctx.step('NONMEMBER → PUT and DELETE both 404 workspace_not_found', async () => {
+      (await put(ctx.P.NONMEMBER, project.id)).status(404).body().has('$.code', 'workspace_not_found');
+      (await del(ctx.P.NONMEMBER, project.id)).status(404).body().has('$.code', 'workspace_not_found');
     });
     await ctx.step('project manager reaches model validation and deletion', async () => {
       (await put(manager, project.id)).status(409)
@@ -1271,11 +1271,11 @@ flow(
         });
       r.status(404);
     });
-    await ctx.step('NONMEMBER → 403', async () => {
+    await ctx.step('NONMEMBER → 404 workspace_not_found', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .get('/v1/workspaces/:projectId/llm-catalog/providers', { params: { projectId: p.id } });
-      r.status(403);
+      r.status(404).body().has('$.code', 'workspace_not_found');
     });
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client

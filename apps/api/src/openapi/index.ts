@@ -6,7 +6,7 @@
  * error contract. Routes are defined with `createRoute()` + zod; the spec is
  * served at /v1/openapi.json and rendered by Scalar at /v1/docs.
  */
-import { canonicalWorkspaceRoute } from '@kortix/shared/workspace-routes';
+import { workspaceAliasOf } from '@kortix/shared/workspace-routes';
 import { OpenAPIHono, z, type RouteConfig } from '@hono/zod-openapi';
 import { ErrorEnvelopeSchema } from '@kortix/api-contract';
 import type { Env } from 'hono';
@@ -179,20 +179,19 @@ const OPENAPI_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'pat
 export function markWorkspaceAliases<T extends { paths?: object }>(doc: T): T {
   if (!doc.paths) return doc;
   const all = doc.paths as Record<string, Record<string, unknown>>;
+  const has = (method: string, routing: string) => Boolean(all[routingToOpenApiPath(routing)]?.[method.toLowerCase()]);
   const paths: Record<string, Record<string, unknown>> = {};
   for (const [path, item] of Object.entries(all)) {
-    const routing = path.replace(/\{([^}]+)\}/g, ':$1');
-    const canonicalRouting = canonicalWorkspaceRoute(routing);
-    const canonical = canonicalRouting?.replace(/:([A-Za-z0-9_]+)/g, '{$1}');
-    const target = canonical ? all[canonical] : undefined;
-    if (!canonical || !target) {
-      paths[path] = item;
-      continue;
-    }
+    const routing = openApiToRoutingPath(path);
     const marked: Record<string, unknown> = { ...item };
+    let changed = false;
     for (const method of OPENAPI_METHODS) {
       const op = item[method] as Record<string, unknown> | undefined;
-      if (!op || !target[method]) continue;
+      if (!op) continue;
+      const canonicalRouting = workspaceAliasOf(method, routing, has);
+      if (!canonicalRouting) continue;
+      const canonical = routingToOpenApiPath(canonicalRouting);
+      changed = true;
       marked[method] = {
         ...op,
         deprecated: true,
@@ -202,9 +201,19 @@ export function markWorkspaceAliases<T extends { paths?: object }>(doc: T): T {
         }`,
       };
     }
-    paths[path] = marked;
+    paths[path] = changed ? marked : item;
   }
   return { ...doc, paths };
+}
+
+/** `{name}` → `:name`, whole segments only. */
+export function openApiToRoutingPath(path: string): string {
+  return path.replace(/(^|\/)\{([^}]+)\}/g, '$1:$2');
+}
+
+/** `:name` → `{name}`, whole segments only: `/policies:bulk-delete` is a custom verb, not a param. */
+export function routingToOpenApiPath(path: string): string {
+  return path.replace(/(^|\/):([A-Za-z0-9_]+)/g, '$1{$2}');
 }
 
 /** Canonical workspace prefixes: the only paths that publish `{workspaceId}`. */
@@ -304,6 +313,13 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
       // from. The request origin the API sees behind the edge router is an
       // internal host, which the spec must not publish (KRTX-2949).
       servers: [{ url: '/' }],
+      tags: [
+        {
+          name: 'workspaces',
+          description:
+            'The canonical workspace API. A workspace is one company’s Kortix: its members, roles, billing, secrets, agents and sessions. Its id is `workspace_id` (equal to `project_id`). Canonical paths take the workspace id only; an account id, an unknown id or a workspace you cannot read answers 404 `workspace_not_found`. The legacy `/v1/projects` and `/v1/accounts/{accountId}` names stay served permanently and accept either id.',
+        },
+      ],
     });
   }
 

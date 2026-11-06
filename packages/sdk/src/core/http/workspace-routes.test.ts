@@ -174,6 +174,28 @@ describe('withWorkspaceRouteFallback', () => {
     ]);
   });
 
+  test('a current server: a legacy-only route under the canonical prefix retries once and the base stays canonical', async () => {
+    // The current API serves `/provision` (and quota, transfer, …) on `/v1/projects` only:
+    // the unknown-route 404 there says nothing about the rest of the canonical names.
+    const s = server({ canonical: true });
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.endsWith('/v1/workspaces/provision')) {
+        await s.fetchImpl(input, init);
+        return Response.json({ error: true, message: 'Not found', status: 404 }, { status: 404 });
+      }
+      return s.fetchImpl(input, init);
+    };
+    const f = withWorkspaceRouteFallback(fetchImpl);
+    await f('http://new.test/v1/workspaces/provision', { method: 'POST', body: '{"name":"a"}' });
+    await f('http://new.test/v1/workspaces');
+    expect(s.seen.map((r) => r.url)).toEqual([
+      'http://new.test/v1/workspaces/provision',
+      'http://new.test/v1/projects/provision',
+      'http://new.test/v1/workspaces',
+    ]);
+  });
+
   test('a path-only base (a Kortix App gate) is remembered too', async () => {
     const s = server({ canonical: false });
     const f = withWorkspaceRouteFallback(s.fetchImpl);

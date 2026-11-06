@@ -73,7 +73,7 @@ const fakeFetch: KortixFetch = async (input, init) => {
     if (!id) return Response.json({ error: 'Invalid OAuth access token' }, { status: 401 });
     return Response.json({ ...id, token_context: { auth_type: 'oauth' }, accounts: [{ account_id: 'acct-1', slug: 'acct1', name: 'Acme', role: 'member' }] });
   }
-  if (url.pathname === '/v1/workspaces') {
+  if (url.pathname === '/v1/projects' || url.pathname === '/v1/workspaces') {
     const token = req.headers.get('authorization')?.slice(7) ?? '';
     if (!identityFor[token]) return Response.json({ error: 'unauthenticated' }, { status: 401 });
     return Response.json([{ project_id: 'p-1', name: 'Dashboards' }]);

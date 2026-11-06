@@ -535,7 +535,7 @@ export async function downloadAccountAudit(
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
   const response = await withWorkspaceRouteFallback(fetch)(
-    `${platformApiBase(options.backendUrl)}/workspaces/${encodeURIComponent(accountId)}/audit/export?${auditFilterQuery(query)}`,
+    `${platformApiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${auditFilterQuery(query)}`,
     {
       headers: requestHeaders(options, false),
       ...(options.signal ? { signal: options.signal } : {}),

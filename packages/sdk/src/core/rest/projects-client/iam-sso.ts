@@ -43,7 +43,7 @@ export interface SsoGroupMapping {
 
 export async function getSsoProvider(accountId: string) {
   return unwrap(
-    await iamGet<{ provider: SsoProvider | null }>(`/workspaces/${accountId}/iam/sso/provider`),
+    await iamGet<{ provider: SsoProvider | null }>(`/accounts/${accountId}/iam/sso/provider`),
   ).provider;
 }
 
@@ -61,7 +61,7 @@ export async function upsertSsoProvider(
 ) {
   return unwrap(
     await backendApi.put<{ provider: SsoProvider }>(
-      `/workspaces/${accountId}/iam/sso/provider`,
+      `/accounts/${accountId}/iam/sso/provider`,
       input,
       { showErrors: false },
     ),
@@ -90,7 +90,7 @@ export async function importSsoProviderFromMetadata(
 ) {
   return unwrap(
     await backendApi.post<{ provider: SsoProvider }>(
-      `/workspaces/${accountId}/iam/sso/provider/from-metadata`,
+      `/accounts/${accountId}/iam/sso/provider/from-metadata`,
       input,
       { showErrors: false },
     ),
@@ -106,7 +106,7 @@ export async function importSsoProviderFromMetadata(
 export async function verifySsoDomain(accountId: string) {
   return unwrap(
     await backendApi.post<{ provider: SsoProvider }>(
-      `/workspaces/${accountId}/iam/sso/provider/verify-domain`,
+      `/accounts/${accountId}/iam/sso/provider/verify-domain`,
       {},
       { showErrors: false },
     ),
@@ -115,13 +115,13 @@ export async function verifySsoDomain(accountId: string) {
 
 export async function deleteSsoProvider(accountId: string) {
   return unwrap(
-    await backendApi.delete<{ deleted: boolean }>(`/workspaces/${accountId}/iam/sso/provider`),
+    await backendApi.delete<{ deleted: boolean }>(`/accounts/${accountId}/iam/sso/provider`),
   );
 }
 
 export async function listSsoGroupMappings(accountId: string) {
   return unwrap(
-    await iamGet<{ mappings: SsoGroupMapping[] }>(`/workspaces/${accountId}/iam/sso/mappings`),
+    await iamGet<{ mappings: SsoGroupMapping[] }>(`/accounts/${accountId}/iam/sso/mappings`),
   ).mappings;
 }
 
@@ -130,7 +130,7 @@ export async function createSsoGroupMapping(
   input: { claim_value: string; group_id: string },
 ) {
   return unwrap(
-    await backendApi.post<SsoGroupMapping>(`/workspaces/${accountId}/iam/sso/mappings`, input, {
+    await backendApi.post<SsoGroupMapping>(`/accounts/${accountId}/iam/sso/mappings`, input, {
       showErrors: false,
     }),
   );
@@ -139,7 +139,7 @@ export async function createSsoGroupMapping(
 export async function deleteSsoGroupMapping(accountId: string, mappingId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
-      `/workspaces/${accountId}/iam/sso/mappings/${mappingId}`,
+      `/accounts/${accountId}/iam/sso/mappings/${mappingId}`,
     ),
   );
 }

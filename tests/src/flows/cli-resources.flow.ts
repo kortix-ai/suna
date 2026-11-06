@@ -707,7 +707,7 @@ flow(
 );
 
 flow('CLI-ROLE-CHANGE', { domain: 'cli', routes: [
-  'POST /v1/workspaces/:accountId/iam/assignments', 'GET /v1/workspaces/:projectId/access',
+  'POST /v1/accounts/:accountId/iam/assignments', 'GET /v1/workspaces/:projectId/access',
 ] }, async (ctx) => {
   const team = await ctx.fixtures.team();
   const project = await team.project();

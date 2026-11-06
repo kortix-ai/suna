@@ -3,24 +3,24 @@
 /**
  * The workspace hooks: every workspace the caller can open, and one workspace.
  *
- * `useWorkspaces` reads the same queries and keys as `useAccounts` and
- * `useProjects(accountId)` (`qk.accounts.list(userId)`,
- * `qk.projects.list(accountId)`), so a host that mixes the old and new hooks
- * still sends one request per list. The state is computed by the pure
- * `workspacesState`, which is what the tests assert: this package has no
- * React test renderer.
+ * `useWorkspaces` reads `listWorkspaces()`: one `GET /v1/workspaces` for every
+ * workspace across accounts (`qk.projects.workspaces(userId)`), plus the
+ * caller's accounts (`qk.accounts.list(userId)`, shared with `useAccounts`).
+ * `workspacesState` is the pure state of the older per-account read, kept
+ * for hosts that compose `useAccounts` and `useProjects` themselves. This
+ * package has no React test renderer: the tests assert the pure parts.
  *
  * Not the sandbox file tree: that is `useRuntimeWorkspace`.
  */
 
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 import {
   buildWorkspaceSummaries,
   compareWorkspacesByRecent,
   getWorkspace,
   listAccounts,
-  listProjectsForAccount,
+  listWorkspaces,
   type KortixAccount,
   type KortixProject,
   type Workspace,
@@ -28,7 +28,7 @@ import {
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
-import { accountsQueryOptions, projectsQueryOptions, type UseAccountsOptions } from './use-accounts';
+import { accountsQueryOptions, type UseAccountsOptions } from './use-accounts';
 
 export type UseWorkspacesOptions = UseAccountsOptions;
 
@@ -42,9 +42,12 @@ export interface UseWorkspacesResult {
   isLoading: boolean;
   /** The accounts failed, or every account's list failed. */
   isError: boolean;
-  /** Accounts whose list failed: their workspaces are unknown, not absent. */
+  /**
+   * Accounts whose list failed: their workspaces are unknown, not absent.
+   * Always empty for `useWorkspaces` (one list for every account).
+   */
   failedAccountIds: string[];
-  /** Refetch every failed list. */
+  /** Refetch a failed list. */
   refetchFailed: () => void;
 }
 
@@ -73,9 +76,19 @@ export function workspacesState(input: {
   };
 }
 
+/** The key + gate + freshness of {@link useWorkspaces}' list, without React. */
+export function workspacesQueryOptions(userId?: string | null, enabled = true) {
+  return {
+    queryKey: qk.projects.workspaces(userId),
+    enabled,
+    ...contract('inventory'),
+  };
+}
+
 /**
- * Every workspace the caller can open. Pass `userId` in any host where the
- * signed-in user can change without a reload (see `useAccounts`).
+ * Every workspace the caller can open, across accounts, in one request
+ * (`listWorkspaces`). Pass `userId` in any host where the signed-in user can
+ * change without a reload (see `useAccounts`).
  */
 export function useWorkspaces(options: UseWorkspacesOptions = {}): UseWorkspacesResult {
   const enabled = options.enabled ?? true;
@@ -83,34 +96,24 @@ export function useWorkspaces(options: UseWorkspacesOptions = {}): UseWorkspaces
     ...accountsQueryOptions(options.userId, enabled),
     queryFn: listAccounts,
   });
-  const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
-  const listQueries = useQueries({
-    queries: accounts.map((account) => ({
-      ...projectsQueryOptions(account.account_id, enabled),
-      queryFn: () => listProjectsForAccount(account.account_id),
-    })),
+  const workspacesQuery = useQuery<WorkspaceSummary[]>({
+    ...workspacesQueryOptions(options.userId, enabled),
+    queryFn: () => listWorkspaces(),
   });
-  // `listQueries` is a new array every render; this signature is its identity.
-  const signature = listQueries.map((q) => `${q.dataUpdatedAt}:${q.isError}:${q.isLoading}`).join('|');
-  const state = useMemo(
-    () =>
-      workspacesState({
-        accounts: accountsQuery,
-        lists: accounts.map((account, index) => ({
-          accountId: account.account_id,
-          data: listQueries[index]?.data,
-          isLoading: listQueries[index]?.isLoading ?? true,
-          isError: listQueries[index]?.isError ?? false,
-        })),
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [accounts, accountsQuery.isLoading, accountsQuery.isError, signature],
-  );
+  const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
+  const workspaces = useMemo(() => workspacesQuery.data ?? [], [workspacesQuery.data]);
+  const { refetch, isError } = workspacesQuery;
   const refetchFailed = useCallback(() => {
-    for (const query of listQueries) if (query.isError) void query.refetch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
-  return { ...state, refetchFailed };
+    if (isError) void refetch();
+  }, [isError, refetch]);
+  return {
+    workspaces,
+    accounts,
+    isLoading: workspacesQuery.isLoading,
+    isError: workspacesQuery.isError,
+    failedAccountIds: [],
+    refetchFailed,
+  };
 }
 
 /** The key + gate + freshness of {@link useWorkspace}, without React. */

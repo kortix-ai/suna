@@ -203,6 +203,8 @@ export function serializeSession(
     session_id: row.sessionId,
     account_id: row.accountId,
     project_id: row.projectId,
+    // The workspace id is the project id (design §0): every record that names a workspace carries it.
+    workspace_id: row.projectId,
     branch_name: row.branchName,
     base_ref: row.baseRef,
     // A legacy `e2b` row passes through as stored: E2B support is discontinued.
@@ -619,6 +621,7 @@ export function buildSecretView(input: {
     identifier,
     name,
     project_id: (shared ?? personal)!.projectId,
+    workspace_id: (shared ?? personal)!.projectId,
     secret_id: shared?.secretId ?? null,
     created_by: shared?.createdBy ?? null,
     created_at: (shared?.createdAt ?? personal?.createdAt)?.toISOString() ?? null,

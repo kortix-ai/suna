@@ -31,9 +31,19 @@ function contextVar(c: RouteParamContext, key: string): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/** The workspace id (`project_id`) in the path. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A uuid in its one stored form (lowercase); any other value unchanged. */
+function canonicalId<T extends string | undefined>(value: T): T {
+  return (typeof value === 'string' && UUID.test(value) ? value.toLowerCase() : value) as T;
+}
+
+/**
+ * The workspace id (`project_id`) in the path. A uuid is lowercased: ids are
+ * stored lowercase, and `/v1/workspaces/<UPPERCASE>` names the same workspace.
+ */
 export function workspaceIdParam(c: RouteParamContext): string {
-  return (c.req.param('workspaceId') ?? c.req.param('projectId')) as string;
+  return canonicalId(c.req.param('workspaceId') ?? c.req.param('projectId')) as string;
 }
 
 /**
@@ -47,6 +57,5 @@ export function workspaceIdParam(c: RouteParamContext): string {
  */
 export function accountIdParam(c: RouteParamContext): string {
   return (contextVar(c, WORKSPACE_ACCOUNT_ID_VAR) ??
-    c.req.param('workspaceId') ??
-    c.req.param('accountId')) as string;
+    canonicalId(c.req.param('workspaceId') ?? c.req.param('accountId'))) as string;
 }

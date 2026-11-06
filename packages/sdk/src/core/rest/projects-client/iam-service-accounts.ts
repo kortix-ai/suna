@@ -23,7 +23,7 @@ export interface CreatedServiceAccount extends ServiceAccount {
 export async function listServiceAccountsApi(accountId: string) {
   return unwrap(
     await iamGet<{ service_accounts: ServiceAccount[] }>(
-      `/workspaces/${accountId}/iam/service-accounts`,
+      `/accounts/${accountId}/iam/service-accounts`,
     ),
   ).service_accounts;
 }
@@ -34,7 +34,7 @@ export async function createServiceAccountApi(
 ) {
   return unwrap(
     await backendApi.post<CreatedServiceAccount>(
-      `/workspaces/${accountId}/iam/service-accounts`,
+      `/accounts/${accountId}/iam/service-accounts`,
       input,
       { showErrors: false },
     ),
@@ -44,7 +44,7 @@ export async function createServiceAccountApi(
 export async function disableServiceAccountApi(accountId: string, saId: string) {
   return unwrap(
     await backendApi.post<{ disabled: boolean }>(
-      `/workspaces/${accountId}/iam/service-accounts/${saId}/disable`,
+      `/accounts/${accountId}/iam/service-accounts/${saId}/disable`,
       {},
       { showErrors: false },
     ),
@@ -54,7 +54,7 @@ export async function disableServiceAccountApi(accountId: string, saId: string) 
 export async function deleteServiceAccountApi(accountId: string, saId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
-      `/workspaces/${accountId}/iam/service-accounts/${saId}`,
+      `/accounts/${accountId}/iam/service-accounts/${saId}`,
     ),
   );
 }

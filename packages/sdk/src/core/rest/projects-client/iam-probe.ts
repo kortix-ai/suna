@@ -162,7 +162,7 @@ export async function probeEffectivePermissions(
   if (probes.length === 0) return [] as PermissionProbeResult[];
   return unwrap(
     await backendApi.post<{ results: PermissionProbeResult[] }>(
-      `/workspaces/${accountId}/iam/members/${userId}/effective:batch`,
+      `/accounts/${accountId}/iam/members/${userId}/effective:batch`,
       { probes },
       { showErrors: options?.showErrors ?? true },
     ),

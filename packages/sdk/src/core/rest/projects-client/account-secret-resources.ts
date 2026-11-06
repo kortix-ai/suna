@@ -79,11 +79,11 @@ export interface SubscriptionConnection extends AccountSecretResource {
 }
 
 export async function listSubscriptionConnections(accountId: string, projectId: string) {
-  return unwrap(await backendApi.get<{ subscriptions: SubscriptionConnection[] }>(`/workspaces/${encodeURIComponent(accountId)}/subscription-connections?project_id=${encodeURIComponent(projectId)}`));
+  return unwrap(await backendApi.get<{ subscriptions: SubscriptionConnection[] }>(`/accounts/${encodeURIComponent(accountId)}/subscription-connections?project_id=${encodeURIComponent(projectId)}`));
 }
 
 export async function refreshSubscriptionConnectionUsage(accountId: string, secretId: string, projectId: string, storage: SubscriptionConnection['storage']) {
-  const path = `/workspaces/${encodeURIComponent(accountId)}/subscription-connections/${encodeURIComponent(secretId)}/usage`;
+  const path = `/accounts/${encodeURIComponent(accountId)}/subscription-connections/${encodeURIComponent(secretId)}/usage`;
   return unwrap(await backendApi.post<{ usage: SubscriptionUsage | null; provider_account?: SubscriptionAccount | null }>(`${path}?project_id=${encodeURIComponent(projectId)}&storage=${storage}`));
 }
 
@@ -107,7 +107,7 @@ export interface SessionProviderSecretPool {
   secret_ids: string[];
 }
 
-const accountPath = (accountId: string) => `/workspaces/${encodeURIComponent(accountId)}/secret-resources`;
+const accountPath = (accountId: string) => `/accounts/${encodeURIComponent(accountId)}/secret-resources`;
 const secretPath = (accountId: string, secretId: string) => `${accountPath(accountId)}/${encodeURIComponent(secretId)}`;
 const poolPath = (projectId: string, sessionId: string, providerId: string) =>
   `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/provider-secret-pools/${encodeURIComponent(providerId)}`;

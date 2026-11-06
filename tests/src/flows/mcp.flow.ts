@@ -158,7 +158,7 @@ flow(
       "GET /v1/accounts",
       "GET /v1/workspaces",
       "GET /v1/me",
-      "GET /v1/workspaces/:accountId/audit",
+      "GET /v1/accounts/:accountId/audit",
       "GET /v1/skills",
       "GET /v1/skills/:name",
       "GET /v1/workspaces/:projectId/files",
@@ -455,7 +455,7 @@ flow(
       r.status(200);
       const audit = await waitFor(
         () =>
-          ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:accountId/audit", {
+          ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/audit", {
             params: { accountId: team.id },
             query: { project_id: p.id, correlation_id: correlationId },
           }),

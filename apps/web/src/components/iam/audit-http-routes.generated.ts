@@ -1688,7 +1688,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|workspaces|:workspaceId|tokens",
   "DELETE|v1|workspaces|:workspaceId|tokens|:tokenId",
   "POST|v1|workspaces|:workspaceId|top-up-requests",
-  "POST|v1|workspaces|:workspaceId|transfer",
   "GET|v1|workspaces|:workspaceId|trigger-runs",
   "GET|v1|workspaces|:workspaceId|triggers",
   "POST|v1|workspaces|:workspaceId|triggers",
@@ -1709,7 +1708,6 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|workspaces|:workspaceId|turn-question",
   "POST|v1|workspaces|:workspaceId|turn-stream",
   "GET|v1|workspaces|:workspaceId|version-diff",
-  "POST|v1|workspaces|create-repo",
   "GET|v1|workspaces|git|backend",
   "GET|v1|workspaces|git|backend|repositories",
   "DELETE|v1|workspaces|github|installation",
@@ -1722,11 +1720,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "GET|v1|workspaces|github|repositories",
   "GET|v1|workspaces|github|repository-branches",
   "POST|v1|workspaces|github|user-token",
-  "POST|v1|workspaces|link-repository",
   "GET|v1|workspaces|managed-git|status",
-  "POST|v1|workspaces|provision",
-  "POST|v1|workspaces|provision-stream",
-  "GET|v1|workspaces|quota",
 ] as const;
 
 export const AUDIT_HTTP_ROUTES = AUDIT_HTTP_ROUTE_KEYS.map((key) => {

@@ -153,9 +153,9 @@ export async function loadProjectForUser(c: Context<AppEnv>, projectId: string, 
 }
 
 // Refuse one more project in the account: 409 `workspace_has_project` when the
-// account already holds its one active project (Workspaces 1:1), else 403
-// `project_limit_reached` at the plan's cap. Returns the response to send, or
-// null when the account may create a project (`projectCreationDenial`).
+// account already holds its one active project (Workspaces 1:1). Returns the
+// response to send, or null when the account may create its project
+// (`projectCreationDenial`).
 export async function enforceProjectQuota(
   c: Context,
   accountId: string,

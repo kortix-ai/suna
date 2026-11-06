@@ -11,12 +11,12 @@ import { iamGet, iamUnwrap as unwrap } from './iam-shared';
 
 /** Whether the account's Enterprise demo is on. */
 export async function getEnterpriseDemo(accountId: string): Promise<boolean> {
-  return unwrap(await iamGet<{ enabled: boolean }>(`/workspaces/${accountId}/iam/enterprise-demo`)).enabled;
+  return unwrap(await iamGet<{ enabled: boolean }>(`/accounts/${accountId}/iam/enterprise-demo`)).enabled;
 }
 
 /** Turn the account's Enterprise demo on or off. Returns the new value. */
 export async function setEnterpriseDemo(accountId: string, enabled: boolean): Promise<boolean> {
   return unwrap(
-    await backendApi.put<{ enabled: boolean }>(`/workspaces/${accountId}/iam/enterprise-demo`, { enabled }),
+    await backendApi.put<{ enabled: boolean }>(`/accounts/${accountId}/iam/enterprise-demo`, { enabled }),
   ).enabled;
 }

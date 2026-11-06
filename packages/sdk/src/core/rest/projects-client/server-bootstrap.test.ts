@@ -50,7 +50,7 @@ test('fetchProjectsForAccountWithToken scopes the query by account_id', async ()
     { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
     'acc-1',
   );
-  expect(last().url).toBe('http://backend.local/v1/workspaces?account_id=acc-1');
+  expect(last().url).toBe('http://backend.local/v1/projects?account_id=acc-1');
   expect(result?.[0]?.project_id).toBe('p1');
 });
 
@@ -60,7 +60,7 @@ test('provisionProjectWithToken posts seed_starter + returns the created project
     { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
     { account_id: 'acc-1', name: 'My First Project', seed_starter: true },
   );
-  expect(last().url).toBe('http://backend.local/v1/workspaces/provision');
+  expect(last().url).toBe('http://backend.local/v1/projects/provision');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ account_id: 'acc-1', name: 'My First Project', seed_starter: true });
   expect(result.ok).toBe(true);
@@ -81,6 +81,14 @@ test('provisionProjectWithToken reports project_limit_reached distinctly from ot
     { name: 'x' },
   );
   expect(forbidden).toEqual({ ok: false, limitReached: false });
+
+  // The workspace rule: the account already holds its project.
+  nextResponse = { status: 409, body: { code: 'workspace_has_project', workspace_id: 'w1' } };
+  const occupied = await provisionProjectWithToken(
+    { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
+    { name: 'x' },
+  );
+  expect(occupied).toEqual({ ok: false, limitReached: true });
 });
 
 test('provisionProjectWithToken returns a non-limit failure without throwing on other errors', async () => {

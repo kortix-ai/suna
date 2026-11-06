@@ -167,7 +167,7 @@ function wireExistingSandbox() {
   handler = (url, method) => {
     const byId = notASessionId(url, method);
     if (byId) return byId;
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 200, body: [project1] };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
     if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
     throw new Error(`unmocked ${method} ${url}`);
   };
@@ -176,7 +176,7 @@ function wireExistingSandbox() {
 /** GET /projects -> [project1]; sessions empty; POST create -> newSession; POST start -> startResult. */
 function wireCreateFlow() {
   handler = (url, method) => {
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 200, body: [project1] };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
     if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [] };
     if (method === 'POST' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: newSession };
     if (method === 'POST' && /\/workspaces\/proj-1\/sessions\/sess-2\/start/.test(url)) {
@@ -189,7 +189,7 @@ function wireCreateFlow() {
 /** GET /projects -> [] — no projects at all. */
 function wireNoProjects() {
   handler = (url, method) => {
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 200, body: [] };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [] };
     throw new Error(`unmocked ${method} ${url}`);
   };
 }
@@ -255,7 +255,7 @@ test('a session with no recorded provider reports the reference provider, platin
   handler = (url, method) => {
     const byId = notASessionId(url, method);
     if (byId) return byId;
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 200, body: [project1] };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
     if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) {
       return { status: 200, body: [{ ...existingSession, sandbox_provider: null }] };
     }
@@ -294,7 +294,7 @@ test('getSandbox returns the row sandbox when one exists', async () => {
 
 test('getSandbox resolves to null (not a rejection) when the lookup fails', async () => {
   handler = (url, method) => {
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 500, body: { message: 'boom' } };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 500, body: { message: 'boom' } };
     throw new Error(`unmocked ${method} ${url}`);
   };
   const result = await getSandbox();
@@ -335,7 +335,7 @@ test('renameSandbox throws "not found" when the sandbox does not resolve', async
 
 function wireTwoProjectsTwoSessions() {
   handler = (url, method) => {
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 200, body: [project1, project2] };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1, project2] };
     if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
     if (method === 'GET' && /\/workspaces\/proj-2\/sessions$/.test(url)) return { status: 200, body: [secondProjectSession] };
     throw new Error(`unmocked ${method} ${url}`);
@@ -356,7 +356,7 @@ test('listSandboxes filters by sandbox_id or external_id', async () => {
 
 test('listSandboxes degrades to [] when listProjectSessionSandboxes rejects', async () => {
   handler = (url, method) => {
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 500, body: { message: 'boom' } };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 500, body: { message: 'boom' } };
     throw new Error(`unmocked ${method} ${url}`);
   };
   expect(await listSandboxes()).toEqual([]);
@@ -387,7 +387,7 @@ test('restartSandbox POSTs to the restart endpoint for the resolved project/sess
   handler = (url, method) => {
     const byId = notASessionId(url, method);
     if (byId) return byId;
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 200, body: [project1] };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
     if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
     if (method === 'POST' && /\/workspaces\/proj-1\/sessions\/sess-1\/restart$/.test(url)) {
       return { status: 200, body: { ok: true, session_id: 'sess-1', status: 'provisioning' } };
@@ -416,7 +416,7 @@ test('stopSandbox POSTs to the stop endpoint for the resolved project/session', 
   handler = (url, method) => {
     const byId = notASessionId(url, method);
     if (byId) return byId;
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 200, body: [project1] };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
     if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
     if (method === 'POST' && /\/workspaces\/proj-1\/sessions\/sess-1\/stop$/.test(url)) {
       return { status: 200, body: { ok: true, session_id: 'sess-1', status: 'stopped' } };
@@ -500,7 +500,7 @@ test('a provider external id still resolves through the first pages: the by-id r
   handler = (url, method) => {
     const byId = notASessionId(url, method);
     if (byId) return byId;
-    if (method === 'GET' && /\/workspaces$/.test(url)) return { status: 200, body: [project1] };
+    if (method === 'GET' && /\/projects$/.test(url)) return { status: 200, body: [project1] };
     if (method === 'GET' && /\/workspaces\/proj-1\/sessions$/.test(url)) return { status: 200, body: [existingSession] };
     if (method === 'POST' && /\/workspaces\/proj-1\/sessions\/sess-1\/restart$/.test(url)) {
       return { status: 200, body: { ok: true, session_id: 'sess-1', status: 'provisioning' } };
