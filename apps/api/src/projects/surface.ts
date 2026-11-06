@@ -73,7 +73,7 @@ export {
 
 // Every declared agent's grant (consumed by the connectors rules matrix).
 export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
-export { mentionTokens, mentionsMember } from './lib/mentions';
+export { mentionTokens } from './lib/mentions';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';

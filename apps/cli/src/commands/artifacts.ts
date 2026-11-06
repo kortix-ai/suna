@@ -1,10 +1,9 @@
-// `kortix artifacts` (flag `artifacts`): share paths of the project's Files as
+// `kortix artifacts`: share paths of the project's Files as
 // docs (Markdown) and pages (HTML), and list, read, save, version and unshare
 // them. The API is the contract; this file only maps flags to it.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
-  ApiError as SdkApiError,
   deleteArtifact,
   getArtifact,
   listAccountMembers,
@@ -19,13 +18,11 @@ import {
 } from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 import { withKortixScope } from '../api/sdk.ts';
-import { ApiError as CliApiError } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
-import { artifactsComments } from './artifacts-comments.ts';
-import { artifactsFocus } from './artifacts-focus.ts';
 import { artifactsPublish } from './artifacts-publish.ts';
+import { artifactsTypes } from './artifacts-types.ts';
 import { TYPES, short, type ArtifactsFlags, type ArtifactsRun } from './artifacts-run.ts';
 const HELP = help`Usage: kortix artifacts <subcommand> [options]
 
@@ -80,24 +77,6 @@ Subcommands:
   versions <artifact>        Every save, newest first (from the Files history).
   restore <artifact> <version-id>
                              Write that version back, as a new save.
-  comments <artifact>        Open threads. --all includes resolved threads;
-                             --resolved shows only resolved threads.
-  comment <artifact> "<text>" [--quote "<text>" | --selector "<css>"]
-                             Open a thread on the whole artifact, an exact
-                             quote (up to 500 characters), or an HTML selector.
-                             A missing quote exits nonzero without posting.
-                             Selector defaults: centered point (0.5, 0.5),
-                             viewport width 1280, scroll (0, 0), empty snippet.
-  reply <thread-id> "<text>"  Reply to a thread by its full id.
-  resolve <thread-id> / reopen <thread-id>
-                             Resolve a thread or open it again.
-  activity <artifact>        Events and saves, newest first. --limit 1–100.
-  focus <artifact>           Agent sessions only: show the people viewing the
-                             artifact where you work. --thread <thread-id> (a
-                             thread you answer) or --quote "<text>" (a passage
-                             you change, up to 500 characters).
-                             --status reading|editing|writing|idle
-                             (default editing; idle removes you).
   pin <artifact> / unpin <artifact>
   rm <artifact>              Stop sharing it. Its files stay in Files.
 
@@ -124,9 +103,7 @@ Examples:
 `;
 
 const VISIBILITIES = ['private', 'project', 'public'];
-const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'bind', 'versions', 'restore', 'comments', 'comment', 'reply', 'resolve', 'reopen', 'activity', 'focus', 'pin', 'unpin', 'rm', 'delete'];
-const FOCUS_STATUSES = ['reading', 'editing', 'writing', 'idle'];
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const KNOWN = ['types', 'publish', 'add', 'ls', 'list', 'info', 'cat', 'pull', 'open', 'share', 'rename', 'bind', 'versions', 'restore', 'pin', 'unpin', 'rm', 'delete'];
 
 function printLinks(a: Artifact) {
   process.stdout.write(`  ${C.dim}files${C.reset}   ${a.path}\n`);
@@ -266,13 +243,6 @@ function parseFlags(rest: string[]): ArtifactsFlags {
     space: takeFlagValue(rest, ['--space']),
     agent: takeFlagValue(rest, ['--agent']),
     clear: takeFlagBool(rest, ['--clear']),
-    quote: takeFlagValue(rest, ['--quote']),
-    selector: takeFlagValue(rest, ['--selector']),
-    all: takeFlagBool(rest, ['--all']),
-    resolved: takeFlagBool(rest, ['--resolved']),
-    limit: takeFlagValue(rest, ['--limit']),
-    thread: takeFlagValue(rest, ['--thread']),
-    focusStatus: takeFlagValue(rest, ['--status']),
   };
 }
 
@@ -294,16 +264,6 @@ export async function runArtifacts(argv: string[]): Promise<number> {
   if (f.visibility && !VISIBILITIES.includes(f.visibility)) return fail(`--visibility must be private, project or public.`);
   if (f.space !== undefined && !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(f.space)) return fail(`--space "${f.space}" is not a space slug (lowercase letters, digits, "-" or "_", at most 63 characters).`);
   if (f.agent !== undefined && !/^[a-z0-9][a-z0-9_-]{0,127}$/.test(f.agent)) return fail(`--agent "${f.agent}" is not an agent name.`);
-  if (f.all && f.resolved) return fail('Use --all or --resolved, not both.');
-  if (f.quote !== undefined && f.selector !== undefined) return fail('Use --quote or --selector, not both.');
-  if (f.limit !== undefined && (!/^\d+$/.test(f.limit) || Number(f.limit) < 1 || Number(f.limit) > 100)) return fail('--limit must be an integer from 1 to 100.');
-  if (sub === 'focus') {
-    if (f.focusStatus !== undefined && !FOCUS_STATUSES.includes(f.focusStatus)) return fail('--status must be reading, editing, writing or idle.');
-    if (f.thread !== undefined && !UUID.test(f.thread)) return fail(`--thread "${f.thread}" is not a thread id. Pass the full id from \`kortix artifacts comments\`.`);
-    if (f.thread !== undefined && f.quote !== undefined) return fail('Use --thread or --quote, not both.');
-    if (f.quote !== undefined && (f.quote.length > 500 || f.quote.includes('\u0000'))) return fail('--quote takes 1 to 500 characters.');
-  }
-
   const ctx = await resolveProjectContext({ projectArg: f.projectArg, hostArg: f.hostArg });
   if (!ctx) return 1;
   const pid = ctx.projectId;
@@ -341,16 +301,8 @@ export async function runArtifacts(argv: string[]): Promise<number> {
 
       const run: ArtifactsRun = { pid, client: ctx.client, f, a0, a1, meta, resolve, out, shared };
       switch (sub) {
-        case 'comments':
-        case 'comment':
-        case 'reply':
-        case 'resolve':
-        case 'reopen':
-        case 'activity':
-          return artifactsComments(sub, run);
-        case 'focus':
         case 'types':
-          return artifactsFocus(sub, run);
+          return artifactsTypes(run);
         case 'publish':
         case 'add':
         case 'versions':
@@ -365,10 +317,6 @@ export async function runArtifacts(argv: string[]): Promise<number> {
     if (code === 'version_conflict') {
       process.stderr.write(`${status.err((err as Error).message)}\n`);
       return 3;
-    }
-    if (err instanceof SdkApiError && typeof err.status === 'number' && ['comments', 'comment', 'reply', 'resolve', 'reopen', 'activity', 'focus'].includes(sub)) {
-      const message = err.status === 403 ? `HTTP 403: ${err.message}` : err.message;
-      return surfaceApiError(new CliApiError(err.status, message, err.details));
     }
     return surfaceApiError(err);
   }

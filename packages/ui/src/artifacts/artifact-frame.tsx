@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useLayoutEffect, useState } from 'react';
 
 import { claimFrame, ensureFrame } from '../apps/app-preview-pool';
 import { ARTIFACT_FRAME_ALLOW, ARTIFACT_IFRAME_SANDBOX } from './frame-policy';
@@ -30,14 +30,9 @@ export const ArtifactFrame = forwardRef<
     title: string;
     className?: string;
     preview?: boolean;
-    onFrame?: (frame: HTMLIFrameElement | null) => void;
   }
->(function ArtifactFrame({ frameKey, src, title, className, preview, onFrame }, ref) {
+>(function ArtifactFrame({ frameKey, src, title, className, preview }, ref) {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
-  const latestOnFrame = useRef(onFrame);
-  useLayoutEffect(() => {
-    latestOnFrame.current = onFrame;
-  });
   const interactive = !preview;
   const frameClass = `${className ?? ''} ${preview ? PREVIEW_CANVAS : ARTIFACT_CANVAS}`;
 
@@ -63,13 +58,11 @@ export const ArtifactFrame = forwardRef<
     const reload = !!previous && Date.now() - previous.at < RELOAD_MS;
     if (interactive && (!reload || previous.focused) && !typingElsewhere())
       claimed?.focus({ preventScroll: true });
-    latestOnFrame.current?.(claimed);
     return () => {
       releasedFocus.set(page, {
         at: Date.now(),
         focused: !!claimed && claimed.ownerDocument.activeElement === claimed,
       });
-      latestOnFrame.current?.(null);
       release();
     };
     // The URL is read once per key: a refetch must not reload the page.
@@ -92,7 +85,7 @@ export const ArtifactFrame = forwardRef<
 const RELOAD_MS = 15_000;
 // One browser tab: whether each artifact's last released frame had the keyboard.
 const releasedFocus = new Map<string, { at: number; focused: boolean }>();
-/** `artifact:<id>` of a frame key (`artifact:<id>:<version>[:annotate]`). */
+/** `artifact:<id>` of a frame key (`artifact:<id>:<version>`). */
 const artifactOf = (frameKey: string) => frameKey.split(':').slice(0, 2).join(':');
 
 /** The keyboard is in a text field or an editor of this document. */
@@ -111,7 +104,7 @@ export function ensureArtifactFrame(key: string, src: string, title: string): vo
     sandbox: ARTIFACT_IFRAME_SANDBOX,
     allow: ARTIFACT_FRAME_ALLOW,
     testid: 'artifact-frame',
-    // The page sees this app's origin, never the path: the bridge gates the live pointer on it.
+    // The page sees this app's origin, never the path with project ids.
     referrerPolicy: 'strict-origin',
   });
 }

@@ -42,7 +42,6 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   capture_device_recovered: ArrowCounterClockwiseIcon,
   // Retired with Rooms (2026-11); the SDK type still carries the kind.
   message: ChatCircleIcon,
-  artifact_comment: ChatCircleIcon,
 };
 
 /**
@@ -54,9 +53,8 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
  *   applies on every phone and browser. A session kind also has this phone's
  *   switch: the row shows on only when both are on, and a toggle writes both.
  * - No Email switches: email is edited on the web (KRTX-38). By default email
- *   is off for a kind until the person turns it on, except `automation_failed`,
- *   `capture_device_down` and `artifact_comment`
- *   (`packages/shared/src/notification-kinds.ts`).
+ *   is off for a kind until the person turns it on, except `automation_failed`
+ *   and `capture_device_down` (`packages/shared/src/notification-kinds.ts`).
  *
  * The page shows no registration state (Jay, 2026-09-27): a token is
  * plumbing, not a setting.

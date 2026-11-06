@@ -43,7 +43,6 @@ describe('KIND_LABEL', () => {
       capture_device_down: 'Capture computer stopped',
       capture_device_recovered: 'Capture computer recording again',
       message: 'Message',
-      artifact_comment: 'Artifact comments',
     });
   });
 
@@ -122,10 +121,3 @@ describe('inboxOpenTarget', () => {
   });
 });
 
-test('Artifact inbox rows open only a validated Artifact path for their own project', () => {
-  const projectId = '11111111-1111-4111-8111-111111111111';
-  const artifactId = '22222222-2222-4222-8222-222222222222';
-  const path = `/projects/${projectId}/artifacts/${artifactId}`;
-  expect(inboxOpenTarget(row({ kind: 'artifact_comment', project_id: projectId, session_id: null, url: path }))).toEqual({ projectId, sessionId: null, artifactPath: path });
-  for (const url of ['https://evil.example.test/path', '/projects/other/artifacts/a1', `/projects/${projectId}/sessions/a1`]) expect(inboxOpenTarget(row({ kind: 'artifact_comment', project_id: projectId, url }))).toBeNull();
-});

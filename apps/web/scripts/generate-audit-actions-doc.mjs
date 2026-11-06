@@ -39,7 +39,6 @@ function isOperatorRoute(route) {
 // The actions of a feature whose flag is off by default (apps/api/src/feature-flags/registry.ts).
 // The public docs leave such a feature out until its flag is on by default.
 const FLAGGED_ACTION_PREFIXES = {
-  artifacts: ['project.artifact.', 'artifact.'],
   email_channel: ['channel.email.', 'webhook.email.'],
   event_triggers: ['trigger.event_apps.', 'trigger.event_types.', 'webhook.event.'],
   pooled_provider_secrets: ['secret.account_resource.', 'session.provider_secret_pool.'],
@@ -51,7 +50,14 @@ const FLAGGED_ACTION_PREFIXES = {
 const LEGACY_ACTION_PREFIXES = ['webhook.daytona.'];
 
 // Actions of a removed feature: old audit rows still carry them, and the API answers 410 (routes/retired.ts).
-const REMOVED_ACTION_PREFIXES = ['session.warm.'];
+const REMOVED_ACTION_PREFIXES = [
+  'session.warm.',
+  // Artifact comments, live presence, doc co-editing and the activity feed (removed 2026-11-06).
+  'project.artifact.comment.',
+  'project.artifact.live.',
+  'project.artifact.doc.',
+  'project.artifact.activity',
+];
 
 function hiddenActionFilter(actions) {
   const prefixes = [

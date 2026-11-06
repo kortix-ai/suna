@@ -400,10 +400,13 @@ describe('featureDisabledBody', () => {
 });
 
 
-describe('artifact comments require Artifacts', () => {
-  test('defaults off and cannot run when Artifacts is off', () => {
-    expect(resolveFeatureFlag({}, 'artifact_comments')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { artifacts: false, artifact_comments: true } }, 'artifact_comments')).toBe(false);
-    expect(resolveFeatureFlag({ experimental: { artifacts: true, artifact_comments: true } }, 'artifact_comments')).toBe(Boolean(config.PLATINUM_API_KEY));
+describe('artifacts graduated and artifact_comments removed (2026-11-06)', () => {
+  test('neither is a flag, and a stored override of either is inert', () => {
+    const metadata = { experimental: { artifacts: false, artifact_comments: true } };
+    for (const key of ['artifacts', 'artifact_comments']) {
+      expect(isFeatureFlagKey(key)).toBe(false);
+      expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain(key);
+      expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain(key);
+    }
   });
 });
