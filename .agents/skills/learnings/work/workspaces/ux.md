@@ -46,33 +46,79 @@ exists; this PR simplifies it. Read `README.md` for the why.
   keeps `WorkspaceHandoff` with its 4 steps.
 - "Create account" (`CreateAccountModal`) is deleted from every entry point.
 
-## 3. Switcher (sidebar, command palette, mobile sheet)
+## 3. The workspace menu and the switcher (sidebar, command palette, mobile sheet)
 
-- One flat list of workspaces, the current one checked. Search always.
-- Rows: workspace icon + name. Pending invitations group on top.
-- Actions at the bottom: "Create workspace", "Workspace settings".
+The menu opens from the workspace name (Slack's "Acme ▾"), top to bottom
+(review finding 21, `workspaceMenuGroups` in
+`packages/ui/src/workspace/sidebar/workspace-menu-model.ts`):
+
+1. Header: the workspace icon, its name and the viewer's one role.
+2. "Invite people to {name}" (`project.members.manage`): Members with
+   `?invite=1`, which opens the invite form. "Workspace settings" (the
+   Customize › Workspace settings gate): the one Settings panel.
+3. "Switch workspace" (the list, with the pending-invitation count) and
+   "Create workspace".
+4. "Preferences" (the person's own settings; it keeps Mod+,), Apps and
+   extensions, Appearance, Help, Download app.
+5. "Leave {name}" (never the last owner; it confirms first) and Log out, with
+   the signed-in email under it.
+
+Rename is in Workspace settings › General, not in the menu.
+
+The list (switcher submenu, chooser, `/workspaces/start`, mobile sheet and
+Workspaces page) is one request, `GET /v1/workspaces` with every state
+(`listWorkspaces({ includeInactive: true })`):
+
+- One flat list, most recently opened first, the current one checked. Search
+  in the submenu always; on the chooser at 8+ rows.
+- Pending invitations on top.
+- `active` rows open. A `setup_required` row (it pays, no repository yet)
+  offers "Set up" (`POST /v1/workspaces/:id/setup`). A `deleting` row (owners
+  only) reads "Deleting on {date}" and offers "Restore"
+  (`POST /v1/workspaces/:id/restore`). Neither opens until its action ran.
+- The chooser shows the create handoff whenever a create is in flight, even
+  after the new workspace joined the list (review finding 38).
 - Removed: account headings, "Create in {account}", "Create account",
-  "Account settings" as a separate row.
+  "Account settings" as a separate row, the top-level "Settings" row that
+  opened personal settings.
 
 ## 4. Workspace settings
 
-One settings surface per workspace: the project admin page
-(`/projects/<id>/admin/<section>`) absorbs the account hub's panes.
-
-Rail groups:
+One Settings panel per workspace at `/workspaces/<id>/admin/<section>`. The
+registry is `packages/shared/src/workspace-settings.ts` (design.md C7): the
+web rail, the CLI, the API emails and the My Kortix prompt read it. No tab
+bar sits over the panel; its one rail is the navigation.
 
 | Group | Sections |
 |---|---|
-| Workspace | General (name, icon, security policy from the account Settings pane), Branding, Git repo, Sandbox templates, Feature flags, API keys |
-| Library | Connectors, Secrets, Skills, Drives, Apps, Triggers, Models, Repo |
-| People | Members, Groups, Roles, Identity, Audit log, Help |
+| Workspace | General (name, icon, workspace ID, Pause all triggers, Danger zone: Leave, Delete), Security (MFA, session policy, session oversight, key rules), Branding, Git, Sandbox, Feature flags, API keys, Capture (while Capture is on) |
+| Library | Connectors, Secrets, Skills, Drives, Apps, Triggers, Models, Repository |
+| People | Members (one roster, one role per person, access requests on top, invite), Groups, Roles, Identity, Audit log |
 | Billing | Plan, Usage |
+| Support | Help |
 
-- The account hub modal (`?accountId=&accountTab=`) stays as the router for
-  old links: each tab opens the matching section of the current workspace.
-- The account "Git" pane (GitHub installations) merges into Git repo.
-- The account "Projects" access tab: **open decision D5** (see
-  `decisions.md`).
+- Each row keeps its own permission gate. `/admin` opens General, else the
+  first section the caller may open.
+- Old links land on their section: `/admin/access` and `/admin/access-projects`
+  → Members, `?accountId=&accountTab=settings` → Security, `/settings/tokens`
+  → API keys, `/admin/loops` → Triggers, `/workspaces/<id>/members` → Members,
+  `/projects/<id>/admin/<s>` → `/workspaces/<id>/admin/<s>`.
+- Delete workspace: a typed confirmation, "Deletes this workspace for every
+  member. You can restore it for 14 days." (`DELETE /v1/workspaces/:id`).
+- API keys mints workspace keys only (`POST /v1/workspaces/:id/tokens`, scope
+  "This workspace"). A person's keys bound to no workspace are in Preferences ›
+  Personal keys (`GET /v1/me/tokens`), scope "Every workspace".
+- Members: the invite is "Invite people to {workspace}": email chips, one
+  role (Member, Manager, Admin), optional expiry. A `split_pending` account
+  keeps its per-workspace grants (the old Access tab) under the roster until
+  the split runs.
+- Preferences is the person's own overlay (`/workspaces/<id>/settings/<tab>`):
+  Profile, Security, Appearance, Notifications, Language & shortcuts,
+  Personal keys, MCP, My computer, and the list of their workspaces in the
+  rail. "Delete my account" shows the plan (`GET /v1/account/deletion-plan`):
+  workspaces deleted, workspaces left, and the ones to hand over first.
+- The split notice (C9) shows on the workspace home and on General for 30
+  days after a split.
 
 ## 5. Copy
 

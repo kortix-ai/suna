@@ -723,9 +723,10 @@
       "plan": {
         "deleted": "随你的账号一起删除",
         "left": "你将离开",
-        "blockers": "请先移交这些工作区:你是唯一的所有者,且有其他人在使用。",
+        "blockers": "你是唯一的所有者,且有其他人在使用。请转让所有权或删除该工作区。",
         "members": "{count, plural, other {# 名成员}}",
-        "nothing": "你不属于任何工作区。仅删除你的登录。"
+        "nothing": "你不属于任何工作区。仅删除你的登录。",
+        "blockersTitle": "请先移交这些工作区"
       }
     },
     "security": {
@@ -996,7 +997,7 @@
         "integrations": "其 API 密钥和已连接的应用停止工作",
         "access": "所有成员都将失去对此工作区的访问权限"
       },
-      "reassurance": "所有者可在 14 天内从工作区列表中恢复它。你自己连接的 Git 仓库不会被删除。",
+      "reassurance": "你自己连接的 Git 仓库不会被删除。",
       "keepWorkspace": "保留工作区",
       "transferWorkspace": "转移工作区",
       "transferDescription": "将此工作区的会话、文件、设置和成员访问权限移动到另一个工作区。",
@@ -26685,7 +26686,8 @@
       "leftToast": "你已离开 {name}",
       "leaveFailed": "无法离开工作区",
       "deletedToast": "工作区已删除。所有者可在 14 天内恢复。",
-      "inviteTitle": "邀请成员加入 {name}"
+      "inviteTitle": "邀请成员加入 {name}",
+      "apiKeysDescription": "在此工作区中操作的密钥:你的密钥,以及用于 CI 和自动化的服务账号。其规则在安全中。"
     },
     "cli": {
       "noWorkspaceTitle": "创建工作区以登录 CLI",

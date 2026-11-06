@@ -168,7 +168,8 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   plan: {
     deleted: 'Deleted with your account',
     left: 'You leave',
-    blockers: 'Hand these over first: you are their only owner and others work in them.',
+    blockersTitle: 'Hand these over first',
+    blockers: 'You are their only owner, and others work in them. Transfer ownership or delete the workspace.',
     members: (count) => `${count} members`,
     nothing: 'You belong to no workspace. Only your login is deleted.',
   },
@@ -279,6 +280,7 @@ export interface ProfileDeletionPlan {
 export interface DeletionPlanCopy {
   deleted: string;
   left: string;
+  blockersTitle: string;
   blockers: string;
   members: (count: number) => string;
   nothing: string;
@@ -291,7 +293,8 @@ function DeletionPlanSummary({ plan, copy }: { plan: ProfileDeletionPlan; copy: 
     <div className="space-y-3" data-testid="deletion-plan">
       {empty ? <p className="text-muted-foreground text-sm">{copy.nothing}</p> : null}
       {plan.blockers.length > 0 ? (
-        <InfoBanner tone="destructive" title={copy.blockers}>
+        <InfoBanner tone="destructive" title={copy.blockersTitle}>
+          <p>{copy.blockers}</p>
           <ul className="list-disc space-y-1 pl-5">
             {plan.blockers.map((blocker) => (
               <li key={blocker.name}>
@@ -663,8 +666,8 @@ export function ProfileTab() {
   const locale = useLocale();
   const copy = useMemo(
     () =>
-      localizedCopy(DEFAULT_PROFILE_TAB_COPY, (key) =>
-        key === 'scheduledForDeletionOn' ? t.raw(key) : t(key),
+      localizedCopy(DEFAULT_PROFILE_TAB_COPY, (key, values) =>
+        key === 'scheduledForDeletionOn' ? t.raw(key) : t(key, values),
       ),
     [t],
   );
@@ -831,7 +834,10 @@ export function ProfileTab() {
   const deletionPlan = useMemo<ProfileDeletionPlan | undefined>(() => {
     const plan = planQuery.data;
     if (!plan) return undefined;
-    const nameOf = (id: string) => directory.workspaces.find((row) => row.workspaceId === id)?.project.name ?? id;
+    // The API names each workspace (`workspace_names`); the directory is the fallback.
+    const served = (plan as { workspace_names?: Record<string, string> }).workspace_names ?? {};
+    const nameOf = (id: string) =>
+      served[id] ?? directory.workspaces.find((row) => row.workspaceId === id)?.project.name ?? id;
     return {
       deleteNames: plan.delete_workspaces.map(nameOf),
       leaveNames: plan.leave_workspaces.map(nameOf),

@@ -723,9 +723,10 @@
       "plan": {
         "deleted": "Excluídos com sua conta",
         "left": "Você sai de",
-        "blockers": "Transfira estes primeiro: você é o único proprietário e outras pessoas trabalham neles.",
+        "blockers": "Você é o único proprietário e outras pessoas trabalham neles. Transfira a propriedade ou exclua o espaço de trabalho.",
         "members": "{count, plural, one {# membro} other {# membros}}",
-        "nothing": "Você não pertence a nenhum espaço de trabalho. Apenas seu login é excluído."
+        "nothing": "Você não pertence a nenhum espaço de trabalho. Apenas seu login é excluído.",
+        "blockersTitle": "Transfira estes primeiro"
       }
     },
     "security": {
@@ -996,7 +997,7 @@
         "integrations": "Suas chaves de API e aplicativos conectados param de funcionar",
         "access": "Todos os membros perdem o acesso a este espaço de trabalho"
       },
-      "reassurance": "Os proprietários podem restaurá-lo na lista de espaços de trabalho por 14 dias. Repositórios Git que você conectou não são excluídos.",
+      "reassurance": "Repositórios Git que você conectou não são excluídos.",
       "keepWorkspace": "Manter espaço de trabalho",
       "transferWorkspace": "Transferir espaço de trabalho",
       "transferDescription": "Mova as sessões, os ficheiros, as configurações e o acesso de membros deste espaço de trabalho para outro espaço de trabalho.",
@@ -26685,7 +26686,8 @@
       "leftToast": "Você saiu de {name}",
       "leaveFailed": "Não foi possível sair do espaço de trabalho",
       "deletedToast": "Espaço de trabalho excluído. Os proprietários podem restaurá-lo por 14 dias.",
-      "inviteTitle": "Convidar pessoas para {name}"
+      "inviteTitle": "Convidar pessoas para {name}",
+      "apiKeysDescription": "Chaves que agem neste espaço de trabalho: as suas e contas de serviço para CI e automações. As regras ficam em Segurança."
     },
     "cli": {
       "noWorkspaceTitle": "Crie um espaço de trabalho para entrar na CLI",

@@ -41,13 +41,14 @@ import { useAuthContext, useLanguage } from '@/contexts';
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { useMyInvites } from '@/lib/invites/hooks';
 import { inviteHref } from '@/lib/invites/invite-landing';
-import { useWorkspaces } from '@/lib/projects/hooks';
+import { useWorkspaceStateAction, useWorkspaces } from '@/lib/projects/hooks';
 import {
   filterWorkspaceRows,
   projectHref,
   shouldShowWorkspacePageSearch,
   type WorkspaceRow,
 } from '@/lib/projects/switcher';
+import { isOpenableWorkspaceRow } from '@/lib/projects/switcher';
 import { newWorkspaceWebUrl } from '@/lib/projects/web-project-links';
 import type { KortixProject } from '@/lib/projects/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -179,9 +180,47 @@ export default function ProjectsPage() {
     />
   );
 
+  const stateAction = useWorkspaceStateAction();
   const renderItem = React.useCallback(
     ({ item }: { item: WorkspaceRow }) => {
       const row = projectToRow(item.project);
+      // Set up (it pays, no repository yet) or Restore (deleted, inside its
+      // restore window): the row opens nothing until the action ran.
+      if (!isOpenableWorkspaceRow(item)) {
+        const deleting = item.state === 'deleting';
+        const busy = stateAction.isPending && stateAction.variables?.workspaceId === item.project.project_id;
+        return (
+          <PressableSurface
+            disabled={stateAction.isPending}
+            onPress={() =>
+              stateAction.mutate(
+                { workspaceId: item.project.project_id, state: deleting ? 'deleting' : 'setup_required' },
+                { onSuccess: () => openWorkspace(item.project) },
+              )
+            }
+            accessibilityRole="button"
+            style={({ pressed }) => (pressed ? { transform: [{ scale: 0.99 }] } : undefined)}
+            className="mx-4 mb-2.5 flex-row items-center gap-3 rounded-xl bg-secondary/70 px-4 py-3.5 active:bg-secondary">
+            <Avatar chalk fallbackText={item.project.name} size={42} />
+            <View className="min-w-0 flex-1">
+              <Text variant="small" className="leading-5 text-muted-foreground" numberOfLines={1}>
+                {row.title}
+              </Text>
+              <Text variant="muted" className="mt-0.5 text-[13px]" numberOfLines={1}>
+                {deleting
+                  ? t('workspace.deletingOn', {
+                      defaultValue: 'Deleting on {{date}}',
+                      date: item.deletionScheduledFor ? new Date(item.deletionScheduledFor).toLocaleDateString() : '',
+                    })
+                  : t('workspace.setupRequired', 'Paid, no repository yet')}
+              </Text>
+            </View>
+            <Text variant="small" className="text-foreground">
+              {busy ? '…' : deleting ? t('workspace.restore', 'Restore') : t('workspace.setUp', 'Set up')}
+            </Text>
+          </PressableSurface>
+        );
+      }
       return (
         <PressableSurface
           onPress={() => openWorkspace(item.project)}
@@ -217,7 +256,7 @@ export default function ProjectsPage() {
         </PressableSurface>
       );
     },
-    [onRowMenu, openWorkspace, t],
+    [onRowMenu, openWorkspace, t, stateAction],
   );
 
   const invitationsHeader =

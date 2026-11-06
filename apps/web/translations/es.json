@@ -723,9 +723,10 @@
       "plan": {
         "deleted": "Se eliminan con tu cuenta",
         "left": "Sales de",
-        "blockers": "Transfiérelos primero: eres su único propietario y otras personas trabajan en ellos.",
+        "blockers": "Eres su único propietario y otras personas trabajan en ellos. Transfiere la propiedad o elimina el espacio de trabajo.",
         "members": "{count, plural, one {# miembro} other {# miembros}}",
-        "nothing": "No perteneces a ningún espacio de trabajo. Solo se elimina tu inicio de sesión."
+        "nothing": "No perteneces a ningún espacio de trabajo. Solo se elimina tu inicio de sesión.",
+        "blockersTitle": "Transfiérelos primero"
       }
     },
     "security": {
@@ -996,7 +997,7 @@
         "integrations": "Sus claves de API y aplicaciones conectadas dejan de funcionar",
         "access": "Todos los miembros pierden el acceso a este espacio de trabajo"
       },
-      "reassurance": "Los propietarios pueden restaurarlo desde la lista de espacios de trabajo durante 14 días. Los repositorios Git que conectaste tú no se eliminan.",
+      "reassurance": "Los repositorios Git que conectaste tú no se eliminan.",
       "keepWorkspace": "Conservar espacio de trabajo",
       "transferWorkspace": "Transferir espacio de trabajo",
       "transferDescription": "Mueve las sesiones, los archivos, los ajustes y el acceso de miembros de este espacio de trabajo a otro espacio de trabajo.",
@@ -26685,7 +26686,8 @@
       "leftToast": "Saliste de {name}",
       "leaveFailed": "No se pudo salir del espacio de trabajo",
       "deletedToast": "Espacio de trabajo eliminado. Los propietarios pueden restaurarlo durante 14 días.",
-      "inviteTitle": "Invitar personas a {name}"
+      "inviteTitle": "Invitar personas a {name}",
+      "apiKeysDescription": "Claves que actúan en este espacio de trabajo: las tuyas y las cuentas de servicio para CI y automatizaciones. Sus reglas están en Seguridad."
     },
     "cli": {
       "noWorkspaceTitle": "Crea un espacio de trabajo para iniciar sesión en la CLI",

@@ -723,9 +723,10 @@
       "plan": {
         "deleted": "Бришу се са вашим налогом",
         "left": "Напуштате",
-        "blockers": "Прво их предајте: ви сте једини власник, а други раде у њима.",
+        "blockers": "Ви сте једини власник, а други раде у њима. Пренесите власништво или обришите радни простор.",
         "members": "{count, plural, one {# члан} few {# члана} other {# чланова}}",
-        "nothing": "Не припадате ниједном радном простору. Брише се само ваша пријава."
+        "nothing": "Не припадате ниједном радном простору. Брише се само ваша пријава.",
+        "blockersTitle": "Прво их предајте"
       }
     },
     "security": {
@@ -996,7 +997,7 @@
         "integrations": "Његови API кључеви и повезане апликације престају да раде",
         "access": "Сви чланови губе приступ овом радном простору"
       },
-      "reassurance": "Власници га могу вратити са листе радних простора у року од 14 дана. Git репозиторијуми које сте сами повезали се не бришу.",
+      "reassurance": "Git репозиторијуми које сте сами повезали се не бришу.",
       "keepWorkspace": "Задржи радни простор",
       "transferWorkspace": "Пренеси радни простор",
       "transferDescription": "Премести сесије, датотеке, подешавања и приступ чланова овог радног простора у други радни простор.",
@@ -26685,7 +26686,8 @@
       "leftToast": "Napustili ste {name}",
       "leaveFailed": "Nije moguće napustiti radni prostor",
       "deletedToast": "Radni prostor je obrisan. Vlasnici ga mogu vratiti u roku od 14 dana.",
-      "inviteTitle": "Pozovi ljude u {name}"
+      "inviteTitle": "Pozovi ljude u {name}",
+      "apiKeysDescription": "Ključevi koji deluju u ovom radnom prostoru: vaši i servisni nalozi za CI i automatizacije. Njihova pravila su u Bezbednosti."
     },
     "cli": {
       "noWorkspaceTitle": "Napravite radni prostor da biste prijavili CLI",

@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { pickerProviderList } from '@kortix/sdk';
+import { inviteWorkspaceMember, listWorkspaces, pickerProviderList, restoreWorkspace, setupWorkspace } from '@kortix/sdk';
 import { notificationInboxEnabled } from '@/lib/notifications/inbox';
 import { composerModelList, offeredModelCount } from '@/lib/session/model-picker';
 import {
@@ -112,7 +112,7 @@ import {
   type UpdateSandboxTemplateInput,
 } from './projects-client';
 import { filterTriggerAgents, flattenTriggerModelCatalog } from './trigger-picker-options';
-import { workspaceRows } from './switcher';
+import { workspaceRowsFromServed } from './switcher';
 import { shouldScanPastEmptySessionPages } from '@kortix/sdk/react';
 
 export type { TriggerAgentOption, TriggerModelOption } from './trigger-picker-options';
@@ -305,28 +305,32 @@ export function useProjects(accountId: string | null) {
 export function useWorkspaces(enabled = true) {
   const accounts = useAccounts(enabled);
   const accountList = useMemo(() => accounts.data ?? [], [accounts.data]);
-  const lists = useQueries({
-    queries: accountList.map((account) => ({
-      queryKey: projectKeys.projects(account.account_id),
-      queryFn: () => listProjectsForAccount(account.account_id),
-      enabled,
-      staleTime: 20_000,
-    })),
+  // Every workspace in every state from ONE request (`GET /v1/workspaces`,
+  // design.md C5): a deleting row offers Restore, a setup_required row Set up.
+  const list = useQuery({
+    queryKey: ['projects', 'workspaces', 'every-state'] as const,
+    queryFn: () => listWorkspaces({ includeInactive: true }),
+    enabled,
+    staleTime: 20_000,
   });
-  const dataKey = lists.map((list) => list.dataUpdatedAt).join(',');
-  const rows = useMemo(() => {
-    const byAccount = new Map(accountList.map((account, index) => [account.account_id, lists[index]?.data]));
-    return workspaceRows(accountList, byAccount);
-    // `lists` is a new array each render; its data changes only with `dataKey`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountList, dataKey]);
-  const isPending = accounts.isPending || lists.some((list) => list.isPending);
-  const isError = accounts.isError || (lists.length > 0 && lists.every((list) => list.isError));
+  const rows = useMemo(() => workspaceRowsFromServed(accountList, list.data ?? []), [accountList, list.data]);
+  const isPending = accounts.isPending || list.isPending;
+  const isError = list.isError;
   const refetch = useCallback(async () => {
     await accounts.refetch();
-    await Promise.all(lists.map((list) => list.refetch()));
-  }, [accounts, lists]);
+    await list.refetch();
+  }, [accounts, list]);
   return { accounts: accountList, rows, isPending, isError, refetch };
+}
+
+/** Restore a `deleting` workspace or set up a `setup_required` one, then refresh the list. */
+export function useWorkspaceStateAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, state }: { workspaceId: string; state: 'deleting' | 'setup_required' }) =>
+      state === 'deleting' ? restoreWorkspace(workspaceId) : setupWorkspace(workspaceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
+  });
 }
 
 /**
@@ -570,6 +574,23 @@ function useInvalidateMembership(projectId: string) {
     queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
     queryClient.invalidateQueries({ queryKey: ['projects'] });
   };
+}
+
+/** The roles an invite can carry (`POST /v1/workspaces/:id/members`). */
+export type InviteRole = 'member' | 'manager' | 'admin';
+
+/** Invite one person into the workspace with one ladder role. */
+export function useInviteWorkspaceMember(workspaceId: string) {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateMembership(workspaceId);
+  return useMutation({
+    mutationFn: ({ email, role }: { email: string; role: InviteRole }) =>
+      inviteWorkspaceMember(workspaceId, { email, role }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(workspaceId) });
+      invalidate();
+    },
+  });
 }
 
 export function useInviteProjectMember(projectId: string) {

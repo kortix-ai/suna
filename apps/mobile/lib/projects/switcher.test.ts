@@ -5,8 +5,10 @@ import {
   WORKSPACE_PAGE_SEARCH_MIN_ROWS,
   filterWorkspaceRows,
   projectHref,
+  isOpenableWorkspaceRow,
   shouldShowWorkspacePageSearch,
   workspaceRows,
+  workspaceRowsFromServed,
 } from './switcher';
 
 function account(account_id: string, name: string): KortixAccount {
@@ -86,5 +88,30 @@ describe('filterWorkspaceRows', () => {
 describe('projectHref', () => {
   test('builds the typed-router href', () => {
     expect(projectHref('proj-123')).toEqual({ pathname: '/projects/[id]', params: { id: 'proj-123' } });
+  });
+});
+
+describe('workspaceRowsFromServed — every state from GET /v1/workspaces', () => {
+  const owner = { account_id: 'acc-1', name: 'Synthetic Co' } as KortixAccount;
+  const project = (id: string, extra: Record<string, unknown> = {}) =>
+    ({ project_id: id, account_id: 'acc-1', name: `ws ${id}`, ...extra }) as unknown as KortixProject;
+
+  test('keeps the served state and role, and names the owner account', () => {
+    const rows = workspaceRowsFromServed([owner], [
+      project('a', { state: 'active', role: 'owner' }),
+      project('b', { state: 'deleting', deletion_scheduled_for: '2026-11-20T00:00:00.000Z', role: 'owner' }),
+      project('c', { state: 'setup_required', role: 'admin' }),
+    ]);
+    expect(rows.map((row) => [row.project.project_id, row.state, row.role, row.account.name])).toEqual([
+      ['a', 'active', 'owner', 'Synthetic Co'],
+      ['b', 'deleting', 'owner', 'Synthetic Co'],
+      ['c', 'setup_required', 'admin', 'Synthetic Co'],
+    ]);
+    expect(rows[1]!.deletionScheduledFor).toBe('2026-11-20T00:00:00.000Z');
+  });
+
+  test('only an active row opens; an older API without state reads as active', () => {
+    const rows = workspaceRowsFromServed([owner], [project('a'), project('b', { state: 'deleting' })]);
+    expect(rows.map(isOpenableWorkspaceRow)).toEqual([true, false]);
   });
 });

@@ -76,7 +76,7 @@ export const DELETE_WORKSPACE_CONSEQUENCES = [
  *  upstream; repositories the user connected themselves are never touched
  *  (`apps/api/src/projects/routes/project-settings.ts`). */
 export const DELETE_WORKSPACE_REASSURANCE =
-  'Owners can restore it from the workspace list for 14 days. Git repositories you connected yourself are not deleted.';
+  'Git repositories you connected yourself are not deleted.';
 
 /**
  * A section label between two groups — plain small text, optionally one line

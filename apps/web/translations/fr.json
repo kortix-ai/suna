@@ -723,9 +723,10 @@
       "plan": {
         "deleted": "Supprimés avec votre compte",
         "left": "Vous quittez",
-        "blockers": "Transférez-les d'abord : vous en êtes le seul propriétaire et d'autres y travaillent.",
+        "blockers": "Vous en êtes le seul propriétaire et d'autres y travaillent. Transférez la propriété ou supprimez l'espace de travail.",
         "members": "{count, plural, one {# membre} other {# membres}}",
-        "nothing": "Vous n'appartenez à aucun espace de travail. Seul votre identifiant est supprimé."
+        "nothing": "Vous n'appartenez à aucun espace de travail. Seul votre identifiant est supprimé.",
+        "blockersTitle": "Transférez-les d'abord"
       }
     },
     "security": {
@@ -996,7 +997,7 @@
         "integrations": "Ses clés API et ses applications connectées cessent de fonctionner",
         "access": "Tous les membres perdent l'accès à cet espace de travail"
       },
-      "reassurance": "Les propriétaires peuvent le restaurer depuis la liste des espaces de travail pendant 14 jours. Les dépôts Git que vous avez connectés vous-même ne sont pas supprimés.",
+      "reassurance": "Les dépôts Git que vous avez connectés vous-même ne sont pas supprimés.",
       "keepWorkspace": "Conserver l’espace de travail",
       "transferWorkspace": "Transférer l’espace de travail",
       "transferDescription": "Déplacer les sessions, fichiers, réglages et accès membres de cet espace de travail vers un autre espace de travail.",
@@ -26685,7 +26686,8 @@
       "leftToast": "Vous avez quitté {name}",
       "leaveFailed": "Impossible de quitter l'espace de travail",
       "deletedToast": "Espace de travail supprimé. Les propriétaires peuvent le restaurer pendant 14 jours.",
-      "inviteTitle": "Inviter des personnes dans {name}"
+      "inviteTitle": "Inviter des personnes dans {name}",
+      "apiKeysDescription": "Clés qui agissent dans cet espace de travail : les vôtres et les comptes de service pour la CI et les automatisations. Leurs règles sont dans Sécurité."
     },
     "cli": {
       "noWorkspaceTitle": "Créez un espace de travail pour connecter la CLI",

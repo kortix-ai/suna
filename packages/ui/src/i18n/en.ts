@@ -500,7 +500,7 @@ const catalog = {
         "integrations": "Its API keys and connected apps stop working",
         "access": "Every member loses access to this workspace"
       },
-      "reassurance": "Owners can restore it from the workspace list for 14 days. Git repositories you connected yourself are not deleted.",
+      "reassurance": "Git repositories you connected yourself are not deleted.",
       "keepWorkspace": "Keep workspace",
       "transferWorkspace": "Transfer workspace",
       "transferDescription": "Move this workspace's sessions, files, settings and member access into another workspace.",
@@ -10038,7 +10038,8 @@ const catalog = {
       "leftToast": "You left {name}",
       "leaveFailed": "Could not leave the workspace",
       "deletedToast": "Workspace deleted. Owners can restore it for 14 days.",
-      "inviteTitle": "Invite people to {name}"
+      "inviteTitle": "Invite people to {name}",
+      "apiKeysDescription": "Keys that act in this workspace: yours, and service accounts for CI and automations. Their rules are in Security."
     },
     "models": {
       "yourDefault": "Workspace default",

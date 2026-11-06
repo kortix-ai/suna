@@ -302,6 +302,8 @@ export function AccountHubContent({
         ? { title: tSettings('sections.security'), description: tSettings('securityDescription') }
         : activeSection === 'roles'
           ? { title: tSettings('sections.roles'), description: tSettings('rolesDescription') }
+          : activeSection === 'tokens'
+            ? { title: tSettings('sections.apiKeys'), description: tSettings('apiKeysDescription') }
           : localizedAccountPaneMeta(tI18nComplete)[activeSection];
   // `project` / `group` / `member` carry the open detail entity onto the URL
   // (`?tab=groups&group=<id>`) — omit one (or pass null) to drop the param,

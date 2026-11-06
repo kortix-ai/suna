@@ -19,6 +19,38 @@ import type { KortixAccount, KortixProject } from '@/lib/projects/projects-clien
 export interface WorkspaceRow {
   project: KortixProject;
   account: KortixAccount;
+  /** `active`, or a state that takes an action first: Set up, or Restore (owners). */
+  state?: 'active' | 'setup_required' | 'deleting';
+  /** When a `deleting` workspace is erased. */
+  deletionScheduledFor?: string | null;
+  /** The caller's one role in the workspace (owner > admin > manager > member). */
+  role?: 'owner' | 'admin' | 'manager' | 'member';
+}
+
+/** The served list (`GET /v1/workspaces`, every state) as rows; `accounts` names each owner account. */
+export function workspaceRowsFromServed(
+  accounts: KortixAccount[],
+  served: ReadonlyArray<
+    KortixProject & {
+      state?: WorkspaceRow['state'];
+      deletion_scheduled_for?: string | null;
+      role?: WorkspaceRow['role'];
+    }
+  >,
+): WorkspaceRow[] {
+  const byId = new Map(accounts.map((account) => [account.account_id, account]));
+  return served.map((project) => ({
+    project,
+    account: byId.get(project.account_id) ?? ({ account_id: project.account_id, name: project.name } as KortixAccount),
+    state: project.state ?? 'active',
+    deletionScheduledFor: project.deletion_scheduled_for ?? null,
+    role: project.role,
+  }));
+}
+
+/** A row that opens now. Set up and Restore come first for the others. */
+export function isOpenableWorkspaceRow(row: WorkspaceRow): boolean {
+  return (row.state ?? 'active') === 'active';
 }
 
 /**

@@ -723,9 +723,10 @@
       "plan": {
         "deleted": "Werden mit deinem Konto gelöscht",
         "left": "Du verlässt",
-        "blockers": "Übergib diese zuerst: Du bist ihr einziger Inhaber und andere arbeiten darin.",
+        "blockers": "Du bist ihr einziger Inhaber, und andere arbeiten darin. Übertrage die Inhaberschaft oder lösche den Workspace.",
         "members": "{count, plural, one {# Mitglied} other {# Mitglieder}}",
-        "nothing": "Du gehörst zu keinem Workspace. Nur deine Anmeldung wird gelöscht."
+        "nothing": "Du gehörst zu keinem Workspace. Nur deine Anmeldung wird gelöscht.",
+        "blockersTitle": "Übergib diese zuerst"
       }
     },
     "security": {
@@ -996,7 +997,7 @@
         "integrations": "Seine API-Schlüssel und verbundenen Apps funktionieren nicht mehr",
         "access": "Alle Mitglieder verlieren den Zugriff auf diesen Workspace"
       },
-      "reassurance": "Owner können ihn 14 Tage lang aus der Workspace-Liste wiederherstellen. Git-Repositories, die du selbst verbunden hast, werden nicht gelöscht.",
+      "reassurance": "Git-Repositories, die du selbst verbunden hast, werden nicht gelöscht.",
       "keepWorkspace": "Workspace behalten",
       "transferWorkspace": "Workspace übertragen",
       "transferDescription": "Sitzungen, Dateien, Einstellungen und Mitgliederzugriff dieses Workspace in einen anderen Workspace verschieben.",
@@ -26685,7 +26686,8 @@
       "leftToast": "Du hast {name} verlassen",
       "leaveFailed": "Workspace konnte nicht verlassen werden",
       "deletedToast": "Workspace gelöscht. Owner können ihn 14 Tage lang wiederherstellen.",
-      "inviteTitle": "Personen zu {name} einladen"
+      "inviteTitle": "Personen zu {name} einladen",
+      "apiKeysDescription": "Schlüssel, die in diesem Workspace handeln: deine und Dienstkonten für CI und Automatisierungen. Ihre Regeln stehen unter Sicherheit."
     },
     "cli": {
       "noWorkspaceTitle": "Erstelle einen Workspace, um die CLI anzumelden",

@@ -723,9 +723,10 @@
       "plan": {
         "deleted": "Eliminati con il tuo account",
         "left": "Lasci",
-        "blockers": "Trasferiscili prima: sei l'unico proprietario e altre persone ci lavorano.",
+        "blockers": "Sei l'unico proprietario e altre persone ci lavorano. Trasferisci la proprietà o elimina il workspace.",
         "members": "{count, plural, one {# membro} other {# membri}}",
-        "nothing": "Non appartieni a nessun workspace. Viene eliminato solo il tuo accesso."
+        "nothing": "Non appartieni a nessun workspace. Viene eliminato solo il tuo accesso.",
+        "blockersTitle": "Trasferiscili prima"
       }
     },
     "security": {
@@ -996,7 +997,7 @@
         "integrations": "Le sue chiavi API e le app collegate smettono di funzionare",
         "access": "Tutti i membri perdono l'accesso a questo workspace"
       },
-      "reassurance": "I proprietari possono ripristinarlo dall'elenco dei workspace per 14 giorni. I repository Git che hai collegato tu non vengono eliminati.",
+      "reassurance": "I repository Git che hai collegato tu non vengono eliminati.",
       "keepWorkspace": "Mantieni workspace",
       "transferWorkspace": "Trasferisci workspace",
       "transferDescription": "Sposta sessioni, file, impostazioni e accesso dei membri di questo workspace in un altro workspace.",
@@ -26685,7 +26686,8 @@
       "leftToast": "Hai lasciato {name}",
       "leaveFailed": "Impossibile lasciare il workspace",
       "deletedToast": "Workspace eliminato. I proprietari possono ripristinarlo per 14 giorni.",
-      "inviteTitle": "Invita persone in {name}"
+      "inviteTitle": "Invita persone in {name}",
+      "apiKeysDescription": "Chiavi che agiscono in questo workspace: le tue e gli account di servizio per CI e automazioni. Le loro regole sono in Sicurezza."
     },
     "cli": {
       "noWorkspaceTitle": "Crea un workspace per accedere con la CLI",
