@@ -24,6 +24,7 @@ import type { AssistantMessage, ImageContent, ModelThinkingLevel } from '@earend
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
 import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet, type RuntimePending } from '@kortix/api-contract/runtime-relay'
 import { KORTIX_PLATFORM_TOOL_NAMES } from '@kortix/api-contract/kortix-tool-card'
+import type { ThreadActivity } from '@kortix/api-contract/wire-values'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -331,7 +332,7 @@ interface ChildSession {
   agentName: string
   createdAt: number
   updatedAt: number
-  status: 'idle' | 'busy'
+  status: ThreadActivity
   transcript: TranscriptStore
   /** The child's pi conversation, kept so `task_id` resumes it. */
   agentMessages: AgentMessage[]
@@ -533,7 +534,7 @@ export class PiRuntime {
   /** The user message the next assistant message answers: the turn's, then the newest steered one read. */
   private turnParent: string | null = null
   private abortAfterTool: { promptId: string; messageId: string } | null = null
-  private status: 'idle' | 'busy' = 'idle'
+  private status: ThreadActivity = 'idle'
   /** Turns admitted and not yet finished, the running one included. */
   private pendingTurns = 0
   /** Prompts admitted behind the running work that have not started: a turn, or a `noReply` message before its queue slot. */
@@ -2640,7 +2641,7 @@ export class PiRuntime {
     return (this.agent?.state.tools ?? []).map((tool) => tool.name)
   }
 
-  sessionStatus(): { type: 'idle' | 'busy' } {
+  sessionStatus(): { type: ThreadActivity } {
     return { type: this.status }
   }
 

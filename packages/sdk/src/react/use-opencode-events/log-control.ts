@@ -9,6 +9,7 @@
 import { useRuntimePendingStore } from '../../browser/stores/opencode-pending-store';
 import type { KortixSessionStatus } from '../../core/runtime/transcript-types';
 import type { RuntimePendingRecord } from '../../core/session/runtime-actions';
+import { THREAD_STATUSES, toKortixSessionStatusType, type ThreadStatus } from '../../core/wire-values';
 import type { RuntimeEvent } from './types';
 
 const isObj = (value: unknown): value is Record<string, unknown> =>
@@ -19,17 +20,20 @@ export function sessionStatusOfLogFrame(event: { type: string; properties: unkno
   if (event.type !== 'log.status' || !isObj(event.properties)) return null;
   const { thread_id: sessionID, status, retry } = event.properties;
   if (typeof sessionID !== 'string' || !sessionID) return null;
+  if (typeof status !== 'string' || !(THREAD_STATUSES as readonly string[]).includes(status)) return null;
+  // The v1 projection of the base set: a compaction runs inside the turn.
+  const type = toKortixSessionStatusType(status as ThreadStatus);
   let value: KortixSessionStatus;
-  if (status === 'idle') value = { type: 'idle' };
-  else if (status === 'busy' || status === 'compacting') value = { type: 'busy' };
-  else if (status === 'retry' && isObj(retry)) {
+  if (type === 'retry' && isObj(retry)) {
     value = {
       type: 'retry',
       attempt: typeof retry.attempt === 'number' ? retry.attempt : 1,
       message: typeof retry.message === 'string' ? retry.message : '',
       next: typeof retry.next_at === 'string' ? Date.parse(retry.next_at) : Date.now(),
     };
-  } else return null;
+  } else if (type === 'idle') value = { type: 'idle' };
+  // A retry without its details is still the turn: `busy`, so the frame never drops.
+  else value = { type: 'busy' };
   return { type: 'session.status', properties: { sessionID, status: value } } as Extract<RuntimeEvent, { type: 'session.status' }>;
 }
 

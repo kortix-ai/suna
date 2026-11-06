@@ -26,6 +26,7 @@
  * from the daemon (`session.log.v2`) and drops the daemon's v1 transcript frames.
  */
 import { z } from 'zod';
+import { THREAD_STATUSES } from '../wire-values';
 import { SessionLogPutSchema, SessionLogSessionPatchSchema, SessionLogThreadUpsertSchema, SessionLogTombstoneSchema } from './wire';
 
 const id = z.string().min(1);
@@ -53,7 +54,7 @@ export const SessionLogBlockDeltaEventSchema = z.object({ thread_id: id, message
  */
 export const SessionLogStatusEventSchema = z.object({
   thread_id: id,
-  status: z.enum(['idle', 'busy', 'retry', 'compacting']),
+  status: z.enum(THREAD_STATUSES),
   retry: z.object({ attempt: z.number().int().positive(), message: z.string(), next_at: z.string() }).optional(),
 });
 

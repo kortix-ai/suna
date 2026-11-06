@@ -108,6 +108,34 @@ export {
  */
 export type { RuntimeCapability, SessionHealthResponse, SessionHealthResult } from './core/session/health';
 export { hasSessionDesktop, runtimeSupports } from './core/session/health';
+export {
+  CREDIT_ACCOUNT_PAYMENT_STATUSES,
+  RUNTIME_CAPABILITIES,
+  SESSION_CONTROL_FRAME_TYPES,
+  SESSION_PROMPT_REASONS,
+  SESSION_START_RESUMING_REASONS,
+  SESSION_START_TRANSPORT_REASONS,
+  SESSION_STREAM_FRAME_TYPES,
+  THREAD_STATUSES,
+  isParkedRuntimeDownReason,
+  isSessionPromptReason,
+  isSessionStartTransportReason,
+  isThreadWorking,
+  toKortixSessionStatusType,
+  toRuntimeThreadStatus,
+} from './core/wire-values';
+export type {
+  CreditAccountPaymentStatus,
+  KortixSessionStatusType,
+  SessionControlFrameType,
+  SessionPromptAdmissionReason,
+  SessionPromptReason,
+  SessionStartResumingReason,
+  SessionStartTransportReason,
+  SessionStreamFrameType,
+  ThreadActivity,
+  ThreadStatus,
+} from './core/wire-values';
 
 /**
  * A session's resolved runtime (opencode session id + runtime URL + sandbox

@@ -20,6 +20,13 @@ describe('sessionStatusOfLogFrame', () => {
     });
   });
 
+  test('a retry without its details is still the turn: busy, never dropped', () => {
+    // Dropped, the frame left whatever status the store held before (an idle
+    // read after a busy one reads as "done" while the model request retries).
+    const status = sessionStatusOfLogFrame({ type: 'log.status', properties: { thread_id: 'ses_a', status: 'retry' } });
+    expect(status?.properties.status).toEqual({ type: 'busy' });
+  });
+
   test('anything else is not a status', () => {
     expect(sessionStatusOfLogFrame({ type: 'log.message', properties: {} })).toBeNull();
     expect(sessionStatusOfLogFrame({ type: 'log.status', properties: { status: 'idle' } })).toBeNull();
