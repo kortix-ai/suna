@@ -31,6 +31,11 @@ index, view, tables and column, and deleted the three `pgmigrations` rows. The
 41 accounts and 41 projects moved. No prod, staging or dev deployment was
 touched.
 
-**Enforcement:** none yet: `tests/src/core/local-stack.ts` should refuse to
-migrate a shared-mode database when `packages/db/migrations` differs from
-`origin/dev`, and name `pnpm worktree create --db`.
+**Enforcement:** `ensureLocalMigrations` in `tests/src/core/local-stack.ts`
+throws before any migration runs when the database is the shared primary
+(`…/postgres`, a shared-mode worktree or the primary checkout) and
+`branchOnlyMigrations` finds migration files that `origin/dev` lacks; the
+message names `pnpm worktree create --name <slug> --db`. CI and a worktree with
+its own database (`branch`, `isolated`) are never refused;
+`KORTIX_SHARED_DB_MIGRATE=1` overrides. `tests/unit/shared-db-migration-guard.test.ts`
+covers both functions.
