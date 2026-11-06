@@ -499,8 +499,8 @@ export function ProjectAdminDashboard({
         style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
         {isMobile ? (
+          // The frame's title bar names the panel; this row is the rail only.
           <nav aria-label={title} className="border-border/60 bg-background flex shrink-0 flex-col border-b">
-            <h1 className="text-foreground px-4 pt-3 text-sm font-medium">{title}</h1>
             <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="min-w-0 flex-1 py-2">
               {settled ? (
                 <div className="flex w-fit items-center gap-2">

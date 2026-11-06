@@ -343,7 +343,7 @@ const catalog = {
   },
   "settings": {
     "rail": {
-      "settings": "Settings",
+      "settings": "Preferences",
       "backToApp": "Back to app",
       "close": "Close",
       "docs": "Docs",

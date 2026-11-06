@@ -258,25 +258,33 @@ export function AccountHubContent({
   const hubSheet = useAccountHubSheet();
   const closeHubSheet = hubSheet.close;
   const inviteOpenedRef = useRef(false);
+  const openInviteRef = useRef<((target: AccountDetail) => void) | null>(null);
   // The page's own query (`?invite=1`), not the hub's mapped params.
   const pageSearchParams = useUiSearchParams();
   useEffect(() => {
     closeHubSheet();
+    inviteOpenedRef.current = false;
   }, [accountId, activeSection, closeHubSheet]);
+  // `?invite=1` (the workspace menu's and the palette's "Invite people")
+  // opens the invite form once Members has loaded. Declared after the effect
+  // above, so the form opens after a section change closed the sheet.
+  const wantsInvite = activeSection === 'members' && pageSearchParams?.get('invite') === '1';
+  const inviteTarget = accountQuery.data;
+  useEffect(() => {
+    if (!wantsInvite) {
+      inviteOpenedRef.current = false;
+      return;
+    }
+    if (inviteOpenedRef.current || !canInviteMember || !inviteTarget || !openInviteRef.current) return;
+    inviteOpenedRef.current = true;
+    openInviteRef.current(inviteTarget);
+    // `accountId` and `activeSection`: re-run after the effect above closed the sheet.
+  }, [wantsInvite, canInviteMember, inviteTarget, accountId, activeSection]);
 
   if (authLoading || !user) {
     return <ConnectingScreen overrideStage="auth" hideWorkspacePicker />;
   }
 
-  // `?invite=1` (the workspace menu's and the palette's "Invite people")
-  // opens the invite form once Members has loaded.
-  const wantsInvite =
-    activeSection === 'members' && pageSearchParams?.get('invite') === '1' && canInviteMember && !!accountQuery.data;
-  if (wantsInvite && !inviteOpenedRef.current && accountQuery.data) {
-    inviteOpenedRef.current = true;
-    const target = accountQuery.data;
-    queueMicrotask(() => openInvite(target));
-  }
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
@@ -375,6 +383,8 @@ export function AccountHubContent({
         />
       ),
     });
+
+  openInviteRef.current = openInvite;
 
   return (
     <AccountPane
