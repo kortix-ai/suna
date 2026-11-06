@@ -30,6 +30,7 @@ import {
   claudeSubscriptionLogins,
   creditAccounts,
   creditPurchases,
+  gatewayRequestLogs,
   iamRoleActions,
   iamRoles,
   projectSessions,
@@ -59,6 +60,8 @@ import { checkWorkspaceInvariants } from './invariants';
 import { workspaceSplitNotice } from './notice';
 import { deliverSplitOwnerEmails, OWNER_EMAIL_MAX_ATTEMPTS, renderSplitOwnerEmail, type SendEmail } from './owner-email';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
+import { listCostByProject } from '../../shared/cost-rollups';
+import { getSessionCostRecord } from '../../shared/session-costs';
 import { resolveOpencodeLogin } from '../../llm-gateway/credentials/opencode-console';
 
 const confirmed = Boolean(
@@ -235,6 +238,7 @@ async function cleanup(): Promise<void> {
   await db.delete(workspaceSplitRuns);
   await db.execute(sql`DELETE FROM kortix.workspace_split_emails`);
   await db.delete(appSiteBlobs).where(inArray(appSiteBlobs.accountId, all));
+  await db.delete(gatewayRequestLogs).where(inArray(gatewayRequestLogs.accountId, all));
   await db.delete(creditPurchases).where(inArray(creditPurchases.accountId, all));
   await db.execute(sql`DELETE FROM kortix.enterprise_contracts WHERE account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(all)}::jsonb))`);
   await db.execute(sql`DELETE FROM kortix.credit_ledger WHERE account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(all)}::jsonb))`);
@@ -959,6 +963,28 @@ withDb('workspace split', () => {
     await deliverSplitOwnerEmails('apply', { send: mail.sendEmail });
     await deliverSplitOwnerEmails('apply', { send: mail.sendEmail });
     expect(mail.sent).toHaveLength(1);
+  });
+
+  test('finding 31 across the split: a log row from before the move stays visible in the moved workspace, and the keeper labels it Moved to another workspace', async () => {
+    const window = { from: new Date(Date.now() - 86_400_000), to: new Date(Date.now() + 60_000) };
+    // Spend of the moved project's session, billed to the legacy account, a moment before the split.
+    await db.insert(gatewayRequestLogs).values({
+      requestId: crypto.randomUUID(), accountId: LEGACY, projectId: MOVED, sessionId: SESSION,
+      requestedModel: 'synthetic-model', resolvedModel: 'synthetic-model', provider: 'synthetic',
+      status: 200, ok: true, billingMode: 'credits', finalCost: '1.25',
+    });
+    await splitLegacy(storage, mailStub().sendEmail);
+    const target = (await runFor(MOVED))!.toAccountId!;
+    // The row stays where it was billed (gateway_request_logs is a ledger the split leaves).
+    const [row] = await db.select({ accountId: gatewayRequestLogs.accountId }).from(gatewayRequestLogs).where(eq(gatewayRequestLogs.sessionId, SESSION));
+    expect(row?.accountId).toBe(LEGACY);
+    // The moved workspace sees the session's full cost, marked as billed elsewhere.
+    const detail = await getSessionCostRecord({ accountId: target, sessionId: SESSION });
+    expect([detail?.llm_cost, detail?.billed_elsewhere_cost]).toEqual([1.25, 1.25]);
+    // The keeper keeps the money and names the project by the label, never by its new name.
+    const page = await listCostByProject({ accountId: LEGACY, window, sort: 'total_desc', limit: 10, offset: 0 });
+    expect(page.projects.find((p) => p.project_id === MOVED)).toMatchObject({ project_name: 'Moved to another workspace', moved: true, llm_cost: 1.25 });
+    expect(page.projects.some((p) => p.project_name === 'Moved')).toBe(false);
   });
 
   test('split_notice: the moved workspace and the keeper each say where they came from, for 30 days', async () => {
