@@ -31,6 +31,8 @@ async function createCliFixture(): Promise<{ cliRoot: string; sdkRoot: string }>
   await mkdir(join(sharedRoot, 'src', 'host-config'), { recursive: true });
   await writeFile(join(sharedRoot, 'src', 'host-config', 'config.ts'), 'config:v1\n');
   await writeFile(join(sharedRoot, 'src', 'host-config', 'sandbox-env.ts'), 'sandbox-env:v1\n');
+  await mkdir(join(sharedRoot, 'src', 'utils'), { recursive: true });
+  await writeFile(join(sharedRoot, 'src', 'utils', 'string.ts'), 'string:v1\n');
   await writeFile(join(sharedRoot, 'package.json'), '{"name":"@kortix/shared"}\n');
   return { cliRoot, sdkRoot };
 }
