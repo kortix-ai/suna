@@ -9,7 +9,7 @@
  * recovery notice.
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { accountMembers, notifications, projectTriggerRuntime } from '@kortix/db';
+import { accountMembers, apps, notifications, projectTriggerRuntime } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { insertIntoView } from '../../__tests__/helpers/compat-views';
@@ -65,7 +65,13 @@ beforeAll(async () => {
     pushEnabled: true, listDevices: async () => [], sendExpo: async () => undefined,
     sendWebPush: async () => ({ sent: 0 }), emailAvailable: () => false, sendEmailNow: async () => 'sent',
   });
+  await db.insert(apps).values([
+    { appId: APP_ID, accountId: project.account_id, projectId: project.project_id, slug: 'status-watch', name: 'Status watch', routeKey: 'ffffffffffffff01', desiredState: 'running' },
+    { appId: crypto.randomUUID(), accountId: project.account_id, projectId: project.project_id, slug: 'gone-watch', name: 'Gone', routeKey: 'ffffffffffffff02', desiredState: 'stopped', deletedAt: new Date() },
+  ] as never);
   await seed('quiet', { expect: 600, heardMinutesAgo: 25 });
+  // Its App was deleted (a session trigger an App delete leaves to its owner): never a silent App.
+  await seed('app-gone', { expect: 600, heardMinutesAgo: 25, app: 'gone-watch' });
   await seed('lively', { expect: 600, heardMinutesAgo: 2 });
   await seed('never-heard', { expect: 3600, heardMinutesAgo: null });
   await seed('off', { expect: 600, heardMinutesAgo: 25, enabled: false });
@@ -76,6 +82,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   setTriggerAlertNotifierForTest(null);
+  await db.delete(apps).where(eq(apps.projectId, project.project_id));
   await removeSeeded([project]);
 });
 
@@ -90,7 +97,7 @@ test('only an enabled trigger past its window is alerted, once, with the flag of
   expect(first?.raised).toBe(2); // quiet (25 min > 10 min), never-heard (120 min since written > 60 min)
   expect((await runtime('quiet')).alertSource).toBe('silence');
   expect((await runtime('never-heard')).alertSource).toBe('silence');
-  for (const slug of ['lively', 'off', 'no-window', 'huge']) expect((await runtime(slug)).alertFailingSince).toBeNull();
+  for (const slug of ['lively', 'off', 'no-window', 'huge', 'app-gone']) expect((await runtime(slug)).alertFailingSince).toBeNull();
   const rows = await inbox('quiet');
   expect(rows.map((r) => r.kind)).toEqual(['automation_failed']);
   expect(rows[0]!.body).toContain('App "status-watch" sent no event for 25m; this trigger expects one within 10m.');

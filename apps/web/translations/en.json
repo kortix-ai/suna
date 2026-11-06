@@ -1867,6 +1867,7 @@
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Search apps",
+    "searchArtifacts": "Search artifacts",
     "appsNoMatches": "No matches",
     "spaces": {
       "channels": "Spaces",
@@ -16705,6 +16706,7 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Open the full approval page",
       "textb7ddab3f7df8": "Delete {value0} and every runtime? This action cannot be undone.",
+      "text9c583fa19f1a": "Its triggers go with it: {value0}.",
       "textb7de71558bf4": "Selected connectors resolve this secret on the server. The sandbox receives no value.",
       "textb7e29198fc4e": "{value0} key removed",
       "textb7ef1459725d": "Failed to delete account immediately",

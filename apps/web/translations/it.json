@@ -1867,6 +1867,7 @@
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Cerca app",
+    "searchArtifacts": "Cerca artefatti",
     "appsNoMatches": "Nessun risultato",
     "spaces": {
       "channels": "Spazi",
@@ -16660,6 +16661,7 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Apri la pagina completa di approvazione",
       "textb7ddab3f7df8": "Eliminare {value0} e ogni runtime? Questa azione non può essere annullata.",
+      "text9c583fa19f1a": "Anche i suoi trigger vengono eliminati: {value0}.",
       "textb7de71558bf4": "I connettori selezionati risolvono questo segreto sul server. La sandbox non riceve alcun valore.",
       "textb7e29198fc4e": "Chiave {value0} rimossa",
       "textb7ef1459725d": "Impossibile eliminare immediatamente l’account",

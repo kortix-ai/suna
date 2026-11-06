@@ -1867,6 +1867,7 @@
     "drive": "云盘",
     "repo": "Repo",
     "searchApps": "搜索应用",
+    "searchArtifacts": "搜索工件",
     "appsNoMatches": "无匹配项",
     "spaces": {
       "channels": "空间",
@@ -16660,6 +16661,7 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "打开完整批准页面",
       "textb7ddab3f7df8": "删除 {value0} 和每个运行时？此操作无法撤消。",
+      "text9c583fa19f1a": "它的触发器也会一并删除：{value0}。",
       "textb7de71558bf4": "选定的连接器会在服务器上解析此密钥。沙盒不会接收任何值。",
       "textb7e29198fc4e": "{value0} 密钥已移除",
       "textb7ef1459725d": "立即删除账户失败",

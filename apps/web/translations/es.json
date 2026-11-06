@@ -1867,6 +1867,7 @@
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Buscar apps",
+    "searchArtifacts": "Buscar artefactos",
     "appsNoMatches": "Sin resultados",
     "spaces": {
       "channels": "Espacios",
@@ -16660,6 +16661,7 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Abrir la página completa de aprobación",
       "textb7ddab3f7df8": "¿Eliminar {value0} y cada tiempo de ejecución? Esta acción no se puede deshacer.",
+      "text9c583fa19f1a": "También se eliminan sus activadores: {value0}.",
       "textb7de71558bf4": "Los conectores seleccionados resuelven este secreto en el servidor. El sandbox no recibe ningún valor.",
       "textb7e29198fc4e": "Clave de {value0} eliminada",
       "textb7ef1459725d": "No se pudo eliminar la cuenta de inmediato",

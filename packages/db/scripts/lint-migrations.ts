@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { loadFileSet } from './load-file-set';
+import { isMigrationFile } from './migration-files';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -469,9 +470,7 @@ function main(): void {
   const grandfathered = loadFileSet(GRANDFATHER_FILE);
   const backfillGrandfathered = loadFileSet(BACKFILL_GRANDFATHER_FILE);
   const lockTimeoutGrandfathered = loadFileSet(CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE);
-  const files = readdirSync(DIR)
-    .filter((f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts'))
-    .sort();
+  const files = readdirSync(DIR).filter(isMigrationFile).sort();
   if (files.length === 0) errors.push('No migration files found in packages/db/migrations/.');
 
   for (const f of files) {
