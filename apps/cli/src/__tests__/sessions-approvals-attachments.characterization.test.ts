@@ -129,7 +129,7 @@ describe('sessions approvals / answer / attachments — characterization', () =>
         }
         const approval = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/approvals/([^/]+)$`));
         if (req.method === 'POST' && approval) {
-          approvalPosts.push({ path: approval[1]!, body: await req.json() });
+          approvalPosts.push({ path: approval[1] ?? '', body: await req.json() });
           return approvalStatus === 200 ? Response.json({ ok: true }) : Response.json({ error: true, message: 'Only a project manager can resolve this.' }, { status: approvalStatus });
         }
         return Response.json({ error: `not found ${url.pathname}` }, { status: 404 });
@@ -350,10 +350,15 @@ describe('sessions approvals / answer / attachments — characterization', () =>
   });
 
   describe('audit read', () => {
-    test('ls reads the session audit', async () => {
+    test('ls asks for the pending-approvals projection, not the full timeline', async () => {
       await approvals('ls');
-      expect(auditSearch).toHaveLength(1);
-      expect(auditSearch[0]).toMatch(/^(\?include_events=false)?$/);
+      expect(auditSearch).toEqual(['?include_events=false']);
+    });
+
+    test('a failed read is worded from the status, as on every CLI request', async () => {
+      approvalStatus = 500;
+      expect(await approvals('approve', 'exec_1')).toBe(1);
+      expect(err()).toContain('HTTP 500: Only a project manager can resolve this.');
     });
   });
 });

@@ -114,7 +114,8 @@ describe('sessions reachable without --scope', () => {
     expect(result.stdout).toContain('You are main (3f2a1b9c)');
     expect(result.stdout).toMatch(/HANDLE\s+ID\s+RELATION\s+STATE\s+INBOUND/);
     expect(result.stdout).toMatch(/reviewer\s+9a8b7c6d\s+child\s+working\s+accept/);
-    expect(seen.map((s) => s.path.replace(/\?scope=mine$/, ''))).toEqual([`/projects/${PROJECT}/sessions/${SELF}/reachable`]);
+    // The server's default scope is `mine`: the CLI no longer sends it.
+    expect(seen.map((s) => s.path)).toEqual([`/projects/${PROJECT}/sessions/${SELF}/reachable`]);
   });
 
   test('with no other session it says so and names --scope project; --json prints { self, agents }', async () => {
@@ -130,6 +131,15 @@ describe('sessions reachable without --scope', () => {
     const result = await runCli(['sessions', 'reachable'], IN_BOX);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('Session not found.');
+  });
+
+  test('a rejected token and a server fault are worded from the status, as on every CLI request', async () => {
+    route = () => json({ error: true, message: 'Boom.' }, 401);
+    const rejected = await runCli(['sessions', 'reachable'], IN_BOX);
+    expect(rejected.stderr).toContain('Token rejected — Boom.. Run `kortix login` to re-authenticate.');
+    route = () => json({ error: true, message: 'Boom.' }, 500);
+    const fault = await runCli(['sessions', 'message', 'reviewer', 'hello'], IN_BOX);
+    expect(fault.stderr).toContain('HTTP 500: Boom.');
   });
 });
 
