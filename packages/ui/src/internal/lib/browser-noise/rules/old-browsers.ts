@@ -655,7 +655,7 @@ const FIREFOX_DEAD_OBJECT_NOISE_PATTERN = /^can['’]t access dead object$/i;
 // `app:///projects/…`) carries no file extension and is NOT a script frame:
 // it is Firefox's fallback source for a throw whose stack is uncapturable,
 // and it is exactly the shape this rule drops.
-function isScriptAssetSource(filename: unknown): boolean {
+export function isScriptAssetSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   if (normalized === '' || normalized === 'undefined') return false;
   if (isExtensionSource(filename)) return true;
