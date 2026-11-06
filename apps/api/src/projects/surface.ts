@@ -232,4 +232,4 @@ export { ManifestWriteRefusedError } from './manifest-io';
 // lifecycle writes) and the canonical live session set (consumed by every
 // domain that counts or stops live sessions).
 export { settleLiveSessionsOfAccounts, transitionSandbox, transitionSession } from './session-lifecycle/status-transitions';
-export { ACTIVE_SESSION_STATUSES } from './lib/session-status';
+export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './lib/session-status';
