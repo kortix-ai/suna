@@ -103,14 +103,12 @@ describe('resolveSessionInsertFailure', () => {
   // `opencode_session_id` -> `runtime_session_id`) leaves the previous API
   // tasks serving for ~8 min against the new schema. Their insert fails with
   // 42703, and the old 500 made the web report every retry as an error.
-  // Drizzle keeps the postgres.js error on `cause`, as in the prod failure.
-  const drizzleWrapped = (code: string) =>
-    Object.assign(new Error('Failed query: insert into "kortix"."project_sessions" …'), {
-      cause: Object.assign(new Error('column "opencode_session_id" does not exist'), { code }),
-    });
   for (const code of ['42703', '42P01']) {
     test(`an undefined column or table (${code}) during a deploy maps to a typed, retryable 503`, () => {
-      const raw = drizzleWrapped(code);
+      // Drizzle keeps the postgres.js error on `cause`, as in the prod failure.
+      const raw = Object.assign(new Error('Failed query: insert into "kortix"."project_sessions" …'), {
+        cause: Object.assign(new Error('column "opencode_session_id" does not exist'), { code }),
+      });
 
       const mapped = resolveSessionInsertFailure(raw);
 
