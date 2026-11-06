@@ -100,9 +100,15 @@ describe('a connector connection revoke is sticky', () => {
     expect(await state(conn.connectionId)).toEqual({ status: 'active', credentials: 1 });
   });
 
+  test('a completion that names no start (a hosted-connect finalize) never leaves revoked', async () => {
+    const conn = await seedConnection('revoke-sticky-finalize', 'revoked', minutesAgo(1));
+    await expect(upsertConnectionCredential({ ...conn, value: 'acct_upstream', kind: 'connection' })).rejects.toThrow(/revoked/);
+    expect(await state(conn.connectionId)).toEqual({ status: 'revoked', credentials: 0 });
+  });
+
   test('a credential a person sets now reconnects a revoked account', async () => {
     const conn = await seedConnection('revoke-sticky-manual', 'revoked', minutesAgo(1));
-    await upsertConnectionCredential({ ...conn, value: 'pasted-secret' });
+    await upsertConnectionCredential({ ...conn, value: 'pasted-secret', connectNow: true });
     expect(await state(conn.connectionId)).toEqual({ status: 'active', credentials: 1 });
   });
 });

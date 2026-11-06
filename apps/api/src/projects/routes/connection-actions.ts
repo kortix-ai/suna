@@ -390,6 +390,8 @@ export function registerConnectionActionsRoutes(): void {
                 connectionId,
                 oauth2: parsed.data.oauth2,
                 createdBy: loaded.userId,
+                // A person saves this credential now: it (re)connects the account.
+                connectNow: true,
               });
             } else {
               await upsertConnectionCredential({
@@ -399,6 +401,8 @@ export function registerConnectionActionsRoutes(): void {
                 value: parsed.data.value,
                 kind: parsed.data.kind,
                 createdBy: loaded.userId,
+                // A person saves this credential now: it (re)connects the account.
+                connectNow: true,
               });
             }
           } catch (error) {

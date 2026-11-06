@@ -501,11 +501,14 @@ export async function upsertConnectionCredential(input: {
   createdBy?: string | null;
   /**
    * When the flow that produced this credential started (an OAuth sign-in).
-   * Set: the write is an in-flight completion, and a revoke that landed after
-   * `startedAt` wins (`ConnectionRevokedError`, nothing is stored). Unset: a
-   * person sets the credential now, which (re)connects the account.
+   * By default the write is an in-flight completion (an OAuth callback, a
+   * device poll, a hosted-connect finalize): a revoke that landed after
+   * `startedAt`, or any revoke when `startedAt` is unset, wins
+   * (`ConnectionRevokedError`, nothing is stored).
    */
   startedAt?: Date;
+  /** A person sets this credential at request time (a pasted secret): it (re)connects a revoked account. */
+  connectNow?: boolean;
 }): Promise<void> {
   const [connection] = await db
     .select({ connectionId: connectorConnections.connectionId })
@@ -525,9 +528,9 @@ export async function upsertConnectionCredential(input: {
     // check and the credential write. A new credential is no longer the one
     // the upstream rejected, and the account is no longer revoked.
     const metadata = sql`${connectorConnections.metadata} - 'credential_rejected_at' - 'revokedAt'`;
-    const live = input.startedAt
-      ? await completeConnection(input.connectionId, input.startedAt, { metadata }, tx)
-      : (await connectConnection(input.connectionId, { metadata }, tx)) !== null;
+    const live = input.connectNow
+      ? (await connectConnection(input.connectionId, { metadata }, tx)) !== null
+      : await completeConnection(input.connectionId, input.startedAt ?? null, { metadata }, tx);
     if (!live) throw new ConnectionRevokedError(input.connectionId);
     await tx.insert(connectionCredentials).values({
       connectorId: input.connectorId,
@@ -560,6 +563,8 @@ export async function upsertConnectionOAuth2Credential(
     connectionId: string;
     oauth2: OAuth2ClientCredentials;
     createdBy?: string | null;
+    /** A person saves it at request time (see `upsertConnectionCredential`). */
+    connectNow?: boolean;
   },
   runtime: OAuth2CredentialRuntime = {},
 ): Promise<void> {
@@ -573,6 +578,7 @@ export async function upsertConnectionOAuth2Credential(
     value: createStoredOAuth2Credential(input.oauth2, token),
     kind: 'oauth2_client_credentials',
     createdBy: input.createdBy,
+    connectNow: input.connectNow,
   });
 }
 
