@@ -1,110 +1,57 @@
 'use client';
 
+import { Button } from '@kortix/ui/button';
+import { cn } from '@kortix/ui/lib/utils';
 import { useTranslations } from '@/i18n/use-translations';
-
-import { ArrowLeftIcon as ArrowLeft, BookOpenIcon as BookOpen } from '@phosphor-icons/react';
-import { m } from 'motion/react';
 import Link from '@/components/site-link';
 
-import { Button } from '@kortix/ui/button';
-
-interface NotFoundAction {
-  href: string;
-  label: string;
-  icon?: React.ReactNode;
-  variant?: 'default' | 'outline';
-}
-
 /**
- * The shared 404 card — the big "404" numeral, heading, blurb and actions.
- *
- * Chrome-free on purpose: the marketing `not-found.tsx` wraps it in the
- * Navbar + hero background + footer, while the dashboard `not-found.tsx`
- * drops it inside the project shell. Same content, two frames.
+ * The one 404 view: the ghost, "404 Page not found", a line of body, and
+ * "Go back to home" + "Documentation". The app-wide `not-found.tsx` renders
+ * it full-viewport; the project `not-found.tsx` renders it inside the project
+ * shell with `homeHref` pointing at the project home.
  */
-export function NotFoundCard({
-  title,
-  description,
-  actions,
+export function NotFoundState({
+  homeHref = '/',
+  className,
 }: {
-  title?: string;
-  description?: string;
-  actions?: NotFoundAction[];
+  homeHref?: string;
+  className?: string;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-
-  const resolvedActions: NotFoundAction[] = actions ?? [
-    {
-      href: '/',
-      label: tHardcodedUi.raw('appNotFound.line100JsxTextReturnHome'),
-      icon: <ArrowLeft className="h-4 w-4" />,
-    },
-    {
-      href: '/docs',
-      label: tHardcodedUi.raw('i18nComplete.textc205924de0fe'),
-      icon: <BookOpen className="h-4 w-4" />,
-      variant: 'outline',
-    },
-  ];
-
+  const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
-    <m.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className="relative z-10 flex w-full max-w-[460px] flex-col items-center gap-6 text-center"
-    >
-      <m.div
-        className="text-foreground/[0.07] font-mono text-7xl leading-none font-bold tracking-tighter select-none sm:text-8xl"
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.1, duration: 0.5 }}
-      >
-        404
-      </m.div>
+    <div className={cn('flex flex-col items-center justify-center gap-12 text-center', className)}>
+      <div className="mx-auto flex max-w-xl flex-col items-center justify-center space-y-6 px-6">
+        <svg
+          width="24"
+          height="24"
+          fill="currentColor"
+          viewBox="0 0 24 24"
+          xmlns="http://www.w3.org/2000/svg"
+          className="size-10"
+        >
+          <path d="M2.25 12.044v6.517c0 .764.308 1.57.8 2.127.501.567 1.354 1.012 2.287.543.696-.35 1.275-.363 1.746-.047 1.126.755 2.708.755 3.834 0 .345-.23.607-.308.825-.31.218-.001.485.072.84.31 1.127.755 2.709.755 3.835 0 .213-.142.58-.237 1.044-.226.454.01.898.12 1.202.273.933.469 1.786.024 2.287-.543.492-.557.8-1.363.8-2.126v-6.518c0-5.405-4.362-9.794-9.75-9.794s-9.75 4.389-9.75 9.794m14.516.934a.75.75 0 0 1-.017 1.06 8 8 0 0 1-.536.476l.218.445a2.25 2.25 0 0 1-4.039 1.983l-.273-.557a8.9 8.9 0 0 1-3.801-.087.75.75 0 0 1 .364-1.455c1.13.283 2.429.287 3.746-.066s2.44-1.005 3.278-1.816a.75.75 0 0 1 1.06.017m-3.027 3.303-.147-.299q.721-.26 1.366-.62l.127.258a.75.75 0 0 1-1.346.66M9.329 10l.103.489a.75.75 0 1 1-1.467.311l-.104-.489A.75.75 0 1 1 9.328 10m4-1.618a.75.75 0 0 1 .89.578l.104.489a.75.75 0 1 1-1.467.312l-.104-.49a.75.75 0 0 1 .578-.889" />
+        </svg>
 
-      <h1 className="text-foreground text-3xl leading-tight font-normal tracking-tight sm:text-5xl">
-        {title ?? tHardcodedUi.raw('appNotFound.line65JsxTextPageNotFound')}
-      </h1>
-      <p className="text-foreground/60 px-2 text-sm leading-relaxed sm:text-base">
-        {description ??
-          tHardcodedUi.raw('appNotFound.line70JsxTextThePageYouAposReLookingForDoesn')}
-      </p>
-
-      <div className="mt-1 flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-center">
-        {resolvedActions.map((action) => (
-          <Button
-            key={action.href + action.label}
-            asChild
-            size="lg"
-            variant={action.variant ?? 'default'}
-            className="h-12 gap-2"
-          >
-            <Link href={action.href}>
-              {action.icon}
-              {action.label}
+        <div className="space-y-1">
+          <h1 className="text-base-900 text-base sm:text-lg md:text-xl">
+            {tI18nHardcoded.raw('autoAppNotFoundJsxText404PageNotFoundf7ea8161')}
+          </h1>
+          <p className="text-base-500 text-base text-balance">
+            {tI18nHardcoded.raw('autoAppNotFoundJsxTextThePageYouAreLookingccf1ecc5')}
+          </p>
+        </div>
+        <div className="grid w-full grid-cols-1 gap-2 lg:grid-cols-2">
+          <Button asChild variant="secondary" className="w-full">
+            <Link href={homeHref}>
+              {tI18nHardcoded.raw('autoAppNotFoundJsxTextGoBackToHome7b70f24a')}
             </Link>
           </Button>
-        ))}
+          <Button asChild className="w-full">
+            <Link href="/docs">{tI18nHardcoded.raw('i18nComplete.textc205924de0fe')}</Link>
+          </Button>
+        </div>
       </div>
-    </m.div>
-  );
-}
-
-/**
- * The faint fractal-noise overlay shared by the 404 / error surfaces. Absolutely
- * positioned, so the parent must be `relative`.
- */
-export function NotFoundNoise() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <div
-      className="pointer-events-none absolute inset-0 z-0 opacity-[0.02] dark:opacity-[0.035]"
-      style={{
-        backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-        backgroundRepeat: 'repeat',
-        backgroundSize: "256px 256px",
-      }}
-    />
+    </div>
   );
 }

@@ -64,8 +64,6 @@ const cronSpec: GitTriggerSpec = {
 };
 const webhookSpec: GitTriggerSpec = { ...cronSpec, type: 'webhook', cron: null, secretEnv: 'RUN_HISTORY_SECRET' };
 
-const noPush = async () => ({ sent: 0 as const, reason: 'no_devices' as const });
-
 async function runs() {
   return db
     .select()
@@ -310,10 +308,7 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
       endError: { name: 'APIError', message: 'Payment Required: Insufficient credits.' },
     });
     const newerTurn = await seedTurn(sessionId, { startedAt: '2026-10-16T10:05:01.000Z' });
-    await recordTriggerRunEnd(
-      { ...end, status: 'error', error: { name: 'APIError', message: 'Payment Required: Insufficient credits.' } },
-      noPush,
-    );
+    await recordTriggerRunEnd({ ...end, status: 'error', error: { name: 'APIError', message: 'Payment Required: Insufficient credits.' } });
     expect(await run(older!)).toMatchObject({
       runStatus: 'failed',
       runError: 'Out of credits: Payment Required: Insufficient credits.',
@@ -323,7 +318,7 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
     expect(await run(newer!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
 
     await endTurn(newerTurn, 'completed', '2026-10-16T10:09:00.000Z');
-    await recordTriggerRunEnd({ ...end, status: 'idle' }, noPush);
+    await recordTriggerRunEnd({ ...end, status: 'idle' });
     expect(await run(newer!)).toMatchObject({ runStatus: 'succeeded', runError: null });
     expect((await run(newer!)).runEndedAt?.toISOString()).toBe('2026-10-16T10:09:00.000Z');
     // A closed run keeps its first outcome.
@@ -333,22 +328,19 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
     // metadata; its run still closes.
     const pinned = await fire(sessionId, '2026-10-16T10:09:30.000Z');
     await seedTurn(sessionId, { startedAt: '2026-10-16T10:09:31.000Z', endedAt: '2026-10-16T10:10:00.000Z', endReason: 'completed' });
-    await recordTriggerRunEnd({ ...end, metadata: {}, status: 'idle' }, noPush);
+    await recordTriggerRunEnd({ ...end, metadata: {}, status: 'idle' });
     expect(await run(pinned!)).toMatchObject({ runStatus: 'succeeded' });
 
     // A subagent turn says nothing about the run.
     const third = await fire(sessionId, '2026-10-16T10:10:30.000Z');
     const thirdTurn = await seedTurn(sessionId, { startedAt: '2026-10-16T10:10:31.000Z' });
-    await recordTriggerRunEnd({ ...end, status: 'idle', childSession: true }, noPush);
+    await recordTriggerRunEnd({ ...end, status: 'idle', childSession: true });
     expect(await run(third!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
 
     // A stopped turn closes the run as failed with "stopped", and is still
     // not a trigger run outcome: the trigger runtime is not touched.
     await endTurn(thirdTurn, 'failed', '2026-10-16T10:12:00.000Z', { name: 'MessageAbortedError', message: 'aborted' });
-    const result = await recordTriggerRunEnd(
-      { ...end, status: 'error', error: { name: 'MessageAbortedError', message: 'aborted' } },
-      noPush,
-    );
+    const result = await recordTriggerRunEnd({ ...end, status: 'error', error: { name: 'MessageAbortedError', message: 'aborted' } });
     expect(result).toBe('not_a_trigger_run');
     expect(await run(third!)).toMatchObject({ runStatus: 'failed', runError: 'stopped' });
     expect((await run(third!)).runEndedAt?.toISOString()).toBe('2026-10-16T10:12:00.000Z');
@@ -370,7 +362,7 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
       status: 'idle' as const,
       childSession: false,
     };
-    await recordTriggerRunEnd({ ...end, outcome: 'already_closed' }, noPush);
+    await recordTriggerRunEnd({ ...end, outcome: 'already_closed' });
     expect(await run(first!)).toMatchObject({ runStatus: 'succeeded', runError: null });
     expect((await run(first!)).runEndedAt?.toISOString()).toBe('2026-10-21T13:17:04.000Z');
 
@@ -378,7 +370,7 @@ describeWithDb('trigger run history — real PostgreSQL', () => {
     const secondTurn = await seedTurn(sessionId, { startedAt: '2026-10-21T13:38:27.000Z' });
     expect(await run(second!)).toMatchObject({ runStatus: 'running', runEndedAt: null });
     await endTurn(secondTurn, 'failed', '2026-10-21T13:50:00.000Z', { name: 'APIError', message: 'Bad Gateway' });
-    await recordTriggerRunEnd({ ...end, status: 'error', error: { name: 'APIError', message: 'Bad Gateway' }, outcome: 'closed' }, noPush);
+    await recordTriggerRunEnd({ ...end, status: 'error', error: { name: 'APIError', message: 'Bad Gateway' }, outcome: 'closed' });
     expect(await run(second!)).toMatchObject({ runStatus: 'failed' });
     expect((await run(second!)).runEndedAt?.toISOString()).toBe('2026-10-21T13:50:00.000Z');
     expect(await run(first!)).toMatchObject({ runStatus: 'succeeded' });

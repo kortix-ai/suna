@@ -35,16 +35,16 @@ function fakeClock() {
 }
 
 describe('waitForDaemonRuntimeReady', () => {
-  test('resolves true once opencode reports ok (the post-restart window clears)', async () => {
+  test('resolves true once the runtime reports ok (the post-restart window clears)', async () => {
     const clock = fakeClock();
     const ready = await waitForDaemonRuntimeReady({
       previewUrl: 'http://127.0.0.1:1/',
       providerHeaders: {},
       deps: {
         fetchImpl: fakeHealthFetch([
-          { opencode: 'starting' },
-          { opencode: 'starting' },
-          { opencode: 'ok', status: 'ok' },
+          { harness: { id: 'pi', state: 'starting' } },
+          { harness: { id: 'pi', state: 'starting' } },
+          { harness: { id: 'pi', state: 'ok' }, status: 'ok' },
         ]),
         sleep: clock.sleep,
         now: clock.now,
@@ -79,7 +79,7 @@ describe('waitForDaemonRuntimeReady', () => {
       previewUrl: 'http://127.0.0.1:1/',
       providerHeaders: { 'x-provider-traffic-token': 'tok' },
       deps: {
-        fetchImpl: fakeHealthFetch(['fail', { opencode: 'starting' }, { opencode: 'ok' }], calls),
+        fetchImpl: fakeHealthFetch(['fail', { harness: { id: 'pi', state: 'starting' } }, { harness: { id: 'pi', state: 'ok' } }], calls),
         sleep: clock.sleep,
         now: clock.now,
       },

@@ -12,7 +12,7 @@ import { iamRoleActions, iamRoles, projects } from '@kortix/db';
 import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { accountCustomRoles, roleActionRows, systemRoleDescriptionRows } from '../../iam/role-read';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { ACCOUNT_ACTIONS, VALID_ACTIONS, assertAuthorized } from '../../iam';
 import { FOLDER_ROLE_KEYS } from '../../iam/assignments';
 import { countRoleBindings } from '../../iam/read-models';
 import { actorOf } from '../../iam/actor';
@@ -415,20 +415,21 @@ export function registerIamCustomRolesRoutes(): void {
       if (await isSystemRoleId(roleId)) {
         // From `role_permissions`, not from the code preset: the seed is the
         // source of truth for what a system role grants, and the engine expands
-        // the same rows.
+        // the same rows. A row the code no longer knows is a retired action
+        // (iam/catalog.ts): never shown, until a contract migration deletes it.
         const system = await systemRoleByWireId(roleId);
         if (!system) return c.json({ error: 'role not found' }, 404);
         return c.json({
           role_id: roleId,
           key: system.key,
-          actions: [...system.actions].sort(),
+          actions: [...system.actions].filter((action) => VALID_ACTIONS.has(action)).sort(),
         });
       }
 
       const role = await loadCustomRole(accountId, roleId);
       if (!role) return c.json({ error: 'role not found' }, 404);
       const rows = await roleActionRows(roleId);
-      return c.json({ role_id: roleId, key: role.key, actions: rows.map((r) => r.action) });
+      return c.json({ role_id: roleId, key: role.key, actions: rows.map((r) => r.action).filter((action) => VALID_ACTIONS.has(action)) });
     },
   );
 

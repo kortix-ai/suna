@@ -20,8 +20,7 @@ import { logger } from '../../lib/logger';
 // It stores the ask (lib/pending-permissions.ts), so it outlives the call that
 // parks and waits in Review, and sends one "needs your approval" notification
 // per request id to the person who prompted the running turn and the session's
-// watchers (KRTX-1742), or, with the project's notification_center flag off, to
-// the session creator's phones. It answers how long the call may wait live
+// watchers (KRTX-1742). It answers how long the call may wait live
 // (`live_wait_ms`), and `approved` when a person approved this exact call
 // (`args_hash`) while it was parked: the agent's re-run then runs. Session
 // resolution matches POST /turn-question (routes/turn-questions.ts), but only a

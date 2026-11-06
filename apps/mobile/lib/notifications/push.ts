@@ -36,7 +36,6 @@ export interface PushData {
   sessionId: string | null;
   /** The inbox row the push reports, marked read on tap. Null from a server before the inbox. */
   notificationId: string | null;
-  artifactPath?: string;
 }
 
 /** Android channel ids. A channel's sound cannot change after creation. */
@@ -86,7 +85,6 @@ export function deliveryForKind(
     case 'permission':
     case 'shared':
     case 'message':
-    case 'artifact_comment':
       return { channelId: CHANNEL_ATTENTION, iosSound: 'kortix_attention.wav' };
   }
 }
@@ -116,29 +114,12 @@ export function parsePushData(raw: unknown): PushData | null {
   const data = raw as Record<string, unknown>;
   const kind = kindOf(data);
   if (!kind || !nonEmptyString(data.projectId)) return null;
-  const artifactPath = kind === 'artifact_comment' ? artifactNotificationPath(data.url, data.projectId) : null;
-  if (kind === 'artifact_comment' && !artifactPath) return null;
   return {
     kind,
     projectId: data.projectId,
-    sessionId: kind === 'artifact_comment' ? null : nonEmptyString(data.sessionId) ? data.sessionId : null,
+    sessionId: nonEmptyString(data.sessionId) ? data.sessionId : null,
     notificationId: nonEmptyString(data.notificationId) ? data.notificationId : null,
-    ...(artifactPath ? { artifactPath } : {}),
   };
-}
-
-export function artifactNotificationPath(value: unknown, projectId: string): string | null {
-  if (typeof value !== 'string' || !value.startsWith('/projects/')) return null;
-  try {
-    const url = new URL(value, 'https://kortix.invalid');
-    const match = /^\/projects\/([^/]+)\/artifacts\/([0-9a-f-]{36})$/i.exec(url.pathname);
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (url.origin !== 'https://kortix.invalid' || !uuid.test(projectId) || !match || match[1] !== projectId || !uuid.test(match[2]!) || url.hash || value.split(/[?#]/)[0] !== url.pathname) return null;
-    for (const [key, entry] of url.searchParams) if (!['thread', 'notification'].includes(key) || !uuid.test(entry) || url.searchParams.getAll(key).length !== 1) return null;
-    return `${url.pathname}${url.search}`;
-  } catch {
-    return null;
-  }
 }
 
 function hostOf(url: string): string | null {
@@ -227,8 +208,7 @@ export const DEVICE_KIND_SWITCH: Partial<Record<InboxNotificationKind, DeviceKin
 /**
  * The kinds this phone turned off, as a patch for the user's record
  * (`updateNotificationPreferences`). Null when it turned none off. The patch
- * applies to the whole user: every device and Web Push of a project with
- * `notification_center` on.
+ * applies to the whole user: every device and Web Push.
  */
 export function legacyKindPatch(prefs: NotificationPreferences): NotificationPreferencesPatch | null {
   const kinds: NotificationPreferencesPatch['kinds'] = {};

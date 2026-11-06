@@ -93,8 +93,6 @@ async function claimDueRows(userId: string): Promise<DigestRow[]> {
       projectId: notifications.projectId,
       sessionId: notifications.sessionId,
       triggerSlug: notifications.triggerSlug,
-      artifactId: notifications.artifactId,
-      artifactThreadId: notifications.artifactThreadId,
       kind: notifications.kind,
       title: notifications.title,
       body: notifications.body,

@@ -50,6 +50,8 @@ let insertedAccount: { name: string } | null = null;
 mockIamAssignments();
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
+  afterDbCommit: (action: () => void) => action(),
   hasDatabase: () => true,
   db: {
     insert: (table: any) => ({

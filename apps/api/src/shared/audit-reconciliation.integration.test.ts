@@ -86,7 +86,7 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       await client.query(
         `INSERT INTO kortix.project_trigger_executions
            (project_id, slug, schedule_revision, scheduled_for, status, spec, payload, session_id)
-         VALUES ($1, 'daily', 'rev-1', now(), 'completed', '{}'::jsonb, '{}'::jsonb, $2)`,
+         VALUES ($1, 'daily', 'rev-1', now(), 'succeeded', '{}'::jsonb, '{}'::jsonb, $2)`,
         [PROJECT, SESSION],
       );
       await client.query(

@@ -34,9 +34,31 @@ describe('effectiveNotificationPreferences', () => {
   });
 
   test('overrides apply per channel and ignore non-booleans', () => {
-    const prefs = effectiveNotificationPreferences({ kinds: { question: { email: false, push: 'no' } } });
-    expect(prefs.question).toEqual({ push: true, email: false });
+    const prefs = effectiveNotificationPreferences({ kinds: { question: { email: true, push: 'no' } } });
+    expect(prefs.question).toEqual({ push: true, email: true });
     expect(prefs.turn_done).toEqual(DEFAULT_NOTIFICATION_PREFERENCES.turn_done);
+  });
+
+  test('email is opt-in for the kinds only the notification center ever mailed', () => {
+    // The inbox and push are on for everyone; these emails reach a person only
+    // when they turn them on, so graduating the center mails nobody new.
+    for (const kind of ['turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_recovered', 'capture_device_recovered'] as const) {
+      expect(DEFAULT_NOTIFICATION_PREFERENCES[kind]).toEqual({ push: true, email: false });
+    }
+    // Mailed before the center was on by default (health and auto-pause alerts,
+    // a capture computer that went down): still mailed.
+    for (const kind of ['automation_failed', 'capture_device_down'] as const) {
+      expect(DEFAULT_NOTIFICATION_PREFERENCES[kind]).toEqual({ push: true, email: true });
+    }
+  });
+
+  test('a delivery may set the email default of its kind; a saved choice still wins', () => {
+    const lowered = { automation_failed: { email: false } };
+    expect(effectiveNotificationPreferences(undefined, lowered).automation_failed).toEqual({ push: true, email: false });
+    expect(effectiveNotificationPreferences({ kinds: { automation_failed: { email: true } } }, lowered).automation_failed.email).toBe(true);
+    expect(effectiveNotificationPreferences({ kinds: { question: { email: false } } }, { question: { email: true } }).question.email).toBe(false);
+    // Other kinds keep their own defaults.
+    expect(effectiveNotificationPreferences(undefined, lowered).capture_device_down.email).toBe(true);
   });
 });
 
