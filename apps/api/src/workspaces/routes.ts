@@ -72,8 +72,21 @@ const workspaceFields = {
 
 export const WorkspaceSummarySchema = ProjectSchema.extend(workspaceFields).openapi('WorkspaceSummary');
 
+export const WorkspaceSplitNoticeSchema = z
+  .object({
+    role: z.enum(['keeper', 'moved']).openapi({ description: '`keeper`: this workspace kept the legacy account. `moved`: it was split off.' }),
+    source_name: z.string().openapi({ description: 'The legacy account’s name before the split.' }),
+    completed_at: z.string().openapi({ description: 'When the legacy account’s last project moved.' }),
+    billing: z.enum(['free', 'comped']).nullable().openapi({ description: 'A split-off’s plan: `free` (with this month’s free credits) or `comped` (the keeper’s plan at no charge until `comped_until`). Null for the keeper.' }),
+    comped_until: z.string().nullable().openapi({ description: 'When a comped plan ends and the workspace moves to Free.' }),
+  })
+  .openapi('WorkspaceSplitNotice');
+
 export const WorkspaceSchema = ProjectSchema.extend({
   ...workspaceFields,
+  split_notice: WorkspaceSplitNoticeSchema.nullable().openapi({
+    description: 'Set for 30 days after a legacy account with several projects became one workspace per project; null otherwise.',
+  }),
   secret_default_strategy: z.enum(['runtime', 'egress', 'broker', 'denied']).openapi({
     description: 'How a secret with no strategy of its own reaches a session.',
   }),

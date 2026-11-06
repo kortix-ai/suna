@@ -119,10 +119,32 @@ export interface WorkspaceSettings {
 /** How a secret with no strategy of its own reaches a session. */
 export type WorkspaceSecretStrategy = 'runtime' | 'egress' | 'broker' | 'denied';
 
+/**
+ * Set for 30 days after a legacy account with several projects became one
+ * workspace per project. `keeper`: this workspace kept the legacy account
+ * (its plan, credits and billing history). `moved`: it was split off.
+ */
+export interface WorkspaceSplitNotice {
+  role: 'keeper' | 'moved';
+  /** The legacy account's name before the split. */
+  source_name: string;
+  /** When the legacy account's last project moved (ISO-8601). */
+  completed_at: string;
+  /**
+   * A split-off's plan: `free` (with this month's free credits) or `comped`
+   * (the keeper's plan at no charge until `comped_until`, then Free). Null for
+   * the keeper, and while the split-off's billing has not applied yet.
+   */
+  billing: 'free' | 'comped' | null;
+  comped_until: string | null;
+}
+
 /** One workspace with its settings: what {@link getWorkspace} returns. */
 export interface Workspace extends WorkspaceSummary, WorkspaceSettings {
   /** How a secret with no strategy of its own reaches a session. Absent on older APIs. */
   secret_default_strategy?: WorkspaceSecretStrategy;
+  /** The split notice, or null. Absent on older APIs. */
+  split_notice?: WorkspaceSplitNotice | null;
 }
 
 /**

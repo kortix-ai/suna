@@ -7,7 +7,8 @@ import {
   resolveProjectSecretForConsumer,
 } from '../../projects/secrets';
 import { recordAuditEvent } from '../../shared/audit';
-import { type CodexAccountLogin, encryptAccountSecret, loadCodexAccountLogin } from '../../secrets/account-resource';
+import { type CodexAccountLogin, loadCodexAccountLogin } from '../../secrets/account-resource';
+import { writeRotatedAccountLogin } from './rotating-login-write';
 import {
   CodexRefreshError,
   OPENAI_AUTH_BASE,
@@ -131,13 +132,17 @@ async function refreshAndPersist(
     if (!next) throw new CodexRefreshError('refresh response missing access token', response.status);
 
     if (row.storage === 'account_resource') {
-      // Unconditional: OpenAI rotates the refresh token on use, so this is now
-      // the only login that works. A login that refreshes needs no reconnection.
-      await db.update(accountSecretResources).set({
-        valueEnc: encryptAccountSecret(row.accountId, JSON.stringify({ openai: next })),
-        updatedAt: new Date(),
-        needsReauthAt: null,
-      }).where(and(eq(accountSecretResources.accountId, row.accountId), eq(accountSecretResources.secretId, row.secretId)));
+      // OpenAI rotates the refresh token on use, so this is now the only login
+      // that works: it lands on the row by secret_id, sealed for the account
+      // that holds it now (a move may have re-sealed it meanwhile), unless the
+      // row no longer carries the refresh token used here (a reconnect).
+      // A login that refreshes needs no reconnection.
+      await writeRotatedAccountLogin({
+        secretId: row.secretId,
+        usedRefresh: current.refresh,
+        refreshOf: (stored) => parseCodexAuth(stored)?.refresh,
+        value: JSON.stringify({ openai: next }),
+      });
     } else {
       await db.update(projectSecrets).set({
         valueEnc: encryptProjectSecret(projectId, JSON.stringify({ openai: next })),

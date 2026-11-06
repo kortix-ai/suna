@@ -83,7 +83,7 @@ import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { isUuid } from '../../shared/validate';
-import { maxProjectsForAccount } from '../../shared/account-limits';
+import { workspaceHasProjectDenial } from '../../workspaces/surface';
 import { blobKey, supabaseSiteStorage, type SiteStorage } from '../../apps/static-site';
 import { mapWithConcurrency } from '../../shared/map-with-concurrency';
 
@@ -221,7 +221,7 @@ export type ProjectTransferErrorCode =
   | 'same_account'
   | 'target_missing'
   | 'concurrent_move'
-  | 'project_limit_reached';
+  | 'workspace_has_project';
 
 export class ProjectTransferError extends Error {
   constructor(
@@ -343,19 +343,6 @@ export async function copyProjectSiteBlobs(
   return { copied: blobs.map((b) => b.sha256).filter((sha) => !missing.has(sha)), missing: [...missing] };
 }
 
-/**
- * Keep `projects.split_pending` true exactly while the account holds 2+
- * active projects (a legacy multi-project account), false once it holds one.
- * The 1:1 index `uq_projects_workspace_account` skips split-pending rows.
- */
-export async function recomputeSplitPending(tx: TransferTx, accountId: string): Promise<void> {
-  await tx.execute(sql`
-    UPDATE kortix.projects p SET split_pending = sub.multi
-      FROM (SELECT count(*) > 1 AS multi FROM kortix.projects
-             WHERE account_id = ${accountId} AND status = 'active') sub
-     WHERE p.account_id = ${accountId} AND p.status = 'active' AND p.split_pending IS DISTINCT FROM sub.multi`);
-}
-
 const jsonMap = (map: Readonly<Record<string, string>>) => JSON.stringify(map);
 
 /**
@@ -384,7 +371,29 @@ export async function transferProjectOwnership(
   }
   await copyProjectSiteBlobs(input, options.siteStorage);
   const moved = await db.transaction((tx) => moveProjectInTransaction(tx, input, options));
+  await afterProjectMoved(input);
   return { projectId: moved.projectId, accountId: moved.accountId };
+}
+
+/**
+ * After a move committed: the caches keyed by the project's old account. The
+ * project-scoped IAM bust (the workspace → account memo, the object grants)
+ * crosses replicas over LISTEN/NOTIFY; the default-model cache is
+ * process-local with a 30 s TTL. Best effort: a failed bust leaves the TTLs.
+ */
+export async function afterProjectMoved(input: { projectId: string; fromAccountId: string; toAccountId: string }): Promise<void> {
+  try {
+    const { invalidateIamCacheForProjectResources } = await import('../../iam/cache-invalidation');
+    const { invalidateAccountModelDefaults } = await import('../../llm-gateway/resolution/default-model');
+    invalidateIamCacheForProjectResources(input.projectId);
+    invalidateAccountModelDefaults(input.fromAccountId);
+    invalidateAccountModelDefaults(input.toAccountId);
+  } catch (error) {
+    logger.warn('[project-transfer] cache bust after the move failed', {
+      projectId: input.projectId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**
@@ -421,13 +430,12 @@ export async function moveProjectInTransaction(
     .where(eq(accounts.accountId, toAccountId)).for('update');
   if (!target) throw new ProjectTransferError('target_missing', 'Target account not found');
 
-  if (!split) {
-    const limit = await maxProjectsForAccount(toAccountId);
-    const [counted] = await tx.select({ count: sql<number>`count(*)::int` }).from(projects)
-      .where(sql`${projects.accountId} = ${toAccountId} AND ${projects.status} = 'active'`);
-    if ((counted?.count ?? 0) >= limit) {
-      throw new ProjectTransferError('project_limit_reached', 'Target account project limit reached');
-    }
+  // One workspace = one project: a plain transfer lands only in an account
+  // with no active project (the create gate's own check; the target row is
+  // locked above). The unique index uq_projects_workspace_account backstops
+  // a create that races past it. A split target is a fresh account.
+  if (!split && (await workspaceHasProjectDenial(toAccountId))) {
+    throw new ProjectTransferError('workspace_has_project', 'The target workspace already has its project');
   }
 
   await cancelArtifactDeliveries(tx, projectId, fromAccountId);
@@ -442,6 +450,37 @@ export async function moveProjectInTransaction(
         ))`);
   }
 
+  const { undecryptableSecrets } = await moveOwnedRows(tx, input, split);
+
+  // `projects.split_pending` follows the account shape through the
+  // projects_split_pending_sync trigger (design.md §3.1 row 27).
+
+  logger.info('[project-transfer] project moved', {
+    projectId,
+    fromAccountId,
+    toAccountId,
+    split: Boolean(split),
+  });
+  return { projectId, accountId: toAccountId, undecryptableSecrets };
+}
+
+/**
+ * Everything the project owns, from `fromAccountId` to `toAccountId`, inside
+ * the caller's transaction: project secrets (re-sealed for the target), the
+ * owned rows ({@link moveProjectRows}), and the project-scoped grants. In
+ * split mode (`split`) the secrets' member grants are kept and group and
+ * custom-role grants are remapped to the target's copies.
+ *
+ * Idempotent: every statement matches only what is still on the source. The
+ * split's repair pass runs it again after the move for rows a request wrote
+ * with the old account while the move committed.
+ */
+export async function moveOwnedRows(
+  tx: TransferTx,
+  input: { projectId: string; fromAccountId: string; toAccountId: string },
+  split?: SplitDirectoryMap,
+): Promise<{ rows: Record<string, number>; undecryptableSecrets: string[] }> {
+  const { projectId, fromAccountId, toAccountId } = input;
   // Lock credentials before reading their envelopes: concurrent refreshes must
   // not overwrite a destination envelope with ciphertext salted by the source.
   const secrets = await tx.select().from(accountSecretResources)
@@ -474,37 +513,7 @@ export async function moveProjectInTransaction(
       .where(eq(accountSecretResources.secretId, secret.secretId));
   }
 
-  // Both ends contain account_id. Defer only this graph's tenant checks;
-  // ordinary connector writes retain immediate foreign-key enforcement.
-  await tx.execute(sql`SET CONSTRAINTS
-    kortix.connector_connections_connector_tenant_fk,
-    kortix.project_session_connector_bindings_session_tenant_fk,
-    kortix.project_session_connector_bindings_alias_tenant_fk,
-    kortix.project_session_connector_bindings_connection_tenant_fk,
-    kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
-
-  for (const table of PROJECT_TRANSFER_TABLES) {
-    const sessionColumn = SESSION_KEYED_TRANSFER_TABLES[getTableName(table)];
-    // A session-keyed table without a project_id index is reached through its
-    // (NOT NULL, indexed) session column instead of a sequential scan.
-    const bySession = sessionColumn
-      ? sql` AND ${sql.identifier(sessionColumn)} IN (SELECT session_id FROM kortix.project_sessions WHERE project_id = ${projectId})`
-      : sql``;
-    await tx.execute(
-      sql`UPDATE ${table} SET account_id = ${toAccountId}
-           WHERE project_id = ${projectId} AND account_id = ${fromAccountId}${bySession}`,
-    );
-  }
-
-  await tx.execute(sql`SET CONSTRAINTS
-    kortix.connector_connections_connector_tenant_fk,
-    kortix.project_session_connector_bindings_session_tenant_fk,
-    kortix.project_session_connector_bindings_alias_tenant_fk,
-    kortix.project_session_connector_bindings_connection_tenant_fk,
-    kortix.connection_oauth_applications_connection_tenant_fk IMMEDIATE`);
-
-  await moveAppHostingRows(tx, projectId, fromAccountId, toAccountId);
-  await moveOpenComputeSessions(tx, projectId, fromAccountId, toAccountId);
+  const rows = await moveProjectRows(tx, input);
 
   if (keptGrants.length) {
     await tx.insert(accountSecretGrants).values(keptGrants.map((grant) => ({ ...grant, accountId: toAccountId })));
@@ -531,17 +540,83 @@ export async function moveProjectInTransaction(
         updated_at = now()
        WHERE account_id = ${fromAccountId} AND scope_type = 'project' AND scope_id = ${projectId}`);
   }
+  return { rows, undecryptableSecrets };
+}
 
-  await recomputeSplitPending(tx, fromAccountId);
-  await recomputeSplitPending(tx, toAccountId);
+/**
+ * Re-point every row the project owns from `fromAccountId` to `toAccountId`:
+ * the {@link PROJECT_TRANSFER_TABLES} by `project_id`, the project default
+ * model (keyed by `scope_key`, its `project_id` is NULL), the App hosting rows
+ * and the open compute rows. Idempotent: a second run matches only rows still
+ * on the source. Returns the rows changed per table (0 entries omitted).
+ *
+ * The move calls it once; the split's repair pass calls it again 120 s after
+ * the move committed for the rows a request that started before the move
+ * wrote with the old account (design.md §3.1 row 32).
+ */
+export async function moveProjectRows(
+  tx: TransferTx,
+  input: { projectId: string; fromAccountId: string; toAccountId: string },
+): Promise<Record<string, number>> {
+  const { projectId, fromAccountId, toAccountId } = input;
+  const changed: Record<string, number> = {};
+  const count = (name: string, rows: unknown) => {
+    const n = Number((rows as { count?: number } | null)?.count ?? (Array.isArray(rows) ? rows.length : 0));
+    if (n > 0) changed[name] = (changed[name] ?? 0) + n;
+  };
+  // Both ends contain account_id. Defer only this graph's tenant checks;
+  // ordinary connector writes retain immediate foreign-key enforcement.
+  await tx.execute(sql`SET CONSTRAINTS
+    kortix.connector_connections_connector_tenant_fk,
+    kortix.project_session_connector_bindings_session_tenant_fk,
+    kortix.project_session_connector_bindings_alias_tenant_fk,
+    kortix.project_session_connector_bindings_connection_tenant_fk,
+    kortix.connection_oauth_applications_connection_tenant_fk DEFERRED`);
 
-  logger.info('[project-transfer] project moved', {
-    projectId,
-    fromAccountId,
-    toAccountId,
-    split: Boolean(split),
-  });
-  return { projectId, accountId: toAccountId, undecryptableSecrets };
+  for (const table of PROJECT_TRANSFER_TABLES) {
+    const sessionColumn = SESSION_KEYED_TRANSFER_TABLES[getTableName(table)];
+    // A session-keyed table without a project_id index is reached through its
+    // (NOT NULL, indexed) session column instead of a sequential scan.
+    const bySession = sessionColumn
+      ? sql` AND ${sql.identifier(sessionColumn)} IN (SELECT session_id FROM kortix.project_sessions WHERE project_id = ${projectId})`
+      : sql``;
+    count(getTableName(table), await tx.execute(
+      sql`UPDATE ${table} SET account_id = ${toAccountId}
+           WHERE project_id = ${projectId} AND account_id = ${fromAccountId}${bySession}`,
+    ));
+  }
+
+  await tx.execute(sql`SET CONSTRAINTS
+    kortix.connector_connections_connector_tenant_fk,
+    kortix.project_session_connector_bindings_session_tenant_fk,
+    kortix.project_session_connector_bindings_alias_tenant_fk,
+    kortix.project_session_connector_bindings_connection_tenant_fk,
+    kortix.connection_oauth_applications_connection_tenant_fk IMMEDIATE`);
+
+  count('account_model_preferences', await moveProjectDefaultModel(tx, input));
+  await moveAppHostingRows(tx, projectId, fromAccountId, toAccountId);
+  await moveOpenComputeSessions(tx, projectId, fromAccountId, toAccountId);
+  return changed;
+}
+
+/**
+ * The project default model is `account_model_preferences(scope='project',
+ * scope_key=<project_id>, project_id NULL)`: the table loop's `project_id`
+ * predicate never matches it. A stale target row for the same project (an
+ * earlier transfer or reverse left it) goes first, so the unique
+ * (account_id, scope, scope_key) index takes the moved row.
+ */
+async function moveProjectDefaultModel(tx: TransferTx, input: { projectId: string; fromAccountId: string; toAccountId: string }) {
+  const { projectId, fromAccountId, toAccountId } = input;
+  const [source] = await tx.execute<{ n: number }>(sql`
+    SELECT count(*)::int AS n FROM kortix.account_model_preferences
+     WHERE account_id = ${fromAccountId} AND scope = 'project' AND scope_key = ${projectId} AND project_id IS NULL`);
+  if (!source?.n) return [];
+  await tx.execute(sql`DELETE FROM kortix.account_model_preferences
+    WHERE account_id = ${toAccountId} AND scope = 'project' AND scope_key = ${projectId} AND project_id IS NULL`);
+  return tx.execute(sql`UPDATE kortix.account_model_preferences SET account_id = ${toAccountId}, updated_at = now()
+    WHERE account_id = ${fromAccountId} AND scope = 'project' AND scope_key = ${projectId} AND project_id IS NULL
+    RETURNING scope_key`);
 }
 
 /**

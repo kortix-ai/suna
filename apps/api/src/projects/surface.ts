@@ -224,13 +224,19 @@ export { ManifestWriteRefusedError } from './manifest-io';
 
 // The transfer engine and the workspace split's data movement (consumed by workspaces/split).
 export {
+  afterProjectMoved,
   copyProjectSiteBlobs,
+  moveOwnedRows,
   PROJECT_TRANSFER_APP_TABLES,
   PROJECT_TRANSFER_LEAVE_TABLES,
   PROJECT_TRANSFER_TABLES,
 } from './lib/project-transfer';
 export {
+  countRotatingLogins,
+  isRotatingLogin,
   projectGrantCounts,
+  reachingGroupsSql,
+  reachingUsersSql,
   ProjectSplitError,
   reverseProjectSplit,
   splitProjectIntoNewAccount,

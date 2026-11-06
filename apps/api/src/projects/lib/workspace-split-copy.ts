@@ -11,14 +11,19 @@
  *      branding. It starts with no billing rows: the runner initializes Free
  *      with 0 credits after commit. Money (wallet, Stripe, contracts) stays
  *      with the source, which keeps the most recently opened project.
- *   2. Copies the directory, so every access path to the project survives:
- *      every membership (owners and admins included), every group with its
- *      members, every custom role with its permissions, and every
- *      account-scope grant (users, groups, the project's service accounts,
- *      and pending invitees whose invite is split here).
+ *   2. Copies the directory for the people who reach the project
+ *      ({@link reachingUsersSql}): their memberships and account-scope
+ *      grants, every group that reaches it with its members, every custom
+ *      role with its permissions, the project's service accounts' grants, and
+ *      the pending invitees whose invite is split here. An account `member`
+ *      grant alone reaches no project: such a person stays behind.
  *   3. Copies the account-wide secrets (`project_id IS NULL`) re-encrypted
  *      with the target key, with their member grants, and rewrites the moved
- *      sessions' provider pools to the copies.
+ *      sessions' provider pools to the copies. A rotating login (ChatGPT,
+ *      OpenCode Console) is never duplicated: one side keeps the live login,
+ *      the other a reconnect placeholder ({@link isRotatingLogin}).
+ *   3b. Copies the account default model (`scope='account'`) and the
+ *      account-wide agent pins; the project default moves with the project.
  *   4. Copies GitHub installations, GitHub user tokens (re-encrypted) and
  *      legacy Claude logins (re-encrypted).
  *   5. Splits pending invites: the moved project's `bootstrap_grants` entries
@@ -36,6 +41,8 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
+import { OPENCODE_CONSOLE_PROVIDERS, parseOpencodeLogin } from '../../llm-gateway/credentials/opencode-console';
+import { db } from '../../shared/db';
 import { pendingPrincipalId } from '../../iam/actor';
 import { logger } from '../../lib/logger';
 import { calculateNextCreditGrant } from '../../billing/services/credit-grant-schedule';
@@ -64,6 +71,15 @@ export interface SplitCopiedIds {
   claudeLogins: string[];
   /** invite created in the target, the source invite it came from, and the entries it took. */
   invites: Array<{ inviteId: string; sourceInviteId: string; moved: unknown[] }>;
+  /**
+   * Rotating logins (design.md §3.1 row 5): `live` names the side that kept
+   * the working login; the other side holds a reconnect placeholder. `none`:
+   * the source row was already a placeholder. The source row's state before
+   * the split, so a reverse restores it. Absent on runs before 2026-11-06.
+   */
+  rotatingLogins?: Array<{ sourceSecretId: string; copyId: string; live: 'source' | 'target' | 'none'; sourceActive: boolean; sourceNeedsReauthAt: string | null }>;
+  /** ids of the account-wide model preferences copied to the target. Absent on runs before 2026-11-06. */
+  modelPreferences?: string[];
 }
 
 export type ProjectSplitErrorCode = 'not_legacy' | 'project_missing' | 'reverse_refused';
@@ -86,10 +102,61 @@ function reseal(fromAccountId: string, toAccountId: string, envelope: string | n
 }
 
 /**
+ * Account-scope roles that reach every project of a legacy account: the
+ * system owner and admin roles, and every custom role of the account
+ * (`customRoleAllows` applies an account-scope custom role to every project).
+ * The system `member` role holds no project action: alone it reaches nothing.
+ */
+const accountReachRoles = (accountId: string) => sql`
+  SELECT r.role_id FROM kortix.roles r
+   WHERE (r.account_id IS NULL AND r.scope_type = 'account' AND r.key IN ('owner', 'admin'))
+      OR (r.account_id = ${accountId} AND NOT r.is_system)`;
+
+/** An unexpired grant `ra` that reaches `projectId`: on the project, or a reaching account-scope role. */
+const reachingGrant = (accountId: string, projectId: string) => sql`
+  (ra.expires_at IS NULL OR ra.expires_at > now())
+  AND ((ra.scope_type = 'project' AND ra.scope_id = ${projectId})
+    OR (ra.scope_type = 'account' AND ra.role_id IN (${accountReachRoles(accountId)})))`;
+
+/**
+ * The groups of `accountId` that reach `projectId` (design.md §3.1 row 6):
+ * a grant on the project, or an owner/admin or custom account role. Selects
+ * `group_id`.
+ */
+export const reachingGroupsSql = (accountId: string, projectId: string) => sql`
+  SELECT g.group_id FROM kortix.account_groups g
+   WHERE g.account_id = ${accountId}
+     AND EXISTS (SELECT 1 FROM kortix.role_assignments ra
+                  WHERE ra.account_id = ${accountId} AND ra.principal_type = 'group' AND ra.principal_id = g.group_id
+                    AND ${reachingGrant(accountId, projectId)})`;
+
+/**
+ * The members of `accountId` who reach `projectId` (design.md §3.1 row 6):
+ * a grant on it, an owner/admin or custom account role, a reaching group, a
+ * grant on one of its project secrets, or super admin. An account `member`
+ * grant alone never counts. One rule, shared by the split's copy, its grant
+ * counts (I7) and invariant I8. Selects `user_id`.
+ */
+export const reachingUsersSql = (accountId: string, projectId: string) => sql`
+  SELECT m.user_id FROM kortix.account_memberships m
+   WHERE m.account_id = ${accountId}
+     AND (m.is_super_admin
+       OR EXISTS (SELECT 1 FROM kortix.role_assignments ra
+                   WHERE ra.account_id = ${accountId} AND ra.principal_type = 'user' AND ra.principal_id = m.user_id
+                     AND ${reachingGrant(accountId, projectId)})
+       OR EXISTS (SELECT 1 FROM kortix.group_members gm
+                   WHERE gm.user_id = m.user_id AND gm.group_id IN (${reachingGroupsSql(accountId, projectId)}))
+       OR EXISTS (SELECT 1 FROM kortix.account_secret_grants sg
+                    JOIN kortix.account_secret_resources r ON r.secret_id = sg.secret_id
+                   WHERE r.account_id = ${accountId} AND r.project_id = ${projectId} AND sg.user_id = m.user_id))`;
+
+/**
  * Who reaches the project through a grant, per principal (`type:id`): the
- * project-scope grants on it plus the account-scope grants the split copies.
- * Pending invitees are left out (their grants move with their invite). The
- * split stores this before the move; invariant I7 compares it after.
+ * project-scope grants on it, the account-scope grants of the users and
+ * groups that reach it ({@link reachingUsersSql}), and the account grants of
+ * the project's service accounts. Pending invitees are left out (their grants
+ * move with their invite). The split stores this before the move; invariant
+ * I7 compares it after.
  */
 export async function projectGrantCounts(tx: TransferTx, accountId: string, projectId: string, groupMap: Readonly<Record<string, string>> = {}): Promise<Record<string, number>> {
   const rows = await tx.execute<{ principal_type: string; principal_id: string; n: number }>(sql`
@@ -99,8 +166,11 @@ export async function projectGrantCounts(tx: TransferTx, accountId: string, proj
        AND (ra.expires_at IS NULL OR ra.expires_at > now())
        AND ra.principal_type IN ('user', 'group', 'service_account', 'project')
        AND ((ra.scope_type = 'project' AND ra.scope_id = ${projectId})
-         OR (ra.scope_type = 'account' AND (ra.principal_type <> 'service_account' OR ra.principal_id IN (
-               SELECT service_account_id FROM kortix.service_accounts WHERE project_id = ${projectId}))))
+         OR (ra.scope_type = 'account' AND (
+               (ra.principal_type = 'user' AND ra.principal_id IN (${reachingUsersSql(accountId, projectId)}))
+            OR (ra.principal_type = 'group' AND ra.principal_id IN (${reachingGroupsSql(accountId, projectId)}))
+            OR (ra.principal_type = 'service_account' AND ra.principal_id IN (
+                  SELECT service_account_id FROM kortix.service_accounts WHERE project_id = ${projectId})))))
      GROUP BY 1, 2`);
   const counts: Record<string, number> = {};
   for (const row of rows) {
@@ -131,42 +201,23 @@ async function copyDirectory(tx: TransferTx, projectId: string, fromAccountId: s
       ${calculateNextCreditGrant(anchor).toISOString()}::timestamptz, false, now(), now())
     ON CONFLICT (account_id) DO UPDATE SET free_credits_eligible = false, updated_at = now()`);
 
-  // The groups that reach the project: an account-wide grant (it reaches every
-  // project of a legacy account) or a grant on this project. Only they are
-  // copied; a group whose grants are all on other projects stays behind.
+  // The groups that reach the project ({@link reachingGroupsSql}); a group
+  // whose grants are all on other projects, or only the account `member`
+  // role, stays behind.
   const groups = await tx.execute<{ group_id: string }>(sql`
-    SELECT g.group_id::text FROM kortix.account_groups g
-     WHERE g.account_id = ${fromAccountId}
-       AND EXISTS (SELECT 1 FROM kortix.role_assignments ra
-         WHERE ra.account_id = ${fromAccountId} AND ra.principal_type = 'group' AND ra.principal_id = g.group_id
-           AND (ra.expires_at IS NULL OR ra.expires_at > now())
-           AND (ra.scope_type = 'account' OR (ra.scope_type = 'project' AND ra.scope_id = ${projectId})))
-     ORDER BY g.group_id`);
+    SELECT group_id::text FROM (${reachingGroupsSql(fromAccountId, projectId)}) g ORDER BY group_id`);
   for (const { group_id } of groups) out.groups[group_id] = randomUUID();
-  const reachingGroups = JSON.stringify(Object.keys(out.groups));
 
-  // Memberships (design.md §2): everyone holding a grant on the project
-  // (account-wide, on the project, through a reaching group, or on one of its
-  // project secrets), and the owners again. A member with no grant on it does
-  // not come along. SCIM external ids are per identity-provider connection,
-  // which stays with the source: the copy carries none.
+  // Memberships: the people who reach the project ({@link reachingUsersSql}).
+  // A member with no reach (an account `member` grant and grants on other
+  // projects only) does not come along. SCIM external ids are per
+  // identity-provider connection, which stays with the source: the copy
+  // carries none.
   const members = await tx.execute<{ user_id: string }>(sql`
     INSERT INTO kortix.account_memberships (user_id, account_id, is_super_admin, joined_at)
     SELECT m.user_id, ${toAccountId}::uuid, m.is_super_admin, m.joined_at FROM kortix.account_memberships m
      WHERE m.account_id = ${fromAccountId}
-       AND (m.is_super_admin
-         OR m.user_id IN (
-           SELECT ra.principal_id FROM kortix.role_assignments ra
-            WHERE ra.account_id = ${fromAccountId} AND ra.principal_type = 'user'
-              AND (ra.expires_at IS NULL OR ra.expires_at > now())
-              AND (ra.scope_type = 'account' OR (ra.scope_type = 'project' AND ra.scope_id = ${projectId})))
-         OR m.user_id IN (
-           SELECT gm.user_id FROM kortix.group_members gm
-            WHERE gm.group_id::text IN (SELECT jsonb_array_elements_text(${reachingGroups}::jsonb)))
-         OR m.user_id IN (
-           SELECT sg.user_id FROM kortix.account_secret_grants sg
-             JOIN kortix.account_secret_resources r ON r.secret_id = sg.secret_id
-            WHERE r.account_id = ${fromAccountId} AND r.project_id = ${projectId}))
+       AND m.user_id IN (${reachingUsersSql(fromAccountId, projectId)})
     RETURNING user_id::text`);
   out.memberships = ids(members, 'user_id');
 
@@ -199,6 +250,8 @@ async function copyDirectory(tx: TransferTx, projectId: string, fromAccountId: s
        WHERE r.account_id = ${fromAccountId}`);
   }
 
+  // Account-scope grants of the principals that came along only: a grant
+  // of a person who stayed behind would be a grant without a membership.
   const pendingIds = invitedEmails.map(pendingPrincipalId);
   const assignments = await tx.execute<{ assignment_id: string }>(sql`
     INSERT INTO kortix.role_assignments (account_id, principal_type, principal_id, role_id, scope_type, scope_id,
@@ -209,7 +262,8 @@ async function copyDirectory(tx: TransferTx, projectId: string, fromAccountId: s
            'account', NULL, ra.object_type, ra.object_id, ra.expires_at, ra.granted_by, ra.source, ra.created_at, now()
       FROM kortix.role_assignments ra
      WHERE ra.account_id = ${fromAccountId} AND ra.scope_type = 'account'
-       AND (ra.principal_type IN ('user', 'group')
+       AND ((ra.principal_type = 'user' AND ra.principal_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(out.memberships)}::jsonb)))
+         OR (ra.principal_type = 'group' AND (${jsonMap(out.groups)}::jsonb ? ra.principal_id::text))
          OR (ra.principal_type = 'service_account' AND ra.principal_id IN (
                SELECT service_account_id FROM kortix.service_accounts WHERE project_id = ${projectId}))
          OR (ra.principal_type = 'pending' AND ra.principal_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(pendingIds)}::jsonb))))
@@ -217,15 +271,67 @@ async function copyDirectory(tx: TransferTx, projectId: string, fromAccountId: s
   out.accountAssignments = ids(assignments, 'assignment_id');
 }
 
-/** Step 3: account-wide secrets, their grants, and the moved sessions' pools. */
+/**
+ * A login whose refresh token rotates on every use: a ChatGPT login
+ * (`codex`/`CODEX_AUTH_JSON`) or an OpenCode Console login (the OpenCode key
+ * secret holding an OAuth login instead of an API key). Two accounts holding
+ * one such row would each refresh it, and the first refresh kills the other
+ * copy (`refresh_token_reused`). A plain API key is static and is copied.
+ */
+export function isRotatingLogin(row: { provider_id: string | null; name: string }, plaintext: string): boolean {
+  if (row.provider_id === 'codex' && row.name === 'CODEX_AUTH_JSON') return true;
+  return Boolean(row.provider_id && OPENCODE_CONSOLE_PROVIDERS[row.provider_id] && parseOpencodeLogin(plaintext));
+}
+
+/** The plaintext of a reconnect placeholder (design.md §3.1 row 5). */
+const PLACEHOLDER = '';
+
+/**
+ * The side that used a rotating login last: the project of the newest
+ * session whose provider pool names it, else the project of its owner's
+ * newest session in the account. `target` when that is the moving project;
+ * `source` otherwise, and when nothing ever used it (the keeper keeps it).
+ */
+async function rotatingLoginSide(tx: TransferTx, secret: { secret_id: string; created_by: string | null }, projectId: string, fromAccountId: string): Promise<'source' | 'target'> {
+  const [pooled] = await tx.execute<{ project_id: string }>(sql`
+    SELECT s.project_id::text FROM kortix.session_provider_secret_pools pp
+      JOIN kortix.project_sessions s ON s.session_id = pp.session_id
+     WHERE s.account_id = ${fromAccountId} AND pp.secret_ids ? ${secret.secret_id}
+     ORDER BY greatest(pp.updated_at, s.updated_at) DESC NULLS LAST, s.session_id
+     LIMIT 1`);
+  if (pooled) return pooled.project_id === projectId ? 'target' : 'source';
+  if (!secret.created_by) return 'source';
+  const [owned] = await tx.execute<{ project_id: string }>(sql`
+    SELECT s.project_id::text FROM kortix.project_sessions s
+      JOIN kortix.projects p ON p.project_id = s.project_id AND p.status = 'active'
+     WHERE s.account_id = ${fromAccountId} AND s.created_by = ${secret.created_by}
+     ORDER BY s.updated_at DESC NULLS LAST, s.session_id
+     LIMIT 1`);
+  return owned?.project_id === projectId ? 'target' : 'source';
+}
+
+/**
+ * Step 3: account-wide secrets, their grants, and the moved sessions' pools.
+ *
+ * A static secret (an API key) is copied re-sealed, so both workspaces keep
+ * it. A rotating login ({@link isRotatingLogin}) is never duplicated: the
+ * side that used it last keeps the working login and the other side gets an
+ * inactive placeholder (empty value, `needs_reauth_at = now()`), which the
+ * clients show as "Reconnect". When the target wins, the copy carries the
+ * login and the source row becomes the placeholder (it keeps its id, so the
+ * source's own pools now name a placeholder). A source row that is already
+ * a placeholder is copied as one.
+ */
 async function copyAccountSecrets(tx: TransferTx, projectId: string, fromAccountId: string, toAccountId: string, out: SplitCopiedIds): Promise<void> {
-  const secrets = await tx.execute<Row & { secret_id: string; value_enc: string }>(sql`
-    SELECT * FROM kortix.account_secret_resources
-     WHERE account_id = ${fromAccountId} AND project_id IS NULL ORDER BY secret_id FOR SHARE`);
+  const secrets = await tx.execute<Row & { secret_id: string; value_enc: string; provider_id: string | null; name: string; created_by: string | null; active: boolean; needs_reauth_at: string | null }>(sql`
+    SELECT secret_id::text, value_enc, provider_id, name, created_by::text, active, needs_reauth_at::text
+      FROM kortix.account_secret_resources
+     WHERE account_id = ${fromAccountId} AND project_id IS NULL ORDER BY secret_id FOR UPDATE`);
+  out.rotatingLogins = [];
   for (const secret of secrets) {
-    let valueEnc: string;
+    let plaintext: string;
     try {
-      valueEnc = encryptAccountSecret(toAccountId, decryptAccountSecret(fromAccountId, secret.value_enc));
+      plaintext = decryptAccountSecret(fromAccountId, secret.value_enc);
     } catch {
       // Unusable in the source too; a member reconnects it in the new workspace.
       out.undecryptableSecrets.push(secret.secret_id);
@@ -233,14 +339,31 @@ async function copyAccountSecrets(tx: TransferTx, projectId: string, fromAccount
     }
     const copyId = randomUUID();
     out.secrets[secret.secret_id] = copyId;
+    const rotating = plaintext === PLACEHOLDER || isRotatingLogin(secret, plaintext);
+    const live = !rotating ? null : plaintext === PLACEHOLDER ? 'none' : await rotatingLoginSide(tx, secret, projectId, fromAccountId);
+    const copyLive = live === null || live === 'target';
+    const valueEnc = encryptAccountSecret(toAccountId, copyLive ? plaintext : PLACEHOLDER);
     await tx.execute(sql`
       INSERT INTO kortix.account_secret_resources (secret_id, account_id, label, project_id, access_mode, provider_id, name,
         value_enc, consumer, strategy, active, cooldown_until, cooldown_probe_at, needs_reauth_at, usage, usage_checked_at,
         provider_account, created_by, created_at, updated_at)
       SELECT ${copyId}::uuid, ${toAccountId}::uuid, label, NULL, access_mode, provider_id, name, ${valueEnc}, consumer, strategy,
-             active, cooldown_until, cooldown_probe_at, needs_reauth_at, usage, usage_checked_at, provider_account,
-             created_by, created_at, updated_at
+             CASE WHEN ${copyLive} THEN active ELSE false END, cooldown_until, cooldown_probe_at,
+             CASE WHEN ${copyLive} THEN needs_reauth_at ELSE now() END,
+             CASE WHEN ${copyLive} THEN usage ELSE NULL END, CASE WHEN ${copyLive} THEN usage_checked_at ELSE NULL END,
+             provider_account, created_by, created_at, now()
         FROM kortix.account_secret_resources WHERE secret_id = ${secret.secret_id}`);
+    if (live === null) continue;
+    out.rotatingLogins.push({
+      sourceSecretId: secret.secret_id, copyId, live,
+      sourceActive: secret.active, sourceNeedsReauthAt: secret.needs_reauth_at,
+    });
+    if (live === 'target') {
+      await tx.execute(sql`UPDATE kortix.account_secret_resources
+        SET value_enc = ${encryptAccountSecret(fromAccountId, PLACEHOLDER)}, active = false, needs_reauth_at = now(),
+            usage = NULL, usage_checked_at = NULL, updated_at = now()
+        WHERE secret_id = ${secret.secret_id}`);
+    }
   }
   if (!Object.keys(out.secrets).length) return;
   await tx.execute(sql`
@@ -251,6 +374,47 @@ async function copyAccountSecrets(tx: TransferTx, projectId: string, fromAccount
        -- Only for the people who came along (copyDirectory's memberships).
        AND g.user_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(out.memberships)}::jsonb))`);
   out.pools = await rewriteProjectPools(tx, projectId, out.secrets);
+}
+
+/**
+ * Account-wide rotating logins of `accountId` (dry-run plan facts): how many
+ * the split hands to one side with a reconnect placeholder on the other.
+ * Placeholders and rows this server cannot decrypt are not counted.
+ */
+export async function countRotatingLogins(accountId: string): Promise<number> {
+  const rows = await db.execute<{ value_enc: string; provider_id: string | null; name: string }>(sql`
+    SELECT value_enc, provider_id, name FROM kortix.account_secret_resources
+     WHERE account_id = ${accountId} AND project_id IS NULL
+       AND provider_id IN (${sql.join(['codex', ...Object.keys(OPENCODE_CONSOLE_PROVIDERS)].map((id) => sql`${id}`), sql`, `)})`);
+  let n = 0;
+  for (const row of rows) {
+    try {
+      const plaintext = decryptAccountSecret(accountId, row.value_enc);
+      if (plaintext !== PLACEHOLDER && isRotatingLogin(row, plaintext)) n += 1;
+    } catch {
+      // not counted
+    }
+  }
+  return n;
+}
+
+/**
+ * Step 3b: the account default model (`scope='account'`) and the
+ * account-wide agent pins (`scope='agent'`, `project_id IS NULL`) apply to
+ * every project of the source; the new workspace starts with the same. The
+ * project's own default (`scope='project'`) and its agent pins move with the
+ * project (`moveProjectRows`).
+ */
+async function copyModelDefaults(tx: TransferTx, fromAccountId: string, toAccountId: string, out: SplitCopiedIds): Promise<void> {
+  const rows = await tx.execute<{ id: string }>(sql`
+    INSERT INTO kortix.account_model_preferences (account_id, scope, scope_key, model, updated_by, created_at, updated_at, project_id)
+    SELECT ${toAccountId}::uuid, p.scope, p.scope_key, p.model, p.updated_by, p.created_at, now(), NULL
+      FROM kortix.account_model_preferences p
+     WHERE p.account_id = ${fromAccountId} AND p.project_id IS NULL AND p.scope IN ('account', 'agent')
+       AND NOT EXISTS (SELECT 1 FROM kortix.account_model_preferences t
+                        WHERE t.account_id = ${toAccountId} AND t.scope = p.scope AND t.scope_key = p.scope_key AND t.project_id IS NULL)
+    RETURNING id::text`);
+  out.modelPreferences = ids(rows, 'id');
 }
 
 /** Replace pooled secret ids by `map` in the project's sessions; returns the rows changed with their old ids. */
@@ -409,10 +573,12 @@ export async function splitProjectIntoNewAccount(
   const out: SplitCopiedIds = {
     account: toAccountId, memberships: [], groups: {}, roles: {}, accountAssignments: [], secrets: {},
     undecryptableSecrets: [], pools: [], githubInstallations: [], githubUserTokens: [], claudeLogins: [], invites: [],
+    rotatingLogins: [], modelPreferences: [],
   };
   const invites = await pendingInvitesForProject(tx, projectId, fromAccountId);
   await copyDirectory(tx, projectId, fromAccountId, toAccountId, invites.map((invite) => invite.email), out);
   await copyAccountSecrets(tx, projectId, fromAccountId, toAccountId, out);
+  await copyModelDefaults(tx, fromAccountId, toAccountId, out);
   await copyIntegrations(tx, fromAccountId, toAccountId, out);
   await splitInvites(tx, projectId, fromAccountId, toAccountId, invites, out);
   const moved = await moveProjectInTransaction(tx, { projectId, fromAccountId, toAccountId }, { split: { groups: out.groups, roles: out.roles } });
@@ -423,6 +589,7 @@ export async function splitProjectIntoNewAccount(
     projectId, fromAccountId, toAccountId,
     memberships: out.memberships.length, groups: Object.keys(out.groups).length, roles: Object.keys(out.roles).length,
     secrets: Object.keys(out.secrets).length, invites: out.invites.length,
+    rotating_logins_moved: out.rotatingLogins?.filter((login) => login.live === 'target').length ?? 0,
   });
   return out;
 }
@@ -479,6 +646,25 @@ export async function reverseProjectSplit(
     ON CONFLICT (user_id, account_id) DO NOTHING`);
 
   await rewriteProjectPools(tx, projectId, invert(copied.secrets));
+  // A rotating login the target kept goes back to the source row with its
+  // newest value (it may have rotated since the split), and the source row
+  // gets back the state it had.
+  for (const login of copied.rotatingLogins ?? []) {
+    if (login.live !== 'target') continue;
+    const [copy] = await tx.execute<{ value_enc: string }>(sql`
+      SELECT value_enc FROM kortix.account_secret_resources WHERE secret_id = ${login.copyId} AND account_id = ${toAccountId} FOR UPDATE`);
+    let plaintext: string | null = null;
+    try {
+      plaintext = copy ? decryptAccountSecret(toAccountId, copy.value_enc) : null;
+    } catch {
+      plaintext = null;
+    }
+    if (plaintext === null || plaintext === PLACEHOLDER) continue; // the source row stays a placeholder: its owner reconnects
+    await tx.execute(sql`UPDATE kortix.account_secret_resources
+      SET value_enc = ${encryptAccountSecret(fromAccountId, plaintext)}, active = ${login.sourceActive},
+          needs_reauth_at = ${login.sourceNeedsReauthAt}::timestamptz, updated_at = now()
+      WHERE secret_id = ${login.sourceSecretId} AND account_id = ${fromAccountId}`);
+  }
   for (const invite of copied.invites) {
     await tx.execute(sql`UPDATE kortix.account_invitations
       SET bootstrap_grants = COALESCE(bootstrap_grants, '[]'::jsonb) || ${JSON.stringify(invite.moved)}::jsonb
@@ -492,6 +678,7 @@ export async function reverseProjectSplit(
   await tx.execute(sql`DELETE FROM kortix.account_invitations WHERE invite_id::text IN (SELECT jsonb_array_elements_text(${list(copied.invites.map((i) => i.inviteId))}::jsonb))`);
   await tx.execute(sql`DELETE FROM kortix.role_assignments WHERE assignment_id::text IN (SELECT jsonb_array_elements_text(${list(copied.accountAssignments)}::jsonb))`);
   await tx.execute(sql`DELETE FROM kortix.account_secret_resources WHERE account_id = ${toAccountId} AND secret_id::text IN (SELECT jsonb_array_elements_text(${list(Object.values(copied.secrets))}::jsonb))`);
+  await tx.execute(sql`DELETE FROM kortix.account_model_preferences WHERE account_id = ${toAccountId} AND id::text IN (SELECT jsonb_array_elements_text(${list(copied.modelPreferences ?? [])}::jsonb))`);
   await tx.execute(sql`DELETE FROM kortix.account_github_installations WHERE account_id = ${toAccountId} AND installation_row_id::text IN (SELECT jsonb_array_elements_text(${list(copied.githubInstallations)}::jsonb))`);
   await tx.execute(sql`DELETE FROM kortix.account_github_user_tokens WHERE account_id = ${toAccountId} AND token_row_id::text IN (SELECT jsonb_array_elements_text(${list(copied.githubUserTokens)}::jsonb))`);
   await tx.execute(sql`DELETE FROM kortix.claude_subscription_logins WHERE account_id = ${toAccountId} AND user_id::text IN (SELECT jsonb_array_elements_text(${list(copied.claudeLogins)}::jsonb))`);

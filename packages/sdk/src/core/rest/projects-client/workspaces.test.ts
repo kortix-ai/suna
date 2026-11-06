@@ -3,6 +3,7 @@ import { configureKortix } from '../../http/config';
 import { ApiError } from '../../http/api-client';
 import type { KortixAccount } from './accounts';
 import type { KortixProject } from './projects';
+import type { WorkspaceSplitNotice } from './workspaces';
 import {
   buildWorkspaceSummaries,
   compareWorkspacesByRecent,
@@ -367,6 +368,25 @@ describe('getWorkspace', () => {
     expect(ws.deletion_scheduled_for).toBe('2026-12-01T00:00:00.000Z');
     expect(ws.member_count).toBe(7);
     expect(calls.map((c) => c.url)).toEqual([`/workspaces/${WS_A}`]);
+  });
+
+  test('a split workspace carries its split_notice; a workspace that never split carries null', async () => {
+    const notice: WorkspaceSplitNotice = {
+      role: 'moved', source_name: 'Synthetic legacy', completed_at: '2026-11-06T10:00:00.000Z',
+      billing: 'comped', comped_until: '2026-12-01T00:00:00.000Z',
+    };
+    route('GET', new RegExp(`^/workspaces/${WS_A}$`), {
+      ...project(WS_A, ACC_A), workspace_id: WS_A, role: 'owner', state: 'active', split_notice: notice,
+      workspace: settingsBlock({ account_role: 'owner' }),
+    });
+    route('GET', new RegExp(`^/workspaces/${WS_B}$`), {
+      ...project(WS_B, ACC_B), workspace_id: WS_B, role: 'owner', state: 'active', split_notice: null,
+      workspace: settingsBlock({ workspace_id: WS_B, account_id: ACC_B, account_role: 'owner' }),
+    });
+    const moved = await getWorkspace(WS_A);
+    expect(moved.split_notice).toEqual(notice);
+    expect(moved.split_notice?.billing).toBe('comped');
+    expect((await getWorkspace(WS_B)).split_notice).toBeNull();
   });
 
   test('a response that already names its role needs no second read', async () => {

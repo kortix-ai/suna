@@ -23,8 +23,16 @@
  *     that spans 3 projects, a GitHub installation and user token, an app with a
  *     static site (blob uploaded to this stack's Supabase Storage), an
  *     account token with no project, an archived project;
- *   - one paying account (a completed purchase, a Stripe customer): the split
- *     holds it until its owner confirms a keeper;
+ *   - rotating subscription logins in the 23-project account: a ChatGPT login
+ *     a moving project's session used last, an OpenCode Console login the
+ *     keeper used last, and a static OpenCode API key (the split hands each
+ *     login to one side and copies the static key to both);
+ *   - an account default model and a moving project's own default model;
+ *   - one paying account (a paid plan, a completed purchase, a Stripe
+ *     customer): the split holds it until its owner confirms a keeper, then
+ *     comps the keeper's plan to each split-off;
+ *   - one account with a stale Stripe subscription id on Free (149 in prod):
+ *     it pays nothing, so the split does not hold it;
  *   - every account: credits, an owner grant, sessions, project secrets.
  * 1:1 account names differ from their project names, as in prod, so the M2
  * name backfill has work to do.
@@ -293,8 +301,32 @@ async function main(): Promise<void> {
   ]);
   await insert('kortix.account_secret_grants', { secret_id: 'uuid', account_id: 'uuid', user_id: 'uuid', granted_by: 'uuid' },
     [{ secret_id: accountSecrets[0]!, account_id: big, user_id: customUser, granted_by: owner(big) }]);
-  await insert('kortix.session_provider_secret_pools', { session_id: 'text', provider_id: 'text', secret_ids: 'jsonb' },
-    [{ session_id: `w7-shape-${bigProjects[1]!.slice(0, 13)}`, provider_id: 'anthropic', secret_ids: accountSecrets }]);
+  // Subscription logins (synthetic tokens): two rotate on use, one is a static key.
+  const logins = { codex: sid('login-codex', big), opencode: sid('login-opencode', big), staticKey: sid('login-static', big) };
+  const inAnHour = Date.now() + 3_600_000;
+  counts.rotating_logins = await insert('kortix.account_secret_resources', {
+    secret_id: 'uuid', account_id: 'uuid', label: 'text', name: 'text', provider_id: 'text', value_enc: 'text',
+    consumer: 'kortix.project_secret_consumer', strategy: 'kortix.project_secret_strategy', created_by: 'uuid',
+  }, [
+    { secret_id: logins.codex, account_id: big, label: 'Shape ChatGPT', name: 'CODEX_AUTH_JSON', provider_id: 'codex', consumer: 'llm_gateway', strategy: 'broker', created_by: owner(big),
+      value_enc: encryptAccountSecret(big, JSON.stringify({ openai: { type: 'oauth', access: 'shape-access', refresh: 'shape-refresh', expires: inAnHour } })) },
+    { secret_id: logins.opencode, account_id: big, label: 'Shape OpenCode', name: 'OPENCODE_API_KEY', provider_id: 'opencode', consumer: 'llm_gateway', strategy: 'runtime', created_by: owner(big),
+      value_enc: encryptAccountSecret(big, JSON.stringify({ type: 'oauth', access: 'shape-oc-access', refresh: 'shape-oc-refresh', expires: inAnHour })) },
+    { secret_id: logins.staticKey, account_id: big, label: 'Shape OpenCode key', name: 'OPENCODE_GO_API_KEY', provider_id: 'opencode-go', consumer: 'llm_gateway', strategy: 'runtime', created_by: owner(big),
+      value_enc: encryptAccountSecret(big, 'synthetic-static-key') },
+  ]) - 1;
+  await insert('kortix.session_provider_secret_pools', { session_id: 'text', provider_id: 'text', secret_ids: 'jsonb', updated_at: 'timestamptz' }, [
+    { session_id: `w7-shape-${bigProjects[1]!.slice(0, 13)}`, provider_id: 'anthropic', secret_ids: accountSecrets, updated_at: minutesAgo(60) },
+    // A moving project used ChatGPT last; the keeper (project 0, opened most recently) used OpenCode last.
+    { session_id: `w7-shape-${bigProjects[1]!.slice(0, 13)}`, provider_id: 'codex', secret_ids: [logins.codex], updated_at: minutesAgo(1) },
+    { session_id: `w7-shape-${bigProjects[1]!.slice(0, 13)}`, provider_id: 'opencode', secret_ids: [logins.opencode, logins.staticKey], updated_at: minutesAgo(90) },
+    { session_id: `w7-shape-${bigProjects[0]!.slice(0, 13)}`, provider_id: 'opencode', secret_ids: [logins.opencode], updated_at: minutesAgo(2) },
+  ]);
+  // The account default model and a moving project's own default.
+  counts.model_preferences = await insert('kortix.account_model_preferences', { account_id: 'uuid', scope: 'text', scope_key: 'text', model: 'text' }, [
+    { account_id: big, scope: 'account', scope_key: 'default', model: 'synthetic-shape-account-model' },
+    { account_id: big, scope: 'project', scope_key: bigProjects[2]!, model: 'synthetic-shape-project-model' },
+  ]);
   counts.github_installations = await insert('kortix.account_github_installations', { account_id: 'uuid', installation_id: 'text', owner_login: 'text' },
     [{ account_id: big, installation_id: '700001', owner_login: 'shape-org' }]);
   await insert('kortix.account_github_user_tokens', { account_id: 'uuid', user_id: 'uuid', github_login: 'text', value_enc: 'text' },
@@ -326,6 +358,13 @@ async function main(): Promise<void> {
     [{ id: sid('purchase', paying), account_id: paying, amount_dollars: 25, status: 'completed' }]);
   counts.billing_customers = await insert('kortix.billing_customers', { account_id: 'uuid', id: 'text' },
     [{ account_id: paying, id: `cus_shape${paying.slice(0, 8)}` }]);
+  // Its plan: the paid Credits plan (each split-off gets it comped until the period ends).
+  await db.execute(sql`UPDATE kortix.credit_accounts SET tier = 'credits', plan_monthly_usd = 100,
+    billing_cycle_anchor = date_trunc('month', now()) WHERE account_id = ${paying}`);
+  // A stale Stripe subscription id on Free: it pays nothing (C6), so it is not held.
+  const stale = accountIds.legacy(2);
+  await db.execute(sql`UPDATE kortix.credit_accounts SET tier = 'free', stripe_subscription_id = ${`sub_shape_stale_${stale.slice(0, 8)}`},
+    stripe_subscription_status = 'canceled' WHERE account_id = ${stale}`);
 
   const summary = {
     scale: `1/${SCALE}`,

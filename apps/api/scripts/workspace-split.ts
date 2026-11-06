@@ -8,7 +8,9 @@
  *
  *   status                               phase counts of kortix.workspace_split_runs
  *   plan [--account <account_id>]        the dry-run plan pass (moves nothing)
+ *   report                               dry-run aggregates of the runs still to apply (counts and credits only)
  *   apply <run_id>                       apply one planned run now
+ *   repair <run_id>                      the repair pass of one done run now (normally the tick, 120 s after the move)
  *   reverse <run_id>                     undo one done run
  *   reopen <run_id>                      plan a reversed run again (the next apply splits it into a fresh account)
  *   confirm-keeper <account_id> <project_id>
@@ -25,7 +27,9 @@ import {
   confirmWorkspaceSplitKeeper,
   planWorkspaceSplits,
   reopenWorkspaceSplitRun,
+  repairWorkspaceSplitRun,
   reverseWorkspaceSplitRun,
+  workspaceSplitReport,
 } from '../src/workspaces/split/split-runner';
 
 const [command, ...args] = process.argv.slice(2);
@@ -43,10 +47,19 @@ async function main(): Promise<number> {
       console.log(JSON.stringify(await planWorkspaceSplits(account ? { accountIds: [account] } : {}), null, 2));
       return 0;
     }
+    case 'report':
+      console.log(JSON.stringify(await workspaceSplitReport(), null, 2));
+      return 0;
     case 'apply':
       if (!args[0]) break;
       console.log(await applyWorkspaceSplitRun(args[0]));
       return 0;
+    case 'repair': {
+      if (!args[0]) break;
+      const repaired = await repairWorkspaceSplitRun(args[0]);
+      console.log(JSON.stringify(repaired ?? { error: 'not a done run' }, null, 2));
+      return repaired ? 0 : 1;
+    }
     case 'reverse':
       if (!args[0]) break;
       await reverseWorkspaceSplitRun(args[0]);
@@ -63,7 +76,7 @@ async function main(): Promise<number> {
       console.log('confirmed');
       return 0;
   }
-  console.error('usage: workspace-split.ts status | plan [--account <id>] | apply <run_id> | reverse <run_id> | reopen <run_id> | confirm-keeper <account_id> <project_id>');
+  console.error('usage: workspace-split.ts status | plan [--account <id>] | report | apply <run_id> | repair <run_id> | reverse <run_id> | reopen <run_id> | confirm-keeper <account_id> <project_id>');
   return 2;
 }
 

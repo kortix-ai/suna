@@ -8,9 +8,10 @@
  * Ledger phases (one row per project to move):
  *
  *   planned         dry-run plan; apply may take it
- *   held            the account took money (a completed purchase, a Stripe
- *                   subscription, an enterprise contract): its owner chooses the
- *                   keeper first (`confirmWorkspaceSplitKeeper`)
+ *   held            the account pays (`kortix.account_is_paying`: a paid
+ *                   plan, bought credits, an enterprise contract; a bare
+ *                   Stripe subscription id never counts): its owner chooses
+ *                   the keeper first (`confirmWorkspaceSplitKeeper`)
  *   storage_copied  the project's static App blobs are copied to the target
  *                   prefix; the database move is next (a resume starts here)
  *   done            moved; `copied_ids` lists every copy, `to_account_id` the
@@ -28,6 +29,17 @@
  * Lease: a claim sets `heartbeat_at` and increments `attempts`; a run whose
  * heartbeat is older than LEASE_MS is reclaimable (a crash mid-run). The move
  * itself is one transaction, so a crash inside it moves nothing.
+ *
+ * After a run is `done` (each step is recorded in `plan`, and the tick retries
+ * a step that did not finish):
+ *
+ *   plan.billing      `applySplitOffBilling` (C6): Free with the free-credit
+ *                     exception, or the keeper's plan comped
+ *   plan.repaired_at  the repair pass at completed_at + REPAIR_AFTER_MS: the
+ *                     move's own idempotent UPDATEs again, for rows a request
+ *                     that started before the move wrote with the old account,
+ *                     then I2 for the run (design.md §3.1 row 32)
+ *   owner emails      once the account's last move is done (`owner-email.ts`)
  */
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
@@ -37,13 +49,24 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type { SiteStorage } from '../../apps/static-site';
 import {
+  afterProjectMoved,
   copyProjectSiteBlobs,
+  countRotatingLogins,
+  moveOwnedRows,
   projectGrantCounts,
   ProjectSplitError,
   reverseProjectSplit,
   splitProjectIntoNewAccount,
   type SplitCopiedIds,
 } from '../../projects/surface';
+import {
+  applySplitOffBilling,
+  isPayingAccount,
+  previewSplitOffBilling,
+  reverseSplitOffBilling,
+} from '../../billing/services/split-off-billing';
+import { checkSplitRunsMoved } from './invariants';
+import { sendSplitOwnerEmails, type SendEmail } from './owner-email';
 
 export type WorkspaceSplitMode = 'off' | 'dry_run' | 'apply';
 export type WorkspaceSplitPhase = 'planned' | 'held' | 'storage_copied' | 'done' | 'failed' | 'skipped' | 'reversed';
@@ -101,7 +124,14 @@ async function accountPlanFacts(accountId: string): Promise<Record<string, unkno
       (SELECT count(*)::int FROM kortix.credit_accounts WHERE account_id = ${accountId}
           AND (coalesce(tier, 'free') NOT IN ('free', 'none') OR lifetime_purchased_precise > 0)) AS paid_plan_or_purchase,
       (SELECT count(*)::int FROM kortix.enterprise_contracts WHERE account_id = ${accountId}) AS enterprise_contracts`);
-  return facts ?? {};
+  const billing = await previewSplitOffBilling(accountId);
+  return {
+    ...(facts ?? {}),
+    // A login one side keeps; the other side reconnects (design.md §3.1 row 5).
+    rotating_logins: await countRotatingLogins(accountId),
+    // What each split-off of this account gets (C6), credits per split-off.
+    split_off_billing: { kind: billing.kind, comped_until: billing.compedUntil, credits: billing.credits },
+  };
 }
 
 async function projectPlanFacts(projectId: string, accountId: string): Promise<Record<string, unknown>> {
@@ -124,12 +154,11 @@ async function planAccount(accountId: string): Promise<{ planned: number; held: 
   if (projects.length < 2) return counts;
   const { keeperId, confirmed, frozen } = await keeperFor(accountId, projects);
   const facts = await accountPlanFacts(accountId);
-  // Every paid source billing knows: a completed purchase (Stripe or RevenueCat),
-  // a Stripe or RevenueCat subscription, a paid plan however it was set
-  // (Stripe, RevenueCat, an admin, a legacy tier key), purchased credit, and an
-  // enterprise contract.
-  const paying = ['completed_purchases', 'stripe_subscriptions', 'revenuecat_subscriptions', 'paid_plan_or_purchase', 'enterprise_contracts']
-    .some((key) => Number(facts[key]) > 0);
+  // The one paying rule (C6, kortix.account_is_paying): a paid plan however it
+  // was set, bought credits, a completed purchase, an active enterprise
+  // contract. A Stripe subscription id on a Free account is stale and pays
+  // nothing (149 legacy prod accounts carry one).
+  const paying = await isPayingAccount(accountId);
   const phase: WorkspaceSplitPhase = paying && !confirmed ? 'held' : 'planned';
   const open = await db.execute<{ run_id: string; project_id: string; phase: WorkspaceSplitPhase }>(sql`
     SELECT run_id::text, project_id::text, phase FROM kortix.workspace_split_runs
@@ -173,12 +202,13 @@ async function planAccount(accountId: string): Promise<{ planned: number; held: 
  * The plan pass: every account with 2+ active projects gets its ledger rows;
  * rows of accounts that are no longer legacy are skipped. Moves nothing.
  */
-export async function planWorkspaceSplits(options: { accountIds?: string[] } = {}): Promise<{ accounts: number; planned: number; held: number; skipped: number }> {
+export async function planWorkspaceSplits(options: { accountIds?: string[] } = {}): Promise<{ accounts: number; planned: number; held: number; skipped: number; stale_flags_cleared: number }> {
   const filter = options.accountIds ? sql`AND account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(options.accountIds)}::jsonb))` : sql``;
+  const staleFlags = await clearStaleSplitPending(filter);
   const legacy = await db.execute<{ account_id: string }>(sql`
     SELECT account_id::text FROM kortix.projects WHERE status = 'active' ${filter}
      GROUP BY account_id HAVING count(*) > 1 ORDER BY account_id`);
-  const totals = { accounts: legacy.length, planned: 0, held: 0, skipped: 0 };
+  const totals = { accounts: legacy.length, planned: 0, held: 0, skipped: 0, stale_flags_cleared: staleFlags };
   for (const { account_id } of legacy) {
     const counts = await planAccount(account_id);
     totals.planned += counts.planned;
@@ -194,8 +224,26 @@ export async function planWorkspaceSplits(options: { accountIds?: string[] } = {
   return totals;
 }
 
+/**
+ * A `split_pending` flag on the only active project of an account (design.md
+ * §3.1 row 27). The projects_split_pending_sync trigger keeps the flag right
+ * for every write after its migration; this clears the rows that went stale
+ * before it (an archived sibling), once, and fills their workspace ids.
+ */
+async function clearStaleSplitPending(filter: ReturnType<typeof sql>): Promise<number> {
+  const cleared = await db.execute<{ account_id: string }>(sql`
+    UPDATE kortix.projects p SET split_pending = false, updated_at = now()
+     WHERE p.split_pending AND p.status = 'active' ${filter}
+       AND (SELECT count(*) FROM kortix.projects q WHERE q.account_id = p.account_id AND q.status = 'active') = 1
+    RETURNING p.account_id::text`);
+  for (const { account_id } of cleared) await fillWorkspaceIds([account_id]);
+  return cleared.length;
+}
+
 export interface ApplyDeps {
   siteStorage?: SiteStorage;
+  /** The owner email transport (test seam). Default: lib/email/transport. */
+  sendEmail?: SendEmail;
 }
 
 export type ApplyOutcome = 'done' | 'busy' | 'skipped' | 'error' | 'failed';
@@ -256,17 +304,158 @@ export async function applyWorkspaceSplitRun(runId: string, deps: ApplyDeps = {}
     if (error instanceof Error && error.message === 'lease_lost') return 'busy';
     return recordFailure(run, error);
   }
-  // The new account's wallet (Free, 0 credits, never the free grant) committed
-  // with the split: splitProjectIntoNewAccount writes its credit_accounts row.
-  // design.md §3.2 C1: after a move, each account's expand rows carry its
-  // workspace id (NULL while the source is still split_pending).
-  await fillAccountWorkspaceIds(run.fromAccountId, toAccountId);
+  await afterMoveCommitted({ runId, projectId: run.projectId, fromAccountId: run.fromAccountId, toAccountId }, deps);
   return 'done';
+}
+
+type MovedRun = { runId: string; projectId: string; fromAccountId: string; toAccountId: string };
+
+/**
+ * After a move committed. Each step is safe to run again, and the tick
+ * retries a step that failed here (`finishDoneRuns`):
+ *   1. the caches keyed by the old account (IAM on every replica, model defaults);
+ *   2. the new account's workspace ids (C1);
+ *   3. its billing (C6), recorded in plan.billing;
+ *   4. when this was the account's last move: the keeper's workspace ids and
+ *      the owner emails.
+ */
+async function afterMoveCommitted(run: MovedRun, deps: ApplyDeps): Promise<void> {
+  await afterProjectMoved(run);
+  await bustAccounts([run.fromAccountId, run.toAccountId]);
+  await fillWorkspaceIds([run.toAccountId]);
+  await applyRunBilling(run);
+  await finishAccountIfLast(run.fromAccountId, deps);
+}
+
+/** The wallet key of a run's billing: the run id; after a reopen, the run id and its new target. */
+async function billingRunKey(runId: string, toAccountId: string): Promise<string> {
+  const [row] = await db.execute<{ reopened: boolean }>(sql`
+    SELECT jsonb_array_length(COALESCE(plan->'reversed_to_account_ids', '[]'::jsonb)) > 0 AS reopened
+      FROM kortix.workspace_split_runs WHERE run_id = ${runId}`);
+  // credit_ledger.stripe_event_id is unique across accounts: a reopened run
+  // splits into a fresh account, which needs its own grant key.
+  return row?.reopened ? `${runId}:${toAccountId}` : runId;
+}
+
+/** `applySplitOffBilling` for one done run; the result goes to plan.billing. A failure stays for the tick to retry. */
+async function applyRunBilling(run: MovedRun): Promise<boolean> {
+  try {
+    const billing = await applySplitOffBilling({
+      runId: await billingRunKey(run.runId, run.toAccountId), sourceAccountId: run.fromAccountId, newAccountId: run.toAccountId,
+    });
+    await db.execute(sql`UPDATE kortix.workspace_split_runs
+      SET plan = plan || jsonb_build_object('billing', ${JSON.stringify(billing)}::jsonb), updated_at = now()
+      WHERE run_id = ${run.runId} AND phase = 'done'`);
+    return true;
+  } catch (error) {
+    await db.execute(sql`UPDATE kortix.workspace_split_runs
+      SET plan = plan || jsonb_build_object('billing_attempts', COALESCE((plan->>'billing_attempts')::int, 0) + 1), updated_at = now()
+      WHERE run_id = ${run.runId}`);
+    logger.warn('[workspace-split] split-off billing did not apply', {
+      runId: run.runId, error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * When no move of `fromAccountId` is open any more and it holds one project:
+ * the keeper's and every split-off's workspace ids (C1), then the owner
+ * emails (C9). Only after an apply: a dry run never reaches here.
+ */
+async function finishAccountIfLast(fromAccountId: string, deps: ApplyDeps): Promise<void> {
+  const [state] = await db.execute<{ open: number; active: number; targets: string[] }>(sql`
+    SELECT (SELECT count(*)::int FROM kortix.workspace_split_runs
+             WHERE from_account_id = ${fromAccountId} AND phase IN ('planned', 'held', 'storage_copied')) AS open,
+           (SELECT count(*)::int FROM kortix.projects WHERE account_id = ${fromAccountId} AND status = 'active') AS active,
+           COALESCE((SELECT jsonb_agg(to_account_id::text) FROM kortix.workspace_split_runs
+             WHERE from_account_id = ${fromAccountId} AND phase = 'done'), '[]'::jsonb) AS targets`);
+  if (!state || state.open > 0 || state.active > 1 || !state.targets.length) return;
+  await fillWorkspaceIds([fromAccountId, ...state.targets]);
+  await sendSplitOwnerEmails(fromAccountId, deps.sendEmail);
+}
+
+export const REPAIR_AFTER_MS = 120_000;
+
+/**
+ * The repair pass of one done run (design.md §3.1 row 32): a request that
+ * started before the move (a session create, a prompt enqueue) can commit a
+ * row with the old account after it. Re-run the move's own idempotent
+ * UPDATEs for the project, then check I2 for the run. Recorded in
+ * plan.repaired_at / repaired_rows / repair_i2_violations. A run whose project
+ * left its split-off account (a reverse, a later transfer) is not touched.
+ */
+export async function repairWorkspaceSplitRun(runId: string): Promise<{ rows: Record<string, number>; i2Violations: number } | null> {
+  const repaired = await db.transaction(async (tx) => {
+    const [run] = await tx.select().from(workspaceSplitRuns).where(eq(workspaceSplitRuns.runId, runId)).for('update');
+    if (!run || run.phase !== 'done' || !run.toAccountId) return null;
+    const [project] = await tx.execute<{ account_id: string }>(sql`
+      SELECT account_id::text FROM kortix.projects WHERE project_id = ${run.projectId} FOR UPDATE`);
+    const copied = run.copiedIds as unknown as SplitCopiedIds;
+    const moved = { projectId: run.projectId, fromAccountId: run.fromAccountId, toAccountId: run.toAccountId };
+    const rows = project?.account_id === run.toAccountId
+      ? (await moveOwnedRows(tx, moved, { groups: copied.groups ?? {}, roles: copied.roles ?? {} })).rows
+      : {};
+    await tx.execute(sql`UPDATE kortix.workspace_split_runs
+      SET plan = plan || jsonb_build_object('repaired_at', now(), 'repaired_rows', ${JSON.stringify(rows)}::jsonb), updated_at = now()
+      WHERE run_id = ${runId}`);
+    return { run: moved, rows };
+  });
+  if (!repaired) return null;
+  if (Object.keys(repaired.rows).length) {
+    await afterProjectMoved(repaired.run);
+    await fillWorkspaceIds([repaired.run.toAccountId]);
+    logger.warn('[workspace-split] repair moved rows written during the move', { runId, rows: repaired.rows });
+  }
+  const i2 = await checkSplitRunsMoved([runId]);
+  await db.execute(sql`UPDATE kortix.workspace_split_runs
+    SET plan = plan || jsonb_build_object('repair_i2_violations', ${i2.violations}::int), updated_at = now()
+    WHERE run_id = ${runId}`);
+  if (!i2.ok) logger.warn('[workspace-split] I2 after the repair pass', { runId, sample: i2.sample });
+  return { rows: repaired.rows, i2Violations: i2.violations };
+}
+
+const BILLING_MAX_ATTEMPTS = 5;
+
+/**
+ * The done-run follow-ups the tick owns: the billing that did not apply, the
+ * repair pass when it is due, and the accounts whose owner emails are not all
+ * sent. Returns when the next repair is due (ms from now), or null.
+ */
+async function finishDoneRuns(deps: ApplyDeps): Promise<number | null> {
+  const unbilled = await db.execute<{ run_id: string; project_id: string; from_account_id: string; to_account_id: string }>(sql`
+    SELECT run_id::text, project_id::text, from_account_id::text, to_account_id::text FROM kortix.workspace_split_runs
+     WHERE phase = 'done' AND NOT (plan ? 'billing') AND COALESCE((plan->>'billing_attempts')::int, 0) < ${BILLING_MAX_ATTEMPTS}
+     ORDER BY completed_at LIMIT 20`);
+  for (const run of unbilled) {
+    await applyRunBilling({ runId: run.run_id, projectId: run.project_id, fromAccountId: run.from_account_id, toAccountId: run.to_account_id });
+  }
+  const due = await db.execute<{ run_id: string }>(sql`
+    SELECT run_id::text FROM kortix.workspace_split_runs
+     WHERE phase = 'done' AND NOT (plan ? 'repaired_at')
+       AND completed_at <= now() - make_interval(secs => ${REPAIR_AFTER_MS / 1000})
+     ORDER BY completed_at LIMIT 20`);
+  for (const { run_id } of due) await repairWorkspaceSplitRun(run_id);
+  const unfinished = await db.execute<{ from_account_id: string }>(sql`
+    SELECT DISTINCT r.from_account_id::text FROM kortix.workspace_split_runs r
+     WHERE r.phase = 'done' AND r.updated_at > now() - interval '7 days'
+       AND NOT EXISTS (SELECT 1 FROM kortix.workspace_split_runs o
+                        WHERE o.from_account_id = r.from_account_id AND o.phase IN ('planned', 'held', 'storage_copied'))
+       AND NOT EXISTS (SELECT 1 FROM kortix.workspace_split_runs e
+                        WHERE e.from_account_id = r.from_account_id AND e.plan ? 'owner_emails'
+                          AND NOT EXISTS (SELECT 1 FROM jsonb_each(e.plan->'owner_emails') s
+                                           WHERE s.value->>'status' = 'failed'))
+     LIMIT 20`);
+  for (const { from_account_id } of unfinished) await finishAccountIfLast(from_account_id, deps);
+  const [next] = await db.execute<{ ms: number | null }>(sql`
+    SELECT (extract(epoch FROM min(completed_at) + make_interval(secs => ${REPAIR_AFTER_MS / 1000}) - now()) * 1000)::bigint AS ms
+      FROM kortix.workspace_split_runs WHERE phase = 'done' AND NOT (plan ? 'repaired_at')`);
+  return next?.ms === null || next?.ms === undefined ? null : Math.max(1_000, Number(next.ms));
 }
 
 /** Undo a `done` run (one project): see `reverseProjectSplit`. */
 export async function reverseWorkspaceSplitRun(runId: string): Promise<void> {
-  await db.transaction(async (tx) => {
+  const reversed = await db.transaction(async (tx) => {
     const [run] = await tx.select().from(workspaceSplitRuns).where(eq(workspaceSplitRuns.runId, runId)).for('update');
     if (!run) throw new ProjectSplitError('reverse_refused', 'Split run not found');
     if (run.phase !== 'done' || !run.toAccountId) throw new ProjectSplitError('reverse_refused', `Split run is ${run.phase}, not done`);
@@ -275,29 +464,41 @@ export async function reverseWorkspaceSplitRun(runId: string): Promise<void> {
       copied: run.copiedIds as unknown as SplitCopiedIds,
     });
     await tx.update(workspaceSplitRuns).set({ phase: 'reversed', updatedAt: new Date() }).where(eq(workspaceSplitRuns.runId, runId));
-    return [run.fromAccountId, run.toAccountId] as const;
-  }).then(([fromAccountId, toAccountId]) => fillAccountWorkspaceIds(fromAccountId, toAccountId));
+    return { runId, projectId: run.projectId, fromAccountId: run.fromAccountId, toAccountId: run.toAccountId, billed: Boolean((run.plan as Record<string, unknown>).billing) };
+  });
+  // The dormant split-off keeps no comp and no split-off credits (C6). The
+  // reverse above already refused an account that took money.
+  if (reversed.billed) {
+    await reverseSplitOffBilling({ runId: reversed.runId, newAccountId: reversed.toAccountId });
+  }
+  await afterProjectMoved(reversed);
+  await bustAccounts([reversed.fromAccountId, reversed.toAccountId]);
+  await fillWorkspaceIds([reversed.fromAccountId, reversed.toAccountId]);
+}
+
+/** kortix.workspace_fill_account for each account (C1): its expand rows carry its live workspace id. */
+async function fillWorkspaceIds(accountIds: string[]): Promise<void> {
+  for (const accountId of new Set(accountIds)) {
+    await db.execute(sql`SELECT kortix.workspace_fill_account(${accountId}::uuid)`);
+  }
 }
 
 /**
- * After a move or its reverse committed: kortix.workspace_fill_account for both
- * accounts (C1), then the IAM engine's workspace facts and decision caches of
- * both accounts on every replica (C3: a split changes which workspace a
- * membership reaches). A cache bust failure leaves the 15 s TTL backstop.
+ * The IAM engine's workspace facts and decision caches of each account, on
+ * every replica (C3: a split changes which workspace a membership reaches).
+ * A cache bust failure leaves the 15 s TTL backstop.
  */
-async function fillAccountWorkspaceIds(fromAccountId: string, toAccountId: string): Promise<void> {
-  await db.execute(sql`SELECT kortix.workspace_fill_account(${fromAccountId}::uuid), kortix.workspace_fill_account(${toAccountId}::uuid)`);
+async function bustAccounts(accountIds: string[]): Promise<void> {
   try {
     const { invalidateWorkspaceFactsForAccount } = await import('../../iam/workspace-facts');
     const { invalidateIamCacheForAccount } = await import('../../iam/cache-invalidation');
-    for (const accountId of [fromAccountId, toAccountId]) {
+    for (const accountId of new Set(accountIds)) {
       invalidateWorkspaceFactsForAccount(accountId);
       await invalidateIamCacheForAccount(accountId);
     }
   } catch (error) {
     logger.warn('[workspace-split] IAM cache bust failed', {
-      from_account_id: fromAccountId,
-      to_account_id: toAccountId,
+      account_ids: accountIds,
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -343,6 +544,35 @@ export async function confirmWorkspaceSplitKeeper(accountId: string, keeperProje
   await planWorkspaceSplits({ accountIds: [accountId] });
 }
 
+/**
+ * The dry-run report: aggregates over the runs still to apply (`planned`,
+ * `held`), counts and credit totals only, never an id or a name. What an
+ * operator reviews before switching to `apply` (split-runbook.md).
+ */
+export async function workspaceSplitReport(): Promise<Record<string, number>> {
+  const [row] = await db.execute<Record<string, number>>(sql`
+    WITH runs AS (
+      SELECT from_account_id, phase, plan FROM kortix.workspace_split_runs WHERE phase IN ('planned', 'held')
+    ), accounts AS (
+      SELECT DISTINCT ON (from_account_id) from_account_id, plan->'account' AS facts FROM runs ORDER BY from_account_id
+    )
+    SELECT
+      (SELECT count(*)::int FROM accounts) AS accounts,
+      (SELECT count(*)::int FROM runs) AS projects_to_move,
+      (SELECT count(*)::int FROM runs WHERE phase = 'held') AS projects_held,
+      (SELECT count(DISTINCT from_account_id)::int FROM runs WHERE phase = 'held') AS accounts_held,
+      (SELECT count(*)::int FROM runs WHERE plan->'account'->'split_off_billing'->>'kind' = 'free') AS split_offs_free,
+      (SELECT count(*)::int FROM runs WHERE plan->'account'->'split_off_billing'->>'kind' = 'comped') AS split_offs_comped,
+      (SELECT COALESCE(sum((plan->'account'->'split_off_billing'->>'credits')::numeric) FILTER (WHERE plan->'account'->'split_off_billing'->>'kind' = 'free'), 0)::int FROM runs) AS free_grant_credits_total,
+      (SELECT COALESCE(sum((plan->'account'->'split_off_billing'->>'credits')::numeric) FILTER (WHERE plan->'account'->'split_off_billing'->>'kind' = 'comped'), 0)::int FROM runs) AS comp_credits_total,
+      (SELECT COALESCE(sum((facts->>'rotating_logins')::int), 0)::int FROM accounts) AS rotating_logins,
+      (SELECT COALESCE(sum((facts->>'unbound_tokens_staying')::int), 0)::int FROM accounts) AS unbound_tokens_staying,
+      (SELECT COALESCE(sum((facts->>'api_keys_staying')::int), 0)::int FROM accounts) AS api_keys_staying,
+      (SELECT COALESCE(sum((facts->>'oauth_clients_staying')::int), 0)::int FROM accounts) AS oauth_clients_staying,
+      (SELECT COALESCE(sum((facts->>'members')::int), 0)::int FROM accounts) AS members_in_accounts`);
+  return row ?? {};
+}
+
 const PLAN_EVERY_MS = 30 * 60_000;
 const IDLE_MS = 60 * 60_000;
 const DRY_RUN_EVERY_MS = 6 * 60 * 60_000;
@@ -381,6 +611,8 @@ export async function processWorkspaceSplits(options: { mode?: WorkspaceSplitMod
     logger.info('[workspace-split] plan pass', { mode, ...totals });
   }
   if (mode === 'dry_run') return { mode, planned, outcomes, nextDelayMs: DRY_RUN_EVERY_MS };
+  const deps = options.deps ?? {};
+  const nextRepairMs = await finishDoneRuns(deps);
   const batch = options.batch ?? APPLY_BATCH;
   const runnable = await db.execute<{ run_id: string }>(sql`
     SELECT run_id::text FROM kortix.workspace_split_runs
@@ -389,7 +621,10 @@ export async function processWorkspaceSplits(options: { mode?: WorkspaceSplitMod
      ORDER BY (phase = 'storage_copied') DESC, plan->>'last_opened_at' ASC NULLS FIRST, created_at
      LIMIT ${batch + 1}`);
   for (const { run_id } of runnable.slice(0, batch)) {
-    outcomes[await applyWorkspaceSplitRun(run_id, options.deps)] += 1;
+    outcomes[await applyWorkspaceSplitRun(run_id, deps)] += 1;
   }
-  return { mode, planned, outcomes, nextDelayMs: runnable.length > batch ? BACKLOG_MS : IDLE_MS };
+  // A run that finished now is repaired REPAIR_AFTER_MS later: come back then.
+  const repairDue = outcomes.done > 0 ? REPAIR_AFTER_MS : nextRepairMs;
+  const nextDelayMs = Math.min(runnable.length > batch ? BACKLOG_MS : IDLE_MS, repairDue ?? IDLE_MS);
+  return { mode, planned, outcomes, nextDelayMs };
 }
