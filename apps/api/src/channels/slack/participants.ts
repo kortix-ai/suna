@@ -23,7 +23,7 @@ export function normalizeConversationPolicy(value: unknown): SlackConversationPo
 }
 
 export function conversationPolicyLabel(policy: SlackConversationPolicy): string {
-  if (policy === 'project_open') return 'Project members can join';
+  if (policy === 'project_open') return 'Workspace members can join';
   if (policy === 'owner_only') return 'Owner only';
   return 'Owner approval';
 }
@@ -416,7 +416,7 @@ export async function decideSlackThreadJoin(input: {
     return { ok: false, text: 'Only the session owner can approve people for this thread.' };
   }
   if (!('userId' in (await resolveProjectChatActor(deciderUser, session.projectId)))) {
-    return { ok: false, text: 'Your Kortix account no longer has access to this project, so you cannot approve people for it.' };
+    return { ok: false, text: 'Your Kortix account no longer has access to this Kortix workspace, so you cannot approve people for it.' };
   }
 
   const now = new Date();

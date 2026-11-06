@@ -43,6 +43,7 @@ export async function handleSlashCommand(
 ): Promise<SlashResponse> {
   switch (sub) {
     case 'projects':
+    case 'workspaces':
     case 'list':
       if (ctx.projectScopedProjectId) return slashProjectScopedInfo(ctx);
       return slashProjects(ctx);
@@ -111,9 +112,9 @@ function slashHelp(ctx: SlashCtx): SlashResponse {
   const advanced: Array<{ cmd: string; desc: string }> = [
     { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/deepseek-v4.1-flash` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
     { cmd: `${command} agent <name>`, desc: 'Set the channel agent directly (`default` to reset).' },
-    ...(isProjectScoped ? [] : [{ cmd: `${command} switch`, desc: 'Connect this channel to a different project.' }]),
+    ...(isProjectScoped ? [] : [{ cmd: `${command} switch`, desc: 'Connect this channel to a different Kortix workspace.' }]),
     { cmd: `${command} policy`,   desc: 'Show or change who can join Slack-started sessions here.' },
-    { cmd: `${command} sessions`, desc: 'Recent sessions started in this workspace.' },
+    { cmd: `${command} sessions`, desc: 'Recent sessions started in this Slack workspace.' },
     ...(config.SLACK_REQUIRE_USER_IDENTITY
       ? [
           { cmd: `${command} login`,  desc: 'Connect your own Kortix account so the agent runs as you.' },
@@ -129,7 +130,7 @@ function slashHelp(ctx: SlashCtx): SlashResponse {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `Run \`${command}\` to open this channel's control panel — connected project, agent, and model, with buttons to change any of them. @-mention me in a thread to put me to work. All responses are private to you.`,
+          text: `Run \`${command}\` to open this channel's control panel — connected Kortix workspace, agent, and model, with buttons to change any of them. @-mention me in a thread to put me to work. All responses are private to you.`,
         },
       },
       { type: 'divider' },
@@ -160,7 +161,7 @@ async function slashProjectScopedInfo(ctx: SlashCtx): Promise<SlashResponse> {
           type: 'mrkdwn',
           text: project
             ? `This Slack app is already tied to *${escapeMrkdwn(project.name)}*.\nUse \`${ctx.command} agents\`, \`${ctx.command} models\`, or \`${ctx.command} policy\` to configure this channel.`
-            : `This Slack app is already tied to one Kortix project.\nUse \`${ctx.command} agents\`, \`${ctx.command} models\`, or \`${ctx.command} policy\` to configure this channel.`,
+            : `This Slack app is already tied to one Kortix workspace.\nUse \`${ctx.command} agents\`, \`${ctx.command} models\`, or \`${ctx.command} policy\` to configure this channel.`,
         },
       },
     ],
@@ -186,7 +187,7 @@ async function slashSessions(ctx: SlashCtx): Promise<SlashResponse> {
     return {
       response_type: 'ephemeral',
       blocks: [
-        { type: 'section', text: { type: 'mrkdwn', text: '*No recent Kortix sessions in this workspace.*\n`@`-mention me in any channel to start one.' } },
+        { type: 'section', text: { type: 'mrkdwn', text: '*No recent Kortix sessions in this Slack workspace.*\n`@`-mention me in any channel to start one.' } },
       ],
     };
   }
@@ -232,7 +233,7 @@ async function slashSessions(ctx: SlashCtx): Promise<SlashResponse> {
 async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
   const selection = await currentChannelSelection(ctx);
   if (!selection?.projectId) {
-    return { response_type: 'ephemeral', text: `No project bound to this channel. Run \`${ctx.command} switch\` first.` };
+    return { response_type: 'ephemeral', text: `No Kortix workspace bound to this channel. Run \`${ctx.command} switch\` first.` };
   }
   const me = await lookupChatIdentity(slackUserOf(ctx));
   if (!me) {
@@ -240,7 +241,7 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
   }
   const token = await loadSlackTokenForProject(selection.projectId);
   if (!token) {
-    return { response_type: 'ephemeral', text: 'Slack is not fully connected for this project yet.' };
+    return { response_type: 'ephemeral', text: 'Slack is not fully connected for this Kortix workspace yet.' };
   }
   // THREE INPUT FORMS, because only one of them is what an operator will type.
   // The slash command is registered should_escape:false, so Slack sends
@@ -284,7 +285,7 @@ async function slashLinkBot(ctx: SlashCtx, arg: string): Promise<SlashResponse> 
     return {
       response_type: 'ephemeral',
       text: actor.reason === 'not_member'
-        ? "You're connected, but don't have access to this project yet."
+        ? "You're connected, but don't have access to this Kortix workspace yet."
         : `Connect your Kortix account first: \`${ctx.command} login\`.`,
     };
   }
@@ -392,7 +393,7 @@ async function slashSession(ctx: SlashCtx): Promise<SlashResponse> {
   if (!selection) {
     return {
       response_type: 'ephemeral',
-      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` to pick one, then \`@\`-mention me to start a session.` } }],
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No Kortix workspace bound to this channel.*\nRun \`${ctx.command} switch\` to pick one, then \`@\`-mention me to start a session.` } }],
     };
   }
   const [s] = await db

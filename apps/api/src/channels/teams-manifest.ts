@@ -50,7 +50,7 @@ export interface TeamsManifest {
  * on an older version; a team owner still accepts a new permission or message
  * action in each team. `unit-teams-manifest.test.ts` fails until you bump.
  */
-export const TEAMS_MANIFEST_VERSION = '1.6.3';
+export const TEAMS_MANIFEST_VERSION = '1.6.4';
 
 /**
  * Resource-specific consent (RSC). These let the bot receive every message in
@@ -74,12 +74,12 @@ export const TEAMS_RSC_PERMISSIONS = [
 
 const BOT_COMMANDS = [
   { title: '/help', description: 'Show what Kortix can do' },
-  { title: '/status', description: 'Show and change the project, agent and model' },
+  { title: '/status', description: 'Show and change the workspace, agent and model' },
   { title: '/sessions', description: 'Your recent sessions started from Teams' },
   { title: '/login', description: 'Connect your Kortix account' },
   { title: '/models', description: 'Pick the model for this conversation' },
   { title: '/agents', description: 'Pick the agent for this conversation' },
-  { title: '/projects', description: 'List connected projects' },
+  { title: '/projects', description: 'List connected Kortix workspaces' },
   { title: '/stop', description: 'Stop the run in progress here' },
   { title: '/new', description: 'Start a new session in this chat' },
   { title: '/policy', description: 'Who may join sessions started here' },

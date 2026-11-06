@@ -254,7 +254,7 @@ test('a member who neither manages the project nor started the session cannot de
   await click('approve', executionId, SLACK.bystander);
 
   expect((await loadApprovalRow(project.project_id, executionId))?.status).toBe('pending_approval');
-  expect(ephemeral).toEqual(['Only a project manager or the person who started this session can decide.']);
+  expect(ephemeral).toEqual(['Only a workspace manager or the person who started this session can decide.']);
   expect(spawned).toHaveLength(0);
 });
 

@@ -111,7 +111,7 @@ async function projectGuild(projectId: string): Promise<string | null> {
 }
 
 const notThisProject = (channelId: string) =>
-  `Discord channel ${channelId} is not a conversation of this Kortix project. This project's agent reads and writes only in its own server's channels and threads, and in direct messages its conversations run in.`;
+  `Discord channel ${channelId} is not a conversation of this Kortix workspace. This workspace's agent reads and writes only in its own server's channels and threads, and in direct messages its conversations run in.`;
 
 const SNOWFLAKE = /^\d{17,20}$/;
 
@@ -176,7 +176,7 @@ export async function discordCallRefusal(input: {
   const refusedUntil = refusedChannels.get(channelId);
   if (refusedUntil && refusedUntil > Date.now()) return notThisProject(channelId);
   const guildId = await projectGuild(input.projectId);
-  if (!guildId) return 'This Kortix project has no Discord server connected.';
+  if (!guildId) return 'This Kortix workspace has no Discord server connected.';
   let channel: DiscordChannel;
   try {
     channel = await discordCall<DiscordChannel>('GET /channels/{id}', `/channels/${channelId}`, { timeoutMs: 5_000 });
@@ -200,7 +200,7 @@ export async function discordCallRefusal(input: {
     if (parent.projects.has(input.projectId)) return null;
   }
   if ((await discordGuildProjects(guildId)).length > 1) {
-    return `Discord channel ${channelId} belongs to no conversation of this project, and its server is connected to more than one Kortix project: this project's agent acts only in its own conversations and bound channels there.`;
+    return `Discord channel ${channelId} belongs to no conversation of this Kortix workspace, and its server is connected to more than one Kortix workspace: this workspace's agent acts only in its own conversations and bound channels there.`;
   }
   return null;
 }

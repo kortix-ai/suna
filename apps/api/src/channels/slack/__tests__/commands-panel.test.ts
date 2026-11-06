@@ -123,7 +123,7 @@ describe('bare /kortix → channel panel', () => {
     expect(ids).toContain('cfg_open_agents');
     expect(ids).toContain('cfg_open_projects');
     // honest effective-model + source line
-    expect(JSON.stringify(resp.blocks)).toContain('project default');
+    expect(JSON.stringify(resp.blocks)).toContain('workspace default');
   });
 
   test('unconnected channel → a Connect button, not a "type switch" instruction', async () => {
@@ -160,6 +160,6 @@ describe('/kortix model <id> → servability gate (never store a 404)', () => {
   test('`default` clears the override', async () => {
     const resp = await handleSlashCommand('model', 'default', ctx);
     expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), null);
-    expect(resp.text).toContain('reset to the project default');
+    expect(resp.text).toContain('reset to the workspace default');
   });
 });

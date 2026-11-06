@@ -348,10 +348,10 @@ const telegramQuestions: QuestionPort = {
 /** Plain-text next step per `classifyTurnError` title (slack/errors.ts). Another title ('Run failed') gets the fallback. */
 const RUN_ERROR_ADVICE: Partial<Record<string, string>> = {
   'Out of credits': 'A workspace admin can top up credits in Kortix. Then send your message again.',
-  'Usage limit reached': 'Wait, then send your message again. A project admin can also pick another model in Kortix.',
+  'Usage limit reached': 'Wait, then send your message again. A workspace admin can also pick another model in Kortix.',
   'Response too long': 'Ask the agent to continue, or narrow the request.',
   'Conversation too long': 'Send /new to start a new conversation.',
-  'Agent unavailable': 'Send /agent to pick another agent, then /new and your message again. A project admin can also fix the agent in Kortix.',
+  'Agent unavailable': 'Send /agent to pick another agent, then /new and your message again. A workspace admin can also fix the agent in Kortix.',
   'Model unavailable': 'Send /model to pick another model, then send your message again.',
   'ChatGPT login needs reconnection': 'Whoever connected the ChatGPT account must reconnect it in Kortix. Then send your message again.',
   'Provider rejected the request': 'A workspace admin can check the model provider settings in Kortix. Then send your message again.',
@@ -432,7 +432,7 @@ export function telegramNotice(target: ChannelTarget, notice: ChannelNotice): st
     case 'start_failed':
       return [
         `Kortix could not start this chat's session, so the agent did not run.${notice.reason ? ` ${notice.reason}` : ''}`,
-        'Send /new, then send your message again. If it fails again, a project admin can check the session in Kortix.',
+        'Send /new, then send your message again. If it fails again, a workspace admin can check the session in Kortix.',
         `Details: ${sessionWebUrl(config.FRONTEND_URL, target.projectId, notice.sessionId)}`,
       ].join('\n');
   }

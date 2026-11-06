@@ -615,7 +615,7 @@ export async function createOrJoinTeamsConversationSession(input: {
   // of the conversation's agent cannot start a session on it from Teams.
   if (!(await userMayLaunchAgent({ projectId, accountId: project.accountId }, userId, selection?.agentName))) {
     if (claimKey) await releaseThreadCreate(claimKey);
-    const refusal = `You don't have access to the \`${selection?.agentName}\` agent in this project. Ask a project manager to grant it, or pick another agent with /agents.`;
+    const refusal = `You don't have access to the \`${selection?.agentName}\` agent in this Kortix workspace. Ask a workspace manager to grant it, or pick another agent with /agents.`;
     if (handle) await finalizeTurn(handle, { error: refusal });
     else if (shared) await tellSender(activity, tenantId, conversationId, projectId, refusal);
     return;
@@ -764,7 +764,7 @@ function startError(status: number | undefined, body: unknown): string {
 }
 
 function queuedMessage(): string {
-  return "I've queued your task behind the sessions already starting in this project, and I'll reply right here the moment it begins.";
+  return "I've queued your task behind the sessions already starting in this Kortix workspace, and I'll reply right here the moment it begins.";
 }
 
 async function claimThreadCreate(key: string): Promise<boolean> {

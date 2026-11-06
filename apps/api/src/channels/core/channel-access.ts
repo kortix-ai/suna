@@ -287,14 +287,14 @@ export async function gateSender(
     }));
   const { label } = port;
   return (
-    `This bot belongs to a Kortix project, and your ${label} account is not allowed to use it yet. ` +
+    `This bot belongs to a Kortix workspace, and your ${label} account is not allowed to use it yet. ` +
     (waiting
-      ? `Your request is waiting for a project admin, who can allow it in Kortix under Customize → Connectors → Channels → ${label}. Your ${label} user ID is ${senderId}.`
-      : `Ask a project admin to allow your ${label} user ID ${senderId || '(unknown)'} under Customize → Connectors → Channels → ${label}${asks ? '' : ', or message this bot privately to ask for access'}.`)
+      ? `Your request is waiting for a workspace admin, who can allow it in Kortix under Customize → Connectors → Channels → ${label}. Your ${label} user ID is ${senderId}.`
+      : `Ask a workspace admin to allow your ${label} user ID ${senderId || '(unknown)'} under Customize → Connectors → Channels → ${label}${asks ? '' : ', or message this bot privately to ask for access'}.`)
   );
 }
 
 /** The alert for a button press from a sender who is not allowed. Only they see it: never post it to the chat. */
 export function refusedPressText(port: ChannelAccessPort, senderId: string): string {
-  return `Your ${port.label} account is not allowed to use this bot. Ask a project admin to allow user ID ${senderId} under Customize → Connectors → Channels → ${port.label}.`;
+  return `Your ${port.label} account is not allowed to use this bot. Ask a workspace admin to allow user ID ${senderId} under Customize → Connectors → Channels → ${port.label}.`;
 }

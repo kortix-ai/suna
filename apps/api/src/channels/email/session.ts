@@ -437,7 +437,7 @@ function emailEnvelope(email: InboundEmail): ChannelEnvelope {
       ...email.attachments.map(
         (a) => `Attachment ${quoted(a.filename ?? a.id)} (${a.size ?? 'unknown'} bytes, attachment_id ${a.id}).`,
       ),
-      'You are operating an email inbox assigned to this Kortix project.',
+      'You are operating an email inbox assigned to this Kortix workspace.',
       'Use the `kortix connectors` CLI in the shell. Connector actions are not direct tools.',
       `Read the current thread, every email with its body: ${connectorReply('email', 'get_thread', { thread_id: email.threadId })}.`,
       'Start a new outbound email with `kortix connectors call email.send_message` and args containing `to`, `subject`, and `text` or `html`.',

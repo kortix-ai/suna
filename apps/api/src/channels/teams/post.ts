@@ -89,7 +89,7 @@ export async function resolveTeamsProjectConversation(
     return {
       ok: false,
       error:
-        'This project has no such Teams conversation. Post only to a chat or channel the bot is already in — `teams conversations` lists them.',
+        'This Kortix workspace has no such Teams conversation. Post only to a chat or channel the bot is already in — `teams conversations` lists them.',
       status: 404,
     };
   }

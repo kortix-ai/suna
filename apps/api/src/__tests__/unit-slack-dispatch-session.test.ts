@@ -278,7 +278,7 @@ describe('Slack authorization matrix — project access and session visibility',
     expect(ephemerals[0]).toMatchObject({
       channel: 'C1',
       user: 'Uoutsider',
-      text: "You're connected, but don't have access to this project yet.",
+      text: "You're connected, but don't have access to this Kortix workspace yet.",
     });
   });
 
@@ -807,7 +807,7 @@ describe('spawnAgentTurn — a thread owned by another project', () => {
     expect(deliverCalls).toBe(0);
     expect(createSessionCalls).toBe(0);
     expect(ephemerals).toHaveLength(1);
-    expect(ephemerals[0].text).toBe("You're connected, but don't have access to this project yet.");
+    expect(ephemerals[0].text).toBe("You're connected, but don't have access to this Kortix workspace yet.");
   });
 
   test('a per-project app refuses a thread its project does not own, with a notice and no delivery', async () => {
@@ -824,7 +824,7 @@ describe('spawnAgentTurn — a thread owned by another project', () => {
     expect(deliverCalls).toBe(0);
     expect(createSessionCalls).toBe(0);
     expect(messages).toHaveLength(1);
-    expect(messages[0].text).toContain('belongs to a different Kortix project');
+    expect(messages[0].text).toContain('belongs to a different Kortix workspace');
   });
 });
 

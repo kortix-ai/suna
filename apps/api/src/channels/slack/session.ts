@@ -311,7 +311,7 @@ async function planSlackLaunch(
   if (allowedAgents.length === 0) {
     if (handle) {
       await finalizeTurn(handle, {
-        error: `You don't have access to the \`${launchAgent}\` agent in this project. Ask a project manager to grant it, or switch the agent with \`/kortix agents\`.`,
+        error: `You don't have access to the \`${launchAgent}\` agent in this Kortix workspace. Ask a workspace manager to grant it, or switch the agent with \`/kortix agents\`.`,
       });
     }
     return null;
@@ -378,7 +378,7 @@ async function joinExistingThread(
 }
 
 function queuedMessage(): string {
-  return "I've queued your task behind the sessions already starting up in this project, and I'll reply right here the moment it begins.";
+  return "I've queued your task behind the sessions already starting up in this Kortix workspace, and I'll reply right here the moment it begins.";
 }
 
 // Fail open on DB errors rather than dropping a message.

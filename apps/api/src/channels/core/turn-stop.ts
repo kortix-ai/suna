@@ -6,7 +6,7 @@ import { projectsView } from '../../workspaces/rows';
 
 /** What a refused Stop tells the presser, in Slack and in Teams. */
 export const CHAT_TURN_STOP_REFUSED =
-  'Only the person who started this run, the session owner or a project manager can stop it.';
+  'Only the person who started this run, the session owner or a workspace manager can stop it.';
 
 /** `userId`: the presser's linked Kortix user, for the stop's attribution; null when unlinked. */
 export type ChatTurnStopVerdict = { allowed: true; userId: string | null } | { allowed: false };

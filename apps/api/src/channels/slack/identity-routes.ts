@@ -102,7 +102,7 @@ slackIdentityApp.openapi(
 
     const projectIds = await listProjectsForWorkspace('slack', payload.teamId);
     if (projectIds.length === 0) {
-      return c.json({ error: 'This Slack workspace is not connected to any Kortix project.' }, 403);
+      return c.json({ error: 'This Slack workspace is not connected to any Kortix workspace.' }, 403);
     }
     const [workspaceName, botToken] = await Promise.all([
       loadSlackTeamNameForProject(projectIds[0]!).catch(() => null),
@@ -159,7 +159,7 @@ slackIdentityApp.openapi(
     // stranger could bind into a workspace they have no access to.
     const projectIds = await listProjectsForWorkspace('slack', payload.teamId);
     if (projectIds.length === 0) {
-      return c.json({ error: 'This Slack workspace is not connected to any Kortix project.' }, 403);
+      return c.json({ error: 'This Slack workspace is not connected to any Kortix workspace.' }, 403);
     }
     const accountRows = await db
       .select({ accountId: projectsView.accountId })

@@ -16,7 +16,7 @@ import { workspaceIdParam } from '../../shared/route-params';
  * connects its own account (owner `me`) instead.
  */
 const AGENT_PROJECT_CONNECT_REFUSAL = {
-  error: 'An agent cannot connect an account the whole project uses. A person connects it in Customize → Connectors; the agent can connect its own with owner "me".',
+  error: 'An agent cannot connect an account the whole workspace uses. A person connects it in Customize → Connectors; the agent can connect its own with owner "me".',
   code: 'agent_session_forbidden',
 } as const;
 

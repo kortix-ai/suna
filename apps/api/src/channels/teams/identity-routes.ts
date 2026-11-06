@@ -91,7 +91,7 @@ teamsIdentityApp.openapi(
 
     const projectIds = await listProjectsForWorkspace('teams', payload.tenantId);
     if (projectIds.length === 0) {
-      return c.json({ error: 'This Teams tenant is not connected to any Kortix project.' }, 403);
+      return c.json({ error: 'This Teams tenant is not connected to any Kortix workspace.' }, 403);
     }
     const [install, chatUserName] = await Promise.all([
       loadTeamsInstall(projectIds[0]!).catch(() => null),
@@ -147,7 +147,7 @@ teamsIdentityApp.openapi(
 
     const projectIds = await listProjectsForWorkspace('teams', payload.tenantId);
     if (projectIds.length === 0) {
-      return c.json({ error: 'This Teams tenant is not connected to any Kortix project.' }, 403);
+      return c.json({ error: 'This Teams tenant is not connected to any Kortix workspace.' }, 403);
     }
     const accountRows = await db
       .select({ accountId: projectsView.accountId })

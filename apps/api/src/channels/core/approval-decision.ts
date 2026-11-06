@@ -67,7 +67,7 @@ export async function decideChatApproval(input: {
       refusal:
         actor.reason === 'unlinked'
           ? 'Connect your Kortix account first (`/kortix login` in Slack, `/login` in Teams) to decide on approvals.'
-          : "You don't have access to decide on this project's approvals.",
+          : "You don't have access to decide on this Kortix workspace's approvals.",
     };
   }
   // Through the chat resolver, so the check carries the second factor the
@@ -86,7 +86,7 @@ export async function decideChatApproval(input: {
     callerUserId: actor.userId,
   });
   if (!verdict.allowed) {
-    return { refusal: 'Only a project manager or the person who started this session can decide.' };
+    return { refusal: 'Only a workspace manager or the person who started this session can decide.' };
   }
 
   const outcome = await decideConnectorApproval({

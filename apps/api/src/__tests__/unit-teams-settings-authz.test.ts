@@ -194,7 +194,7 @@ describe('Teams setting commands need a linked project manager', () => {
     await run('/agent reviewer');
     await run('/policy owner');
     expect(writes).toEqual([]);
-    expect(posted.every((c) => c.includes('Only a project manager'))).toBe(true);
+    expect(posted.every((c) => c.includes('Only a workspace manager'))).toBe(true);
     expect(actorChecks.every((c) => c.action === 'project.connector.write' && c.projectId === PROJECT)).toBe(true);
   });
 
@@ -209,7 +209,7 @@ describe('Teams setting commands need a linked project manager', () => {
     settingsActor = { reason: 'not_member' };
     await run('/use Second');
     expect(inserts).toEqual([]);
-    expect(posted[0]).toContain('Only a project manager');
+    expect(posted[0]).toContain('Only a workspace manager');
   });
 
   test('a project manager changes the model, agent, policy and project', async () => {
@@ -231,9 +231,9 @@ describe('Teams setting commands need a linked project manager', () => {
 describe('Teams setting cards need a linked project manager', () => {
   test('model, agent and project picks from a member without the capability change nothing', async () => {
     settingsActor = { reason: 'not_member' };
-    expect(await press('teams_set_model', { model: 'kortix/glm-5.3-flash' })).toContain('Only a project manager');
-    expect(await press('teams_set_agent', { agent: 'reviewer' })).toContain('Only a project manager');
-    expect(await press('teams_pick_project', { projectId: OTHER })).toContain('Only a project manager');
+    expect(await press('teams_set_model', { model: 'kortix/glm-5.3-flash' })).toContain('Only a workspace manager');
+    expect(await press('teams_set_agent', { agent: 'reviewer' })).toContain('Only a workspace manager');
+    expect(await press('teams_pick_project', { projectId: OTHER })).toContain('Only a workspace manager');
     expect(writes).toEqual([]);
     expect(inserts).toEqual([]);
   });
@@ -257,13 +257,13 @@ describe('/status and /sessions', () => {
     expect(card.actions.map((a: { title: string; data?: { panel?: string } }) => [a.title, a.data?.panel ?? null])).toEqual([
       ['Change model', 'models'],
       ['Change agent', 'agents'],
-      ['Switch project', 'projects'],
+      ['Switch workspace', 'projects'],
       ['Open in Kortix', null],
     ]);
   });
 
   test('a /status button returns its picker to the presser', async () => {
-    expect(await press('teams_open_panel', { panel: 'projects' })).toContain('Connected projects');
+    expect(await press('teams_open_panel', { panel: 'projects' })).toContain('Connected workspaces');
     expect(await press('teams_open_panel', { panel: 'models' })).toContain('MODELS-PICKER');
     expect(await press('teams_open_panel', { panel: 'agents' })).toContain('AGENTS-PICKER');
     expect(await press('teams_open_panel', { panel: 'nope' })).toContain("isn't available anymore");
@@ -310,7 +310,7 @@ describe('/unbind, /home and /projects', () => {
     settingsActor = { reason: 'not_member' };
     await run('/unbind');
     expect(deletes).toBe(0);
-    expect(posted[0]).toContain('Only a project manager');
+    expect(posted[0]).toContain('Only a workspace manager');
   });
 
   test('a per-project bot has nothing to unbind', async () => {
@@ -328,13 +328,13 @@ describe('/unbind, /home and /projects', () => {
     expect(inserts).toEqual([]);
     expect(actorChecks).toEqual([]);
     expect(posted).toHaveLength(3);
-    for (const card of posted) expect(card).toContain('always runs its own project');
+    for (const card of posted) expect(card).toContain('always runs its own Kortix workspace');
   });
 
   test('/projects lists each project with Open and Use, the current one marked', async () => {
     await run('/projects');
     const card = posted[0]!;
-    expect(card).toContain('Connected projects');
+    expect(card).toContain('Connected workspaces');
     expect(card).toContain('"title":"✓ In use"');
     expect(card).toContain(`"projectId":"${OTHER}"`);
     expect(card).toContain('https://dev.kortix.com/workspaces/proj-2');
@@ -342,7 +342,7 @@ describe('/unbind, /home and /projects', () => {
 
   test('/home lists the organization\'s projects and what to try', async () => {
     await run('/home');
-    expect(posted[0]).toContain('Projects in this organization');
+    expect(posted[0]).toContain('Kortix workspaces here');
     expect(posted[0]).toContain('First');
     expect(posted[0]).toContain('Second');
   });

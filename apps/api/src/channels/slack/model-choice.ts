@@ -50,7 +50,7 @@ const MAX_OPTION_VALUE = 150;
 
 const PERSONAL_SCOPE_NOTE = 'Includes your own API keys and ChatGPT subscriptions. When a provider has several keys, they rotate.';
 const SHARED_SCOPE_NOTE =
-  'Only keys shared with the whole project work here: this channel is shared. Your own keys and ChatGPT subscription work in a DM with me.';
+  'Only keys shared with the whole Kortix workspace work here: this channel is shared. Your own keys and ChatGPT subscription work in a DM with me.';
 
 /** A DM with the bot. Slack DM channel ids start with `D`; group DMs and channels do not. */
 export function slackChannelIsDm(channelId: string): boolean {
@@ -105,7 +105,7 @@ export async function buildSlackModelsResponse(ctx: SlackModelCtx): Promise<Slas
   if (!scope) {
     return {
       response_type: 'ephemeral',
-      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project is connected to this channel yet.*\nRun \`${ctx.command}\` to connect one, then pick a model.` } }],
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No Kortix workspace is connected to this channel yet.*\nRun \`${ctx.command}\` to connect one, then pick a model.` } }],
     };
   }
   const selection = await currentChannelSelection({ teamId: ctx.teamId, channelId: ctx.channelId });
@@ -117,7 +117,7 @@ export async function buildSlackModelsResponse(ctx: SlackModelCtx): Promise<Slas
   const defaultLabel = defaultModel ? labelForModelRef(defaultModel) : null;
   const status = current
     ? `This channel uses *${escapeMrkdwn(labelForModelRef(current))}*.${keysNote ? ` ${escapeMrkdwn(keysNote)}` : ''}`
-    : `This channel uses the *project default*${defaultLabel ? ` (${escapeMrkdwn(defaultLabel)})` : ''}.`;
+    : `This channel uses the *workspace default*${defaultLabel ? ` (${escapeMrkdwn(defaultLabel)})` : ''}.`;
 
   const blocks: Array<Record<string, unknown>> = [
     { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
@@ -126,7 +126,7 @@ export async function buildSlackModelsResponse(ctx: SlackModelCtx): Promise<Slas
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `${current ? '' : '✓ '}*Use project default*${defaultLabel ? `  ·  _${escapeMrkdwn(defaultLabel)}_` : ''}`,
+        text: `${current ? '' : '✓ '}*Use workspace default*${defaultLabel ? `  ·  _${escapeMrkdwn(defaultLabel)}_` : ''}`,
       },
       accessory: {
         type: 'button',
@@ -201,7 +201,7 @@ export async function buildSlackModelsResponse(ctx: SlackModelCtx): Promise<Slas
  * mrkdwn line to show the person.
  */
 export async function applySlackModelChoice(ctx: SlackModelCtx, choice: string): Promise<string> {
-  const connect = `Connect a project first — run \`${ctx.command}\`.`;
+  const connect = `Connect a Kortix workspace first — run \`${ctx.command}\`.`;
   const channelCtx = { teamId: ctx.teamId, channelId: ctx.channelId };
   const id = choice.trim();
   const scope = await slackModelScope(ctx);
@@ -209,7 +209,7 @@ export async function applySlackModelChoice(ctx: SlackModelCtx, choice: string):
   const auth = await authorizeChannelChange(slackUserOf(ctx), slackSettingsChannel(ctx));
   if (!auth.ok) return settingsRefusalText(auth.reason, ctx.command, connect);
   if (!id || id.toLowerCase() === 'default') {
-    return (await setChannelModel(channelCtx, null)) ? 'Model reset to the project default.' : connect;
+    return (await setChannelModel(channelCtx, null)) ? 'Model reset to the workspace default.' : connect;
   }
   if (/\s/.test(id)) {
     return `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/deepseek-v4.1-flash\` or \`deepseek-v4.1-flash\`).`;
@@ -225,7 +225,7 @@ export async function applySlackModelChoice(ctx: SlackModelCtx, choice: string):
     if (!scope.personalUserId && scope.linkedUserId) {
       const personal = await checkChannelModel({ ...scope, personalUserId: scope.linkedUserId }, id);
       if (personal.ok) {
-        return `*${label}* runs on your own API key or ChatGPT subscription, which this shared channel cannot use. Pick it in a DM with me, or pick a model the project shares.`;
+        return `*${label}* runs on your own API key or ChatGPT subscription, which this shared channel cannot use. Pick it in a DM with me, or pick a model the Kortix workspace shares.`;
       }
     }
     return `\`${escapeMrkdwn(id)}\` isn't available for this workspace. Pick one from \`${ctx.command} models\`, or connect that provider in Kortix first.`;

@@ -257,7 +257,7 @@ async function postProjectPicker(opts: {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*Which project should ${channelLabel} use?*\nAsked once — I'll remember it for ${isDm ? 'this DM' : 'this channel'}.`,
+        text: `*Which Kortix workspace should ${channelLabel} use?*\nAsked once — I'll remember it for ${isDm ? 'this DM' : 'this channel'}.`,
       },
     },
     {
@@ -274,7 +274,7 @@ async function postProjectPicker(opts: {
   const pickerTs = await postBlocks(
     token,
     channelId,
-    `Which project should ${channelLabel} use?`,
+    `Which Kortix workspace should ${channelLabel} use?`,
     blocks,
     threadTs,
   );
@@ -455,7 +455,7 @@ export async function classifyEvent(
   if (event.type === 'app_mention') {
     if (!botUserId) {
       console.warn(
-        '[slack] app_mention accepted without verifying the mentioned bot: this project has no ' +
+        '[slack] app_mention accepted without verifying the mentioned bot: this Kortix workspace has no ' +
           'recorded bot user id (run `link-bot`). In a workspace with more than one Kortix app ' +
           'installed, this is how the wrong bot answers.',
       );
@@ -463,7 +463,7 @@ export async function classifyEvent(
     }
     if (mentionsUser(event.text ?? '', botUserId)) return 'mention';
     console.warn(
-      `[slack] ignoring an app_mention that does not mention this project's bot (${botUserId}) — ` +
+      `[slack] ignoring an app_mention that does not mention this Kortix workspace's bot (${botUserId}) — ` +
         'it is addressed to another app in this workspace',
     );
     return 'ignore';
@@ -517,7 +517,7 @@ async function postChannelIntro(projectId: string, channelId: string): Promise<v
     .limit(1);
   const projectLine = project?.name
     ? `This channel is connected to *${escapeMrkdwn(project.name)}*.`
-    : 'This channel is connected to a Kortix project.';
+    : 'This channel is connected to a Kortix workspace.';
   const blocks: Array<Record<string, unknown>> = [
     {
       type: 'header',
@@ -686,7 +686,7 @@ export async function dispatchSlackEvent(
 }
 
 const FOREIGN_THREAD_NOTICE =
-  'This thread belongs to a different Kortix project. Mention me in a new message to start here.';
+  'This thread belongs to a different Kortix workspace. Mention me in a new message to start here.';
 
 // `ownThreadsOnly`: the per-project (BYO) webhook. Its requests may reach only
 // its own project, so a thread another project owns is refused, not joined.

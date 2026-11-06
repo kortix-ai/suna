@@ -154,7 +154,7 @@ export async function slackWriteRefusal(
     if (owner) {
       return {
         kind: 'thread',
-        message: `Slack thread ${ts} in ${channel} belongs to another Kortix project. This project's agent does not post in, change, or react to another project's threads.`,
+        message: `Slack thread ${ts} in ${channel} belongs to another Kortix workspace. This workspace's agent does not post in, change, or react to another workspace's threads.`,
       };
     }
   }
@@ -163,7 +163,7 @@ export async function slackWriteRefusal(
   if (!owners?.size || owners.has(projectId)) return null;
   return {
     kind: 'channel',
-    message: `Slack conversation ${channel} belongs to another Kortix project. This project's agent does not post in, change, or react to messages in another project's channels. Post in a channel of this project, in a channel no project is connected to, or in a direct message.`,
+    message: `Slack conversation ${channel} belongs to another Kortix workspace. This workspace's agent does not post in, change, or react to messages in another workspace's channels. Post in a channel of this workspace, in a channel no Kortix workspace is connected to, or in a direct message.`,
   };
 }
 

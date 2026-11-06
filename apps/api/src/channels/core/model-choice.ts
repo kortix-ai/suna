@@ -108,5 +108,5 @@ export async function chatTurnModel(settings: SettingsChannel, thread: { session
 export function statusModel(choice: string | null, pin: string | null): string {
   if (choice) return labelForModelRef(choice);
   if (pin) return `${labelForModelRef(pin)} (this session)`;
-  return 'project default';
+  return 'workspace default';
 }

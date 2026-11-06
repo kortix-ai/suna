@@ -201,7 +201,7 @@ test('a member who is neither manager nor launcher gets a refusal and the card k
   expect(response).toEqual({
     statusCode: 200,
     type: 'application/vnd.microsoft.activity.message',
-    value: 'Only a project manager or the person who started this session can decide.',
+    value: 'Only a workspace manager or the person who started this session can decide.',
   });
   expect(resumed).toHaveLength(0);
 });

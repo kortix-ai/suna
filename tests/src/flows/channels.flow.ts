@@ -1708,7 +1708,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .get(`/v1/workspaces/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
-        r.status(403).body().matches("$.error", /belongs to another Kortix project/);
+        r.status(403).body().matches("$.error", /belongs to another Kortix workspace/);
       });
     } finally {
       await withDb(ctx, async (db) => {

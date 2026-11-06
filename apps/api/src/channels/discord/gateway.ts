@@ -345,10 +345,10 @@ export async function intakeMessage(
     if (!place.addressed) return 'ignored';
     const text =
       route.kind === 'ambiguous'
-        ? `More than one Kortix project can answer ${guildId ? 'in this channel' : 'you here'}. Use /connect to pick one.`
+        ? `More than one Kortix workspace can answer ${guildId ? 'in this channel' : 'you here'}. Use /connect to pick one.`
         : guildId
-          ? 'This server is not connected to a Kortix project. A project admin connects it under Customize → Connectors → Channels → Discord.'
-          : `Kortix does not know your Discord account yet. Ask a Kortix project admin to allow your Discord user id ${authorId} under Customize → Connectors → Channels → Discord.`;
+          ? 'This server is not connected to a Kortix workspace. A workspace admin connects it under Customize → Connectors → Channels → Discord.'
+          : `Kortix does not know your Discord account yet. Ask a Kortix workspace admin to allow your Discord user id ${authorId} under Customize → Connectors → Channels → Discord.`;
     await noticeOnce(m.channel_id, m.id, text);
     return 'ignored';
   }
@@ -444,7 +444,7 @@ export function discordCommandDefinitions(): Array<Record<string, unknown>> {
       description: c.description.slice(0, 100),
       ...(arg[c.name] ? { options: [{ type: 3, name: arg[c.name]!.name, description: arg[c.name]!.description, required: false }] } : {}),
     })),
-    { name: 'connect', description: 'Pick the Kortix project this channel uses' },
+    { name: 'connect', description: 'Pick the Kortix workspace this channel uses' },
   ].map((c) => ({ ...c, type: 1, contexts: [0, 1], integration_types: [0] }));
 }
 

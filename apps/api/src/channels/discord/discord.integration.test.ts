@@ -291,7 +291,7 @@ describe('the interactions webhook', () => {
     const reply = (await (await interact(body)).json()) as { type: number; data: { content: string; flags: number } };
     expect(reply.type).toBe(4);
     expect(reply.data.flags).toBe(64);
-    expect(reply.data.content).toContain('not connected to a Kortix project');
+    expect(reply.data.content).toContain('not connected to a Kortix workspace');
     expect(await db.select().from(jobQueue).where(eq(jobQueue.jobKey, `discord:${FOREIGN_GUILD}:${body.id}`))).toEqual([]);
   });
 });
@@ -483,8 +483,8 @@ describe('the kortix_discord connector', () => {
     expect(await refusal({ channel_id: own })).toBeNull();
     expect(await refusal({ channel_id: CHANNEL })).toBeNull();
     // Bound to the other project by /connect above.
-    expect(await refusal({ channel_id: OTHER_CHANNEL })).toContain('not a conversation of this Kortix project');
-    expect(await refusal({ channel_id: FOREIGN_CHANNEL })).toContain('not a conversation of this Kortix project');
+    expect(await refusal({ channel_id: OTHER_CHANNEL })).toContain('not a conversation of this Kortix workspace');
+    expect(await refusal({ channel_id: FOREIGN_CHANNEL })).toContain('not a conversation of this Kortix workspace');
     expect(await refusal({ channel_id: 'general' })).toContain('one Discord channel id');
     expect(await refusal({ channel_id: own, message_reference: { message_id: own, channel_id: FOREIGN_CHANNEL } })).toContain('same channel');
     expect(await refusal({ channel_id: own, message_reference: { message_id: own, type: 1 } })).toContain('does not forward');
@@ -597,7 +597,7 @@ describe('the shared bot token stays in each project', () => {
     // The person moves their DM, though the old project no longer allows them: only they press a button in it.
     const moved = await bindDiscordChannel({ guildId: GUILD, threadId: DM2, settingsId: DM2, direct: true, startThread: false, addressed: true, channelName: null, threadName: null }, PROJECT, ALLOWED);
     expect(moved).toBe(true);
-    expect(await discordCallRefusal({ projectId: LEFT, args: { channel_id: DM2 } })).toContain('not a conversation of this Kortix project');
+    expect(await discordCallRefusal({ projectId: LEFT, args: { channel_id: DM2 } })).toContain('not a conversation of this Kortix workspace');
     expect(await db.select().from(chatThreads).where(and(eq(chatThreads.threadId, DM2), eq(chatThreads.projectId, LEFT)))).toEqual([]);
 
     expect(await discordCallRefusal({ projectId: PROJECT, actionPath: 'send_message', args: { channel_id: DM2 } })).toBeNull();
@@ -620,7 +620,7 @@ describe('the shared bot token stays in each project', () => {
     const unbound = '730000000000000003';
     channels.set(unbound, { id: unbound, type: 0, guild_id: GUILD, parent_id: null, name: 'general' });
     // OTHER has the server too (/connect above).
-    expect(await discordCallRefusal({ projectId: PROJECT, args: { channel_id: unbound } })).toContain('more than one Kortix project');
+    expect(await discordCallRefusal({ projectId: PROJECT, args: { channel_id: unbound } })).toContain('more than one Kortix workspace');
     await releaseDiscordInstall(OTHER);
     expect(await discordCallRefusal({ projectId: PROJECT, args: { channel_id: unbound } })).toBeNull();
 
@@ -901,7 +901,7 @@ describe('edge cases: failures, order and Discord limits', () => {
     await handleDiscordMessage({ ...event, id: snowflake() } as never);
     const gone = calls.filter((c) => c.route === `POST /channels/${CHANNEL}/messages`);
     expect(gone).toHaveLength(1);
-    expect(gone[0]!.body.content).toContain('not connected to a Kortix project any more');
+    expect(gone[0]!.body.content).toContain('not connected to a Kortix workspace any more');
 
     calls.length = 0;
     await tellDeadDiscordEvent(event as never);

@@ -145,7 +145,7 @@ test('Stop: a participant approved on this session may not stop a run they did n
   await approve(currentSession, 'aad-joiner', JOINER);
   expect(await stopTeamsTurn({ sessionId: currentSession, teamsUserId: 'aad-joiner' })).toEqual({
     stopped: false,
-    notice: 'Only the person who started this run, the session owner or a project manager can stop it.',
+    notice: 'Only the person who started this run, the session owner or a workspace manager can stop it.',
   });
   expect(stopped).toEqual([]);
 });

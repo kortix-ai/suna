@@ -157,7 +157,7 @@ export async function gateChannelRead(
   const kind = Object.hasOwn(scopes, input.actionPath) ? scopes[input.actionPath] : undefined;
   if (!kind) {
     if (input.risk !== 'read') return PASS;
-    return refuse(`The ${label(platform)} connector does not run read action "${input.actionPath}": it has no rule that keeps it to this project's conversations.`);
+    return refuse(`The ${label(platform)} connector does not run read action "${input.actionPath}": it has no rule that keeps it to this workspace's conversations.`);
   }
   if (kind === 'directory' || kind === 'write') return PASS;
 
@@ -170,7 +170,7 @@ export async function gateChannelRead(
       : refuse(
           scope.workspaceIds.length === 0
             ? noInstall(platform)
-            : `${input.actionPath} does not run while this Slack workspace is connected to more than one Kortix project: a search cannot be limited to this project's conversations. Read a channel with get_history or a thread with get_thread instead.`,
+            : `${input.actionPath} does not run while this Slack workspace is connected to more than one Kortix workspace: a search cannot be limited to this workspace's conversations. Read a channel with get_history or a thread with get_thread instead.`,
         );
   }
   if (kind === 'channel' || kind === 'thread') return gateTarget(scope, kind, input);
@@ -400,15 +400,15 @@ export function noInstall(platform: Platform): string {
 }
 
 function otherProject(platform: Platform, subject: string): string {
-  return `${subject} belongs to another Kortix project. This project's ${label(platform)} connector reads only its own conversations.`;
+  return `${subject} belongs to another Kortix workspace. This workspace's ${label(platform)} connector reads only its own conversations.`;
 }
 
 function refusalMessage(scope: Scope, owner: Owner, subject: string): string {
   if (scope.workspaceIds.length === 0) return noInstall(scope.platform);
   if (owner === 'other') return otherProject(scope.platform, subject);
   return scope.platform === 'slack'
-    ? `${subject} is not connected to this project, and this Slack workspace is connected to more than one Kortix project. Connect it first: run \`/kortix switch\` in that conversation and pick this project.`
-    : `This project has no conversation in ${subject}, and this Microsoft 365 tenant is connected to more than one Kortix project. Mention the bot in that channel and pick this project first.`;
+    ? `${subject} is not connected to this Kortix workspace, and this Slack workspace is connected to more than one Kortix workspace. Connect it first: run \`/kortix switch\` in that conversation and pick this Kortix workspace.`
+    : `This Kortix workspace has no conversation in ${subject}, and this Microsoft 365 tenant is connected to more than one Kortix workspace. Mention the bot in that channel and pick this Kortix workspace first.`;
 }
 
 function listOf(data: unknown, key: string): unknown[] | null {

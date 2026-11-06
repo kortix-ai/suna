@@ -121,18 +121,18 @@ describe('Slack, a workspace two projects share', () => {
   test("each project reads its own channel and is refused the other's", async () => {
     expect((await gate(mine.project_id, 'slack', 'get_history', { channel: C_MINE })).refusal).toBeNull();
     expect(refused(await gate(mine.project_id, 'slack', 'get_history', { channel: C_OTHER }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
     expect((await gate(other.project_id, 'slack', 'get_history', { channel: C_OTHER })).refusal).toBeNull();
     expect(refused(await gate(other.project_id, 'slack', 'get_history', { channel: C_MINE.toLowerCase() }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
   });
 
   test('a channel no project owns, including one with a picker waiting, is refused', async () => {
     for (const channel of [C_PICKER, `C0NEVERSEEN${RUN}`]) {
       expect(refused(await gate(mine.project_id, 'slack', 'get_history', { channel }))).toContain(
-        'connected to more than one Kortix project',
+        'connected to more than one Kortix workspace',
       );
     }
   });
@@ -143,7 +143,7 @@ describe('Slack, a workspace two projects share', () => {
       `Slack thread ${T_OTHER_IN_MINE}`,
     );
     expect(refused(await gate(other.project_id, 'slack', 'get_thread', { channel: C_OTHER, ts: T_MINE_IN_OTHER }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
     // No session owns this thread: the channel decides.
     expect((await gate(mine.project_id, 'slack', 'get_thread', { channel: C_MINE, ts: '1700000300.000300' })).refusal).toBeNull();
@@ -189,7 +189,7 @@ describe('Slack, a workspace one project has to itself', () => {
 
   test('a channel a disconnected project still owns stays refused', async () => {
     expect(refused(await gate(solo.project_id, 'slack', 'get_history', { channel: C_GONE }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
   });
 
@@ -215,13 +215,13 @@ describe('Teams, a tenant two projects share', () => {
 
   test('a channel only the other project has a conversation in, or none has, is refused', async () => {
     expect(refused(await gate(mine.project_id, 'teams', 'list_messages', { 'channel-id': CH_ONLY_OTHER }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
     expect(refused(await gate(mine.project_id, 'teams', 'list_messages', { 'channel-id': CH_QUIET }))).toContain(
       'Mention the bot in that channel',
     );
     expect(refused(await gate(mine.project_id, 'teams', 'list_messages', { 'channel-id': CH_SESSION_ONLY }))).toContain(
-      'belongs to another Kortix project',
+      'belongs to another Kortix workspace',
     );
     expect((await gate(other.project_id, 'teams', 'list_messages', { 'channel-id': CH_ONLY_OTHER })).refusal).toBeNull();
   });
