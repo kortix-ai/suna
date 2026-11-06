@@ -17,6 +17,7 @@ import { type SQL, and, asc, desc, eq, gt, inArray, lt, ne, sql } from 'drizzle-
 import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
+import { type TransitionResult, transitionStatus } from '../shared/status-transition';
 import { isUuid } from '../shared/validate';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
@@ -160,6 +161,54 @@ export async function supersededByFor(
     if (next) replaced.set(row.crId, { cr_id: next.crId, number: next.number });
   }
   return replaced;
+}
+
+/**
+ * The status writes of a change request. Each is one compare-and-set
+ * (`shared/status-transition.ts`), so a merge, a close and a reopen that race
+ * cannot leave a merged request `closed` or `open`:
+ *
+ *   - `merge` may leave `closed`: the git merge already landed on the base
+ *     branch when the row is written, and git is the truth. A close that
+ *     raced the merge loses to it.
+ *   - `close` leaves `open` only. A merged request is never closed.
+ *   - `reopen` leaves `closed` only. A merged request is never reopened.
+ */
+export const CHANGE_REQUEST_TRANSITIONS = {
+  merge: { from: ['open', 'closed'], to: 'merged' },
+  close: { from: ['open'], to: 'closed' },
+  reopen: { from: ['closed'], to: 'open' },
+} as const satisfies Record<string, { from: readonly ChangeRequestStatus[]; to: ChangeRequestStatus }>;
+
+/** Record a merge that landed. Lost race: another merge recorded it first. */
+export function recordChangeRequestMerge(
+  crId: string,
+  set: Pick<
+    typeof changeRequests.$inferInsert,
+    'mergedAt' | 'mergedBy' | 'mergeCommitSha' | 'headCommitSha' | 'baseCommitSha'
+  >,
+): Promise<TransitionResult<ChangeRequestRow>> {
+  return transitionStatus(changeRequests, changeRequests.status, CHANGE_REQUEST_TRANSITIONS.merge, {
+    where: eq(changeRequests.crId, crId),
+    set: { ...set, closedAt: null, closedBy: null, updatedAt: new Date() },
+  });
+}
+
+/** Close an open request. Lost race: it is merged or closed already. */
+export function closeChangeRequest(crId: string, closedBy: string): Promise<TransitionResult<ChangeRequestRow>> {
+  const now = new Date();
+  return transitionStatus(changeRequests, changeRequests.status, CHANGE_REQUEST_TRANSITIONS.close, {
+    where: eq(changeRequests.crId, crId),
+    set: { closedAt: now, closedBy, updatedAt: now },
+  });
+}
+
+/** Reopen a closed request. Lost race: it is open or merged. */
+export function reopenChangeRequest(crId: string): Promise<TransitionResult<ChangeRequestRow>> {
+  return transitionStatus(changeRequests, changeRequests.status, CHANGE_REQUEST_TRANSITIONS.reopen, {
+    where: eq(changeRequests.crId, crId),
+    set: { closedAt: null, closedBy: null, updatedAt: new Date() },
+  });
 }
 
 /** The most open requests on one base a merge checks for carried work. */

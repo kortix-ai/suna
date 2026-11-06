@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
+import { logger } from '../../lib/logger';
 import { wallet } from '../wallet';
-import { applyStripeSync } from './account-write-owner';
+import { applyStripeSync, isClosedBillingAccount } from './account-write-owner';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { upsertCustomer } from '../repositories/customers';
 import { getTier, paidMonthlyUsd } from './tiers';
@@ -64,6 +65,16 @@ export async function activateSubscriptionForAccount(params: {
 
   const isYearly = commitmentType === 'yearly' || commitmentType === 'yearly_commitment';
   const existingAccount = await getCreditAccount(accountId);
+  if (isClosedBillingAccount(existingAccount)) {
+    logger.info(`[Webhook] activation skipped: ${accountId} is closed (sub=${subscriptionId})`);
+    return;
+  }
+  // Auto top-up turns on when the account moves ONTO this subscription. A
+  // second activation of the same live subscription (checkout and the first
+  // invoice both activate; Stripe redelivers) keeps the customer's own
+  // choice: a replay must never turn back on what they turned off.
+  const switchesOntoSubscription =
+    existingAccount?.stripeSubscriptionId !== subscriptionId || existingAccount?.stripeSubscriptionStatus !== 'active';
   const previousSubscriptionId = previousSubscriptionIdHint
     ?? (
       existingAccount?.tier === 'free' &&
@@ -93,8 +104,8 @@ export async function activateSubscriptionForAccount(params: {
       commitmentType: commitmentType === 'yearly_commitment' ? commitmentType : null,
       nextCreditGrant: nextCreditGrantTs,
       lastRenewalPeriodStart: subscription.current_period_start,
-      autoTopupEnabled: true,
-      ...(existingAccount?.autoTopupCustomized ? {} : {
+      ...(switchesOntoSubscription ? { autoTopupEnabled: true } : {}),
+      ...(existingAccount?.autoTopupCustomized || !switchesOntoSubscription ? {} : {
         autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
         autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
       }),
