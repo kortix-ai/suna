@@ -4,10 +4,8 @@
  * split_pending, and whether it is closing. Its own module, so the route tests
  * that replace `iam/authorize` wholesale keep the real reader.
  */
-import { and, eq, inArray } from 'drizzle-orm';
-import { accountDeletionRequests, projects } from '@kortix/db';
-import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
+import { readAccountEngineFacts } from '../workspaces/surface';
 import { ttlMemo } from '../shared/ttl-memo';
 import { invalidateIamCacheForProjectResources, registerProjectScopedMemo } from './cache-invalidation';
 
@@ -43,28 +41,12 @@ const workspaceFactsMemo = ttlMemo({
   keyFn: (accountId: string) => `${accountId}|workspace-facts`,
   loader: async (accountId: string): Promise<WorkspaceFacts> => {
     if (!isUuid(accountId)) return NO_WORKSPACE;
-    const [active, open] = await Promise.all([
-      db
-        .select({ projectId: projects.projectId, splitPending: projects.splitPending })
-        .from(projects)
-        .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')))
-        .limit(2),
-      db
-        .select({ id: accountDeletionRequests.id })
-        .from(accountDeletionRequests)
-        .where(
-          and(
-            eq(accountDeletionRequests.accountId, accountId),
-            inArray(accountDeletionRequests.status, ['pending', 'processing']),
-          ),
-        )
-        .limit(1),
-    ]);
+    const { activeProjects: active, deletionOpen } = await readAccountEngineFacts(accountId);
     const splitPending = active.length > 1 || active.some((row) => row.splitPending);
     return {
       soleProjectId: active.length === 1 && !splitPending ? active[0]!.projectId : null,
       splitPending,
-      closing: open.length > 0,
+      closing: deletionOpen,
     };
   },
   shouldCache: (facts) => !facts.closing && (facts.soleProjectId !== null || facts.splitPending),
@@ -81,7 +63,6 @@ export function workspaceFactsOf(accountId: string): Promise<WorkspaceFacts> {
 export function invalidateWorkspaceFactsForAccount(accountId: string): void {
   invalidateIamCacheForProjectResources(accountId);
 }
-
 
 /** Test hook. */
 export function clearWorkspaceFacts(): void {

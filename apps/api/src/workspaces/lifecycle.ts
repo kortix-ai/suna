@@ -133,6 +133,8 @@ async function afterClose(record: WorkspaceRecord, requestId: string): Promise<v
 async function bustIamCache(accountId: string): Promise<void> {
   try {
     const { invalidateIamCacheForAccount } = await import('../iam/cache-invalidation');
+    const { invalidateWorkspaceFactsForAccount } = await import('../iam/workspace-facts');
+    invalidateWorkspaceFactsForAccount(accountId);
     await invalidateIamCacheForAccount(accountId);
   } catch (error) {
     logger.warn('[workspaces] IAM cache bust failed', {

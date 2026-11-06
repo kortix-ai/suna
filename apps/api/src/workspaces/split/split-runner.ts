@@ -279,9 +279,28 @@ export async function reverseWorkspaceSplitRun(runId: string): Promise<void> {
   }).then(([fromAccountId, toAccountId]) => fillAccountWorkspaceIds(fromAccountId, toAccountId));
 }
 
-/** kortix.workspace_fill_account for both accounts of a move (C1). */
+/**
+ * After a move or its reverse committed: kortix.workspace_fill_account for both
+ * accounts (C1), then the IAM engine's workspace facts and decision caches of
+ * both accounts on every replica (C3: a split changes which workspace a
+ * membership reaches). A cache bust failure leaves the 15 s TTL backstop.
+ */
 async function fillAccountWorkspaceIds(fromAccountId: string, toAccountId: string): Promise<void> {
   await db.execute(sql`SELECT kortix.workspace_fill_account(${fromAccountId}::uuid), kortix.workspace_fill_account(${toAccountId}::uuid)`);
+  try {
+    const { invalidateWorkspaceFactsForAccount } = await import('../../iam/workspace-facts');
+    const { invalidateIamCacheForAccount } = await import('../../iam/cache-invalidation');
+    for (const accountId of [fromAccountId, toAccountId]) {
+      invalidateWorkspaceFactsForAccount(accountId);
+      await invalidateIamCacheForAccount(accountId);
+    }
+  } catch (error) {
+    logger.warn('[workspace-split] IAM cache bust failed', {
+      from_account_id: fromAccountId,
+      to_account_id: toAccountId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**

@@ -238,3 +238,33 @@ export async function accountIsPaying(accountId: string): Promise<boolean> {
   );
   return row?.paying === true;
 }
+
+/**
+ * The raw facts the IAM engine reads per account (iam/workspace-facts.ts owns
+ * the memo and the derivation): up to two of its active project rows with
+ * their `split_pending` flag, and whether an account deletion request is open
+ * (`pending` or `processing`, the `closing` lifecycle).
+ */
+export async function readAccountEngineFacts(
+  accountId: string,
+): Promise<{ activeProjects: Array<{ projectId: string; splitPending: boolean }>; deletionOpen: boolean }> {
+  const [row] = await db.execute<{
+    active_projects: Array<{ projectId: string; splitPending: boolean }> | null;
+    deletion_open: boolean;
+  }>(sql`
+    SELECT
+      COALESCE((
+        SELECT json_agg(json_build_object('projectId', p.project_id, 'splitPending', p.split_pending))
+        FROM (
+          SELECT project_id, split_pending FROM kortix.projects
+          WHERE account_id = ${accountId}::uuid AND status = 'active'
+          LIMIT 2
+        ) p
+      ), '[]'::json) AS active_projects,
+      EXISTS (
+        SELECT 1 FROM kortix.account_deletion_requests r
+        WHERE r.account_id = ${accountId}::uuid AND r.status IN ('pending', 'processing')
+      ) AS deletion_open
+  `);
+  return { activeProjects: row?.active_projects ?? [], deletionOpen: row?.deletion_open === true };
+}

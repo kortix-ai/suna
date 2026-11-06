@@ -27,6 +27,7 @@ export {
   getWorkspace,
   listAccountWorkspaces,
   listUserWorkspaceCandidates,
+  readAccountEngineFacts,
   workspaceIdOfAccount,
   workspaceRecordFromJson,
   workspaceState,
