@@ -18,6 +18,7 @@ import { AuthProvider } from '@/features/providers/auth-provider';
 import { locales, type Locale } from '@/i18n/config';
 import { CHUNK_BOOT_RECOVERY_SCRIPT } from '@/lib/chunk-boot-recovery';
 import { DESKTOP_INIT_SCRIPT } from '@kortix/ui/internal/lib/desktop';
+import { DESKTOP_LEGACY_PATH_SCRIPT } from '@/lib/workspace-redirects';
 import { INTERFACE_THEME_INIT_SCRIPT } from '@/lib/interface-themes';
 import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import '@/lib/polyfills';
@@ -269,6 +270,9 @@ export default async function RootLayout({
 
         {/* Desktop runtime detection — runs before hydration so CSS reacts on first paint. */}
         <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
+        {/* An installed desktop shell opens /projects… (served in place): show
+            the /workspaces URL before the App Router hydrates. */}
+        <script dangerouslySetInnerHTML={{ __html: DESKTOP_LEGACY_PATH_SCRIPT }} />
 
         {/* Interface theme palettes on /new, /workspaces/** and /settings — set
             before first paint so the stored palette never flashes the default. */}

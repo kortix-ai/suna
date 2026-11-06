@@ -30,6 +30,7 @@ import { authCookieOptions, hasPanelMarker, panelAuthUrl } from '@/lib/supabase/
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
+import { desktopShellPath, isDesktopShell } from './lib/workspace-redirects';
 import { NextResponse } from 'next/server';
 
 type Locale = (typeof locales)[number];
@@ -146,6 +147,10 @@ const PROTECTED_APP_PREFIXES = [
   '/panel',
   '/presentations',
   '/workspaces',
+  // An installed desktop shell keeps the pre-Workspaces app paths; next.config
+  // serves them from /workspaces (src/lib/workspace-redirects.ts).
+  '/projects',
+  '/new',
   '/rauch',
   '/settings',
   '/setup',
@@ -587,8 +592,9 @@ export async function middleware(request: NextRequest) {
       // Supabase user is fetched below, so there is no identity here to check
       // the cookie against — and an unowned cookie read is exactly the bug that
       // sent one account into another account's project. The door re-resolves.
+      // An installed shell loads only its own app paths: /projects, not /workspaces.
       return finalizeEnvironmentAccess(
-        NextResponse.redirect(new URL(PROJECT_LANDING_PATH, request.url)),
+        NextResponse.redirect(new URL(desktopShellPath(PROJECT_LANDING_PATH), request.url)),
       );
     }
   }
@@ -836,10 +842,14 @@ export async function middleware(request: NextRequest) {
   // otherwise the id-free landing door opens the only one, or the
   // create-or-join chooser, behind an instant paint. It never creates one. The cookie is browser-written, so `resolveDefaultLandingPath`
   // only accepts a well-formed project id and falls back to the door.
-  const defaultLandingPath = resolveDefaultLandingPath(
+  const landingPath = resolveDefaultLandingPath(
     request.cookies.get(LAST_PROJECT_COOKIE)?.value,
     user?.id,
   );
+  // The desktop shell gates server redirects by its own path list (/projects).
+  const defaultLandingPath = isDesktopShell(request.headers.get('user-agent'))
+    ? desktopShellPath(landingPath)
+    : landingPath;
 
   // FAST PATH: authenticated users hitting the homepage go straight to a project.
   if (pathname === '/' && user) {

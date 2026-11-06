@@ -55,10 +55,6 @@ describe('desktop route allowlist', () => {
     expect(webRoutes.filter((route) => !shellList.includes(`'${route}'`))).toEqual([]);
   });
 
-  test('the desktop bounce lands on the door that resolves a real workspace', () => {
-    expect(source).toContain('NextResponse.redirect(new URL(PROJECT_LANDING_PATH');
-  });
-
   test('/workspaces is NOT public — it requires authentication', () => {
     const publicList = source.slice(
       source.indexOf('const PUBLIC_ROUTES'),
@@ -79,10 +75,13 @@ describe('desktop site root', () => {
   // The shell launches at `/`. It must reach the identity-aware `/` redirect
   // (the remembered project for a signed-in user, as on web), not the
   // identity-blind gate bounce. Signed out, both end at the landing door.
+  // An installed shell loads only its own app paths (/projects, not
+  // /workspaces): the door is /projects/start, served from /workspaces/start
+  // (src/lib/workspace-redirects.ts).
   test('a signed-out desktop `/` lands on the door, never the list or marketing', async () => {
     const response = await middleware(desktopRequest('/'));
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('https://dev.kortix.com/workspaces/start');
+    expect(response.headers.get('location')).toBe('https://dev.kortix.com/projects/start');
   });
 
   test('desktop `/` passes the gate to the remembered-project redirect', () => {
@@ -95,6 +94,6 @@ describe('desktop site root', () => {
 
   test('other marketing paths still bounce to the door', async () => {
     const response = await middleware(desktopRequest('/pricing'));
-    expect(response.headers.get('location')).toBe('https://dev.kortix.com/workspaces/start');
+    expect(response.headers.get('location')).toBe('https://dev.kortix.com/projects/start');
   });
 });

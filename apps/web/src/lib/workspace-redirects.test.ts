@@ -5,7 +5,13 @@ import * as pathToRegexp from 'next/dist/compiled/path-to-regexp';
 
 import { locales } from '@/i18n/catalog.mjs';
 
-import { workspaceRedirects } from './workspace-redirects';
+import {
+  DESKTOP_LEGACY_PATH_SCRIPT,
+  desktopShellPath,
+  workspaceDesktopRewrites,
+  workspacePathOfDesktopLegacy,
+  workspaceRedirects,
+} from './workspace-redirects';
 
 const { compile, match } = pathToRegexp as {
   match: (source: string, options: { decode: (value: string) => string }) => (path: string) => false | { params: object };
@@ -79,6 +85,77 @@ describe('the /projects → /workspaces redirects', () => {
   test('a canonical /workspaces page and a look-alike path are not redirected', () => {
     for (const path of ['/workspaces', '/workspaces/p1', '/workspaces/new', '/projectsx', '/newsroom', '/admin/workspaces']) {
       expect(redirectOf(path)).toBeNull();
+    }
+  });
+});
+
+// ── Installed desktop shells (pre-Workspaces nav-rules.js) ────────────────────
+// The APP_PATH_PREFIXES of every shell shipped before this release: a server
+// redirect to any other path opens in the system browser and empties the window.
+const OLD_SHELL_APP_PATHS = ['/projects', '/new', '/settings', '/invites', '/admin', '/setup', '/connectors', '/oauth', '/checkout', '/tunnel', '/capture', '/github', '/cli', '/marketplace', '/maintenance', '/countryerror', '/debug'];
+const oldShellLoads = (path: string) =>
+  path === '/' || path === '/auth' || path.startsWith('/auth/') || OLD_SHELL_APP_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+const DESKTOP_UA = 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/140 Electron/38 KortixDesktop/0.1.0';
+
+function headerMatches(condition: { type: string; key: string; value: string }, ua: string): boolean {
+  return condition.type === 'header' && new RegExp(`^${condition.value}$`).test(ua);
+}
+
+/** Next's redirect pass for a request with `ua`: query conditions as above, header `has`/`missing` on the UA. */
+function redirectFor(url: string, ua: string): string | null {
+  const { pathname } = new URL(url, 'http://kortix.test');
+  for (const rule of rules) {
+    if (!match(rule.source, { decode: decodeURIComponent })(pathname)) continue;
+    if (rule.has?.some((c) => c.type === 'query')) continue;
+    if (rule.has?.some((c) => c.type === 'header' && !headerMatches(c, ua))) continue;
+    if (rule.missing?.some((c) => headerMatches(c, ua))) continue;
+    const params = (match(rule.source, { decode: decodeURIComponent })(pathname) as { params: object }).params;
+    return compile(rule.destination)(params);
+  }
+  return null;
+}
+
+describe('an installed desktop shell keeps every app page in its window', () => {
+  test.each(['/projects', '/projects/start', '/projects/p1', '/projects/p1/sessions/s1', '/new'])(
+    '%s: no server redirect for the shell; the page is served from /workspaces',
+    (path) => {
+      expect(redirectFor(path, DESKTOP_UA)).toBeNull();
+      const rewrite = workspaceDesktopRewrites().find((r) => match(r.source, { decode: decodeURIComponent })(path));
+      expect(rewrite?.has?.every((c) => headerMatches(c, DESKTOP_UA))).toBe(true);
+      const params = (match(rewrite!.source, { decode: decodeURIComponent })(path) as { params: object }).params;
+      expect(compile(rewrite!.destination)(params)).toBe(workspacePathOfDesktopLegacy(path)!);
+    },
+  );
+
+  test.each([
+    ['/projects/p1/config', '/projects/p1/admin/general'],
+    ['/projects/p1/agent', '/projects/p1/customize/agents'],
+  ])('an old deep link %s redirects the shell to %s, a path it loads', (path, location) => {
+    expect(redirectFor(path, DESKTOP_UA)).toBe(location);
+    expect(oldShellLoads(location)).toBe(true);
+  });
+
+  test('a browser keeps the 308 to /workspaces', () => {
+    expect(redirectFor('/projects/p1', 'Mozilla/5.0 Chrome/140')).toBe('/workspaces/p1');
+    expect(redirectFor('/projects/p1/config', 'Mozilla/5.0 Chrome/140')).toBe('/workspaces/p1/admin/general');
+  });
+
+  test('the server-side landing paths the middleware and sign-in send the shell are paths it loads', () => {
+    for (const landing of ['/workspaces/start', '/workspaces/p1', '/workspaces/p1/sessions/s1', '/settings/billing']) {
+      expect(oldShellLoads(desktopShellPath(landing))).toBe(true);
+    }
+  });
+
+  test('before hydration the shell shows the /workspaces URL of a legacy path', () => {
+    for (const [from, to] of [['/projects/p1/sessions/s1?x=1', '/workspaces/p1/sessions/s1?x=1'], ['/new', '/workspaces/new'], ['/projects', '/workspaces']] as const) {
+      const [pathname, search = ''] = from.split('?');
+      const calls: string[] = [];
+      const window = {
+        location: { pathname, search: search ? `?${search}` : '', hash: '' },
+        history: { state: { k: 1 }, replaceState: (_s: unknown, _t: string, url: string) => calls.push(url) },
+      };
+      new Function('window', DESKTOP_LEGACY_PATH_SCRIPT)(window);
+      expect(calls).toEqual([to]);
     }
   });
 });

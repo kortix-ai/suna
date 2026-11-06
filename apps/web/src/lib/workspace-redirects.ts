@@ -9,14 +9,94 @@
  * (`/de/projects/<id>` → `/de/workspaces/<id>`). Mapping test:
  * `workspace-redirects.test.ts`.
  */
+type Condition = { type: 'query' | 'header'; key: string; value: string };
+
 export interface Redirect {
   source: string;
   destination: string;
   permanent: boolean;
-  has?: { type: 'query'; key: string; value: string }[];
+  has?: Condition[];
+  missing?: Condition[];
+}
+
+export interface Rewrite {
+  source: string;
+  destination: string;
+  has?: Condition[];
+}
+
+/**
+ * The installed desktop shells (Electron, every build before the Workspaces
+ * release) load only their own list of app paths in the window: `/projects`
+ * and `/new`, never `/workspaces`. A server redirect to `/workspaces` fires the
+ * shell's `will-redirect` gate, which opens the URL in the system browser and
+ * leaves the window empty. Every shell sends the same UA token, so the web
+ * cannot tell an old shell from a new one: the desktop shell keeps the old
+ * paths, served in place.
+ *
+ *   - no `/projects` → `/workspaces` 308 for the shell (`missing` the UA);
+ *   - an old `/projects/:id/<tab>` link redirects to its new page under
+ *     `/projects` (an app path in every shell);
+ *   - {@link workspaceDesktopRewrites} serves `/projects/…` and `/new` from
+ *     the `/workspaces` pages;
+ *   - `DesktopLegacyPathSync` (client) then shows the `/workspaces` URL with
+ *     `history.replaceState`, which no shell gates.
+ *
+ * Client navigations (Link, router.push) never reach the gate. Drop this once
+ * every shell in use ships `/workspaces` in its list.
+ */
+export const DESKTOP_SHELL_UA = 'KortixDesktop';
+const DESKTOP: Condition = { type: 'header', key: 'user-agent', value: `.*${DESKTOP_SHELL_UA}.*` };
+
+/** True for a request from the desktop shell. */
+export function isDesktopShell(userAgent: string | null | undefined): boolean {
+  return Boolean(userAgent?.includes(DESKTOP_SHELL_UA));
+}
+
+/** The path an installed desktop shell may load for `path`: `/workspaces…` → `/projects…`. Other paths are unchanged. */
+export function desktopShellPath(path: string): string {
+  return path.replace(/^\/workspaces(?=$|[/?#])/, '/projects');
+}
+
+/** The `/workspaces` path of a legacy desktop URL (`/projects…`, `/new`), or null when `path` is not one. */
+export function workspacePathOfDesktopLegacy(path: string): string | null {
+  if (/^\/projects(?=$|[/?#])/.test(path)) return path.replace(/^\/projects/, '/workspaces');
+  if (/^\/new(?=$|[?#])/.test(path)) return path.replace(/^\/new/, '/workspaces/new');
+  return null;
+}
+
+/** `rewrites().beforeFiles` for the desktop shell: its legacy paths served from the `/workspaces` pages. */
+export function workspaceDesktopRewrites(): Rewrite[] {
+  return [
+    { source: '/projects', destination: '/workspaces', has: [DESKTOP] },
+    { source: '/projects/:path*', destination: '/workspaces/:path*', has: [DESKTOP] },
+    { source: '/new', destination: '/workspaces/new', has: [DESKTOP] },
+  ];
+}
+
+/**
+ * For the desktop shell: each rule whose source is a legacy app path and whose
+ * destination is a `/workspaces` page gets a twin that answers the shell with
+ * the same page under `/projects`; the original rule skips the shell. A twin
+ * that would redirect a path to itself is dropped: the rewrite serves it.
+ */
+function withDesktopShell(rules: Redirect[]): Redirect[] {
+  return rules.flatMap((rule) => {
+    const legacySource = /^\/(projects|new)(?=$|\/)/.test(rule.source);
+    if (!legacySource || !/^\/workspaces(?=$|\/)/.test(rule.destination)) return [rule];
+    const destination = desktopShellPath(rule.destination);
+    const twin: Redirect[] = destination === rule.source || rule.source === '/new'
+      ? []
+      : [{ ...rule, destination, has: [...(rule.has ?? []), DESKTOP] }];
+    return [...twin, { ...rule, missing: [...(rule.missing ?? []), DESKTOP] }];
+  });
 }
 
 export function workspaceRedirects(locales: readonly string[]): Redirect[] {
+  return withDesktopShell(workspaceRedirectTable(locales));
+}
+
+function workspaceRedirectTable(locales: readonly string[]): Redirect[] {
   const locale = `/:locale(${locales.join('|')})`;
   return [
     // Every workspace page moved from /projects to /workspaces (2026-11-06,
@@ -116,3 +196,22 @@ export function workspaceRedirects(locales: readonly string[]): Redirect[] {
     { source: `${locale}/new`, destination: '/:locale/workspaces/new', permanent: true },
   ];
 }
+
+/**
+ * Runs in <head> before hydration. An installed desktop shell loads `/projects…`
+ * and `/new` (served from the `/workspaces` pages by
+ * {@link workspaceDesktopRewrites}); this shows the `/workspaces` URL with
+ * `history.replaceState`, so the App Router hydrates on the canonical path
+ * (usePathname reads `/workspaces/…`). A same-document URL change fires no
+ * shell navigation gate. Other browsers never see these paths (308).
+ */
+export const DESKTOP_LEGACY_PATH_SCRIPT = `
+(function() {
+  try {
+    var l = window.location, p = l.pathname, n = null;
+    if (/^\\/projects(?=$|\\/)/.test(p)) n = p.replace(/^\\/projects/, '/workspaces');
+    else if (p === '/new') n = '/workspaces/new';
+    if (n) window.history.replaceState(window.history.state, '', n + l.search + l.hash);
+  } catch (e) {}
+})();
+`.trim();

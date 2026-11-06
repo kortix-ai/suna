@@ -1,3 +1,4 @@
+import { desktopShellPath, isDesktopShell } from '@/lib/workspace-redirects';
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildDesktopBounceHtml, buildMobileBounceHtml } from '@/lib/auth/desktop-bounce';
 import {
@@ -302,6 +303,9 @@ export async function GET(request: NextRequest) {
       }
 
       // Web redirect - include auth event params for client-side tracking
+      // An installed desktop shell loads only its own app paths (/projects):
+      // a redirect to /workspaces would open in the system browser.
+      if (isDesktopShell(request.headers?.get('user-agent'))) finalDestination = desktopShellPath(finalDestination);
       const redirectUrl = new URL(`${baseUrl}${finalDestination}`);
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);
