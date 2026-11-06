@@ -21,7 +21,8 @@ mock.module('../connectors/manifest-mutation', () => ({
     return { ok: true };
   },
 }));
-mock.module('../projects/surface', () => ({ withProjectGitAuth: async (row: unknown) => row }));
+const { withoutAppTriggers } = await import('../projects/lib/app-trigger-retire');
+mock.module('../projects/surface', () => ({ withProjectGitAuth: async (row: unknown) => row, withoutAppTriggers }));
 const { commitAppFields, syncDeclaredApps } = await import('./app-manifest');
 
 let project: SeededProject;

@@ -25,6 +25,8 @@ mock.module('../config', () => ({
 
 mock.module('../shared/db', () => ({
   hasDatabase: () => true,
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
+  afterDbCommit: (action: () => void) => action(),
   db: {
     select: () => ({
       from: () => ({

@@ -36,7 +36,7 @@ const MANIFEST: ExpectedRunningAssets = {
 /** A fully converged daemon under #7859's contract: capabilities present, `running` matching the manifest sha-to-sha, nothing pending, nothing pinned. */
 const CURRENT_HEALTH = {
   daemon: 'ok',
-  opencode: 'ok',
+  harness: { id: 'pi', version: null, state: 'ok', ready: true, error: null, session: { id: null, required: false }, turn: null, details: {} },
   capabilities: [...REQUIRED_RUNTIME_CAPABILITIES],
   uptime_s: 600,
   runtime: {
