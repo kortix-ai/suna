@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
+import { supportsWebGL2 } from '@kortix/ui/shader-safe';
+
 import { localizedA1oContent } from './content';
 
 /**
@@ -515,7 +517,10 @@ export default function DieScene({
     return () => query.removeEventListener('change', onChange);
   }, []);
 
-  if (!mounted) return <div className="h-full w-full" aria-hidden />;
+  // three renders through WebGL2 only, and R3F's <Canvas> constructs the
+  // renderer inside an async configure() it never awaits: without WebGL2 the
+  // throw escapes every error boundary as an unhandled rejection.
+  if (!mounted || !supportsWebGL2()) return <div className="h-full w-full" aria-hidden />;
 
   return (
     <Canvas
