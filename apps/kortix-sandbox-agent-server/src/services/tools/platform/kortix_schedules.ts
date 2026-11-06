@@ -30,6 +30,8 @@ const TOOL = 'kortix_schedules' as const
 const RUNTIME_ID = /^(?:reminder|trigger|automation)\.[0-9a-f]{12}$/
 /** A kortix.yaml trigger's slug, the manifest grammar (`@kortix/manifest-schema` `SLUG_RE`). */
 const TRIGGER_SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/
+/** An App event name, as the App events API accepts it. */
+const APP_EVENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
 const ACTIONS = ['follow_up', 'wake_on', 'events', 'list', 'create', 'automate', 'test', 'runs', 'pause', 'resume', 'remove', 'delete', 'run_now'] as const
 const WAKE_ON = ['cr_merged', 'webhook', 'connector_event', 'app_event'] as const
 /** An automation's source (`automate` `on`) and the kortix.yaml trigger `--type` it becomes. */
@@ -692,9 +694,15 @@ async function testAppAutomation(name: string, app: string, filter: Record<strin
   const sample = (payload && typeof payload === 'object' ? (payload as { event?: unknown }).event : undefined) as { name?: unknown; data?: unknown } | undefined
   const listened = typeof filter?.['event.name'] === 'string' ? (filter['event.name'] as string) : null
   const event = typeof sample?.name === 'string' && sample.name.trim() ? sample.name.trim() : listened ?? 'test.event'
+  // An App event name (the API's rule): letters, digits, . _ : / -, starting with a letter or digit, so it is
+  // never read as a CLI flag (`--trigger=…` would pick another automation).
+  if (!APP_EVENT_NAME.test(event)) {
+    return fail(TOOL, 'test', 'Check the event name', { kind: 'invalid', message: '`payload.event.name` is 1-128 letters, digits and . _ : / -, starting with a letter or digit, e.g. "status.changed".' }, context)
+  }
   const data = sample?.data && typeof sample.data === 'object' && !Array.isArray(sample.data) ? sample.data : null
   // The CLI exits 1 when nothing fired; its JSON still says why.
-  const run = await runKortix(['apps', 'events', 'emit', app, event, ...(data ? [`--data=${JSON.stringify(data)}`] : []), '--wait', '--json'], context)
+  // --trigger: only this automation gets the test; another on the same event starts nothing.
+  const run = await runKortix(['apps', 'events', 'emit', app, event, ...(data ? [`--data=${JSON.stringify(data)}`] : []), `--trigger=${name}`, '--wait', '--json'], context)
   const answer = parseJson<EmitAnswer>(run.stdout)
   if (!answer) return fail(TOOL, 'test', `Could not test ${name}`, cliError(run), context)
   const row = answer.events?.find((entry) => entry.trigger === name) ?? null

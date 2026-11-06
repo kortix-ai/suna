@@ -172,6 +172,12 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
   expect(last().method).toBe('DELETE');
 });
 
+test('a test event can name the one trigger it is for', async () => {
+  responses.push({ status: 202, body: { triggers: 1, accepted: 1, deduped: 0, suppressed: 0, unmatched: 0, ids: ['test-1'] } });
+  await sendAppTestEvent('project-1', 'app-1', { name: 'status.changed', trigger: 'status-work' });
+  expect(last()).toMatchObject({ method: 'POST', body: { name: 'status.changed', trigger: 'status-work' } });
+});
+
 test('an App delete names the triggers that went with it', async () => {
   responses.push({ body: { ok: true, images: { released: 1, pending: 0 }, triggers_removed: ['status-check', 'status-work'] } });
   const deleted = await deleteApp('project-1', 'app-1');

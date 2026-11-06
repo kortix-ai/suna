@@ -142,6 +142,8 @@ export async function ingestAppEvents(input: {
   events: readonly AppEventInput[];
   /** Sent through the test route: the events must already carry `test-` ids (asTestEvents). */
   test?: boolean;
+  /** The test route's `trigger`: only this trigger gets the events, so a test of one automation starts no other. */
+  only?: string;
   now?: Date;
 }): Promise<AppEventIngestResult> {
   const now = input.now ?? new Date();
@@ -160,7 +162,7 @@ export async function ingestAppEvents(input: {
     const event = spec?.filter?.['event.name'];
     return spec?.app === input.appSlug && !(typeof event === 'string' && isAppPlatformEvent(event));
   });
-  const slugs = named.filter((row) => row.enabled !== false).map((row) => row.slug);
+  const slugs = named.filter((row) => row.enabled !== false && (!input.only || row.slug === input.only)).map((row) => row.slug);
   const heartbeats = input.events.filter((event) => event.name === HEARTBEAT_EVENT_NAME).length;
   if (heartbeats > 0) {
     const events = input.events.filter((event) => event.name !== HEARTBEAT_EVENT_NAME);
@@ -172,7 +174,9 @@ export async function ingestAppEvents(input: {
     return { ...(rest ?? { accepted: 0, deduped: 0, suppressed: 0, triggers: slugs.length, unmatched: 0 }), heartbeats };
   }
   if (slugs.length === 0) {
-    const reason = unmatchedReason(input.appSlug, named.map((row) => row.slug));
+    const reason = input.only
+      ? `trigger "${input.only}" does not listen to App "${input.appSlug}", or it is disabled: kortix triggers ls`
+      : unmatchedReason(input.appSlug, named.map((row) => row.slug));
     const kept = await keepUnmatchedEvents({ ...input, test: input.test === true, now, reason });
     return { accepted: 0, deduped: kept.deduped, suppressed: 0, triggers: 0, unmatched: input.events.length, hint: reason };
   }
@@ -240,6 +244,8 @@ export async function emitAppPlatformEvent(input: {
   data: Record<string, unknown>;
   /** From the test route: the id must already start with `test-`. */
   test?: boolean;
+  /** The test route's `trigger`: only this trigger gets it. */
+  only?: string;
   now?: Date;
 }): Promise<AppPlatformEventResult | null> {
   const now = input.now ?? new Date();
@@ -257,12 +263,15 @@ export async function emitAppPlatformEvent(input: {
     const slugs = rows
       .filter((row) => {
         const spec = row.scheduleSpec as { app?: string; filter?: Record<string, unknown> | null } | null;
-        return row.enabled !== false && spec?.app === input.appSlug && spec.filter?.['event.name'] === input.name;
+        return row.enabled !== false && spec?.app === input.appSlug && spec.filter?.['event.name'] === input.name
+          && (!input.only || row.slug === input.only);
       })
       .map((row) => row.slug);
     const event: AppEventInput = { name: input.name, data: input.data, id: input.id };
     if (slugs.length === 0) {
-      const hint = `no trigger listens to ${input.name} on App "${input.appSlug}": add one with on: { event: ${input.name}, app: ${input.appSlug} } to start a repair agent`;
+      const hint = input.only
+        ? `trigger "${input.only}" does not listen to ${input.name} on App "${input.appSlug}", or it is disabled: kortix triggers ls`
+        : `no trigger listens to ${input.name} on App "${input.appSlug}": add one with on: { event: ${input.name}, app: ${input.appSlug} } to start a repair agent`;
       const kept = await keepUnmatchedEvents({ projectId: input.projectId, appId: app.appId, events: [event], test: input.test === true, now, reason: hint });
       return { accepted: 0, deduped: kept.deduped, suppressed: 0, triggers: 0, unmatched: 1, hint };
     }

@@ -60,6 +60,11 @@ const TestEvent = z.object({
   data: z.record(z.string(), z.any()).optional(),
   id: z.string().optional().openapi({ description: 'Prefixed with test- when it does not start with it.' }),
 });
+const TestTarget = z.object({
+  trigger: z.string().optional().openapi({ description: 'Only this trigger gets the test, so testing one automation starts no other. One that does not listen answers unmatched with a hint.' }),
+});
+/** A trigger slug: a kortix.yaml slug or a runtime id (`trigger.<hex>`). */
+const TRIGGER_SLUG = /^[a-z0-9][a-z0-9_.-]{0,127}$/;
 
 const TestEventResult = z
   .object({
@@ -126,7 +131,7 @@ export function registerAppEventLogRoutes(): void {
         'exact name. Needs project.app.deploy.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
-        body: { content: { 'application/json': { schema: TestEvent.or(z.object({ events: z.array(TestEvent) })) } } },
+        body: { content: { 'application/json': { schema: TestEvent.merge(TestTarget).or(z.object({ events: z.array(TestEvent) }).merge(TestTarget)) } } },
       },
       responses: { 202: json(TestEventResult, 'Events appended'), ...errors(400, 403, 404, 429, 503) },
     }),
@@ -141,7 +146,13 @@ export function registerAppEventLogRoutes(): void {
       if (limited) {
         return c.json({ error: 'This App sent too many requests this minute. Retry shortly.', code: 'rate_limit_exceeded', retry_after_seconds: limited.retryAfterSeconds }, 429);
       }
-      const parsed = parseAppEventsBody(await readJsonObject(c), { platform: true });
+      const body = await readJsonObject(c);
+      const only = body.trigger === undefined ? undefined : body.trigger;
+      if (only !== undefined && (typeof only !== 'string' || !TRIGGER_SLUG.test(only))) {
+        return c.json({ error: 'trigger must be a trigger slug, as kortix triggers ls shows it' }, 400);
+      }
+      const { trigger: _trigger, ...eventBody } = body;
+      const parsed = parseAppEventsBody(eventBody, { platform: true });
       if ('error' in parsed) return c.json({ error: parsed.error }, 400);
       const events = asTestEvents(parsed);
       // A kortix.app.* test goes where Kortix's own would: only to triggers on that exact name.
@@ -156,11 +167,11 @@ export function registerAppEventLogRoutes(): void {
         totals.unmatched += part.unmatched;
         if (part.hint && !totals.hints.includes(part.hint)) totals.hints.push(part.hint);
       };
-      if (appEvents.length > 0) add(await ingestAppEvents({ projectId, appId, appSlug: app.slug, events: appEvents, test: true }));
+      if (appEvents.length > 0) add(await ingestAppEvents({ projectId, appId, appSlug: app.slug, events: appEvents, test: true, only }));
       for (const event of platform) {
         const result = await emitAppPlatformEvent({
           projectId, appSlug: app.slug, name: event.name as Parameters<typeof emitAppPlatformEvent>[0]['name'],
-          id: event.id!, data: event.data ?? {}, test: true,
+          id: event.id!, data: event.data ?? {}, test: true, only,
         });
         if (!result) return c.json({ error: 'Could not write the test event. Retry.' }, 503);
         add(result);
