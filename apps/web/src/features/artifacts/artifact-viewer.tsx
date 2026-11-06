@@ -1011,8 +1011,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   variant="secondary"
                   onClick={() => setAsking((open) => !open)}
                   aria-expanded={asking}
-                  // `rounded-md`: the radius of its icon neighbour, so the group's outer corners match.
-                  className="aria-expanded:bg-accent hidden rounded-md sm:inline-flex"
+                  className="aria-expanded:bg-accent hidden sm:inline-flex"
                 >
                   <SparkleIcon weight="fill" className="size-3.5" aria-hidden /> {t('askAgent')}
                 </Button>
@@ -1096,8 +1095,6 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   <Button
                     size="xs"
                     variant="secondary"
-                    // `rounded-md`: the radius of the ⋯ beside it, so the group's outer corners match.
-                    className="rounded-md"
                     onClick={() => setSharing(true)}
                   >
                     <ShareNetworkIcon className="size-3.5" aria-hidden /> {t('share')}
