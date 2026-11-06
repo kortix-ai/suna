@@ -576,9 +576,9 @@ describe('kortix_schedules automations', () => {
 
   test('test: an App automation gets a real test event (a test- id, the real drain) and reports what the work did', async () => {
     fakeKortix(`'triggers show status-alert --json') echo '{"slug":"status-alert","type":"app","app":"status-watch","filter":{"event.name":"status.changed"}}' ;;
-  'apps events emit status-watch status.changed --data={"status":"down"} --wait --json') echo '{"triggers":1,"accepted":1,"ids":["test-1"],"events":[{"trigger":"status-alert","status":"fired","session_id":"ses_9","reason":null}],"fired":true,"pending":false}' ;;
+  'apps events emit status-watch status.changed --data={"status":"down"} --trigger=status-alert --wait --json') echo '{"triggers":1,"accepted":1,"ids":["test-1"],"events":[{"trigger":"status-alert","status":"fired","session_id":"ses_9","reason":null}],"fired":true,"pending":false}' ;;
   'triggers show any-event --json') echo '{"slug":"any-event","type":"app","app":"status-watch","filter":null}' ;;
-  'apps events emit status-watch test.event --wait --json') echo '{"triggers":2,"accepted":2,"ids":["test-2"],"events":[{"trigger":"status-alert","status":"skipped","reason":"filter did not match"},{"trigger":"any-event","status":"skipped","reason":"throttled"}],"fired":false,"pending":false}'; exit 1 ;;`)
+  'apps events emit status-watch test.event --trigger=any-event --wait --json') echo '{"triggers":2,"accepted":2,"ids":["test-2"],"events":[{"trigger":"status-alert","status":"skipped","reason":"filter did not match"},{"trigger":"any-event","status":"skipped","reason":"throttled"}],"fired":false,"pending":false}'; exit 1 ;;`)
     const hit = await run('kortix_schedules', { action: 'test', name: 'status-alert', payload: { event: { data: { status: 'down' } } } })
     expect(hit.ok).toBe(true)
     expect(hit.card.title).toBe('status-alert ran on a test event')

@@ -74,6 +74,7 @@ export function AppDetailModal({
   canWrite,
   canDeploy,
   canAdmin = false,
+  focusEventId = null,
   open,
   onOpenChange,
 }: {
@@ -83,6 +84,8 @@ export function AppDetailModal({
   canDeploy: boolean;
   /** project.app.admin: restore a volume. */
   canAdmin?: boolean;
+  /** Open the App's log on this event id (a trigger run's link). */
+  focusEventId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -364,6 +367,7 @@ export function AppDetailModal({
                 latest={latest}
                 onVersions={canDeploy && status.deployed ? () => setVersionsOpen(true) : undefined}
                 canDeploy={canDeploy}
+                focusEventId={focusEventId}
               />
             ) : preview || app.external_url ? (
               <AppPreview

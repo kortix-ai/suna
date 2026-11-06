@@ -3389,6 +3389,8 @@ so the App's real event with the same id still fires later. The prompt reads
 `{{ event.test }}` as `true` and starts with a TEST line. CLI:
 `kortix apps events emit <app> <name> --data '{"status":"down"}' --wait`
 waits up to 60 s for the outcome and exits `0` only when a trigger fired.
+`trigger` (CLI `--trigger <slug>`) sends the test to that one trigger, so a
+test of one automation starts no other on the same event.
 
 **Know when a watcher stops.** Add `expect_event_within` (5m to 30d) to the
 App trigger: `on: { event: status.changed, app: status-watch }` plus

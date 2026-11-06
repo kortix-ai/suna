@@ -155,3 +155,24 @@ test('a deleted App gets no platform event', async () => {
   await db.update(apps).set({ deletedAt: new Date() }).where(eq(apps.appId, QUIET_APP_ID));
   expect(await emitAppPlatformEvent({ projectId: project.project_id, appSlug: 'quiet-watch', name: 'kortix.app.silent', id: 'x', data: {} })).toBeNull();
 });
+
+test('a test narrowed to one trigger reaches only that trigger; one that does not listen is unmatched with the fix', async () => {
+  const { asTestEvents } = await import('./app-events');
+  await seed('work-2', 'status-watch', { event: 'status.changed' });
+  const one = asTestEvents([{ name: 'status.changed', id: 'narrow-1' }]);
+  const narrowed = await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'status-watch', events: one, test: true, only: 'work-2' });
+  expect(narrowed).toMatchObject({ triggers: 1, accepted: 1, unmatched: 0 });
+  const reached = (await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, project.project_id)))
+    .filter((row) => (row.line as { id?: string }).id === 'test-narrow-1').map((row) => row.slug);
+  expect(reached).toEqual(['work-2']);
+
+  const miss = await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'status-watch', events: asTestEvents([{ name: 'status.changed' }]), test: true, only: 'nope' });
+  expect(miss).toMatchObject({ triggers: 0, unmatched: 1 });
+  expect(miss.hint).toContain('trigger "nope" does not listen to App "status-watch"');
+
+  // A platform test on the exact listener, and on a trigger that listens to another name.
+  const repair = await emitAppPlatformEvent({ projectId: project.project_id, appSlug: 'status-watch', name: 'kortix.app.silent', id: 'test-p-1', data: {}, test: true, only: 'repair' });
+  expect(repair).toMatchObject({ triggers: 1, accepted: 1 });
+  const wrong = await emitAppPlatformEvent({ projectId: project.project_id, appSlug: 'status-watch', name: 'kortix.app.silent', id: 'test-p-2', data: {}, test: true, only: 'back' });
+  expect(wrong).toMatchObject({ triggers: 0, unmatched: 1 });
+});

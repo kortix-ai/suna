@@ -852,12 +852,13 @@ export interface AppTestEventResult extends AppEventIngestResult {
 /**
  * Send events as if the App posted them, through the same log, limits and
  * triggers, to prove the wiring. Every id starts with `test-`, so a real event
- * with the same id still fires later. Needs project.app.deploy.
+ * with the same id still fires later. `trigger`: only that trigger gets them,
+ * so testing one automation starts no other. Needs project.app.deploy.
  */
 export async function sendAppTestEvent(
   projectId: string,
   appId: string,
-  input: AppEventInput | { events: AppEventInput[] },
+  input: (AppEventInput | { events: AppEventInput[] }) & { trigger?: string },
 ): Promise<AppTestEventResult> {
   return unwrap(
     await backendApi.post<AppTestEventResult>(`/projects/${projectId}/apps/${appId}/events/test`, input),

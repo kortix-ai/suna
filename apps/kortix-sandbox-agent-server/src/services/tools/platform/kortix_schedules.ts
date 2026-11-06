@@ -694,7 +694,8 @@ async function testAppAutomation(name: string, app: string, filter: Record<strin
   const event = typeof sample?.name === 'string' && sample.name.trim() ? sample.name.trim() : listened ?? 'test.event'
   const data = sample?.data && typeof sample.data === 'object' && !Array.isArray(sample.data) ? sample.data : null
   // The CLI exits 1 when nothing fired; its JSON still says why.
-  const run = await runKortix(['apps', 'events', 'emit', app, event, ...(data ? [`--data=${JSON.stringify(data)}`] : []), '--wait', '--json'], context)
+  // --trigger: only this automation gets the test; another on the same event starts nothing.
+  const run = await runKortix(['apps', 'events', 'emit', app, event, ...(data ? [`--data=${JSON.stringify(data)}`] : []), `--trigger=${name}`, '--wait', '--json'], context)
   const answer = parseJson<EmitAnswer>(run.stdout)
   if (!answer) return fail(TOOL, 'test', `Could not test ${name}`, cliError(run), context)
   const row = answer.events?.find((entry) => entry.trigger === name) ?? null

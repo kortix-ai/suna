@@ -56,6 +56,14 @@ describe('Kortix Apps React Query bindings', () => {
     expect((useAppEvents('project-1', 'app-1', { enabled: false }) as any).enabled).toBe(false);
   });
 
+  test('one event\'s rows: keyed under the App log, by id', () => {
+    const one = useAppEvents('project-1', 'app-1', { id: 'evt-7' }) as any;
+    const log = appEventsKey('project-1', 'app-1');
+    expect(one.queryKey.slice(0, log.length)).toEqual([...log]);
+    expect(one.queryKey).not.toEqual(log);
+    expect(one.queryKey).toEqual([...log, { id: 'evt-7' }]);
+  });
+
   test('a test event refreshes the App event log', () => {
     const send = useSendAppTestEvent('project-1', 'app-1') as any;
     expect(typeof send.mutationFn).toBe('function');

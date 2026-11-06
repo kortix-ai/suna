@@ -721,3 +721,14 @@ test('an every schedule with an App target payload: create sends every and paylo
   const trigger: ProjectTrigger = (await listProjectTriggers('P1')).triggers[0]!;
   expect(trigger.every_seconds).toBe(300);
 });
+
+test('an App trigger reads when its App was heard, and since when it is silent or crashed', async () => {
+  nextResponse = {
+    status: 200,
+    body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'app', app: 'status-watch', last_event_at: '2026-11-06T09:00:00.000Z', silent_since: null, crashed_since: '2026-11-06T09:30:00.000Z' }], errors: [] },
+  };
+  const trigger: ProjectTrigger = (await listProjectTriggers('P1')).triggers[0]!;
+  const crashed: string | null | undefined = trigger.crashed_since;
+  expect(crashed).toBe('2026-11-06T09:30:00.000Z');
+  expect(trigger.silent_since).toBeNull();
+});
