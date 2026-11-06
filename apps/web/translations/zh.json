@@ -25040,7 +25040,7 @@
       "composerKeys": "Enter 发送 · Shift+Enter 换行",
       "closeSelection": "取消所选段落",
       "preparingSelection": "正在准备所选段落…",
-      "selectionCaptureFailed": "无法准备所选段落。请放弃此选择，再对整个作品发表评论。",
+      "selectionCaptureFailed": "无法准备所选段落。请放弃此选择，再对整个工件发表评论。",
       "commentSelection": "评论",
       "selectionTooLong": "这段内容太长，无法评论。请选择不超过 {max} 个字符。",
       "selectionUnavailable": "无法将评论关联到此段内容，请选择其他段落。",
@@ -25061,7 +25061,7 @@
         "sent_to_agent": "向智能体发送了反馈"
       },
       "person": "用户",
-      "deleteRootDescription": "其文本将对所有人移除，讨论串将变为只读。此操作无法撤销。",
+      "deleteRootDescription": "其文本将对所有人删除，讨论串会从评论列表中移除。此操作无法撤销。",
       "showPanel": "显示评论",
       "hidePanel": "隐藏评论",
       "panelTitle": "评论和动态",
@@ -25104,7 +25104,14 @@
       "pagePinLabel": "评论 {number}",
       "showPanelCount": "显示评论，{count} 条未解决",
       "hidePanelCount": "隐藏评论，{count} 条未解决",
-      "commentSelectionHint": "评论所选内容"
+      "commentSelectionHint": "评论所选内容",
+      "threadReopened": "讨论串已重新打开",
+      "noCommentsReadOnlyHint": "关于此工件的评论会显示在这里。",
+      "commentTooLong": "评论最多 {max} 个字符。请删除 {over} 个。",
+      "discardDrawingTitle": "放弃此绘图？",
+      "discardDrawingHint": "你的笔画尚未保存。此操作无法撤销。",
+      "discardDrawing": "放弃",
+      "keepDrawing": "继续绘制"
     },
     "moveTo": "移至空间",
     "projectWide": "项目范围",
@@ -25133,13 +25140,28 @@
       "writing": "{name} 正在撰写…"
     },
     "coedit": {
-      "offLarge": "实时协同编辑已关闭：此文档超过 1 MiB。更改会在输入时保存。",
-      "offLineEndings": "实时协同编辑已关闭：此文档混用了 CRLF 和 LF 换行符。更改会在输入时保存。",
-      "offShape": "实时协同编辑已关闭：编辑器会改写此文档的部分 Markdown。更改会在输入时保存。",
+      "offLarge": "实时协同编辑已关闭：此文档太大。更改会在输入时保存。",
+      "offLineEndings": "实时协同编辑已关闭：此文档混用了两种换行符。更改会在输入时保存。",
+      "offShape": "实时协同编辑已关闭：编辑器无法完全按原样保留此文档的部分内容。更改会在输入时保存。",
       "stoppedLarge": "实时协同编辑已停止：有一处更改太大，无法共享。更改会在输入时保存。",
       "stoppedFailed": "实时协同编辑已停止：连接失败。更改会在输入时保存。",
-      "stoppedHistory": "实时协同编辑已停止：此文档的编辑历史过大。更改会在输入时保存。"
-    }
+      "stoppedHistory": "实时协同编辑已停止：此文档的编辑历史过大。更改会在输入时保存。",
+      "offFailed": "实时协同编辑已关闭：无法连接。更改会在输入时保存。"
+    },
+    "conflictTitle": "其他人更改了此文档",
+    "conflictReloadTitle": "加载较新的版本？",
+    "conflictReloadHint": "上次保存后的编辑将被丢弃。此操作无法撤销。",
+    "docLoadError": "无法加载此文档。",
+    "openError": "无法打开此工件。",
+    "viewOnly": "仅查看",
+    "viewingOldUndated": "你正在查看较早的版本。",
+    "exportWaiting": "正在保存你的编辑，然后导出…",
+    "exportBlocked": "导出已停止：你最近的编辑尚未保存。",
+    "clearFilters": "清除筛选",
+    "linkCopyFailed": "无法复制链接。请在输入框中选中后复制。",
+    "shareDropsPeople": "{count, plural, other {保存后将移除你添加的 # 人。只有“私密”会保留人员列表。}}",
+    "askAgentHistoryError": "无法加载之前的聊天。",
+    "embedUnavailable": "此链接没有预览，因此保持为链接。"
   },
   "emailConnect": {
     "homeTitle": "收件箱所在位置",

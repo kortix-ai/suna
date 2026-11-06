@@ -51,7 +51,7 @@ import {
 import { useOptionalSidebar } from '@kortix/ui/sidebar';
 import { Skeleton } from '@kortix/ui/skeleton';
 import { SplitSheet, SplitSheetMain } from '@kortix/ui/split-sheet';
-import { successToast } from '@kortix/ui/toast';
+import { dismissToast, errorToast, progressToast, successToast } from '@kortix/ui/toast';
 import { SidebarToggle } from '@kortix/ui/workspace';
 import {
   ArrowClockwiseIcon,
@@ -141,6 +141,10 @@ import { rootRem, useElementWidth } from './use-element-width';
 /** A pressed mode toggle (pin, draw) in the header's secondary group: inverted ink, so the mode reads at a glance. */
 const MODE_TOGGLE =
   'aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:hover:bg-foreground/90';
+
+/** A small status mark beside the title (visibility, pinned): focusable for its hint. */
+const HEADER_MARK =
+  'text-muted-foreground focus-visible:ring-ring flex shrink-0 rounded-sm outline-none focus-visible:ring-2';
 
 /** An anchor's identity: it equals the key of an offer of the same selection. */
 const anchorKey = (anchor: ArtifactCommentAnchor | null | undefined) =>
@@ -296,19 +300,72 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     setDocStatus('saved');
     void query.refetch().then(() => setReloads((n) => n + 1));
   };
-  // Export as PDF prints the saved file: with edits pending, it waits for the autosave.
+  // Export as PDF prints the saved file: with edits pending, it waits for the autosave and says
+  // so. A save that fails or meets a conflict ends the export with a message, never a late print.
   const [exporting, setExporting] = useState(false);
   const exportUrl = artifact?.version.view_url;
+  const exportToast = `artifact-export-${artifactId}`;
+  const exportPdf = () => {
+    if (!exportUrl) return;
+    if (docStatus === 'saved') return printArtifact(exportUrl);
+    if (docStatus === 'error' || docStatus === 'conflict') return errorToast(t('exportBlocked'));
+    setExporting(true);
+    progressToast(t('exportWaiting'), { id: exportToast });
+  };
   useEffect(() => {
-    if (!exporting || !exportUrl || docStatus !== 'saved') return;
+    if (!exporting) return;
+    if (docStatus === 'error' || docStatus === 'conflict') {
+      setExporting(false);
+      dismissToast(exportToast);
+      errorToast(t('exportBlocked'));
+      return;
+    }
+    if (!exportUrl || docStatus !== 'saved') return;
     setExporting(false);
+    dismissToast(exportToast);
     printArtifact(exportUrl);
-  }, [exporting, exportUrl, docStatus]);
+  }, [exporting, exportUrl, docStatus, exportToast, t]);
   const [sharing, setSharing] = useState(false);
   const [asking, setAsking] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const titleButton = useRef<HTMLButtonElement>(null);
+  // Set by the ⋯ menu's Rename: Radix returns focus to ⋯ when the menu closes, which would leave
+  // the new field without the keyboard. The menu's `onCloseAutoFocus` reads it and keeps focus.
+  const renameFromMenu = useRef(false);
+  // One rename ends once: Enter or Escape unmounts the field, and its blur must not save again.
+  const renameOver = useRef(false);
+  const renameInput = useRef<HTMLInputElement>(null);
+  // The field takes focus with the name selected: typing replaces it, an arrow key edits it. From a
+  // click on the title, once it is in the page. From ⋯ → Rename, only when the menu has let go of
+  // focus (its `onCloseAutoFocus`): measured, the menu's focus trap pulled an earlier focus back to
+  // its item, which then unmounted and left focus on the page body.
+  const focusRename = () => {
+    renameInput.current?.focus();
+    renameInput.current?.select();
+  };
+  useEffect(() => {
+    if (renaming && !renameFromMenu.current) focusRename();
+  }, [renaming]);
+  const startRename = () => {
+    renameOver.current = false;
+    setRenaming(true);
+  };
+  /** `title` null cancels. `returnFocus`: the keyboard ended it, so it goes back to the title. */
+  const finishRename = (title: string | null, returnFocus = false) => {
+    if (renameOver.current) return;
+    renameOver.current = true;
+    setRenaming(false);
+    // The title button mounts again with this render: read the ref when the frame comes.
+    if (returnFocus) requestAnimationFrame(() => titleButton.current?.focus({ preventScroll: true }));
+    const next = title?.trim();
+    const current = query.data;
+    if (!current || !next || next === current.title) return;
+    // A failed rename toasts from the API client; the title shows the saved name again.
+    mutations.update.mutate({ artifactId: current.artifact_id, title: next });
+  };
   const [historyOpen, setHistoryOpen] = useState(false);
-  const versions = useArtifactVersions(projectId, artifactId, historyOpen);
+  // Read with the History menu, and while an old version is open: its banner names its time.
+  const versions = useArtifactVersions(projectId, artifactId, historyOpen || !!version);
   const viewingOld = !!artifact?.version.id;
   const canEdit = !!artifact?.can_edit && !viewingOld;
   const isDoc = artifact?.type === 'doc';
@@ -574,6 +631,16 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     setDrawingDirty(false);
     selection.clear();
   };
+  // Leaving draw mode with strokes on the canvas asks first: one key or click never throws a drawing away.
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const leaveDrawing = () => {
+    cancelDrawing();
+    focusSoon(compact ? actionsButton.current : drawButton.current);
+  };
+  const requestLeaveDrawing = () => {
+    if (drawingDirty) setConfirmDiscard(true);
+    else leaveDrawing();
+  };
   /** Draw mode docks the panel first: a panel opened after the drawing would narrow the page and hide it. */
   const startDrawing = () => {
     clearCommentSelection();
@@ -605,8 +672,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     if (dismissOffer()) return true;
     if (drawingOpen) {
       if (fromPage) return false;
-      cancelDrawing();
-      focusSoon(compact ? actionsButton.current : drawButton.current);
+      requestLeaveDrawing();
       return true;
     }
     if (annotationMode === 'comment') {
@@ -663,6 +729,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
   }, [hasOffer]);
   const cancelCapture = htmlAnnotations.cancelCapture;
+  // Another version, or the right to comment changed: every drawing and selection starts over.
   useLayoutEffect(() => {
     invalidateDrawingRequest();
     cancelCapture();
@@ -676,15 +743,32 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
     dismissedOffer.current = '';
     clearSelection();
     return invalidateDrawingRequest;
-  }, [
-    annotationVersion,
-    claimedFrame,
-    version,
-    context.data?.can_comment,
-    cancelCapture,
-    clearSelection,
-    invalidateDrawingRequest,
-  ]);
+  }, [version, context.data?.can_comment, cancelCapture, clearSelection, invalidateDrawingRequest]);
+  // A save moved the page (an agent, another person): the frame loads the new version. The
+  // person's drawing stays. Strokes in progress stay on a canvas that says the page changed; a
+  // finished drawing keeps its screenshot and posts on the version it was drawn on.
+  const keepsDrawing = useRef(false);
+  const keepsSelection = useRef(false);
+  // Before the effect below, in the same commit: it reads what the drawing held before the save.
+  useLayoutEffect(() => {
+    keepsDrawing.current = drawingDirty || !!pendingDrawing;
+    keepsSelection.current = !!pendingDrawing;
+  });
+  useLayoutEffect(() => {
+    invalidateDrawingRequest();
+    cancelCapture();
+    setDrawingBusy(false);
+    setOffer(null);
+    dismissedOffer.current = '';
+    if (!keepsSelection.current) clearSelection();
+    if (keepsDrawing.current) return invalidateDrawingRequest;
+    setDrawingOpen(false);
+    setDrawingError(false);
+    setDrawingViewport(null);
+    setDrawingDirty(false);
+    setPendingDrawing(null);
+    return invalidateDrawingRequest;
+  }, [annotationVersion, claimedFrame, cancelCapture, clearSelection, invalidateDrawingRequest]);
   const finishDrawing = async (strokes: DrawingStroke[]) => {
     if (drawingBusy || !drawingViewport) return;
     if (!htmlAnnotations.isCurrentViewport(drawingViewport)) {
@@ -771,30 +855,63 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
       </div>
     ) : null;
 
-  if (query.isError) {
+  // A failed read with nothing to show. Only 403 and 404 mean the artifact is gone for this
+  // viewer; anything else (a 5xx, the network) is worth another try.
+  if (query.isError && !artifact) {
+    const status = (query.error as { status?: number } | null)?.status;
+    const gone = status === 403 || status === 404;
     return (
-      <div className="mx-auto w-full max-w-3xl p-8">
-        <ErrorState
-          title={t('notFoundTitle')}
-          description={t('notFoundHint')}
-          action={
-            <Button size="sm" variant="outline" asChild>
-              <Link href={`/projects/${projectId}/artifacts`}>{t('back')}</Link>
-            </Button>
-          }
-        />
+      <div className={embedded ? 'flex h-full min-h-0 flex-col' : 'mx-auto w-full max-w-3xl p-8'}>
+        {/* Embedded in the session panel: its own Close, as the loaded header has. */}
+        {embedded ? (
+          <div className="flex h-10 shrink-0 items-center justify-end border-b px-1">
+            <Hint label={t('close')} side="bottom">
+              <Button size="icon-sm" variant="ghost" aria-label={t('close')} onClick={onClose}>
+                <XIcon className="size-3.5" />
+              </Button>
+            </Hint>
+          </div>
+        ) : null}
+        <div className={embedded ? 'p-6' : undefined}>
+          <ErrorState
+            title={t(gone ? 'notFoundTitle' : 'openError')}
+            description={gone ? t('notFoundHint') : undefined}
+            action={
+              !gone ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={query.isFetching}
+                  onClick={() => void query.refetch()}
+                >
+                  {query.isFetching ? <Loading className="size-4 shrink-0" /> : null}
+                  {t('retry')}
+                </Button>
+              ) : embedded ? undefined : (
+                <Button size="sm" variant="outline" asChild>
+                  <Link href={`/projects/${projectId}/artifacts`}>{t('back')}</Link>
+                </Button>
+              )
+            }
+          />
+        </div>
       </div>
     );
   }
 
   const VisIcon = artifact ? VISIBILITY_ICON[artifact.visibility] : null;
   const statusText = isDoc && canEdit && docStatus !== 'saved' ? t(`docStatus.${docStatus}`) : null;
+  // A doc this viewer may read but not change looks editable unless the header says so.
+  const viewOnly = isDoc && !!artifact && !artifact.can_edit && !viewingOld;
   const folder = artifact
     ? artifact.path.endsWith(`/${artifact.entry}`)
       ? artifact.path.slice(0, -artifact.entry.length - 1)
       : artifact.path
     : '';
   const rows = historyRows(versions.data ?? []);
+  const openedVersionAt = version
+    ? versions.data?.find((entry) => entry.id === version)?.created_at
+    : undefined;
   const people = artifact?.participants;
   // Pin and Draw: an HTML page the person may comment on, at its current version.
   const annotationControls = annotationEnabled && context.data?.can_comment === true && !version;
@@ -865,43 +982,47 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               {artifact ? (
                 renaming ? (
                   <input
-                    autoFocus
+                    ref={renameInput}
                     defaultValue={artifact.title}
                     aria-label={t('rename')}
                     className="text-foreground min-w-0 flex-1 bg-transparent font-medium outline-none"
-                    onBlur={() => setRenaming(false)}
-                    onKeyDown={async (e) => {
+                    // Clicking away keeps the new name, as the session title does. Escape cancels.
+                    onBlur={(e) => finishRename(e.currentTarget.value)}
+                    onKeyDown={(e) => {
                       if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
-                      if (e.key === 'Escape') setRenaming(false);
-                      if (e.key === 'Enter') {
-                        const title = e.currentTarget.value.trim();
-                        setRenaming(false);
-                        if (title && title !== artifact.title)
-                          await mutations.update.mutateAsync({
-                            artifactId: artifact.artifact_id,
-                            title,
-                          });
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        finishRename(null, true);
                       }
+                      if (e.key === 'Enter') finishRename(e.currentTarget.value, true);
                     }}
                   />
                 ) : (
-                  <h1 className="min-w-0 truncate">
-                    <button
-                      type="button"
-                      className="text-foreground max-w-full truncate font-medium disabled:cursor-default"
-                      disabled={!artifact.can_manage}
-                      title={artifact.can_manage ? t('rename') : undefined}
-                      onClick={() => setRenaming(true)}
-                    >
-                      {artifact.title}
-                    </button>
+                  <h1 className="text-foreground min-w-0 truncate font-medium">
+                    {artifact.can_manage ? (
+                      <Hint label={t('rename')} side="bottom">
+                        <button
+                          ref={titleButton}
+                          type="button"
+                          className="max-w-full truncate"
+                          onClick={startRename}
+                        >
+                          {artifact.title}
+                        </button>
+                      </Hint>
+                    ) : (
+                      artifact.title
+                    )}
                   </h1>
                 )
               ) : null}
               {artifact && VisIcon ? (
                 <Hint label={t(`visibility.${artifact.visibility}`)} side="bottom">
+                  {/* Focusable, so the keyboard reaches the hint too. */}
                   <span
-                    className="text-muted-foreground flex shrink-0"
+                    role="img"
+                    tabIndex={0}
+                    className={HEADER_MARK}
                     aria-label={t(`visibility.${artifact.visibility}`)}
                   >
                     <VisIcon weight="fill" className="size-3.5" aria-hidden />
@@ -910,7 +1031,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               ) : null}
               {artifact?.pinned ? (
                 <Hint label={t('pinned')} side="bottom">
-                  <span className="text-muted-foreground flex shrink-0" aria-label={t('pinned')}>
+                  <span role="img" tabIndex={0} className={HEADER_MARK} aria-label={t('pinned')}>
                     <PushPinIcon weight="fill" className="size-3.5" aria-hidden />
                   </span>
                 </Hint>
@@ -919,15 +1040,26 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
           </BreadcrumbList>
         </Breadcrumb>
 
+        {/* The doc's save state, or that it is view only. It gives way before the actions: it
+            truncates, and the actions never leave the header. A conflict's choice is above the doc. */}
+        {statusText ? (
+          <span
+            className={cn(
+              'max-w-40 min-w-0 shrink truncate px-2 text-xs',
+              docStatus === 'conflict' || docStatus === 'error'
+                ? 'text-foreground'
+                : 'text-muted-foreground',
+            )}
+          >
+            {statusText}
+          </span>
+        ) : viewOnly ? (
+          <span className="text-muted-foreground max-w-40 min-w-0 shrink truncate px-2 text-xs">
+            {t('viewOnly')}
+          </span>
+        ) : null}
         {artifact ? (
           <div className="flex shrink-0 items-center gap-2">
-            {docStatus === 'conflict' && statusText ? (
-              <Button size="sm" variant="ghost" className="text-xs" onClick={reloadDoc}>
-                {statusText} · {t('conflictReload')}
-              </Button>
-            ) : statusText ? (
-              <span className="text-muted-foreground px-2 text-xs">{statusText}</span>
-            ) : null}
             {/* Who can open it, for every viewer, as the session header shows its people. While
                 others are here live, the live faces take this place: one row of faces, not two. */}
             {people && !(liveOn && liveMembers.others.length > 0) ? (
@@ -951,7 +1083,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {/* Two groups: the artifact's history and Ask AI; then Share and More. */}
             <ButtonGroup>
               <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
-                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })} side="bottom">
+                <Hint label={`${t('history')} · ${t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}`} side="bottom">
                   <DropdownMenuTrigger asChild>
                     <Button size="icon-sm" variant="secondary" aria-label={t('history')}>
                       <ClockCounterClockwiseIcon className="size-3.5" />
@@ -1005,13 +1137,14 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-              {canEdit ? (
+              {/* A narrow header (a small window, the session panel) moves Ask AI into ⋯. */}
+              {canEdit && !compact ? (
                 <Button
                   size="xs"
                   variant="secondary"
                   onClick={() => setAsking((open) => !open)}
                   aria-expanded={asking}
-                  className="aria-expanded:bg-accent hidden sm:inline-flex"
+                  className="aria-expanded:bg-accent"
                 >
                   <SparkleIcon weight="fill" className="size-3.5" aria-hidden /> {t('askAgent')}
                 </Button>
@@ -1055,7 +1188,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                       aria-disabled={(!annotationReady && !drawingOpen) || undefined}
                       className={cn(MODE_TOGGLE, 'aria-disabled:opacity-50')}
                       onClick={() => {
-                        if (drawingOpen) cancelDrawing();
+                        if (drawingOpen) requestLeaveDrawing();
                         else if (annotationReady) startDrawing();
                       }}
                     >
@@ -1112,7 +1245,15 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     <DotsThreeIcon className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent
+                  align="end"
+                  onCloseAutoFocus={(e) => {
+                    if (!renameFromMenu.current) return;
+                    renameFromMenu.current = false;
+                    e.preventDefault();
+                    focusRename();
+                  }}
+                >
                   {annotationControls && compact ? (
                     <>
                       <DropdownMenuCheckboxItem
@@ -1127,15 +1268,20 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                         reverse
                         checked={drawingOpen}
                         disabled={!annotationReady && !drawingOpen}
-                        onCheckedChange={() => (drawingOpen ? cancelDrawing() : startDrawing())}
+                        onCheckedChange={() => (drawingOpen ? requestLeaveDrawing() : startDrawing())}
                       >
                         <ScribbleIcon /> {t('discussion.draw')}
                       </DropdownMenuCheckboxItem>
                       <DropdownMenuSeparator />
                     </>
                   ) : null}
+                  {canEdit && compact ? (
+                    <DropdownMenuItem onSelect={() => setAsking(true)}>
+                      <SparkleIcon weight="fill" /> {t('askAgent')}
+                    </DropdownMenuItem>
+                  ) : null}
                   {isDoc ? (
-                    <DropdownMenuItem onSelect={() => setExporting(true)}>
+                    <DropdownMenuItem onSelect={exportPdf}>
                       <FilePdfIcon /> {t('exportPdf')}
                     </DropdownMenuItem>
                   ) : (
@@ -1178,7 +1324,12 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   </DropdownMenuItem>
                   {artifact.can_manage ? (
                     <>
-                      <DropdownMenuItem onSelect={() => setRenaming(true)}>
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          renameFromMenu.current = true;
+                          startRename();
+                        }}
+                      >
                         <PencilSimpleIcon /> {t('rename')}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
@@ -1216,15 +1367,14 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
 
       {artifact && viewingOld ? (
         <div className="bg-muted flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2 text-xs">
-          <span>
-            {t('viewingOld', {
-              time: relativeTime(
-                rows.find((r) => r.id === version)?.created_at ?? artifact.updated_at,
-                locale,
-              ),
-            })}
+          <span className="min-w-0 truncate">
+            {/* The version's own time (every save, not only a burst's newest); until the history
+                answers, no time rather than a wrong one. */}
+            {openedVersionAt
+              ? t('viewingOld', { time: relativeTime(openedVersionAt, locale) })
+              : t('viewingOldUndated')}
           </span>
-          <span className="flex gap-1">
+          <span className="flex shrink-0 gap-1">
             <Button size="xs" variant="ghost" onClick={() => openVersion(undefined)}>
               {t('backToCurrent')}
             </Button>
@@ -1233,6 +1383,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 size="xs"
                 variant="secondary"
                 disabled={mutations.restore.isPending}
+                aria-busy={mutations.restore.isPending}
                 onClick={async () => {
                   await mutations.restore.mutateAsync({
                     artifactId: artifact.artifact_id,
@@ -1242,7 +1393,12 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   successToast(t('restored'));
                 }}
               >
-                <ArrowCounterClockwiseIcon /> {t('restore')}
+                {mutations.restore.isPending ? (
+                  <Loading className="size-3.5 shrink-0" />
+                ) : (
+                  <ArrowCounterClockwiseIcon />
+                )}{' '}
+                {t('restore')}
               </Button>
             ) : null}
           </span>
@@ -1376,10 +1532,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                     }}
                     onFinish={(strokes) => void finishDrawing(strokes)}
                     onDraftChange={setDrawingDirty}
-                    onCancel={() => {
-                      cancelDrawing();
-                      focusSoon(compact ? actionsButton.current : drawButton.current);
-                    }}
+                    onCancel={requestLeaveDrawing}
                   />
                 ) : null}
                 {drawingOpen && drawingError ? (
@@ -1431,6 +1584,19 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
           onOpenChange={setSharing}
         />
       ) : null}
+      <ConfirmDialog
+        open={confirmDiscard && drawingOpen}
+        onOpenChange={setConfirmDiscard}
+        title={t('discussion.discardDrawingTitle')}
+        description={t('discussion.discardDrawingHint')}
+        confirmLabel={t('discussion.discardDrawing')}
+        cancelLabel={t('discussion.keepDrawing')}
+        confirmVariant="destructive"
+        onConfirm={() => {
+          setConfirmDiscard(false);
+          leaveDrawing();
+        }}
+      />
       <ConfirmDialog
         open={removal.open}
         onOpenChange={(open) => {

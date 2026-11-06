@@ -25061,7 +25061,7 @@
         "sent_to_agent": "エージェントにフィードバックを送信しました"
       },
       "person": "ユーザー",
-      "deleteRootDescription": "テキストは全員に対して削除され、スレッドは読み取り専用になります。元に戻すことはできません。",
+      "deleteRootDescription": "このテキストは全員から削除され、スレッドはコメント一覧から外れます。元に戻すことはできません。",
       "showPanel": "コメントを表示",
       "hidePanel": "コメントを非表示",
       "panelTitle": "コメントとアクティビティ",
@@ -25104,7 +25104,14 @@
       "pagePinLabel": "コメント {number}",
       "showPanelCount": "コメントを表示（未解決 {count} 件）",
       "hidePanelCount": "コメントを非表示（未解決 {count} 件）",
-      "commentSelectionHint": "選択範囲にコメント"
+      "commentSelectionHint": "選択範囲にコメント",
+      "threadReopened": "スレッドを再開しました",
+      "noCommentsReadOnlyHint": "このアーティファクトへのコメントはここに表示されます。",
+      "commentTooLong": "コメントは {max} 文字までです。{over} 文字を削除してください。",
+      "discardDrawingTitle": "この描画を破棄しますか？",
+      "discardDrawingHint": "描いた線は保存されていません。元に戻すことはできません。",
+      "discardDrawing": "破棄",
+      "keepDrawing": "描画を続ける"
     },
     "moveTo": "スペースに移動",
     "projectWide": "プロジェクト全体",
@@ -25133,13 +25140,28 @@
       "writing": "{name} が書いています…"
     },
     "coedit": {
-      "offLarge": "ライブ共同編集はオフです: このドキュメントは 1 MiB を超えています。変更は入力中に保存されます。",
-      "offLineEndings": "ライブ共同編集はオフです: このドキュメントは CRLF と LF の改行が混在しています。変更は入力中に保存されます。",
-      "offShape": "ライブ共同編集はオフです: エディターが Markdown の一部を書き換えてしまいます。変更は入力中に保存されます。",
+      "offLarge": "ライブ共同編集はオフです: このドキュメントは大きすぎます。変更は入力中に保存されます。",
+      "offLineEndings": "ライブ共同編集はオフです: このドキュメントには 2 種類の改行が混在しています。変更は入力中に保存されます。",
+      "offShape": "ライブ共同編集はオフです: エディターはこのドキュメントの一部を書かれたとおりに保てません。変更は入力中に保存されます。",
       "stoppedLarge": "ライブ共同編集が停止しました: 共有するには大きすぎる変更がありました。変更は入力中に保存されます。",
       "stoppedFailed": "ライブ共同編集が停止しました: 接続に失敗しました。変更は入力中に保存されます。",
-      "stoppedHistory": "ライブ共同編集が停止しました: このドキュメントの編集履歴が大きすぎます。変更は入力中に保存されます。"
-    }
+      "stoppedHistory": "ライブ共同編集が停止しました: このドキュメントの編集履歴が大きすぎます。変更は入力中に保存されます。",
+      "offFailed": "ライブ共同編集はオフです: 接続できませんでした。変更は入力中に保存されます。"
+    },
+    "conflictTitle": "他の人がこのドキュメントを変更しました",
+    "conflictReloadTitle": "新しいバージョンを読み込みますか？",
+    "conflictReloadHint": "最後の保存以降の編集は破棄されます。元に戻すことはできません。",
+    "docLoadError": "このドキュメントを読み込めませんでした。",
+    "openError": "このアーティファクトを開けませんでした。",
+    "viewOnly": "閲覧のみ",
+    "viewingOldUndated": "以前のバージョンを表示しています。",
+    "exportWaiting": "編集を保存してからエクスポートします…",
+    "exportBlocked": "エクスポートを中止しました: 最新の編集が保存されていません。",
+    "clearFilters": "フィルターをクリア",
+    "linkCopyFailed": "リンクをコピーできませんでした。フィールドで選択してコピーしてください。",
+    "shareDropsPeople": "{count, plural, other {保存すると、追加した # 人が外れます。ユーザーの一覧を保持するのは「非公開」だけです。}}",
+    "askAgentHistoryError": "以前のチャットを読み込めませんでした。",
+    "embedUnavailable": "このリンクにはプレビューがないため、リンクのままです。"
   },
   "emailConnect": {
     "homeTitle": "受信箱の場所",

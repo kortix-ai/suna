@@ -399,7 +399,6 @@ export function triggerSpecToFlatEntry(spec: GitTriggerSpec): Record<string, unk
     }
     entry.timezone = spec.timezone;
     if (spec.maxLatenessSeconds) entry.max_lateness = formatDurationSeconds(spec.maxLatenessSeconds);
-  if (spec.expectEventWithinSeconds) entry.expect_event_within = formatDurationSeconds(spec.expectEventWithinSeconds);
   } else if (spec.type === 'event' && spec.event) {
     entry.connector = spec.event.connector;
     if (spec.event.account) entry.account = spec.event.account;
@@ -411,6 +410,8 @@ export function triggerSpecToFlatEntry(spec: GitTriggerSpec): Record<string, unk
   } else if (spec.secretEnv) {
     entry.secret_env = spec.secretEnv;
   }
+  // An app trigger's silence alert; written outside the type branch so an edit of any type that holds it keeps it.
+  if (spec.expectEventWithinSeconds) entry.expect_event_within = formatDurationSeconds(spec.expectEventWithinSeconds);
   if (spec.target) entry.target = spec.target;
   if (spec.promptTemplate) entry.prompt = spec.promptTemplate;
   return entry;

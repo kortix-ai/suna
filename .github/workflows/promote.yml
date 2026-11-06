@@ -106,6 +106,14 @@ jobs:
             echo "::error::title and notes are required unless dry_run is true."
             exit 1
           fi
+          # The notes become RELEASE_NOTES.md, which deploy-prod publishes as the
+          # public GitHub Release and /changelog. A release PR body is not notes:
+          # it carries the "Merging this PR publishes" footer and bot footers
+          # with tracking links (2026-11-06, learnings ledger).
+          if printf '%s' "$IN_NOTES" | grep -qE 'Merging this PR \*\*publishes|<!-- ?codesmith|blacksmith\.sh'; then
+            echo "::error::notes look like a release PR body (PR footer or bot markup). Pass the release notes only."
+            exit 1
+          fi
           git fetch --no-tags origin dev staging prod
           REF="${INPUT_REF:-dev}"
           SHA="$(git rev-parse --verify --quiet "origin/$REF^{commit}" || git rev-parse --verify "$REF^{commit}")"

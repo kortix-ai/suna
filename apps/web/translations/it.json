@@ -25061,7 +25061,7 @@
         "sent_to_agent": "ha inviato commenti a un agente"
       },
       "person": "Persona",
-      "deleteRootDescription": "Il testo viene rimosso per tutti e la discussione diventa di sola lettura. L’operazione non può essere annullata.",
+      "deleteRootDescription": "Il suo testo viene rimosso per tutti e la discussione esce dall’elenco dei commenti. L’operazione non si può annullare.",
       "showPanel": "Mostra commenti",
       "hidePanel": "Nascondi commenti",
       "panelTitle": "Commenti e attività",
@@ -25104,7 +25104,14 @@
       "pagePinLabel": "Commento {number}",
       "showPanelCount": "Mostra commenti, {count} aperti",
       "hidePanelCount": "Nascondi commenti, {count} aperti",
-      "commentSelectionHint": "Commenta la selezione"
+      "commentSelectionHint": "Commenta la selezione",
+      "threadReopened": "Discussione riaperta",
+      "noCommentsReadOnlyHint": "I commenti su questo artefatto compaiono qui.",
+      "commentTooLong": "Un commento può avere al massimo {max} caratteri. Rimuovine {over}.",
+      "discardDrawingTitle": "Scartare questo disegno?",
+      "discardDrawingHint": "I tuoi tratti non sono salvati. L’operazione non si può annullare.",
+      "discardDrawing": "Scarta",
+      "keepDrawing": "Continua a disegnare"
     },
     "moveTo": "Sposta nello spazio",
     "projectWide": "A livello di progetto",
@@ -25133,13 +25140,28 @@
       "writing": "{name} sta redigendo…"
     },
     "coedit": {
-      "offLarge": "La modifica dal vivo è disattivata: questo documento supera 1 MiB. Le modifiche si salvano mentre scrivi.",
-      "offLineEndings": "La modifica dal vivo è disattivata: questo documento mescola fine riga CRLF e LF. Le modifiche si salvano mentre scrivi.",
-      "offShape": "La modifica dal vivo è disattivata: l'editor riscriverebbe parte del Markdown. Le modifiche si salvano mentre scrivi.",
+      "offLarge": "La modifica dal vivo è disattivata: questo documento è troppo grande. Le modifiche si salvano mentre scrivi.",
+      "offLineEndings": "La modifica dal vivo è disattivata: questo documento mescola due tipi di a capo. Le modifiche si salvano mentre scrivi.",
+      "offShape": "La modifica dal vivo è disattivata: l’editor non può mantenere una parte di questo documento esattamente come è scritta. Le modifiche si salvano mentre scrivi.",
       "stoppedLarge": "La modifica dal vivo si è interrotta: una modifica era troppo grande da condividere. Le modifiche si salvano mentre scrivi.",
       "stoppedFailed": "La modifica dal vivo si è interrotta: la connessione non è riuscita. Le modifiche si salvano mentre scrivi.",
-      "stoppedHistory": "La modifica dal vivo si è interrotta: la cronologia delle modifiche di questo documento è troppo grande. Le modifiche si salvano mentre scrivi."
-    }
+      "stoppedHistory": "La modifica dal vivo si è interrotta: la cronologia delle modifiche di questo documento è troppo grande. Le modifiche si salvano mentre scrivi.",
+      "offFailed": "La modifica dal vivo è disattivata: impossibile connettersi. Le modifiche si salvano mentre scrivi."
+    },
+    "conflictTitle": "Qualcun altro ha modificato questo documento",
+    "conflictReloadTitle": "Caricare la versione più recente?",
+    "conflictReloadHint": "Le tue modifiche dall’ultimo salvataggio vengono scartate. L’operazione non si può annullare.",
+    "docLoadError": "Impossibile caricare questo documento.",
+    "openError": "Impossibile aprire questo artefatto.",
+    "viewOnly": "Sola lettura",
+    "viewingOldUndated": "Stai visualizzando una versione precedente.",
+    "exportWaiting": "Salvataggio delle modifiche, poi esportazione…",
+    "exportBlocked": "Esportazione interrotta: le ultime modifiche non sono salvate.",
+    "clearFilters": "Rimuovi filtri",
+    "linkCopyFailed": "Impossibile copiare il link. Selezionalo nel campo e copialo.",
+    "shareDropsPeople": "{count, plural, one {Salvando si rimuove la persona aggiunta. Solo Privato mantiene un elenco di persone.} other {Salvando si rimuovono le # persone aggiunte. Solo Privato mantiene un elenco di persone.}}",
+    "askAgentHistoryError": "Impossibile caricare le chat precedenti.",
+    "embedUnavailable": "Questo link non ha un’anteprima, quindi resta un link."
   },
   "emailConnect": {
     "homeTitle": "Dove si trova la casella",
