@@ -35,7 +35,16 @@ import { dollarsToCredits, formatCredits } from '@kortix/shared';
 import { AdminPageShell } from '../_components/admin-page-shell';
 import { AdminEmptyFrame, AdminPanel, AdminSection, AdminTableFrame } from '../_components/admin-panel';
 
-const DATE = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+// Date, time and zone: a code that ends Sunday 23:59 in one zone is Monday in
+// UTC, and a bare date reads as the wrong day.
+const DATE = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZoneName: 'short',
+});
 
 function redeemLink(code: string): string {
   return `${window.location.origin}/redeem?${new URLSearchParams({ code })}`;
@@ -68,8 +77,9 @@ function CreateCodeForm() {
         code: code.trim(),
         amount_usd: amountUsd,
         max_redemptions: max,
-        // The code stops working at the end of the chosen day, UTC.
-        expires_at: expiresOn ? new Date(`${expiresOn}T23:59:59Z`).toISOString() : null,
+        // The code stops working at the end of the chosen day in the admin's
+        // own time zone (no `Z`: the browser reads it as local time).
+        expires_at: expiresOn ? new Date(`${expiresOn}T23:59:59`).toISOString() : null,
         description: note.trim() || null,
       });
       successToast('Credit code created', { description: `${created.code} · ${redeemLink(created.code)}` });
@@ -255,6 +265,7 @@ function CodesTable() {
 export default function AdminCreditCodesPage() {
   return (
     <AdminPageShell
+      width="wide"
       title="Credit codes"
       description="A code adds credits to an account's balance. Each account redeems a code once, and the credits never expire."
     >

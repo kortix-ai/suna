@@ -3,7 +3,8 @@
  *
  * Daytona's file and exec APIs need a started sandbox, so the cycle is the
  * Platinum one: start (Daytona restores an archived sandbox from its storage
- * first), copy with `COPY_SCRIPT`, download, then stop and archive again. Kortix
+ * first), measure and split the store with `copyScript`, download the parts,
+ * then stop and archive again. Kortix
  * does not see the start: the session row stays `stopped` and the box's token
  * stays refused. Every environment shares one Daytona disk quota (learning
  * 2026-10-06), so keep the concurrency low: a started archived box holds its
@@ -15,20 +16,24 @@ import type { Sandbox } from '@daytonaio/sdk';
 import { getDaytona } from '../../shared/daytona';
 import { withTimeout } from '../../shared/with-timeout';
 import {
-  COPY_SCRIPT,
+  assembleStore,
+  BOX_TEMP_GLOB,
+  copyScript,
   isSafeBoxPath,
   MAX_FILE_BYTES,
   parseCopyOutput,
   RecoverableBoxError,
+  retryTransient,
   type BoxReader,
   type BoxState,
-  type CopiedStore,
+  type StoreCopy,
 } from './box';
 
 const CALL_TIMEOUT_MS = 60_000;
 /** Restoring an archived sandbox from Daytona's storage can take minutes. */
 const START_TIMEOUT_S = 600;
-const EXEC_TIMEOUT_S = 60;
+/** Splitting a store of a few GB on a box restored from archive takes minutes. */
+const EXEC_TIMEOUT_S = 300;
 const DOWNLOAD_TIMEOUT_S = 300;
 
 const notFound = (err: unknown) => /not found|404/i.test(err instanceof Error ? err.message : String(err));
@@ -89,33 +94,25 @@ async function startBox(sandbox: Sandbox, externalId: string): Promise<void> {
   }
 }
 
-async function download(sandbox: Sandbox, path: string, to: string): Promise<number> {
+async function fetchBytes(sandbox: Sandbox, path: string): Promise<Buffer> {
   const bytes = await sandbox.fs.downloadFile(path, DOWNLOAD_TIMEOUT_S);
-  if (bytes.length >= MAX_FILE_BYTES) throw new RecoverableBoxError(`a store file is at the ${MAX_FILE_BYTES} B download cap`, false);
-  await writeFile(to, bytes, { mode: 0o600 });
-  return bytes.length;
+  if (bytes.length >= MAX_FILE_BYTES) throw new RecoverableBoxError(`a file is at the ${MAX_FILE_BYTES} B download cap`, false);
+  return bytes;
 }
 
-async function copyStore(externalId: string, localDir: string): Promise<CopiedStore | null> {
+async function copyStore(externalId: string, localDir: string, maxStoreBytes: number): Promise<StoreCopy> {
   const sandbox = await get(externalId);
   await startBox(sandbox, externalId);
   const exec = await withTimeout(
-    sandbox.process.executeCommand(`sh -c '${COPY_SCRIPT.replaceAll("'", `'\\''`)}'`, undefined, undefined, EXEC_TIMEOUT_S),
+    sandbox.process.executeCommand(`sh -c '${copyScript(maxStoreBytes).replaceAll("'", `'\\''`)}'`, undefined, undefined, EXEC_TIMEOUT_S),
     (EXEC_TIMEOUT_S + 30) * 1000,
     `Daytona exec(${externalId})`,
   );
   if (exec.exitCode !== 0) throw new RecoverableBoxError(`copy exec exit ${exec.exitCode}: ${(exec.result ?? '').slice(0, 300)}`, true);
   const found = parseCopyOutput(exec.result ?? '');
-  if (!found) return null;
-  await mkdir(localDir, { recursive: true, mode: 0o700 });
-  const dbPath = join(localDir, 'opencode.db');
-  let bytes = await download(sandbox, `${found.boxTemp}/opencode.db`, dbPath);
-  try {
-    bytes += await download(sandbox, `${found.boxTemp}/opencode.db-wal`, `${dbPath}-wal`);
-  } catch (err) {
-    if (!notFound(err)) throw err; // no WAL: the store was checkpointed
-  }
-  return { dbPath, bytes, ...found };
+  if (found.kind !== 'found') return found;
+  const fetchPart = (path: string) => retryTransient(() => fetchBytes(sandbox, path), (err) => !notFound(err) && !(err instanceof RecoverableBoxError));
+  return { kind: 'copied', ...(await assembleStore(found, localDir, maxStoreBytes, fetchPart)) };
 }
 
 async function copySidecars(externalId: string, paths: string[], localDir: string): Promise<Map<string, Buffer>> {
@@ -127,8 +124,9 @@ async function copySidecars(externalId: string, paths: string[], localDir: strin
     if (!isSafeBoxPath(path)) continue;
     const to = join(localDir, `sidecar-${i}`);
     try {
-      await download(sandbox, path, to);
-      out.set(path, Buffer.from(await Bun.file(to).bytes()));
+      const bytes = await fetchBytes(sandbox, path);
+      await writeFile(to, bytes, { mode: 0o600 });
+      out.set(path, bytes);
     } catch (err) {
       if (notFound(err)) continue;
       throw err;
@@ -137,11 +135,13 @@ async function copySidecars(externalId: string, paths: string[], localDir: strin
   return out;
 }
 
-async function release(externalId: string, boxTemp: string | null, stillParked: () => Promise<boolean>): Promise<'parked' | 'left-running'> {
+async function release(externalId: string, stillParked: () => Promise<boolean>): Promise<'parked' | 'left-running'> {
   const sandbox = await get(externalId).catch(() => null);
   if (!sandbox) return 'parked';
-  if (boxTemp) {
-    await withTimeout(sandbox.process.executeCommand(`rm -rf ${boxTemp}`, undefined, undefined, 20), 50_000, 'Daytona rm').catch(() => undefined);
+  // Only a running box takes an exec. A box another writer stopped keeps its copy
+  // until the next attempt's copy script removes it.
+  if ((await state(externalId).catch(() => 'other')) === 'running') {
+    await withTimeout(sandbox.process.executeCommand(`sh -c 'rm -rf ${BOX_TEMP_GLOB}'`, undefined, undefined, 20), 50_000, 'Daytona rm').catch(() => undefined);
   }
   // Same rule as Platinum: read as late as possible, and give a box a wake
   // claimed after the stop back by starting it again.

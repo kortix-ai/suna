@@ -20,6 +20,7 @@ const { app, BrowserWindow, Menu, dialog, shell, ipcMain, nativeImage, nativeThe
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
+const { showMessage } = require('./message-box');
 const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
 const { createDeepLinkInbox } = require('./deep-link-inbox');
@@ -1003,7 +1004,6 @@ function buildMenu() {
 
 /** Kortix ▸ About Kortix on Windows and Linux (macOS uses the native about panel). */
 function showAboutDialog() {
-  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
   const options = {
     type: 'info',
     title: `About ${app.name}`,
@@ -1011,7 +1011,7 @@ function showAboutDialog() {
     detail: `Version ${app.getVersion()}\nElectron ${process.versions.electron} · Chromium ${process.versions.chrome}`,
     buttons: ['OK'],
   };
-  void (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options));
+  void showMessage(options, mainWindow);
 }
 
 /** Open the application menu as a popup at window point (x, y). */
