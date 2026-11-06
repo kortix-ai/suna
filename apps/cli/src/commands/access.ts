@@ -107,7 +107,6 @@ Options:
   --principal <id>   Filter assignments by principal. Also user:<id|email> |
                      group:<id|name> | service_account:<id> | pending:<email>.
   --expires <iso>    Auto-revoke timestamp.
-  --account-id <id>  Operate on this account (default: the linked workspace's account, else the active account).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -150,7 +149,7 @@ async function resolveScope(
   wantsProject: boolean,
 ): Promise<Scope | null> {
   if (!wantsProject) {
-    const acct = resolveAccountContext({ accountArg: f.accountId, hostArg: f.host });
+    const acct = resolveAccountContext({ workspaceArg: f.project, accountArg: f.accountId, hostArg: f.host });
     if (!acct) return null;
     return { client: acct.client, accountId: acct.accountId, projectId: null };
   }
@@ -556,7 +555,7 @@ async function revokeByAssignmentId(
   f: Record<string, string | undefined>,
   json: boolean,
 ): Promise<number | null> {
-  const acct = resolveAccountContext({ accountArg: f.accountId, hostArg: f.host });
+  const acct = resolveAccountContext({ workspaceArg: f.project, accountArg: f.accountId, hostArg: f.host });
   // No credentials at all — it already said so; do not let the legacy path
   // print the same refusal a second time.
   if (!acct) return 1;

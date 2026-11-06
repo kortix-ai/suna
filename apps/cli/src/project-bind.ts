@@ -38,11 +38,41 @@ export interface WorkspaceListFailure {
   error: unknown;
 }
 
+/** The workspace a workspace-bound credential (a workspace key, a session or
+ *  agent token) is bound to, from `/accounts/me`. Null for a person credential. */
+export function boundWorkspaceId(me: MeResponse): string | null {
+  return me.token_context?.workspace_id || me.token_context?.project_id || null;
+}
+
+/** The membership row that owns one workspace, or a stand-in for a server
+ *  that does not report `workspace_id` on its memberships. */
+function membershipOf(me: MeResponse, project: ProjectSummary): AccountMembership {
+  const accounts = Array.isArray(me.accounts) ? me.accounts : [];
+  const owner =
+    accounts.find((a) => a.workspace_id && a.workspace_id === project.project_id) ??
+    accounts.find((a) => a.account_id === project.account_id);
+  const base = owner ?? {
+    account_id: project.account_id,
+    slug: (project.account_id ?? '').slice(0, 8),
+    name: '',
+    role: '',
+  };
+  return project.role ? { ...base, role: project.role } : base;
+}
+
 /**
  * Every workspace the caller belongs to on one host, flat: one row per
- * project, across every account. A legacy account with several projects
- * shows each as its own workspace; an account with no project is not a
- * workspace and gives no row. `accountId` narrows to one account.
+ * workspace, across every account.
+ *
+ * - A workspace-bound credential lists its one workspace
+ *   (`GET /v1/workspaces/<bound id>`). It never reads another account's list.
+ * - A server that lists every workspace in one request (`GET /v1/workspaces`
+ *   rows carry `state`) is read once.
+ * - An older server is read per account (`/workspaces?account_id=`): a legacy
+ *   account with several projects shows each as its own workspace; an account
+ *   with no project gives no row.
+ *
+ * `accountId` narrows to one account (per-account read only).
  *
  * Throws when the identity read (`/accounts/me`) fails, or when the one
  * account asked for cannot be read. One unreadable account among several
@@ -55,6 +85,39 @@ export async function listWorkspaceRowsReport(
 ): Promise<{ rows: WorkspaceRow[]; failed: WorkspaceListFailure[] }> {
   const me = knownMe ?? (await clientFromAuth(auth).get<MeResponse>('/me'));
   const memberships = Array.isArray(me.accounts) ? me.accounts : [];
+
+  const bound = boundWorkspaceId(me);
+  if (bound && !accountId) {
+    try {
+      const project = await clientFromAuth(auth).get<ProjectSummary>(
+        `/workspaces/${encodeURIComponent(bound)}`,
+      );
+      return { rows: [{ project, account: membershipOf(me, project) }], failed: [] };
+    } catch (error) {
+      const account = memberships.find((a) => a.workspace_id === bound) ?? {
+        account_id: bound,
+        slug: bound.slice(0, 8),
+        name: '',
+        role: '',
+      };
+      return { rows: [], failed: [{ account, error }] };
+    }
+  }
+
+  if (!accountId && memberships.length > 0) {
+    // One request on a server that lists every workspace of the caller.
+    // An older server answers this unscoped call with ONE account's projects
+    // (no `state` field), so only a row set that carries `state` counts.
+    try {
+      const listed = await clientFromAuth(auth).get<ProjectSummary[]>('/workspaces');
+      if (Array.isArray(listed) && listed.length > 0 && listed.every((p) => typeof p.state === 'string')) {
+        return { rows: listed.map((project) => ({ project, account: membershipOf(me, project) })), failed: [] };
+      }
+    } catch {
+      // Fall through to the per-account read, which names each failure.
+    }
+  }
+
   const accounts = accountId
     ? memberships.filter((a) => a.account_id === accountId)
     : memberships;
@@ -84,20 +147,36 @@ export async function listWorkspaceRowsReport(
       // project once.
       if (seen.has(project.project_id)) continue;
       seen.add(project.project_id);
-      rows.push({ project, account });
+      rows.push({ project, account: project.role ? { ...account, role: project.role } : account });
     }
   }
   return { rows, failed };
 }
 
+/** The reads behind an empty workspace list failed: never "no workspace". */
+export class WorkspaceListError extends Error {
+  constructor(readonly failed: WorkspaceListFailure[]) {
+    const first = failed[0];
+    const reason =
+      first?.error instanceof Error ? first.error.message : String(first?.error ?? 'unknown error');
+    super(
+      `could not list the workspaces${failed.length > 1 ? ` of ${failed.length} accounts` : ''}: ${reason}`,
+    );
+    this.name = 'WorkspaceListError';
+  }
+}
+
 /** The rows of listWorkspaceRowsReport. Binding picks among the readable
- *  workspaces, so an unreadable account is skipped here. */
+ *  workspaces, so an unreadable account is skipped here, but an empty list
+ *  whose reads failed throws WorkspaceListError instead of reading as none. */
 export async function listWorkspaceRows(
   auth: Auth,
   accountId?: string,
   knownMe?: MeResponse,
 ): Promise<WorkspaceRow[]> {
-  return (await listWorkspaceRowsReport(auth, accountId, knownMe)).rows;
+  const report = await listWorkspaceRowsReport(auth, accountId, knownMe);
+  if (report.rows.length === 0 && report.failed.length > 0) throw new WorkspaceListError(report.failed);
+  return report.rows;
 }
 
 /**
@@ -107,7 +186,8 @@ export async function listWorkspaceRows(
 async function bindableWorkspaces(auth: Auth, accountId?: string): Promise<WorkspaceRow[]> {
   try {
     return await listWorkspaceRows(auth, accountId);
-  } catch {
+  } catch (err) {
+    if (err instanceof WorkspaceListError) throw err;
     const projects = await clientFromAuth(auth, { accountId: accountId ?? bindableAccountId(auth) }).get<
       ProjectSummary[]
     >('/workspaces');

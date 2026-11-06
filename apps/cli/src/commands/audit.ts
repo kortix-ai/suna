@@ -97,7 +97,6 @@ Options:
   --name <n>           webhooks add: a label for this endpoint.
   --url <u>            webhooks add: the http(s) endpoint to POST events to.
   --action-prefix <p>  webhooks add: only deliver actions with this prefix.
-  --account <id>       Operate on this account (default: the linked workspace's account, else the active account).
   --host <name>        Operate against a non-default Kortix host.
   --json               Machine-readable output.
   -h, --help           Show this help.
@@ -402,7 +401,7 @@ export async function runAudit(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.project, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/workspaces/${ctx.accountId}/audit`;
 

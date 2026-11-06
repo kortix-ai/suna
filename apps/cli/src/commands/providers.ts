@@ -67,17 +67,17 @@ Subcommands:
                                     once a minute per login; this spends no
                                     plan quota. openai, chatgpt and codex
                                     name ChatGPT; claude names Claude.
-                                    --account <id>. Includes the logins
-                                    stored on --project (default: linked).
+                                    Includes the logins stored on the
+                                    workspace (--workspace, default: linked).
   retry [<provider>]                End the rate-limit rest of the account's
                                     stored provider accounts now (e.g. after
                                     resetting ChatGPT usage). openai, chatgpt
                                     and codex name ChatGPT connections. With no
                                     provider, every account still cooling down.
                                     Otherwise the gateway re-tries one every
-                                    15 min on its own. --account <id>.
-                                    Includes the logins stored on --project
-                                    (default: linked).
+                                    15 min on its own. Includes the logins
+                                    stored on the workspace (--workspace,
+                                    default: linked).
   custom ls [--json]                List custom OpenAI-compatible endpoints.
   custom set <id> --base-url <url> --model <model>[=<name>] [--model …]
              [--name <name>] [--key-stdin]
@@ -274,7 +274,7 @@ export function coolingSecrets<T extends StoredAccount>(rows: T[], provider: str
 }
 
 async function providersRetry(provider: string | undefined, accountArg: string | undefined, opts: CtxOpts, json: boolean): Promise<number> {
-  const ctx = resolveAccountContext({ accountArg, hostArg: opts.hostArg });
+  const ctx = resolveAccountContext({ workspaceArg: opts.projectArg, accountArg, hostArg: opts.hostArg });
   if (!ctx) return 1;
   const base = `/workspaces/${encodeURIComponent(ctx.accountId)}/secret-resources`;
   // Without project_id the list holds only account-wide rows; an OAuth login
@@ -362,7 +362,7 @@ export function planUsageLines(usage: PlanUsage | null | undefined, now = Date.n
 async function providersUsage(provider: string | undefined, accountArg: string | undefined, opts: CtxOpts, json: boolean): Promise<number> {
   const want = provider ? USAGE_PROVIDERS[provider] : undefined;
   if (provider && !want) return fail(`"${provider}" has no plan usage. Use openai, chatgpt, codex or claude.`);
-  const ctx = resolveAccountContext({ accountArg, hostArg: opts.hostArg });
+  const ctx = resolveAccountContext({ workspaceArg: opts.projectArg, accountArg, hostArg: opts.hostArg });
   if (!ctx) return 1;
   const base = `/workspaces/${encodeURIComponent(ctx.accountId)}/secret-resources`;
   const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });

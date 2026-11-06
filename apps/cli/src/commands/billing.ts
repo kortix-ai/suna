@@ -62,7 +62,8 @@ Subcommands:
     --csv <file>                    Write the rows as CSV. Needs --by.
 
 Global options:
-  --account <id>     Operate on this account (default: the linked workspace's account, else the active account).
+  --workspace <id>   The workspace (default: KORTIX_WORKSPACE_ID, then
+                     KORTIX_PROJECT_ID, the linked workspace, the default workspace).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -135,7 +136,7 @@ export async function runBilling(argv: string[]): Promise<number> {
 
   // In a session box, `costs --project` reads with the box's own project-bound token, no account.
   const projectToken = (sub === 'costs' || sub === 'cost') && f.project && !f.account && !f.host;
-  const ctx = (projectToken ? resolveProjectTokenContext() : null) ?? resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = (projectToken ? resolveProjectTokenContext() : null) ?? resolveAccountContext({ workspaceArg: f.project, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
 
   try {

@@ -3,6 +3,8 @@
 
 export interface AccountMembership {
   account_id: string;
+  /** The account's one workspace (null: none, or several older projects). */
+  workspace_id?: string | null;
   slug: string;
   name: string;
   role: string;
@@ -14,6 +16,8 @@ export interface MeResponse {
   token_context?: {
     auth_type: string | null;
     project_id: string | null;
+    /** The workspace a bound credential is bound to (= `project_id`). */
+    workspace_id?: string | null;
     session_id: string | null;
     agent: string | null;
     connectors: string[] | 'all' | null;
@@ -42,6 +46,12 @@ export interface ProjectSummary {
   updated_at: string;
   /** Web dashboard URL for this project (server-provided; not the API host). */
   dashboard_url?: string;
+  /** `GET /v1/workspaces` (2026-11-06 and later): the workspace id (= project_id). */
+  workspace_id?: string;
+  /** `GET /v1/workspaces`: the caller's workspace role. */
+  role?: string | null;
+  /** `GET /v1/workspaces`: active, setup_required (pays, no project yet) or deleting. */
+  state?: 'active' | 'setup_required' | 'deleting';
 }
 
 // ── Custom LLM providers (`GET /projects/:id/custom-providers`) ───────────

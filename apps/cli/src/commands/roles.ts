@@ -80,7 +80,6 @@ Options:
   --expires <iso>    Optional hard expiry for an assignment.
   --out <file>       Write export to a file (default: stdout).
   --format <f>       toml (default) | json — export format.
-  --account <id>     Operate on this account (default: active account).
   --json             Machine-readable output (read subcommands).
   -h, --help         Show this help.
 
@@ -122,7 +121,7 @@ export async function runRoles(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.project, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
   const base = `/workspaces/${ctx.accountId}/iam`;
 

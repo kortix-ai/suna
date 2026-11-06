@@ -1067,7 +1067,8 @@ async function projectsLs(
   if (rows.length === 0) {
     if (query && listed.length > 0) {
       process.stdout.write(`  ${C.dim}No workspace matches "${query}".${C.reset}\n\n`);
-    } else {
+    } else if (failed.length === 0) {
+      // Only a complete read may say none exists.
       writeNoWorkspaceYet();
     }
     return exitCode;
@@ -1093,11 +1094,18 @@ function renderWorkspaceTable(rows: WorkspaceRow[], marks: { linked?: string; de
     const isDefault = p.project_id === marks.def;
     const isLinked = p.project_id === marks.linked;
     const marker = isDefault ? `${C.green}● ${C.reset}` : isLinked ? `${C.cyan}◆ ${C.reset}` : '  ';
-    const tag = isDefault
-      ? `   ${C.green}default${C.reset}`
-      : isLinked
-        ? `   ${C.cyan}linked${C.reset}`
-        : '';
+    const state =
+      p.state === 'setup_required'
+        ? `   ${C.yellow}set up needed${C.reset}`
+        : p.state === 'deleting'
+          ? `   ${C.yellow}deleting${C.reset}`
+          : '';
+    const tag =
+      (isDefault
+        ? `   ${C.green}default${C.reset}`
+        : isLinked
+          ? `   ${C.cyan}linked${C.reset}`
+          : '') + state;
     process.stdout.write(
       `${marker}${pad(p.name, nameW)}   ${pad(p.project_id, 36)}   ${C.faded}${pad(account.role, roleW)}${C.reset}   ${C.faded}${formatRelative(p.updated_at)}${C.reset}${tag}\n`,
     );
@@ -1252,11 +1260,18 @@ function renderProjectTable(
     const isDefault = p.project_id === marks.def;
     const isLinked = p.project_id === marks.linked;
     const marker = isDefault ? `${C.green}● ${C.reset}` : isLinked ? `${C.cyan}◆ ${C.reset}` : '  ';
-    const tag = isDefault
-      ? `   ${C.green}default${C.reset}`
-      : isLinked
-        ? `   ${C.cyan}linked${C.reset}`
-        : '';
+    const state =
+      p.state === 'setup_required'
+        ? `   ${C.yellow}set up needed${C.reset}`
+        : p.state === 'deleting'
+          ? `   ${C.yellow}deleting${C.reset}`
+          : '';
+    const tag =
+      (isDefault
+        ? `   ${C.green}default${C.reset}`
+        : isLinked
+          ? `   ${C.cyan}linked${C.reset}`
+          : '') + state;
     const repo = trimMid(p.repo_url, 40);
     const updated = formatRelative(p.updated_at);
     process.stdout.write(

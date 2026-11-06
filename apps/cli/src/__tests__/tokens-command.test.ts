@@ -328,8 +328,9 @@ describe('kortix tokens', () => {
       project_id: string;
     };
     // account_id must ride in the body: this route resolves the account from
-    // the body, not the query string.
-    expect(body.account_id).toBe(ACCOUNT);
+    // the body, not the query string. --workspace/--project names the
+    // workspace, and its id is the account the API resolves.
+    expect(body.account_id).toBe('p1');
     expect(body.name).toBe('ci-deploy');
     expect(body.project_id).toBe('p1');
     expect(new Date(body.expires_at).getTime()).toBeGreaterThan(Date.now());

@@ -240,11 +240,12 @@ describe('kortix access assignments', () => {
     expect(out).toContain(ASSIGNMENT);
   });
 
-  test('--account filters to account-scope assignments and never resolves a project', async () => {
+  test('--account filters to account-scope assignments and never reads the project', async () => {
     const code = await runAccess(['assignments', '--account']);
     expect(code).toBe(0);
     expect(assignmentGet()!.url).toContain('scope_type=account');
-    expect(requests.some((r) => r.url.includes(`/workspaces/${PROJECT}`))).toBe(false);
+    // The workspace is the context (its id goes to the IAM route); its record is never read.
+    expect(requests.some((r) => new URL(r.url).pathname === `/v1/workspaces/${PROJECT}`)).toBe(false);
   });
 
   test('--all drops the scope filter entirely', async () => {

@@ -133,7 +133,8 @@ describe('kortix members', () => {
     expect(h.code).toBe(0);
     for (const fragment of [
       'Usage: kortix members',
-      'invite <email> --role <r>',
+      'invite <email> [--role <r>]',
+      '--grant <id>:<r>',
       'set-role <user|email> --role <r>',
       'super-admin <user|email> on|off',
       'invites ls',
@@ -173,7 +174,7 @@ describe('kortix members', () => {
     const config = boot(defaultRoutes);
     const r = await runCommand(
       runner,
-      ['invite', 'carol@corp.com', '--role', 'member', '--project', 'p1:manager', '--project', 'p2'],
+      ['invite', 'carol@corp.com', '--role', 'member', '--grant', 'p1:manager', '--grant', 'p2'],
       { cwd: tmp, configFile: config },
     );
     expect(r.code).toBe(0);
@@ -191,6 +192,30 @@ describe('kortix members', () => {
     });
     expect(r.stdout).toContain('Invited carol@corp.com as member');
     expect(r.stdout).toContain('https://kortix.test/invite/inv_1');
+  });
+
+  test('invite with no --role invites a member; --workspace <id>:<role> is the older --grant', async () => {
+    const config = boot(defaultRoutes);
+    const r = await runCommand(runner, ['invite', 'carol@corp.com', '--workspace', 'p1:manager'], {
+      cwd: tmp,
+      configFile: config,
+    });
+    expect(r.code).toBe(0);
+    expect(api!.requests[0]).toMatchObject({
+      method: 'POST',
+      path: `/v1/workspaces/${ACCOUNT}/members`,
+      body: { email: 'carol@corp.com', role: 'member', project_grants: [{ project_id: 'p1', role: 'manager' }] },
+    });
+    expect(r.stderr).toContain('older spelling of --grant');
+  });
+
+  test('--workspace <id> selects the workspace the command acts on', async () => {
+    const config = boot((req, url) =>
+      url.pathname === '/v1/workspaces/ws_other/members' ? Response.json([]) : defaultRoutes(req, url, undefined),
+    );
+    const r = await runCommand(runner, ['ls', '--workspace', 'ws_other', '--json'], { cwd: tmp, configFile: config });
+    expect(r.code).toBe(0);
+    expect(api!.requests[0]).toMatchObject({ method: 'GET', path: '/v1/workspaces/ws_other/members' });
   });
 
   test('invite --role owner is refused locally (the API would silently downgrade it)', async () => {
@@ -297,7 +322,7 @@ describe('kortix members', () => {
 
   test('missing required arguments exit 2 without any HTTP call', async () => {
     const config = boot(defaultRoutes);
-    for (const args of [['invite'], ['invite', 'a@b.com'], ['set-role'], ['rm'], ['groups']]) {
+    for (const args of [['invite'], ['set-role'], ['rm'], ['groups']]) {
       const r = await runCommand(runner, args, { cwd: tmp, configFile: config });
       expect(r.code).toBe(2);
     }

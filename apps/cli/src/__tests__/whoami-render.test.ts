@@ -249,14 +249,16 @@ describe('whoami renderings (human + --token-only) are byte-stable', () => {
     expect(stdout).toBe('\n  user token\n  agent     reviewer\n  connectors all\n\n');
   });
 
-  test('human mode: the summary carries identity, account, default project and host', () => {
+  test('human mode: the summary carries identity, the bound workspace and host', () => {
     const { code, stdout } = get('human session');
     expect(code).toBe(0);
     expect(stdout).toContain(`\n  ${EMAIL}\n`);
     expect(stdout).toContain(`  email     ${EMAIL}\n`);
     expect(stdout).toContain(`  user_id   ${USER_ID}\n`);
-    expect(stdout).toContain('  workspace Def Project (owner, default)\n');
-    expect(stdout).toContain('  switch workspace with kortix workspaces use\n');
+    // A session token reaches one workspace: it outranks the stored default.
+    expect(stdout).toContain('  workspace proj_1 (bound)\n');
+    expect(stdout).not.toContain('Def Project');
+    expect(stdout).not.toContain('switch workspace with');
     expect(stdout).not.toContain('  account   ');
     expect(stdout).toContain(`  host      ${HOST_NAME} (http://127.0.0.1:${apiPort}/v1)\n`);
     expect(stdout).toMatch(/hosts configured — list with `kortix hosts ls`\n/);

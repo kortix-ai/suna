@@ -336,7 +336,7 @@ describe('audit CLI process', () => {
 
       const accountRequests = requests.filter(
         (url) =>
-          url.pathname.endsWith('/workspaces/account-1/audit') && !url.pathname.endsWith('/export'),
+          url.pathname.endsWith('/workspaces/project-1/audit') && !url.pathname.endsWith('/export'),
       );
       expect(accountRequests).toHaveLength(2);
       expect(accountRequests[0]!.searchParams.get('action')).toBe('session.');
