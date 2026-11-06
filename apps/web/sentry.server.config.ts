@@ -5,26 +5,13 @@
  */
 
 import * as Sentry from '@sentry/nextjs';
-import { shouldIgnoreSentryNoiseEvent } from '@kortix/ui/internal/lib/browser-error-noise';
-
-const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
+import { SENTRY_DSN, sentryOptions } from './sentry.options';
 
 if (SENTRY_DSN) {
-  Sentry.init({
-    dsn: SENTRY_DSN,
-    environment: process.env.NEXT_PUBLIC_KORTIX_ENV || 'dev',
-
-    // Sample 20% of server transactions for performance monitoring
-    tracesSampleRate: 0.2,
-
-    // Don't send PII
-    sendDefaultPii: false,
-
-    beforeSend(event, hint) {
-      if (shouldIgnoreSentryNoiseEvent(event, hint)) {
-        return null;
-      }
-      return event;
-    },
-  });
+  Sentry.init(
+    sentryOptions({
+      // Sample 20% of server transactions for performance monitoring
+      tracesSampleRate: 0.2,
+    }),
+  );
 }
