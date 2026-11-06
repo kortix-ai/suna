@@ -25148,7 +25148,9 @@
       "discardDrawingTitle": "Diese Zeichnung verwerfen?",
       "discardDrawingHint": "Deine Striche sind nicht gespeichert. Das kann nicht rückgängig gemacht werden.",
       "discardDrawing": "Verwerfen",
-      "keepDrawing": "Weiterzeichnen"
+      "keepDrawing": "Weiterzeichnen",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "In Bereich verschieben",
     "projectWide": "Projektweit",

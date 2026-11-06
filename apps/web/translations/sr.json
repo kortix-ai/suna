@@ -25148,7 +25148,9 @@
       "discardDrawingTitle": "Одбацити овај цртеж?",
       "discardDrawingHint": "Ваши потези нису сачувани. Ово се не може опозвати.",
       "discardDrawing": "Одбаци",
-      "keepDrawing": "Настави цртање"
+      "keepDrawing": "Настави цртање",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "Премести у простор",
     "projectWide": "На нивоу пројекта",

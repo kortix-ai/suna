@@ -25148,7 +25148,9 @@
       "discardDrawingTitle": "Abandonner ce dessin ?",
       "discardDrawingHint": "Vos traits ne sont pas enregistrés. Cette action est irréversible.",
       "discardDrawing": "Abandonner",
-      "keepDrawing": "Continuer à dessiner"
+      "keepDrawing": "Continuer à dessiner",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "Déplacer vers un espace",
     "projectWide": "À l’échelle du projet",

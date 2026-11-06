@@ -25148,7 +25148,9 @@
       "discardDrawingTitle": "Scartare questo disegno?",
       "discardDrawingHint": "I tuoi tratti non sono salvati. L’operazione non si può annullare.",
       "discardDrawing": "Scarta",
-      "keepDrawing": "Continua a disegnare"
+      "keepDrawing": "Continua a disegnare",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "Sposta nello spazio",
     "projectWide": "A livello di progetto",

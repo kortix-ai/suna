@@ -25148,7 +25148,9 @@
       "discardDrawingTitle": "Descartar este desenho?",
       "discardDrawingHint": "Seus traços não estão salvos. Isso não pode ser desfeito.",
       "discardDrawing": "Descartar",
-      "keepDrawing": "Continuar desenhando"
+      "keepDrawing": "Continuar desenhando",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "Mover para espaço",
     "projectWide": "Todo o projeto",
