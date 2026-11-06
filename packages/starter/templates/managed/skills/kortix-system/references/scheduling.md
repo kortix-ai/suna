@@ -381,8 +381,10 @@ on a `kortix.yaml` trigger) tells the person once when the watcher stops posting
     on: { event: status.changed, app: status-watch }
     run: { agent: ops, prompt: "Status is now {{ event.data.status }}." }
   ```
-- Done watching: `kortix triggers rm` the session trigger and `status-watch-check`,
-  then `kortix apps delete status-watch --yes` if nothing else uses it.
+- Done watching: `kortix apps delete status-watch --yes`. The triggers that name
+  the App go with it (your session trigger, `status-watch-check`, a work
+  trigger) and it prints their names. Other work still uses the App
+  (`kortix triggers ls`): `kortix triggers rm` only your session trigger.
 
 ### A watcher, specified; a relay App
 
