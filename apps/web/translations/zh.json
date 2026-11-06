@@ -26693,7 +26693,6 @@
       "description": "工作区是你的公司使用 Kortix 工作的地方：成员、智能体以及他们创建的一切。",
       "submit": "创建工作区",
       "restricted": "此服务器仅为受邀人员创建工作区。请管理员邀请 {email}。",
-      "limitReached": "你的套餐已达到工作区上限。升级后即可再创建一个。",
       "freeCreditsRule": "只有你的第一个工作区能获得每月免费额度。"
     },
     "settings": {

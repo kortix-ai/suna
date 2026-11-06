@@ -13,7 +13,6 @@ import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
 import { Button } from '@kortix/ui/button';
 import { Input } from '@kortix/ui/input';
 import { Label } from '@kortix/ui/label';
-import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@kortix/ui/workspace/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
 import { AccountTopBar } from '@/features/workspace/account-top-bar';
@@ -38,7 +37,6 @@ import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { cn } from '@kortix/ui';
-import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 
 /**
  * The form <-> `WorkspaceHandoff` swap's ONLY transition — a plain opacity
@@ -157,7 +155,6 @@ export function NewWorkspacePage() {
     error: createError,
     retry,
     canRetry,
-    limitReached,
     phase,
   } = useCreateWorkspace({
     enterProject: returnUrl
@@ -166,7 +163,6 @@ export function NewWorkspacePage() {
         ? (projectId) => router.replace(`/workspaces/${encodeURIComponent(projectId)}/settings/computer`)
         : undefined,
   });
-  const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
   const submitting = status === 'creating';
 
   // The too-long message fires LIVE, before the field is ever left: the input
@@ -434,37 +430,16 @@ export function NewWorkspacePage() {
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
                 {tWorkspaces('submit')}
               </Button>
-              {/* The plan cap, known BEFORE any submit (KRTX-2495): the quota
-                  pre-check answered `capped` for the target account, so the
-                  form states the cap reason here instead of teaching it
-                  through a failed create. Same slot and treatment as the
-                  post-submit error block below — form-level, `role="alert"`,
-                  one message and one secondary action — so the cap says the
-                  same thing about the same account wherever it is met. Shown
-                  only while `status === 'idle'`: once a submit runs, the
-                  handoff ('creating') or the post-submit block ('error') owns
-                  this slot, so at most one cap message is ever on screen.
-                  The Upgrade affordance is gated on billing exactly like the
-                  post-submit one: with billing off there is nothing to upgrade
-                  to, and the server itself answers `capped: false`. */}
+              {/* The one-workspace rule, known BEFORE any submit (KRTX-2495):
+                  the quota pre-check answered `capped` (the account already
+                  holds its project), so the form says so here instead of
+                  teaching it through a failed create. No Upgrade action: the
+                  rule is the same on every plan. Shown only while
+                  `status === 'idle'`: once a submit runs, the handoff or the
+                  post-submit block owns this slot. */}
               {capState && status === 'idle' ? (
                 <div role="alert" className="flex flex-col items-center gap-1.5">
                   <p className="text-destructive text-center text-xs">{capState.message}</p>
-                  {isBillingEnabled() ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        openUpgradeDialog({
-                          reason: 'subscription_required',
-                          accountId: effectiveAccountId ?? undefined,
-                        })
-                      }
-                    >
-                      {t('actions.upgrade')}
-                    </Button>
-                  ) : null}
                 </div>
               ) : null}
               {/* Form-level, not a field error: every failure `messageFor`
@@ -503,29 +478,6 @@ export function NewWorkspacePage() {
                       {t('actions.tryAgain')}
                     </Button>
                   ) : null}
-                  {/* The plan cap (403 `project_limit_reached`) is the one
-                      failure the user can resolve on the spot, so it gets the
-                      way out the message promises: the upgrade dialog, opened
-                      for the account the create targeted. Never rendered next
-                      to the retry control — `canRetry` is false for this
-                      error — so it stays the only secondary action on screen.
-                      Gated on billing like the `GlobalUpgradeModal` mount
-                      below, which is what answers this click. */}
-                  {limitReached && isBillingEnabled() ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        openUpgradeDialog({
-                          reason: 'subscription_required',
-                          accountId: effectiveAccountId ?? undefined,
-                        })
-                      }
-                    >
-                      {t('actions.upgrade')}
-                    </Button>
-                  ) : null}
                 </div>
               ) : null}
             </form>
@@ -533,15 +485,6 @@ export function NewWorkspacePage() {
         )}
       </AnimatePresence>
 
-      {/* The plan-cap error's "Upgrade" button calls `openUpgradeDialog()`,
-          which needs a mounted `GlobalUpgradeModal` to answer it. The other
-          hosts are `AppProviders` (mounted by `project-shell.tsx` and the share
-          page, never by `app/(app)/layout.tsx`) and
-          `accounts/[id]/page.tsx`, which mounts one bare — the precedent that
-          this mount follows. Neither covers `/workspaces/new`, so billing can be enabled
-          here with no host at all and that button would be a dead click. Same
-          flag and same line as `app-providers.tsx:139`. */}
-      {isBillingEnabled() && <GlobalUpgradeModal />}
     </main>
   );
 }

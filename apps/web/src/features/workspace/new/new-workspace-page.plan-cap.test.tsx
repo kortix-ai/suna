@@ -36,7 +36,9 @@ configureKortix({
   getToken: async () => 'synthetic-token',
   fetch: async (input, init) => {
     const path = new URL(String(input)).pathname;
-    if (path.endsWith('/projects/provision-stream')) {
+    // `POST /v1/workspaces` (the SDK's createWorkspace, streamed): a new
+    // workspace with its own account.
+    if (path === '/v1/workspaces' && init?.method === 'POST') {
       creates += 1;
       payloads.push(String(init?.body));
       if (failCreate) return Response.json({ error: 'Temporary outage' }, { status: 502 });
@@ -261,19 +263,13 @@ test('a capped account cannot submit: Create project is disabled and fires no re
   await unmount(renderer);
 });
 
-test('a capped account gets the Upgrade affordance, scoped to the target account', async () => {
+test('a capped account gets no Upgrade affordance: the one-workspace rule is the same on every plan', async () => {
   setBilling(true);
   quotaData = cappedQuota;
   const renderer = await renderPage();
-  const upgrade = findButtonWithText(renderer, 'Upgrade plan');
-  expect(upgrade).not.toBeNull();
-  await act(async () => {
-    upgrade!.props.onClick();
-  });
-  const dialog = useUpgradeDialogStore.getState();
-  expect(dialog.isOpen).toBe(true);
-  expect(dialog.accountId).toBe('user-1');
-  useUpgradeDialogStore.getState().closeUpgradeDialog();
+  expect(capText(renderer)).toBe(CAP_MESSAGE);
+  expect(findButtonWithText(renderer, 'Upgrade plan')).toBeNull();
+  expect(useUpgradeDialogStore.getState().isOpen).toBe(false);
   await unmount(renderer);
 });
 
@@ -344,8 +340,8 @@ test('retry resends the failed attempt and retains the computer destination', as
   failCreate = false;
   await act(async () => { findButtonWithText(renderer, 'Try again')?.props.onClick(); });
   expect(JSON.parse(payloads.at(-1) ?? '{}').name).toBe('Original name');
-  // A whole new workspace: the server picks the account, so none is sent.
-  expect(JSON.parse(payloads.at(-1) ?? '{}').new_workspace).toBe(true);
+  // A whole new workspace (`POST /v1/workspaces`): the server picks the
+  // account, so none is sent.
   expect(JSON.parse(payloads.at(-1) ?? '{}').account_id).toBeUndefined();
   expect(JSON.parse(payloads.at(-1) ?? '{}').idempotency_key).toBe(JSON.parse(payloads.at(-2) ?? '{}').idempotency_key);
   expect(destinations.at(-1)).toBe('/workspaces/created-project/settings/computer');

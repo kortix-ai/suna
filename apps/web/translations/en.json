@@ -26693,8 +26693,7 @@
       "description": "A workspace is where your company works with Kortix: people, agents and everything they make.",
       "submit": "Create workspace",
       "restricted": "This server creates workspaces for invited people only. Ask an admin to invite {email}.",
-      "limitReached": "Your plan's workspace limit is reached. Upgrade to create another.",
-      "freeCreditsRule": "Each person gets monthly free credits in one workspace: the first one they create."
+      "freeCreditsRule": "Only your first workspace gets the monthly free credits."
     },
     "settings": {
       "title": "Workspace settings",

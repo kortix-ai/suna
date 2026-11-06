@@ -26693,7 +26693,6 @@
       "description": "Un espacio de trabajo es donde tu empresa trabaja con Kortix: personas, agentes y todo lo que crean.",
       "submit": "Crear espacio de trabajo",
       "restricted": "Este servidor solo crea espacios de trabajo para personas invitadas. Pide a un administrador que invite a {email}.",
-      "limitReached": "Alcanzaste el límite de espacios de trabajo de tu plan. Mejora tu plan para crear otro.",
       "freeCreditsRule": "Solo tu primer espacio de trabajo recibe los créditos gratuitos mensuales."
     },
     "settings": {

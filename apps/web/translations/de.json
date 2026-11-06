@@ -26693,7 +26693,6 @@
       "description": "In einem Workspace arbeitet dein Unternehmen mit Kortix: Menschen, Agents und alles, was sie erstellen.",
       "submit": "Workspace erstellen",
       "restricted": "Dieser Server erstellt Workspaces nur für eingeladene Personen. Bitte einen Admin, {email} einzuladen.",
-      "limitReached": "Das Workspace-Limit deines Plans ist erreicht. Führe ein Upgrade durch, um einen weiteren zu erstellen.",
       "freeCreditsRule": "Nur dein erster Workspace erhält die monatlichen Gratis-Credits."
     },
     "settings": {

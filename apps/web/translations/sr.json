@@ -26693,7 +26693,6 @@
       "description": "Radni prostor je mesto gde vaša kompanija radi sa Kortixom: ljudi, agenti i sve što naprave.",
       "submit": "Napravi radni prostor",
       "restricted": "Ovaj server pravi radne prostore samo za pozvane osobe. Zamolite administratora da pozove {email}.",
-      "limitReached": "Dostignut je limit radnih prostora vašeg plana. Nadogradite plan da biste napravili još jedan.",
       "freeCreditsRule": "Samo vaš prvi radni prostor dobija mesečne besplatne kredite."
     },
     "settings": {
