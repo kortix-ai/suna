@@ -263,6 +263,14 @@ export function docMarkdownPositions(markdown: string, doc: PMNode): DocMarkdown
     }
     return true;
   };
+  /** Skip one rendered character that has no source (it maps nowhere). */
+  const skipRendered = () => {
+    offset++;
+    if (offset === rendered[index]!.value.length) {
+      index++;
+      offset = 0;
+    }
+  };
   for (;;) {
     if (!placeRaw()) return null;
     const run = source[next++];
@@ -272,9 +280,24 @@ export function docMarkdownPositions(markdown: string, doc: PMNode): DocMarkdown
     while (used < run.value.length) {
       const target = rendered[index];
       if (!target) return null;
-      const length = Math.min(run.value.length - used, target.value.length - offset);
-      if (run.value.slice(used, used + length) !== target.value.slice(offset, offset + length))
-        return null;
+      let length = Math.min(run.value.length - used, target.value.length - offset);
+      const want = run.value.slice(used, used + length);
+      const have = target.value.slice(offset, offset + length);
+      if (want !== have) {
+        // The editor can hold whitespace Markdown cannot write (a paragraph's leading or trailing
+        // space), and the reverse. Map the matching prefix, skip that whitespace on the side that
+        // has it, and go on: one such paragraph must not unmap every passage in the doc. Any other
+        // difference is another text.
+        let same = 0;
+        while (same < length && want[same] === have[same]) same++;
+        if (same === 0) {
+          if (/\s/.test(have[0]!)) skipRendered();
+          else if (/\s/.test(want[0]!)) used++;
+          else return null;
+          continue;
+        }
+        length = same;
+      }
       const linear = run.value.length === run.end - run.start;
       runs.push({
         from: target.pos + offset,
@@ -289,6 +312,11 @@ export function docMarkdownPositions(markdown: string, doc: PMNode): DocMarkdown
         offset = 0;
       }
     }
+  }
+  // Whitespace the editor holds after the last mapped text (a trailing space) maps nowhere.
+  while (index < rendered.length && /^\s*$/.test(rendered[index]!.value.slice(offset))) {
+    index++;
+    offset = 0;
   }
   return index === rendered.length ? { markdown, runs } : null;
 }
