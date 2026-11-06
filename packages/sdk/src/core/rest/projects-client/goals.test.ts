@@ -184,7 +184,7 @@ describe('goal record: list, read, health', () => {
     serve(routes, calls);
   });
 
-  test('listProjectGoals reads GET /projects/:pid/goals and keeps the ProjectGoal shape', async () => {
+  test('listProjectGoals reads GET /workspaces/:pid/goals and keeps the ProjectGoal shape', async () => {
     const company = { ...RECORD, goal_id: 'g-company', slug: 'close', folder: '/Company/Goals/close', owner_session_id: null };
     routes['GET /workspaces/p1/goals'] = { status: 200, body: { goals: [RECORD, company] } };
     const [goal, other] = await listProjectGoals('p1', { now: NOW });
@@ -279,7 +279,7 @@ describe('goal record: list, read, health', () => {
 describe('goal record: a person creates and controls a goal', () => {
   let calls: Call[] = [];
   const routes: Record<string, { status: number; body: unknown }> = {};
-  const base = `/projects/p1/goals/${RECORD.goal_id}`;
+  const base = `/workspaces/p1/goals/${RECORD.goal_id}`;
   beforeEach(() => {
     calls = [];
     for (const key of Object.keys(routes)) delete routes[key];

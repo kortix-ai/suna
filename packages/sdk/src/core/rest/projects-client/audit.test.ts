@@ -119,7 +119,7 @@ test('listProjectAudit uses the canonical project route and forwards phase/curso
     limit: 100,
   });
   const url = new URL(calls[0]!.url);
-  expect(url.pathname).toBe('/projects/project-1/audit');
+  expect(url.pathname).toBe('/workspaces/project-1/audit/events');
   expect(Object.fromEntries(url.searchParams)).toEqual({
     action: 'opencode.tool',
     phase: 'completed',

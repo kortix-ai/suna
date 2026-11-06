@@ -49,7 +49,7 @@ describe('runProjectGoalControl', () => {
     seed(qc, RECORD);
     const goal = { goalId: 'g1', revision: 4 } as ProjectGoal;
     const next = await runProjectGoalControl(qc, 'p1', { goal, action: 'pause', reason: 'x' });
-    expect(calls).toEqual(['/projects/p1/goals/g1/pause']);
+    expect(calls).toEqual(['/workspaces/p1/goals/g1/pause']);
     expect(next?.revision).toBe(5);
     expect(qc.getQueryData<ProjectGoal>(qk.project.goal('p1', 'g1'))?.revision).toBe(5);
     expect(qc.getQueryData<ProjectGoal[]>(qk.project.goals('p1'))?.[0]?.revision).toBe(5);
@@ -63,7 +63,7 @@ describe('runProjectGoalControl', () => {
       runProjectGoalControl(qc, 'p1', { goal, action: 'stop', reason: 'x' }),
       runProjectGoalControl(qc, 'p1', { goal, action: 'stop', reason: 'x' }),
     ]);
-    expect(calls).toEqual(['/projects/p1/goals/g1/stop']);
+    expect(calls).toEqual(['/workspaces/p1/goals/g1/stop']);
     expect(a).toBe(b);
   });
 
@@ -85,6 +85,6 @@ describe('runProjectGoalControl', () => {
       runProjectGoalControl(qc, 'p1', { goal, action: 'answer', text: 'yes', answerId: 'a-1' }),
       runProjectGoalControl(qc, 'p1', { goal, action: 'answer', text: 'yes', answerId: 'a-1' }),
     ]);
-    expect(calls).toEqual(['/projects/p1/goals/g1/answer']);
+    expect(calls).toEqual(['/workspaces/p1/goals/g1/answer']);
   });
 });
