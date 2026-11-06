@@ -334,15 +334,15 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => Boolean(config.PLATINUM_API_KEY),
     // Off by default; a project turns it on (Marko, 2026-10-28).
     platformDefault: () => false,
-    enforcement: 'ui-only',
+    enforcement: 'routes',
     enforcementNote:
-      'BOX: off, a session box has no kortix-goals skill and its CLI hides and refuses `kortix goals` ' +
-      '(KORTIX_FEATURE_FLAGS → kortixd, apps/cli/src/command-table.ts) and kortixd runs no after-turn goal ' +
-      'check (harness/shared/on-idle-hook.ts), so a goal that already exists stops ' +
-      'being worked when the flag is turned off; its folder in Files stays. `kortix goals new` also checks the ' +
-      'flag through the API outside a box (apps/cli/src/commands/goals.ts). SERVER: off, a merged change request ' +
-      'wakes no goal (projects/lib/goal-wake.ts wakeGoal). The other server parts goals use ' +
-      '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
+      'Mixed, and every part is enforced on the server. ROUTES: every /v1/projects/:id/goals* route answers 403 ' +
+      '`feature_disabled` when off (projects/routes/goals.ts). BEHAVIORAL: the goal admission gate ' +
+      '(projects/goals/admission.ts, called from lib/trigger-fire.ts fireSessionReminder) refuses every heartbeat ' +
+      'fire and every event wake of a goal while the flag is off: no turn runs, the goal is blocked `flag_off` and ' +
+      'its heartbeat is switched off; a person resumes it after the flag is back on. A merged change request wakes ' +
+      'no goal (projects/lib/goal-wake.ts). BOX: off, a session box has no kortix-goals skill and its CLI hides ' +
+      '`kortix goals` (KORTIX_FEATURE_FLAGS → kortixd). The project_goals rows and the Goals folders in Files stay.',
   },
   {
     key: 'artifacts',

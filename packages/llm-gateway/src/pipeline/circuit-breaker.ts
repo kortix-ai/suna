@@ -93,6 +93,11 @@ export class CircuitBreakers {
     this.opts = { ...DEFAULT_BREAKER_OPTIONS, ...opts };
   }
 
+  /** The breakers' clock; pass its reading to `success()` as `admittedAt`. */
+  now(): number {
+    return this.opts.now();
+  }
+
   /**
    * Whether this attempt may reach the upstream now. An open circuit whose
    * cooldown has passed lets exactly one caller through as the probe.
@@ -111,9 +116,18 @@ export class CircuitBreakers {
     return false;
   }
 
-  success(key: string): void {
+  /**
+   * The upstream answered 2xx. `admittedAt` is when the request started: a
+   * request admitted before the circuit opened answers about the old
+   * upstream, so its success is recorded but does not close the circuit.
+   */
+  success(key: string, admittedAt: number = this.opts.now()): void {
     const circuit = this.circuits.get(key);
     if (!circuit) return;
+    if (circuit.state === 'open' && admittedAt < circuit.openedAt) {
+      this.record(circuit, false);
+      return;
+    }
     if (circuit.state !== 'closed') {
       circuit.state = 'closed';
       circuit.cooldownMs = this.opts.cooldownMs;
@@ -121,6 +135,18 @@ export class CircuitBreakers {
     }
     circuit.consecutive = 0;
     this.record(circuit, false);
+  }
+
+  /**
+   * The attempt ended with no verdict on the upstream: the client aborted, the
+   * upstream refused the request itself (400, 401, 403, 404, 413, 422), or the
+   * attempt threw before it reached the upstream. A probe in that state is
+   * released, so the next caller probes. Every attempt that `allow()` admitted
+   * ends in exactly one of `success`, `failure` or `release`.
+   */
+  release(key: string): void {
+    const circuit = this.circuits.get(key);
+    if (circuit?.state === 'half_open') circuit.probing = false;
   }
 
   failure(key: string, meta: { provider: string; model: string; reason: string; publicListing: boolean }): CircuitState {

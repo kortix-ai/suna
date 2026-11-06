@@ -21,6 +21,7 @@ import { SessionAttentionSchema, SessionBoardStateSchema, SessionInboundSchema }
 import { SESSION_PROMPT_REASONS } from './wire-values';
 
 export * from './memory';
+export * from './goals';
 export * from './wire-values';
 
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */

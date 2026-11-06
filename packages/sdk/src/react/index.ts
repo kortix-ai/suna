@@ -152,7 +152,16 @@ export {
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useUnifiedTriggers } from './use-unified-triggers';
-export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
+export {
+  runProjectGoalControl,
+  useProjectGoal,
+  useProjectGoalControl,
+  useProjectGoalEvents,
+  useProjectGoalFiles,
+  useProjectGoals,
+  useSessionGoal,
+  type ProjectGoalControlInput,
+} from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms, useSpaceRoom } from './use-rooms';
 export { usePeerMessages, useReachableAgents, useSessionWorkflows, useTeamTasks, useTeammates } from './use-multi-agent';
 export { useArtifactLive, type ArtifactLiveState, type UseArtifactLiveOptions } from './use-artifact-live';

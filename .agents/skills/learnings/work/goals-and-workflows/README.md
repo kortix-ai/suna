@@ -29,6 +29,7 @@ discretion. Every new rule is a code check.
 | `state-machines.md` | the kinds of state machine considered and why the recommendation moved from statechart to durable workflow |
 | `decisions.md` | decided / recommended / open, dated. Update it whenever a decision changes |
 | `live-runs.md` | the local runs behind the lesson above |
+| `prod-readiness.md` | 2026-11-06 master plan: opt-in prod beta, server goal record, milestones M1–M7 |
 
 ## What was discussed (2026-10-19 to 2026-10-21)
 

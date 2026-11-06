@@ -7831,7 +7831,8 @@ const catalog = {
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
       "verification_stalled": "Verification started more than 24 hours ago.",
-      "unreadable": "This folder has no goal file."
+      "unreadable": "This folder has no goal file.",
+      "blocked": "This goal cannot go on by itself."
     },
     "sessionChip": "Goal",
     "sessionRole": {
@@ -7855,6 +7856,24 @@ const catalog = {
       "draft": "Getting started: the agent is writing the plan.",
       "working": "In progress. Next check {time}.",
       "workingNoWake": "In progress."
+    },
+    "blocked": {
+      "credits": "It ran out of credits, so no wake can start.",
+      "wake_cap": "It used all {max} wakes for today.",
+      "session_cap": "It used all {max} sessions it may start.",
+      "owner_lost": "Its agent session failed, and no session took over.",
+      "storage": "Its folder in Files could not be read or written.",
+      "flag_off": "Goals is turned off for this project.",
+      "setup": "Kortix is still setting it up."
+    },
+    "blockedNext": {
+      "credits": "Add credits, then resume it.",
+      "wake_cap": "It goes on by itself after midnight UTC.",
+      "session_cap": "Stop it, or ask a project admin to raise its session limit.",
+      "owner_lost": "Start it again to give it a new session.",
+      "storage": "Check the folder in Files, then resume it.",
+      "flag_off": "Turn on Goals for this project, then resume it.",
+      "setup": "This finishes by itself within a minute."
     }
   },
   "agentEditor": {

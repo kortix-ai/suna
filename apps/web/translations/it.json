@@ -23654,7 +23654,8 @@
       "missed_wake": "L'ultimo risveglio è in ritardo.",
       "ask_overdue": "Una richiesta è scaduta.",
       "verification_stalled": "La verifica è iniziata più di 24 ore fa.",
-      "unreadable": "GOAL.md manca o non ha l’intestazione dell’obiettivo."
+      "unreadable": "GOAL.md manca o non ha l’intestazione dell’obiettivo.",
+      "blocked": "Questo obiettivo non può proseguire da solo."
     },
     "sessionChip": "Obiettivo",
     "sessionRole": {
@@ -24468,7 +24469,43 @@
     "restart": "Riavvia l'obiettivo",
     "restartReason": "Riavviato dalla pagina dell'obiettivo",
     "restartedToast": "Obiettivo riavviato",
-    "restartError": "Impossibile riavviare l'obiettivo. Riprova."
+    "restartError": "Impossibile riavviare l'obiettivo. Riprova.",
+    "noAccess": "Non hai accesso a questo obiettivo.",
+    "noAccessHint": "Chiedi alla persona a cui è destinato, o a un amministratore del progetto, di condividerlo con te.",
+    "notFoundHint": "È stato eliminato, oppure il link è errato.",
+    "chooseGoal": "Più obiettivi hanno questo nome. Scegline uno.",
+    "goalLoadError": "Impossibile caricare questo obiettivo. Riprova.",
+    "eventsLoadError": "Impossibile caricare l'attività.",
+    "changedToast": "Questo obiettivo è cambiato prima della tua azione. La pagina lo mostra com'è ora.",
+    "blockedTitle": "Bloccato",
+    "blocked": {
+      "credits": "Ha finito i crediti, quindi nessun risveglio può partire.",
+      "wake_cap": "Ha usato tutti i {max} risvegli di oggi.",
+      "session_cap": "Ha usato tutte le {max} sessioni che può avviare.",
+      "owner_lost": "La sua sessione agente è fallita e nessuna sessione è subentrata.",
+      "storage": "Non è stato possibile leggere o scrivere la sua cartella in File.",
+      "flag_off": "Gli obiettivi sono disattivati per questo progetto.",
+      "setup": "Kortix lo sta ancora configurando."
+    },
+    "blockedNext": {
+      "credits": "Aggiungi crediti, poi riprendilo.",
+      "wake_cap": "Riprende da solo dopo la mezzanotte UTC.",
+      "session_cap": "Fermalo, o chiedi a un amministratore del progetto di aumentare il limite di sessioni.",
+      "owner_lost": "Avvialo di nuovo per dargli una nuova sessione.",
+      "storage": "Controlla la cartella in File, poi riprendilo.",
+      "flag_off": "Attiva gli obiettivi per questo progetto, poi riprendilo.",
+      "setup": "Si completa da solo entro un minuto."
+    },
+    "legacyUnverifiedTitle": "Non verificato da Kortix",
+    "legacyUnverified": "Questo obiettivo è stato importato dalla sua cartella. Kortix non ne ha verificato il risultato.",
+    "verified": "Verificato",
+    "reportedMet": "Segnalato come raggiunto, non ancora verificato",
+    "reportedMetHint": "L'agente lo segnala come fatto. Il controllo indipendente non l'ha ancora approvato.",
+    "verifiedCount": "{verified} di {total} verificati",
+    "checkFailed": "Controllo non superato: {note}",
+    "waitingOnPerson": "In attesa di {person}",
+    "waitNoCost": "Nessun controllo viene eseguito mentre attende una risposta.",
+    "chaseAt": "Sollecita {time}"
   },
   "agentEditor": {
     "manage": "Gestisci",

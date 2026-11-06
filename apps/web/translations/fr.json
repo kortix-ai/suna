@@ -23654,7 +23654,8 @@
       "missed_wake": "Le dernier réveil est en retard.",
       "ask_overdue": "Une demande a dépassé son échéance.",
       "verification_stalled": "La vérification a commencé il y a plus de 24 heures.",
-      "unreadable": "GOAL.md est absent ou n’a pas d’en-tête d’objectif."
+      "unreadable": "GOAL.md est absent ou n’a pas d’en-tête d’objectif.",
+      "blocked": "Cet objectif ne peut pas continuer seul."
     },
     "sessionChip": "Objectif",
     "sessionRole": {
@@ -24468,7 +24469,43 @@
     "restart": "Relancer l'objectif",
     "restartReason": "Relancé depuis la page de l'objectif",
     "restartedToast": "Objectif relancé",
-    "restartError": "Impossible de relancer l'objectif. Réessayez."
+    "restartError": "Impossible de relancer l'objectif. Réessayez.",
+    "noAccess": "Vous n'avez pas accès à cet objectif.",
+    "noAccessHint": "Demandez à la personne concernée, ou à un administrateur du projet, de le partager avec vous.",
+    "notFoundHint": "Il a été supprimé, ou le lien est incorrect.",
+    "chooseGoal": "Plusieurs objectifs portent ce nom. Choisissez-en un.",
+    "goalLoadError": "Impossible de charger cet objectif. Réessayez.",
+    "eventsLoadError": "Impossible de charger l'activité.",
+    "changedToast": "Cet objectif a changé avant votre action. La page l'affiche tel qu'il est maintenant.",
+    "blockedTitle": "Bloqué",
+    "blocked": {
+      "credits": "Il n'a plus de crédits, aucun réveil ne peut démarrer.",
+      "wake_cap": "Il a utilisé ses {max} réveils pour aujourd'hui.",
+      "session_cap": "Il a utilisé les {max} sessions qu'il peut démarrer.",
+      "owner_lost": "Sa session d'agent a échoué et aucune session n'a pris le relais.",
+      "storage": "Son dossier dans Fichiers n'a pas pu être lu ou écrit.",
+      "flag_off": "Les objectifs sont désactivés pour ce projet.",
+      "setup": "Kortix est encore en train de le configurer."
+    },
+    "blockedNext": {
+      "credits": "Ajoutez des crédits, puis reprenez-le.",
+      "wake_cap": "Il reprend seul après minuit UTC.",
+      "session_cap": "Arrêtez-le, ou demandez à un administrateur du projet d'augmenter sa limite de sessions.",
+      "owner_lost": "Relancez-le pour lui donner une nouvelle session.",
+      "storage": "Vérifiez le dossier dans Fichiers, puis reprenez-le.",
+      "flag_off": "Activez les objectifs pour ce projet, puis reprenez-le.",
+      "setup": "Cela se termine seul en moins d'une minute."
+    },
+    "legacyUnverifiedTitle": "Non vérifié par Kortix",
+    "legacyUnverified": "Cet objectif a été importé depuis son dossier. Kortix n'a pas vérifié son résultat.",
+    "verified": "Vérifié",
+    "reportedMet": "Signalé atteint, pas encore vérifié",
+    "reportedMetHint": "L'agent signale ce critère comme atteint. La vérification indépendante ne l'a pas encore validé.",
+    "verifiedCount": "{verified} sur {total} vérifiés",
+    "checkFailed": "Vérification échouée : {note}",
+    "waitingOnPerson": "En attente de {person}",
+    "waitNoCost": "Aucune vérification ne tourne tant qu'il attend une réponse.",
+    "chaseAt": "Relance {time}"
   },
   "agentEditor": {
     "manage": "Gérer",

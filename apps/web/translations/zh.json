@@ -23654,7 +23654,8 @@
       "missed_wake": "上次唤醒已逾期。",
       "ask_overdue": "有一项请求已过期。",
       "verification_stalled": "验证已开始超过 24 小时。",
-      "unreadable": "GOAL.md 不存在或缺少目标的 front matter。"
+      "unreadable": "GOAL.md 不存在或缺少目标的 front matter。",
+      "blocked": "此目标无法自行继续。"
     },
     "sessionChip": "目标",
     "sessionRole": {
@@ -24468,7 +24469,43 @@
     "restart": "重新开始目标",
     "restartReason": "从目标页面重新开始",
     "restartedToast": "目标已重新开始",
-    "restartError": "无法重新开始目标。请重试。"
+    "restartError": "无法重新开始目标。请重试。",
+    "noAccess": "你无权访问此目标。",
+    "noAccessHint": "请负责人或项目管理员与你共享。",
+    "notFoundHint": "它已被删除，或链接有误。",
+    "chooseGoal": "有多个目标使用此名称。请选择一个。",
+    "goalLoadError": "无法加载此目标。请重试。",
+    "eventsLoadError": "无法加载动态。",
+    "changedToast": "在你的操作生效前，此目标已更改。页面显示的是它现在的状态。",
+    "blockedTitle": "已阻塞",
+    "blocked": {
+      "credits": "积分已用完，无法开始唤醒。",
+      "wake_cap": "今天的 {max} 次唤醒已全部用完。",
+      "session_cap": "可启动的 {max} 个会话已全部用完。",
+      "owner_lost": "其智能体会话失败，且没有会话接手。",
+      "storage": "无法读写其在文件中的文件夹。",
+      "flag_off": "此项目已关闭目标功能。",
+      "setup": "Kortix 仍在设置它。"
+    },
+    "blockedNext": {
+      "credits": "添加积分后恢复它。",
+      "wake_cap": "UTC 午夜后它会自动继续。",
+      "session_cap": "停止它，或请项目管理员提高会话上限。",
+      "owner_lost": "重新启动它以分配新会话。",
+      "storage": "检查文件中的文件夹，然后恢复它。",
+      "flag_off": "为此项目开启目标功能，然后恢复它。",
+      "setup": "一分钟内会自动完成。"
+    },
+    "legacyUnverifiedTitle": "未经 Kortix 验证",
+    "legacyUnverified": "此目标是从其文件夹导入的。Kortix 未检查其结果。",
+    "verified": "已验证",
+    "reportedMet": "已报告达成，尚未验证",
+    "reportedMetHint": "智能体报告此项已完成。独立检查尚未通过。",
+    "verifiedCount": "已验证 {verified}/{total}",
+    "checkFailed": "检查未通过：{note}",
+    "waitingOnPerson": "等待 {person}",
+    "waitNoCost": "等待回答期间不会运行检查。",
+    "chaseAt": "{time} 跟进"
   },
   "agentEditor": {
     "manage": "管理",
