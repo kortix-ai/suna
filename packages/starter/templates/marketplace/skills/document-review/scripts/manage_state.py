@@ -482,7 +482,7 @@ def _print_records(records: list[dict], spec: RecordSpec) -> None:
         print(spec.header.format(**record))
         print(f"  Section: {record['section']} | Location: {record['location']}")
         for label, key, optional in spec.fields:
-            value = record.get(key)
+            value = record.get(key) if key in ("anchor", "source_urls") else record[key]
             if optional and not value:
                 continue
             print(f"  {label}: {', '.join(value) if key == 'source_urls' else value}")
