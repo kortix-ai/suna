@@ -25111,7 +25111,9 @@
       "discardDrawingTitle": "放弃此绘图？",
       "discardDrawingHint": "你的笔画尚未保存。此操作无法撤销。",
       "discardDrawing": "放弃",
-      "keepDrawing": "继续绘制"
+      "keepDrawing": "继续绘制",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "移至空间",
     "projectWide": "项目范围",
