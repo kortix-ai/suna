@@ -7,8 +7,9 @@
  *   I2  on every moved table, a split project's rows carry its account
  *   I3  every secret of a split-off account decrypts with that account's key
  *   I4  every user holding a grant is a member of the grant's account
- *   I5  money stayed: each split-off account had no billing at the move, and
- *       the source kept its Stripe customers
+ *   I5  money stayed: each split-off account had no billing at the move, the
+ *       source kept its Stripe customers, and the split-off wallet is Free
+ *       with no free grant (credit_accounts.free_credits_eligible = false)
  *   I6  a 1:1 workspace's account name equals its project name
  *   I7  each principal reaches the moved workspace through as many grants as
  *       before the move
@@ -120,16 +121,21 @@ async function i4(): Promise<InvariantResult> {
 async function i5(runs: DoneRun[]): Promise<InvariantResult> {
   const violations: string[] = [];
   for (const run of runs) {
-    const [money] = await db.execute<{ target_billing: number; source_customers: number }>(sql`
+    const [money] = await db.execute<{ target_billing: number; source_customers: number; target_wallet: number; target_free_grants: number }>(sql`
       SELECT
         (SELECT count(*)::int FROM kortix.billing_customers WHERE account_id = ${run.to_account_id})
         + (SELECT count(*)::int FROM kortix.credit_purchases WHERE account_id = ${run.to_account_id} AND created_at <= ${run.completed_at}::timestamptz)
         + (SELECT count(*)::int FROM kortix.enterprise_contracts WHERE account_id = ${run.to_account_id} AND created_at <= ${run.completed_at}::timestamptz) AS target_billing,
-        (SELECT count(*)::int FROM kortix.billing_customers WHERE account_id = ${run.from_account_id}) AS source_customers`);
+        (SELECT count(*)::int FROM kortix.billing_customers WHERE account_id = ${run.from_account_id}) AS source_customers,
+        (SELECT count(*)::int FROM kortix.credit_accounts WHERE account_id = ${run.to_account_id} AND NOT free_credits_eligible) AS target_wallet,
+        (SELECT count(*)::int FROM kortix.credit_ledger WHERE account_id = ${run.to_account_id} AND type = 'free_tier_grant') AS target_free_grants`);
     const planned = Number((run.plan.account as Record<string, unknown> | undefined)?.billing_customers ?? 0);
     if (!money) continue;
     if (money.target_billing > 0) violations.push(`target_billing:${run.run_id}`);
     if (money.source_customers < planned) violations.push(`source_lost_customer:${run.run_id}`);
+    // One free grant per person: the split-off wallet exists, is not eligible, and was never granted.
+    if (money.target_wallet !== 1) violations.push(`target_wallet:${run.run_id}`);
+    if (money.target_free_grants > 0) violations.push(`target_free_grant:${run.run_id}`);
   }
   return result(violations);
 }

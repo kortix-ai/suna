@@ -1,5 +1,6 @@
 import { config } from '../../config';
 import { getCreditAccount, upsertCreditAccount } from '../repositories/credit-accounts';
+import { isWorkspaceSplitTarget } from '../repositories/split-targets';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { wallet } from '../wallet';
 import { getTier, MINIMUM_CREDIT_FOR_RUN } from './tiers';
@@ -58,7 +59,9 @@ export async function ensureFreeTierAccountReady(
 
   const account = await getCreditAccount(accountId);
   if (!account) {
-    await initializeFreeTierAccount(accountId);
+    // A split-off workspace whose row is missing gets Free with 0 credits:
+    // its person holds the free grant in their first workspace.
+    await initializeFreeTierAccount(accountId, { freeCredits: !(await isWorkspaceSplitTarget(accountId)) });
     return null;
   }
 

@@ -36,7 +36,6 @@ import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type { SiteStorage } from '../../apps/static-site';
-import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import {
   copyProjectSiteBlobs,
   projectGrantCounts,
@@ -248,13 +247,8 @@ export async function applyWorkspaceSplitRun(runId: string, deps: ApplyDeps = {}
     if (error instanceof Error && error.message === 'lease_lost') return 'busy';
     return recordFailure(run, error);
   }
-  if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    // Free with 0 credits: the free grant stays with the person's first workspace.
-    await initializeFreeTierAccount(toAccountId, { freeCredits: false }).catch((error) =>
-      logger.warn('[workspace-split] free tier init failed; the billing gates repair it on first use', {
-        accountId: toAccountId, error: error instanceof Error ? error.message : String(error),
-      }));
-  }
+  // The new account's wallet (Free, 0 credits, never the free grant) committed
+  // with the split: splitProjectIntoNewAccount writes its credit_accounts row.
   return 'done';
 }
 

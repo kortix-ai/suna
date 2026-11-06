@@ -38,6 +38,7 @@ import { sql } from 'drizzle-orm';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { pendingPrincipalId } from '../../iam/actor';
 import { logger } from '../../lib/logger';
+import { calculateNextCreditGrant } from '../../billing/services/credit-grant-schedule';
 import { moveProjectInTransaction, type TransferTx } from './project-transfer';
 
 /** Every row the split created in the target, by kind. JSON-safe. */
@@ -120,6 +121,15 @@ async function copyDirectory(tx: TransferTx, projectId: string, fromAccountId: s
       a.pat_idle_revoke_days, a.admins_see_all_sessions, a.automations_paused_at, a.automations_paused_by, a.branding
       FROM kortix.accounts a JOIN kortix.projects p ON p.account_id = a.account_id
      WHERE a.account_id = ${fromAccountId} AND p.project_id = ${projectId}`);
+  // Its wallet, in the same transaction: Free with 0 credits and no free
+  // grant ever (the person holds it in their first workspace). Without the
+  // row, the billing gate's repair would grant the signup credits.
+  const anchor = new Date();
+  await tx.execute(sql`
+    INSERT INTO kortix.credit_accounts (account_id, tier, billing_cycle_anchor, next_credit_grant, free_credits_eligible, created_at, updated_at)
+    VALUES (${toAccountId}::uuid, 'free', ${anchor.toISOString()}::timestamptz,
+      ${calculateNextCreditGrant(anchor).toISOString()}::timestamptz, false, now(), now())
+    ON CONFLICT (account_id) DO UPDATE SET free_credits_eligible = false, updated_at = now()`);
 
   // SCIM external ids are per identity-provider connection, which stays with
   // the source: the copy carries none.

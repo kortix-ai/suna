@@ -273,6 +273,13 @@ withDb('workspace split', () => {
     expect(await db.select({ accountId: appSiteFiles.accountId }).from(appSiteFiles).where(eq(appSiteFiles.sha256, SHA))).toEqual([{ accountId: target }]);
     expect(storage.objects.get(`${target}/${SHA}`)).toBe('site');
 
+    // The new wallet committed with the split: Free, not eligible, never granted.
+    const [wallet] = await db.execute<{ tier: string; free_credits_eligible: boolean; grants: number }>(sql`
+      SELECT c.tier, c.free_credits_eligible,
+        (SELECT count(*)::int FROM kortix.credit_ledger l WHERE l.account_id = c.account_id AND l.type = 'free_tier_grant') AS grants
+        FROM kortix.credit_accounts c WHERE c.account_id = ${target}`);
+    expect(wallet).toEqual({ tier: 'free', free_credits_eligible: false, grants: 0 });
+
     // Money stays: the paying account is held, nothing of it moved.
     expect((await runFor(PAYING_B))?.phase).toBe('held');
     expect((await accountOfProject(PAYING_B))?.accountId).toBe(PAYING);
