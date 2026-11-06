@@ -52,6 +52,13 @@ describe('thread file paths', () => {
     expect(spaceFolderOf(dm, () => null)).toBeNull();
     expect(spaceFolderOf({ ...base, space_id: null, space_kind: null }, () => null)).toBeNull();
   });
+
+  test('a channel thread the channel does not publish keeps its files out of the shared channel folder', () => {
+    const base = { space_id: 's1', space_kind: 'channel', space_slug: 'general', space_name: 'general', space_visibility: 'public', space_dm_user_id: null, space_dm_agent: null } as unknown as ThreadPlaceRow;
+    expect(spaceFolderOf({ ...base, thread_visibility: 'project' }, () => null)).toBe('/Company/Channels/general');
+    expect(spaceFolderOf({ ...base, thread_visibility: 'private' }, () => null)).toBeNull();
+    expect(spaceFolderOf({ ...base, thread_visibility: 'restricted' }, () => null)).toBeNull();
+  });
 });
 
 describe('message numbering', () => {

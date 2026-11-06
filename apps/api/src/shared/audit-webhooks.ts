@@ -119,6 +119,22 @@ export function entitlementLookupFailure(attempts: number, message: string, now 
   };
 }
 
+/** Write a claimed delivery's outcome: fenced on this worker's claim, lease released, `updatedAt` now unless the caller sets it. */
+async function updateClaimedDelivery(
+  deliveryId: string,
+  outcome: Partial<typeof auditWebhookDeliveries.$inferInsert>,
+): Promise<void> {
+  await db
+    .update(auditWebhookDeliveries)
+    .set({ lockedBy: null, lockedUntil: null, updatedAt: new Date(), ...outcome })
+    .where(
+      and(
+        eq(auditWebhookDeliveries.deliveryId, deliveryId),
+        eq(auditWebhookDeliveries.lockedBy, WORKER_ID),
+      ),
+    );
+}
+
 async function processDelivery(deliveryId: string): Promise<void> {
   const [row] = await db
     .select({ delivery: auditWebhookDeliveries, hook: auditWebhooks, event: getViewSelectedFields(auditEventsAll) })
@@ -142,33 +158,17 @@ async function processDelivery(deliveryId: string): Promise<void> {
     // A lookup error is not "not entitled". Dead-lettering here lost a SIEM
     // customer's events for any billing-layer blip; retry on the delivery backoff.
     const attempts = row.delivery.attempts + 1;
-    await db
-      .update(auditWebhookDeliveries)
-      .set(entitlementLookupFailure(attempts, error instanceof Error ? error.message : String(error)))
-      .where(
-        and(
-          eq(auditWebhookDeliveries.deliveryId, deliveryId),
-          eq(auditWebhookDeliveries.lockedBy, WORKER_ID),
-        ),
-      );
+    await updateClaimedDelivery(
+      deliveryId,
+      entitlementLookupFailure(attempts, error instanceof Error ? error.message : String(error)),
+    );
     return;
   }
   if (!entitled || !row.hook.enabled) {
-    await db
-      .update(auditWebhookDeliveries)
-      .set({
-        status: 'dead_letter',
-        lockedBy: null,
-        lockedUntil: null,
-        lastError: entitled ? 'webhook disabled' : 'audit entitlement unavailable',
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(auditWebhookDeliveries.deliveryId, deliveryId),
-          eq(auditWebhookDeliveries.lockedBy, WORKER_ID),
-        ),
-      );
+    await updateClaimedDelivery(deliveryId, {
+      status: 'dead_letter',
+      lastError: entitled ? 'webhook disabled' : 'audit entitlement unavailable',
+    });
     return;
   }
 
@@ -181,45 +181,23 @@ async function processDelivery(deliveryId: string): Promise<void> {
   );
   const attempts = row.delivery.attempts + 1;
   if (result.ok) {
-    await db
-      .update(auditWebhookDeliveries)
-      .set({
-        status: 'delivered',
-        attempts,
-        lastStatus: result.status ?? null,
-        lastError: null,
-        deliveredAt: new Date(),
-        lockedBy: null,
-        lockedUntil: null,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(auditWebhookDeliveries.deliveryId, deliveryId),
-          eq(auditWebhookDeliveries.lockedBy, WORKER_ID),
-        ),
-      );
+    await updateClaimedDelivery(deliveryId, {
+      status: 'delivered',
+      attempts,
+      lastStatus: result.status ?? null,
+      lastError: null,
+      deliveredAt: new Date(),
+    });
     return;
   }
   const dead = attempts >= MAX_DELIVERY_ATTEMPTS;
-  await db
-    .update(auditWebhookDeliveries)
-    .set({
-      status: dead ? 'dead_letter' : 'retry',
-      attempts,
-      nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)),
-      lastStatus: result.status ?? null,
-      lastError: result.error?.slice(0, 1000) ?? 'delivery failed',
-      lockedBy: null,
-      lockedUntil: null,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(auditWebhookDeliveries.deliveryId, deliveryId),
-        eq(auditWebhookDeliveries.lockedBy, WORKER_ID),
-      ),
-    );
+  await updateClaimedDelivery(deliveryId, {
+    status: dead ? 'dead_letter' : 'retry',
+    attempts,
+    nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)),
+    lastStatus: result.status ?? null,
+    lastError: result.error?.slice(0, 1000) ?? 'delivery failed',
+  });
 }
 
 let deliveryWaker: (() => void) | null = null;

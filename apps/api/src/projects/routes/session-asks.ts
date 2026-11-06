@@ -43,6 +43,15 @@ function mayDecide(caller: ApprovalCaller, sessions: Map<string, AskSessionRow>,
   return false;
 }
 
+/**
+ * An ask whose thread sits in a private channel the caller is not in does not
+ * exist for them, a manager included: the decision writes into that thread.
+ */
+function askInHiddenSpace(sessions: Map<string, AskSessionRow>, ask: { sessionId: string; surfaceSessionId: string | null }, hidden: ReadonlySet<string>): boolean {
+  const row = sessions.get(ask.surfaceSessionId ?? ask.sessionId) ?? sessions.get(ask.sessionId);
+  return !!row?.spaceId && hidden.has(row.spaceId);
+}
+
 export function registerSessionAsksRoutes(): void {
   projectsApp.openapi(
     createRoute({
@@ -127,6 +136,9 @@ export function registerSessionAsksRoutes(): void {
           return c.json({ error: "reply must be 'once', 'always' or 'reject'" }, 400);
         }
         const sessions = await readAskSessions(projectId, [ask.sessionId, ask.surfaceSessionId ?? ask.sessionId]);
+        if (askInHiddenSpace(sessions, ask, await hiddenSpaceIds(projectId, loaded.userId, callerKortixSessionId(c)))) {
+          return c.json({ error: 'Not found' }, 404);
+        }
         if (!mayDecide(caller, sessions, { session_id: ask.sessionId, surface_session_id: ask.surfaceSessionId ?? ask.sessionId })) {
           return c.json({ error: 'Only a project manager or the session launcher can decide this' }, 403);
         }
@@ -137,6 +149,9 @@ export function registerSessionAsksRoutes(): void {
       const question = await getPendingQuestionById(projectId, parsed.id);
       if (!question) return c.json({ error: 'Not found' }, 404);
       const sessions = await readAskSessions(projectId, [question.sessionId, question.surfaceSessionId ?? question.sessionId]);
+      if (askInHiddenSpace(sessions, question, await hiddenSpaceIds(projectId, loaded.userId, callerKortixSessionId(c)))) {
+        return c.json({ error: 'Not found' }, 404);
+      }
       if (!mayDecide(caller, sessions, { session_id: question.sessionId, surface_session_id: question.surfaceSessionId ?? question.sessionId })) {
         return c.json({ error: 'Only a project manager or the session launcher can answer this' }, 403);
       }
