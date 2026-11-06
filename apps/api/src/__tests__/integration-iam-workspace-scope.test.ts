@@ -17,9 +17,10 @@ import { accountMembers, accountTokens, accounts, projectMembers, projects, serv
 import { toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { db } from '../shared/db';
 import { authorize, workspaceRoleFor, type Obj } from '../iam/authorize';
-import { actorForUser, type Actor } from '../iam/actor';
+import { actorForUser, tokenCredential, type Actor } from '../iam/actor';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam';
 import { insertIntoView } from './helpers/compat-views';
+import { myKortixAgentGrant } from '../projects/lib/my-kortix-agent';
 
 const uid = () => crypto.randomUUID();
 
@@ -164,6 +165,10 @@ describe('one agent wall: HUMAN_ONLY (an inherited session acts as its person ot
   const SA = uid();
   const AGENT_TOKEN = uid();
   const PLAIN_TOKEN = uid();
+  // A My Kortix-shaped session token: a session and an agent grant, no service
+  // account (mintSessionToken mints the coordinator this way, and any session
+  // whose ensureAgentServiceAccount failed). The credential reads as a PAT.
+  const NO_SA_SESSION_TOKEN = uid();
 
   beforeAll(async () => {
     await db.insert(serviceAccounts).values({
@@ -180,6 +185,11 @@ describe('one agent wall: HUMAN_ONLY (an inherited session acts as its person ot
         tokenId: AGENT_TOKEN, accountId: ONE_ACCOUNT, userId: people.owner, name: 'session',
         publicKey: `pk_a_${AGENT_TOKEN.slice(0, 8)}`, secretKeyHash: `h_a_${AGENT_TOKEN.slice(0, 8)}`,
         projectId: ONE_WS, sessionId: uid(), serviceAccountId: SA,
+      },
+      {
+        tokenId: NO_SA_SESSION_TOKEN, accountId: ONE_ACCOUNT, userId: people.owner, name: 'my-kortix',
+        publicKey: `pk_m_${NO_SA_SESSION_TOKEN.slice(0, 8)}`, secretKeyHash: `h_m_${NO_SA_SESSION_TOKEN.slice(0, 8)}`,
+        projectId: ONE_WS, sessionId: uid(), agentGrant: myKortixAgentGrant(),
       },
       // The same person's project PAT.
       {
@@ -239,6 +249,19 @@ describe('one agent wall: HUMAN_ONLY (an inherited session acts as its person ot
     for (const action of ['workspace.token.create', 'workspace.billing.write', 'workspace.account.delete']) {
       expect({ action, ...(await authorize(agentActor(), action)) }).toEqual({ action, allowed: false, reason: 'agent_human_only_action' });
     }
+  });
+
+  test('HUMAN_ONLY is refused to a session token that names no service account (My Kortix)', async () => {
+    const credential = await tokenCredential(NO_SA_SESSION_TOKEN, ONE_ACCOUNT, null);
+    const actor: Actor = { userId: people.owner, accountId: ONE_ACCOUNT, credential, ctx: {} };
+    for (const action of ['workspace.delete', 'workspace.credentials.issue']) {
+      expect({ action, ...(await authorize(actor, action, ws(ONE_WS))) }).toEqual({ action, allowed: false, reason: 'agent_human_only_action' });
+    }
+    for (const action of ['workspace.token.create', 'workspace.billing.write']) {
+      expect({ action, ...(await authorize(actor, action)) }).toEqual({ action, allowed: false, reason: 'agent_human_only_action' });
+    }
+    // Its ordinary work still passes as the launcher.
+    expect((await authorize(actor, 'workspace.write', ws(ONE_WS))).allowed).toBe(true);
   });
 
   test("a workspace-bound token never reaches another account's surface", async () => {

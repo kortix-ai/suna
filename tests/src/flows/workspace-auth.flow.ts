@@ -416,3 +416,80 @@ flow(
     });
   },
 );
+
+// ── WS-AUTH-8 — a session token with no service account is still an agent ───
+// The My Kortix coordinator's session token names a session and an agent grant
+// but no service account (mintSessionToken), so it classifies as a PAT that
+// acts as its launcher. HUMAN_ONLY applies to it all the same.
+flow(
+  'WS-AUTH-8',
+  {
+    domain: 'workspaces',
+    requires: ['database'],
+    routes: [
+      'POST /v1/workspaces/:workspaceId/tokens',
+      'POST /v1/workspaces/:workspaceId/iam/service-accounts',
+      'POST /v1/billing/auto-topup/configure',
+      'DELETE /v1/workspaces/:workspaceId',
+      'GET /v1/workspaces/:workspaceId/members',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const w = await team.project();
+    const db = await openDb(ctx);
+    const sessionId = crypto.randomUUID();
+    try {
+      let session!: ReturnType<typeof ctx.client.withBearer>;
+      await ctx.step('the owner mints a workspace key; the row is bound to a session with the My Kortix grant and no service account', async () => {
+        const minted = await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${w.id}/tokens`, {
+          name: 'wsa8-my-kortix',
+          expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        });
+        minted.status(201);
+        const { token_id, secret_key } = minted.json<{ token_id: string; secret_key: string }>();
+        const grant = { agent: 'kortix', permissions: 'all', connectors: [], env: [] };
+        // A live session and its sandbox, as a real My Kortix session has them:
+        // a session token answers only while its sandbox is active.
+        await db.query(
+          `INSERT INTO kortix.project_sessions
+             (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility, metadata)
+           VALUES ($1, $2, $3, $1, 'kortix', 'running', $4, 'private', '{"workspace_mode":"branch"}'::jsonb)`,
+          [sessionId, team.id, w.id, ctx.P.OWNER.userId],
+        );
+        await db.query(
+          `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
+           VALUES ($1::uuid, $1, $2, $3, 'active')`,
+          [sessionId, team.id, w.id],
+        );
+        await db.query(
+          `UPDATE kortix.account_tokens SET session_id = $2, agent_grant = $3::jsonb, service_account_id = NULL WHERE token_id = $1`,
+          [token_id, sessionId, JSON.stringify(grant)],
+        );
+        session = ctx.client.withBearer(secret_key, 'MY_KORTIX_SESSION');
+      });
+
+      await ctx.step('the session keeps the person’s ordinary work: GET /workspaces/:w/members → 200', async () => {
+        (await session.get(`/v1/workspaces/${w.id}/members`)).status(200);
+      });
+
+      await ctx.step('minting a service account, configuring auto-topup and deleting the workspace → 403 agent_human_only_action', async () => {
+        (await session.post(`/v1/workspaces/${w.id}/iam/service-accounts`, { name: 'wsa8-sa' }))
+          .status(403).body().has('$.code', 'agent_human_only_action');
+        (await session.post('/v1/billing/auto-topup/configure', { account_id: team.id, enabled: true, threshold: 5, amount: 20 }))
+          .status(403).body().has('$.code', 'agent_human_only_action');
+        (await session.del(`/v1/workspaces/${w.id}`)).status(403).body().has('$.code', 'agent_human_only_action');
+      });
+
+      await ctx.step('the owner in the browser keeps the same power: POST /iam/service-accounts → 201; the workspace still answers 200', async () => {
+        (await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${w.id}/iam/service-accounts`, { name: 'wsa8-owner-sa' })).status(201);
+        (await ctx.client.as(ctx.P.OWNER).get(`/v1/workspaces/${w.id}`)).status(200);
+      });
+    } finally {
+      await db.query('DELETE FROM kortix.account_tokens WHERE session_id = $1', [sessionId]);
+      await db.query('DELETE FROM kortix.session_sandboxes WHERE session_id = $1', [sessionId]);
+      await db.query('DELETE FROM kortix.project_sessions WHERE session_id = $1', [sessionId]);
+      await (db as unknown as { end(): Promise<void> }).end();
+    }
+  },
+);

@@ -59,6 +59,7 @@ import type { WorkspaceRole } from './roles';
 import {
   actingPrincipal,
   actingTokenId,
+  isAgentSessionToken,
   loadTokenBinding,
   type Actor,
   type PrincipalRef,
@@ -254,18 +255,19 @@ async function authorizeDecision(actor: Actor, action: string, obj: EvalObj): Pr
   // governed (it acts as its service account), and above the super-admin
   // bypass: the launcher's bypass is exactly the power that must not pass to
   // the agent. This is the ONE agent wall; everything else is a grant.
-  if (actor.credential.kind === 'agent_session' && isHumanOnlyAction(action)) {
+  // A session token that names no service account (My Kortix) reads as a PAT;
+  // its binding says it is a session, so the binding is read first.
+  // 2. The acting token's binding: project confinement, agent grant, standing
+  // identity — one memoized read, skipped entirely for browser requests.
+  const tokenId = actingTokenId(actor);
+  const binding = tokenId ? await loadTokenBinding(tokenId) : null;
+  if (isHumanOnlyAction(action) && isAgentSessionToken(actor, binding)) {
     return deny('agent_human_only_action');
   }
 
   const catalog = await loadPermissionCatalog();
   const entry = catalog.byAction.get(action);
   const scope: ScopeType = entry?.scopeType ?? scopeForUncatalogedAction(action);
-
-  // 2. The acting token's binding: project confinement, agent grant, standing
-  // identity — one memoized read, skipped entirely for browser requests.
-  const tokenId = actingTokenId(actor);
-  const binding = tokenId ? await loadTokenBinding(tokenId) : null;
 
   // 3. The acting principal.
   const principal = actingPrincipal(actor);

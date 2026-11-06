@@ -168,6 +168,19 @@ export function credentialOnBehalfOf(actor: Actor): string | null {
   return actor.credential.kind === 'agent_session' ? (actor.credential.onBehalfOfUserId ?? null) : null;
 }
 
+/**
+ * True when the request runs inside an agent session: an `agent_session`
+ * credential, or a token bound to a session or an agent grant that names no
+ * service account (the My Kortix coordinator, or a session whose service
+ * account could not be ensured). Those classify as `pat` and act as their
+ * launcher, but they are agents: HUMAN_ONLY (C8) applies to them.
+ */
+export function isAgentSessionToken(actor: Actor, binding: TokenBinding | null): boolean {
+  if (actor.credential.kind === 'agent_session') return true;
+  if (actor.credential.kind !== 'pat' || !binding) return false;
+  return (binding.sessionId ?? null) != null || binding.agentGrant != null;
+}
+
 /** The agent-session narrowing, or null when there is none. */
 export function credentialAgentGrant(actor: Actor): AgentGrant | null {
   return actor.credential.kind === 'agent_session' ? actor.credential.agentGrant : null;
@@ -184,6 +197,10 @@ export interface TokenBinding {
   projectId: string | null;
   agentGrant: AgentGrant | null;
   serviceAccountId: string | null;
+  /** The session the token belongs to. A session token that names no service
+   *  account (My Kortix, or a failed agent service-account ensure) still is an
+   *  agent session: `isAgentSessionToken` reads this. */
+  sessionId?: string | null;
   /** Only on the binding the auth middleware read this request. The memo below
    *  never carries it: every turn rewrites it (`bindSessionTurnIdentity`), and a
    *  15 s copy on another replica would name the previous prompter. */
@@ -211,6 +228,7 @@ const loadTokenBinding = ttlMemo({
         projectId: accountTokens.projectId,
         agentGrant: accountTokens.agentGrant,
         serviceAccountId: accountTokens.serviceAccountId,
+        sessionId: accountTokens.sessionId,
       })
       .from(accountTokens)
       .where(eq(accountTokens.tokenId, tokenId))
@@ -220,6 +238,7 @@ const loadTokenBinding = ttlMemo({
           projectId: row.projectId,
           agentGrant: readStoredAgentGrant(row.agentGrant),
           serviceAccountId: row.serviceAccountId ?? null,
+          sessionId: row.sessionId ?? null,
         }
       : null;
   },
