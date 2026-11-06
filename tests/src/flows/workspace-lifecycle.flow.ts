@@ -152,8 +152,9 @@ flow(
       const adminAccounts = (await ctx.client.as(admin).get('/v1/accounts')).status(200).json<Array<{ account_id: string }>>();
       if (adminAccounts.some((a) => a.account_id === team.id)) throw new Error('the admin still lists the closing team account');
     });
-    await ctx.step('a second DELETE answers 404: the project is no longer live', async () => {
-      (await asOwner.del('/v1/workspaces/:workspaceId', { params })).status(404);
+    await ctx.step('a second DELETE: the owner → 409 workspace_deleting (restore it first), the admin → 404', async () => {
+      (await asOwner.del('/v1/workspaces/:workspaceId', { params })).status(409).body().has('$.code', 'workspace_deleting');
+      (await ctx.client.as(admin).del('/v1/workspaces/:workspaceId', { params })).status(404);
     });
     await ctx.step('the owner restores it → 200 active with the same id; the member reads it again', async () => {
       const r = await asOwner.post('/v1/workspaces/:workspaceId/restore', {}, { params });
@@ -195,7 +196,7 @@ flow(
   {
     domain: 'workspaces',
     requires: ['database'],
-    routes: ['POST /v1/workspaces/:workspaceId/setup', 'GET /v1/workspaces/:workspaceId', 'GET /v1/workspaces'],
+    routes: ['POST /v1/workspaces/:workspaceId/setup', 'POST /v1/projects/:workspaceId/setup', 'GET /v1/workspaces/:workspaceId', 'GET /v1/workspaces'],
   },
   async (ctx) => {
     const owner = await ctx.fixtures.user({ label: 'LIFE4-OWNER' });
@@ -206,8 +207,13 @@ flow(
     await ctx.step('a non-member → 404 workspace_not_found', async () => {
       (await setup(ctx.P.NONMEMBER)).status(404).body().has('$.code', 'workspace_not_found');
     });
-    await ctx.step('a project-less workspace that does not pay is not waiting for setup → 409 workspace_setup_not_required', async () => {
-      (await setup(owner)).status(409).body().has('$.code', 'workspace_setup_not_required').has('$.workspace_id', workspaceId);
+    await ctx.step('a project-less workspace that does not pay is never served on a canonical path → 404 workspace_not_found; the legacy name answers 409 workspace_setup_not_required', async () => {
+      (await setup(owner)).status(404).body().has('$.code', 'workspace_not_found');
+      (await ctx.client.as(owner).post('/v1/projects/:workspaceId/setup', { name: ctx.fixtures.name('life4') }, { params: { workspaceId } }))
+        .status(409)
+        .body()
+        .has('$.code', 'workspace_setup_not_required')
+        .has('$.workspace_id', workspaceId);
     });
     await ctx.step('the same workspace once it pays: its record → 200 state setup_required, the list names it, a project-backed sub-path → 409 workspace_setup_required', async () => {
       (await ctx.client.as(owner).get('/v1/workspaces/:workspaceId', { params: { workspaceId } })).status(404);

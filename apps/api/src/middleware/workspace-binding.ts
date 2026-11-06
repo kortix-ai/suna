@@ -161,6 +161,9 @@ export const WORKSPACE_BINDINGS: readonly WorkspaceBindingRule[] = [
   // new_workspace_requires_person to any key).
   { pattern: '/v1/projects', methods: ['GET'], binding: OWN_WORKSPACE },
   { pattern: '/v1/workspaces', methods: ['GET'], binding: OWN_WORKSPACE },
+  // POST /v1/workspaces reaches its handler, which refuses every bound
+  // credential with the coded 403 new_workspace_requires_person (WS-ROUTE-9).
+  { pattern: '/v1/workspaces', methods: ['POST'], binding: OWN_WORKSPACE },
   { pattern: '/v1/projects', binding: PERSON },
   { pattern: '/v1/workspaces', binding: PERSON },
 

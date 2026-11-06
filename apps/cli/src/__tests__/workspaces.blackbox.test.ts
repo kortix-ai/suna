@@ -139,6 +139,29 @@ describe('a person with no workspace', () => {
   });
 });
 
+describe('an account id where a workspace id is expected', () => {
+  test('members ls --account <account id> retries the legacy /accounts name once on 404 workspace_not_found', async () => {
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        paths.push(url.pathname);
+        if (url.pathname === '/v1/workspaces/acct_legacy/members') {
+          return Response.json({ error: 'Workspace not found', code: 'workspace_not_found' }, { status: 404 });
+        }
+        if (url.pathname === '/v1/accounts/acct_legacy/members') {
+          return Response.json([{ user_id: 'user_1', email: 'user@example.test', account_role: 'owner', projects: [] }]);
+        }
+        return Response.json({ error: `unexpected ${url.pathname}` }, { status: 404 });
+      },
+    });
+    const r = await runCli(['members', 'ls', '--account', 'acct_legacy', '--json'], writeConfig(`http://127.0.0.1:${server.port}/v1`));
+    expect(`exit=${r.code} ${r.stderr}`).toBe(`exit=0 ${r.stderr}`);
+    expect(paths).toEqual(['/v1/workspaces/acct_legacy/members', '/v1/accounts/acct_legacy/members']);
+    expect(JSON.parse(r.stdout)[0].email).toBe('user@example.test');
+  });
+});
+
 describe('workspaces rm', () => {
   test('a delete that closes the workspace prints until when an owner can restore it', async () => {
     const r = await runCli(['workspaces', 'rm', 'ws_close', '--yes'], writeConfig(startServer(), 'account_1'));

@@ -127,7 +127,8 @@ describe('the fence decides each credential × route class', () => {
     // the workspace list: a bound key lists its one workspace; creating one is a person's act
     ['GET', '/v1/projects', projectPat, true],
     ['GET', '/v1/workspaces', projectPat, true],
-    ['POST', '/v1/workspaces', projectPat, 'person-route'],
+    // POST /v1/workspaces passes the fence; the handler refuses every bound key (new_workspace_requires_person, WS-ROUTE-9).
+    ['POST', '/v1/workspaces', projectPat, true],
     ['POST', '/v1/projects', projectPat, 'person-route'],
     ['GET', '/v1/projects/', projectPat, 'default-deny'],
     // the person's own surfaces
