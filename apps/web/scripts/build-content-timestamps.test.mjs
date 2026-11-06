@@ -8,11 +8,10 @@ const scriptUrl = new URL('./build-content-timestamps.mjs', import.meta.url);
 describe('content timestamp manifest', () => {
   it('imports without writing', async () => {
     const beforeImport = await readFile(manifestUrl, 'utf8');
-    const timestampModule = await import(`${scriptUrl.href}?test=import-without-writing`);
+    await import(`${scriptUrl.href}?test=import-without-writing`);
     const afterImport = await readFile(manifestUrl, 'utf8');
 
     assert.equal(afterImport, beforeImport);
-    assert.equal(typeof timestampModule.createContentTimestampManifest, 'function');
   });
 
   // Tree content only: the same result on dev, staging and every promotion

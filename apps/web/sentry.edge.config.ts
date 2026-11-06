@@ -5,23 +5,13 @@
  */
 
 import * as Sentry from '@sentry/nextjs';
-import { shouldIgnoreSentryNoiseEvent } from '@kortix/ui/internal/lib/browser-error-noise';
-
-const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
+import { SENTRY_DSN, sentryOptions } from './sentry.options';
 
 if (SENTRY_DSN) {
-  Sentry.init({
-    dsn: SENTRY_DSN,
-    environment: process.env.NEXT_PUBLIC_KORTIX_ENV || 'dev',
-
-    // Sample 10% of edge transactions
-    tracesSampleRate: 0.1,
-
-    beforeSend(event) {
-      if (shouldIgnoreSentryNoiseEvent(event)) {
-        return null;
-      }
-      return event;
-    },
-  });
+  Sentry.init(
+    sentryOptions({
+      // Sample 10% of edge transactions
+      tracesSampleRate: 0.1,
+    }),
+  );
 }
