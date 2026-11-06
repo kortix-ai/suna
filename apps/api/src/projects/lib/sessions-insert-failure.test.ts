@@ -121,7 +121,7 @@ describe('resolveSessionInsertFailure', () => {
       });
       // The cause stays in the server log, so a real schema defect stays visible.
       expect(errorSpy).toHaveBeenCalledTimes(1);
-      expect((errorSpy.mock.calls[0] as unknown[])[1]).toMatchObject({ pgCode: code });
+      expect(errorSpy.mock.calls[0]?.[1]).toMatchObject({ pgCode: code });
     });
   }
 
