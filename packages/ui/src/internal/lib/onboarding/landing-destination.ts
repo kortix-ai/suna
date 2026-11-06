@@ -8,7 +8,7 @@
  * `PROJECT_LANDING_PATH` is the id-free door used when we do not yet know which
  * project to open. It paints instantly and resolves the real project behind the
  * UI, so no caller ever has to block on a backend round-trip to build a
- * redirect. See `app/(app)/projects/start/page.tsx`.
+ * redirect. See `app/(app)/workspaces/start/page.tsx`.
  */
 export const PROJECT_LANDING_PATH = '/projects/start';
 

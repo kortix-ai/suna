@@ -4324,7 +4324,7 @@ export function SessionChat({
       // already resolved client-side, so there is no server data to fetch.
       // Under Next.js `router.replace` would run a COLD RSC FETCH on every
       // open/close of this dialog, on the hottest route in the app (see
-      // app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:1309); Next
+      // app/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx:1309); Next
       // observes `history.replaceState`, which `useUiShallowNavigate` writes
       // when the host router observes history and routes through it otherwise.
       shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });

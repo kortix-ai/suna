@@ -5,8 +5,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const WEB_ROOT = resolve(import.meta.dir, '../../../../../..');
-const LOADING = resolve(WEB_ROOT, 'src/app/[locale]/(app)/projects/[id]/loading.tsx');
-const SESSION_LOADING = resolve(WEB_ROOT, 'src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/loading.tsx');
+const LOADING = resolve(WEB_ROOT, 'src/app/[locale]/(app)/workspaces/[id]/loading.tsx');
+const SESSION_LOADING = resolve(WEB_ROOT, 'src/app/[locale]/(app)/workspaces/[id]/sessions/[sessionId]/loading.tsx');
 
 /**
  * Modules too heavy to sit in the loading boundary's payload. The workspace module (ProjectHome) is on

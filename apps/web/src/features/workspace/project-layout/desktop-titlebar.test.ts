@@ -532,7 +532,7 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     // why the component exists. See HeaderlessSessionSurface.
     'sessions/[sessionId]/page.tsx': join(
       repoRoot,
-      'apps/web/src/app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
+      'apps/web/src/app/[locale]/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx',
     ),
   };
 

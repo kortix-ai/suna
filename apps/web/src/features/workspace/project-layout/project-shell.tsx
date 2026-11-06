@@ -167,7 +167,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     //
     // The path comes from `window.location.pathname`, never a hardcoded
     // `/projects/<id>`. This shell is mounted by
-    // `app/(app)/projects/[id]/layout.tsx`, so the effect runs on EVERY route
+    // `app/(app)/workspaces/[id]/layout.tsx`, so the effect runs on EVERY route
     // beneath it, and rewriting the address bar to the project root while
     // `/projects/<id>/files` is still the rendered view desyncs the two: the
     // sidebar's active-row test stops matching, Back leaves for somewhere the

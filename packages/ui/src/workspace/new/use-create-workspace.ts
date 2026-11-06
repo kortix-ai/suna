@@ -43,7 +43,7 @@ export type CreateStatus = 'idle' | 'creating' | 'error';
 /**
  * Backoff for a 409 `provision_in_flight` retry, ms — one entry per retry.
  * Identical to `/projects/start`'s `RETRY_DELAY_MS`
- * (`app/(app)/projects/start/page.tsx:36`, `const RETRY_DELAY_MS = [400,
+ * (`app/(app)/workspaces/start/page.tsx:36`, `const RETRY_DELAY_MS = [400,
  * 1200]`): both doors run the SAME logical create against the same persisted
  * `idempotency_key`, so their backoffs must not diverge.
  */

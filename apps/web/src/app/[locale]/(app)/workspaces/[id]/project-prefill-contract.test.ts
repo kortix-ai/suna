@@ -14,7 +14,7 @@ import { resolve } from 'node:path';
  * auth.
  */
 const WEB_ROOT = resolve(import.meta.dir, '../../../../../..');
-const PAGE = resolve(WEB_ROOT, 'src/app/[locale]/(app)/projects/[id]/page.tsx');
+const PAGE = resolve(WEB_ROOT, 'src/app/[locale]/(app)/workspaces/[id]/page.tsx');
 
 describe('project page ?q= prefill wiring', () => {
   const source = readFileSync(PAGE, 'utf8');

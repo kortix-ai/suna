@@ -93,7 +93,7 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
   },
   {
     name: "/projects/start's stuck-state escape hatch",
-    file: 'app/[locale]/(app)/projects/start/page.tsx',
+    file: 'app/[locale]/(app)/workspaces/start/page.tsx',
     from: 'function StartSignOutButton()',
     to: 'function ProjectStartError(',
   },
@@ -286,7 +286,7 @@ describe('the signed-out route guards do not race the exit', () => {
       // guided-setup wizards are panes of the Identity section and inherit
       // this guard from `account-hub-content.tsx`.
       'features/accounts/hub/account-hub-content.tsx',
-      'app/[locale]/(app)/projects/start/page.tsx',
+      'app/[locale]/(app)/workspaces/start/page.tsx',
       'features/workspace/new/new-workspace-page.tsx',
     ]) {
       expect({ file, calls: code(file).includes('useSignedOutRedirect();') }).toEqual({

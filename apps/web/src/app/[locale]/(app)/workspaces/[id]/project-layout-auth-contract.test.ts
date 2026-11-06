@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const WEB_ROOT = resolve(import.meta.dir, '../../../../../..');
-const LAYOUT = resolve(WEB_ROOT, 'src/app/[locale]/(app)/projects/[id]/layout.tsx');
+const LAYOUT = resolve(WEB_ROOT, 'src/app/[locale]/(app)/workspaces/[id]/layout.tsx');
 const MIDDLEWARE = resolve(WEB_ROOT, 'src/middleware.ts');
 
 /**

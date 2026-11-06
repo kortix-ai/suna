@@ -10,7 +10,7 @@
  *
  * The page exists only with the project's `drives` flag on, which the web
  * derives from the Volumes switch in Feature flags
- * (`apps/web/src/app/[locale]/(app)/projects/[id]/drive/page.tsx`). Off, this
+ * (`apps/web/src/app/[locale]/(app)/workspaces/[id]/drive/page.tsx`). Off, this
  * screen says so in one line and `o` opens that switch.
  */
 

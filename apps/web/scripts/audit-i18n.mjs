@@ -1117,7 +1117,7 @@ function scanFile(file) {
         (file ===
           path.join(uiSrcDir, 'customize/sections/view/gateway/gateway-overview.tsx') &&
           catalogRoot === 'METRICS') ||
-        (file === path.join(srcDir, 'app/[locale]/admin/projects/page.tsx') &&
+        (file === path.join(srcDir, 'app/[locale]/admin/workspaces/page.tsx') &&
           catalogRoot === 'STATUS_OPTIONS') ||
         (file === path.join(srcDir, 'components/iam/api-keys-card.tsx') &&
           catalogRoot === 'STATUS_BADGE') ||

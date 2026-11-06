@@ -251,7 +251,7 @@ describe('every screen has Back by default', () => {
     for (const file of [
       // `/new` and `/projects` render their top row through this component.
       'features/workspace/account-top-bar.tsx',
-      'app/[locale]/(app)/projects/start/page.tsx',
+      'app/[locale]/(app)/workspaces/start/page.tsx',
     ]) {
       expect(readFileSync(join(webSrc, file), 'utf8')).toContain('kx-desktop-band-row');
     }
