@@ -225,7 +225,7 @@ accountsRouter.openapi(
       ...errors(401, 403),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   if (!isPersonCaller(c)) return c.json({ error: 'Personal keys are managed by the person, from a browser session or a personal key', code: 'person_route' }, 403);
   const tokens = await listPersonalTokensOfUser(c.get('userId') as string);
   return c.json(
@@ -261,7 +261,7 @@ accountsRouter.openapi(
       ...errors(400, 401, 403, 404),
     },
   }),
-  async (c: any) => {
+  async (c) => {
   const tokenId = c.req.param('tokenId');
   if (!isUuid(tokenId)) return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);
   if (!isPersonCaller(c)) return c.json({ error: 'Personal keys are managed by the person, from a browser session or a personal key', code: 'person_route' }, 403);
@@ -269,11 +269,13 @@ accountsRouter.openapi(
   const accountId = await personalTokenAccountOfUser(tokenId, c.get('userId') as string);
   if (!accountId) return c.json({ error: 'token not found' }, 404);
   if (c.req.query('delete_revoked') === 'true') {
-    const deleted = await deleteRevokedPersonalAccountToken(tokenId, accountId);
-    return deleted ? c.json({ ok: true, deleted: true }) : c.json({ error: 'revoked personal token not found' }, 404);
+    if (!(await deleteRevokedPersonalAccountToken(tokenId, accountId))) {
+      return c.json({ error: 'revoked personal token not found' }, 404);
+    }
+    return c.json({ ok: true as const, deleted: true }, 200);
   }
-  const ok = await revokeAccountToken(tokenId, accountId);
-  return ok ? c.json({ ok: true }) : c.json({ error: 'token not found or already revoked' }, 404);
+  if (!(await revokeAccountToken(tokenId, accountId))) return c.json({ error: 'token not found or already revoked' }, 404);
+  return c.json({ ok: true as const }, 200);
   },
 );
 

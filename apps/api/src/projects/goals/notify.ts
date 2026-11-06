@@ -9,7 +9,6 @@
  * no goal subject yet); its title names the goal.
  */
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { notificationsEnabled } from '../../notifications/enabled';
@@ -17,6 +16,7 @@ import { deliver } from '../../notifications/notifier';
 import { db } from '../../shared/db';
 import { utcDay } from './rules';
 import type { GoalRow } from './store';
+import { projectsView } from '../../workspaces/rows';
 
 export type GoalNoticeKind = 'needs_you' | 'blocked' | 'verified_done' | 'verification_failed' | 'verification_stalled';
 
@@ -38,14 +38,14 @@ const LINE: Record<GoalNoticeKind, string> = {
 
 /** The web page of one goal. */
 export function goalDeepLink(goal: Pick<GoalRow, 'projectId' | 'goalId'>): string {
-  return `/projects/${goal.projectId}/goals/${goal.goalId}`;
+  return `/workspaces/${goal.projectId}/goals/${goal.goalId}`;
 }
 
 export async function notifyGoal(goal: GoalRow, kind: GoalNoticeKind, detail: string, now: Date): Promise<void> {
   const recipient = goal.assignedUserId ?? goal.createdByUserId;
   const dedupeKey = `goal:${goal.goalId}:${kind}:${utcDay(now)}`;
   try {
-    const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, goal.projectId)).limit(1);
+    const [project] = await db.select({ metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, goal.projectId)).limit(1);
     if (!project || !notificationsEnabled(project.metadata)) return;
     await deliver({
       kind: KIND[kind],
