@@ -109,10 +109,7 @@ function statusIcon(status) {
   return statusIcons.get(status);
 }
 
-/**
- * The bar and its dim: frameless, transparent windows above every app. `extra`
- * adds the window's own options; its `webPreferences` cannot drop the hardened ones.
- */
+/** The bar and its dim: frameless, transparent windows above every app. `extra.webPreferences` cannot drop the hardened ones. */
 function overlayWindowOptions(extra = {}) {
   return {
     show: false,

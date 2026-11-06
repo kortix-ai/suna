@@ -10,15 +10,12 @@
  * Your app calls relay.relayRPC(tunnelId, method, params) to reach the agent.
  */
 
-import type { ServerWebSocket } from 'bun';
 import { Hono } from 'hono';
 import { TunnelRelay } from './relay';
 import { HeartbeatManager } from './heartbeat';
 import { createTunnelRouter } from './routes';
 import { createWsHandlers } from './ws-handler';
 import type { TunnelServerConfig } from '../shared/types';
-
-type TunnelSocket = ServerWebSocket<{ tunnelId: string }>;
 
 export interface TunnelServer {
   port: number;
@@ -66,7 +63,7 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
 
   heartbeat.start();
 
-  const bunServer = Bun.serve({
+  const bunServer = Bun.serve<{ tunnelId: string }>({
     port,
     fetch(req, server) {
       const url = new URL(req.url);
@@ -106,13 +103,13 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
 
     websocket: {
       idleTimeout: 0,
-      open(ws: TunnelSocket) {
+      open(ws) {
         wsHandlers.onOpen(ws.data.tunnelId, ws);
       },
-      message(ws: TunnelSocket, message: string | Buffer) {
+      message(ws, message: string | Buffer) {
         wsHandlers.onMessage(ws.data.tunnelId, ws, message);
       },
-      close(ws: TunnelSocket) {
+      close(ws) {
         wsHandlers.onClose(ws.data.tunnelId, ws);
       },
     },
