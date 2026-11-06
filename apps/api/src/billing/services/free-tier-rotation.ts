@@ -24,6 +24,20 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
   let skipped = 0;
   const errors: string[] = [];
 
+  // Split-off comps that ended move to Free with eligibility first, so the
+  // rotation never sees a comped account as due (design.md §3.2 C6).
+  try {
+    const { expireSplitOffComps } = await import('./split-off-billing');
+    const comps = await expireSplitOffComps(now);
+    if (comps.ended.length + comps.kept.length > 0) {
+      console.log(`[FreeTierRotation] Split-off comps ended: ${comps.ended.length} to Free, ${comps.kept.length} kept their own plan`);
+    }
+  } catch (err) {
+    const msg = `Error ending split-off comps: ${(err as Error).message}`;
+    console.error(`[FreeTierRotation] ${msg}`);
+    errors.push(msg);
+  }
+
   let after: string | undefined;
   for (;;) {
     const accounts = await getFreeAccountsDueForRotation(after);

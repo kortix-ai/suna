@@ -5039,6 +5039,10 @@ export const creditAccounts = kortixSchema.table(
     // on Free with 0 credits and this false. Every row that existed before is
     // true (the default), so no account loses credits.
     freeCreditsEligible: boolean('free_credits_eligible').default(true).notNull(),
+    // Workspaces M9 (design.md §3.2 C6): a workspace split off a paying account
+    // holds the keeper's plan comped, with no Stripe subscription, until this
+    // time. The billing rotation moves it to Free with eligibility after it.
+    compPlanUntil: timestamp('comp_plan_until', { withTimezone: true, mode: 'string' }),
     lastProcessedInvoiceId: varchar('last_processed_invoice_id', { length: 255 }),
     commitmentType: varchar('commitment_type', { length: 50 }),
     commitmentStartDate: timestamp('commitment_start_date', { withTimezone: true, mode: 'string' }),

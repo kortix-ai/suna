@@ -38,6 +38,7 @@ import {
   upsertCreditAccount,
 } from '../repositories/credit-accounts';
 import { invalidateAccountBilling } from './billing-cache';
+import { isPaidTier } from './tier-facts';
 
 export type AccountPatch = Partial<typeof creditAccounts.$inferInsert>;
 
@@ -101,6 +102,9 @@ export const ADMIN_OWNED_FIELDS = [
   'trialEndsAt',
   'trialNote',
   'trialGrantedBy',
+  // A split-off workspace's comped plan (design.md §3.2 C6): written by
+  // split-off-billing.ts through applyAdminOverride, never by a provider sync.
+  'compPlanUntil',
 ] as const;
 
 /**
@@ -131,7 +135,7 @@ export class AccountWriteOwnershipError extends Error {
 }
 
 /** The subset of a `credit_accounts` row the pin rule reads. */
-export type PinnableAccount = { tier?: string | null } | null;
+export type PinnableAccount = { tier?: string | null; compPlanUntil?: string | null } | null;
 
 /**
  * Is this account's tier owned by an operator rather than by the provider?
@@ -142,6 +146,11 @@ export type PinnableAccount = { tier?: string | null } | null;
  */
 export function accountIsAdminPinned(account: PinnableAccount): boolean {
   return account?.tier === 'enterprise';
+}
+
+/** True while the account holds a split-off comp (`comp_plan_until` in the future). */
+export function accountHoldsComp(account: PinnableAccount, now: Date = new Date()): boolean {
+  return Boolean(account?.compPlanUntil && new Date(account.compPlanUntil) > now);
 }
 
 export interface StripeSyncContext {
@@ -215,6 +224,14 @@ export async function applyStripeSync(
         `[write-owner] applyStripeSync${label}: skipping tier='${String(next.tier)}' for ${accountId} — the account is on Enterprise. Every other provider field is still applied.`,
       );
       delete next.tier;
+    } else if (accountHoldsComp(account ?? null) && !isPaidTier(String(next.tier ?? 'none'))) {
+      // A comped split-off has no subscription, so no provider fact can end
+      // its plan. Only a paid tier from a subscription it bought replaces it.
+      console.warn(
+        `[write-owner] applyStripeSync${label}: skipping tier='${String(next.tier)}' for ${accountId} — the account holds a split-off comp until ${String(account?.compPlanUntil)}.`,
+      );
+      delete next.tier;
+      delete next.planMonthlyUsd;
     }
   }
 
