@@ -42,7 +42,7 @@ mock.module('../../../config', () => ({
   KNOWN_PROVIDERS: ['platinum', 'daytona'],
 }));
 
-mock.module('../../../shared/db', () => ({
+mock.module('../../../shared/db', () => ({ withDbTransaction: async <T>(action: () => Promise<T>) => action(),
   hasDatabase: () => true,
   db: {
     select: (projection?: Record<string, unknown>) => ({
