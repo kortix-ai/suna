@@ -97,7 +97,6 @@ export {
   isThirdPartyReactUpdateDepthNoise,
 } from './browser-noise/rules/react';
 export {
-  isAnonymousAuthRefreshRace,
   isAutoplayNotAllowedRejectionNoise,
   isNonErrorObjectNotFoundRejectionNoise,
   isNonErrorUndefinedRejectionNoise,
