@@ -1,6 +1,6 @@
 'use client';
 
-import { leaveWorkspace, listWorkspaceMembers } from '@kortix/sdk';
+import { leaveWorkspace, listWorkspaceMembers, type AccountMember, type WorkspaceRole } from '@kortix/sdk';
 import { qk, useWorkspace } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
@@ -14,7 +14,7 @@ import { errorToast, successToast } from '../../primitives/toast';
 import { useUiRouter, useUiViewerId } from '../../providers/ui-provider';
 
 /** A member row's ladder role: the served `role`, else the account role an older API sends. */
-export function memberWorkspaceRole(member: { role?: string | null; account_role?: string | null }): string {
+export function memberWorkspaceRole(member: Pick<AccountMember, 'role' | 'account_role'>): WorkspaceRole {
   return member.role ?? member.account_role ?? 'member';
 }
 

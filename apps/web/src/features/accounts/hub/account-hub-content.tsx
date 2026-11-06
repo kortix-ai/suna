@@ -1054,7 +1054,7 @@ function MembersCard({
     roleEditor.roleValueFor(member.user_id, member.account_role);
   // The one ladder role (owner > admin > manager > member) the API serves on
   // every member row. A custom role keeps its name.
-  const ladderRole = (member: AccountMember) => memberWorkspaceRole(member) as WorkspaceRole;
+  const ladderRole = (member: AccountMember) => memberWorkspaceRole(member);
   const [roleTarget, setRoleTarget] = useState<{ userId: string; label: string; role: WorkspaceRole } | null>(null);
   const viewerIsOwner = members.some((m) => m.user_id === currentUserId && m.account_role === 'owner');
 

@@ -835,7 +835,7 @@ export function ProfileTab() {
     const plan = planQuery.data;
     if (!plan) return undefined;
     // The API names each workspace (`workspace_names`); the directory is the fallback.
-    const served = (plan as { workspace_names?: Record<string, string> }).workspace_names ?? {};
+    const served = plan.workspace_names ?? {};
     const nameOf = (id: string) =>
       served[id] ?? directory.workspaces.find((row) => row.workspaceId === id)?.project.name ?? id;
     return {
