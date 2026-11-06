@@ -594,6 +594,8 @@ export const projectGitConnections = kortixSchema.table(
     uniqueIndex('idx_project_git_connections_project').on(table.projectId),
     index('idx_project_git_connections_provider_repo').on(table.provider, table.externalRepoId),
     index('idx_project_git_connections_status').on(table.status),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('project_git_connections_status_check', sql`${table.status} in ('connected', 'error')`),
   ],
 );
 
@@ -654,6 +656,8 @@ export const projectSnapshotArchives = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_project_snapshot_archives_project_sha').on(table.projectId, table.commitSha),
     index('idx_project_snapshot_archives_claim').on(table.status, table.nextAttemptAt),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('project_snapshot_archives_status_check', sql`${table.status} in ('queued', 'building', 'ready', 'failed')`),
   ],
 );
 
@@ -2607,6 +2611,9 @@ export const projectTriggerExecutions = kortixSchema.table(
     index('idx_project_trigger_executions_open_run')
       .on(table.sessionId)
       .where(sql`${table.runStatus} = 'running'`),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('project_trigger_executions_status_check', sql`${table.status} in ('queued', 'running', 'succeeded', 'skipped', 'dead_lettered', 'failed', 'rejected', 'requeued')`),
+    check('project_trigger_executions_run_status_check', sql`${table.runStatus} in ('running', 'succeeded', 'failed')`),
   ],
 );
 
@@ -2815,6 +2822,8 @@ export const chatThreadParticipants = kortixSchema.table(
     ),
     index('idx_chat_thread_participants_session').on(table.sessionId),
     index('idx_chat_thread_participants_user').on(table.userId),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('chat_thread_participants_status_check', sql`${table.status} in ('pending', 'approved', 'denied')`),
   ],
 );
 
@@ -5098,6 +5107,9 @@ export const creditAccounts = kortixSchema.table(
     // BitmapOr of two probes on this index. `tier` alone cannot help: 99.7% of
     // rows are `free`.
     index('idx_credit_accounts_tier_next_credit_grant').on(table.tier, table.nextCreditGrant),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('credit_accounts_payment_status_check', sql`${table.paymentStatus} in ('active', 'cancelling', 'past_due', 'failed', 'deleted', 'pending')`),
+    check('credit_accounts_trial_status_check', sql`${table.trialStatus} in ('none', 'active', 'expired', 'converted', 'revoked', 'cancelled')`),
   ],
 );
 
@@ -5913,6 +5925,8 @@ export const accountDeletionRequests = kortixSchema.table(
     uniqueIndex('uniq_account_deletion_requests_pending')
       .on(table.accountId)
       .where(sql`${table.status} = 'pending'`),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('account_deletion_requests_status_check', sql`${table.status} in ('pending', 'processing', 'completed', 'cancelled')`),
   ],
 );
 
@@ -9291,7 +9305,9 @@ export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
   userId: uuid('user_id'),
   accountId: uuid('account_id'),
   status: text('status').notNull().default('pending'),
-});
+}, (table) => [
+  check('cli_device_grants_status_check', sql`${table.status} in ('pending', 'approved', 'denied', 'consumed')`),
+]);
 
 /**
  * An artifact (flag `artifacts`): a path in the project's Files volume shared

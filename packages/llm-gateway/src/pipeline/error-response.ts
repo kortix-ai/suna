@@ -1,4 +1,4 @@
-import { parseUpstreamErrorBody } from '../http/parse-upstream-error';
+import { normalizeUpstreamErrorCode, parseUpstreamErrorBody } from '../http/parse-upstream-error';
 import type { GatewayAttemptFailure } from '../domain';
 
 // ---------------------------------------------------------------------------
@@ -46,12 +46,46 @@ import type { GatewayAttemptFailure } from '../domain';
  * regions" 400, dev 2026-09-29) was replayed five times. Below 500, 429 aside,
  * relay the provider's message in an envelope that agrees with the status.
  */
-export function providerClientErrorBody(status: number, raw: string): string {
+export function providerClientErrorBody(status: number, raw: string, sentBytes = 0): string {
   if (status >= 500 || status === 429) return raw;
+  const tooLarge = requestTooLarge(status, raw, sentBytes);
+  if (tooLarge) return JSON.stringify({ error: { message: tooLarge.message, type: 'invalid_request_error', code: tooLarge.code } });
   const { message, code } = parseUpstreamErrorBody(raw);
   return JSON.stringify({
     error: { message, type: 'invalid_request_error', ...(code === 'context_length_exceeded' ? { code } : {}) },
   });
+}
+
+/**
+ * A request body this size or larger that a provider refuses as "too long" was
+ * refused for its bytes, not its tokens. Bedrock answers a body over ~32 MB with
+ * "Input is too long for requested model." at any token count (probed
+ * 2026-11-06: 31,262,126 bytes → 200, 32,029,742 bytes → 400 at ~22k tokens);
+ * Anthropic's request limit is 32 MB.
+ */
+export const REQUEST_TOO_LARGE_BYTES = 30_000_000;
+
+/**
+ * `request_too_large` when the provider refused the request for its size: an
+ * HTTP 413, or a context-overflow refusal of a body of at least
+ * `REQUEST_TOO_LARGE_BYTES`. Null otherwise. The message names the size, so a
+ * client and a person both see that compacting the text does not help.
+ */
+export function requestTooLarge(
+  status: number,
+  upstreamText: string,
+  sentBytes: number,
+): { code: 'request_too_large'; message: string } | null {
+  const refusedAsTooLong =
+    (status === 400 || status === 422) &&
+    sentBytes >= REQUEST_TOO_LARGE_BYTES &&
+    normalizeUpstreamErrorCode(undefined, upstreamText) === 'context_length_exceeded';
+  if (status !== 413 && !refusedAsTooLong) return null;
+  const size = sentBytes > 0 ? `${(sentBytes / 1_000_000).toFixed(1)} MB` : 'too large';
+  return {
+    code: 'request_too_large',
+    message: `The request is ${size}, more than the model provider accepts in one request (about 32 MB). Images and attachments make up most of it.`,
+  };
 }
 
 /** Upper bound the gateway relays for `Retry-After`, in seconds. */

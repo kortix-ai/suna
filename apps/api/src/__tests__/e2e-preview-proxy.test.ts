@@ -1306,29 +1306,6 @@ describe('Preview proxy: forwarding', () => {
     }
   });
 
-  test('marks proxied session sandbox and owning session as active usage', async () => {
-    mockFetchResponses = [{ status: 200, body: 'OK' }];
-    const sandboxId = 'touch-sandbox-001';
-    mockDbSandbox = { ...mockDbSandbox, externalId: sandboxId };
-    const app = createProxyTestApp();
-    const res = await app.request(`/v1/p/${sandboxId}/${TEST_PORT}/kortix/health`, {
-      headers: { Authorization: 'Bearer test' },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(res.status).toBe(200);
-    expect(
-      mockDbUpdateCalls.some(
-        (call) => call.table === sessionSandboxes && call.updates.lastUsedAt instanceof Date,
-      ),
-    ).toBe(true);
-    expect(
-      mockDbUpdateCalls.some(
-        (call) => call.table === projectSessions && call.updates.status === 'running',
-      ),
-    ).toBe(true);
-  });
-
   test('creates trace headers when caller does not provide traceparent', async () => {
     mockFetchResponses = [{ status: 200, body: 'OK' }];
     const app = createProxyTestApp();

@@ -59,7 +59,7 @@ import type { WorkflowControlBody } from '@kortix/api-contract/multi-agent'
 import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay'
 import { PARKED, PermissionBroker, QuestionBroker, compilePermissionPolicy, type AskRelayAnswer, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
-import { KORTIX_PROVIDER_ID, compactionSettings, nativeModelId, promptModelId, selectId } from './model'
+import { IMAGE_RESIZE, KORTIX_PROVIDER_ID, compactionSettings, nativeModelId, promptModelId, selectId } from './model'
 import { claudeSessions } from './claude/provider'
 import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
@@ -2478,7 +2478,8 @@ export class PiRuntime {
   /** The prompt's images (images.ts), when the selected model reads images. Otherwise its `<file>` tags carry the paths alone. */
   private async images(input: PromptInput): Promise<ImageContent[]> {
     if (!this.selected?.images || !this.coding) return []
-    return promptImages(input, this.cfg.workspace || '/workspace', this.coding.resizeImage)
+    const resize = this.coding.resizeImage
+    return promptImages(input, this.cfg.workspace || '/workspace', (bytes, mime) => resize(bytes, mime, IMAGE_RESIZE))
   }
 
   // ── configuration ────────────────────────────────────────────────────────

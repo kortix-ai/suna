@@ -466,26 +466,28 @@ export async function markSandboxUsed(sandboxId: string): Promise<void> {
     // running for hours after its last turn (KRTX-378) and the DB-only
     // stuck-session reconcile could not catch it while the traffic kept
     // bumping `updated_at`.
+    //
+    // Both writes are named transitions (status-transitions.ts): the heal is a
+    // compare-and-set on `stopped|error`, so a row a concurrent delete
+    // archived, or a restart claimed for `provisioning`, after the read above
+    // is never revived. The session write only refreshes a session that
+    // already reads `running` (`touch`): traffic never undoes a park, a
+    // failure, a provisioning claim, or a tombstone.
+    // Loaded on first use: this module is on the hot proxy path and keeps the
+    // projects surface out of its import graph.
+    const { transitionSandbox, transitionSession } = await import('../projects/surface');
     let boxIsRunning = !['error', 'stopped'].includes(row.status);
     if (['error', 'stopped'].includes(row.status)) {
-      const healed = await db
-        .update(sessionSandboxes)
-        .set({ status: 'active', lastUsedAt: now, updatedAt: now })
-        .where(
-          and(
-            eq(sessionSandboxes.sandboxId, row.sandboxId),
-            gt(sessionSandboxes.deadlineAt, now),
-          ),
-        )
-        .returning({ sandboxId: sessionSandboxes.sandboxId });
-      boxIsRunning = healed.length > 0;
+      const healed = await transitionSandbox('heal', row.sandboxId, {
+        at: now,
+        columns: { lastUsedAt: now },
+        guard: gt(sessionSandboxes.deadlineAt, now),
+      });
+      boxIsRunning = healed !== null;
     }
 
     if (boxIsRunning) {
-      await db
-        .update(projectSessions)
-        .set({ status: 'running', updatedAt: now })
-        .where(eq(projectSessions.sessionId, row.sessionId));
+      await transitionSession('touch', row.sessionId, { at: now });
     }
   } catch (err) {
     sandboxTouchCache.delete(sandboxId);
@@ -506,10 +508,9 @@ export async function markSandboxErrored(externalId: string): Promise<void> {
       .orderBy(...preferredSandboxOrder())
       .limit(1);
     if (!row) return;
-    await db
-      .update(sessionSandboxes)
-      .set({ status: 'error', updatedAt: new Date() })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+    const { transitionSandbox } = await import('../projects/surface');
+    const errored = await transitionSandbox('proxyError', row.sandboxId);
+    if (!errored) return;
     console.warn(`[PREVIEW] Auto-marked session sandbox ${row.sandboxId} (external: ${externalId}) as error after all retries failed`);
   } catch (err) {
     console.warn('[PREVIEW] Failed to auto-mark sandbox as error:', err);

@@ -228,3 +228,9 @@ export {
 } from './git/push-manifest-check';
 // A manifest write refused while the default branch's kortix.yaml is not YAML (consumed by the HTTP error handler).
 export { ManifestWriteRefusedError } from './manifest-io';
+
+// Session and sandbox status transitions (consumed by the preview proxy's
+// lifecycle writes) and the canonical live session set (consumed by every
+// domain that counts or stops live sessions).
+export { settleLiveSessionsOfAccounts, transitionSandbox, transitionSession } from './session-lifecycle/status-transitions';
+export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './lib/session-status';

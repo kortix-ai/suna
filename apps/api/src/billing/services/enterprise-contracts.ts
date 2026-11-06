@@ -21,9 +21,11 @@ import { BillingError } from '../../errors';
 import { accountRoleMap } from '../../iam/read-models';
 import { lookupEmailsByUserIds } from '../../accounts/core/owner-emails';
 import { clearAccountLimitCache } from '../../shared/account-limits';
-import { db } from '../../shared/db';
+import { db, withDbTransaction } from '../../shared/db';
+import { type StatusRule, transitionStatus } from '../../shared/status-transition';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount } from '../repositories/credit-accounts';
+import { getCustomerByAccountId } from '../repositories/customers';
 import { applyAdminOverride } from './account-write-owner';
 import { mergeOverridePatch, toStoredOverrides } from './entitlement-overrides';
 import { invalidateCachedAccountTier } from './entitlements';
@@ -32,7 +34,7 @@ import { getOrCreateStripeCustomer } from './subscriptions';
 
 export type ContractRow = typeof enterpriseContracts.$inferSelect;
 export type ContractCollection = 'checkout' | 'invoice' | 'manual';
-export type ContractEndReason = 'operator' | 'term_over' | 'stripe_subscription_deleted';
+export type ContractEndReason = 'operator' | 'term_over' | 'stripe_subscription_deleted' | 'account_closed';
 
 /** Largest license or credit amount one contract may carry, USD. */
 export const MAX_CONTRACT_USD = 10_000_000;
@@ -180,6 +182,13 @@ async function billingEmailFor(accountId: string): Promise<string> {
 
 // ─── Writes ─────────────────────────────────────────────────────────────────
 
+/** The contract's status moves. Each is one compare-and-set on its `from`. */
+export const CONTRACT_TRANSITIONS = {
+  activate: { from: ['offered'], to: 'active' },
+  end: { from: ['active'], to: 'ended' },
+  withdraw: { from: ['offered'], to: 'withdrawn' },
+} as const satisfies Record<string, StatusRule>;
+
 function invalidateCaches(accountId: string): void {
   invalidateCachedAccountTier(accountId);
   clearAccountLimitCache();
@@ -199,7 +208,10 @@ export async function createContract(input: CreateContractInput): Promise<Contra
   if (await getOpenOffer(input.accountId)) {
     throw new ContractError('the account already has an open offer; withdraw it first', 409);
   }
-  if (input.collection !== 'checkout' && (await getActiveContract(input.accountId))) {
+  // Every collection, checkout included: an offer paid while a contract is
+  // active can never activate (one active contract per account), so the
+  // customer would pay for a subscription that grants nothing.
+  if (await getActiveContract(input.accountId)) {
     throw new ContractError('the account already has an active contract; end it first', 409);
   }
 
@@ -229,6 +241,7 @@ export async function createContract(input: CreateContractInput): Promise<Contra
   }
 
   // invoice
+  let createdSubscriptionId: string | null = null;
   try {
     const customer = await getOrCreateStripeCustomer(input.accountId, await billingEmailFor(input.accountId));
     const subscription = await getStripe().subscriptions.create({
@@ -245,6 +258,7 @@ export async function createContract(input: CreateContractInput): Promise<Contra
       })),
       metadata: contractMetadata(offer),
     });
+    createdSubscriptionId = subscription.id;
     return activateContract(offer.id, {
       startsAt: new Date(subscription.current_period_start * 1000).toISOString(),
       endsAt: new Date(subscription.current_period_end * 1000).toISOString(),
@@ -253,10 +267,24 @@ export async function createContract(input: CreateContractInput): Promise<Contra
       actorUserId: input.actorUserId ?? null,
     });
   } catch (err) {
-    await db
-      .update(enterpriseContracts)
-      .set({ status: 'withdrawn', updatedAt: new Date().toISOString(), note: `Stripe failed: ${(err as Error).message}`.slice(0, 2000) })
-      .where(eq(enterpriseContracts.id, offer.id));
+    // A subscription Stripe already created bills until it is cancelled. The
+    // offer is withdrawn only once nothing bills for it; when the cancel fails
+    // too, the offer stays `offered` and the subscription's own webhooks
+    // activate it, so a live subscription never sits behind a withdrawn offer.
+    if (createdSubscriptionId) {
+      try {
+        await getStripe().subscriptions.cancel(createdSubscriptionId);
+      } catch (cancelErr) {
+        logger.error(`[enterprise-contracts] offer ${offer.id}: activation failed and its subscription ${createdSubscriptionId} could not be cancelled`, {
+          error: (cancelErr as Error).message,
+        });
+        throw err;
+      }
+    }
+    await transitionStatus(enterpriseContracts, enterpriseContracts.status, CONTRACT_TRANSITIONS.withdraw, {
+      where: eq(enterpriseContracts.id, offer.id),
+      set: { updatedAt: new Date().toISOString(), note: `Stripe failed: ${(err as Error).message}`.slice(0, 2000) },
+    });
     throw err;
   }
 }
@@ -310,13 +338,49 @@ export async function createOfferCheckout(params: {
 export async function withdrawOffer(accountId: string, actorUserId: string | null): Promise<ContractRow> {
   const offer = await getOpenOffer(accountId);
   if (!offer) throw new ContractError('the account has no open Enterprise offer', 404);
-  const [row] = await db
-    .update(enterpriseContracts)
-    .set({ status: 'withdrawn', updatedAt: new Date().toISOString() })
-    .where(and(eq(enterpriseContracts.id, offer.id), eq(enterpriseContracts.status, 'offered')))
-    .returning();
+  // The offer's Checkout session stays payable for 24 h. Expire it first: a
+  // payment after the withdrawal would leave a live subscription that grants
+  // nothing. A session already paid refuses the withdrawal instead.
+  if (offer.collection === 'checkout') await expireOfferCheckouts(offer);
+  const moved = await transitionStatus(enterpriseContracts, enterpriseContracts.status, CONTRACT_TRANSITIONS.withdraw, {
+    where: eq(enterpriseContracts.id, offer.id),
+    set: { updatedAt: new Date().toISOString() },
+  });
   logger.info(`[enterprise-contracts] offer ${offer.id} on ${accountId} withdrawn by ${actorUserId ?? 'system'}`);
-  return row ?? offer;
+  return moved.applied ? moved.row : getContract(offer.id);
+}
+
+/**
+ * Expire every open Checkout session of the offer. Each click makes a new
+ * session and the row keeps only the last one, so the customer's sessions are
+ * listed and matched on the `contract_id` they carry. 409 when one is paid.
+ */
+async function expireOfferCheckouts(offer: ContractRow): Promise<void> {
+  const stripe = getStripe();
+  const sessions = new Map<string, Stripe.Checkout.Session>();
+  const customer = await getCustomerByAccountId(offer.accountId);
+  if (customer?.id) {
+    const page = await stripe.checkout.sessions.list({ customer: customer.id, limit: 100 });
+    for (const session of page.data) {
+      if (session.metadata?.contract_id === offer.id) sessions.set(session.id, session);
+    }
+  }
+  if (offer.stripeCheckoutSessionId && !sessions.has(offer.stripeCheckoutSessionId)) {
+    sessions.set(offer.stripeCheckoutSessionId, await stripe.checkout.sessions.retrieve(offer.stripeCheckoutSessionId));
+  }
+  const paid = () => new ContractError('the offer was already paid; it activates when Stripe confirms the payment', 409);
+  if ([...sessions.values()].some((session) => session.status === 'complete')) throw paid();
+  for (const session of sessions.values()) {
+    if (session.status !== 'open') continue;
+    try {
+      await stripe.checkout.sessions.expire(session.id);
+    } catch (err) {
+      // Expired or paid between the two calls: read it again.
+      const again = await stripe.checkout.sessions.retrieve(session.id);
+      if (again.status === 'complete') throw paid();
+      if (again.status !== 'expired') throw err;
+    }
+  }
 }
 
 /**
@@ -340,26 +404,30 @@ export async function activateContract(
   const existing = await getActiveContract(contract.accountId);
   if (existing) throw new ContractError('the account already has an active contract; end it first', 409);
 
-  const [active] = await db
-    .update(enterpriseContracts)
-    .set({
-      status: 'active',
-      startsAt: term.startsAt,
-      endsAt: term.endsAt,
-      stripeSubscriptionId: term.stripeSubscriptionId ?? contract.stripeSubscriptionId,
-      autoRenews: term.autoRenews ?? false,
-      updatedAt: new Date().toISOString(),
-    })
-    .where(and(eq(enterpriseContracts.id, contractId), eq(enterpriseContracts.status, 'offered')))
-    .returning();
+  // The status and the entitlement commit together: a crash between them left
+  // an active contract with no license, and the retry returned early above.
+  const active = await withDbTransaction(async () => {
+    const moved = await transitionStatus(enterpriseContracts, enterpriseContracts.status, CONTRACT_TRANSITIONS.activate, {
+      where: eq(enterpriseContracts.id, contractId),
+      set: {
+        startsAt: term.startsAt,
+        endsAt: term.endsAt,
+        stripeSubscriptionId: term.stripeSubscriptionId ?? contract.stripeSubscriptionId,
+        autoRenews: term.autoRenews ?? false,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    if (!moved.applied) return null;
+    // Licensed: the Enterprise features. The billing plan is not touched.
+    await applyAdminOverride(
+      contract.accountId,
+      { enterpriseEntitled: true },
+      { userId: term.actorUserId ?? null, action: 'enterprise.contract.activate' },
+    );
+    return moved.row;
+  });
   if (!active) return getContract(contractId);
 
-  // Licensed: the Enterprise features. The billing plan is not touched.
-  await applyAdminOverride(
-    contract.accountId,
-    { enterpriseEntitled: true },
-    { userId: term.actorUserId ?? null, action: 'enterprise.contract.activate' },
-  );
   invalidateCaches(contract.accountId);
   logger.info(`[enterprise-contracts] contract ${contractId} active on ${contract.accountId} (${active.collection})`);
   return active;
@@ -378,11 +446,27 @@ export async function endContract(
   const contract = await getContract(contractId);
   if (contract.status !== 'active') throw new ContractError(`contract is ${contract.status}`, 409);
   const now = new Date();
-  const [ended] = await db
-    .update(enterpriseContracts)
-    .set({ status: 'ended', endedAt: now.toISOString(), autoRenews: false, updatedAt: now.toISOString() })
-    .where(and(eq(enterpriseContracts.id, contractId), eq(enterpriseContracts.status, 'active')))
-    .returning();
+  const graceEnds = new Date(now.getTime() + ACCESS_GRACE_DAYS * DAY_MS).toISOString();
+  // The status and the entitlement commit together: a crash between them left
+  // an ended contract whose `enterprise_entitled` stayed true forever.
+  const ended = await withDbTransaction(async () => {
+    const moved = await transitionStatus(enterpriseContracts, enterpriseContracts.status, CONTRACT_TRANSITIONS.end, {
+      where: eq(enterpriseContracts.id, contractId),
+      set: { endedAt: now.toISOString(), autoRenews: false, updatedAt: now.toISOString() },
+    });
+    if (!moved.applied) return null;
+    const account = await getCreditAccount(contract.accountId);
+    const overrides = mergeOverridePatch(account?.entitlementOverrides, {
+      sso: { value: true, expires_at: graceEnds },
+      scim: { value: true, expires_at: graceEnds },
+    });
+    await applyAdminOverride(
+      contract.accountId,
+      { enterpriseEntitled: false, entitlementOverrides: toStoredOverrides(overrides) },
+      { userId: actorUserId, action: `enterprise.contract.end.${reason}` },
+    );
+    return moved.row;
+  });
   if (!ended) return getContract(contractId);
 
   // Stripe only when there is a subscription to touch: a manual contract on an
@@ -393,23 +477,29 @@ export async function endContract(
     );
   }
 
-  const account = await getCreditAccount(contract.accountId);
-  const graceEnds = new Date(now.getTime() + ACCESS_GRACE_DAYS * DAY_MS).toISOString();
-  const overrides = mergeOverridePatch(account?.entitlementOverrides, {
-    sso: { value: true, expires_at: graceEnds },
-    scim: { value: true, expires_at: graceEnds },
-  });
-
-  await applyAdminOverride(
-    contract.accountId,
-    { enterpriseEntitled: false, entitlementOverrides: toStoredOverrides(overrides) },
-    { userId: actorUserId, action: `enterprise.contract.end.${reason}` },
-  );
   invalidateCaches(contract.accountId);
+  // A closed account has nobody left to tell.
+  if (reason === 'account_closed') return ended;
   await notifyContractEnded(contract.accountId, graceEnds).catch((err) =>
     logger.warn('[enterprise-contracts] contract-ended notice failed', { error: (err as Error).message }),
   );
   return ended;
+}
+
+/**
+ * Account closure (account-deletion.ts): end the active contract and withdraw
+ * an open offer. The closure cancels every Stripe subscription itself.
+ */
+export async function endContractForClosedAccount(accountId: string): Promise<void> {
+  const active = await getActiveContract(accountId);
+  if (active) await endContract(active.id, 'account_closed');
+  const offer = await getOpenOffer(accountId);
+  if (offer) {
+    await transitionStatus(enterpriseContracts, enterpriseContracts.status, CONTRACT_TRANSITIONS.withdraw, {
+      where: eq(enterpriseContracts.id, offer.id),
+      set: { updatedAt: new Date().toISOString(), note: 'account closed' },
+    });
+  }
 }
 
 /** Manual contracts whose term is over end on the access sweep. Returns how many ended. */
@@ -442,8 +532,19 @@ function contractIdOf(metadata: Stripe.Metadata | null | undefined): string | nu
 /** Activate the contract behind `subscription` when Stripe says it is live. */
 async function ensureActiveFromSubscription(contractId: string, subscription: Stripe.Subscription): Promise<ContractRow> {
   const contract = await getContract(contractId);
+  const live = subscription.status === 'active' || subscription.status === 'trialing';
+  // A subscription for an offer that was withdrawn (or that lost to another
+  // contract) grants nothing, so it must not keep billing. The one charge
+  // already taken needs a person: the log says so.
+  if ((contract.status === 'withdrawn' || contract.status === 'ended') && live && contract.stripeSubscriptionId !== subscription.id) {
+    await getStripe().subscriptions.cancel(subscription.id).catch((err) => {
+      if ((err as { code?: string }).code !== 'resource_missing') throw err;
+    });
+    logger.error(`[enterprise-contracts] cancelled subscription ${subscription.id} of ${contract.status} contract ${contractId}; refund the payment by hand`);
+    return contract;
+  }
   if (contract.status !== 'offered') return contract;
-  if (subscription.status !== 'active' && subscription.status !== 'trialing') return contract;
+  if (!live) return contract;
   return activateContract(contractId, {
     startsAt: new Date(subscription.current_period_start * 1000).toISOString(),
     endsAt: new Date(subscription.current_period_end * 1000).toISOString(),
