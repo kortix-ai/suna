@@ -32,7 +32,7 @@
  * `?section=`, is rewritten to the section that opened.
  */
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, type ComponentType, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, type ComponentType, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type Icon } from '@phosphor-icons/react';
 
@@ -439,6 +439,21 @@ export function ProjectAdminDashboard({
     router.replace(projectAdminHref(projectId, active, Object.fromEntries(query.entries())));
   }, [retired, linkOut, settled, active, named, legacyQuery, content, projectId, router, searchParams]);
 
+  // A narrow window shows the rail as one horizontal strip. Scroll the
+  // selected row into it, so a section opened from a link, the palette or a
+  // click on a partly hidden row is visible. Only the strip scrolls, never the page.
+  const stripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!isMobile || !settled || !strip) return;
+    const tab = strip.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    if (!tab) return;
+    const stripBox = strip.getBoundingClientRect();
+    const tabBox = tab.getBoundingClientRect();
+    if (tabBox.left >= stripBox.left && tabBox.right <= stripBox.right) return;
+    strip.scrollLeft += tabBox.left - stripBox.left - (stripBox.width - tabBox.width) / 2;
+  }, [isMobile, settled, active]);
+
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
   const navigateTo = useCallback((href: string) => router.push(href), [router]);
   const settingsNav = useMemo(
@@ -501,7 +516,7 @@ export function ProjectAdminDashboard({
         {isMobile ? (
           // The frame's title bar names the panel; this row is the rail only.
           <nav aria-label={title} className="border-border/60 bg-background flex shrink-0 flex-col border-b">
-            <FadedScrollArea orientation="horizontal" fadeColor="from-background" className="min-w-0 flex-1 py-2">
+            <FadedScrollArea ref={stripRef} orientation="horizontal" fadeColor="from-background" className="min-w-0 flex-1 py-2">
               {settled ? (
                 <div className="flex w-fit items-center gap-2">
                   <Tabs value={active} className="w-fit">
