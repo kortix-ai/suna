@@ -29,6 +29,11 @@
  *   bun src/scripts/recover-opencode-history.ts --env prod --apply              # everything, in batches
  *   ... [--provider platinum|daytona] [--session <id>]… [--project <id>] [--concurrency 3]
  *
+ * BIG STORES. A store over 128 MiB is set aside (`too_large`, with its size) and
+ * not copied. A second run takes them one at a time, on a task with more memory:
+ *
+ *   bun src/scripts/recover-opencode-history.ts --env prod --apply --max-store-mb 2048 --concurrency 1
+ *
  * STOP RULES (the run ends by itself and exits 1): 5 failures in a row; more
  * than 2 invalid logs and over 5 % of the processed sessions; Platinum
  * throttling (429) for over 5 minutes; SIGTERM (in-flight boxes finish first).
@@ -68,10 +73,11 @@ interface Args {
   project: string | null;
   concurrency: number;
   provider: 'platinum' | 'daytona';
+  maxStoreBytes: number;
 }
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { env: '', plan: false, apply: false, limit: null, sessions: [], project: null, concurrency: 3, provider: 'platinum' };
+  const out: Args = { env: '', plan: false, apply: false, limit: null, sessions: [], project: null, concurrency: 3, provider: 'platinum', maxStoreBytes: MAX_STORE_BYTES };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--env') out.env = argv[++i] ?? '';
@@ -81,6 +87,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--session') out.sessions.push(argv[++i] ?? '');
     else if (a === '--project') out.project = argv[++i] ?? null;
     else if (a === '--concurrency') out.concurrency = Number(argv[++i]);
+    else if (a === '--max-store-mb') out.maxStoreBytes = Number(argv[++i]) * 1024 * 1024;
     else if (a === '--provider') {
       const p = argv[++i];
       if (p !== 'platinum' && p !== 'daytona') throw new Error('--provider must be platinum or daytona');
@@ -90,6 +97,11 @@ function parseArgs(argv: string[]): Args {
   }
   if (out.limit !== null && !(out.limit > 0)) throw new Error('--limit must be a positive number');
   if (!(out.concurrency >= 1 && out.concurrency <= 6)) throw new Error('--concurrency must be 1..6');
+  if (!(Number.isSafeInteger(out.maxStoreBytes) && out.maxStoreBytes > 0 && out.maxStoreBytes <= 4096 * 1024 * 1024)) {
+    throw new Error('--max-store-mb must be a whole number, 1..4096');
+  }
+  // Memory: the conversion holds a store several times over.
+  if (out.maxStoreBytes > MAX_STORE_BYTES && out.concurrency !== 1) throw new Error('--max-store-mb above 128 needs --concurrency 1');
   // A dry run stamps nothing, so without a limit it would read the same boxes again and again.
   if (!out.apply && !out.plan && out.limit === null) out.limit = 5;
   return out;
@@ -105,6 +117,17 @@ type Candidate = {
   external_id: string;
   attempts: number;
 };
+
+/**
+ * A raised cap takes again the sessions set aside for their store size (no
+ * recorded size, or one under the cap), not those over the row caps (their
+ * detail starts with `sessions=`).
+ */
+function retakeTooLarge(maxStoreBytes: number) {
+  return sql`OR (ss.metadata->${RECOVERY_KEY}->>'outcome' = 'too_large'
+            AND coalesce(ss.metadata->${RECOVERY_KEY}->>'detail', '') NOT LIKE 'sessions=%'
+            AND coalesce((ss.metadata->${RECOVERY_KEY}->>'bytes')::bigint, 0) <= ${maxStoreBytes})`;
+}
 
 /** Sessions whose only transcript is an OpenCode store on a parked box of `--provider`. Fresh ones first, then retries. */
 function candidateFilter(args: Args) {
@@ -129,6 +152,7 @@ function candidateFilter(args: Args) {
         NOT ss.metadata ? ${RECOVERY_KEY}
         OR (ss.metadata->${RECOVERY_KEY}->>'outcome' = 'retry'
             AND coalesce((ss.metadata->${RECOVERY_KEY}->>'attempts')::int, 0) < ${MAX_ATTEMPTS})
+        ${args.maxStoreBytes > MAX_STORE_BYTES ? retakeTooLarge(args.maxStoreBytes) : sql``}
       )
       ${args.sessions.length ? sql`AND ps.session_id IN (${sql.join(args.sessions.map((s) => sql`${s}`), sql`, `)})` : sql``}
       ${args.project ? sql`AND ps.project_id = ${args.project}::uuid` : sql``}`;
@@ -163,6 +187,11 @@ async function plan(args: Args): Promise<void> {
 interface Result {
   outcome: string;
   retryable?: boolean;
+  /**
+   * False when the box was not ours to read yet (running, or still archiving
+   * after an earlier cycle): no attempt is spent and the stop rules ignore it.
+   */
+  attempted?: false;
   detail?: string;
   messages?: number;
   threads?: number;
@@ -171,25 +200,23 @@ interface Result {
 }
 
 /** One session, end to end. Never throws: every failure is a result. */
-async function recoverOne(box: BoxReader, c: Candidate, apply: boolean): Promise<Result> {
+async function recoverOne(box: BoxReader, c: Candidate, args: Pick<Args, 'apply' | 'maxStoreBytes'>): Promise<Result> {
+  const { apply } = args;
   const local = await mkdtemp(join(tmpdir(), 'kortix-recover-'));
-  let boxTemp: string | null = null;
   let started = false;
   let result: Result;
   try {
     const state = await box.state(c.external_id);
     if (state === 'gone') return { outcome: 'box_gone' };
-    if (state === 'running' || state === 'other') return { outcome: 'retry', retryable: true, detail: `box ${state}` };
+    if (state === 'running' || state === 'other') return { outcome: 'retry', retryable: true, attempted: false, detail: `box ${state}` };
     if (!(await stillRecoverable(c.session_id))) return { outcome: 'skipped', detail: 'session changed before the read' };
     started = true;
-    const copied = await box.copyStore(c.external_id, join(local, 'store'));
-    if (!copied) {
+    const copied = await box.copyStore(c.external_id, join(local, 'store'), args.maxStoreBytes);
+    if (copied.kind === 'none') {
       result = { outcome: 'no_store' };
-    } else if (copied.bytes > MAX_STORE_BYTES) {
-      boxTemp = copied.boxTemp;
+    } else if (copied.kind === 'too_large') {
       result = { outcome: 'too_large', bytes: copied.bytes };
     } else {
-      boxTemp = copied.boxTemp;
       const store = readOpenCodeStore(copied.dbPath);
       const paths = sidecarPaths(store);
       // The store is tenant-written: bound what the conversion walks before it walks it.
@@ -222,7 +249,7 @@ async function recoverOne(box: BoxReader, c: Candidate, apply: boolean): Promise
   }
   if (started) {
     try {
-      const back = await box.release(c.external_id, boxTemp, () => rowParked(c.session_id));
+      const back = await box.release(c.external_id, () => rowParked(c.session_id));
       if (back === 'left-running') result.detail = [result.detail, 'box left running: the session woke'].filter(Boolean).join('; ');
     } catch (err) {
       result.detail = [result.detail, `release failed: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`].filter(Boolean).join('; ');
@@ -267,12 +294,13 @@ async function main(): Promise<void> {
         if (!c) return;
         seen.add(c.session_id);
         const t0 = Date.now();
-        const r = await recoverOne(box, c, args.apply);
+        const r = await recoverOne(box, c, args);
         processed++;
         totals.set(r.outcome, (totals.get(r.outcome) ?? 0) + 1);
         console.log(
           `[recover] ${r.outcome} session=${c.session_id} box=${c.external_id} origin=${c.origin}` +
             ` messages=${r.messages ?? '-'} threads=${r.threads ?? '-'} blobs=${r.blobs ?? '-'} bytes=${r.bytes ?? '-'} ms=${Date.now() - t0}` +
+            ` rss_mb=${Math.round(process.memoryUsage().rss / 2 ** 20)}` +
             (r.detail ? ` detail=${JSON.stringify(r.detail)}` : ''),
         );
         if (args.apply) {
@@ -281,13 +309,14 @@ async function main(): Promise<void> {
             // A skip means the session changed under the recovery (someone opened it): look again
             // next run. A session that has a log by then is no longer a candidate.
             outcome: r.outcome === 'retry' && !r.retryable ? 'failed' : r.outcome === 'skipped' ? 'retry' : r.outcome,
-            attempts: c.attempts + 1,
+            attempts: c.attempts + (r.attempted === false ? 0 : 1),
             ...(r.detail && { detail: r.detail.slice(0, 300) }),
             ...(r.messages !== undefined && { messages: r.messages, threads: r.threads }),
+            ...(r.bytes !== undefined && { bytes: r.bytes }),
           };
           await stamp(c.sandbox_id, value).catch((err) => console.log(`[recover] stamp failed session=${c.session_id}: ${String(err)}`));
         }
-        failuresInRow = r.outcome === 'retry' || r.outcome === 'refused' ? failuresInRow + 1 : 0;
+        if (r.attempted !== false) failuresInRow = r.outcome === 'retry' || r.outcome === 'refused' ? failuresInRow + 1 : 0;
         if (r.outcome === 'invalid') invalid++;
         if (failuresInRow >= CONSECUTIVE_FAILURES_STOP) stopReason = `${failuresInRow} failures in a row`;
         else if (invalid > 2 && invalid / processed > 0.05) stopReason = `${invalid} invalid logs of ${processed}`;
@@ -299,7 +328,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[recover] done provider=${args.provider} mode=${args.apply ? 'apply' : 'dry-run'} processed=${processed} minutes=${((Date.now() - startedAt) / 60_000).toFixed(1)}` +
+    `[recover] done provider=${args.provider} mode=${args.apply ? 'apply' : 'dry-run'} max_store_mb=${args.maxStoreBytes / 2 ** 20} processed=${processed} minutes=${((Date.now() - startedAt) / 60_000).toFixed(1)}` +
       ` outcomes=${JSON.stringify(Object.fromEntries(totals))}${stopReason ? ` STOPPED: ${stopReason}` : ''}`,
   );
   if (stopReason) process.exitCode = 1;
