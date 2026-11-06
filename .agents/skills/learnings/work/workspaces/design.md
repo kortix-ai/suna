@@ -606,6 +606,31 @@ column, no trigger); the rerun after the holder commits takes 49 ms. The
 add member, provision + rename + list + delete a project) answers 0 errors and
 leaves I1–I12 at 0.
 
+**Added by the finisher (2026-11-06), same order rules:**
+
+- `20261106140500000_workspaces_account_id_indexes.concurrent.ts` (before M4):
+  `(account_id)` indexes, `CREATE INDEX CONCURRENTLY`, on the six expand tables
+  that had none (`oauth_access_tokens`, `oauth_authorization_codes`,
+  `app_runtimes`, `app_volumes`, `cli_device_grants`, `capture_device_grants`).
+  The fill the reconcile runs on a new workspace's first project no longer
+  sequentially scans them inside the provision transaction.
+- `20261106142200000_workspace_id_api_keys.sql`: `api_keys` is hot (every
+  API-key request reads it, no cache), so it left batch 2 for its own file.
+- `apps/api/scripts/workspace-split.ts fill <account>... | fill --null` stamps
+  the expand rows of an account that left `split_pending` outside the split
+  runner (a transfer, an old pod's archive). R2a step 10a runs `fill --null`.
+
+**Split holds (decided by the finisher, record for Marko):** an account with an
+`account_sso_providers` row or a live SCIM token is held
+(`held_reason: account_has_identity_provider`) whatever the keeper: the split
+copies members, not the IdP, so SSO enforcement and SCIM deprovisioning would
+stop at the keeper. Confirming the keeper does not release it; the split
+carrying identity is a follow-up. The move transaction re-checks both holds
+under the run lock. Every split-off grant is keyed by run AND target account
+(`split_off_grant:<run>:<account>`), so a reopened run never replays the
+dormant account's grant. The owner email waits until every done run has
+`plan.billing`.
+
 No index on the new `workspace_id` columns in R1 (nothing reads them until R2).
 `mixed-version-safe` annotations: the old image never names `workspaces`, the new columns,
 the functions or `person_deletion_requests`; the BEFORE triggers only set a column the old
@@ -717,7 +742,9 @@ against a view (learning `2026-08-19T163833Z`).
    unchanged, `KORTIX_SQL_TRACE` diff empty.
 
 10a. Before R2a ships, re-measure prod read-only (Marko approves the read): I9
-     and I10 at 0 for 7 days, the count of NULL `workspace_id` per expand table,
+     and I10 at 0 for 7 days, the count of NULL `workspace_id` per expand table
+     (run `workspace-split.ts fill --null` until it reports 0 accounts), 0 accounts
+     held for `account_has_identity_provider` (the split must carry SSO/SCIM first),
      and classify `oauth_refresh_tokens` (§6.2). The store flip (step 8) is one
      change in `apps/api/src/workspaces/store.ts` (`livePairs`: answer from
      `s.j`, compare `e.j`); the metric and log keep their names.
