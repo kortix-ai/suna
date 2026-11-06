@@ -137,6 +137,29 @@ export function resolveMentions(text: string, people: readonly MentionCandidate[
   return out;
 }
 
+/**
+ * True when every @mention of a member's message names another person (and
+ * there is at least one): the message is for them, not for the thread's
+ * agent. `@all`, `@here`, an agent, the author or an unknown name: false.
+ */
+export function addressesOnlyPeople(text: string, people: readonly MentionCandidate[], authorId: string): boolean {
+  const tokens = mentionTokens(text);
+  if (tokens.size === 0) return false;
+  const persons = resolveMentions(text, people, []).filter((m) => m.kind === 'person' && m.userId !== authorId);
+  return persons.length === tokens.size;
+}
+
+/** `addressesOnlyPeople` for a session's message: the project's people read only when the text has an @. Never throws. */
+export async function messageAddressesOnlyPeople(input: { accountId: string; projectId: string; authorId: string; text: string }): Promise<boolean> {
+  if (!input.text.includes('@')) return false;
+  try {
+    return addressesOnlyPeople(input.text, await projectMentionCandidates(input), input.authorId);
+  } catch (error) {
+    logger.warn('[space-posts] the message mentions were not read; the agent answers', { error: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
+}
+
 /** The project's people as mention candidates. */
 export async function projectMentionCandidates(project: { accountId: string; projectId: string }): Promise<MentionCandidate[]> {
   const { ids } = await loadProjectRosterIds({ row: project });
