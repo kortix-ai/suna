@@ -236,6 +236,51 @@ describe('browser bridge', () => {
     expect(bridge.status().attached).toBe(false)
   })
 
+  test('an attach that times out leaves an overlapping attach and its bridge alone', async () => {
+    const ids: string[] = []
+    const overlapping = createChromeBridge({
+      fetchImpl: (async (url: string, init: RequestInit) => {
+        if (!String(url).endsWith('/chrome/attach')) return new Response(null, { status: 204 })
+        ids.push(String(JSON.parse(String(init.body)).ticket))
+        return Response.json({ attachmentId: `att-${ids.length}`, chrome: BROWSER })
+      }) as unknown as typeof fetch,
+      cdpPort: 0,
+      dialTimeoutMs: 200,
+      relay: () => ({ apiRoot: 'http://api.test/v1', token: TOKEN }),
+    })
+    const server = Bun.serve<BridgeWsData>({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch(req, srv) {
+        const prep = overlapping.prepareUpgrade(req, TOKEN)
+        if (!prep.ok) return prep.response
+        return srv.upgrade(req, { data: { chromeBridge: true } }) ? undefined : new Response('x', { status: 500 })
+      },
+      websocket: overlapping.bridgeSocket,
+    })
+    try {
+      const first = overlapping.attach({ ask: false })
+      await Bun.sleep(120)
+      const second = overlapping.attach({ ask: false })
+      // The first attach's dial window ends while the second one waits.
+      expect((await first).status).toBe(502)
+      const ext = new Peer(`ws://127.0.0.1:${server.port}${KORTIX_CHROME_BRIDGE_PATH}?ticket=${ids[1]}`, { 'X-Kortix-User-Context': userContext() })
+      await ext.opened
+      ext.send({ hello: { chrome: BROWSER, tabScope: 'own' } })
+      const result = await second
+      expect(result.status).toBe(200)
+      expect(result.body).toMatchObject({ attachmentId: 'att-2' })
+      await Bun.sleep(150)
+      // The second attach's own window has passed: the bridge it set up is still open.
+      expect(ext.ws.readyState).toBe(WebSocket.OPEN)
+      expect(overlapping.status().attached).toBe(true)
+      ext.ws.close()
+    } finally {
+      overlapping.stop()
+      server.stop(true)
+    }
+  })
+
   test('routes require the sandbox bearer', async () => {
     const app = createChromeRouter({ sandboxToken: TOKEN } as never, bridge)
     expect((await app.request('/status')).status).toBe(401)

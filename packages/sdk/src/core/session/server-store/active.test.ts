@@ -9,7 +9,7 @@ import { setCurrentRuntime } from '../current-runtime';
 // `export { getActiveRuntimeUrl, ... } from './server-store/active'`
 // re-export chain in `../server-store.ts`: mocking EITHER the barrel
 // (`../server-store`, as `files/client.test.ts` used to) OR this submodule
-// directly (as `opencode/client.test.ts` used to) replaced this module's real
+// directly (as `core/runtime/client.test.ts` used to) replaced this module's real
 // exports for every other importer too, including a plain static
 // `import ... from './active'` here (which would crash with "Export named
 // '...' not found" once some export the mock omitted got statically linked).

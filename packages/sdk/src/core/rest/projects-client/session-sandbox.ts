@@ -107,7 +107,7 @@ export interface SessionStartResult {
   /** Stable terminal failure. Provider-specific diagnostics stay internal. */
   failure?: SessionStartFailure | null;
   /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000), composed
+   * Relative proxy path for this session's runtime (port 8000), composed
    * against the configured backendUrl. The server owns the proxy scheme; the SDK
    * consumes this opaquely (never builds `/p/<id>/<port>` itself). Absent until the
    * box has an external_id — `useSession` falls back to deriving it from
@@ -301,7 +301,7 @@ function postSessionStart(projectId: string, sessionId: string, options?: Sessio
 
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
- * the OpenCode pin server-side, returning ONE readiness payload to poll until
+ * the runtime pin server-side, returning ONE readiness payload to poll until
  * stage='ready'.
  */
 export async function startProjectSession(

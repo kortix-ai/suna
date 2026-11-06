@@ -157,9 +157,8 @@ Never fork a component. Every key the theme takes: [kortix.com/docs/sdk/ui#themi
 `scripts/sdk-boundary.mjs` runs before `build`, `test`, `test:e2e` and `typecheck`. It
 rejects, in client code:
 
-- an import of the OpenCode SDK or of an SDK transport module (only `@kortix/sdk` and
-  `@kortix/sdk/react`);
-- a constructed runtime proxy path, OpenCode REST path, or `previewUrl()` / `proxyUrl()` call;
+- an import of an SDK transport module (only `@kortix/sdk` and `@kortix/sdk/react`);
+- a constructed runtime proxy path, session runtime REST path, or `previewUrl()` / `proxyUrl()` call;
 - a legacy runtime store;
 - a raw request to the Kortix backend, or to a BFF route outside the allowlist;
 - a local UI kit: a file under `src/components/ui`, `lucide-react`, `radix-ui`,

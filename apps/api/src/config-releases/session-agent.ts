@@ -41,8 +41,8 @@
  */
 
 import { isMyKortixAgentName } from '@kortix/shared';
-import { OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
-import { OPENCODE_BUILTIN_AGENT_NAMES } from '../projects/agents';
+import { RUNTIME_BUILTIN_AGENTS } from '@kortix/manifest-schema';
+import { RUNTIME_BUILTIN_AGENT_NAMES } from '../projects/agents';
 import type { ConfigReleaseVariant } from './builder';
 
 /** The `default` sentinel: "whatever this project's default agent is". */
@@ -58,7 +58,7 @@ export interface DeclaredAgentRoster {
   readable: boolean;
   /** False when the project declares no agents at all — it adopted no governance. */
   governed: boolean;
-  /** OpenCode's build/plan/general/explore run only when declared. Every roster read today sets it; a stored one may predate it. */
+  /** The runtime built-ins build/plan/general/explore run only when declared. Every roster read today sets it; a stored one may predate it. */
   onlyDeclared?: boolean;
 }
 
@@ -98,12 +98,12 @@ export function resolveSessionReleaseAgent(
   }
 
   // The platform coordinator is injected, never declared (2026-08-13), and
-  // OpenCode's own built-ins belong to the runtime, not to any manifest.
+  // the runtime's own built-in agents belong to the runtime, not to any manifest.
   // Neither was ever "dropped", so neither is ever re-pointed.
   // A project runs only declared agents: an undeclared built-in it disables
   // is dropped like any other agent.
-  const disabledBuiltin = roster.onlyDeclared === true && (OPENCODE_BUILTIN_AGENTS_V3 as readonly string[]).includes(name);
-  if (isMyKortixAgentName(name) || (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !disabledBuiltin)) {
+  const disabledBuiltin = roster.onlyDeclared === true && (RUNTIME_BUILTIN_AGENTS as readonly string[]).includes(name);
+  if (isMyKortixAgentName(name) || (RUNTIME_BUILTIN_AGENT_NAMES.has(name) && !disabledBuiltin)) {
     return { kind: 'declared', agent: name };
   }
 
@@ -124,7 +124,7 @@ export function resolveSessionReleaseAgent(
  * access exactly one agent is compiled, so nothing else is disclosed.
  *
  * `none` is the answer for a session with no usable agent. It compiles to an
- * empty OpenCode config, whose etag is non-null, so `release_id` is never null
+ * empty config (`{}`), whose etag is non-null, so `release_id` is never null
  * and the box always has a release to converge onto. It is NOT "the default
  * agent minus the grant": compiling the default agent for an owner who may not
  * run it would hand that owner the agent's prompt and model through the box.

@@ -629,6 +629,8 @@ export const qk = {
     spaceLinks: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'links'] as const,
     /** `listProjectSpaceMembers` — a channel's people (the header roster, the Members tab). Under `spaces`, so a spaces refresh refreshes it. */
     spaceMembers: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'members'] as const,
+    /** `getProjectSpaceProactive` — a space's watcher settings (`spaces_proactive`). Under `spaces`, so a spaces refresh refreshes it. */
+    spaceProactive: (id: string, spaceId: string) => [...qk.project.spaces(id), spaceId, 'proactive'] as const,
     /** `getProjectSpaceGeneralNotice` — `#general`'s turned-on-again line. Under `spaces`, so a spaces refresh refreshes it. */
     spaceGeneralNotice: (id: string) => [...qk.project.spaces(id), 'general-notice'] as const,
     /** `getPrivateChannelsAvailable`. Under `spaces`, so a spaces refresh refreshes it. */
@@ -677,10 +679,14 @@ export const qk = {
     artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,
     /** `listArtifactTypes`. */
     artifactTypes: (id: string) => [...qk.project.artifacts(id), 'types'] as const,
-    /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
+    /** `listProjectGoals` — every goal record the caller may read. */
     goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
-    /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */
+    /** `getProjectGoalFiles` — one goal folder's brief, log, notes and verification. */
     goalFiles: (id: string, folder: string) => [...qk.project.goals(id), 'files', folder] as const,
+    /** `getProjectGoal` — one goal record by `goal_id`. */
+    goal: (id: string, goalId: string) => [...qk.project.goals(id), 'goal', goalId] as const,
+    /** `listProjectGoalEvents` — one goal's audit trail. */
+    goalEvents: (id: string, goalId: string) => [...qk.project.goals(id), 'events', goalId] as const,
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,

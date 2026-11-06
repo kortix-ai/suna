@@ -195,6 +195,48 @@ export async function setProjectSpaceTabs(projectId: string, spaceId: string, ta
 }
 
 /**
+ * A space's Proactive settings (flag `spaces_proactive`, with `chat`): its
+ * watcher reads what happens in the space and writes only when it matters.
+ * Same fields as the API's `GET /spaces/:spaceId/proactive`.
+ */
+export interface ProjectSpaceProactive {
+  space_id: string;
+  /** The watcher is on. Off until someone turns it on. */
+  enabled: boolean;
+  /** A short brief at 09:00 in `brief_timezone`, on days with events. */
+  daily_brief: boolean;
+  /** IANA zone of the daily brief, such as `Europe/Berlin`. */
+  brief_timezone: string;
+  /** The caller may change these: the channel's creator, a project manager or the DM's owner. Never a session token. */
+  can_edit: boolean;
+}
+
+/** A change to {@link ProjectSpaceProactive}: only the fields given change. */
+export interface ProjectSpaceProactiveInput {
+  enabled?: boolean;
+  daily_brief?: boolean;
+  /** An IANA zone; an unknown one rejects with 400 `invalid_timezone`. */
+  brief_timezone?: string;
+}
+
+/** A space's Proactive settings. 403 `feature_disabled` while `spaces_proactive` is off. */
+export async function getProjectSpaceProactive(projectId: string, spaceId: string) {
+  return unwrap(await backendApi.get<ProjectSpaceProactive>(`/projects/${projectId}/spaces/${spaceId}/proactive`, { showErrors: false }));
+}
+
+/**
+ * Turn a space's watcher or its daily brief on or off. Anyone but the
+ * channel's creator, a project manager or the DM's owner rejects with 403
+ * `forbidden`. The caller shows the error, so it never reaches the host
+ * error handler. Resolves the stored settings.
+ */
+export async function setProjectSpaceProactive(projectId: string, spaceId: string, input: ProjectSpaceProactiveInput) {
+  return unwrap(
+    await backendApi.put<ProjectSpaceProactive>(`/projects/${projectId}/spaces/${spaceId}/proactive`, input, { showErrors: false }),
+  );
+}
+
+/**
  * The caller's DM with `agentName`, created on the first call. An agent the
  * project does not declare rejects with 404 `agent_not_found`. The caller
  * shows the error, so it never reaches the host error handler.

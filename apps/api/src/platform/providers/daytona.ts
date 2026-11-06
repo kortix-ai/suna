@@ -193,7 +193,7 @@ export class DaytonaProvider implements SandboxProvider {
       ...(workloadType === 'app' ? { KORTIX_WORKLOAD_TYPE: workloadType } : {}),
       // Session identity, git context, KORTIX_TOKEN, and the project's own
       // secrets (incl. provider keys set via `kortix providers`, picked up by
-      // opencode at boot) — see buildSessionSandboxEnvVars() and
+      // the runtime at boot) — see buildSessionSandboxEnvVars() and
       // provisionSessionSandbox().
       ...opts.envVars,
     };

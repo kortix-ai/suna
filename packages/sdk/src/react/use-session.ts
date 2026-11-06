@@ -5,7 +5,7 @@
  *
  * Everything sandbox-shaped is internal: it drives `/start` (server long-poll),
  * points the runtime at the session's sandbox, opens the SSE stream, resolves the
- * canonical OpenCode id, and syncs messages — exposing one `phase`
+ * canonical runtime session id, and syncs messages — exposing one `phase`
  * (starting|ready|error) plus messages/send/abort/questions/permissions and the
  * server-side capabilities (models/agents/commands/picks). The host imports
  * `createKortix` + `useSession` and NOTHING else runtime-related: no server-store,
@@ -23,16 +23,18 @@ import type { Message, Part } from '../core/runtime/runtime-types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
+import { useRuntimeCompactionStore } from '../browser/stores/runtime-compaction-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import type { SendReceipt } from '../core/session/working';
 import {
   compactionExpiryAtMs,
   projectCompacting,
 } from '../core/session/compaction';
-import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import {
+  claimSandboxConnection,
   markRuntimeReadyVerified,
+  sandboxConnectionKey,
   seedConnectionFromReadyStart,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
@@ -64,9 +66,9 @@ import { holdLiveStart, liveStartPollMode } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
-import { useCanonicalRuntimeSession } from './use-canonical-opencode-session';
+import { useCanonicalRuntimeSession } from './use-canonical-runtime-session';
 import type { ModelKey } from './use-model-store';
-import { useRuntimeEventStream } from './use-opencode-events';
+import { useRuntimeEventStream } from './use-runtime-events';
 import { useSessionStream } from './use-session-stream';
 import { sessionStreamConnected } from '../core/session/control-stream';
 import {
@@ -75,7 +77,7 @@ import {
   presenceReporter,
   watchHumanPresence,
 } from './human-presence';
-import { formatModelString } from './use-opencode-local';
+import { formatModelString } from './use-runtime-local';
 import {
   type AbortSettlement,
   type PromptPart,
@@ -84,9 +86,9 @@ import {
   replyToQuestion,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
-} from './use-opencode-sessions';
-import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
-import { unwrap } from './use-opencode-sessions/shared';
+} from './use-runtime-sessions';
+import { mintSessionWireMessageId } from './use-runtime-sessions/messages';
+import { unwrap } from './use-runtime-sessions/shared';
 import { useProjectConfig } from './use-project-config';
 import { useProjectModels } from './use-project-models';
 import { useRuntimePhase } from './use-runtime-phase';
@@ -169,7 +171,7 @@ export function presenceReturnReopensSession(
 export const SESSION_START_POLL_MS = 1_500;
 
 /**
- * The absolute URL of this session's OpenCode runtime, or `null` until the box
+ * The absolute URL of this session's runtime, or `null` until the box
  * is ready.
  *
  * `/start` reports the runtime two ways and NEITHER is directly usable:
@@ -692,7 +694,7 @@ export interface KortixSendError {
   cause: unknown;
 }
 
-// `getClient()` (packages/sdk/src/opencode/client.ts) throws a
+// `getClient()` (packages/sdk/src/core/runtime/client.ts) throws a
 // `RuntimeNotReadyError` with this exact message when the sandbox url hasn't
 // been resolved yet (session still starting). The string match is kept as a
 // fallback for callers that re-wrap the original error (losing the
@@ -736,7 +738,7 @@ export function markDispatchedForPartIds(sessionId: string, parts: PromptPart[])
  * as `{ type: 'text', text }` with no id at all, so — even where a host paired
  * it with its own optimistic add — nothing correlated the two. The sync
  * store's `message.updated` handler matches an incoming echo to an optimistic
- * message primarily by EXACT part id (opencode preserves a client-supplied
+ * message primarily by EXACT part id (the runtime preserves a client-supplied
  * part id on echo); only when that fails does it fall back to "the oldest
  * DISPATCHED optimistic message" (`markDispatchedForPartIds`, called
  * unconditionally by `sendParts` below, marks it — but only once the part ids
@@ -885,7 +887,7 @@ export function classifySendError(error: unknown): KortixSendError {
   return {
     kind: 'runtime-error',
     // Prefer the gateway's own message (already human-written server-side per
-    // status/cause) over opencode's raw runtime-error formatting when present.
+    // status/cause) over the runtime's raw error formatting when present.
     // The fallback is unwrapped too: a thrown error's message is often an HTTP
     // body (`{"message":…,"code":401}`), and a body is not a sentence.
     message: gateway?.message || unwrapError(formatted.message),
@@ -969,7 +971,7 @@ export function sendReceiptId(
   return clientMessageId ?? identified?.id ?? sessionId;
 }
 
-export async function rewindOpenCodeSession(sessionId: string, messageId: string): Promise<void> {
+export async function rewindRuntimeSession(sessionId: string, messageId: string): Promise<void> {
   if (!messageId) throw new Error('Session rewind requires a message id');
   unwrap(
     await getClient().session.revert({
@@ -979,7 +981,7 @@ export async function rewindOpenCodeSession(sessionId: string, messageId: string
   );
 }
 
-export async function restoreOpenCodeSessionRewind(sessionId: string): Promise<void> {
+export async function restoreRuntimeSessionRewind(sessionId: string): Promise<void> {
   unwrap(await getClient().session.unrevert({ sessionID: sessionId }));
 }
 
@@ -1548,6 +1550,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     !!sandbox?.external_id &&
     switchedBoxId === sandbox.external_id;
 
+  // 2b. The connection store describes the runtime this view switched to. It is
+  // one per tab: while this view owns it, another mounted session's stream
+  // cannot write its box's state there. Released when the view leaves the
+  // session; the next session to switch claims it.
+  useEffect(() => {
+    if (!switched) return;
+    return claimSandboxConnection(sandboxConnectionKey(projectId, sessionId));
+  }, [switched, projectId, sessionId]);
+
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
   // handling drives recovery (no steady-state health loop to halt — the old
@@ -1589,7 +1600,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // R5.3: its events come from the session stream mounted in 1c.
   useRuntimeEventStream({ enabled: switched, projectId, sessionId });
 
-  // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
+  // 5. Resolve the canonical runtime root id (server-owned; /start hands it over)
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
   const canonicalSession = useCanonicalRuntimeSession({
@@ -1791,7 +1802,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // cleared ONLY by the `session.compacted` SSE frame, so a missed frame pinned
   // the composer for the lifetime of the tab and a compaction started anywhere
   // else was invisible.
-  const optimisticCompactionAtMs = useOpenCodeCompactionStore((state) =>
+  const optimisticCompactionAtMs = useRuntimeCompactionStore((state) =>
     switched ? (state.compactingBySession[ocSessionId] ?? null) : null,
   );
   // The box reports compaction as `log.status`, into the compaction store above.
@@ -1999,7 +2010,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindPending(true);
     setRewindError(null);
     try {
-      await rewindOpenCodeSession(ocSessionId, messageId);
+      await rewindRuntimeSession(ocSessionId, messageId);
       useSyncStore.getState().stageSessionRevert(ocSessionId, messageId);
     } catch (error) {
       const classified = classifySendError(error);
@@ -2016,7 +2027,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindPending(true);
     setRewindError(null);
     try {
-      await restoreOpenCodeSessionRewind(ocSessionId);
+      await restoreRuntimeSessionRewind(ocSessionId);
       useSyncStore.getState().clearSessionRevert(ocSessionId);
     } catch (error) {
       const classified = classifySendError(error);
@@ -2149,7 +2160,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     /** The serialized session_sandboxes row from /start (status, metadata, ids), or null. */
     sandbox,
     /**
-     * Absolute URL of this session's OpenCode runtime (the `/p/<ext>/8000`
+     * Absolute URL of this session's runtime (the `/p/<ext>/8000`
      * proxy), or null until `stage === 'ready'`. The same URL the hook hands
      * to `setCurrentRuntime` — hosts that need it for a PTY attach or a direct
      * daemon call read it here instead of rebuilding it from `sandbox`.
@@ -2242,7 +2253,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // server-side capabilities (pre-runtime)
     models,
     agents,
-    defaultAgent: config?.default_agent ?? config?.open_code_default_agent ?? null,
+    defaultAgent: config?.default_agent ?? null,
     commands: config?.commands ?? [],
     picks,
 

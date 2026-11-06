@@ -16,10 +16,13 @@ import { EditorContent, useEditor, type Editor, type JSONContent } from '@tiptap
 import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { commentEnterAction, mentionAtCaret } from './artifact-discussion-logic';
 import { useLiveTyping } from './artifact-live-presence';
 import { AVATAR_SM_EDGE } from './artifact-meta';
+
+/** The longest comment the API accepts (`comments-service.ts`): Send stays off above it, and says why. */
+const COMMENT_BODY_MAX = 10_000;
 
 export interface CommentMentionOption {
   key: string;
@@ -119,6 +122,7 @@ function activeMention(editor: Editor) {
 
 export function ArtifactCommentComposer(props: Props) {
   const t = useTranslations('artifacts.discussion');
+  const locale = useLocale();
   const id = useId();
   const latest = useRef(props);
   const editorRef = useRef<Editor | null>(null);
@@ -250,7 +254,7 @@ export function ArtifactCommentComposer(props: Props) {
               !latest.current.pending &&
               !latest.current.submitDisabled &&
               latest.current.value.trim() &&
-              latest.current.value.length <= 10_000
+              latest.current.value.length <= COMMENT_BODY_MAX
             ) {
               typingRef.current.stop();
               latest.current.onSubmit();
@@ -298,7 +302,7 @@ export function ArtifactCommentComposer(props: Props) {
         event.preventDefault();
         if (
           props.value.trim() &&
-          props.value.length <= 10_000 &&
+          props.value.length <= COMMENT_BODY_MAX &&
           !props.pending &&
           !props.submitDisabled
         ) {
@@ -343,12 +347,12 @@ export function ArtifactCommentComposer(props: Props) {
                   type="submit"
                   size="icon-xs"
                   variant="default"
-                  className="rounded-full"
+                  className="relative rounded-full after:absolute after:-inset-1 after:content-['']"
                   aria-label={props.submitLabel}
                   disabled={
                     !editor ||
                     !props.value.trim() ||
-                    props.value.length > 10_000 ||
+                    props.value.length > COMMENT_BODY_MAX ||
                     props.pending ||
                     props.submitDisabled
                   }
@@ -357,7 +361,7 @@ export function ArtifactCommentComposer(props: Props) {
                   {props.pending ? (
                     <Loading className="size-3.5 shrink-0" />
                   ) : (
-                    <ArrowUpIcon weight="bold" className="size-3.5" aria-hidden />
+                    <ArrowUpIcon className="size-3.5" aria-hidden />
                   )}
                 </InputGroupButton>
               </InputGroupAddon>
@@ -440,6 +444,14 @@ export function ArtifactCommentComposer(props: Props) {
           </PopoverContent>
         </Popover>
       </Field>
+      {props.value.length > COMMENT_BODY_MAX ? (
+        <p role="alert" className="text-destructive text-xs tabular-nums">
+          {t('commentTooLong', {
+            max: new Intl.NumberFormat(locale).format(COMMENT_BODY_MAX),
+            over: new Intl.NumberFormat(locale).format(props.value.length - COMMENT_BODY_MAX),
+          })}
+        </p>
+      ) : null}
       {props.error ? (
         <p role="alert" className="text-destructive text-xs">
           {props.error}

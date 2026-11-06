@@ -87,6 +87,10 @@ export function cliConnectorRuntimeArtifacts(
       path: resolve(cliRoot, '../../packages/shared/src/host-config'),
       excludeNames: CLI_RUNTIME_EXCLUDES,
     },
+    {
+      label: 'kortix-shared-utils-string',
+      path: resolve(cliRoot, '../../packages/shared/src/utils/string.ts'),
+    },
     { label: 'kortix-shared-pkg', path: resolve(cliRoot, '../../packages/shared/package.json') },
   ];
 }

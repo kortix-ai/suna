@@ -12,7 +12,7 @@ import {
  * identical on every iteration, so the harness cannot tell turns apart by
  * text — it diffs the known message-id set instead, matching the convention
  * `tests/src/flows/session-thread-reliability.flow.ts` already uses for
- * OpenCode's wire shape (`info.id`/`info.role`/`info.time.{created,completed}`).
+ * the v1 transcript message shape (`info.id`/`info.role`/`info.time.{created,completed}`).
  */
 
 const user = (id: string): OcMessage => ({ info: { id, role: 'user' } });

@@ -1,33 +1,11 @@
 /**
- * An agent's pixel mark: a 7×7 mirrored pixel figure derived from its slug.
- *
- * Same slug, same mark, on every surface and every device. Nothing is stored:
- * the slug is hashed (FNV-1a), the hash seeds a PRNG (mulberry32), the PRNG
- * fills the left half of the grid against a density mask, and the half is
- * mirrored. A draw that fails the quality gate is redrawn from a salted seed,
- * so retries stay deterministic. The tone comes from a second hash.
- *
- * Changing SIZE, MASK, the gate or PALETTES changes every agent's mark — the
- * golden test in `pixel-mark.test.ts` exists to make that a deliberate act.
+ * An agent's pixel mark on its tile: the shape from `pixelMarkShape`
+ * (`@kortix/shared/pixel-mark`) plus a tile tone from a second hash of the slug.
  */
 
-import { PIXEL_KORTIX_ROWS } from '../../primitives/pixel-kortix-mark';
+import { fnv1a, pixelMarkShape } from '@kortix/shared/pixel-mark';
 
-export const PIXEL_MARK_SIZE = 7;
-const HALF = 4;
-const MAX_ATTEMPTS = 256;
-
-// Fill chance per cell, outer edge → spine. Dense centre, sparse edges, so the
-// mirrored result reads as one body.
-const MASK = [
-  [0.15, 0.3, 0.45, 0.55],
-  [0.3, 0.5, 0.6, 0.7],
-  [0.4, 0.6, 0.65, 0.7],
-  [0.5, 0.65, 0.7, 0.75],
-  [0.4, 0.55, 0.6, 0.65],
-  [0.3, 0.45, 0.5, 0.5],
-  [0.2, 0.35, 0.4, 0.35],
-];
+export { passesPixelMarkGate } from '@kortix/shared/pixel-mark';
 
 export interface PixelMarkTone {
   name: string;
@@ -67,132 +45,7 @@ const BRAND: PixelMarkTone = {
 };
 const RESERVED: Record<string, PixelMarkTone> = { kortix: BRAND, mykortix: BRAND, meta: BRAND };
 
-/** My Kortix (slug `mykortix`) wears the Kortix symbol itself, the same 12 × 10
- *  grid as `PixelKortixMark` and the merch chips. `+` cells are the dithered
- *  curve cells; at agent-mark sizes they paint at half ink. */
-const RESERVED_ROWS: Record<string, readonly string[]> = { mykortix: PIXEL_KORTIX_ROWS, meta: PIXEL_KORTIX_ROWS };
-
-type Grid = boolean[][];
-
-export function fnv1a(input: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-
-function mulberry32(seed: number) {
-  let a = seed;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function draw(seed: number): Grid {
-  const rand = mulberry32(seed);
-  return MASK.map((row) => {
-    const half = row.map((p) => rand() < p);
-    return [...half, half[2], half[1], half[0]];
-  });
-}
-
-function largestComponent(grid: Grid): number {
-  const seen = grid.map((row) => row.map(() => false));
-  let best = 0;
-  for (let r = 0; r < PIXEL_MARK_SIZE; r++)
-    for (let c = 0; c < PIXEL_MARK_SIZE; c++) {
-      if (!grid[r][c] || seen[r][c]) continue;
-      let size = 0;
-      const stack: [number, number][] = [[r, c]];
-      seen[r][c] = true;
-      while (stack.length) {
-        const [y, x] = stack.pop()!;
-        size++;
-        for (const [ny, nx] of [[y + 1, x], [y - 1, x], [y, x + 1], [y, x - 1]]) {
-          if (grid[ny]?.[nx] && !seen[ny][nx]) {
-            seen[ny][nx] = true;
-            stack.push([ny, nx]);
-          }
-        }
-      }
-      best = Math.max(best, size);
-    }
-  return best;
-}
-
-function hasIsolatedPixel(grid: Grid): boolean {
-  return grid.some((row, r) =>
-    row.some((on, c) => {
-      if (!on) return false;
-      for (let dy = -1; dy <= 1; dy++)
-        for (let dx = -1; dx <= 1; dx++) if ((dy || dx) && grid[r + dy]?.[c + dx]) return false;
-      return true;
-    }),
-  );
-}
-
-/** Readable at 14px, fills the frame, one connected body. */
-export function passesPixelMarkGate(grid: Grid): boolean {
-  const filled = grid.flat().filter(Boolean).length;
-  if (filled < 18 || filled > 30) return false;
-  const rows = grid.filter((row) => row.some(Boolean)).length;
-  const cols = grid[0].filter((_, c) => grid.some((row) => row[c])).length;
-  if (rows < 5 || cols < 5) return false;
-  if (grid.filter((row) => row.every(Boolean)).length > 1) return false;
-  if (grid.filter((row) => row[HALF - 1]).length < 3) return false;
-  if (hasIsolatedPixel(grid)) return false;
-  return largestComponent(grid) >= Math.ceil(filled * 0.85);
-}
-
-/** One SVG path, horizontal runs merged, in grid units. */
-function toPath(grid: Grid): string {
-  let d = '';
-  grid.forEach((row, y) => {
-    for (let x = 0; x < row.length; ) {
-      if (!row[x]) {
-        x++;
-        continue;
-      }
-      const start = x;
-      while (x < row.length && row[x]) x++;
-      d += `M${start} ${y}h${x - start}v1h-${x - start}z`;
-    }
-  });
-  return d;
-}
-
-/** Runs of one cell character on one row, as an SVG path. */
-function rowsToPath(rows: readonly string[], cell: string): string {
-  return toPath(rows.map((row) => [...row].map((c) => c === cell)));
-}
-
 export function pixelMark(slug: string) {
-  const rows = RESERVED_ROWS[slug];
-  if (rows) {
-    return {
-      grid: rows.map((row) => [...row].map((c) => c !== ' ')),
-      path: rowsToPath(rows, '#'),
-      ditherPath: rowsToPath(rows, '+'),
-      width: rows[0].length,
-      height: rows.length,
-      tone: RESERVED[slug] ?? BRAND,
-    };
-  }
-  let grid = draw(fnv1a(slug));
-  for (let attempt = 1; !passesPixelMarkGate(grid) && attempt < MAX_ATTEMPTS; attempt++)
-    grid = draw(fnv1a(`${slug}:${attempt}`));
   const tone = RESERVED[slug] ?? PIXEL_MARK_TONES[fnv1a(`${slug}#tone`) % PIXEL_MARK_TONES.length];
-  return {
-    grid,
-    path: toPath(grid),
-    ditherPath: '',
-    width: PIXEL_MARK_SIZE,
-    height: PIXEL_MARK_SIZE,
-    tone,
-  };
+  return { ...pixelMarkShape(slug), tone };
 }

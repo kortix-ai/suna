@@ -135,6 +135,8 @@ function isExpectedResponse(status: number, data: any, message: string): boolean
         data?.code === SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE ||
         // A stale save: the editor that sent it shows the conflict.
         data?.code === 'version_conflict' ||
+        // A goal write on a stale revision: the goal page refreshes and says what changed.
+        data?.error === 'goal_conflict' ||
         // A state a GitHub owner fixes, not a defect: the host shows the fix.
         data?.code === REPOSITORY_DISCONNECTED_CODE)) ||
     (status === 503 &&

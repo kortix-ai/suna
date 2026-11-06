@@ -4,6 +4,7 @@
 import { and, eq, inArray, isNotNull, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { connectorConnections, connectors, tunnelConnections, tunnelDeviceAuthRequests } from '@kortix/db';
 import { db } from '../shared/db';
+import { revokeConnections } from '../connectors/connection-status';
 import { retryOnDeadlock } from '../shared/error-cause';
 import { isTunnelConnectionLive } from './core/cluster-forwarder';
 import { tunnelRelay } from './core/relay';
@@ -43,10 +44,7 @@ export async function unpairMachine(tunnelId: string, where?: SQL): Promise<bool
         .where(and(eq(tunnelConnections.tunnelId, tunnelId), where))
         .for('update');
       if (!machine) return false;
-      await tx
-        .update(connectorConnections)
-        .set({ status: 'revoked', isDefault: false, updatedAt: new Date() })
-        .where(eq(connectorConnections.tunnelId, tunnelId));
+      await revokeConnections(eq(connectorConnections.tunnelId, tunnelId), { set: { isDefault: false } }, tx);
       await tx.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
       return true;
     }),

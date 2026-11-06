@@ -492,8 +492,30 @@ pub struct TrayText {
 /// The tray's words for this library now. `recording`: the service's recorder runs.
 pub fn tray_text(paths: &MemoryPaths, recording: bool) -> TrayText {
     let account = issuer::registration(paths).and_then(|r| r.account_name);
-    let reason = Settings::effective(paths).inactive_reason(super::store::now_ms());
+    let now = super::store::now_ms();
+    let status = super::recorder::RecorderStatus::read(paths);
+    let reason = Settings::effective(paths)
+        .inactive_reason(now)
+        .or_else(|| recorder_blocker(status.as_ref(), now));
     tray_words(account.as_deref(), recording, reason)
+}
+
+/// Recorder states in which the process runs but writes no frame. The tray
+/// read only the settings and "the process runs", so it said "Recording"
+/// in each of these. Momentary skips (inactive, locked, an excluded app) stay
+/// "Recording": capture is armed and resumes on its own. Only a heartbeat
+/// from the last 15 s counts; the tray may not see the recorder's pid.
+fn recorder_blocker(status: Option<&super::recorder::RecorderStatus>, now: i64) -> Option<&'static str> {
+    let s = status.filter(|s| now - s.updated_at_ms < 15_000)?;
+    [
+        "low_disk",
+        "sync_backlog",
+        "permission_missing",
+        "error",
+        "privacy_model_unavailable",
+    ]
+    .into_iter()
+    .find(|r| *r == s.state)
 }
 
 /// Labels and status only. The account is named when it is known.
@@ -502,6 +524,11 @@ pub fn tray_words(account: Option<&str>, recording: bool, reason: Option<&str>) 
         (Some("policy_paused"), _) => account.map_or("Paused by policy".into(), |a| format!("Paused by {a}")),
         (Some("policy_pending"), _) => account.map_or("Waiting for your organization's settings".into(), |a| format!("Waiting for {a}'s settings")),
         (Some("policy_off"), _) => account.map_or("Screen recording is off by policy".into(), |a| format!("Screen recording is off for {a}")),
+        (Some("low_disk"), _) => "Paused: low disk space".to_string(),
+        (Some("sync_backlog"), _) => "Paused: upload backlog".to_string(),
+        (Some("permission_missing"), _) => "Needs permission to record".to_string(),
+        (Some("error"), _) => "Not recording: error, retrying".to_string(),
+        (Some("privacy_model_unavailable"), _) => "Not recording: privacy filter unavailable".to_string(),
         (Some(_), _) => "Paused".to_string(),
         (None, true) => account.map_or("Recording".into(), |a| format!("Recording for {a}")),
         (None, false) => "Not recording".to_string(),
@@ -776,6 +803,28 @@ mod tests {
         }
         let long = "x".repeat(400);
         assert_eq!(tray_words(Some(&long), true, None).tip.chars().count(), 127);
+    }
+
+    #[test]
+    fn the_tray_does_not_say_recording_while_the_recorder_writes_nothing() {
+        use super::super::recorder::RecorderStatus;
+        let now = 1_800_000_000_000;
+        let st = |state: &str, age: i64| RecorderStatus { state: state.into(), updated_at_ms: now - age, ..Default::default() };
+        for (state, words) in [
+            ("low_disk", "Paused: low disk space"),
+            ("sync_backlog", "Paused: upload backlog"),
+            ("permission_missing", "Needs permission to record"),
+            ("error", "Not recording: error, retrying"),
+            ("privacy_model_unavailable", "Not recording: privacy filter unavailable"),
+        ] {
+            let reason = recorder_blocker(Some(&st(state, 1_000)), now);
+            assert_eq!(tray_words(None, true, reason).status, words, "{state}");
+        }
+        for state in ["recording", "inactive", "locked", "excluded", "starting"] {
+            assert_eq!(recorder_blocker(Some(&st(state, 1_000)), now), None, "{state}");
+        }
+        assert_eq!(recorder_blocker(Some(&st("low_disk", 60_000)), now), None, "an old heartbeat says nothing");
+        assert_eq!(recorder_blocker(None, now), None);
     }
 
     #[test]

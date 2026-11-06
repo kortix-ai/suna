@@ -128,7 +128,7 @@ describe("the first prompt's text outlives the store's copy, locally", () => {
 /**
  * A session parked on the USER draws no waiting row anywhere.
  *
- * The `question` tool and a tool-permission prompt both block OpenCode inside
+ * The `question` tool and a tool-permission prompt both block the agent inside
  * its own turn loop: no `session.idle` frame follows, the control plane's row
  * stays `active`, and `projectWorking` correctly keeps saying `working`. So the
  * shimmer and its clock ran while the agent was waiting for a reply — measured

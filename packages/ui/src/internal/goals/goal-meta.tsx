@@ -51,12 +51,24 @@ export function GoalStatusBadge({ status, paused }: { status: ProjectGoalStatus 
 
 const CLOSED = new Set<ProjectGoalStatus>(['done', 'stopped', 'abandoned']);
 
+/** A goal the caller holds: the server record when there is one, else (an older caller) GOAL.md and its heartbeat. */
+type GoalLike = Pick<ProjectGoal, 'health'> & Partial<Pick<ProjectGoal, 'goal' | 'heartbeat' | 'record' | 'blockedReason'>>;
+
 /**
- * A person paused the goal and nothing wakes it: GOAL.md has `paused_at` AND its heartbeat
- * is not running. `paused_at` alone is a claim any session with the folder can write.
+ * A person paused the goal: the server record's `paused_at`. Only a person
+ * can pause, and the API enforces it, so the record is the truth. Without a
+ * record (an older caller): GOAL.md `paused_at` AND a heartbeat that is not running.
  */
-export function goalPaused(goal: Pick<ProjectGoal, 'goal' | 'health' | 'heartbeat'>): boolean {
-  return goal.health.state !== 'closed' && !!goal.goal?.paused_at && goal.heartbeat?.state !== 'active';
+export function goalPaused(goal: GoalLike): boolean {
+  if (goal.health.state === 'closed') return false;
+  if (goal.record) return !!goal.record.paused_at;
+  return !!goal.goal?.paused_at && goal.heartbeat?.state !== 'active';
+}
+
+/** When the goal wakes next: the server's `next_wake_at`, else the heartbeat's next fire. Null while paused or waiting. */
+export function goalNextWake(goal: GoalLike): string | null {
+  if (goal.record) return goal.record.next_wake_at;
+  return goal.heartbeat?.state === 'active' ? (goal.heartbeat.next_fire_at ?? null) : null;
 }
 
 /**
@@ -73,6 +85,8 @@ export function useGoalStateText() {
     if (doc.status === 'done') return t('state.done');
     if (CLOSED.has(doc.status)) return t(`state.${doc.status === 'stopped' ? 'stopped' : 'abandoned'}`);
     if (goalPaused(goal) && doc.paused_at) return t('state.paused', { time: formatGoalTime(doc.paused_at, locale, now) });
+    // Blocked: the reason is the sentence; the goal page adds the next step.
+    if (goal.blockedReason) return issueText('blocked', goal);
     // Waiting on a person: the question itself is the sentence. GOAL.md is hand-editable: only text counts.
     const asked = doc.status === 'waiting_on_user' && typeof doc.waiting_on === 'string' ? doc.waiting_on : null;
     const ask = goalOpenAsks(doc)[0]?.title;
@@ -82,15 +96,15 @@ export function useGoalStateText() {
     if (goal.health.issues[0]) return issueText(goal.health.issues[0], goal);
     if (doc.status === 'verifying') return t('state.verifying');
     if (doc.status === 'draft') return t('state.draft');
-    const next = goal.heartbeat?.next_fire_at;
+    const next = goalNextWake(goal);
     return next ? t('state.working', { time: formatGoalTime(next, locale, now) }) : t('state.workingNoWake');
   };
 }
 
 /** Orange: a person must act (a question or a problem). Grey otherwise: green is kept for done (the ring). */
-export function GoalHealthDot({ goal }: { goal: Pick<ProjectGoal, 'health'> & Partial<Pick<ProjectGoal, 'goal' | 'heartbeat'>> }) {
+export function GoalHealthDot({ goal }: { goal: GoalLike }) {
   const open = goal.health.state !== 'closed';
-  const paused = open && !!goal.goal?.paused_at && goal.heartbeat?.state !== 'active';
+  const paused = goalPaused(goal);
   const waiting = open && !paused && (goal.goal?.status === 'waiting_on_user' || goalOpenAsks(goal.goal ?? null).length > 0);
   const tone: StatusTone =
     open && !paused && (waiting || goal.health.state === 'attention') ? 'warning' : 'neutral';
@@ -109,7 +123,7 @@ export type GoalIconState =
   | 'stopped';
 
 /** The icon state of a goal in a list: paused and attention win over the state in GOAL.md. */
-export function goalIconState(goal: ProjectGoal): GoalIconState {
+export function goalIconState(goal: GoalLike): GoalIconState {
   const doc = goal.goal;
   if (!doc) return 'attention';
   if (doc.status === 'done') return 'done';
@@ -211,23 +225,38 @@ export function GoalStatusIcon({
   );
 }
 
-/** One sentence per issue, for the health line and its tooltip. */
+/** One sentence per issue, for the health line and its tooltip. `blocked` says why, from the server's `blocked_reason`. */
 export function useGoalIssueText() {
   const t = useTranslations('goals');
-  return (issue: ProjectGoalIssue, goal: Pick<ProjectGoal, 'heartbeat'>) =>
+  return (issue: ProjectGoalIssue, goal: Partial<Pick<ProjectGoal, 'heartbeat' | 'blockedReason' | 'record'>>) =>
     issue === 'heartbeat_failed'
       ? t('issue.heartbeat_failed', { error: goal.heartbeat?.last_error ?? '—' })
-      : t(`issue.${issue}`);
+      : issue === 'blocked'
+        ? goal.blockedReason
+          ? t(`blocked.${goal.blockedReason}`, { max: goal.blockedReason === 'session_cap' ? (goal.record?.max_sessions ?? 0) : (goal.record?.max_wakes_per_day ?? 0) })
+          : t('issue.blocked')
+        : t(`issue.${issue}`);
 }
 
-/** Done criteria met, as a ring and "met/total". Nothing while the goal has no criteria. */
-export function GoalCriteriaProgress({ goal, ring = true }: { goal: ProjectGoalDocument | null; ring?: boolean }) {
+/** The next step a person takes for a blocked goal, one sentence. */
+export function useGoalBlockedNextStep() {
   const t = useTranslations('goals');
-  const { met, total } = goalProgress(goal);
+  return (goal: Pick<ProjectGoal, 'blockedReason'>): string | null => (goal.blockedReason ? t(`blockedNext.${goal.blockedReason}`) : null);
+}
+
+/**
+ * Done criteria the agent reports met, as a ring and "met/total". The ring
+ * turns green only when the verifier passed every criterion. Nothing while
+ * the goal has no criteria.
+ */
+export function GoalCriteriaProgress({ goal, ring = true }: { goal: ProjectGoal | ProjectGoalDocument | null; ring?: boolean }) {
+  const t = useTranslations('goals');
+  const progress = goal && 'record' in goal ? goalCriteriaStatus(goal) : { ...goalProgress(goal), verified: 0 };
+  const { met, total, verified } = progress;
   if (total === 0) return null;
   return (
     <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs tabular-nums" aria-label={t('criteriaMet', { met, total })}>
-      {ring ? <ProgressRing value={(met / total) * 100} className="size-3.5" progressClassName={met === total ? 'text-kortix-green' : 'text-muted-foreground'} /> : null}
+      {ring ? <ProgressRing value={(met / total) * 100} className="size-3.5" progressClassName={verified === total ? 'text-kortix-green' : 'text-muted-foreground'} /> : null}
       <span aria-hidden>
         {met}/{total}
       </span>
@@ -235,9 +264,19 @@ export function GoalCriteriaProgress({ goal, ring = true }: { goal: ProjectGoalD
   );
 }
 
+/** Criteria the agent reports met (its claim, not verification) and the total. */
 export function goalProgress(goal: ProjectGoalDocument | null): { met: number; total: number } {
   const criteria = goal?.success_criteria ?? [];
   return { met: criteria.filter((c) => c.met).length, total: criteria.length };
+}
+
+/** Criteria reported met by the agent, verified by the independent verifier, and the total. */
+export function goalCriteriaStatus(goal: Pick<ProjectGoal, 'criteria'>): { met: number; verified: number; total: number } {
+  return {
+    met: goal.criteria.filter((c) => c.reported_met).length,
+    verified: goal.criteria.filter((c) => c.verified).length,
+    total: goal.criteria.length,
+  };
 }
 
 /** Open asks for a person (not the agent): what the goal waits on someone for. */
@@ -246,18 +285,19 @@ export function goalOpenAsks(goal: ProjectGoalDocument | null): ProjectGoalItem[
 }
 
 /** The goal waits on a person: its state is `waiting_on_user`, or it has an open ask. */
-export function goalNeedsYou(goal: ProjectGoal): boolean {
+export function goalNeedsYou(goal: GoalLike): boolean {
   if (goal.health.state === 'closed' || goalPaused(goal)) return false;
-  return goal.goal?.status === 'waiting_on_user' || goalOpenAsks(goal.goal).length > 0;
+  return goal.goal?.status === 'waiting_on_user' || goalOpenAsks(goal.goal ?? null).length > 0;
 }
 
 /** The goal runs into a problem no person was asked about: a health issue (no heartbeat, a failed wake, …). */
-export function goalNeedsAttention(goal: ProjectGoal): boolean {
+export function goalNeedsAttention(goal: GoalLike): boolean {
   return goal.health.state === 'attention' && !goalNeedsYou(goal) && !goalPaused(goal);
 }
 
-/** When the goal last woke: the heartbeat's last run, else the wake GOAL.md records. */
-export function goalLastWake(goal: Pick<ProjectGoal, 'goal' | 'heartbeat'>): string | null {
+/** When the goal last woke: the server's `last_wake_at`, else the heartbeat's last run, else the wake GOAL.md records. */
+export function goalLastWake(goal: Partial<Pick<ProjectGoal, 'goal' | 'heartbeat' | 'record'>>): string | null {
+  if (goal.record) return goal.record.last_wake_at;
   return goal.heartbeat?.last_fired_at ?? goal.goal?.last_wake_at ?? null;
 }
 
@@ -316,9 +356,11 @@ export function formatGoalTime(iso: string | null | undefined, locale: string, n
   return iso ? formatFireTime(iso, locale, now) : '—';
 }
 
-export function goalHref(projectId: string, goal: Pick<ProjectGoal, 'scope' | 'slug'>): string | null {
+/** A goal's page: `/goals/<goal_id>`. Without an id (an older caller): the legacy `/goals/<scope>/<slug>` link, which resolves when the slug is unique. */
+export function goalHref(projectId: string, goal: Pick<ProjectGoal, 'scope' | 'slug'> & Partial<Pick<ProjectGoal, 'goalId'>>): string | null {
   const list = uiRoutes().goals(projectId);
-  return list ? `${list}/${goal.scope}/${encodeURIComponent(goal.slug)}` : null;
+  if (!list) return null;
+  return goal.goalId ? `${list}/${encodeURIComponent(goal.goalId)}` : `${list}/${goal.scope}/${encodeURIComponent(goal.slug)}`;
 }
 
 /** The current time, re-read every 30 seconds: relative times and health stay current. */

@@ -24,7 +24,8 @@ const CURSOR_WAIT_MS = 1500;
 export type AttachmentEnv = {
   onBridgeOpen(a: Attachment): void;
   onEnded(a: Attachment, reason: 'stopped' | 'closed' | 'canceled_by_user' | 'error'): void;
-  onGroup(a: Attachment): void;
+  /** The persisted record changed (tab group, pause): write it to session storage. */
+  onChanged(a: Attachment): void;
   chrome(): ChromeConnection | undefined;
   overlay(tabId: number, a: Attachment): void;
 };
@@ -44,12 +45,13 @@ export class Attachment {
 
   constructor(public rec: AttachmentRecord, private env: AttachmentEnv) {
     this.groupId = rec.groupId >= 0 ? rec.groupId : undefined;
+    this.paused = rec.paused === true;
     for (const id of rec.tabIds ?? []) this.touched.add(id);
     this.shim = new Shim(this.host(), (c, m) => this.send({ c, m }));
   }
 
   get title() { return this.rec.sessionTitle; }
-  record(): AttachmentRecord { return { ...this.rec, groupId: this.groupId ?? -1, tabIds: [...this.touched] }; }
+  record(): AttachmentRecord { return { ...this.rec, groupId: this.groupId ?? -1, tabIds: [...this.touched], paused: this.paused }; }
 
   // ─── bridge ────────────────────────────────────────────────────────────────
 
@@ -110,8 +112,10 @@ export class Attachment {
     this.env.onEnded(this, reason);
   }
 
+  /** A user pause survives a worker restart: it is part of the persisted record. */
   setPaused(p: boolean) {
     this.paused = p;
+    this.env.onChanged(this);
     void this.refreshOverlays();
   }
 
@@ -148,7 +152,7 @@ export class Attachment {
     } catch {
       this.groupId = undefined;
     }
-    this.env.onGroup(this);
+    this.env.onChanged(this);
   }
 
   private async sessionWindow(): Promise<number | undefined> {

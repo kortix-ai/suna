@@ -20,7 +20,7 @@ type AiSdkResponseFormat =
 // reconstructs ONE choice from AI-SDK's single-result `streamText`/
 // `generateText` (see sse.ts/index.ts), so setting n>1 would silently bill for
 // completions the client never receives instead of doing nothing; and
-// `modalities` (audio output) — no current caller (opencode/agents) requests
+// `modalities` (audio output) — no current caller (session runtimes, agents) requests
 // non-text output and AI SDK core has no hook for it on streamText/generateText.
 function extraOpenAiFields(body: Record<string, unknown>): Record<string, unknown> {
   const logitBias = body.logit_bias;
@@ -165,7 +165,7 @@ interface ResolvedThinking {
   effort: AnthropicThinkingEffort;
 }
 
-// Client-supplied `reasoning_effort` (OpenAI/opencode-shaped), an OpenAI
+// Client-supplied `reasoning_effort` (OpenAI-shaped), an OpenAI
 // Responses-style `reasoning.effort`/`reasoning.budget_tokens`/`.max_tokens`,
 // or a raw Anthropic-shaped `body.thinking:{type:'enabled',budget_tokens}`
 // block — resolved into BOTH a thinking-token budget (for Bedrock + maxTokens
@@ -535,7 +535,7 @@ const bedrockAdapter: ProviderAdapter = {
     // field shape for them is unverified), so an effort that reaches here is
     // DROPPED. Not refused: #6887 briefly answered 400 `unsupported_param`
     // here, and the first turn of a fresh project on dev proved that opencode
-    // sends a default effort for every reasoning-capable model (the user never
+    // sent a default effort for every reasoning-capable model (the user never
     // picked a tier) — refusing the parameter refused the model, including
     // the managed Grok default. Map the wire when it is verified; until then
     // the model runs at its own default.

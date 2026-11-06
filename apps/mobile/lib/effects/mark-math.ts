@@ -1,8 +1,6 @@
 /**
- * Pure geometry for the Kortix mark effects — the mobile twin of
- * `apps/web/src/features/mark-effects/mark-math.ts`. Keep the two in sync: the
- * constants and `flowAngle` define the shared look of the effect on both
- * platforms.
+ * Pure geometry for the Kortix mark effects: the constants and `flowAngle`
+ * define the look of the effect.
  *
  * Everything here is a worklet so the particle simulation can run on the UI
  * thread. No Skia, no React — just maths, so it stays deterministic.

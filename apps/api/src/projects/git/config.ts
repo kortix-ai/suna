@@ -122,17 +122,6 @@ export function resolveConfigAgents(
   /** The declared agent's prompt file, when it has one. */
   resolveFile: (spec: LoadedAgents['specs'][number]) => string | undefined = () => undefined,
 ): Pick<ProjectConfigSummary, 'agent_discovery' | 'agents'> {
-  if (loadedAgents.specs.length === 0 && loadedAgents.errors.length === 0) {
-    return {
-      agent_discovery: 'opencode',
-      agents: nativeAgents.map((agent) => ({
-        ...agent,
-        source: 'opencode' as const,
-        enabled: true,
-      })),
-    };
-  }
-
   const nativeByName = new Map(nativeAgents.map((agent) => [agent.name, agent]));
   const nativeByPath = new Map(nativeAgents.map((agent) => [agent.path, agent]));
   return {
@@ -181,14 +170,12 @@ export function resolveConfigAgents(
 export function disconnectedProjectConfig(): ProjectConfigSummary {
   return {
     is_kortix_repo: false,
-    signals: { manifest: false, openCodeConfig: false, openCodeAgent: false },
+    signals: { manifest: false, declaredAgents: false },
     manifest_raw: null,
     manifest: {},
     manifest_health: manifestHealthWithout('repository_disconnected'),
     env: { required: [], optional: [] },
-    open_code_raw: null,
     default_agent: null,
-    open_code_default_agent: null,
     agent_discovery: 'declarative',
     agents: [],
     skills: [],
@@ -455,16 +442,14 @@ export async function loadRepoConfigSummary(
 
   return {
     is_kortix_repo: Boolean(found),
-    signals: { manifest: Boolean(found), openCodeConfig: false, openCodeAgent: loadedAgents.specs.length > 0 },
+    signals: { manifest: Boolean(found), declaredAgents: loadedAgents.specs.length > 0 },
     // The root file's own text. `manifest`/`env`/agents come from the merged
     // document when the root declares `imports:`.
     manifest_raw: found?.rootContent ?? null,
     manifest,
     manifest_health: health,
     env: envRequirements(manifest),
-    open_code_raw: null,
     default_agent: loadedAgents.defaultAgent ?? null,
-    open_code_default_agent: loadedAgents.defaultAgent ?? null,
     agent_discovery: 'declarative',
     agents,
     skills: projectSkills,

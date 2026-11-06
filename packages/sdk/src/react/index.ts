@@ -19,18 +19,19 @@ export { useConnectorQuery, type ConnectorQueryOptions } from './use-connector-q
 // user signing in) to drop the SDK's per-user in-memory session state.
 export { resetIdentityState } from './reset-identity-state';
 
-// @kortix/sdk/react — the complete OpenCode React hook surface, relocated
-// verbatim from apps/web (every useOpenCode* hook, query-key factory, provider,
-// and type). This is the single source of truth the web UI binds to.
-export * from './opencode';
+// @kortix/sdk/react — the session runtime React hook surface (every runtime
+// hook, query-key factory, provider, and type). This is the single source of
+// truth the web UI binds to.
+export * from './runtime-hooks';
 export { useRuntimeSupports } from './use-runtime-supports';
 export { useHasSessionDesktop } from './use-has-session-desktop';
 // The session's one live connection (R5.3). `useSession` mounts it; a host that
 // runs its own copy of a poll (self-heal, sync) gates it on this.
-export { useSessionStreamConnected } from './use-session-stream';
+export { useSessionStreamConnected, useSessionStreamEnded } from './use-session-stream';
+export type { SessionStreamEnd, SessionStreamEndReason } from './use-session-stream';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
-// `./opencode`'s explicit barrel list, so re-exported directly here.
+// `./runtime-hooks`'s explicit barrel list, so re-exported directly here.
 export {
   answerQuestion,
   answerPermission,
@@ -55,7 +56,7 @@ export {
 } from '../core/http/api/errors';
 
 // The framework-free SSE event-stream primitive that `useRuntimeEventStream`
-// (exported above via `./opencode`) wraps. Re-exported here too so a host
+// (exported above via `./runtime-hooks`) wraps. Re-exported here too so a host
 // already importing from `@kortix/sdk/react` can build its own binding
 // (e.g. a non-QueryClient consumer) without a second import from `@kortix/sdk`.
 export {
@@ -77,7 +78,7 @@ export * from './use-kortix-master';
 
 // The send / stash-replay / error-recovery core extracted from apps/web's
 // `session-chat.tsx` — see `use-session-send.ts` for the full contract. Not
-// (yet) re-exported by `./opencode`'s explicit barrel list, so re-exported
+// (yet) re-exported by `./runtime-hooks`'s explicit barrel list, so re-exported
 // directly here (same reasoning as the other direct re-exports above).
 export {
   useSessionSend,
@@ -151,7 +152,16 @@ export {
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useUnifiedTriggers } from './use-unified-triggers';
-export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
+export {
+  runProjectGoalControl,
+  useProjectGoal,
+  useProjectGoalControl,
+  useProjectGoalEvents,
+  useProjectGoalFiles,
+  useProjectGoals,
+  useSessionGoal,
+  type ProjectGoalControlInput,
+} from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms, useSpaceRoom } from './use-rooms';
 export { usePeerMessages, useReachableAgents, useSessionWorkflows, useTeamTasks, useTeammates } from './use-multi-agent';
 export { useArtifactLive, type ArtifactLiveState, type UseArtifactLiveOptions } from './use-artifact-live';
@@ -205,6 +215,7 @@ export {
 } from './use-project-apps';
 
 export * from './use-admin-accounts';
+export * from './use-admin-credit-codes';
 export * from './use-admin-role';
 export * from './use-admin-projects';
 export * from './use-admin-activity-analytics';
@@ -272,6 +283,8 @@ export {
   useRemoveProjectSpaceLink,
   useSetProjectSpaceTabs,
   useUpdateProjectSpace,
+  useProjectSpaceProactive,
+  useSetProjectSpaceProactive,
 } from './use-project-spaces';
 // Session groups (`session_groups`): the project's shared folders of sessions.
 export {

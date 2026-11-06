@@ -29,6 +29,7 @@ const { autoUpdater } = require('electron-updater');
 // Pure helpers live in their own module so they're unit-testable without the
 // Electron runtime (see update-channel.test.js).
 const { resolveChannel, isUpdaterSupported } = require('./update-channel');
+const { showMessage } = require('./message-box');
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
@@ -69,7 +70,6 @@ function setSplashStatus(text) {
 /** Offer to restart into the staged update (or install silently on quit). */
 async function promptRestart(info) {
   const version = (info && info.version) || '';
-  const win = getMainWindow();
   const opts = {
     type: 'info',
     buttons: ['Restart now', 'Later'],
@@ -80,9 +80,7 @@ async function promptRestart(info) {
     detail:
       'Restart Kortix to finish updating. It only takes a moment — your work lives on the web, so nothing is lost.',
   };
-  const { response } = win && !win.isDestroyed()
-    ? await dialog.showMessageBox(win, opts)
-    : await dialog.showMessageBox(opts);
+  const { response } = await showMessage(opts, getMainWindow());
   if (response === 0) {
     // Let the dialog close before tearing the app down.
     setImmediate(() => autoUpdater.quitAndInstall());
@@ -103,14 +101,13 @@ function registerHandlers() {
     setSplashStatus('');
     if (interactive) {
       interactive = false;
-      const win = getMainWindow();
       const opts = {
         type: 'info',
         buttons: ['OK'],
         title: 'You’re up to date',
         message: `Kortix ${app.getVersion()} is the latest version.`,
       };
-      win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts);
+      showMessage(opts, getMainWindow());
     }
   });
 
@@ -132,7 +129,6 @@ function registerHandlers() {
     setSplashStatus('');
     if (interactive) {
       interactive = false;
-      const win = getMainWindow();
       const opts = {
         type: 'error',
         buttons: ['OK'],
@@ -140,7 +136,7 @@ function registerHandlers() {
         message: 'Couldn’t check for updates.',
         detail: (err && err.message) || 'Please try again later.',
       };
-      win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts);
+      showMessage(opts, getMainWindow());
     }
   });
 }

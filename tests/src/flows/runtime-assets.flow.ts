@@ -94,7 +94,8 @@ flow(
     });
 
     await ctx.step('the v2 component block describes the whole runtime, not just the CLI', async () => {
-      // A box converges its daemon and its opencode off this block. If the
+      // A box converges its daemon and CLI (and an old OpenCode box its
+      // OpenCode) off this block. If the
       // component list regresses to CLI-only, every sandbox silently stops
       // self-healing and nothing else in the system notices.
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/runtime-assets/manifest');
@@ -398,7 +399,7 @@ flow(
 //
 // WHAT CANNOT BE STAGED HERE, said plainly rather than faked: the BEHIND half
 // needs the deploy's binaries to differ from the box's image, which no test can
-// arrange. The swap decision table, the pre-exec probe and the OpenCode rollback
+// arrange. The swap decision table, the pre-exec probe and the rollback latch
 // are proved in apps/kortix-sandbox-agent-server/src/__tests__/runtime-convergence.test.ts,
 // and the comparison and the memo in
 // apps/api/src/runtime-assets/__tests__/running-assets.test.ts.

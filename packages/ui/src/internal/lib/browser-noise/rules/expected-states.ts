@@ -19,7 +19,7 @@ import { normalizeString } from '../evidence';
 const RUNTIME_NOT_READY_NOISE_PATTERNS = [
   'Server URL not ready',
   'sandbox is still loading',
-  // The daemon's not-ready 503, in every spelling (code, pi, OpenCode).
+  // The daemon's not-ready 503, with or without its code.
   ...RUNTIME_NOT_READY_MARKERS,
 ] as const;
 

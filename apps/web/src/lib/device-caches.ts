@@ -219,12 +219,10 @@ const RETIRED_LOCAL_PREFIXES = [
   'kortix_cache_providers:',
   'kortix.saved-copy:',
 ];
-/** The retired sessionStorage stream cache. */
-const RETIRED_SESSION_PREFIXES = ['opencode_stream_cache:'];
 
-function sweep(name: 'localStorage' | 'sessionStorage', prefixes: readonly string[]): void {
+function sweep(prefixes: readonly string[]): void {
   try {
-    const storage = globalThis[name];
+    const storage = globalThis.localStorage;
     if (!storage) return;
     const keys: string[] = [];
     for (let index = 0; index < storage.length; index += 1) {
@@ -244,6 +242,5 @@ function sweep(name: 'localStorage' | 'sessionStorage', prefixes: readonly strin
  * nothing.
  */
 export function sweepRetiredDeviceCaches(): void {
-  sweep('localStorage', RETIRED_LOCAL_PREFIXES);
-  sweep('sessionStorage', RETIRED_SESSION_PREFIXES);
+  sweep(RETIRED_LOCAL_PREFIXES);
 }

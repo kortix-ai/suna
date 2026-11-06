@@ -31,7 +31,7 @@ export interface ComposerOptions {
 
 /**
  * The canonical "compose a first message" input: {@link SessionChatInput}
- * pre-wired with the OpenCode model / agent / variant / command selectors (the
+ * pre-wired with the model / agent / variant / command selectors (the
  * four catalog queries + per-session selection state). Used by the home composer
  * and the instant session shell so neither hand-rolls the selector wiring.
  *
@@ -159,7 +159,7 @@ export function ComposerChatInput({
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const startAgent = defaultAgentName || (projectConfig?.default_agent ?? projectConfig?.open_code_default_agent);
+  const startAgent = defaultAgentName || projectConfig?.default_agent;
   const local = useSessionModelSelection({
     agents,
     providers,

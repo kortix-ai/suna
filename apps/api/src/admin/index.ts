@@ -17,6 +17,7 @@ import { requestClientIp } from '../middleware/client-ip';
 import { requireAdmin } from '../middleware/require-admin';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { analyticsApp } from './analytics';
+import { creditCodesApp } from './credit-codes';
 import { isUuid } from '../shared/validate';
 import { isoValue } from '../shared/cost-values';
 import { readJsonObject } from '../shared/http-body';
@@ -107,6 +108,8 @@ adminApp.use('*', supabaseAuth, requireAdmin);
 // this line above the `use('*')` would publish platform-wide activity data to
 // anonymous callers. `analytics-mount.test.ts` fails if that happens.
 adminApp.route('/analytics', analyticsApp);
+// Credit codes: same rule — mounted after the gate, no middleware of its own.
+adminApp.route('/api/credit-codes', creditCodesApp);
 
 // ── List accounts ────────────────────────────────────────────────────────────
 adminApp.openapi(

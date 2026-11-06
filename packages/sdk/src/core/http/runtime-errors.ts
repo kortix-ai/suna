@@ -44,39 +44,34 @@ export function parseRuntimeErrorPayload(error: unknown): unknown {
 //     → sandbox-proxy/routes/preview.ts (HTTP proxy + WebSocket resolver)
 //   - `Sandbox is not running` → sandbox-proxy/routes/public-share.ts
 //   - `Sandbox is not ready` → public-session-shares, shared/session-public-shares
-//   - `opencode … not ready` → daemon 503 pass-through, session-transcript,
-//     public-session-share-view
 //   - `sandbox_not_ready`, `sandbox_lifecycle_unavailable` → machine codes on
 //     503 bodies from the sandbox proxy
 // Deliberately NOT here: `sandbox port unreachable` — that is emitted only
 // after the box reported active and the port still failed to answer, which is
 // a genuine failure, not parking.
-//   - `runtime_not_ready` (code), `sandbox runtime not ready`, `opencode not
-//     ready` → the daemon's own 503, `RUNTIME_NOT_READY_MARKERS` below
+//   - `runtime_not_ready` (code), `sandbox runtime not ready` → the daemon's
+//     own 503, `RUNTIME_NOT_READY_MARKERS` below
 const SANDBOX_NOT_READY_PATTERNS: readonly RegExp[] = [
   /sandbox not ready/i,
   /sandbox is not (?:ready|running)/i,
-  /opencode (?:session )?(?:is )?not ready/i,
   /\bsandbox_not_ready\b/,
   /\bsandbox_lifecycle_unavailable\b/,
 ];
 
 /**
  * Every spelling of the daemon's 503 while the session runtime cannot take a
- * request, as lower-case substrings: the `code` a W6 daemon sends on both
- * harnesses, then the two `error` texts of a daemon without the code (pi and
- * OpenCode's boot steps; the OpenCode process itself). For a host that needs
- * a string list (a telemetry ignore list); a predicate should call
+ * request, as lower-case substrings: the `code` a W6 daemon sends, then the
+ * `error` text of a daemon without the code. For a host that needs a string
+ * list (a telemetry ignore list); a predicate should call
  * `isRuntimeNotReadyResponse`.
  */
 export const RUNTIME_NOT_READY_MARKERS = [
   'runtime_not_ready',
   'sandbox runtime not ready',
-  'opencode not ready',
 ] as const;
 
 // `\b` keeps the API's `runtime_not_ready_timeout` park reason out.
-const RUNTIME_NOT_READY_PATTERN = /\bruntime_not_ready\b|sandbox runtime not ready|opencode not ready/i;
+const RUNTIME_NOT_READY_PATTERN = /\bruntime_not_ready\b|sandbox runtime not ready/i;
 
 /**
  * True when the daemon refused a request because the session runtime is not up
@@ -156,7 +151,7 @@ export function formatRuntimeError(error: unknown): {
   // genuinely broke.
   //
   // Matched against the raw string, not a `parseRuntimeErrorPayload` field:
-  // `unwrap()` (react/use-opencode-sessions/shared.ts) is what actually
+  // `unwrap()` (react/use-runtime-sessions/shared.ts) is what actually
   // produces the error this function receives for the session-list poll that
   // drives the page's runtime-error card, and it throws `new Error(body.error)`
   // — just the bare phrase, with the JSON wrapper already stripped off. There

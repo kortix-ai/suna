@@ -30,7 +30,7 @@ export class TranscriptReadError extends Error {
  * Is this failure an expected state of a sandbox runtime that is stopped,
  * gone, or cold — the states a fail-open transcript read tolerates?
  *
- * Sibling of `unreachableCauseForThrow` in `projects/opencode-mapping.ts`
+ * Sibling of `unreachableCauseForThrow` in `projects/runtime-session-mapping.ts`
  * (same domain, different question: that one splits timeout-vs-endpoint for
  * the liveness probe; this one splits expected-vs-unexpected for the log
  * level).

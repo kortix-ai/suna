@@ -19,6 +19,11 @@ import type { Agent, FlatModel, ProviderListResponse } from './runtime-data';
 
 // ─── Persistent store ────────────────────────────────────────────────────────
 
+/** The AsyncStorage key of the persisted picks. */
+export const LOCAL_CONFIG_KEY = 'kortix-local-config';
+/** The key builds before 2026-11 used. Read once, never written. */
+export const LEGACY_LOCAL_CONFIG_KEY = 'opencode-local-config';
+
 interface LocalConfigState {
   /** The agent last picked or sent with on project home (web's last-used agent). A thread shows it only while its roster loads. */
   selectedAgent: string | null;
@@ -79,8 +84,14 @@ export const useLocalConfigStore = create<LocalConfigState>()(
         }),
     }),
     {
-      name: 'opencode-local-config',
-      storage: createJSONStorage(() => AsyncStorage),
+      name: LOCAL_CONFIG_KEY,
+      storage: createJSONStorage(() => ({
+        // Builds before 2026-11 saved the picks under the legacy key. Read it
+        // until the first write lands under the new key; sign-out clears both.
+        getItem: async (name) => (await AsyncStorage.getItem(name)) ?? AsyncStorage.getItem(LEGACY_LOCAL_CONFIG_KEY),
+        setItem: (name, value) => AsyncStorage.setItem(name, value),
+        removeItem: (name) => AsyncStorage.removeItem(name),
+      })),
     },
   ),
 );

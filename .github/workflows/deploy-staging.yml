@@ -1,4 +1,7 @@
 name: Deploy Staging
+# The SHA in the run name lets promote.yml find ITS deploy run: a dispatch runs
+# on ref `dev`, so the run's headSha is dev's tip, not the staging SHA.
+run-name: Deploy Staging ${{ inputs.sha || github.event.workflow_run.head_sha || github.ref_name }}
 
 # Staging is the release-candidate lane. It tracks the `staging` branch and is
 # the only normal source for Promote to Production. Dev can be messy; staging

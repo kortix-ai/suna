@@ -35,6 +35,7 @@ import { deliver } from '../../notifications/notifier';
 import { loadSessionAccessRows, maySeeSessions } from '../../notifications/access';
 import { mentionTokens } from './mentions';
 import { loadProjectRosterIds } from './project-access-view';
+import { isWatcherOfSpace } from './space-watch/store';
 import { resolveUserIdentities } from './user-identity';
 
 /** Session metadata: the agent that wrote a top-level post (its name), when it was not the thread's agent. */
@@ -136,6 +137,29 @@ export function resolveMentions(text: string, people: readonly MentionCandidate[
   return out;
 }
 
+/**
+ * True when every @mention of a member's message names another person (and
+ * there is at least one): the message is for them, not for the thread's
+ * agent. `@all`, `@here`, an agent, the author or an unknown name: false.
+ */
+export function addressesOnlyPeople(text: string, people: readonly MentionCandidate[], authorId: string): boolean {
+  const tokens = mentionTokens(text);
+  if (tokens.size === 0) return false;
+  const persons = resolveMentions(text, people, []).filter((m) => m.kind === 'person' && m.userId !== authorId);
+  return persons.length === tokens.size;
+}
+
+/** `addressesOnlyPeople` for a session's message: the project's people read only when the text has an @. Never throws. */
+export async function messageAddressesOnlyPeople(input: { accountId: string; projectId: string; authorId: string; text: string }): Promise<boolean> {
+  if (!input.text.includes('@')) return false;
+  try {
+    return addressesOnlyPeople(input.text, await projectMentionCandidates(input), input.authorId);
+  } catch (error) {
+    logger.warn('[space-posts] the message mentions were not read; the agent answers', { error: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
+}
+
 /** The project's people as mention candidates. */
 export async function projectMentionCandidates(project: { accountId: string; projectId: string }): Promise<MentionCandidate[]> {
   const { ids } = await loadProjectRosterIds({ row: project });
@@ -229,7 +253,9 @@ export async function postIntoSpace(input: {
   const space = isUuid(input.spaceId) ? await findLiveSpace(projectId, input.spaceId) : null;
   // Another person's DM, or a channel this session cannot see, does not exist for it.
   if (!space || (space.kind === 'dm' && space.dmUserId !== person)) return notFound;
-  if (!canSeeSpace(space, await spaceAccessFor(projectId, person, callerSessionId))) return notFound;
+  // The space's own watcher (`spaces_proactive`) is filed in no space: it sees its space as its person does.
+  const bound = (await isWatcherOfSpace(callerSessionId, space.spaceId)) ? null : callerSessionId;
+  if (!canSeeSpace(space, await spaceAccessFor(projectId, person, bound))) return notFound;
   // A DM is the person's own: only a session whose prompts come from them alone writes there.
   if (space.kind === 'dm' && !(await threadWorksOnlyForPerson(projectId, thread))) {
     return { status: 403, body: { error: 'Only a private session that works only for this person posts into their private space', code: 'not_the_persons_chat' } };

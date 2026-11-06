@@ -8,10 +8,10 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { UnifiedMarkdown } from './unified-markdown';
 
 /**
- * Minimal YAML frontmatter rendering for markdown files (opencode-style agent
- * and skill definitions, but generic). The parser handles flat key/value pairs
- * plus a single level of nested objects — enough for the patterns documented
- * at https://opencode.ai/docs/agents/ and similar conventions.
+ * Minimal YAML frontmatter rendering for markdown files (agent and skill
+ * definitions, but generic). The parser handles flat key/value pairs plus a
+ * single level of nested objects — enough for agent and skill frontmatter
+ * (`description`, `mode`, `permission`, ...) and similar conventions.
  */
 
 export type FrontmatterValue = string | Record<string, string>;
@@ -77,7 +77,7 @@ export function parseFrontmatter(content: string): ParsedMarkdown {
     const line = rawLine.trimEnd();
     if (!line.trim() || line.trim().startsWith('#')) continue;
 
-    // A nested key may be QUOTED, and in the opencode permission idiom it
+    // A nested key may be QUOTED, and in the agent permission idiom it
     // usually is — `"*": allow`. Matching only [\w.-] dropped that line, left
     // the parent an empty object, and printed a bare em-dash where the
     // permissions belong. Wildcards and path-ish keys are accepted bare too.
@@ -205,8 +205,8 @@ function FrontmatterValueBody({ value }: { value: FrontmatterValue }) {
 
 /**
  * Render markdown content; if a leading YAML frontmatter block is present, it
- * renders as a small metadata card above the prose. Used for opencode-style
- * agent / skill markdown files (and any other frontmatter-prefixed `.md`).
+ * renders as a small metadata card above the prose. Used for agent / skill
+ * markdown files (and any other frontmatter-prefixed `.md`).
  */
 export function MarkdownWithFrontmatter({
   content,

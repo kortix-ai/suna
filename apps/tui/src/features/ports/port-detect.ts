@@ -21,8 +21,8 @@ import { SANDBOX_PORTS, detectLocalhostUrls } from '@kortix/sdk';
 
 /**
  * Ports never worth offering: infrastructure the sandbox itself owns, not a
- * service the agent stood up. SSH (22) and the OpenCode/Kortix Master control
- * channel are never a "dev server the user wants in their browser" — matching
+ * service the agent stood up. SSH (22) and the daemon's control port (8000)
+ * are never a "dev server the user wants in their browser" — matching
  * them would just add noise every time an agent's shell touched its own
  * control port.
  */

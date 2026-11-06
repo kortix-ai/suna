@@ -1,4 +1,4 @@
-import { resolveSessionOpencodeEndpoint } from './runtime-client';
+import { resolveSessionRuntimeEndpoint } from './runtime-client';
 import { runtimeVerbPaths, sessionRuntimeFetch } from './runtime-fetch';
 
 /**
@@ -31,7 +31,7 @@ export async function abortRuntimeTurn(
 ): Promise<boolean> {
   if (!sessionId) return false;
   try {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionRuntimeEndpoint(sessionId);
     if (!resolved) return false;
     if (opts.requestedStop) {
       try {
@@ -39,7 +39,7 @@ export async function abortRuntimeTurn(
         await markTurnStopRequested(
           sessionId,
           'UserStop',
-          { opencodeSessionId: resolved.opencodeSessionId },
+          { runtimeSessionId: resolved.runtimeSessionId },
           opts.stoppedBy ?? null,
         );
       } catch (err) {
@@ -49,7 +49,7 @@ export async function abortRuntimeTurn(
         });
       }
     }
-    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.abort(resolved.opencodeSessionId));
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.abort(resolved.runtimeSessionId));
     return res.ok;
   } catch {
     return false;

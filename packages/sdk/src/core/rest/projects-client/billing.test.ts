@@ -25,6 +25,7 @@ import {
   acceptEnterpriseOffer,
   contactEnterpriseSales,
   purchaseCredits,
+  redeemCreditCode,
   reactivateSubscription,
   requestTopUp,
   resolvedPlan,
@@ -291,6 +292,25 @@ test('purchaseCredits posts amount + urls to purchase-credits', async () => {
   expect(last().url).toContain('/billing/purchase-credits');
   expect(last().body).toMatchObject({ amount: 20 });
   expect(result.checkout_url).toContain('stripe.com');
+});
+
+test('redeemCreditCode posts the code + account to redeem-code and returns the grant', async () => {
+  nextResponse = { status: 200, body: { code: 'FRONTIER', amount_usd: 100, balance: 105 } };
+  const result = await redeemCreditCode({ code: 'frontier', accountId: 'acc-1' });
+  expect(last().url).toContain('/billing/redeem-code');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ code: 'frontier', account_id: 'acc-1' });
+  expect(result).toEqual({ code: 'FRONTIER', amount_usd: 100, balance: 105 });
+});
+
+test('redeemCreditCode throws an ApiError that carries the refusal code and message', async () => {
+  nextResponse = {
+    status: 409,
+    body: { error: 'This account has already redeemed this code.', code: 'credit_code_already_redeemed' },
+  };
+  const error = await redeemCreditCode({ code: 'FRONTIER', accountId: 'acc-1' }).catch((e) => e);
+  expect(error.message).toBe('This account has already redeemed this code.');
+  expect(error.code).toBe('credit_code_already_redeemed');
 });
 
 test('getAutoTopupSettings GETs and configureAutoTopup POSTs auto-topup', async () => {

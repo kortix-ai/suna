@@ -1,7 +1,7 @@
 /**
  * An OpenAI-compatible `/chat/completions` on 127.0.0.1 for harness tests (no real
  * model provider, dummy key): it streams the next scripted step and records each
- * request body. pi and OpenCode both speak this dialect.
+ * request body. pi's `kortix` provider speaks this dialect.
  */
 /**
  * `reasoning`: the reasoning tokens the step's usage reports (`completion_tokens_details.reasoning_tokens`).

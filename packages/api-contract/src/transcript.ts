@@ -3,15 +3,13 @@
  *
  * A message is `{ info, parts }`. The session runtime streams it as
  * `{ type, properties }` events, stores it, and serves it back from
- * `/kortix/runtime/messages`. pi emits these types directly. The OpenCode
- * adapter passes OpenCode's frames through, because v1 keeps OpenCode 1.18's
- * field names: an OpenCode value assigns to these types, and a type test
- * (`apps/api/src/__tests__/unit-transcript-contract-drift.test.ts`) fails when
- * an OpenCode upgrade stops that.
+ * `/kortix/runtime/messages`. pi emits these types directly. v1 keeps
+ * OpenCode 1.18's field names, so a message an OpenCode box stored before
+ * 2026-10-30 reads as these types too.
  *
  * `@kortix/sdk` is published and cannot import this private package. It keeps
  * a copy of these types in `packages/sdk/src/core/runtime/transcript-types.ts`;
- * the same drift test holds the two copies equal.
+ * `transcript-types.test.ts` there holds the two copies equal below this header.
  *
  * Types only: kortixd bundles this file into the guest binary.
  */

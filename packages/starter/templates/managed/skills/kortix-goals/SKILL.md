@@ -1,6 +1,6 @@
 ---
 name: kortix-goals
-description: "Work a goal until an independent verifier confirms it done, across days or weeks: a goal folder in Files (`GOAL.md`, `log.md`, `evidence/`) run with the `kortix goals` CLI, a heartbeat loop, questions to the assigned user, handovers to a fresh session, and a verifier session before done. Load when the user gives an outcome rather than a task (\"make sure X\", \"get me Y\", \"keep at it until\", \"make this a goal\", \"/goal\"), when a prompt says \"Goal wake:\", \"Goal reply:\" or \"Verify the goal\", when you receive a `[GOAL CHECK]` message, or when the user asks how a goal is going."
+description: "Work a goal until an independent verifier passes every done criterion, across days or weeks: the Goals API holds the state, the goal folder in Files (`GOAL.md` brief, `log.md`, `evidence/`) holds the work, and the `kortix goals` CLI moves it. Load when a prompt starts or wakes a goal (\"Goal wake\", a goal_id, \"Verify the goal\"), when you receive a `[GOAL CHECK]` message, when the user gives an outcome rather than a task (\"make sure X\", \"keep at it until\", \"make this a goal\", \"/goal\"), or when someone asks how a goal is going."
 metadata:
   kortix-feature-flag: goals
 ---
@@ -8,241 +8,173 @@ metadata:
 <skill name="kortix-goals">
 
 <overview>
-A goal is what a person wants plus a definition of done. You work it until a
-separate verifier session confirms it, not until you think it is done.
+A goal is what a person wants plus a definition of done. An owner session
+works it. A separate verifier session decides whether it is done.
 
-Three things, three questions:
+The **Goals API is the authority**. It holds the state, pause, stop, owner,
+verifier, criteria, caps and counters. It knows which session calls from the
+session's own credential: no flag or file can make you the owner, the
+verifier or a person. `kortix goals` calls the API; every refusal it prints
+is the API's or the CLI's rule, with the reason.
 
-| Thing | Answers |
-| --- | --- |
-| Agent | who works it: its grants decide what the goal may touch |
-| Trigger (a loop is one) | when work starts: the heartbeat, a reply, a merged change request |
-| Goal | what done means: the folder below |
-
-A goal is a folder in Files, `Goals/<slug>/` in the user's own folder by
-default (`/drives/me/Goals/<slug>/` in a session). It is the goal's context:
-every session that works the goal reads it and appends to it. Sessions come
-and go; a new session with no transcript must be able to continue from the
-folder. Only the user sees their own folder. `--folder` puts it in another
-read-write folder `/drives/README.md` lists.
+The folder in Files (`/drives/me/Goals/<slug>/` in a session) holds the work:
 
 | File | Holds | Who writes |
 | --- | --- | --- |
-| `GOAL.md` | front matter: the goal, done criteria, assigned user, assigned agent, state, links, limits. Body: context in the person's words, constraints, plan | the CLI writes state and sessions; you write criteria, links, summary and the body |
-| `log.md` | append-only: each wake, what changed, what is next; handovers; verifier findings | you and the CLI. Never rewrite earlier lines |
+| `GOAL.md` | the brief: the person's request, `## Done criteria`, context, plan | you (criteria only while the goal is a draft) |
+| `log.md` | append-only: each wake, what changed, what is next | you; never rewrite earlier lines |
 | `evidence/` | proof per criterion; `verification.md` is the verifier's report | you; the verifier writes `verification.md` |
+
+After each accepted write the CLI puts a `kortix-lifecycle` block in GOAL.md's
+front matter (state, revision, owner). It is a read-only copy for you. Editing
+it, or writing `state:`, `paused_at:` or caps into GOAL.md, changes nothing.
+`kortix goals status` is the truth.
 </overview>
 
 <lifecycle>
 ```
-draft ──▶ active ──▶ verifying ──▶ done          (verifier PASS)
-            ▲  │          └──────▶ active        (verifier FAIL, findings in log.md)
+draft ──▶ active ──▶ verifying ──▶ done      (every criterion passed)
+            ▲  │          └──────▶ active    (any criterion failed)
             │  ▼
-       waiting_on_user                            (a question for the assigned user)
-any state ──▶ stopped                             (a person said stop)
+       waiting_on_user                        (until the assigned user answers)
+any open state ──▶ stopped                    (a person, from the Goals page)
 ```
 
-The CLI enforces every edge. You cannot reach `verifying` except through
-`kortix goals verify`, and you can never reach `done`: only the verifier's
-`kortix goals verdict pass` does. One owner session at a time moves the goal.
+You cannot reach `done`, and you cannot stop, pause, resume or restart a goal,
+or raise its caps. A person does those from the Goals page.
 </lifecycle>
 
 <commands>
 | Command | Who | What it does |
 | --- | --- | --- |
-| `kortix goals new "<goal>" [--slug s] [--user <user_id>] [--agent <name>] [--every 4h] [--folder <dir>]` | the session that takes the goal | creates `Goals/<slug>/` (the user's own folder unless `--folder`), makes this session the owner, marks it unattended, arms the heartbeat. State `draft` |
-| `kortix goals transition active --reason "…"` | owner | from draft (1 to 8 done criteria) or from waiting_on_user |
-| `kortix goals transition waiting_on_user --reason "<the question>"` | owner | the reason is the question the assigned user sees |
-| `kortix goals transition stopped --reason "<the person's words>"` | owner | only when a person said stop |
-| `kortix goals verify` | owner | every criterion `met: true` with an existing evidence file: starts the verifier session and moves to `verifying` |
-| `kortix goals verdict pass\|fail --reason "…"` | the verifier | after it wrote `evidence/verification.md`. pass → done; fail → active with the findings in log.md. Wakes the owner |
-| `kortix goals handover --note "<state of play>"` | owner | context nearly full: writes the note to log.md, starts a fresh owner session, drops this session's heartbeat |
-| `kortix goals check` | owner | prints what is wrong in GOAL.md |
-| `kortix goals ls` / `status [<slug>]` | anyone | every goal / one goal |
+| `kortix goals status [<slug>]` / `ls` | anyone | the goal as the API holds it: state, criteria (reported met vs verified), waiting on, owner, verifier, next wake, caps |
+| `kortix goals transition active --reason "…"` | owner | draft → active: sends the list under `## Done criteria` in GOAL.md (1 to 8), then activates |
+| `kortix goals transition waiting_on_user --reason "<question>" [--chase-at <iso>]` | owner | asks the assigned user; see `<waiting>` |
+| `kortix goals progress [--met c1,c2] [--unmet c3] [--evidence c1=evidence/x.md] [--summary "…"]` | owner | reports criteria and the summary. Evidence paths are relative, under `evidence/`. Reporting is not verifying |
+| `kortix goals verify` | owner | every criterion reported met with an evidence file that exists: the API starts a verifier session and the goal is `verifying` |
+| `kortix goals handover --note "<state of play>"` | owner | the API starts a fresh owner session with the note; you stop |
+| `kortix goals verdict --pass <ids> [--fail <ids>] [--inconclusive <ids>] [--note <id>="<why>"]…` | verifier | see `<verify>` |
+| `kortix goals check` | owner | prints what the goal needs from you |
 
-Add `--json` for machine-readable output. `new` needs the project features
-`goals`, `volumes` and `reminders`; it prints the enable command when one is off.
-`verify` and `handover` start sessions themselves: a "do not spawn sessions"
-contract does not apply to them.
+Add `--json` for machine-readable output and `--goal <goal_id>` when the CLI
+cannot tell which goal you mean. `kortix goals new` is for a person: in a
+session the API refuses it.
 </commands>
 
-<goal-md>
-`kortix goals new` writes the front matter. Keep its keys. Times are UTC ISO 8601.
-
-```markdown
----
-goal: EU billing live: invoices in EUR with VAT
-state: active
-assigned_user: <user_id>
-assigned_agent: billing
-space: null
-summary: "Pricing page done. Invoice template next."
-done_criteria:
-  - id: c1
-    text: An invoice for a DE customer shows EUR and 19% VAT
-    met: true
-    evidence: evidence/invoice-de.pdf
-  - id: c2
-    text: Checkout charges in EUR, not USD
-    met: false
-    evidence: null
-links:
-  - evidence/invoice-de.pdf
-  - /Company/Finance/vat-ids.md
-  - https://<host>/projects/<project_id>/changes/12
-waiting_on: null
-heartbeat: 4h
-max_wakes_per_day: 12
-max_sessions: 10
-reminder_id: reminder.0123456789ab
-next_wake_at: "2026-10-28T13:00:00Z"
-last_wake_at: "2026-10-28T09:00:00Z"
-wake_day: 2026-10-28
-wake_count: 3
-verified_by: null
-sessions:
-  - id: <session_id>
-    role: owner
-    since: "2026-10-28T08:00:00Z"
-transitions:
-  - from: null
-    to: draft
-    at: "2026-10-28T08:00:00Z"
-    reason: goal created
-    by: <session_id>
----
-# EU billing live
-
-## Context
-The request in the person's words. Constraints. What you learned.
-```
-
-| Key | Rule |
-| --- | --- |
-| `state`, `transitions`, `sessions`, `verified_by`, `reminder_id`, `wake_*` | **CLI only**. A state edited by hand is a `[GOAL CHECK]` |
-| `done_criteria` | you: 1 to 8, each checkable by someone else, each naming its proof. `met: true` only with an `evidence` path (relative to the folder) to a file that exists |
-| `links` | you: everything the goal produced or depends on: files, artifacts, Apps, change requests, sessions. The Goal page lists them |
-| `assigned_user` | the person the goal is for: they answer its questions and get its updates. Default: the session's creator |
-| `assigned_agent` | the agent whose grants the goal runs with |
-| `heartbeat`, `max_wakes_per_day`, `max_sessions` | limits. The assigned user may change them; you do not raise them yourself |
-| `paused_at`, `paused_by` | **a person only** (the Goals page). Never set or clear them |
-
-Quote a value that contains `: ` or starts with a quote or `#`. Read GOAL.md
-just before you write it.
-</goal-md>
-
 <start>
-When a person gives an outcome (or says "make this a goal"):
+**A goal started from the Goals page.** Your first message names the goal.
+The goal, its folder and its heartbeat exist; you are its owner and it is a
+`draft`.
 
-1. `kortix goals new "<the outcome>"`. Add `--agent` when another agent should
-   own it, `--user` when it is for someone else.
-2. Write 1 to 8 `done_criteria` that someone else can check.
-3. Write the context under `## Context`: their words, the constraints, the
-   obvious ones (no spend above what they named, nothing irreversible
-   without asking).
+1. `kortix goals status`. Read GOAL.md and `log.md`.
+2. Keep the person's done criteria. When there are none, write 1 to 8 under
+   `## Done criteria`, each one checkable by someone else and naming its proof.
+3. Write the context: their words, the constraints, the obvious ones (no spend
+   above what they named, nothing irreversible without asking).
 4. `kortix goals transition active --reason "criteria written"`.
 5. Act on the first step in this turn. Append it to `log.md`.
-6. End with four lines: the outcome, the criteria, the first thing you need
-   from them (or "nothing for now"), and where to watch it: the Goals page.
 
-**Created from the Goals page.** Your first message is `Goal wake: <folder>.
-… It is new`. The folder, GOAL.md (state `draft`, this session its owner) and
-the heartbeat already exist. Do not run `kortix goals new`. Read GOAL.md, keep
-the person's done criteria (write 1 to 8 when there are none), then steps 3
-to 6 above.
+**A person asks for a goal in chat.** You cannot create it. Agree the outcome
+and the done criteria with them, then ask them to create it from the Goals
+page. The API starts an owner session for it.
 </start>
 
-<pause>
-A person can pause a goal from the Goals page. GOAL.md then has `paused_at`.
-The heartbeat is off, and `check --enforce` leaves the goal alone. A paused
-goal keeps its state. Do no work on it: end the turn. The person resumes it
-from the Goals page, which clears `paused_at` and wakes the owner.
-</pause>
-
 <wake>
-Every turn on a goal is one wake, whatever started it: the heartbeat
-(`Goal wake: <folder>.`), a reply (`Goal reply: <folder>.`), a merged change
-request (`… Change request #N … merged.`), a verdict, a person in this chat.
+Every turn on a goal is one wake: the heartbeat, an answer, a verdict, a
+merged change request, a person in this chat.
 
-1. **Orient.** Read GOAL.md and the last 40 lines of log.md. What changed?
-2. **Advance.** Do the highest-leverage next step. Use workers for parallel
-   or heavy work (the agent tool, or `kortix sessions new --meta goal=<folder>`
-   so their change requests wake the goal too).
-3. **Ask** when only a person can unblock it: write the question in plain
-   text, send it on a channel they use (see `<permissions>`), then
-   `kortix goals transition waiting_on_user --reason "<the question>"` and end
-   the turn. Never ask with the blocking question tool: this session is
-   unattended and nobody can answer it. The answer arrives as a new message.
-   When it does, `kortix goals transition active --reason "answered"`.
-4. **Save.** Update `summary`, `done_criteria`, `links`. Append one line per
-   action to log.md.
+1. **Orient.** `kortix goals status`, GOAL.md, the last 40 lines of `log.md`.
+   Paused (`paused by a person`): do no work, end the turn.
+2. **Advance.** Do the highest-leverage next step. Use workers for parallel or
+   heavy work.
+3. **Report.** `kortix goals progress` with what changed. Append one line per
+   action to `log.md`.
+4. **Ask** when only a person can unblock it: see `<waiting>`.
 5. **Claim done** when every criterion is met with evidence:
    `kortix goals verify`. End the turn. The verdict wakes you.
-6. End the turn. After it, kortixd runs `kortix goals check --enforce`: it
-   counts the wake, re-arms a missing heartbeat, holds the heartbeat until the
-   next UTC day once `max_wakes_per_day` is reached, and removes the heartbeat
-   of a closed goal. Only a problem code cannot fix comes back as `[GOAL CHECK]`:
-   fix exactly what it names, then end the turn.
+6. End the turn. After it, kortixd runs `kortix goals check --enforce`. It
+   sends `[GOAL CHECK]` when your goal is still a draft or you reported
+   nothing for 3 wakes (at most 3 messages per 6 hours). Do what it names.
 
 **Context nearly full?** Write the state of play (done, in flight, next, open
-questions, where things are) and run `kortix goals handover --note "…"`. A
-fresh owner continues from GOAL.md and your note. Stop working this goal after
-that.
+questions, where things are) and `kortix goals handover --note "…"`. Stop
+working the goal after that.
 </wake>
 
-<verify>
-You are the verifier when your first message says "Verify the goal in
-<folder>". You did none of the work and have no memory of it.
+<waiting>
+Write the question in plain text, send it on a channel the person uses (see
+`<permissions>`), then
+`kortix goals transition waiting_on_user --reason "<the question>"` and end
+the turn. Never use the blocking question tool: nobody watches this session.
 
-1. Read GOAL.md. For each done criterion, check it yourself: open the evidence,
-   then check the real thing (the page, the file, the API, the record). An
-   owner's note is not proof.
-2. Write `evidence/verification.md`: one line per criterion, `c1 PASS: <why>`
-   or `c1 FAIL: <what is missing>`.
-3. `kortix goals verdict pass --reason "…"` when every line is PASS, else
-   `kortix goals verdict fail --reason "<the failed criteria>"`.
-4. Do not edit GOAL.md. Do not fix the work.
+While the goal waits, the API runs no heartbeat turn. It wakes you when the
+assigned user answers from the Goals page (the goal is `active` again), or
+once at `--chase-at` (60 minutes to 14 days ahead) when you set it. When the
+answer reaches you another way (a reply on the channel you asked on), run
+`kortix goals transition active --reason "<what they answered>"` yourself.
+</waiting>
+
+<verify>
+You are the verifier when your first message asks you to verify a goal. You
+did none of the work.
+
+1. `kortix goals status`: the current criteria and their evidence.
+2. Check each criterion yourself: open the evidence, then check the real thing
+   (the page, the file, the API, the record). An owner's note is not proof.
+3. Write `evidence/verification.md`: one line per criterion, `c1 PASS: <why>`
+   or `c1 FAIL: <what is missing>`. The CLI refuses a verdict without it.
+4. Give exactly one result per current criterion, for example
+   `kortix goals verdict --pass c1,c2 --fail c3 --note c3="charged in USD"`.
+   A missing, duplicate or unknown id is refused; a fail or inconclusive needs
+   a note. All pass: the goal is done. Any other result: it goes back to the
+   owner with your notes.
+5. Do not edit GOAL.md. Do not fix the work.
+
+A session that owned the goal cannot give its verdict: the API refuses it.
 </verify>
 
-<permissions>
-The goal engine decides nothing about access. Every email, Slack message or
-connector call goes through the assigned agent's grants and the connector's
-approval rules, as in any session. An approval rule holds a send until a
-person approves it.
-
-When the agent lacks a grant you need, do not work around it: ask the
-assigned user for it (step 3 of `<wake>`) and wait in `waiting_on_user`.
-Credentials go in the Secrets Manager, never in the goal folder.
-</permissions>
-
 <limits>
-- `heartbeat` (default 4h): the interval while the goal is open.
-- `max_wakes_per_day` (default 12): after that many owner turns in a UTC day,
-  the heartbeat waits until the next day. A person's message still reaches you.
-- `max_sessions` (default 10): owners and verifiers in total. At the cap,
-  `verify` and `handover` refuse: ask the assigned user to raise it.
+A person sets the caps on the Goals page; the API enforces them when a wake
+starts. `kortix goals status` shows them.
+
+- heartbeat (default 4h): how often an `active` goal wakes.
+- wakes per UTC day (default 12): at the cap the goal is `blocked: wake_cap`
+  until the next UTC day.
+- sessions per goal (default 10, owners and verifiers): at the cap `verify`
+  and `handover` are refused (`session_cap`). Ask the assigned user to raise it.
+
+Other `blocked` reasons: `credits` (a person tops up and resumes),
+`owner_lost`, `storage`, `flag_off`, `setup`. None of them is yours to fix:
+say so in `log.md` and end the turn.
 </limits>
+
+<permissions>
+The goal decides nothing about access. Every email, Slack message or
+connector call goes through the assigned agent's grants and the connector's
+approval rules, as in any session. When the agent lacks a grant, do not work
+around it: ask for it (`<waiting>`). Credentials go in the Secrets Manager,
+never in the goal folder.
+</permissions>
 
 <status>
 When anyone asks how a goal is going: `kortix goals status <slug>` (or
 `kortix goals ls`). Answer with the state, the summary, what it waits on, and
-the next wake. People see the same on the Goals page and on the Goal page.
+the next wake. Say "reported met" for what the owner claims and "verified"
+only for what a verifier passed.
 
-When a person asks "what are my goals" or "what waits on me" (My Kortix gets
-this most): `kortix goals ls --json`, keep the goals whose `assigned_user` is
-that person, and list first the ones in `waiting_on_user` with their
-`waiting_on` question.
+When `ls` prints "Unverified local copy", the API did not answer: you know the
+folders and their briefs, not the state. Say that.
 </status>
 
 <gotchas>
-- **One owner.** Only the last `owner` in `sessions` moves the goal. A former
-  owner that gets a message points to the goal folder and does nothing else.
-- **A clash** leaves a `(conflict ...)` copy of GOAL.md beside it: merge the
-  two, then delete the copy.
-- **The person's edits win.** A field they changed in Files is the truth.
+- **One owner.** After a handover or a successor takes over, the API refuses
+  a former owner's writes. A former owner that gets a message points to the
+  goal and does nothing else.
+- **Revision conflicts.** A person may edit the goal while you work. The CLI
+  re-reads once and retries when the move is still valid; otherwise it prints
+  why. Read `kortix goals status` and continue from there.
 - **Absolute dates.** Write "2026-11-04", never "next Tuesday".
 - **No secrets** in the folder, and no customer data beyond what the goal needs.
-- **A legacy `goal.json` folder** still lists; start new goals with `new`.
 </gotchas>
 
 </skill>

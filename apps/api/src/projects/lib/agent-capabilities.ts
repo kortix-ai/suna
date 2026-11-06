@@ -76,12 +76,11 @@ function mapOf(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-/** The implementation an extension names: its pi source, else its OpenCode module. */
+/** The implementation an extension names: its pi source. */
 function extensionSource(entry: unknown): string | null {
-  const { pi, opencode } = mapOf(entry);
+  const { pi } = mapOf(entry);
   const source = typeof pi === 'string' ? pi : mapOf(pi).source;
-  if (typeof source === 'string') return source;
-  return typeof opencode === 'string' ? opencode : null;
+  return typeof source === 'string' ? source : null;
 }
 
 export function buildAgentCapabilities(input: {

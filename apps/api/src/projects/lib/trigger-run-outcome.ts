@@ -297,7 +297,7 @@ export async function recordTriggerRunEnd(
     return recovered.length > 0 ? 'recovered' : 'unchanged';
   }
 
-  // OpenCode compacts on overflow by itself. ContextOverflowError as the
+  // The runtime compacts on overflow by itself. ContextOverflowError as the
   // turn's end means compaction failed: this session can never run again.
   if (end.error?.name === 'ContextOverflowError') {
     await db

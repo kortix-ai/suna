@@ -1162,8 +1162,7 @@ harnessFlow(
     const path = `output/ke2e-run12-${Date.now()}.md`;
     const content = `ke2e-run12-${crypto.randomUUID()}`;
     const done = `RUN12_DONE_${Date.now()}`;
-    // The daemon hosts both tools (services/tools) and runs the same module for
-    // either harness: pi in process, OpenCode through the bridge plugin.
+    // The daemon hosts both tools (services/tools); pi runs them in process.
     // `memory` was a Kortix tool until 2026-10-30; `show` is the Kortix tool here, after a harness `write`.
     await ctx.step('the agent writes a file with `write` and presents it with the Kortix `show` tool', async () => {
       await sendPrompt(

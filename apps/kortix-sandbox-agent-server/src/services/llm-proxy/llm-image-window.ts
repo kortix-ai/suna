@@ -13,17 +13,37 @@
  * the gateway's own pass is then a no-op.
  *
  * Shapes covered: OpenAI chat (`messages[].content[]` with `image_url` /
- * `input_image`), Anthropic (`messages[].content[]` with `image`) and the
- * OpenAI Responses API (`input[].content[]` with `input_image`).
+ * `input_image`), Anthropic (`messages[].content[]` with `image`, and the
+ * images inside a `tool_result` block's `content[]`) and the OpenAI Responses
+ * API (`input[].content[]` and `input[].output[]` with `input_image`).
+ *
+ * Claude Code puts every screenshot a tool returned inside a `tool_result`
+ * block, and resends them all on every step. A window that read only the top
+ * level counted none of them: on 2026-11-06 a real `claude` session grew by
+ * ~0.32 MB per screenshot read through this proxy, passed Anthropic's 32 MB
+ * cap, and every later turn of that session failed with "Request too large".
+ *
+ * The window bounds count and bytes with the gateway's rule
+ * (`packages/llm-gateway/src/pipeline/image-window.ts`, the same cuts: a test
+ * pins it): Bedrock and Anthropic refuse a body over ~32 MB at any token count.
  */
 export interface ImageWindowOptions {
   /** Requests carrying at most this many inline images pass untouched. */
   maxImages: number;
-  /** On overflow, the most recent this-many images survive. */
+  /** On overflow, the most recent this-many images survive (one more, as the gateway). */
   keepOnOverflow: number;
+  /** Requests whose inline images exceed this many bytes are pruned. 0 or absent disables the byte cap. */
+  maxBytes?: number;
+  /** The inline image bytes a byte prune keeps at most. */
+  keepBytesOnOverflow?: number;
 }
 
-export const DEFAULT_IMAGE_WINDOW: ImageWindowOptions = { maxImages: 20, keepOnOverflow: 12 };
+export const DEFAULT_IMAGE_WINDOW: ImageWindowOptions = {
+  maxImages: 20,
+  keepOnOverflow: 12,
+  maxBytes: 22 * 1024 * 1024,
+  keepBytesOnOverflow: 16 * 1024 * 1024,
+};
 
 export interface ImageWindowResult {
   total: number;
@@ -46,22 +66,32 @@ function itemsOf(body: Record<string, unknown>): unknown[] {
   return [];
 }
 
+/** The image parts of one parts array, in order, and those of every part's own `content[]` (a `tool_result`). */
+function collectSlots(parts: unknown[], slots: Array<{ content: unknown[]; index: number; bytes: number }>): void {
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    if (isImagePart(part)) slots.push({ content: parts, index: i, bytes: JSON.stringify(part).length });
+    else if (part && typeof part === 'object' && Array.isArray((part as { content?: unknown }).content)) {
+      collectSlots((part as { content: unknown[] }).content, slots);
+    }
+  }
+}
+
 /** Mutates the request body in place. Returns what it counted and dropped. */
 export function applyInlineImageWindow(
   body: Record<string, unknown>,
   options: ImageWindowOptions = DEFAULT_IMAGE_WINDOW,
 ): ImageWindowResult {
-  const slots: Array<{ content: unknown[]; index: number }> = [];
+  const slots: Array<{ content: unknown[]; index: number; bytes: number }> = [];
   for (const item of itemsOf(body)) {
     if (!item || typeof item !== 'object') continue;
-    const content = (item as { content?: unknown }).content;
-    if (!Array.isArray(content)) continue;
-    for (let i = 0; i < content.length; i += 1) {
-      if (isImagePart(content[i])) slots.push({ content, index: i });
+    for (const key of ['content', 'output'] as const) {
+      const parts = (item as Record<string, unknown>)[key];
+      if (Array.isArray(parts)) collectSlots(parts, slots);
     }
   }
   const total = slots.length;
-  const dropped = imagesToDrop(total, options);
+  const dropped = imageCut(slots.map((slot) => slot.bytes), options);
   for (let i = 0; i < dropped; i += 1) {
     const slot = slots[i];
     if (slot) slot.content[slot.index] = { type: 'text', text: NOTICE };
@@ -72,18 +102,36 @@ export function applyInlineImageWindow(
 // No count: a dropped image reads the same at every step, so the prefix before the cut stays cached.
 const NOTICE = '[image omitted by sandbox: an older image was removed; the most recent are kept]';
 
-/** How many of `total` images, oldest first, the window drops. */
-function imagesToDrop(total: number, options: ImageWindowOptions): number {
-  const max = Math.max(0, Math.trunc(options.maxImages));
-  if (max === 0 || total <= max) return 0;
-  const keep = Math.min(max, Math.max(0, Math.trunc(options.keepOnOverflow)));
-  // Stateless hysteresis: a client re-sends its whole history every request, so the cut
-  // moves in steps of `max - keep` images and every request until the next step drops the
-  // same images with the same notice; the provider's prompt cache keeps its prefix. (Dropping
-  // `total - keep` moved the cut, and the notice's count, on every new image.) Between
-  // `keep + 1` and `max` images survive.
-  const step = max - keep;
-  return step > 0 ? Math.ceil((total - max) / step) * step : total - keep;
+/**
+ * How many images, oldest first, the window drops, given each image's bytes: the gateway's
+ * forward pass. Walk the images and keep a window of the newest; when an image puts it over
+ * `maxImages` or `maxBytes`, its start moves to `keepOnOverflow + 1` images and
+ * `keepBytesOnOverflow` bytes. The cut depends only on the images up to each point, so for a
+ * history that only grows it holds still until the next overflow, and the provider's prompt
+ * cache keeps the prefix. The newest image always stays.
+ */
+export function imageCut(sizes: readonly number[], options: ImageWindowOptions): number {
+  const maxCount = Math.max(0, Math.trunc(options.maxImages));
+  const keepCount = Math.min(maxCount, Math.max(0, Math.trunc(options.keepOnOverflow)));
+  const countAfterPrune = keepCount < maxCount ? keepCount + 1 : maxCount;
+  const maxBytes = Math.max(0, Math.trunc(options.maxBytes ?? 0));
+  const keepBytes = Math.min(maxBytes, Math.max(0, Math.trunc(options.keepBytesOnOverflow ?? maxBytes)));
+  let start = 0;
+  let count = 0;
+  let bytes = 0;
+  for (let i = 0; i < sizes.length; i += 1) {
+    count += 1;
+    bytes += sizes[i]!;
+    const overCount = maxCount > 0 && count > maxCount;
+    const overBytes = maxBytes > 0 && bytes > maxBytes;
+    if (!overCount && !overBytes) continue;
+    while (start < i && ((overCount && count > countAfterPrune) || (maxBytes > 0 && bytes > (overBytes ? keepBytes : maxBytes)))) {
+      count -= 1;
+      bytes -= sizes[start]!;
+      start += 1;
+    }
+  }
+  return start;
 }
 
 /**
@@ -102,7 +150,7 @@ export function applyInlineImageWindowToText(
   const spans = imagePartSpans(text);
   if (!spans) return null;
   const total = spans.length;
-  const dropped = imagesToDrop(total, options);
+  const dropped = imageCut(spans.map(([start, end]) => end - start), options);
   if (dropped === 0) return { text, total, dropped };
   const replacement = JSON.stringify({ type: 'text', text: NOTICE });
   const pieces: string[] = [];
@@ -184,7 +232,8 @@ function imagePartSpans(text: string): Array<[number, number]> | null {
           i += 1;
           ws();
           if (role === 'part' && key === 'type' && text[i] === '"') type = string(true);
-          else value(role === 'item' && key === 'content' ? 'content' : 'other', onPart);
+          // An item's `content` / `output`, and a part's own `content` (a `tool_result`), hold parts.
+          else value((role === 'item' && (key === 'content' || key === 'output')) || (role === 'part' && key === 'content') ? 'content' : 'other', onPart);
           ws();
           if (text[i] === ',') { i += 1; continue; }
           if (text[i] === '}') { i += 1; break; }
@@ -246,7 +295,13 @@ export function imageWindowFromEnv(
   const keepRaw = env.KORTIX_LLM_IMAGE_KEEP_ON_OVERFLOW?.trim();
   const keepOnOverflow =
     keepRaw && /^\d+$/.test(keepRaw) ? Number(keepRaw) : DEFAULT_IMAGE_WINDOW.keepOnOverflow;
-  return { maxImages, keepOnOverflow: Math.min(keepOnOverflow, maxImages) };
+  const int = (name: string, fallback: number) => {
+    const value = env[name]?.trim();
+    return value && /^\d+$/.test(value) ? Number(value) : fallback;
+  };
+  const maxBytes = int('KORTIX_LLM_MAX_INLINE_IMAGE_BYTES', DEFAULT_IMAGE_WINDOW.maxBytes!);
+  const keepBytesOnOverflow = int('KORTIX_LLM_IMAGE_KEEP_BYTES_ON_OVERFLOW', DEFAULT_IMAGE_WINDOW.keepBytesOnOverflow!);
+  return { maxImages, keepOnOverflow: Math.min(keepOnOverflow, maxImages), maxBytes, keepBytesOnOverflow: Math.min(keepBytesOnOverflow, maxBytes) };
 }
 
 /** Paths whose JSON body carries a model request with inline images. */

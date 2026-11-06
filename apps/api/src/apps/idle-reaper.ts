@@ -3,10 +3,12 @@ import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or 
 import { markComputeSessionAlive, pauseComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
+import { clearAppCrashAlerts, raiseAppCrashAlerts } from '../projects/surface';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { type AppdStatus, AppHostingProvider } from './hosting';
 import { groupAlwaysOn, groupMinRunning, releaseConfigOf } from './release-config';
+import { transitionAppRuntime, transitionAppRuntimes } from './runtime-status';
 
 /** Does keep-alive look after this release: an always-on group, or a group with `min_machines_running`? */
 function releaseKeptUp(app: typeof apps.$inferSelect, deployment: typeof appDeployments.$inferSelect): boolean {
@@ -29,13 +31,11 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
   if (running) return { candidates: 0, stopped: 0, errors: 0 };
   running = true;
   try {
-    await db
-      .update(appRuntimes)
-      .set({ status: 'running', updatedAt: now })
-      .where(and(
-        eq(appRuntimes.status, 'stopping'),
-        lt(appRuntimes.updatedAt, new Date(now.getTime() - STALE_STOPPING_MS)),
-      ));
+    await transitionAppRuntimes(
+      'releaseIdleStop',
+      lt(appRuntimes.updatedAt, new Date(now.getTime() - STALE_STOPPING_MS)),
+      { updatedAt: now },
+    );
     const rows = await db
       .select({ runtime: appRuntimes, app: apps, deployment: appDeployments })
       .from(appRuntimes)
@@ -68,32 +68,32 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
           ));
           if (runningCount <= min) continue;
         }
-        const [claimed] = await db
-          .update(appRuntimes)
-          .set({ status: 'stopping', updatedAt: now })
-          .where(and(
+        const claimed = await transitionAppRuntime(
+          'claimIdleStop',
+          and(
             eq(appRuntimes.runtimeId, runtime.runtimeId),
-            eq(appRuntimes.status, 'running'),
             lte(appRuntimes.idleDeadlineAt, now),
             or(isNull(appRuntimes.activityLeaseUntil), lt(appRuntimes.activityLeaseUntil, now)),
-          ))
-          .returning();
+          ),
+          { updatedAt: now },
+        );
         if (!claimed) continue;
         await hosting.stop(claimed.provider as SandboxProviderName, claimed.externalId);
         const stoppedAt = new Date();
-        await db.update(appRuntimes).set({
-          status: 'stopped',
-          stoppedAt,
-          activityLeaseUntil: null,
-          updatedAt: stoppedAt,
-        }).where(eq(appRuntimes.runtimeId, claimed.runtimeId));
+        // Only this reaper's own claim: a wake that leased the row while the
+        // provider stop ran started the box again, and its `running` stands.
+        const finished = await transitionAppRuntime(
+          'finishIdleStop',
+          eq(appRuntimes.runtimeId, claimed.runtimeId),
+          { stoppedAt, activityLeaseUntil: null, updatedAt: stoppedAt },
+        );
+        if (!finished) continue;
         await pauseComputeSession(claimed.runtimeId, stoppedAt);
         stopped += 1;
       } catch (error) {
         errors += 1;
-        await db.update(appRuntimes).set({ status: 'running', updatedAt: new Date() })
-          .where(and(eq(appRuntimes.runtimeId, runtime.runtimeId), eq(appRuntimes.status, 'stopping')))
-          .catch(() => {});
+        await transitionAppRuntime('releaseIdleStop', eq(appRuntimes.runtimeId, runtime.runtimeId), { updatedAt: new Date() })
+          .catch(() => null);
         logger.error('[apps] idle stop failed', {
           runtimeId: runtime.runtimeId,
           error: error instanceof Error ? error.message : String(error),
@@ -138,25 +138,45 @@ export interface AppKeepAliveResult {
 /** Supervisor restarts per runtime in any hour; past it the App stays down until a person or a deploy acts. */
 export const APPD_REVIVES_PER_HOUR = 3;
 const HOUR_MS = 60 * 60_000;
-// replica-local: only the scheduler leader runs keep-alive. A leader change
-// forgets the count, which allows at most one extra hour of restarts.
-const appdRevives = new Map<string, number[]>();
 
-/** Forget every revive (a DB suite that reuses runtime ids between tests). */
-export function resetAppdRevivesForTest(): void {
-  appdRevives.clear();
+/**
+ * Supervisor restarts of `runtimeId` in the hour before `now`: its
+ * `supervisor_restarted` events. Durable: a count in the leader's memory
+ * started from 0 on every leader change (each API deploy on dev), so a crash
+ * loop got 3 more restarts per deploy and its crash alert waited.
+ */
+export async function appdRevivesInLastHour(runtimeId: string, now: Date): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(appDeploymentEvents).where(and(
+    eq(appDeploymentEvents.runtimeId, runtimeId),
+    eq(appDeploymentEvents.type, 'supervisor_restarted'),
+    gt(appDeploymentEvents.createdAt, new Date(now.getTime() - HOUR_MS)),
+  ));
+  return Number(row?.n ?? 0);
 }
 
-/** Record a revive of `runtimeId` at `now` unless the hour's budget is spent. Pure on the map. */
-export function takeAppdRevive(runtimeId: string, now: number, revives: Map<string, number[]> = appdRevives): boolean {
-  const recent = (revives.get(runtimeId) ?? []).filter((at) => now - at < HOUR_MS);
-  if (recent.length >= APPD_REVIVES_PER_HOUR) {
-    revives.set(runtimeId, recent);
-    return false;
-  }
-  revives.set(runtimeId, [...recent, now]);
-  return true;
+// replica-local: the crash episode each always-on App is in (App id → when it
+// began), so kortix.app.crashed is one event per episode and a crash after a
+// recovery is a new one. A leader change forgets it: at most one repeat event.
+const crashEpisodes = new Map<string, number>();
+
+/** Forget every crash episode (a DB suite that reuses App ids between tests). */
+export function resetCrashEpisodesForTest(): void {
+  crashEpisodes.clear();
 }
+
+/**
+ * One App's health this pass, across its machines: down past the restart
+ * budget on any machine opens (or keeps) its crash episode; every checked
+ * machine ready ends it. Deciding per App, not per machine, keeps a healthy
+ * machine from clearing what a crashed one raised on every pass.
+ */
+export function crashVerdict(machines: readonly MachineHealth[]): 'crashed' | 'ready' | 'unknown' {
+  if (machines.includes('spent')) return 'crashed';
+  return machines.length > 0 && machines.every((health) => health === 'ready') ? 'ready' : 'unknown';
+}
+
+/** What one machine's keep-alive found: down past the budget, ready, or neither (restarted, starting, not asked). */
+export type MachineHealth = 'spent' | 'ready' | 'other';
 
 /**
  * Whether a running VM's supervisor needs a start. kortix-appd exits once its
@@ -263,9 +283,9 @@ async function stopUnaffordableRuntimes(hosting: AppHostingProvider) {
 async function stopForCost(hosting: AppHostingProvider, runtime: RuntimeRow, type: string, message: string) {
   await hosting.stop(runtime.provider as SandboxProviderName, runtime.externalId);
   const stoppedAt = new Date();
-  await db.update(appRuntimes).set({
-    status: 'stopped', stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null, updatedAt: stoppedAt,
-  }).where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+  await transitionAppRuntime('stop', eq(appRuntimes.runtimeId, runtime.runtimeId), {
+    stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null, updatedAt: stoppedAt,
+  });
   await pauseComputeSession(runtime.runtimeId, stoppedAt);
   await db.insert(appDeploymentEvents).values({
     deploymentId: runtime.deploymentId, runtimeId: runtime.runtimeId, level: 'warn', type, message,
@@ -282,12 +302,12 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
   let lost = 0;
   let revived = 0;
 
-  const keepInstanceRunning = async (app: AppRow, deployment: typeof appDeployments.$inferSelect, instance: RuntimeRow) => {
+  const keepInstanceRunning = async (app: AppRow, deployment: typeof appDeployments.$inferSelect, instance: RuntimeRow): Promise<MachineHealth> => {
     let runtime = instance;
     const provider = runtime.provider as SandboxProviderName;
     if (runtime.status === 'running') {
       const status = await hosting.providerStatus(provider, runtime.externalId);
-      if (status === 'unknown') return; // the provider did not answer; the next pass asks again
+      if (status === 'unknown') return 'other'; // the provider did not answer; the next pass asks again
       if (status === 'running') {
         await markComputeSessionAlive(runtime.runtimeId, now);
         // Platinum runs an always-on App as a persistent VM. Daytona keeps
@@ -300,33 +320,42 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
         // The VM runs; does its App? A crash-looping App ends its supervisor.
         const appd = await hosting.status(provider, runtime.externalId, runtime.runtimeId).catch(() => null);
         if (supervisorNeedsStart(appd)) {
-          if (!takeAppdRevive(runtime.runtimeId, now.getTime())) {
+          if ((await appdRevivesInLastHour(runtime.runtimeId, now)) >= APPD_REVIVES_PER_HOUR) {
             logger.warn('[apps] always-on App supervisor is down and its restart budget is spent', { appId: app.appId, runtimeId: runtime.runtimeId });
-            return;
+            return 'spent';
           }
           // Only the supervisor: a VM that stopped meanwhile refuses it, and the
           // next pass starts that VM through the wake gate.
           await hosting.startSupervisor(provider, runtime.externalId).then(
-            () => { revived += 1; },
+            async () => {
+              revived += 1;
+              // The record is the budget (appdRevivesInLastHour).
+              await db.insert(appDeploymentEvents).values({
+                deploymentId: runtime.deploymentId, runtimeId: runtime.runtimeId, level: 'warn', type: 'supervisor_restarted',
+                message: `The App's process had stopped; Kortix started it again (at most ${APPD_REVIVES_PER_HOUR} times an hour).`,
+              }).catch(() => undefined);
+            },
             (error) => logger.warn('[apps] always-on App supervisor could not be started', { appId: app.appId, error: String(error) }),
           );
+          return 'other';
         }
-        return;
+        return appd?.ready ? 'ready' : 'other';
       }
       // The row says running; the provider says it is not. Record the truth,
       // close the compute window, then start it through the wake gate.
       const stoppedAt = new Date();
-      const [corrected] = await db.update(appRuntimes).set({
-        status: 'stopped', stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null, updatedAt: stoppedAt,
-      }).where(and(eq(appRuntimes.runtimeId, runtime.runtimeId), eq(appRuntimes.status, 'running'))).returning();
-      if (!corrected) return;
+      const corrected = await transitionAppRuntime('lost', eq(appRuntimes.runtimeId, runtime.runtimeId), {
+        stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null, updatedAt: stoppedAt,
+      });
+      if (!corrected) return 'other';
       await pauseComputeSession(runtime.runtimeId, stoppedAt);
       runtime = corrected;
       lost += 1;
     }
-    if (runtime.status !== 'stopped') return;
+    if (runtime.status !== 'stopped') return 'other';
     await ensureAppRuntimeRunning({ app, deployment, runtime }, hosting);
     started += 1;
+    return 'other';
   };
 
   /**
@@ -338,10 +367,25 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
     const instances = await db.select().from(appRuntimes)
       .where(and(eq(appRuntimes.deploymentId, deployment.deploymentId), inArray(appRuntimes.status, ['running', 'stopped'])))
       .orderBy(desc(appRuntimes.status), asc(appRuntimes.createdAt));
+    const health: MachineHealth[] = [];
     for (const group of Object.keys(config.processes)) {
       const own = instances.filter((instance) => instance.processGroup === group);
       const keep = groupAlwaysOn(app, config, group) ? own : own.slice(0, groupMinRunning(config, group));
-      for (const instance of keep) await keepInstanceRunning(app, deployment, instance);
+      for (const instance of keep) health.push(await keepInstanceRunning(app, deployment, instance));
+    }
+    // The App's health, once per pass (app-health-alerts.ts): the triggers that
+    // name it hear a crash once per episode, and a repair trigger gets
+    // kortix.app.crashed; all machines ready again ends it.
+    const verdict = crashVerdict(health);
+    if (verdict === 'crashed') {
+      const episode = crashEpisodes.get(app.appId) ?? now.getTime();
+      crashEpisodes.set(app.appId, episode);
+      await raiseAppCrashAlerts({ projectId: app.projectId, appSlug: app.slug, episode: `${app.appId}:${episode}`, restarts: APPD_REVIVES_PER_HOUR, now })
+        .catch((error) => logger.warn('[apps] crash alert failed', { appId: app.appId, error: String(error) }));
+    } else if (verdict === 'ready') {
+      crashEpisodes.delete(app.appId);
+      await clearAppCrashAlerts({ projectId: app.projectId, appSlug: app.slug, now })
+        .catch((error) => logger.warn('[apps] crash recovery failed', { appId: app.appId, error: String(error) }));
     }
   };
 

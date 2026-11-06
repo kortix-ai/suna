@@ -29,6 +29,7 @@
  */
 
 import {
+  SESSION_START_RESUMING_REASONS,
   SessionStartImageStepSchema,
   type SessionStartAction,
   type SessionStartBoot,
@@ -110,16 +111,7 @@ export function createStartCallLog(observedAt: Date = new Date()): StartCallLog 
 }
 
 /** Reasons that mean "a provider operation is moving this box", not "booting". */
-const RESUMING_REASONS = new Set([
-  'runtime_waking',
-  'runtime_wake_cooldown',
-  'runtime_status_unknown',
-  'runtime_stop_unconfirmed',
-  'runtime_restoring_in_place',
-  'runtime_recovered_in_place',
-  'runtime_recovery_in_progress',
-  'runtime_removed_checking',
-]);
+const RESUMING_REASONS: ReadonlySet<string> = new Set(SESSION_START_RESUMING_REASONS);
 
 function firstTimestamp(
   metadata: Record<string, unknown>,
@@ -178,9 +170,6 @@ export function deriveBoot(
               metadata,
               'runtimeBootWaitFirstSeenAt',
               'runtimeReadyWaitStartedAt',
-              // The same two clocks as a pre-W4 API wrote them.
-              'opencodeBootWaitFirstSeenAt',
-              'opencodeReadyWaitStartedAt',
               'providerRunningConfirmedAt',
             )
           : phase === 'provisioning'

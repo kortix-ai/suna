@@ -22,7 +22,7 @@ const GENERIC_DATA_PATHS = [
   'projects/lib/sandbox-env-push.ts',
   'projects/lib/sandbox-secret-propagation.ts',
   'projects/lib/sandbox-session-push.ts',
-  'projects/opencode-mapping.ts',
+  'projects/runtime-session-mapping.ts',
   'projects/session-open/session-open.ts',
   'projects/session-open/session-open-provision.ts',
   'projects/session-open/session-open-readiness.ts',

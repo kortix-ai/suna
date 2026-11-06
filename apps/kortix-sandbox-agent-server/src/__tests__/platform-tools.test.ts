@@ -562,7 +562,8 @@ describe('kortix_schedules automations', () => {
   })
 
   test('test: a dry run reports the filter verdict, the session key and the rendered prompt, and fires nothing', async () => {
-    fakeKortix(`'triggers fire issue-triage --dry-run --payload={"event":{"data":{"number":7}}} --json') echo '{"filter_matches":true,"session_key":"7","rendered_prompt":"Label Login fails","payload":{}}' ;;
+    fakeKortix(`'triggers show issue-triage --json') echo '{"slug":"issue-triage","type":"event","app":null,"filter":null}' ;;
+  'triggers fire issue-triage --dry-run --payload={"event":{"data":{"number":7}}} --json') echo '{"filter_matches":true,"session_key":"7","rendered_prompt":"Label Login fails","payload":{}}' ;;
   'triggers fire issue-triage --dry-run --json') echo '{"filter_matches":false,"session_key":null,"rendered_prompt":"Label ","payload":{}}' ;;`)
     const hit = await run('kortix_schedules', { action: 'test', name: 'issue-triage', payload: { event: { data: { number: 7 } } } })
     expect(hit.ok).toBe(true)
@@ -571,6 +572,29 @@ describe('kortix_schedules automations', () => {
     const miss = await run('kortix_schedules', { action: 'test', id: 'issue-triage' })
     expect(miss.card.title).toBe('issue-triage would skip this event')
     expect((await run('kortix_schedules', { action: 'test', name: 'x', payload: 'nope' })).ok).toBe(false)
+  })
+
+  test('test: an App automation gets a real test event (a test- id, the real drain) and reports what the work did', async () => {
+    fakeKortix(`'triggers show status-alert --json') echo '{"slug":"status-alert","type":"app","app":"status-watch","filter":{"event.name":"status.changed"}}' ;;
+  'apps events emit status-watch status.changed --data={"status":"down"} --trigger=status-alert --wait --json') echo '{"triggers":1,"accepted":1,"ids":["test-1"],"events":[{"trigger":"status-alert","status":"fired","session_id":"ses_9","reason":null}],"fired":true,"pending":false}' ;;
+  'triggers show any-event --json') echo '{"slug":"any-event","type":"app","app":"status-watch","filter":null}' ;;
+  'apps events emit status-watch test.event --trigger=any-event --wait --json') echo '{"triggers":2,"accepted":2,"ids":["test-2"],"events":[{"trigger":"status-alert","status":"skipped","reason":"filter did not match"},{"trigger":"any-event","status":"skipped","reason":"throttled"}],"fired":false,"pending":false}'; exit 1 ;;`)
+    const hit = await run('kortix_schedules', { action: 'test', name: 'status-alert', payload: { event: { data: { status: 'down' } } } })
+    expect(hit.ok).toBe(true)
+    expect(hit.card.title).toBe('status-alert ran on a test event')
+    expect(hit.data).toMatchObject({ name: 'status-alert', app: 'status-watch', event: 'status.changed', test_id: 'test-1', outcome: 'fired', session_id: 'ses_9' })
+    // A "*" automation with no sample name: a neutral name; the CLI exits 1 when nothing fired, and the verdict still comes back.
+    const skip = await run('kortix_schedules', { action: 'test', name: 'any-event' })
+    expect(skip.ok).toBe(true)
+    expect(skip.card.title).toBe('any-event skipped the test event')
+    expect(skip.data).toMatchObject({ event: 'test.event', outcome: 'skipped', reason: 'throttled', session_id: null })
+    expect(argvs().some((argv) => argv.includes('--dry-run'))).toBe(false)
+    // An event name is an App event name, never a flag: "--trigger=other" cannot pick another automation.
+    const before = argvs().length
+    const flag = await run('kortix_schedules', { action: 'test', name: 'status-alert', payload: { event: { name: '--trigger=any-event' } } })
+    expect(flag.ok).toBe(false)
+    expect(flag.error?.kind).toBe('invalid')
+    expect(argvs().slice(before).some((argv) => argv.startsWith('apps events emit'))).toBe(false)
   })
 
   test('runs: the recent runs with a tally of what started, skipped and failed, and no cost', async () => {

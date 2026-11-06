@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { capitalizeWords, truncateString } from './string';
+import { capitalizeWords, stripTrailingSlashes, truncateString } from './string';
 
 describe('truncateString', () => {
   test('returns empty string for undefined input', () => {
@@ -73,5 +73,25 @@ describe('capitalizeWords', () => {
 
   test('leaves digits and internal casing alone, only touches word starts', () => {
     expect(capitalizeWords('gpt5-agent')).toBe('Gpt5-Agent');
+  });
+});
+
+describe('stripTrailingSlashes', () => {
+  test('trims every trailing slash and nothing else', () => {
+    expect(stripTrailingSlashes('https://a.test/v1///')).toBe('https://a.test/v1');
+    expect(stripTrailingSlashes('a//b/')).toBe('a//b');
+    expect(stripTrailingSlashes('/a')).toBe('/a');
+    expect(stripTrailingSlashes('no-slash')).toBe('no-slash');
+  });
+
+  test('a string of only slashes, and the empty string, become empty', () => {
+    expect(stripTrailingSlashes('////')).toBe('');
+    expect(stripTrailingSlashes('')).toBe('');
+  });
+
+  test('a long slash run is linear', () => {
+    const started = performance.now();
+    expect(stripTrailingSlashes(`a${'/'.repeat(240_000)}`)).toBe('a');
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 });

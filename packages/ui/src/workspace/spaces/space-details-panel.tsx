@@ -1,8 +1,17 @@
 'use client';
 
 import type { ProjectSpace, ProjectSpaceMember } from '@kortix/sdk';
-import { qk, useProjectConfig, useProjectSpaceMembers, useProjectTriggers } from '@kortix/sdk/react';
-import { LightningIcon, LockSimpleIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
+import {
+  qk,
+  useFeatureFlag,
+  useProjectConfig,
+  useProjectSpaceMembers,
+  useProjectSpaceProactive,
+  useProjectTriggers,
+  useSetProjectSpaceProactive,
+  useUpdateProjectSpace,
+} from '@kortix/sdk/react';
+import { DotsThreeIcon, LightningIcon, LockSimpleIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 
@@ -15,8 +24,17 @@ import { AgentMark } from '../../internal/components/agent-mark';
 import { cn } from '../../lib/utils';
 import { uiRoutes } from '../../lib/routes';
 import { Button } from '../../primitives/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '../../primitives/dropdown-menu';
 import Hint from '../../primitives/hint';
 import { Label } from '../../primitives/label';
+import { Switch } from '../../primitives/switch';
+import { errorToast, successToast } from '../../primitives/toast';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { UiLink as Link, useUiViewer } from '../../providers/ui-provider';
 import { type Principal, PrincipalRow } from './principal-card';
@@ -29,7 +47,8 @@ import { agentLabel } from './space-timeline';
 /**
  * A space's details, on the right of the space (flag `chat`), opened from its
  * name in the header: its tile, name and description, then Agents (the
- * default first), People, Tabs and Routines, each with its own "Add". The
+ * default first), People, Tabs and Routines, each with its own "Add", and
+ * Proactive (flag `spaces_proactive`). The
  * rarer settings (make private, leave, archive, member menus) stay in the
  * full settings dialog, one link at the end. Everything here can also be
  * asked for in chat: the hint line says so.
@@ -112,12 +131,13 @@ export function SpaceDetailsPanel({
         </div>
 
         <div className="space-y-6 px-4 pb-6">
-          <AgentsSection projectId={projectId} space={space} onAdd={canAdd && editable ? () => setAdding(true) : undefined} />
+          <AgentsSection projectId={projectId} space={space} editable={!!channel && editable} />
           <div ref={peopleRef} className="scroll-mt-2">
           <PeopleSection projectId={projectId} space={space} members={members.data?.members} onAdd={canAdd ? () => setAdding(true) : undefined} />
           </div>
           <TabsSection projectId={projectId} space={space} onOpenTab={onOpenTab} />
           <RoutinesSection projectId={projectId} space={space} />
+          <ProactiveSection projectId={projectId} space={space} />
           {onOpenSettings ? (
             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={onOpenSettings}>
               {t('allSettings')}
@@ -190,25 +210,113 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
-/** The space's agents, the default first. A private space with one agent lists that agent. */
-function AgentsSection({ projectId, space, onAdd }: { projectId: string; space: ProjectSpace; onAdd?: () => void }) {
+/**
+ * The space's agents, the default first: the agents its threads hand work to
+ * (the router routes only to them). A channel's editor makes one the default
+ * (moves it first), removes one, and adds a project agent from a picker.
+ */
+function AgentsSection({ projectId, space, editable }: { projectId: string; space: ProjectSpace; editable: boolean }) {
   const t = useTranslations('spaces.panel');
+  const tDetails = useTranslations('spaces.details');
   const config = useProjectConfig(projectId);
-  const projectDefault = config?.default_agent ?? config?.open_code_default_agent ?? null;
+  const update = useUpdateProjectSpace(projectId);
+  const projectDefault = config?.default_agent ?? null;
   const agents = space.kind === 'dm' ? (space.dm_agent_name ? [space.dm_agent_name] : []) : (space.agents ?? []);
   // No agent list: a new thread starts on the project's default agent.
   const shown = agents.length > 0 ? agents : projectDefault ? [projectDefault] : [];
+  const spaceName = space.slug ?? space.name;
+  const addable = (config?.agents ?? [])
+    .filter((agent) => !agent.hidden && agent.enabled !== false && agent.mode !== 'subagent')
+    .filter((agent) => !agents.includes(agent.name));
+  const save = (next: string[], done: string) =>
+    update.mutate(
+      { spaceId: space.space_id, input: { agents: next } },
+      { onSuccess: () => successToast(done), onError: () => errorToast(tDetails('agentsFailed')) },
+    );
+  const add = editable ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground gap-1.5" disabled={update.isPending}>
+          <PlusIcon className="size-3.5 shrink-0" />
+          {t('addAgent')}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        {addable.length === 0 ? (
+          <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">{t('noAgentsToAdd')}</DropdownMenuLabel>
+        ) : (
+          addable.map((agent) => (
+            <DropdownMenuItem
+              key={agent.name}
+              className="gap-2.5"
+              onSelect={() =>
+                // An empty list ran on the project's default: adding keeps that agent first, so the default does not move.
+                save(
+                  agents.length === 0 && projectDefault && projectDefault !== agent.name ? [projectDefault, agent.name] : [...agents, agent.name],
+                  tDetails('agentAdded', { agent: agentLabel(agent.name), name: spaceName }),
+                )
+              }
+            >
+              <AgentMark slug={agent.name} size={21} />
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-sm">{agentLabel(agent.name)}</span>
+                {agent.description ? <span className="text-muted-foreground truncate text-xs">{agent.description}</span> : null}
+              </span>
+            </DropdownMenuItem>
+          ))
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
   return (
-    <Section title={t('agents')} add={onAdd ? <AddButton label={t('addAgent')} onClick={onAdd} /> : null}>
-      {shown.map((agent, index) => (
-        <Row
-          key={agent}
-          avatar={<AgentMark slug={agent} size={21} />}
-          name={agentLabel(agent)}
-          card={{ projectId, principal: { kind: 'agent', name: agent } }}
-          tag={index === 0 ? (agents.length > 0 ? t('default') : t('projectDefault')) : null}
-        />
-      ))}
+    <Section title={t('agents')} add={add}>
+      {shown.map((agent, index) => {
+        const label = agentLabel(agent);
+        const isDefault = index === 0;
+        // The project's default stands in for an empty list: nothing to move or remove.
+        const listed = agents.includes(agent);
+        return (
+          <PrincipalRow
+            key={agent}
+            projectId={projectId}
+            principal={{ kind: 'agent', name: agent }}
+            avatar={<AgentMark slug={agent} size={21} />}
+            name={label}
+            tag={isDefault ? (listed ? t('default') : t('projectDefault')) : null}
+            actions={
+              editable && listed ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground shrink-0"
+                      aria-label={tDetails('agentMenu', { agent: label })}
+                      disabled={update.isPending}
+                    >
+                      <DotsThreeIcon className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {isDefault ? null : (
+                      <DropdownMenuItem
+                        onSelect={() => save([agent, ...agents.filter((item) => item !== agent)], tDetails('defaultSet', { agent: label, name: spaceName }))}
+                      >
+                        {tDetails('makeDefault')}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onSelect={() => save(agents.filter((item) => item !== agent), tDetails('agentRemoved', { agent: label, name: spaceName }))}
+                    >
+                      {tDetails('removeAgent', { name: spaceName })}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null
+            }
+          />
+        );
+      })}
     </Section>
   );
 }
@@ -328,6 +436,77 @@ function RoutinesSection({ projectId, space }: { projectId: string; space: Proje
       ))}
       {privateChannel && routines.length === 0 ? (
         <li className="text-muted-foreground px-2 py-1 text-xs text-pretty">{t('routinesPrivate')}</li>
+      ) : null}
+    </Section>
+  );
+}
+
+/** The browser's IANA zone, for the daily brief; UTC when it has none. */
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** One switch row: the name, a muted line under it, the switch at the end. */
+function SwitchRow({
+  label,
+  hint,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <li className="flex min-h-9 items-center gap-2.5 px-2 py-1">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{label}</p>
+        <p className="text-muted-foreground text-xs text-pretty">{hint}</p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} className="shrink-0" />
+    </li>
+  );
+}
+
+/**
+ * Proactive (flag `spaces_proactive`): the space's watcher reads what happens
+ * here and writes only when it matters; the daily brief adds one summary at
+ * 9:00. Only the space's creator, a project manager or the DM's owner may
+ * change them (`can_edit`); everyone else sees the state.
+ */
+function ProactiveSection({ projectId, space }: { projectId: string; space: ProjectSpace }) {
+  const t = useTranslations('spaces.panel');
+  const flag = useFeatureFlag(projectId, 'spaces_proactive');
+  const settings = useProjectSpaceProactive(projectId, space.space_id, { enabled: flag.enabled });
+  const update = useSetProjectSpaceProactive(projectId, space.space_id);
+  if (!flag.enabled || !settings.data) return null;
+  const { enabled, daily_brief: dailyBrief, can_edit: canEdit } = settings.data;
+  const save = (input: Parameters<typeof update.mutate>[0]) =>
+    update.mutate(input, { onError: () => errorToast(t('proactiveFailed')) });
+  return (
+    <Section title={t('proactive')}>
+      <SwitchRow
+        label={t('proactiveWatch')}
+        hint={t('proactiveWatchHint')}
+        checked={enabled}
+        disabled={!canEdit || update.isPending}
+        onChange={(next) => save({ enabled: next })}
+      />
+      {enabled ? (
+        <SwitchRow
+          label={t('proactiveBrief')}
+          hint={t('proactiveBriefHint')}
+          checked={dailyBrief}
+          disabled={!canEdit || update.isPending}
+          onChange={(next) => save(next ? { daily_brief: true, brief_timezone: browserTimeZone() } : { daily_brief: false })}
+        />
       ) : null}
     </Section>
   );

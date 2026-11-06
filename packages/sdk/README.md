@@ -653,6 +653,47 @@ Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.
 
+## Goals
+
+A goal is what a person wants plus a definition of done (project flag
+`goals`, off by default). The API owns its state, pause, owner and verifier
+sessions, limits and verification; the goal's Drive folder holds the brief
+(`GOAL.md`), `log.md` and `evidence/`. Lifecycle fields written into
+`GOAL.md` change nothing.
+
+```ts
+import { createProjectGoal, listProjectGoals, pauseProjectGoal, ProjectGoalConflictError } from '@kortix/sdk';
+
+// goalId is the idempotency key: retry with the same id, get the same goal.
+const { goal } = await createProjectGoal(projectId, { outcome: 'EU billing live', goalId });
+
+const [first] = await listProjectGoals(projectId);
+if (first?.capabilities.pause) {
+  try {
+    const { projectGoal } = await pauseProjectGoal(projectId, first, 'Paused from my app.');
+    console.log(projectGoal.revision); // the new revision
+  } catch (error) {
+    // Someone changed the goal first: error.goal is the goal as it is now.
+    if (error instanceof ProjectGoalConflictError) console.log(error.goal.record.state);
+    else throw error;
+  }
+}
+```
+
+- Show a control only when `goal.capabilities` allows it. A read-only viewer
+  gets every capability `false`.
+- `criteria[].verified` is set only by a passed independent verification;
+  `criteria[].reported_met` is the agent's claim.
+- `blockedReason` says why a goal cannot go on (`credits`, `wake_cap`,
+  `session_cap`, `owner_lost`, `storage`, `flag_off`, `setup`).
+- `replyToProjectGoal(projectId, goal, text, { answerId })` answers as the
+  caller; one answer per `answerId`.
+- React: `useProjectGoals`, `useProjectGoal`, `useProjectGoalEvents`,
+  `useProjectGoalFiles`, `useSessionGoal`, and `useProjectGoalControl` (one
+  request per double submit, the cache updated on success and on a `409`).
+- Deprecated: `ProjectGoal.heartbeat` is always `null`;
+  `CreateProjectGoalInput.sessionId` is sent as the goal id.
+
 ## Artifact comments and activity
 
 Projects enable `artifacts` and `artifact_comments` before using comments.
@@ -938,7 +979,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `subscriptions.{list,usage}` (project-authorized usage for named and legacy ChatGPT logins; reads credentials in place) · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
-| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
+| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,redeem,autoTopupSettings,configureAutoTopup}` (`redeem({ code, accountId })` adds a credit code's amount to the non-expiring credits, once per account). `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}`. A project installs an item through `createMarketplaceInstallSession(projectId, itemId)`, which starts a session whose agent merges the item into the project and opens a change request; it resolves `{ session_id }` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
@@ -1465,7 +1506,7 @@ learn it once.
 | `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/genui/fence`, `@kortix/sdk/genui`, `@kortix/sdk/genui/react` | Generative UI: split `openui` blocks out of text, parse them, render them (see **Generative UI** below) | `genui` and `genui/react` need the optional peers `zod` and `@openuidev/lang-core`; `genui/fence` loads neither |
-| `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers are `@deprecated` | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
+| `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers (`wireIdClockDelta`, `mintWireMessageIdAbove`, …) place ids on the 48-bit clock | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
 | `@kortix/sdk/workspace-search` | `createWorkspaceSearchClient` and its ranking helpers | isolated from the root on purpose |
 | `@kortix/sdk/capture-rules` | the Kortix Capture constants (`CAPTURE_LAYERS`, `CAPTURE_DEVICE_DEFAULTS`, …) | the root exports the same names; this module loads alone |
 | `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |

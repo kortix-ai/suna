@@ -490,7 +490,7 @@ const GatewayModelSchema = z
     family: z.string().optional(),
     // The REAL upstream provider this model resolves against ('anthropic',
     // 'openai', 'codex', 'kortix', ...) — every gateway model is registered
-    // under the single synthetic `kortix` opencode provider, so this is the
+    // under the one provider id `kortix`, so this is the
     // field a client groups/labels by instead of parsing the wire model id.
     provider: z.string().optional(),
     reasoning: z.boolean().optional(),

@@ -49,7 +49,7 @@ const row = (over: Record<string, unknown> = {}) =>
     sandboxProvider: 'platinum',
     sandboxId: 's',
     sandboxUrl: null,
-    opencodeSessionId: null,
+    runtimeSessionId: null,
     agentName: 'default',
     status: 'stopped',
     error: null,

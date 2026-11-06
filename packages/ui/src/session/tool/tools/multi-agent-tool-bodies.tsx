@@ -30,13 +30,13 @@ import {
   parseStoppedChild,
   parseTasks,
   type StoppedChild,
-  type AgentBoardState,
-  type PeerSendStatus,
+  type SessionBoardState,
+  type PeerMessageStatus,
   type PeerSendSummary,
   type ReachableAgentRow,
   type TeamTaskRow,
-  type TeamTaskStatus,
-} from './multi-agent-tool-data';
+  type SessionTaskStatus,
+} from '@kortix/sdk';
 
 /**
  * The card bodies of the multi-agent tools (`send_message`, `list_agents`,
@@ -75,13 +75,13 @@ export function runningKey(tool: MultiAgentTool): 'sending' | 'checkingAgents' |
   }
 }
 
-const TASK_VARIANT: Record<TeamTaskStatus, BadgeVariant> = {
+const TASK_VARIANT: Record<SessionTaskStatus, BadgeVariant> = {
   pending: 'muted',
   in_progress: 'info',
   completed: 'success',
 };
 
-const STATE_KEY: Record<AgentBoardState, string> = {
+const STATE_KEY: Record<SessionBoardState, string> = {
   working: 'working',
   needs_input: 'needsInput',
   idle: 'idle',
@@ -90,7 +90,7 @@ const STATE_KEY: Record<AgentBoardState, string> = {
   stopped: 'stopped',
 };
 
-const TASK_KEY: Record<TeamTaskStatus, string> = {
+const TASK_KEY: Record<SessionTaskStatus, string> = {
   pending: 'pending',
   in_progress: 'inProgress',
   completed: 'completed',
@@ -102,7 +102,7 @@ const ROW_CLASS = 'flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-x
 export const AgentAvatarIcon = AgentFace;
 
 /** The state a send ended in, as a session-list glyph: delivered is done, held waits on a person. */
-const PEER_GLYPH: Record<PeerSendStatus, SessionDisplayStatus> = {
+const PEER_GLYPH: Record<PeerMessageStatus, SessionDisplayStatus> = {
   delivered: 'done',
   held: 'needs-you',
   refused: 'stopped',

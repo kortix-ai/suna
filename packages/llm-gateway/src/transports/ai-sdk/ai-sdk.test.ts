@@ -794,7 +794,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     }
     for (const id of ['us.amazon.nova-micro-v1:0', 'xai.grok-4.6']) {
       // No verified mapping for these families yet: the effort is DROPPED and
-      // the plain Converse request goes out. opencode sends a default effort
+      // the plain Converse request goes out. opencode sent a default effort
       // for every reasoning-capable model, so refusing it (as #6887 briefly
       // did) refused the model — including the managed Grok default.
       const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
@@ -1991,5 +1991,64 @@ describe('buildAiSdkArgs — extra OpenAI-only fields via providerOptions (logit
   it('never maps these OpenAI-only fields for anthropic/bedrock — matches native, which has no equivalent for either transport', () => {
     expect(buildAiSdkArgs(body, 'anthropic').providerOptions).toBeUndefined();
     expect(buildAiSdkArgs(body, 'bedrock').providerOptions).toBeUndefined();
+  });
+});
+
+describe('ai-sdk mid-stream failure keeps the usage estimate', () => {
+  // The relay settles an estimate only when the stream reported no usage
+  // (simple-handler settle: `!reported && outputChars > 0`). A failed stream
+  // must therefore end with no zero-usage frame and no `stop` finish.
+  const failedFinishes = (sse: string) =>
+    frames(sse).flatMap((c: any) => (c.choices ?? []).map((ch: any) => ch?.finish_reason)).filter(Boolean);
+
+  it('an error part after output emits no stop finish and no usage frame', async () => {
+    const sse = await readAll(
+      openAiSseFromFullStream(
+        parts(
+          { type: 'text-delta', id: '1', text: 'partial answer' },
+          { type: 'error', error: Object.assign(new Error('overloaded'), { statusCode: 529 }) },
+        ),
+        CTX,
+      ),
+    );
+    const scanned = scan(sse);
+    expect(scanned.error?.code).toBe(529);
+    expect(scanned.usage).toBeNull();
+    expect(scanned.outputChars).toBeGreaterThan(0);
+    expect(failedFinishes(sse)).toEqual([]);
+  });
+
+  it('an iterator throw after output emits no stop finish and no usage frame', async () => {
+    async function* cut() {
+      yield { type: 'text-delta', id: '1', text: 'partial' } as { type: string; [k: string]: unknown };
+      throw new Error('socket hang up');
+    }
+    const sse = await readAll(openAiSseFromFullStream(cut(), CTX));
+    const scanned = scan(sse);
+    expect(scanned.error?.message).toBe('socket hang up');
+    expect(scanned.usage).toBeNull();
+    expect(failedFinishes(sse)).toEqual([]);
+  });
+
+  it('an abort part reads as a failure, not a clean stop', async () => {
+    const sse = await readAll(
+      openAiSseFromFullStream(parts({ type: 'text-delta', id: '1', text: 'partial' }, { type: 'abort' }), CTX),
+    );
+    expect(scan(sse).usage).toBeNull();
+    expect(failedFinishes(sse)).toEqual([]);
+  });
+
+  it('a failure after the provider reported usage keeps the real usage', async () => {
+    const sse = await readAll(
+      openAiSseFromFullStream(
+        parts(
+          { type: 'text-delta', id: '1', text: 'partial' },
+          { type: 'finish-step', finishReason: 'stop', usage: usage() },
+          { type: 'error', error: new Error('cut') },
+        ),
+        CTX,
+      ),
+    );
+    expect(scan(sse).usage?.promptTokens).toBe(100);
   });
 });

@@ -25,6 +25,9 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // Space posts: the agent that wrote a top-level post, and its mentions (space-posts.ts).
   'chat_root_author',
   'chat_root_mentions',
+  // Space watcher (`spaces_proactive`): the space a watcher watches, and the posts it made (space-watch/keys.ts).
+  'space_watcher',
+  'space_watcher_post',
   // Soft delete (`deleteSession`).
   'forkedFromSessionId',
   'deletedAt',
@@ -83,8 +86,8 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // A restored deleted session (`restore-session.ts`): its boxes restore from
   // the session log at boot too.
   'restoredAt',
-  // Legacy migration restore. Selects the archive that session open and
-  // restart copy into the sandbox (`legacy-migration-rehydrate.ts`).
+  // Legacy migration provenance: the Suna migration wrote it and clients show
+  // it. No client may forge it.
   'legacy_migration',
   // Channel origin. Reply targets and the channel runtime env
   // (`session-channel-env.ts`, the Slack/Teams/email/Telegram/Discord relays).

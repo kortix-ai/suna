@@ -11,7 +11,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { config } from '../config';
-import { upsertCredential, upsertConnectionCredential } from './credentials';
+import { ConnectionRevokedError, upsertCredential, upsertConnectionCredential } from './credentials';
 import type { ExecResult } from './call';
 import { isCatalogApp } from './pipedream-catalog';
 import {
@@ -379,14 +379,20 @@ export async function finalizePipedreamConnectionAuthorization(opts: {
     opts.app,
   );
   if (!match) return { connected: false };
-  await upsertConnectionCredential({
-    projectId: opts.projectId,
-    connectorId: opts.connectorId,
-    connectionId: opts.connectionId,
-    value: match.id,
-    kind: 'connection',
-    createdBy: opts.createdBy,
-  });
+  try {
+    // An in-flight completion: a revoke that landed meanwhile wins.
+    await upsertConnectionCredential({
+      projectId: opts.projectId,
+      connectorId: opts.connectorId,
+      connectionId: opts.connectionId,
+      value: match.id,
+      kind: 'connection',
+      createdBy: opts.createdBy,
+    });
+  } catch (error) {
+    if (error instanceof ConnectionRevokedError) return { connected: false };
+    throw error;
+  }
   return { connected: true, accountId: match.id };
 }
 

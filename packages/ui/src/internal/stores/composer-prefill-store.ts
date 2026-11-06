@@ -55,7 +55,10 @@ export const useComposerPrefillStore = create<ComposerPrefillState>((set, get) =
         ...s.prefillByProject,
         [projectId]: {
           text: prompt,
-          ...(extras?.submit ? { submit: true } : {}),
+          // The value as given: `'when-ready'` must reach the composer, which
+          // waits for Send to be possible. Collapsed to `true` it sent while
+          // models and entitlements still loaded.
+          ...(extras?.submit ? { submit: extras.submit } : {}),
           ...(extras?.files?.length ? { files: extras.files } : {}),
           ...(extras?.options ? { options: extras.options } : {}),
         },

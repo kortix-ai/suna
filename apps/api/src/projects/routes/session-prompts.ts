@@ -74,7 +74,7 @@ import { capturePersonEvent } from './product-events';
 // their own idea of the queue.
 //
 // The client still mints the wire `messageID` and sends it here verbatim.
-// OpenCode decides "has this prompt already been answered?" by id ORDER, and
+// An OpenCode box decides "has this prompt already been answered?" by id ORDER, and
 // only the process holding the transcript can place an id correctly — see
 // `wire-message-id.ts` for the one exception (redelivery, which re-reads the
 // transcript first).
@@ -268,9 +268,9 @@ export function registerSessionPromptsRoutes(): void {
       }
       if (!messageId || !WIRE_MESSAGE_ID.test(messageId)) {
         // Rejected rather than repaired: an id this endpoint cannot verify the
-        // ordering of is one OpenCode may read as already answered, and a
+        // ordering of is one an OpenCode box may read as already answered, and a
         // dropped turn is worse than a refused request.
-        return c.json({ error: 'message_id must be an OpenCode wire message id' }, 400);
+        return c.json({ error: 'message_id must be a wire message id (msg_…)' }, 400);
       }
       const sanitized = sanitizeInboxPromptParts(rawParts);
       if ('error' in sanitized) return c.json({ error: sanitized.error }, 400);
@@ -285,9 +285,9 @@ export function registerSessionPromptsRoutes(): void {
 
       const overridesInput = (body.overrides ?? {}) as Record<string, unknown>;
       const model = overridesInput.model as { providerID?: unknown; modelID?: unknown } | null;
-      // A RE-POINTED pin travels ON THE PROMPT: OpenCode keeps its own
-      // per-session model, and `KORTIX_OPENCODE_MODEL` only seeds the default for
-      // a NEW OpenCode session. See `lib/prompt-model.ts` for the measurement.
+      // A RE-POINTED pin travels ON THE PROMPT: the runtime keeps its own
+      // per-session model, and `KORTIX_MODEL` only seeds the default for
+      // a NEW runtime session. See `lib/prompt-model.ts` for the measurement.
       const overrides = {
         agent: typeof overridesInput.agent === 'string' ? overridesInput.agent : null,
         model: promptModelOverride(model, visible.row.metadata as Record<string, unknown> | null),
@@ -868,14 +868,14 @@ export function registerSessionPromptsRoutes(): void {
       }
 
       // A HOLD IS A STOP SOMEBODY ASKED FOR. Stamp it on the open turn before
-      // anything this Stop sends can reach OpenCode. The hold is the Stop's FIRST
+      // anything this Stop sends can reach the runtime. The hold is the Stop's FIRST
       // request, and its settle (below) can abort the box before the client's
       // own abort leaves the browser. That settle abort does not pass the
       // sandbox proxy that stamps `UserStop`, so without this stamp the turn
       // closed on a bare "Aborted" frame and the user's own Stop read as
       // "stopped before it finished" (prod 2026-09-25). The ledger keeps the
       // stamp only over an abort: a turn that completes drops it, and a named
-      // cause replaces it. Scoped to the session's root OpenCode session, like
+      // cause replaces it. Scoped to the session's root runtime session, like
       // the proxy stamp. The write never throws.
       //
       // A hold over a running turn stops it, so only the turn's prompter, the
@@ -894,7 +894,7 @@ export function registerSessionPromptsRoutes(): void {
         await markTurnStopRequested(
           sessionId,
           'UserStop',
-          { opencodeSessionId: visible.row.runtimeSessionId ?? null },
+          { runtimeSessionId: visible.row.runtimeSessionId ?? null },
           stopper,
         );
       }

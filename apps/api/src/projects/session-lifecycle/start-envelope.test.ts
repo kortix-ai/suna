@@ -98,9 +98,6 @@ describe('the session-open envelope states what THIS call did', () => {
     expect(booting({ runtimeBootWaitFirstSeenAt: '2026-08-26T13:59:30.000Z' })).toBe(
       '2026-08-26T13:59:30.000Z',
     );
-    expect(booting({ opencodeBootWaitFirstSeenAt: '2026-08-26T13:59:20.000Z' })).toBe(
-      '2026-08-26T13:59:20.000Z',
-    );
   });
 
   // `cooling_down` is proven through the real /start route in

@@ -35,7 +35,7 @@ export const HEX40 = /^[0-9a-f]{40}$/;
 
 /**
  * `project` compiles every agent. `agent:<name>` compiles one selected agent.
- * `none` compiles an EMPTY OpenCode config: the answer for a session with no
+ * `none` compiles an EMPTY config (`{}`): the answer for a session with no
  * usable agent (config-releases/session-agent.ts). Its etag is non-null, so a
  * session whose agent the manifest dropped still gets a release ID and still
  * boots, instead of `release_id: null` and no config at all.

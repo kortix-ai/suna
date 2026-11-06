@@ -122,6 +122,10 @@ export function ArtifactLiveAvatars({
             ) : null}
           </span>
         )}
+        {/* Dimmed faces alone do not say why: while the connection is down, the word does. */}
+        {!live && !compact ? (
+          <span className="text-muted-foreground px-1 text-xs">{t('reconnecting')}</span>
+        ) : null}
       </button>
     </PopoverTrigger>
   );

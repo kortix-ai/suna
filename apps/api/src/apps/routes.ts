@@ -42,6 +42,8 @@ import {
 } from './limits';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { projectsApp } from '../projects/lib/app';
+import { clearAppCrashAlerts, dropRetiredAppTriggers, projectCapabilityAllowed, runtimeTriggersNamingApp } from '../projects/surface';
+import { PROJECT_ACTIONS } from '../iam';
 import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
 import {
@@ -67,6 +69,7 @@ import {
 } from '../platform/providers/deprecated';
 import { captureProductEvent } from '../shared/product-analytics';
 import { analyticsSource } from '../middleware/analytics-source';
+import { transitionAppRuntime } from './runtime-status';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -750,12 +753,14 @@ export function registerAppsRoutes(): void {
       method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
       description:
         'The App stops serving at once; its machines and images go. An App with volumes needs `project.app.admin`: ' +
-        'each volume keeps a final snapshot for 7 days, then Kortix purges it.',
+        'each volume keeps a final snapshot for 7 days, then Kortix purges it. The project triggers that name the App ' +
+        '(its work triggers, the schedule that calls it) go with it, listed in `triggers_removed`; that needs ' +
+        '`project.trigger.delete` (403 `app_triggers_need_delete` without it). A session trigger on the App stays with its session.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
       },
       responses: {
-        200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'),
+        200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject, triggers_removed: z.array(z.string()) }), 'Deleted'),
         ...errors(400, 403, 404, 409, 502),
       },
     }),
@@ -770,15 +775,28 @@ export function registerAppsRoutes(): void {
         const admin = await authorizedProject(c, projectId, 'admin');
         if (admin instanceof Response) return admin;
       }
-      // kortix.yaml owns the App's block: remove it (and references to it) first,
-      // or the next `kortix apps deploy` would recreate the App from it.
-      const undeclared = await commitAppRemoval(projectId, row.slug);
+      // The triggers that name the App go with it: without the App they fail on
+      // every fire or raise a silence alert nothing can clear. Removing them is
+      // a trigger delete, so it takes the same permission.
+      const mayRemoveTriggers = await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE);
+      const runtimeTriggers = await runtimeTriggersNamingApp(projectId, row.slug);
+      if (runtimeTriggers.length > 0 && !mayRemoveTriggers) {
+        return c.json({
+          error: `Deleting ${row.slug} also removes the triggers that name it (${runtimeTriggers.join(', ')}); you need permission to delete triggers.`,
+          code: 'app_triggers_need_delete',
+        }, 403);
+      }
+      // kortix.yaml owns the App's block: remove it (and references to it, and
+      // its triggers) first, or the next `kortix apps deploy` would recreate it.
+      const undeclared = await commitAppRemoval(projectId, row.slug, { mayRemoveTriggers });
       if (!undeclared.ok) return c.json({ error: undeclared.error, code: undeclared.code ?? 'manifest_write_failed' }, undeclared.status);
+      const triggersRemoved = [...new Set([...undeclared.removedTriggers, ...runtimeTriggers])].sort();
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
       await db.update(apps).set({ deletedAt: new Date(), desiredState: 'stopped', activeDeploymentId: null, updatedAt: new Date() })
         .where(eq(apps.appId, appId));
+      await dropRetiredAppTriggers(projectId, triggersRemoved);
       const deployments = await db
         .select({
           deploymentId: appDeployments.deploymentId,
@@ -819,7 +837,7 @@ export function registerAppsRoutes(): void {
         deployment.status !== 'deleted' && !IN_PROGRESS_DEPLOYMENT_STATUSES.includes(deployment.status));
       const released = await releaseDeploymentImages(finished);
       const images = { released: released.released, pending: released.pending + building.length };
-      return c.json({ ok: true, images });
+      return c.json({ ok: true, images, triggers_removed: triggersRemoved });
     },
   );
 
@@ -1158,17 +1176,18 @@ export function registerAppsRoutes(): void {
           if (runtime) {
             await new AppHostingProvider().stop(runtime.provider as SandboxProviderName, runtime.externalId);
             const now = new Date();
-            await db.update(appRuntimes).set({
-              status: 'stopped',
+            await transitionAppRuntime('stop', eq(appRuntimes.runtimeId, runtime.runtimeId), {
               stoppedAt: now,
               activityLeaseUntil: null,
               idleDeadlineAt: null,
               wakeLeaseOwner: null,
               wakeLeaseUntil: null,
               updatedAt: now,
-            }).where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+            });
             await pauseComputeSession(runtime.runtimeId, now);
           }
+          // Stopped on purpose: keep-alive no longer checks it, so its crash streaks end here.
+          await clearAppCrashAlerts({ projectId, appSlug: app.slug, running: false }).catch(() => 0);
         } else {
           const loaded = await loadPublicApp(app.routeKey);
           if (!loaded) return c.json({ error: 'Active deployment has no runtime' }, 409);

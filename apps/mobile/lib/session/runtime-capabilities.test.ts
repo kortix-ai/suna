@@ -2,12 +2,12 @@ import { describe, expect, test } from 'bun:test';
 
 import { recordRuntimeCapabilities, runtimeSupportsAt, unsupportedFeatureMessage } from './runtime-capabilities';
 
-const PI = ['file.import', 'session.subagents'];
-const OPENCODE = ['file.import', 'session.rewind', 'session.compact', 'session.commands', 'session.subagents'];
+const NARROW = ['file.import', 'session.subagents'];
+const FULL = ['file.import', 'session.rewind', 'session.compact', 'session.commands', 'session.subagents'];
 
 describe('runtime capabilities', () => {
-  test("a pi runtime's list hides rewind, compact, and commands on that computer only", () => {
-    recordRuntimeCapabilities('https://a', PI);
+  test("a runtime's list hides the features it does not list, on that computer only", () => {
+    recordRuntimeCapabilities('https://a', NARROW);
     expect(runtimeSupportsAt('https://a', 'session.rewind')).toBe(false);
     expect(runtimeSupportsAt('https://a', 'session.compact')).toBe(false);
     expect(runtimeSupportsAt('https://a', 'session.commands')).toBe(false);
@@ -16,10 +16,10 @@ describe('runtime capabilities', () => {
   });
 
   test('an answer without a list keeps the last one; a new list replaces it', () => {
-    recordRuntimeCapabilities('https://a', PI);
+    recordRuntimeCapabilities('https://a', NARROW);
     recordRuntimeCapabilities('https://a', undefined);
     expect(runtimeSupportsAt('https://a', 'session.rewind')).toBe(false);
-    recordRuntimeCapabilities('https://a', OPENCODE);
+    recordRuntimeCapabilities('https://a', FULL);
     expect(runtimeSupportsAt('https://a', 'session.rewind')).toBe(true);
   });
 
@@ -49,7 +49,7 @@ describe('unsupportedFeatureMessage', () => {
 describe('the SDK capability gate', () => {
   test("the app's health probe reports the list to the SDK's connection store", async () => {
     const { useRuntimeConnectionStore } = await import('@kortix/sdk/react');
-    recordRuntimeCapabilities('https://a', PI);
-    expect(useRuntimeConnectionStore.getState().runtimeCapabilities).toEqual(PI);
+    recordRuntimeCapabilities('https://a', NARROW);
+    expect(useRuntimeConnectionStore.getState().runtimeCapabilities).toEqual(NARROW);
   });
 });

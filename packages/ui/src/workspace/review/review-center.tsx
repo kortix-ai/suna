@@ -108,6 +108,8 @@ import {
   decideApprovalAction,
   filterItems,
   groupBySession,
+  isPromiseLike,
+  REVIEW_VERDICT_ANNOUNCED,
   sessionOptions,
   setStatus,
 } from './review-reducer';
@@ -575,8 +577,14 @@ export function ReviewCenter({
   onSegmentChange?: (segment: ReviewSegment) => void;
   /** Connected mode: the segment has more pages than `initialItems` holds. */
   loadMore?: { onLoadMore: () => void; isLoading: boolean; isError: boolean };
-  /** Connected mode: fire the server verdict for a single item. */
-  onAct?: (id: string, verdict: ReviewVerdict, feedback?: string) => void;
+  /**
+   * Connected mode: fire the server verdict for a single item. Return a
+   * promise to make the inbox wait for the server: it rolls the optimistic
+   * status back on a rejection (the host toasts the error), and it shows its
+   * own success toast only on resolve, unless the host resolves with
+   * `REVIEW_VERDICT_ANNOUNCED` because it already told the user.
+   */
+  onAct?: (id: string, verdict: ReviewVerdict, feedback?: string) => unknown;
   /** Connected mode: fire the server verdict for many items (the select-mode
    *  bar and `d`). Resolves with one result per id; absent results mean all ok. */
   onBulkAct?: (
@@ -655,6 +663,11 @@ export function ReviewCenter({
   // next `initialItems` reconciliation (the refetch that follows a mutation).
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingDecision, setPendingDecision] = useState<'approve' | 'deny' | null>(null);
+  // The single verdict still waiting for the server (an `onAct` that returned
+  // a promise). While it waits, a poll keeps its optimistic status and does
+  // not clear the spinner, so the row cannot flicker back to "needs you" and a
+  // second verdict cannot go out.
+  const [inFlight, setInFlight] = useState<{ id: string; status: ReviewStatus } | null>(null);
 
   const undoRef = useRef<ReviewItem[] | null>(null);
   // Query root for scroll-into-view — a container of the [data-idx] rows. It wraps
@@ -820,9 +833,13 @@ export function ReviewCenter({
   const [initialItemsSeen, setInitialItemsSeen] = useState(initialItems);
   if (initialItems !== initialItemsSeen) {
     setInitialItemsSeen(initialItems);
-    if (initialItems) setItems(initialItems);
-    setPendingId(null);
-    setPendingDecision(null);
+    if (initialItems) {
+      setItems(inFlight ? setStatus(initialItems, inFlight.id, inFlight.status) : initialItems);
+    }
+    if (!inFlight) {
+      setPendingId(null);
+      setPendingDecision(null);
+    }
   }
 
   // Detect items that arrived since the user last looked → flag them "fresh".
@@ -875,15 +892,37 @@ export function ReviewCenter({
     next: ReviewItem[],
     message: string,
     tone: 'success' | 'info' = 'success',
-    server?: () => void,
+    server?: () => unknown,
+    optimistic?: { id: string; status: ReviewStatus },
   ) {
-    if (connected) {
-      setItems(next);
-      server?.();
-      (tone === 'info' ? infoToast : successToast)(message);
-    } else {
+    if (!connected) {
       commit(next, message, tone);
+      return;
     }
+    const before = items;
+    setItems(next);
+    const result = server?.();
+    const announce = () => (tone === 'info' ? infoToast : successToast)(message);
+    if (!isPromiseLike(result)) {
+      announce();
+      return;
+    }
+    // Wait for the server: no "done" toast before it answers, and a refused
+    // verdict puts the item back where it was.
+    if (optimistic) setInFlight(optimistic);
+    void Promise.resolve(result)
+      .then(
+        (value) => {
+          if (value !== REVIEW_VERDICT_ANNOUNCED) announce();
+        },
+        () => setItems(before),
+      )
+      .finally(() => {
+        if (!optimistic) return;
+        setInFlight(null);
+        setPendingId(null);
+        setPendingDecision(null);
+      });
   }
 
   /** Every verdict path checks here first, so a refused verdict never commits. */
@@ -896,6 +935,8 @@ export function ReviewCenter({
     resolve: (id, status, message, feedback) => {
       const verdict = statusToVerdict(status);
       if (verdict && !allowsId(id, verdict)) return;
+      // One verdict per item at a time.
+      if (inFlight?.id === id) return;
       if (connected && (status === 'approved' || status === 'rejected')) {
         setPendingId(id);
         setPendingDecision(status === 'approved' ? 'approve' : 'deny');
@@ -905,6 +946,7 @@ export function ReviewCenter({
         message ?? 'Updated',
         status === 'rejected' || status === 'changes_requested' ? 'info' : 'success',
         verdict && onAct ? () => onAct(id, verdict, feedback) : undefined,
+        { id, status },
       );
     },
     decideAction: (itemId, actionId, decision) =>

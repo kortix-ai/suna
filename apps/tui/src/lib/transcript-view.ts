@@ -3,7 +3,7 @@
  * `useSession().messages` returns, so every rule here is unit-testable.
  */
 
-/** The structural shape of an OpenCode message part this file reads. */
+/** The structural shape of a runtime message part this file reads. */
 export interface PartLike {
   type: string;
   text?: string;

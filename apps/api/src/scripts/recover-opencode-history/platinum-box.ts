@@ -7,9 +7,10 @@
  *      accepted it. Kortix does not see this start: the session row stays
  *      `stopped`, the box's session token stays refused (no turn, no model
  *      call, no billing), and the sidebar does not move.
- *   2. One exec runs `COPY_SCRIPT` (box.ts).
- *   3. `GET /files` downloads the copies and the offloaded attachments.
- *   4. `release` removes the temp copy, then stops (confirmed) and archives
+ *   2. One exec runs `copyScript` (box.ts): it measures the store and splits
+ *      it into parts under Platinum's 256 MiB download cap.
+ *   3. `GET /files` downloads the parts and the offloaded attachments.
+ *   4. `release` removes the temp copies, then stops (confirmed) and archives
  *      the box when the Kortix row is still parked.
  */
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -17,17 +18,21 @@ import { join } from 'node:path';
 import { PlatinumProvider } from '../../platform/providers/platinum';
 import { PlatinumHttpError, platinumFetch, platinumJson } from '../../shared/platinum';
 import {
-  COPY_SCRIPT,
+  assembleStore,
+  BOX_TEMP_GLOB,
+  copyScript,
   isSafeBoxPath,
   MAX_FILE_BYTES,
   parseCopyOutput,
   RecoverableBoxError,
+  retryTransient,
   type BoxReader,
   type BoxState,
-  type CopiedStore,
+  type StoreCopy,
 } from './box';
 
-const EXEC_TIMEOUT_MS = 60_000;
+/** Splitting a store of a few GB on a box restored from archive takes minutes. */
+const COPY_EXEC_TIMEOUT_MS = 5 * 60_000;
 const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
 /** Platinum's worst observed restore from archive is ~546 s. */
 const START_BUDGET_MS = 10 * 60_000;
@@ -110,7 +115,7 @@ async function waitSettled(externalId: string): Promise<BoxState> {
   }
 }
 
-async function download(externalId: string, path: string, to: string): Promise<number> {
+async function fetchBytes(externalId: string, path: string): Promise<Buffer> {
   const res = await paced(async () => {
     const r = await platinumFetch(`/v1/sandboxes/${externalId}/files?path=${encodeURIComponent(path)}`, {
       signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
@@ -122,12 +127,11 @@ async function download(externalId: string, path: string, to: string): Promise<n
     return r;
   });
   const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.length >= MAX_FILE_BYTES) throw new RecoverableBoxError(`a store file is at the ${MAX_FILE_BYTES} B download cap`, false);
-  await writeFile(to, bytes, { mode: 0o600 });
-  return bytes.length;
+  if (bytes.length >= MAX_FILE_BYTES) throw new RecoverableBoxError(`a file is at the ${MAX_FILE_BYTES} B download cap`, false);
+  return bytes;
 }
 
-async function copyStore(externalId: string, localDir: string): Promise<CopiedStore | null> {
+async function copyStore(externalId: string, localDir: string, maxStoreBytes: number): Promise<StoreCopy> {
   try {
     await paced(() => provider.start(externalId));
   } catch (err) {
@@ -135,19 +139,14 @@ async function copyStore(externalId: string, localDir: string): Promise<CopiedSt
     throw new RecoverableBoxError(`start failed: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}`, status !== 404);
   }
   await waitRunning(externalId);
-  const exec = await paced(() => provider.exec(externalId, ['sh', '-c', COPY_SCRIPT], { timeoutMs: EXEC_TIMEOUT_MS }));
+  const exec = await paced(() => provider.exec(externalId, ['sh', '-c', copyScript(maxStoreBytes)], { timeoutMs: COPY_EXEC_TIMEOUT_MS }));
   if (exec.exitCode !== 0) throw new RecoverableBoxError(`copy exec exit ${exec.exitCode}: ${exec.stderr.slice(0, 300)}`, true);
   const found = parseCopyOutput(exec.stdout);
-  if (!found) return null;
-  await mkdir(localDir, { recursive: true, mode: 0o700 });
-  const dbPath = join(localDir, 'opencode.db');
-  let bytes = await download(externalId, `${found.boxTemp}/opencode.db`, dbPath);
-  try {
-    bytes += await download(externalId, `${found.boxTemp}/opencode.db-wal`, `${dbPath}-wal`);
-  } catch (err) {
-    if (!(err instanceof PlatinumHttpError && err.status === 404)) throw err; // no WAL: the store was checkpointed
-  }
-  return { dbPath, bytes, ...found };
+  if (found.kind !== 'found') return found;
+  // A network error or a 5xx is worth another try; a 4xx is an answer.
+  const transient = (err: unknown) => !(err instanceof RecoverableBoxError) && (!(err instanceof PlatinumHttpError) || err.status >= 500);
+  const fetchPart = (path: string) => retryTransient(() => fetchBytes(externalId, path), transient);
+  return { kind: 'copied', ...(await assembleStore(found, localDir, maxStoreBytes, fetchPart)) };
 }
 
 async function copySidecars(externalId: string, paths: string[], localDir: string): Promise<Map<string, Buffer>> {
@@ -157,8 +156,9 @@ async function copySidecars(externalId: string, paths: string[], localDir: strin
     if (!isSafeBoxPath(path)) continue;
     const to = join(localDir, `sidecar-${i}`);
     try {
-      await download(externalId, path, to);
-      out.set(path, Buffer.from(await Bun.file(to).bytes()));
+      const bytes = await fetchBytes(externalId, path);
+      await writeFile(to, bytes, { mode: 0o600 });
+      out.set(path, bytes);
     } catch (err) {
       if (err instanceof PlatinumHttpError && err.status === 404) continue;
       throw err;
@@ -167,8 +167,12 @@ async function copySidecars(externalId: string, paths: string[], localDir: strin
   return out;
 }
 
-async function release(externalId: string, boxTemp: string | null, stillParked: () => Promise<boolean>): Promise<'parked' | 'left-running'> {
-  if (boxTemp) await paced(() => provider.exec(externalId, ['rm', '-rf', boxTemp], { timeoutMs: 20_000 })).catch(() => undefined);
+async function release(externalId: string, stillParked: () => Promise<boolean>): Promise<'parked' | 'left-running'> {
+  // Only a running box takes an exec. A box another writer stopped keeps its copy
+  // until the next attempt's copy script removes it.
+  if ((await state(externalId).catch(() => 'other')) === 'running') {
+    await paced(() => provider.exec(externalId, ['sh', '-c', `rm -rf ${BOX_TEMP_GLOB}`], { timeoutMs: 20_000 })).catch(() => undefined);
+  }
   // The park read and the stop are not atomic, and no Kortix writer honors a
   // recovery claim. So read as late as possible, and when a wake claimed the row
   // after the stop landed, start the box again: the wake owns it.

@@ -28,7 +28,10 @@ export { revertIdleSessionFallbacks } from './lib/session-model-fallback-revert'
 // Chat (`chat`): a thread's board of the chat's other threads (consumed by the turn-start path).
 export { chatThreadBoardTurn } from './lib/chat-threads';
 export { sessionWhereTurn } from './lib/session-where';
-export { notifyMessageMentions } from './lib/space-posts';
+export { messageAddressesOnlyPeople, notifyMessageMentions } from './lib/space-posts';
+export { runSpaceWatcherTick } from './lib/space-watch/wake';
+export { runGoalReconcilerTick } from './goals/reconcile';
+export { sessionSpaceAgents } from './lib/front-thread';
 
 // A person's pins and archive (consumed by account erasure and offboarding).
 export { deleteMemberSessionStates, deleteUserSessionStates } from './lib/session-user-state';
@@ -78,7 +81,13 @@ export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
 export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
-export { assertProjectCapability, loadProjectForUser } from './lib/access';
+export { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from './lib/access';
+
+// An App delete takes the triggers that name the App (consumed by ../apps routes and app-manifest).
+export { dropRetiredAppTriggers, runtimeTriggersNamingApp, withoutAppTriggers } from './lib/app-trigger-retire';
+
+// An always-on App that keeps crashing alerts the triggers that name it (consumed by ../apps/idle-reaper).
+export { clearAppCrashAlerts, raiseAppCrashAlerts } from './lib/app-health-alerts';
 
 // Who may decide a gated connector call (consumed by ../setup-links/approval-app,
 // so the approval page refuses exactly whom the resolve route refuses).
@@ -92,6 +101,8 @@ export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets, resolveP
 export {
   APP_EVENT_LOG_STATUSES,
   asTestEvents,
+  emitAppPlatformEvent,
+  isAppPlatformEvent,
   decodeAppEventCursor,
   ingestAppEvents,
   listAppEventLog,
@@ -217,3 +228,9 @@ export {
 } from './git/push-manifest-check';
 // A manifest write refused while the default branch's kortix.yaml is not YAML (consumed by the HTTP error handler).
 export { ManifestWriteRefusedError } from './manifest-io';
+
+// Session and sandbox status transitions (consumed by the preview proxy's
+// lifecycle writes) and the canonical live session set (consumed by every
+// domain that counts or stops live sessions).
+export { settleLiveSessionsOfAccounts, transitionSandbox, transitionSession } from './session-lifecycle/status-transitions';
+export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './lib/session-status';
