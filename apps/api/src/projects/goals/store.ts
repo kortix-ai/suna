@@ -195,6 +195,19 @@ export async function setGoalRuntimeFields(goalId: string, patch: Pick<GoalPatch
   await db.update(projectGoals).set(patch).where(eq(projectGoals.goalId, goalId));
 }
 
+/**
+ * Install `next` as the goal's heartbeat only while the row still names
+ * `expected` (compare-and-set). False: another writer installed one first.
+ */
+export async function installGoalHeartbeat(goalId: string, expected: string | null, next: string, nextWakeAt: Date | null): Promise<boolean> {
+  const rows = await db
+    .update(projectGoals)
+    .set({ heartbeatReminderId: next, nextWakeAt })
+    .where(and(eq(projectGoals.goalId, goalId), sql`${projectGoals.heartbeatReminderId} is not distinct from ${expected}`))
+    .returning({ id: projectGoals.goalId });
+  return rows.length === 1;
+}
+
 export async function dbNow(q: Pick<typeof db, 'execute'> = db): Promise<Date> {
   const result = await q.execute(sql`select now() as now`);
   const rows = (Array.isArray(result) ? result : (result as { rows?: unknown[] }).rows ?? []) as Array<{ now: string | Date }>;

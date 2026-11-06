@@ -68,6 +68,7 @@ import {
   getGoal,
   goalFolderTaken,
   goalOfSession,
+  installGoalHeartbeat,
   insertGoal,
   setGoalRuntimeFields,
   writeGoal,
@@ -302,7 +303,8 @@ export async function finishGoalSetup(project: ProjectRow, goal: GoalRow): Promi
           logger.warn('[goals] heartbeat not created', { goal_id: goal.goalId, error: hb.error });
           return reread(goal);
         }
-        await setGoalRuntimeFields(goal.goalId, { heartbeatReminderId: hb.id, nextWakeAt: hb.nextFireAt });
+        // A concurrent setup (a retry, the reconciler) may install first: keep one heartbeat.
+        if (!(await installGoalHeartbeat(goal.goalId, null, hb.id, hb.nextFireAt))) await deleteHeartbeat(goal.projectId, hb.id);
       }
       await mark('heartbeat');
     }
@@ -529,9 +531,22 @@ export async function requestVerification(ctx: GoalContext, goalId: string, req:
       event: ev(ctx.actor, 'verification_requested', `Verification attempt ${attempt} started.`, { verifier_session_id: verifierId, attempt }),
     };
   }, { now: ctx.now });
-  await goalEffects().queuePrompt({
-    project: ctx.project,
-    sessionId: verifierId,
+  await queueVerifierPrompt(ctx.project, result.row);
+  return reread(result.row);
+}
+
+/**
+ * Queue the verifier's first prompt for the current attempt. A prompt that did
+ * not queue is recorded in `setup.verifier_prompt` (the attempt), and the
+ * reconciler retries it with the same key until it queues: a verification is
+ * never left with a verifier that was never asked.
+ */
+export async function queueVerifierPrompt(project: ProjectRow, goal: GoalRow): Promise<boolean> {
+  const attempt = goal.verification?.attempt ?? goal.verificationAttempts;
+  if (!goal.verifierSessionId) return false;
+  const queued = await goalEffects().queuePrompt({
+    project,
+    sessionId: goal.verifierSessionId,
     userId: goal.createdByUserId,
     text:
       `You verify goal ${goal.goalId} ("${goal.title}") in ${goal.boxFolder}. You did not do the work. ` +
@@ -539,7 +554,14 @@ export async function requestVerification(ctx: GoalContext, goalId: string, req:
       'then give the verdict with `kortix goals verdict`: exactly one result (pass, fail or inconclusive) per criterion.',
     key: `goal-verify:${goal.goalId}:${attempt}`,
   });
-  return reread(result.row);
+  const pending = queued ? null : attempt;
+  if ((goal.setup.verifier_prompt ?? null) !== pending) {
+    const setup: Record<string, unknown> = { ...goal.setup };
+    if (pending === null) delete setup.verifier_prompt;
+    else setup.verifier_prompt = pending;
+    await setGoalRuntimeFields(goal.goalId, { setup });
+  }
+  return queued;
 }
 
 async function blockSessionCap(goal: GoalRow, ctx: GoalContext): Promise<never> {
@@ -838,8 +860,14 @@ export async function applyHeartbeat(goal: GoalRow): Promise<void> {
   }
 }
 
-/** A new heartbeat on `sessionId`, then the old one deleted. */
+/**
+ * A new heartbeat on `sessionId`, installed by compare-and-set on the id the row
+ * held when this started, then the old one deleted. Two concurrent moves both
+ * create one; only the first installs, and the other deletes its own, so no
+ * enabled reminder is left that the admission gate cannot find.
+ */
 export async function moveHeartbeat(goal: GoalRow, sessionId: string, enabled: boolean): Promise<void> {
+  const previous = (await getGoal(goal.projectId, goal.goalId))?.heartbeatReminderId ?? null;
   const created = await createHeartbeat({
     projectId: goal.projectId,
     sessionId,
@@ -855,8 +883,11 @@ export async function moveHeartbeat(goal: GoalRow, sessionId: string, enabled: b
     logger.warn('[goals] heartbeat not created', { goal_id: goal.goalId, error: created.error });
     return;
   }
-  await setGoalRuntimeFields(goal.goalId, { heartbeatReminderId: created.id, nextWakeAt: created.nextFireAt });
-  if (goal.heartbeatReminderId && goal.heartbeatReminderId !== created.id) await deleteHeartbeat(goal.projectId, goal.heartbeatReminderId);
+  if (!(await installGoalHeartbeat(goal.goalId, previous, created.id, created.nextFireAt ?? null))) {
+    await deleteHeartbeat(goal.projectId, created.id);
+    return;
+  }
+  if (previous && previous !== created.id) await deleteHeartbeat(goal.projectId, previous);
 }
 
 export async function dropHeartbeat(goal: GoalRow): Promise<void> {

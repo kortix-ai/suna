@@ -24,7 +24,7 @@ import type { ProjectRow } from '../lib/serializers';
 import { readHeartbeat, sessionHealth } from './effects';
 import { notifyGoal } from './notify';
 import { isOpenState, utcDay } from './rules';
-import { applyHeartbeat, dropHeartbeat, finishGoalSetup, heartbeatWanted, moveHeartbeat } from './service';
+import { applyHeartbeat, dropHeartbeat, finishGoalSetup, heartbeatWanted, moveHeartbeat, queueVerifierPrompt } from './service';
 import { appendGoalEvent, dbNow, goalsToReconcile, writeGoal, type GoalRow } from './store';
 
 export const GOAL_RECONCILE_BATCH = 50;
@@ -105,6 +105,11 @@ export async function reconcileGoal(goal: GoalRow, now: Date, result: GoalReconc
       result.ownerLost += 1;
       return;
     }
+  }
+  // A verifier prompt that did not queue (requestVerification recorded it): ask again, same key.
+  if (goal.state === 'verifying' && goal.setup.verifier_prompt === goal.verification?.attempt) {
+    const project = await loadProject(goal.projectId);
+    if (project && (await queueVerifierPrompt(project, goal))) result.repaired += 1;
   }
   if (goal.state === 'verifying' && goal.verification?.started_at) {
     const age = now.getTime() - Date.parse(goal.verification.started_at);

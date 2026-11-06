@@ -37,6 +37,8 @@ const BO = crypto.randomUUID();
 const volume = new FakeVolume();
 
 const prompts: Array<{ sessionId: string; key: string; text: string; userId: string | null }> = [];
+/** Prompt keys whose next queue attempt fails once (a lifecycle queue outage). */
+const failPromptOnce = new Set<string>();
 const aborted: string[] = [];
 
 let project: ProjectRow;
@@ -103,6 +105,7 @@ beforeAll(async () => {
       return { sessionId: input.sessionId };
     },
     async queuePrompt(input) {
+      if (failPromptOnce.delete(input.key)) return false;
       if (!prompts.some((p) => p.key === input.key)) prompts.push({ sessionId: input.sessionId, key: input.key, text: input.text, userId: input.userId });
       return true;
     },
@@ -329,6 +332,21 @@ describe('verification', () => {
     expect(r2.violations!.every((v) => v.includes('does not exist'))).toBe(true);
   });
 
+  test('a verifier prompt that did not queue is retried by the reconciler with the same key', async () => {
+    const { goal, owner } = await readyGoal();
+    failPromptOnce.add(`goal-verify:${goal.goalId}:1`);
+    const verifying = await goals.requestVerification(ctx(owner), goal.goalId, { revision: goal.revision });
+    expect(verifying.state).toBe('verifying');
+    expect(prompts.some((p) => p.key === `goal-verify:${goal.goalId}:1`)).toBe(false);
+    expect((await getGoal(PROJECT, goal.goalId))!.setup.verifier_prompt).toBe(1);
+    let cursor: string | null = null;
+    do {
+      cursor = (await runGoalReconcilerTick(cursor)).cursor;
+    } while (cursor);
+    expect(prompts.filter((p) => p.key === `goal-verify:${goal.goalId}:1` && p.sessionId === verifying.verifierSessionId).length).toBe(1);
+    expect((await getGoal(PROJECT, goal.goalId))!.setup.verifier_prompt).toBeUndefined();
+  });
+
   test('a verdict must cover exactly the current criteria; the owner lineage and stale criteria are refused; a full pass is done', async () => {
     const { goal, owner } = await readyGoal();
     const verifying = await goals.requestVerification(ctx(owner), goal.goalId, { revision: goal.revision });
@@ -442,6 +460,15 @@ describe('the heartbeat belongs to the API', () => {
     expect(await goalHeartbeatEditRefusal(PROJECT, goal.heartbeatReminderId!, true)).toContain(goal.goalId);
     expect(await goalHeartbeatEditRefusal(PROJECT, goal.heartbeatReminderId!, false)).toBeNull();
     expect(await goalHeartbeatEditRefusal(PROJECT, 'reminder.000000000000', true)).toBeNull();
+  });
+
+  test('two concurrent heartbeat moves leave exactly one reminder, the one the goal names', async () => {
+    const goal = await activeGoal();
+    const { moveHeartbeat } = await import('../projects/goals/service');
+    await Promise.all([moveHeartbeat(goal, goal.ownerSessionId!, true), moveHeartbeat(goal, goal.ownerSessionId!, true)]);
+    const rows = await db.select().from(projectTriggerRuntime).where(and(eq(projectTriggerRuntime.projectId, PROJECT), eq(projectTriggerRuntime.sessionId, goal.ownerSessionId!)));
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.slug).toBe((await getGoal(PROJECT, goal.goalId))!.heartbeatReminderId!);
   });
 
   test('a successor session takes over the heartbeat and becomes the owner; at the session cap no successor starts', async () => {
