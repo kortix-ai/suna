@@ -123,3 +123,8 @@ export function takeFlags<T extends object>(
 export function fromWorkspaceAlias<T extends string | undefined>(value: T): T {
   return (value === 'workspace' ? 'project' : value) as T;
 }
+
+/** The reverse of {@link fromWorkspaceAlias}, for output: the API's `project` prints as `workspace`. */
+export function toWorkspaceAlias(value: string): string {
+  return value === 'project' ? 'workspace' : value;
+}

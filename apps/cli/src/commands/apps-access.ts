@@ -3,7 +3,7 @@ import type { AppAccessMode } from '@kortix/sdk';
 import { emitJson, fail, takeFlagValue } from '../command-helpers.ts';
 import { C } from '../style.ts';
 import { APP_ACCESS_MODES, type ContextOptions, context, csv, resolveApp, scoped } from './apps-deploy.ts';
-import { fromWorkspaceAlias } from '../command-argv.ts';
+import { fromWorkspaceAlias, toWorkspaceAlias } from '../command-argv.ts';
 
 // `kortix apps access` and `access-link` — who may open an App, and the
 // short-lived browser URL that bypasses the check.
@@ -58,7 +58,7 @@ export async function accessCommand(
   if (json) emitJson(result);
   else {
     process.stdout.write(
-      `\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${result.access.mode}\n  viewer  ${result.access.viewer_token_scope}\n`,
+      `\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${toWorkspaceAlias(result.access.mode)}\n  viewer  ${result.access.viewer_token_scope}\n`,
     );
     if (result.access.member_ids.length)
       process.stdout.write(`  members ${result.access.member_ids.join(', ')}\n`);

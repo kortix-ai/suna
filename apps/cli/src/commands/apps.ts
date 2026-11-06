@@ -5,7 +5,7 @@ import { parseDocument } from 'yaml';
 import { dirname, resolve } from 'node:path';
 import type { App, AppDeployment, CreateAppInput, UpdateAppInput } from '@kortix/sdk';
 
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, toWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -738,7 +738,7 @@ async function showCommand(
           : 'not deployed';
     process.stdout.write(`\n  ${C.bold}${app.name}${C.reset}\n  ${C.dim}${hosting}${C.reset}\n${appLines(app)}`);
     if (!app.external_url && app.access_mode !== 'public') {
-      process.stdout.write(`  ${C.dim}${pad('access', 14)}${C.reset}${app.access_mode}\n`);
+      process.stdout.write(`  ${C.dim}${pad('access', 14)}${C.reset}${toWorkspaceAlias(app.access_mode)}\n`);
       process.stdout.write(
         `  Open in a browser: kortix apps access-link ${app.app_id} --workspace ${ctx.projectId}${options.hostArg ? ` --host ${options.hostArg}` : ''}\n`,
       );

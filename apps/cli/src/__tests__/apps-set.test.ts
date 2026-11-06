@@ -207,7 +207,8 @@ describe('kortix apps set', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain(`access        ${mode}`);
+    // The wire's `project` prints as the user-facing `workspace`.
+    expect(r.stdout).toContain(`access        ${mode === 'project' ? 'workspace' : mode}`);
     expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --workspace ${PROJECT}`);
     expect(calls.every((call) => call.method === 'GET')).toBe(true);
   });

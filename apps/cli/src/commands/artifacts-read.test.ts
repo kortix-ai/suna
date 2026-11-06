@@ -56,9 +56,9 @@ test('artifacts ls prints one row per artifact: short id, type, visibility, age,
     const result = await run(['ls'], base);
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trimEnd().split('\n')).toEqual([
-      '22222222  doc   project  5m ago   ★ Q3 churn report  /Artifacts/q3.md',
-      '33333333  html  private  3h ago   Old deck  /Artifacts/deck',
-      '44444444  doc   project  45d ago  Ancient  /Artifacts/q3.md',
+      '22222222  doc   workspace  5m ago   ★ Q3 churn report  /Artifacts/q3.md',
+      '33333333  html  private    3h ago   Old deck  /Artifacts/deck',
+      '44444444  doc   workspace  45d ago  Ancient  /Artifacts/q3.md',
     ]);
   });
 });
@@ -69,7 +69,7 @@ test('artifacts info prints the title line, the facts line, entry_version, descr
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trimEnd().split('\n')).toEqual([
       `Q3 churn report  ${aid}`,
-      '  doc · project + 2 people · by Ada · updated 5m ago',
+      '  doc · workspace + 2 people · by Ada · updated 5m ago',
       '  entry_version v-7',
       '  Churn by cohort',
       '  1234     index.md',

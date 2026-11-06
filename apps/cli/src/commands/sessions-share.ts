@@ -20,7 +20,7 @@ import {
 import type { ApiClient } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { C, help, pad, status } from '../style.ts';
-import { fromWorkspaceAlias } from '../command-argv.ts';
+import { fromWorkspaceAlias, toWorkspaceAlias } from '../command-argv.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -427,7 +427,7 @@ export async function runSessionsLinks(argv: string[]): Promise<number> {
     emitJson(created);
     return 0;
   }
-  process.stdout.write(`\n${status.ok(`Public link minted ${C.dim}(${created.mode})${C.reset}`)}\n`);
+  process.stdout.write(`\n${status.ok(`Public link minted ${C.dim}(${toWorkspaceAlias(created.mode)})${C.reset}`)}\n`);
   process.stdout.write(`  ${C.dim}share_id ${C.reset}${created.share_id}\n`);
   process.stdout.write(`  ${C.dim}url      ${C.reset}${C.cyan}${shareUrl(created)}${C.reset}\n`);
   if (created.expires_at) {

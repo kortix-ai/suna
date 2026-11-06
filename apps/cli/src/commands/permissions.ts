@@ -1,4 +1,4 @@
-import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias, toWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   resolveAccountContext,
@@ -133,7 +133,7 @@ export async function runPermissions(argv: string[]): Promise<number> {
         process.stdout.write('\n');
         process.stdout.write(`  ${C.bold}${hit.action}${C.reset}\n`);
         process.stdout.write(`  ${C.dim}${hit.description}${C.reset}\n\n`);
-        process.stdout.write(`  ${C.dim}scope${C.reset}      ${hit.scope_type}\n`);
+        process.stdout.write(`  ${C.dim}scope${C.reset}      ${toWorkspaceAlias(hit.scope_type)}\n`);
         process.stdout.write(`  ${C.dim}resource${C.reset}   ${hit.resource_type}\n`);
         process.stdout.write(`  ${C.dim}area${C.reset}       ${hit.area}\n`);
         process.stdout.write(`  ${C.dim}level${C.reset}      ${hit.level}\n`);

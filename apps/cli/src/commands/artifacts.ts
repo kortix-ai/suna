@@ -20,7 +20,7 @@ import {
 import { formatRelative } from '@kortix/shared';
 import { withKortixScope } from '../api/sdk.ts';
 import { ApiError as CliApiError } from '../api/client.ts';
-import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias, toWorkspaceAlias } from '../command-argv.ts';
 import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { artifactsComments } from './artifacts-comments.ts';
@@ -145,7 +145,7 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
       if (f.json) return out(list, '');
       if (!list.length) return out(null, 'No artifacts yet. Publish one with `kortix artifacts publish <file>`.');
       for (const a of list) {
-        process.stdout.write(`${C.dim}${short(a.artifact_id)}${C.reset}  ${pad(a.type, 6)}${pad(a.visibility, 9)}${pad(formatRelative(a.updated_at, { maxRelativeDays: null }) ?? '—', 9)}${a.pinned ? '★ ' : ''}${a.title}  ${C.dim}${a.path}${C.reset}\n`);
+        process.stdout.write(`${C.dim}${short(a.artifact_id)}${C.reset}  ${pad(a.type, 6)}${pad(toWorkspaceAlias(a.visibility), 11)}${pad(formatRelative(a.updated_at, { maxRelativeDays: null }) ?? '—', 9)}${a.pinned ? '★ ' : ''}${a.title}  ${C.dim}${a.path}${C.reset}\n`);
       }
       return 0;
     }
@@ -157,7 +157,7 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
       if (f.json) return out(a, '');
       process.stdout.write(`${C.bold}${a.title}${C.reset}  ${C.dim}${a.artifact_id}${C.reset}\n`);
       if (sub === 'info') {
-        process.stdout.write(`  ${a.type} · ${a.visibility}${a.shared_with_user_ids.length ? ` + ${a.shared_with_user_ids.length} people` : ''} · by ${a.created_by.name ?? a.created_by.email ?? a.created_by.user_id} · updated ${formatRelative(a.updated_at, { maxRelativeDays: null }) ?? '—'}${a.can_edit ? '' : ' · view only'}\n`);
+        process.stdout.write(`  ${a.type} · ${toWorkspaceAlias(a.visibility)}${a.shared_with_user_ids.length ? ` + ${a.shared_with_user_ids.length} people` : ''} · by ${a.created_by.name ?? a.created_by.email ?? a.created_by.user_id} · updated ${formatRelative(a.updated_at, { maxRelativeDays: null }) ?? '—'}${a.can_edit ? '' : ' · view only'}\n`);
         process.stdout.write(`  ${C.dim}entry_version${C.reset} ${a.entry_version ?? '-'}\n`);
         if (a.description) process.stdout.write(`  ${a.description}\n`);
         for (const file of a.version.files) process.stdout.write(`  ${C.dim}${pad(String(file.size), 9)}${C.reset}${file.path}\n`);
@@ -211,7 +211,7 @@ async function artifactsRead(sub: string, { pid, client, f, a0, a1, resolve, out
         ...(people ? { shared_with_user_ids: people } : {}),
       });
       if (f.json) return out(a, '');
-      process.stdout.write(`${status.ok(`"${a.title}" is ${a.visibility}${a.shared_with_user_ids.length ? `, shared with ${a.shared_with_user_ids.length} people` : ''}`)}\n`);
+      process.stdout.write(`${status.ok(`"${a.title}" is ${toWorkspaceAlias(a.visibility)}${a.shared_with_user_ids.length ? `, shared with ${a.shared_with_user_ids.length} people` : ''}`)}\n`);
       printLinks(a);
       return 0;
     }
@@ -334,7 +334,7 @@ export async function runArtifacts(argv: string[]): Promise<number> {
       const [a0, a1] = rest;
       const shared = (a: Artifact, verb: string) => {
         if (f.json) return out(a, '');
-        process.stdout.write(`${status.ok(`${verb} "${a.title}" (${a.type}, ${a.visibility})`)} ${C.dim}${short(a.artifact_id)}${C.reset}\n`);
+        process.stdout.write(`${status.ok(`${verb} "${a.title}" (${a.type}, ${toWorkspaceAlias(a.visibility)})`)} ${C.dim}${short(a.artifact_id)}${C.reset}\n`);
         printLinks(a);
         return 0;
       };
