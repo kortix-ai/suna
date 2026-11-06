@@ -88,7 +88,7 @@ async function bindCeiling(
 ): Promise<string> {
   const serviceAccountId = await world.serviceAccountId(agent);
   const r = await ctx.client.as(by).post(
-    '/v1/workspaces/:accountId/iam/assignments',
+    '/v1/accounts/:accountId/iam/assignments',
     {
       principal_type: 'service_account',
       principal_id: serviceAccountId,
@@ -126,7 +126,7 @@ flow(
       'POST /v1/workspaces/:projectId/manifest/validate',
       'PUT /v1/workspaces/:projectId/agents/:agentName/config',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
       'GET /v1/workspaces/:projectId/files',
       'GET /v1/workspaces/:projectId/secrets',
@@ -210,7 +210,7 @@ flow(
     routes: [
       'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
       'GET /v1/workspaces/:projectId/files',
       'GET /v1/workspaces/:projectId/secrets',
@@ -277,11 +277,11 @@ flow(
     timeoutMs: 180_000,
     routes: [
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
-      'POST /v1/workspaces/:accountId/iam/assignments',
-      'GET /v1/workspaces/:accountId/iam/assignments',
-      'DELETE /v1/workspaces/:accountId/iam/assignments/:assignmentId',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/accounts/:accountId/iam/assignments',
+      'DELETE /v1/accounts/:accountId/iam/assignments/:assignmentId',
       'GET /v1/workspaces/:projectId',
       'GET /v1/workspaces/:projectId/files',
       'GET /v1/workspaces/:projectId/sessions',
@@ -308,7 +308,7 @@ flow(
       await ctx.step("an account admin binds system role `member` to auditor's service account; read-back lists it", async () => {
         assignmentId = await bindCeiling(ctx, world, admin, 'auditor', 'member');
         const serviceAccountId = await world.serviceAccountId('auditor');
-        const list = await ctx.client.as(admin).get('/v1/workspaces/:accountId/iam/assignments', {
+        const list = await ctx.client.as(admin).get('/v1/accounts/:accountId/iam/assignments', {
           params: { accountId: team.id },
           query: { principal_type: 'service_account', principal_id: serviceAccountId },
         });
@@ -340,7 +340,7 @@ flow(
       });
 
       await ctx.step('the admin removes the binding; files returns to 200', async () => {
-        const r = await ctx.client.as(admin).del('/v1/workspaces/:accountId/iam/assignments/:assignmentId', {
+        const r = await ctx.client.as(admin).del('/v1/accounts/:accountId/iam/assignments/:assignmentId', {
           params: { accountId: team.id, assignmentId },
         });
         r.status([200, 204]);
@@ -364,7 +364,7 @@ flow(
     timeoutMs: 180_000,
     routes: [
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
       'PUT /v1/workspaces/:projectId/access/:userId',
       'GET /v1/workspaces/:projectId/access',
@@ -448,11 +448,11 @@ flow(
     routes: [
       'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
       'GET /v1/workspaces/:projectId/triggers',
       'POST /v1/workspaces/:projectId/triggers/:slug/fire',
-      'POST /v1/workspaces/:accountId/iam/assignments',
+      'POST /v1/accounts/:accountId/iam/assignments',
       'GET /v1/workspaces/:projectId/files',
       'GET /v1/workspaces/:projectId/sessions',
     ],
@@ -545,7 +545,7 @@ flow(
     routes: [
       'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
       'POST /v1/workspaces/:projectId/sessions',
     ],
@@ -615,9 +615,9 @@ flow(
     timeoutMs: 240_000,
     routes: [
       'POST /v1/workspaces/:projectId/resource-grants',
-      'PATCH /v1/workspaces/:accountId/iam/session-oversight',
+      'PATCH /v1/accounts/:accountId/iam/session-oversight',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
       'GET /v1/connectors/workspaces/:projectId/connectors/:slug/accounts',
       'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
@@ -635,7 +635,7 @@ flow(
       await ctx.step('commit `assistant` with connectors [the mail connector]; the human may run it; oversight on', async () => {
         await world.writeManifest(manifest({ assistant: { kortix_permissions: ['project.session.read'], connectors: [slug] } }));
         await world.grantRun('assistant', human);
-        const oversight = await world.owner.patch('/v1/workspaces/:accountId/iam/session-oversight', { enabled: true },
+        const oversight = await world.owner.patch('/v1/accounts/:accountId/iam/session-oversight', { enabled: true },
           { params: { accountId: team.id } });
         oversight.status(200).body().has('$.enabled', true);
       });
@@ -728,7 +728,7 @@ flow(
       'DELETE /v1/workspaces/:projectId/apps/:appId',
       'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
     ],
   },
@@ -842,7 +842,7 @@ flow(
       'DELETE /v1/workspaces/:projectId/apps/:appId',
       'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
     ],
   },
@@ -939,7 +939,7 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
       'GET /v1/git/:project/info/refs',
       'POST /v1/git/:project/git-upload-pack',
@@ -1150,10 +1150,10 @@ flow(
     routes: [
       'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
       'GET /v1/workspaces/:projectId/files',
-      'GET /v1/workspaces/:accountId/audit',
+      'GET /v1/accounts/:accountId/audit',
       'GET /v1/git/:project/info/refs',
       'POST /v1/git/:project/git-upload-pack',
       'POST /v1/git/:project/git-receive-pack',
@@ -1186,7 +1186,7 @@ flow(
         r.status(200);
         let events: Array<Record<string, any>> = [];
         await eventually(`audit event for ${label}`, async () => {
-          const page = await world.owner.get('/v1/workspaces/:accountId/audit', {
+          const page = await world.owner.get('/v1/accounts/:accountId/audit', {
             params: { accountId: team.id },
             query: { project_id: project.id, correlation_id: correlationId },
           });
@@ -1234,7 +1234,7 @@ flow(
 
         let events: Array<Record<string, any>> = [];
         await eventually('git audit rows for the shipper run', async () => {
-          const page = await world.owner.get('/v1/workspaces/:accountId/audit', {
+          const page = await world.owner.get('/v1/accounts/:accountId/audit', {
             params: { accountId: team.id },
             query: { project_id: project.id, session_id: run.sessionId, action: 'git' },
           });
@@ -1277,9 +1277,9 @@ flow(
     routes: [
       'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
-      'GET /v1/workspaces/:accountId/iam/agent-identities',
+      'GET /v1/accounts/:accountId/iam/agent-identities',
       'GET /v1/connectors/workspaces/:projectId/catalog',
-      'POST /v1/workspaces/:accountId/iam/assignments',
+      'POST /v1/accounts/:accountId/iam/assignments',
       'GET /v1/workspaces/:projectId/files',
       'GET /v1/workspaces/:projectId/secrets',
       'POST /v1/workspaces/:projectId/sessions',

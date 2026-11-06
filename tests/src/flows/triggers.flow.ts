@@ -270,9 +270,9 @@ flow(
     domain: 'triggers',
     routes: [
       'GET /v1/workspaces/:projectId/triggers',
-      'PUT /v1/workspaces/:accountId/iam/enterprise-demo',
-      'POST /v1/workspaces/:accountId/iam/roles',
-      'POST /v1/workspaces/:accountId/iam/policies',
+      'PUT /v1/accounts/:accountId/iam/enterprise-demo',
+      'POST /v1/accounts/:accountId/iam/roles',
+      'POST /v1/accounts/:accountId/iam/policies',
     ],
   },
   async (ctx) => {
@@ -296,7 +296,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/workspaces/:accountId/iam/roles',
+            '/v1/accounts/:accountId/iam/roles',
             {
               key: roleKey,
               name: 'No trigger read',
@@ -312,7 +312,7 @@ flow(
 
     await ctx.step('bind that member to the custom role on this project', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/workspaces/:accountId/iam/policies',
+        '/v1/accounts/:accountId/iam/policies',
         {
           principalType: 'member',
           principalId: noTriggerRead.userId!,
@@ -809,7 +809,7 @@ flow(
       'GET /v1/workspaces/:projectId/files/history',
       'GET /v1/workspaces/:projectId/sessions',
       'GET /v1/workspaces/:projectId/sessions/:sessionId',
-      'POST /v1/workspaces/:accountId/iam/groups',
+      'POST /v1/accounts/:accountId/iam/groups',
     ],
   },
   async (ctx) => {
@@ -824,7 +824,7 @@ flow(
     await team.grantProjectRole(project.id, teammateUserId, 'user');
     const owner = ctx.client.as(ctx.P.OWNER);
     const groupResponse = await owner.post(
-      '/v1/workspaces/:accountId/iam/groups',
+      '/v1/accounts/:accountId/iam/groups',
       { name: ctx.fixtures.name('trigger-access-group') },
       { params: { accountId: team.id } },
     );
@@ -1174,7 +1174,7 @@ flow(
     timeoutMs: 600_000,
     routes: [
       'GET /v1/me',
-      'POST /v1/workspaces/provision',
+      'POST /v1/projects/provision',
       'POST /v1/workspaces/:projectId/git-token',
       'GET /v1/workspaces/:projectId/triggers',
       'PATCH /v1/workspaces/:projectId/triggers/:slug',
@@ -2768,8 +2768,8 @@ flow(
   {
     domain: 'triggers',
     routes: [
-      'GET /v1/workspaces/:accountId/automations',
-      'PATCH /v1/workspaces/:accountId/automations',
+      'GET /v1/accounts/:accountId/automations',
+      'PATCH /v1/accounts/:accountId/automations',
       'POST /v1/workspaces/:projectId/secrets',
       'POST /v1/workspaces/:projectId/triggers',
       'GET /v1/workspaces/:projectId/triggers',
@@ -2811,14 +2811,14 @@ flow(
     });
 
     await ctx.step('GET automations: running; the owner may change it, a member may read it but not change it, an outsider → 403', async () => {
-      (await owner.get('/v1/workspaces/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', true);
-      (await memberClient.get('/v1/workspaces/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', false);
-      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/workspaces/:accountId/automations', { params: account })).status(403);
+      (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', true);
+      (await memberClient.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false).has('$.can_change', false);
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/accounts/:accountId/automations', { params: account })).status(403);
     });
 
     await ctx.step('a member cannot pause → 403; the owner pauses → 200 with paused_at and paused_by; the listing says so', async () => {
-      (await memberClient.patch('/v1/workspaces/:accountId/automations', { paused: true }, { params: account })).status(403);
-      const s = (await owner.patch('/v1/workspaces/:accountId/automations', { paused: true }, { params: account })).status(200).json<Status>();
+      (await memberClient.patch('/v1/accounts/:accountId/automations', { paused: true }, { params: account })).status(403);
+      const s = (await owner.patch('/v1/accounts/:accountId/automations', { paused: true }, { params: account })).status(200).json<Status>();
       if (!s.paused || !s.paused_at || s.paused_by !== ctx.P.OWNER.userId) throw new Error(`pause status is wrong: ${JSON.stringify(s)}`);
       if ((await listingPaused()) !== true) throw new Error('the trigger listing does not say the account is paused');
     });
@@ -2829,7 +2829,7 @@ flow(
     });
 
     await ctx.step('resumed: the switch reads running and a delivery reaches the fire path again (402, not skipped)', async () => {
-      (await owner.patch('/v1/workspaces/:accountId/automations', { paused: false }, { params: account })).status(200).body().has('$.paused', false).has('$.paused_by', null);
+      (await owner.patch('/v1/accounts/:accountId/automations', { paused: false }, { params: account })).status(200).body().has('$.paused', false).has('$.paused_by', null);
       if ((await listingPaused()) !== false) throw new Error('the trigger listing still says the account is paused');
       (await deliver()).status(402);
     });
@@ -2843,10 +2843,10 @@ flow(
         const pause = await sb.run(['triggers', 'pause', '--account-wide']);
         throwIfCliInfraFailure(pause, 'triggers pause --account-wide');
         if (pause.exitCode !== 0 || !pause.stdout.includes('All triggers PAUSED')) throw new Error(`pause --account-wide: exit ${pause.exitCode}: ${pause.all}`);
-        (await owner.get('/v1/workspaces/:accountId/automations', { params: account })).status(200).body().has('$.paused', true);
+        (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', true);
         const resume = await sb.run(['triggers', 'resume', '--account-wide']);
         if (resume.exitCode !== 0 || !resume.stdout.includes('All triggers RESUMED')) throw new Error(`resume --account-wide: exit ${resume.exitCode}: ${resume.all}`);
-        (await owner.get('/v1/workspaces/:accountId/automations', { params: account })).status(200).body().has('$.paused', false);
+        (await owner.get('/v1/accounts/:accountId/automations', { params: account })).status(200).body().has('$.paused', false);
       } finally {
         sb.dispose();
       }

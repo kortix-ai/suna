@@ -196,8 +196,8 @@ flow(
         (await search(owner, { q: word, limit: 'ten' })).status(400).body().has('$.code', 'invalid_input');
       });
 
-      await ctx.step('an account member without access to the project → 403', async () => {
-        (await search(ctx.client.as(outsider), { q: word })).status(403);
+      await ctx.step('an account member without access to the project → 404 workspace_not_found', async () => {
+        (await search(ctx.client.as(outsider), { q: word })).status(404).body().has('$.code', 'workspace_not_found');
       });
     } finally {
       if (tokenId) await db.query('DELETE FROM kortix.account_tokens WHERE token_id = $1', [tokenId]).catch(() => {});

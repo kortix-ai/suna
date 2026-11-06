@@ -105,7 +105,7 @@ flow(
     routes: [
       'GET /v1/me',
       'GET /v1/workspaces',
-      'GET /v1/workspaces/:accountId/audit',
+      'GET /v1/accounts/:accountId/audit',
       'GET /v1/user-roles',
     ],
   },
@@ -121,7 +121,7 @@ flow(
     await ctx.step('ANON GET /accounts/:id/audit → 401 (before authz)', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/workspaces/:accountId/audit', { params: { accountId: NIL_UUID } });
+        .get('/v1/accounts/:accountId/audit', { params: { accountId: NIL_UUID } });
       r.status(401);
     });
     await ctx.step('ANON GET /user-roles → 401', async () => {
@@ -506,7 +506,7 @@ flow(
   'SEC-H',
   {
     domain: 'security',
-    routes: ['POST /v1/workspaces/:accountId/iam/groups', 'GET /v1/workspaces/:accountId/audit'],
+    routes: ['POST /v1/accounts/:accountId/iam/groups', 'GET /v1/accounts/:accountId/audit'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ enterprise: true });
@@ -514,7 +514,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/iam/groups',
+          '/v1/accounts/:accountId/iam/groups',
           { name: ctx.fixtures.name('sec-h-grp') },
           { params: { accountId: team.id } },
         );
@@ -523,7 +523,7 @@ flow(
     await ctx.step('audit log reflects activity → 200 with events array', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/workspaces/:accountId/audit', { params: { accountId: team.id } });
+        .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
       r.status(200).body().exists('$.events');
       const events = r.json<{ events?: unknown[] }>()?.events;
       if (!Array.isArray(events) || events.length === 0) {
@@ -533,7 +533,7 @@ flow(
     await ctx.step('NONMEMBER cannot read the audit log → 403', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/workspaces/:accountId/audit', { params: { accountId: team.id } });
+        .get('/v1/accounts/:accountId/audit', { params: { accountId: team.id } });
       r.status([403, 404]);
     });
   },

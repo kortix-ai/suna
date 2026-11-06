@@ -187,14 +187,15 @@ flow(
     });
 
     await ctx.step(
-      "cross-project principal cannot inspect the App",
+      "cross-project principal cannot inspect the App (404 workspace_not_found)",
       async () => {
         const response = await ctx.client
           .as(ctx.P.NONMEMBER)
           .get("/v1/workspaces/:projectId/apps/:appId", {
             params: { ...projectParams, appId },
           });
-        response.status(403);
+        // Canonical paths answer an unreadable workspace with 404 workspace_not_found.
+        response.status(404).body().has("$.code", "workspace_not_found");
       },
     );
 
@@ -756,7 +757,7 @@ flow(
       const response = await ctx.client
         .as(ctx.P.NONMEMBER)
         .get("/v1/workspaces/:projectId/apps", { params: projectParams });
-      response.status(403);
+      response.status(404).body().has("$.code", "workspace_not_found");
     });
 
     await ctx.step("delete the test App", async () => {
@@ -775,8 +776,8 @@ flow(
     timeoutMs: 240_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
-      "POST /v1/workspaces/:accountId/iam/groups",
-      "POST /v1/workspaces/:accountId/iam/groups/:groupId/members",
+      "POST /v1/accounts/:accountId/iam/groups",
+      "POST /v1/accounts/:accountId/iam/groups/:groupId/members",
       "POST /v1/workspaces/:projectId/apps",
       "PATCH /v1/workspaces/:projectId/apps/:appId/access",
       "GET /v1/workspaces/:projectId/apps",
@@ -818,14 +819,14 @@ flow(
 
     const group = async (slug: string, members: Principal[]) => {
       const created = await owner.post(
-        "/v1/workspaces/:accountId/iam/groups",
+        "/v1/accounts/:accountId/iam/groups",
         { name: ctx.fixtures.name(slug) },
         { params: accountParams },
       );
       const groupId = created.status(201).json<{ group_id: string }>().group_id;
       (
         await owner.post(
-          "/v1/workspaces/:accountId/iam/groups/:groupId/members",
+          "/v1/accounts/:accountId/iam/groups/:groupId/members",
           { userIds: members.map(userId) },
           { params: { ...accountParams, groupId } },
         )
@@ -1331,7 +1332,7 @@ flow(
         if (!IN_PROGRESS.includes(status)) throw new Error(`409 named a finished status: ${status}`);
       });
 
-      await ctx.step("an unknown deployment answers 404; a cross-project principal gets 403", async () => {
+      await ctx.step("an unknown deployment answers 404; a cross-project principal gets 404 workspace_not_found", async () => {
         (await owner.del(
           "/v1/workspaces/:projectId/apps/:appId/deployments/:deploymentId",
           { params: { ...projectParams, appId, deploymentId: UNKNOWN_ID } },
@@ -1339,7 +1340,7 @@ flow(
         (await ctx.client.as(ctx.P.NONMEMBER).del(
           "/v1/workspaces/:projectId/apps/:appId/deployments/:deploymentId",
           { params: deploymentParams() },
-        )).status(403);
+        )).status(404).body().has("$.code", "workspace_not_found");
       });
 
       await ctx.step("kortix apps delete --deployment requires --yes, names the deployments that exist, and relays the 409", async () => {

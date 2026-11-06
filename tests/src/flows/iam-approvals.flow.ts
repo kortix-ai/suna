@@ -282,12 +282,12 @@ flow(
       },
     );
 
-    await ctx.step('an unknown project returns the project-param 404 envelope', async () => {
+    await ctx.step('an unknown project returns the canonical 404 workspace_not_found envelope', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/approvals', {
         params: { projectId: UNKNOWN_UUID },
       });
       r.status(404);
-      deepStrictEqual(r.json(), { error: 'Not found' });
+      deepStrictEqual(r.json(), { error: 'Workspace not found', code: 'workspace_not_found' });
     });
 
     await ctx.step(
@@ -370,7 +370,7 @@ flow(
     });
 
     await ctx.step(
-      'a non-project-member cannot resolve anything on this project → 403',
+      'a non-project-member cannot resolve anything on this project → 404 workspace_not_found',
       async () => {
         const r = await ctx.client
           .as(ctx.P.NONMEMBER)
@@ -379,7 +379,7 @@ flow(
             { decision: 'approve' },
             { params: { projectId: project.id, executionId: UNKNOWN_UUID } },
           );
-        r.status(403);
+        r.status(404).body().has('$.code', 'workspace_not_found');
       },
     );
   },
@@ -457,9 +457,9 @@ flow(
   {
     domain: 'iam',
     routes: [
-      'GET /v1/workspaces/:accountId/iam/enterprise-demo',
-      'PUT /v1/workspaces/:accountId/iam/enterprise-demo',
-      'POST /v1/workspaces/:accountId/iam/sso/provider/from-metadata',
+      'GET /v1/accounts/:accountId/iam/enterprise-demo',
+      'PUT /v1/accounts/:accountId/iam/enterprise-demo',
+      'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata',
     ],
   },
   async (ctx) => {
@@ -469,13 +469,13 @@ flow(
       ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
+          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
           { name: 'Acme', primary_domain: 'acme-e2e-iam32.com', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );
 
     await ctx.step('a fresh account reads Enterprise off, and an SSO write is a clean 402 upsell', async () => {
-      const g = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
+      const g = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/enterprise-demo', { params: { accountId: team.id } });
       g.status(200).body().has('$.enabled', false).has('$.state', 'off');
       (await sso()).status(402).body().has('$.code', 'entitlement_required').has('$.entitlement', 'sso');
     });
@@ -483,14 +483,14 @@ flow(
     await ctx.step('a member without billing.write cannot turn the Enterprise demo on → 403', async () => {
       const r = await ctx.client
         .as(member)
-        .put('/v1/workspaces/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
+        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
       r.status(403);
     });
 
     await ctx.step('the OWNER turns the Enterprise demo on itself → state demo, and the same SSO write is no longer a 402', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put('/v1/workspaces/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
+        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId: team.id } });
       r.status(200).body().has('$.enabled', true).has('$.state', 'demo');
       const after = await sso();
       if (after.statusCode === 402) throw new Error(`still gated after the Enterprise demo: ${after.text()}`);
@@ -499,7 +499,7 @@ flow(
     await ctx.step('turning it off gates SSO again', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put('/v1/workspaces/:accountId/iam/enterprise-demo', { enabled: false }, { params: { accountId: team.id } });
+        .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: false }, { params: { accountId: team.id } });
       r.status(200).body().has('$.enabled', false).has('$.state', 'off');
       (await sso()).status(402);
     });
@@ -512,7 +512,7 @@ flow(
   'IAM-33',
   {
     domain: 'iam',
-    routes: ['POST /v1/workspaces/:accountId/iam/sso/provider/from-metadata'],
+    routes: ['POST /v1/accounts/:accountId/iam/sso/provider/from-metadata'],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -523,7 +523,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
+            '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
             { name: 'Acme', primary_domain: 'acme-e2e-iam33.com', metadata_xml: '<x/>' },
             { params: { accountId: team.id } },
           );
@@ -542,7 +542,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
+          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
           { primary_domain: 'acme-e2e-iam33.com', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );
@@ -553,7 +553,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
+          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
           { name: 'Acme', primary_domain: 'not a domain', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );
@@ -566,7 +566,7 @@ flow(
         const r = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
+            '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
             { name: 'Acme', primary_domain: 'acme-e2e-iam33.com' },
             { params: { accountId: team.id } },
           );
@@ -580,7 +580,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          '/v1/workspaces/:accountId/iam/sso/provider/from-metadata',
+          '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
           { name: 'Acme', primary_domain: 'acme-e2e-iam33.com', metadata_xml: '<x/>' },
           { params: { accountId: team.id } },
         );

@@ -118,7 +118,7 @@ flow(
       'PATCH /v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId',
       'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId/retry',
       'DELETE /v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId',
-      'POST /v1/workspaces/:accountId/iam/assignments',
+      'POST /v1/accounts/:accountId/iam/assignments',
     ],
   },
   async (ctx) => {
@@ -130,7 +130,7 @@ flow(
     const AGENT = 'kortix';
     await ctx.step('the owner grants the member the agent the session runs', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/workspaces/:accountId/iam/assignments',
+        '/v1/accounts/:accountId/iam/assignments',
         {
           principal_type: 'user',
           principal_id: member.userId,
@@ -255,7 +255,7 @@ flow(
       'PATCH /v1/workspaces/:projectId/sessions/:sessionId/prompts/:promptId',
       'GET /v1/workspaces/:projectId/sessions/:sessionId/prompts',
       'GET /v1/workspaces/:projectId/sessions/:sessionId/message-authors',
-      'POST /v1/workspaces/:accountId/iam/assignments',
+      'POST /v1/accounts/:accountId/iam/assignments',
     ],
   },
   async (ctx) => {
@@ -270,7 +270,7 @@ flow(
     await ctx.step('the owner grants both members the agent the session runs', async () => {
       for (const member of [prompter, bystander]) {
         const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/workspaces/:accountId/iam/assignments',
+          '/v1/accounts/:accountId/iam/assignments',
           {
             principal_type: 'user',
             principal_id: member.userId,

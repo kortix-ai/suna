@@ -153,7 +153,7 @@ const ACTIONABLE_DENIALS = new Set(['account_mfa_required', 'sso_required']);
 export async function canonicalWorkspaceDecision(
   c: Context,
   rawId: string,
-  opts: { projectBacked: boolean },
+  opts: { projectBacked: boolean; outsiderAllowed?: boolean },
 ): Promise<Response | null> {
   const known = getVar(c, CANONICAL_WORKSPACE_VAR) as CanonicalWorkspace | undefined;
   if (known && known.workspaceId === rawId.toLowerCase()) return null;
@@ -161,7 +161,7 @@ export async function canonicalWorkspaceDecision(
   if (!ws) return workspaceNotFound(c);
 
   const userId = getVar(c, 'userId');
-  if (typeof userId === 'string' && userId.length > 0) {
+  if (typeof userId === 'string' && userId.length > 0 && !opts.outsiderAllowed) {
     const actor = await actorOf(c, ws.accountId);
     const verdict = await authorize(actor, PROJECT_ACTIONS.PROJECT_READ, {
       type: 'project',
@@ -202,6 +202,15 @@ function canonicalTail(path: string): string {
 const NOT_PROJECT_BACKED = new Set(['', 'restore', 'setup']);
 
 /**
+ * `POST /v1/workspaces/:id/access-requests`: a person who cannot read the
+ * workspace asks for access. The route answers for itself (it reveals no more
+ * than the share link the person already holds).
+ */
+function outsiderAllowed(method: string, tail: string): boolean {
+  return method === 'POST' && tail === 'access-requests';
+}
+
+/**
  * The canonical gate as middleware, for `/v1/workspaces/:workspaceId[/…]` and
  * `/v1/connectors/workspaces/:workspaceId/…`. Mount AFTER the auth
  * middleware. A non-uuid segment (`current`, a static route) passes
@@ -212,8 +221,11 @@ export function canonicalWorkspaceGate(): MiddlewareHandler {
   return async (c, next) => {
     const raw = canonicalWorkspacePathId(c.req.path);
     if (raw && isUuid(raw)) {
-      const projectBacked = !NOT_PROJECT_BACKED.has(canonicalTail(c.req.path));
-      const refused = await canonicalWorkspaceDecision(c, raw, { projectBacked });
+      const tail = canonicalTail(c.req.path);
+      const refused = await canonicalWorkspaceDecision(c, raw, {
+        projectBacked: !NOT_PROJECT_BACKED.has(tail),
+        outsiderAllowed: outsiderAllowed(c.req.method, tail),
+      });
       if (refused) return refused;
     }
     await next();

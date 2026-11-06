@@ -924,8 +924,8 @@ flow(
       (await anon.post(sharesRoute, { transcript: true }, { params })).status(401);
     });
 
-    await ctx.step('NONMEMBER: {transcript:true} → 403, no share is written', async () => {
-      (await ctx.client.as(ctx.P.NONMEMBER).post(sharesRoute, { transcript: true }, { params })).status(403);
+    await ctx.step('NONMEMBER: {transcript:true} → 404 workspace_not_found, no share is written', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).post(sharesRoute, { transcript: true }, { params })).status(404).body().has('$.code', 'workspace_not_found');
       const list = await owner.get(sharesRoute, { params });
       list.status(200);
       if (list.json<{ shares: unknown[] }>().shares.length !== 0) throw new Error('a refused mint wrote a share');
@@ -1432,11 +1432,11 @@ flow(
       (await ctx.client.as(ctx.P.ANON).get(byId, { params: { sessionId: sharedId } })).status(401);
     });
 
-    await ctx.step('a caller outside the account gets 404 by id, as for an unknown id; the project route answers 403', async () => {
+    await ctx.step('a caller outside the account gets 404 by id, as for an unknown id; the workspace route answers 404 workspace_not_found', async () => {
       const outsider = ctx.client.as(ctx.P.NONMEMBER);
       (await outsider.get(byId, { params: { sessionId: sharedId } })).status(404);
       (await outsider.get(byId, { params: { sessionId: crypto.randomUUID() } })).status(404);
-      (await outsider.get(inProject, { params: { projectId: project.id, sessionId: sharedId } })).status(403);
+      (await outsider.get(inProject, { params: { projectId: project.id, sessionId: sharedId } })).status(404).body().has('$.code', 'workspace_not_found');
     });
 
     await ctx.step('a deleted session is gone by id → 404', async () => {
@@ -1587,11 +1587,11 @@ flow(
       (await owner.put('/v1/workspaces/:projectId/sessions/:sessionId/archive', { archived: 'yes' }, { params: params(s1) })).status(400);
     });
 
-    await ctx.step('a session the caller cannot see → 404; ANON → 401; outside the account → 403', async () => {
+    await ctx.step('a session the caller cannot see → 404; ANON → 401; outside the account → 404 workspace_not_found', async () => {
       (await pin(privateId, true, ctx.client.as(member))).status(404);
       (await pin(crypto.randomUUID(), true)).status(404);
       (await pin(s1, true, ctx.client.as(ctx.P.ANON))).status(401);
-      (await archive(s1, true, ctx.client.as(ctx.P.NONMEMBER))).status(403);
+      (await archive(s1, true, ctx.client.as(ctx.P.NONMEMBER))).status(404).body().has('$.code', 'workspace_not_found');
     });
 
     await ctx.step('a deleted session cannot be pinned or archived → 404', async () => {
@@ -2965,9 +2965,9 @@ flow(
         if (view.total !== 1 || view.multi_user) throw new Error(`unshared: ${JSON.stringify(view)}`);
       });
 
-      await ctx.step('unknown session → 404; NONMEMBER → 403; ANON → 401', async () => {
+      await ctx.step('unknown session → 404; NONMEMBER → 404 workspace_not_found; ANON → 401', async () => {
         (await owner.get(path, { params: { projectId: project.id, sessionId: crypto.randomUUID() } })).status(404);
-        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params })).status(403);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params })).status(404).body().has('$.code', 'workspace_not_found');
         (await ctx.client.as(ctx.P.ANON).get(path, { params })).status(401);
       });
     } finally {

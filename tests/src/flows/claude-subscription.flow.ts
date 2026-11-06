@@ -22,9 +22,9 @@ flow(
       'POST /v1/workspaces/:projectId/claude-subscription/login/start',
       'POST /v1/workspaces/:projectId/claude-subscription/login/complete',
       'DELETE /v1/workspaces/:projectId/claude-subscription',
-      'GET /v1/workspaces/:accountId/secret-resources',
-      'PUT /v1/workspaces/:accountId/secret-resources/:secretId/access',
-      'PUT /v1/workspaces/:accountId/secret-resources/:secretId/value',
+      'GET /v1/accounts/:accountId/secret-resources',
+      'PUT /v1/accounts/:accountId/secret-resources/:secretId/access',
+      'PUT /v1/accounts/:accountId/secret-resources/:secretId/value',
     ],
   },
   async (ctx) => {
@@ -59,7 +59,7 @@ flow(
     });
 
     await ctx.step('the account list shows it as a private Claude account, without the token', async () => {
-      const listed = await owner.get('/v1/workspaces/:accountId/secret-resources', { params: { accountId: team.id }, query: { project_id: project.id } });
+      const listed = await owner.get('/v1/accounts/:accountId/secret-resources', { params: { accountId: team.id }, query: { project_id: project.id } });
       listed.status(200);
       if (leaks(listed.text())) throw new Error('the token is in the account list');
       const row = listed.json<{ secrets: any[] }>().secrets.find((entry) => entry.secret_id === secretId);
@@ -75,13 +75,13 @@ flow(
     await ctx.step('the account belongs to this project only, and another member cannot use it until it is shared', async () => {
       (await owner.get(path, { params: { projectId: other.id } })).status(200).body().has('$.connected', false);
       (await asMember.get(path, { params })).status(200).body().has('$.connected', false).has('$.accounts', 0);
-      (await owner.put('/v1/workspaces/:accountId/secret-resources/:secretId/access', { mode: 'project', user_ids: [] }, { params: { accountId: team.id, secretId } }))
+      (await owner.put('/v1/accounts/:accountId/secret-resources/:secretId/access', { mode: 'project', user_ids: [] }, { params: { accountId: team.id, secretId } }))
         .status(200).body().has('$.access_mode', 'project');
       (await asMember.get(path, { params })).status(200).body().has('$.connected', true).has('$.accounts', 1);
     });
 
     await ctx.step('a Claude login is reconnected, never rotated; only its creator reconnects it', async () => {
-      (await owner.put('/v1/workspaces/:accountId/secret-resources/:secretId/value', { value: TOKEN }, { params: { accountId: team.id, secretId } })).status(400);
+      (await owner.put('/v1/accounts/:accountId/secret-resources/:secretId/value', { value: TOKEN }, { params: { accountId: team.id, secretId } })).status(400);
       (await asMember.put(`${path}/token`, { token: TOKEN, resource_id: secretId }, { params })).status(403);
       (await owner.put(`${path}/token`, { token: TOKEN, resource_id: secretId }, { params })).status(200).body().has('$.secret_id', secretId);
     });

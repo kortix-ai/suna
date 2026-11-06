@@ -399,26 +399,26 @@ flow(
 
 flow(
   "GH-14",
-  { domain: "git", routes: ["POST /v1/workspaces/create-repo"] },
+  { domain: "git", routes: ["POST /v1/projects/create-repo"] },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/workspaces/create-repo", { name: "x" });
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/projects/create-repo", { name: "x" });
       r.status(401);
     });
     await ctx.step("missing name → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/create-repo", {});
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/create-repo", {});
       r.status(400);
     });
     await ctx.step("invalid name chars → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/workspaces/create-repo", { name: "bad name/with spaces" });
+        .post("/v1/projects/create-repo", { name: "bad name/with spaces" });
       r.status(400);
     });
     await ctx.step("valid name but no GitHub App install → 409 install_url / 503", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/workspaces/create-repo", { name: ctx.fixtures.name("repo").replace(/[^a-zA-Z0-9._-]/g, "-") });
+        .post("/v1/projects/create-repo", { name: ctx.fixtures.name("repo").replace(/[^a-zA-Z0-9._-]/g, "-") });
       r.status([200, 201, 409, 502, 503]);
     });
   },
@@ -426,28 +426,28 @@ flow(
 
 flow(
   "GH-15",
-  { domain: "git", requires: ["managedGit"], routes: ["POST /v1/workspaces/link-repository"] },
+  { domain: "git", requires: ["managedGit"], routes: ["POST /v1/projects/link-repository"] },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/workspaces/link-repository", { repo_full_name: "octocat/hello" });
+        .post("/v1/projects/link-repository", { repo_full_name: "octocat/hello" });
       r.status(401);
     });
     await ctx.step("missing repo_url/repo_full_name → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/link-repository", {});
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/link-repository", {});
       r.status(400);
     });
     await ctx.step("repo via App with no install → 400/409/502 (no validated access)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/workspaces/link-repository", { repo_full_name: "octocat/hello-world" });
+        .post("/v1/projects/link-repository", { repo_full_name: "octocat/hello-world" });
       r.status([200, 201, 400, 409, 502, 503]);
     });
     await ctx.step("repo via bogus PAT → validation fails 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/workspaces/link-repository", { repo_full_name: "octocat/hello-world", github_token: "ghp_invalid_token_xyz" });
+        .post("/v1/projects/link-repository", { repo_full_name: "octocat/hello-world", github_token: "ghp_invalid_token_xyz" });
       r.status([400, 401, 409, 502]);
     });
   },
@@ -770,13 +770,13 @@ flow(
     await ctx.step(
       "OWNER POST /link-repository {source: managed} → 403 unless an operator; with installation_id too → 400",
       async () => {
-        const both = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/link-repository", {
+        const both = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/link-repository", {
           repo_full_name: "managed-kortix/does-not-matter",
           source: "managed",
           installation_id: "12345",
         });
         both.status(400);
-        const managed = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/link-repository", {
+        const managed = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/link-repository", {
           repo_full_name: "managed-kortix/does-not-matter",
           source: "managed",
         });
@@ -884,7 +884,7 @@ flow(
   {
     domain: "git",
     requires: ["admin"],
-    routes: ["GET /v1/workspaces/git/backend/repositories", "POST /v1/workspaces/link-repository"],
+    routes: ["GET /v1/workspaces/git/backend/repositories", "POST /v1/projects/link-repository"],
   },
   async (ctx) => {
     const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
@@ -893,7 +893,7 @@ flow(
       r.status(403).body().has("$.error", "The instance git backend is only browsable by a self-host operator");
     });
     await ctx.step("platform admin imports a backend repository by name → 403", async () => {
-      const r = await admin.post("/v1/workspaces/link-repository", {
+      const r = await admin.post("/v1/projects/link-repository", {
         source: "managed",
         repo_full_name: "managed-kortix/someone-elses-project",
       });

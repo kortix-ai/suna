@@ -93,20 +93,20 @@ flow(
 
 flow(
   "PROJ-4",
-  { domain: "git", routes: ["POST /v1/workspaces/create-repo"] },
+  { domain: "git", routes: ["POST /v1/projects/create-repo"] },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).post("/v1/workspaces/create-repo", { name: "ke2e-repo" });
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/projects/create-repo", { name: "ke2e-repo" });
       r.status(401);
     });
     await ctx.step("missing name → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/create-repo", {});
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/create-repo", {});
       r.status(400);
     });
     await ctx.step("invalid name chars → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/workspaces/create-repo", { name: "bad name/with spaces" });
+        .post("/v1/projects/create-repo", { name: "bad name/with spaces" });
       r.status(400);
     });
     await ctx.step("fresh account with no GitHub App install → 409 + install_url (or 503 if GitHub unconfigured)", async () => {
@@ -117,7 +117,7 @@ flow(
       const name = ctx.fixtures.name("repo").replace(/[^a-zA-Z0-9._-]/g, "-");
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/workspaces/create-repo", { name, private: true, account_id: team.id });
+        .post("/v1/projects/create-repo", { name, private: true, account_id: team.id });
       r.status([409, 503]);
       // The spec's defining assertion: the no-install path surfaces an install_url.
       if (r.statusCode === 409) r.body().exists("$.install_url");
@@ -127,7 +127,7 @@ flow(
       // the catalog gate runs before anything is created upstream.
       const team = await ctx.fixtures.team();
       const name = ctx.fixtures.name("repo-src").replace(/[^a-zA-Z0-9._-]/g, "-");
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/create-repo", {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/create-repo", {
         name,
         private: true,
         account_id: team.id,

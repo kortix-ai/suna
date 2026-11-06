@@ -517,13 +517,13 @@ flow(
   "ADM-14",
   {
     domain: "admin",
-    routes: ["PUT /v1/workspaces/:accountId/iam/enterprise-demo", "GET /v1/admin/api/accounts"],
+    routes: ["PUT /v1/accounts/:accountId/iam/enterprise-demo", "GET /v1/admin/api/accounts"],
   },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .put("/v1/workspaces/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: NOPE } });
+        .put("/v1/accounts/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: NOPE } });
       r.status(401);
     });
     if (ctx.env.capabilities.admin) {
@@ -531,7 +531,7 @@ flow(
       const name = ctx.fixtures.name("adm14-demo");
       const team = await ctx.fixtures.team({ name });
       await ctx.step("admin turns the demo on for an account it is not a member of → 200 state demo", async () => {
-        const r = await admin.put("/v1/workspaces/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: team.id } });
+        const r = await admin.put("/v1/accounts/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: team.id } });
         r.status(200).body().has("$.enabled", true).has("$.state", "demo");
       });
       await ctx.step("the accounts-list row reports enterprise 'demo'", async () => {
@@ -541,7 +541,7 @@ flow(
         if (row?.enterprise !== "demo") throw new Error(`expected enterprise 'demo', got ${JSON.stringify(row?.enterprise)}`);
       });
       await ctx.step("admin turns it off → 200 state off", async () => {
-        const r = await admin.put("/v1/workspaces/:accountId/iam/enterprise-demo", { enabled: false }, { params: { accountId: team.id } });
+        const r = await admin.put("/v1/accounts/:accountId/iam/enterprise-demo", { enabled: false }, { params: { accountId: team.id } });
         r.status(200).body().has("$.enabled", false).has("$.state", "off");
       });
     }
@@ -574,7 +574,7 @@ flow(
   {
     domain: "admin",
     serial: true,
-    routes: ["PUT /v1/workspaces/:accountId/iam/enterprise-demo", "GET /v1/billing/account-state"],
+    routes: ["PUT /v1/accounts/:accountId/iam/enterprise-demo", "GET /v1/billing/account-state"],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team({ name: ctx.fixtures.name("adm16-demo") });
@@ -586,7 +586,7 @@ flow(
     await ctx.step("the OWNER turns the demo on → enterprise demo, plan still Free, SSO on", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/workspaces/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: team.id } });
+        .put("/v1/accounts/:accountId/iam/enterprise-demo", { enabled: true }, { params: { accountId: team.id } });
       r.status(200);
       (await state())
         .status(200)
@@ -1135,7 +1135,7 @@ flow(
       "POST /v1/admin/api/impersonate",
       "DELETE /v1/admin/api/impersonate/:grantId",
       "GET /v1/admin/api/impersonate/active",
-      "POST /v1/workspaces/:accountId/members",
+      "POST /v1/accounts/:accountId/members",
       "POST /v1/account/request-deletion",
       "POST /v1/account/cancel-deletion",
       "DELETE /v1/account/delete-immediately",
@@ -1249,7 +1249,7 @@ flow(
     // 403 as a credential mint, for the same reason.
     await ctx.step("acting-as CANNOT grant itself durable membership", async () => {
       const r = await admin.post(
-        "/v1/workspaces/:accountId/members",
+        "/v1/accounts/:accountId/members",
         { email: "imp1-should-fail@ke2e.kortix.test", role: "admin" },
         { params: { accountId: victim.id }, ...acting() },
       );
@@ -1447,16 +1447,16 @@ flow(
     });
     let grantId = "";
 
-    await ctx.step("without a grant the admin cannot read the project → 403", async () => {
+    await ctx.step("without a grant the admin cannot read the workspace → 404 workspace_not_found", async () => {
       const r = await admin.get("/v1/workspaces/:projectId", { params: { projectId } });
-      r.status(403);
+      r.status(404).body().has("$.code", "workspace_not_found");
     });
-    await ctx.step("the retired x-kortix-admin-bypass header opens nothing → 403", async () => {
+    await ctx.step("the retired x-kortix-admin-bypass header opens nothing → 404 workspace_not_found", async () => {
       const r = await admin.get("/v1/workspaces/:projectId", {
         params: { projectId },
         headers: { "x-kortix-admin-bypass": "1" },
       });
-      r.status(403);
+      r.status(404).body().has("$.code", "workspace_not_found");
     });
     await ctx.step("a malformed project id → 400, an unknown one → 404", async () => {
       (await admin.post("/v1/admin/api/impersonate", { project_id: "not-a-uuid" })).status(400);
@@ -1494,8 +1494,8 @@ flow(
       });
       r.status(200).body().has("$.session_id", sessionId);
     });
-    await ctx.step("without the header, the same admin still sees nothing → 403", async () => {
-      (await admin.get("/v1/workspaces/:projectId/sessions", { params: { projectId } })).status(403);
+    await ctx.step("without the header, the same admin still sees nothing → 404 workspace_not_found", async () => {
+      (await admin.get("/v1/workspaces/:projectId/sessions", { params: { projectId } })).status(404).body().has("$.code", "workspace_not_found");
     });
     await ctx.step("revoked, the grant opens nothing on the next request → 403", async () => {
       (await admin.del("/v1/admin/api/impersonate/:grantId", { params: { grantId } })).status(200);

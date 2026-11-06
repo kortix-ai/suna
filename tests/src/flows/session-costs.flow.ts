@@ -303,7 +303,7 @@ flow(
       'GET /v1/usage/session-costs/:sessionId',
       'GET /v1/usage',
       'POST /v1/accounts/tokens',
-      'POST /v1/workspaces/:accountId/iam/service-accounts',
+      'POST /v1/accounts/:accountId/iam/service-accounts',
     ],
   },
   async (ctx) => {
@@ -314,7 +314,7 @@ flow(
 
     await ctx.step('service account with zero role assignments cannot read account-wide usage → 403', async () => {
       const sa = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/workspaces/:accountId/iam/service-accounts',
+        '/v1/accounts/:accountId/iam/service-accounts',
         { name: ctx.fixtures.name('cost4-sa') },
         { params: { accountId: team.id } },
       );

@@ -249,7 +249,7 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'GET /v1/me',
-      'POST /v1/workspaces/provision',
+      'POST /v1/projects/provision',
       'POST /v1/workspaces/:projectId/git-token',
     ],
   },
@@ -423,7 +423,7 @@ flow(
     timeoutMs: 300_000,
     routes: [
       'GET /v1/me',
-      'POST /v1/workspaces/provision',
+      'POST /v1/projects/provision',
       'POST /v1/workspaces/:projectId/git-token',
     ],
   },
@@ -538,7 +538,7 @@ flow(
     timeoutMs: 600_000,
     routes: [
       'GET /v1/me',
-      'POST /v1/workspaces/provision',
+      'POST /v1/projects/provision',
       'GET /v1/workspaces/:projectId',
       'POST /v1/workspaces/:projectId/git-token',
     ],
@@ -606,7 +606,7 @@ flow(
     timeoutMs: 900_000,
     routes: [
       'GET /v1/me',
-      'POST /v1/workspaces/provision',
+      'POST /v1/projects/provision',
       'GET /v1/workspaces/:projectId',
       'POST /v1/workspaces/:projectId/git-token',
     ],
@@ -681,7 +681,7 @@ flow(
     timeoutMs: 1_200_000,
     routes: [
       'GET /v1/me',
-      'POST /v1/workspaces/provision',
+      'POST /v1/projects/provision',
       'POST /v1/workspaces/:projectId/sessions',
       'POST /v1/workspaces/:projectId/sessions/:sessionId/start',
       'POST /v1/workspaces/:projectId/sessions/:sessionId/commit-push',
