@@ -1,27 +1,21 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
-
-import { ArrowLeftIcon as ArrowLeft, BookOpenIcon as BookOpen } from '@phosphor-icons/react';
 import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
 
-import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state';
+import { NotFoundState } from '@/components/common/not-found-state';
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
 /**
- * Dashboard 404 — the not-found boundary for `/projects/[id]/*`.
+ * Dashboard 404: the not-found boundary for `/projects/[id]/*`.
  *
- * Same `<NotFoundCard />` as the marketing 404, but framed by the project
- * shell (sidebar + tab bar) so a mistyped project sub-route still feels like
- * you're inside the workspace. The "back" action returns to the project home
- * rather than the marketing site.
+ * The same `<NotFoundState />` as the app-wide 404, inside the project shell
+ * (sidebar + tab bar). "Go back to home" returns to the project home.
  *
  * not-found boundaries don't receive route params, so the project id is read
  * back off the pathname (`/projects/<id>/…`).
  */
 export default function ProjectNotFound() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
 
   const projectId = useMemo(() => {
@@ -29,36 +23,10 @@ export default function ProjectNotFound() {
     return segments[0] === 'projects' ? segments[1] : undefined;
   }, [pathname]);
 
-  const card = (
-    <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4 py-16 sm:px-6">
-      <NotFoundNoise />
-      <NotFoundCard
-        actions={[
-          {
-            href: projectId ? `/projects/${projectId}` : PROJECT_LANDING_PATH,
-            label: tHardcodedUi.raw('appNotFound.line100JsxTextReturnHome'),
-            icon: <ArrowLeft className="h-4 w-4" />,
-          },
-          {
-            href: '/docs',
-            label: tHardcodedUi.raw('i18nComplete.textc205924de0fe'),
-            icon: <BookOpen className="h-4 w-4" />,
-            variant: 'outline',
-          },
-        ]}
-      />
-    </div>
-  );
-
-  // Fall back to a bare card if we somehow can't recover the project id — the
-  // shell needs one to mount its sidebar.
+  // Without a project id the shell does not mount: fill the viewport instead.
   if (!projectId) {
-    return (
-      <div className="bg-background relative flex min-h-dvh w-full flex-col items-center justify-center">
-        {card}
-      </div>
-    );
+    return <NotFoundState homeHref={PROJECT_LANDING_PATH} className="h-dvh" />;
   }
 
-  return card;
+  return <NotFoundState homeHref={`/projects/${projectId}`} className="min-h-0 flex-1" />;
 }

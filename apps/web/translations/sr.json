@@ -5838,11 +5838,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "Ова страница се аутоматски освежава сваких 30 секунди."
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "Страница није пронађена",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "Страница коју тражите не постоји или је премештена.",
       "line82JsxTextText404Error": "404 Грешка",
-      "line85JsxTextResourceNotAvailable": "ресурс није доступан",
-      "line100JsxTextReturnHome": "Повратак кући"
+      "line85JsxTextResourceNotAvailable": "ресурс није доступан"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "Неважећи захтев за ауторизацију",

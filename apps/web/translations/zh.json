@@ -5838,11 +5838,8 @@
       "line61JsxTextThisPageRefreshesAutomaticallyEvery30Seconds": "此页面每 30 秒自动刷新一次。"
     },
     "appNotFound": {
-      "line65JsxTextPageNotFound": "页面未找到",
-      "line70JsxTextThePageYouAposReLookingForDoesn": "您查找的页面不存在或已被移动。",
       "line82JsxTextText404Error": "404 错误",
-      "line85JsxTextResourceNotAvailable": "资源不可用",
-      "line100JsxTextReturnHome": "返回主页"
+      "line85JsxTextResourceNotAvailable": "资源不可用"
     },
     "appOauthAuthorizePage": {
       "line146JsxTextInvalidAuthorizationRequest": "无效的授权请求",
