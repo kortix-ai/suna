@@ -1835,6 +1835,23 @@ describe('pi extensions', () => {
     expect(child).toContain("Today's date: Tue Mar 10 2026 (")
   })
 
+  test('every agent is told its session ids; a separate subagent its parent session, a subagent inside the session the main conversation', async () => {
+    const session = '11111111-1111-4111-8111-111111111111'
+    const parent = '22222222-2222-4222-8222-222222222222'
+    const r = await boot({
+      script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general', session: 'same' } }, { text: 'child done' }, { text: 'parent done' }],
+      env: { KORTIX_SESSION_ID: session, KORTIX_PROJECT_ID: 'project-1', KORTIX_PARENT_SESSION_ID: parent, KORTIX_SPACE_ID: 'space-1' },
+    })
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, 'one')
+    await promptAndSettle(r, 'delegate it')
+    const [root, , child] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(root).toContain(`## Session ids\n- session_id: ${session} (this session)\n- project_id: project-1\n- parent_session_id: ${parent} (the session that started you)\n- space_id: space-1`)
+    expect(root).toContain('`kortix sessions log <session_id> -n 50`')
+    expect(child).toContain(`- parent: the main conversation of this session (${session}), which started you`)
+    expect(child).not.toContain('parent_session_id')
+  })
+
   test('a box whose /workspace is a volume tells the model, a subagent included, that the computer is temporary; on a new computer it also says programs from before are not running; a box on its own disk says neither', async () => {
     const r = await boot({
       script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],

@@ -728,7 +728,11 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
       liveError = err instanceof SessionRuntimeError ? (err.cause ?? err) : err;
     }
   }
-  const why = liveError !== null ? 'its sandbox is not answering' : `session is ${session.status}`;
+  // A 403 is the box refusing this credential (a subagent reading its parent), not a box that is down.
+  const refused = (liveError as { status?: unknown } | null)?.status === 403;
+  const why = liveError === null
+    ? `session is ${session.status}`
+    : refused ? 'the live turn is not open to this credential' : 'its sandbox is not answering';
 
   let stored: StoredSessionLog | null = null;
   const handle = kortixFromAuth(auth).session(projectId, session.session_id);
