@@ -23653,7 +23653,8 @@
       "missed_wake": "前回の起動が遅れています。",
       "ask_overdue": "依頼の期限が過ぎています。",
       "verification_stalled": "検証開始から24時間以上経過しています。",
-      "unreadable": "GOAL.md がないか、ゴールのフロントマターがありません。"
+      "unreadable": "GOAL.md がないか、ゴールのフロントマターがありません。",
+      "blocked": "このゴールは自力で進めません。"
     },
     "sessionChip": "ゴール",
     "sessionRole": {
@@ -24467,7 +24468,43 @@
     "restart": "ゴールを再開始",
     "restartReason": "ゴールページから再開始しました",
     "restartedToast": "ゴールを再開始しました",
-    "restartError": "ゴールを再開始できませんでした。もう一度お試しください。"
+    "restartError": "ゴールを再開始できませんでした。もう一度お試しください。",
+    "noAccess": "このゴールへのアクセス権がありません。",
+    "noAccessHint": "担当者かプロジェクト管理者に共有を依頼してください。",
+    "notFoundHint": "削除されたか、リンクが間違っています。",
+    "chooseGoal": "この名前のゴールが複数あります。1つ選んでください。",
+    "goalLoadError": "このゴールを読み込めませんでした。もう一度お試しください。",
+    "eventsLoadError": "アクティビティを読み込めませんでした。",
+    "changedToast": "操作が届く前にこのゴールが変更されました。ページには現在の状態が表示されています。",
+    "blockedTitle": "ブロック中",
+    "blocked": {
+      "credits": "クレジットが尽きたため、起動を開始できません。",
+      "wake_cap": "今日の起動回数 {max} 回をすべて使いました。",
+      "session_cap": "開始できるセッション {max} 件をすべて使いました。",
+      "owner_lost": "エージェントのセッションが失敗し、引き継いだセッションがありません。",
+      "storage": "ファイル内のフォルダを読み書きできませんでした。",
+      "flag_off": "このプロジェクトではゴールがオフになっています。",
+      "setup": "Kortix がまだセットアップしています。"
+    },
+    "blockedNext": {
+      "credits": "クレジットを追加してから再開してください。",
+      "wake_cap": "UTC の午前0時を過ぎると自動で再開します。",
+      "session_cap": "停止するか、プロジェクト管理者にセッション上限の引き上げを依頼してください。",
+      "owner_lost": "もう一度開始して新しいセッションを割り当ててください。",
+      "storage": "ファイル内のフォルダを確認してから再開してください。",
+      "flag_off": "このプロジェクトでゴールをオンにしてから再開してください。",
+      "setup": "1分以内に自動で完了します。"
+    },
+    "legacyUnverifiedTitle": "Kortix による検証なし",
+    "legacyUnverified": "このゴールはフォルダからインポートされました。Kortix は結果を確認していません。",
+    "verified": "検証済み",
+    "reportedMet": "達成と報告済み、未検証",
+    "reportedMetHint": "エージェントは完了と報告しています。独立した検証はまだ合格していません。",
+    "verifiedCount": "{total} 件中 {verified} 件検証済み",
+    "checkFailed": "検証に失敗しました: {note}",
+    "waitingOnPerson": "{person} の回答待ち",
+    "waitNoCost": "回答を待っている間はチェックは実行されません。",
+    "chaseAt": "{time} にフォローアップ"
   },
   "agentEditor": {
     "manage": "管理",

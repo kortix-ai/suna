@@ -679,10 +679,14 @@ export const qk = {
     artifactText: (id: string, artifactId: string, entryVersion: string) => [...qk.project.scope(id), 'artifact-text', artifactId, entryVersion] as const,
     /** `listArtifactTypes`. */
     artifactTypes: (id: string) => [...qk.project.artifacts(id), 'types'] as const,
-    /** `listProjectGoals` — the goal folders in Files with their heartbeats. */
+    /** `listProjectGoals` — every goal record the caller may read. */
     goals: (id: string) => [...qk.project.scope(id), 'goals'] as const,
-    /** `getProjectGoalFiles` — one goal folder's log, notes and verification. */
+    /** `getProjectGoalFiles` — one goal folder's brief, log, notes and verification. */
     goalFiles: (id: string, folder: string) => [...qk.project.goals(id), 'files', folder] as const,
+    /** `getProjectGoal` — one goal record by `goal_id`. */
+    goal: (id: string, goalId: string) => [...qk.project.goals(id), 'goal', goalId] as const,
+    /** `listProjectGoalEvents` — one goal's audit trail. */
+    goalEvents: (id: string, goalId: string) => [...qk.project.goals(id), 'events', goalId] as const,
     /** `listSessionReminders` — `GET /projects/:id/sessions/:sid/reminders`. */
     sessionReminders: (id: string, sessionId: string) =>
       [...qk.project.reminders(id), 'session', sessionId] as const,
