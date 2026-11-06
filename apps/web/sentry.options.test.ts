@@ -42,15 +42,40 @@ test('the shared beforeSend drops injected browser noise but keeps real errors',
   expect(beforeSend?.(real, {})).toBe(real);
 });
 
-test.each(['./sentry.client.config', './sentry.server.config', './sentry.edge.config'])(
-  'runtime config %s initializes Sentry with sendDefaultPii: false',
-  async (configPath) => {
-    await import(configPath);
-    const options = Sentry.getClient()?.getOptions();
-    expect(options?.sendDefaultPii).toBe(false);
-    await Sentry.close();
-    // init() started a release-health session on the isolation scope; drop it
-    // so it does not leak into the next config's client (see sentry.client.config.test.ts).
-    Sentry.getIsolationScope().setSession();
+// Each runtime config runs in its own bun process: @sentry/nextjs keeps the
+// first client, so a second init() in one process would leave getClient()
+// pointing at the previous config's options and hide a regression. The
+// tracesSampleRate and the client-only filters prove each read is that
+// config's own client.
+const runtimeConfigs = [
+  { config: './sentry.client.config.ts', tracesSampleRate: 0.1, clientFilters: true },
+  { config: './sentry.server.config.ts', tracesSampleRate: 0.2, clientFilters: false },
+  { config: './sentry.edge.config.ts', tracesSampleRate: 0.1, clientFilters: false },
+];
+
+test.each(runtimeConfigs)(
+  'runtime config $config initializes its own Sentry client with sendDefaultPii: false',
+  ({ config, tracesSampleRate, clientFilters }) => {
+    const probe = `
+      const Sentry = await import('@sentry/nextjs');
+      await import(${JSON.stringify(config)});
+      const options = Sentry.getClient()?.getOptions();
+      console.log(JSON.stringify({
+        tracesSampleRate: options?.tracesSampleRate,
+        sendDefaultPii: options?.sendDefaultPii ?? null,
+        clientFilters: Boolean(options?.ignoreErrors?.length && options?.denyUrls?.length),
+      }));
+    `;
+    const run = Bun.spawnSync([process.execPath, '-e', probe], {
+      cwd: import.meta.dir,
+      env: { ...process.env, NEXT_PUBLIC_SENTRY_DSN: 'https://public@example.test/1' },
+    });
+    expect(run.exitCode).toBe(0);
+    const lines = run.stdout.toString().trim().split('\n');
+    expect(JSON.parse(lines[lines.length - 1])).toEqual({
+      tracesSampleRate,
+      sendDefaultPii: false,
+      clientFilters,
+    });
   },
 );

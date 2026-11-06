@@ -101,7 +101,7 @@ function lastCommitIso(pathRelativeToRepo) {
       encoding: 'utf8',
     }).trim();
   } catch {
-    committed = '';
+    // no git: fall through to the mtime fallback below
   }
   if (committed) return new Date(committed).toISOString();
   // A source file that exists on disk but has no commit touching it yet — a
