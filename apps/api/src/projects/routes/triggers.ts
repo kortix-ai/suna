@@ -63,7 +63,6 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { annotateAuditEvent } from '../../shared/audit-scope';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { logger } from '../../lib/logger';
 import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
@@ -89,16 +88,14 @@ import { capturePersonEvent } from './product-events';
 
 /**
  * The person who created or edited a trigger follows its alerts (KRTX-1742).
- * Never an API key or a service account: they name no person. Only with the
- * project's `notification_center` flag on.
+ * Never an API key or a service account: they name no person.
  */
 async function followTrigger(
   c: Context<AppEnv>,
-  project: { accountId: string; metadata: unknown },
+  project: { accountId: string },
   projectId: string,
   slug: string,
 ): Promise<void> {
-  if (!notificationsEnabled(project.metadata)) return;
   const userId = triggerWatcherOf({
     authType: c.get('authType'),
     userId: c.get('userId'),

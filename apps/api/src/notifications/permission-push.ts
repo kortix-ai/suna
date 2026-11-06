@@ -21,8 +21,8 @@ export interface PermissionPushRequest {
   projectId: string;
   requestId: string;
   /**
-   * Handed to the notifier, which resolves it only when the project's
-   * `notification_center` flag is on. Never on the relay's response path.
+   * Handed to the notifier, which resolves it after the claim. Never on the
+   * relay's response path.
    */
   context?: () => Promise<PermissionAskContext>;
 }

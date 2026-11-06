@@ -2,7 +2,7 @@
 // unread rows (one email per user per hour, ALL due rows claimed, 10 listed
 // plus "and N more", answered questions and rows the user can no longer see
 // dropped but stamped, never a permission ask) and the 90-day retention sweep.
-// A row of a project with the `notification_center` flag off is never mailed.
+// A stored `notification_center` override is inert: its project's rows are mailed.
 // Real: the inbox rows, pending questions, auth emails and the rendering.
 // Captured: the email transport.
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
@@ -106,7 +106,7 @@ beforeEach(async () => {
   answer = { ok: true, provider: 'mailpit', status: 200 };
   // One digest tick reads every user with due rows: start each test from a clean inbox.
   await db.update(notifications).set({ emailedAt: sql`now() - interval '1 day'` }).where(sql`${notifications.emailedAt} IS NULL`);
-  project = await seedProject(`digest-${crypto.randomUUID().slice(0, 8)}`, { metadata: { experimental: { notification_center: true } } });
+  project = await seedProject(`digest-${crypto.randomUUID().slice(0, 8)}`);
   seeded.push(project);
 });
 
@@ -226,16 +226,16 @@ describe('the email digest', () => {
     expect(sent[0]!.text).toContain('Session failed: My own session');
   });
 
-  test('the live access filter drops a row of a project with the notification_center flag off: stamped, no email', async () => {
+  test('the live access filter mails a row of a project with a stored notification_center: false override', async () => {
     const { userId } = await userWithEmail();
-    const flagOff = await seedProject(`digest-off-${crypto.randomUUID().slice(0, 8)}`);
-    seeded.push(flagOff);
-    await insertIntoView(db, accountMembers, { userId, accountId: flagOff.account_id, accountRole: 'owner' });
-    const sessionId = await seedSession(flagOff, userId);
-    const id = await row(userId, flagOff, { sessionId, title: 'My own session' });
+    const overridden = await seedProject(`digest-off-${crypto.randomUUID().slice(0, 8)}`, { metadata: { experimental: { notification_center: false } } });
+    seeded.push(overridden);
+    await insertIntoView(db, accountMembers, { userId, accountId: overridden.account_id, accountRole: 'owner' });
+    const sessionId = await seedSession(overridden, userId);
+    const id = await row(userId, overridden, { sessionId, title: 'My own session' });
 
-    expect(await runNotificationDigestTick({ emailAvailable: () => true })).toEqual({ users: 1, sent: 0, claimed: 1, dropped: 1 });
-    expect(sent).toEqual([]);
+    expect(await runNotificationDigestTick({ emailAvailable: () => true })).toEqual({ users: 1, sent: 1, claimed: 1, dropped: 0 });
+    expect(sent[0]!.text).toContain('Session failed: My own session');
     expect((await stateOf([id])).get(id)!.emailedAt).not.toBeNull();
   });
 

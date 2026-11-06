@@ -10,7 +10,7 @@ import { db } from '../shared/db';
 import { isNotificationEmailAvailable } from './email-delivery';
 import { filterVisibleNotificationRows, hiddenNotificationKinds, listInbox } from './inbox-read';
 
-const enabled = { experimental: { artifacts: true, artifact_comments: true, notification_center: false } };
+const enabled = { experimental: { artifacts: true, artifact_comments: true } };
 const originalStorageKey = config.PLATINUM_API_KEY;
 
 describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment notifications', () => {
@@ -119,13 +119,13 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('Artifact comment notifications'
     expect(await stored()).toEqual([]);
   });
 
-  test('the comment flag gates only Artifact rows; notification_center continues to gate session rows', async () => {
+  test('the comment flag gates only Artifact rows; session rows show with it on or off', async () => {
     await notify();
     const sessionId = await seedSession(project, owner);
     await db.insert(notifications).values({ userId: owner, accountId: project.account_id, projectId: project.project_id,
       sessionId, kind: 'turn_done', title: 'Synthetic session' });
-    expect((await listInbox(owner, { limit: 20 })).notifications).toEqual([]);
-    await db.update(projects).set({ metadata: { experimental: { artifacts: true, artifact_comments: false, notification_center: true } } })
+    expect((await listInbox(owner, { limit: 20 })).notifications.map((row) => row.kind)).toEqual(['turn_done']);
+    await db.update(projects).set({ metadata: { experimental: { artifacts: true, artifact_comments: false } } })
       .where(eq(projects.projectId, project.project_id));
     expect((await listInbox(member, { limit: 20 })).notifications).toEqual([]);
     expect((await listInbox(owner, { limit: 20 })).notifications.map((row) => row.kind)).toEqual(['turn_done']);

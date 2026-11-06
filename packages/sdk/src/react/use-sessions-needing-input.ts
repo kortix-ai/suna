@@ -27,13 +27,15 @@ export function sessionNeedsInputCount(
  * The project's per-session "waiting on a human" summary. The server only lists
  * sessions the viewer may answer, so a session present here is a `needs-you`
  * session for this viewer. Polled every 30 s. An open session's stream also
- * refetches it on each question event (`handleInteractionEvent`).
+ * refetches it on each question event (`handleInteractionEvent`). Nobody asked
+ * for this read, so a failure stays out of the host's `onError` (no toast, no
+ * frontend Sentry capture per poll); the API captures its own 500s.
  */
 export function useSessionsNeedingInput(projectId: string, options?: { enabled?: boolean }) {
   const enabled = Boolean(projectId) && options?.enabled !== false;
   return useQuery({
     queryKey: qk.project.needsInput(projectId),
-    queryFn: () => listSessionsNeedingInput(projectId),
+    queryFn: () => listSessionsNeedingInput(projectId, { showErrors: false }),
     enabled,
     ...contract('volatile'),
     refetchInterval: enabled ? 30_000 : false,

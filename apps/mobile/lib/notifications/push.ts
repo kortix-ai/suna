@@ -227,8 +227,7 @@ export const DEVICE_KIND_SWITCH: Partial<Record<InboxNotificationKind, DeviceKin
 /**
  * The kinds this phone turned off, as a patch for the user's record
  * (`updateNotificationPreferences`). Null when it turned none off. The patch
- * applies to the whole user: every device and Web Push of a project with
- * `notification_center` on.
+ * applies to the whole user: every device and Web Push.
  */
 export function legacyKindPatch(prefs: NotificationPreferences): NotificationPreferencesPatch | null {
   const kinds: NotificationPreferencesPatch['kinds'] = {};

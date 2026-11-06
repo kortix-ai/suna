@@ -812,30 +812,10 @@
       "notificationsDescription": "Notifications du navigateur pour les événements de vos sessions.",
       "unsupported": "Votre navigateur ne prend pas en charge les notifications.",
       "enableNotifications": "Activer les notifications",
-      "permissionGranted": "Autorisation du navigateur accordée",
       "permissionDenied": "Bloquées par le navigateur — modifiez l'autorisation dans les paramètres du site",
-      "permissionDefault": "L'autorisation du navigateur sera demandée lors de l'activation",
       "notificationTypes": "Types de notification",
       "behavior": "Comportement",
       "sendTestNotification": "Envoyer une notification de test",
-      "types": {
-        "onCompletion": {
-          "label": "Tâches terminées",
-          "description": "Lorsqu'une session termine sa tâche"
-        },
-        "onError": {
-          "label": "Erreurs",
-          "description": "Lorsqu'une session rencontre une erreur"
-        },
-        "onQuestion": {
-          "label": "Questions",
-          "description": "Lorsque Kortix a besoin de votre réponse pour continuer"
-        },
-        "onPermission": {
-          "label": "Demandes d'autorisation",
-          "description": "Lorsque Kortix a besoin d'une autorisation pour utiliser un outil"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Uniquement lorsque l'onglet est masqué",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Affiche les notifications dans ce navigateur, même lorsque tous les onglets Kortix sont fermés.",
       "enableDescriptionDesktop": "Affiche les notifications de l'application de bureau tant que sa fenêtre est ouverte.",
       "enableDescriptionBrowser": "Affiche les notifications dans ce navigateur tant qu'un onglet Kortix est ouvert.",
-      "notificationTypesDescription": "Ces choix s'appliquent sur chaque téléphone et dans chaque navigateur. Un téléphone a aussi son propre interrupteur pour Tour terminé, Tour en échec, Question et Demande d'autorisation. Il ne les reçoit que si les deux sont activés. La cloche liste toutes les notifications des projets où Centre de notifications est activé.",
+      "notificationTypesDescription": "Ces choix s'appliquent sur chaque téléphone et dans chaque navigateur. Un téléphone a aussi son propre interrupteur pour Tour terminé, Tour en échec, Question et Demande d'autorisation. Il ne les reçoit que si les deux sont activés. La boîte de réception liste toutes les notifications, quels que soient ces choix. L'e-mail est désactivé pour la plupart des types jusqu'à ce que vous l'activiez.",
       "push": "Push",
       "email": "E-mail",
       "channelSwitch": "{kind} : {channel}",
@@ -1287,10 +1267,6 @@
         "us_region": {
           "name": "Région États-Unis",
           "description": "Exécutez les nouvelles sessions de ce projet dans la région Est des États-Unis. Une session en cours garde sa région jusqu’à son redémarrage."
-        },
-        "notification_center": {
-          "name": "Centre de notifications",
-          "description": "Prévient les personnes concernées par une session (l'auteur du prompt, son créateur et ses abonnés) par une boîte de réception avec cloche, des notifications push du navigateur et des e-mails, et signale les déclencheurs et boucles en échec. Désactivé : seul le téléphone du créateur de la session reçoit son push, et le téléphone d'un propriétaire du compte en reçoit un quand un déclencheur commence à échouer."
         },
         "event_triggers": {
           "name": "Déclencheurs d’événements Composio",
@@ -3394,22 +3370,28 @@
       "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau.",
       "artifact_comment": "Retours, mentions et réponses sur les artefacts que vous pouvez consulter."
     },
-    "bell": {
-      "label": "Notifications",
-      "unreadLabel": "Notifications : {count} non lues",
+    "inbox": {
+      "title": "Boîte de réception",
+      "description": "Les nouvelles des sessions, déclencheurs et artefacts qui vous concernent, dans tous les projets.",
+      "unreadLabel": "Boîte de réception : {count} non lues",
+      "unreadCount": "{count} non lues",
       "markAllRead": "Tout marquer comme lu",
       "tabAll": "Tout",
       "tabNeedsYou": "Pour vous",
       "tabDone": "Terminé",
       "emptyNeedsYou": "Rien ne vous attend pour l’instant",
+      "emptyNeedsYouDescription": "Les questions, demandes d'autorisation et échecs s'affichent dans cet onglet.",
       "empty": "Les notifications s'afficheront ici",
+      "emptyDescription": "Kortix vous prévient quand une session se termine, attend votre réponse ou échoue.",
       "loadError": "Impossible de charger les notifications",
       "retry": "Réessayer",
       "unread": "Non lue",
       "promptPush": "Être notifié quand Kortix est fermé",
       "promptBackground": "Être notifié quand Kortix est en arrière-plan",
       "turnOn": "Activer",
-      "dismiss": "Ignorer"
+      "dismiss": "Ignorer",
+      "settings": "Paramètres de notification",
+      "emailOptIn": "L'e-mail est désactivé pour la plupart des types jusqu'à ce que vous l'activiez."
     },
     "arrival": {
       "inProject": "{kind} dans {project}",
@@ -21225,6 +21207,31 @@
       "text116cd3982a9b": "Objectifs",
       "textb0571ad96905": "objectifs objectif buts résultats",
       "text20d55e8c3373": "Annulation en cours",
+      "text3bd428ea044b": "Code de crédits créé",
+      "text340f463033e0": "Code",
+      "text24f52bfeb8a8": "Montant (USD)",
+      "textcd7767866963": "Comptes max.",
+      "texta5e4b9f547aa": "Expire après le",
+      "text58d661beb649": "À quoi sert le code. Les clients ne le voient jamais.",
+      "textb26f2162f0be": "{value0} crédits sans expiration par compte, une fois par compte.",
+      "text730bcc003693": "Chaque compte utilise un code une seule fois.",
+      "text231db95a3c8d": "Créer le code",
+      "textcc2a6d1c6f5a": "Épuisé",
+      "text285d1fb4c107": "Impossible de charger les codes de crédits. {value0}",
+      "text300726143d4d": "Les codes de crédits que vous créez apparaîtront ici",
+      "text98e6acfa20a3": "{value0} désactivé",
+      "text471313d05b7c": "{value0} activé",
+      "text220cf152984e": "Impossible de modifier le code",
+      "textb61216face35": "Impossible de créer le code. Réessayez.",
+      "text49e96d7cdf58": "Montant",
+      "texte3ca364bc6c1": "Utilisés",
+      "text8dcda9f17257": "{value0} crédits",
+      "text73b18d522cce": "Désactiver",
+      "text6d30f5727722": "Activer",
+      "textb80e926c97f3": "Codes de crédits",
+      "textd9dbfe1691b9": "Un code ajoute des crédits au solde d’un compte. Chaque compte utilise un code une seule fois, et les crédits n’expirent jamais.",
+      "text3edce074d607": "Nouveau code",
+      "texte0d1d308a679": "Codes",
       "textc1c52c665c38": "Le premier agent d'IA généraliste open source. Le dépôt a dépassé 20 000 étoiles sur GitHub, et Microsoft a investi via le GitHub Fund.",
       "text3c21bb15ccc5": "Invitez l'équipe. Les personnes et les agents reçoivent des permissions par ressource.",
       "texte898c82553c3": "02 · Membres du projet",

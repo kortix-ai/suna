@@ -2,13 +2,12 @@
  * Web Push for this browser (KRTX-1742): the service worker (`public/sw.js`),
  * the push subscription, and its record on the API.
  *
- * `NotificationHost` drives it. While the `notification_center` flag is on it
- * subscribes (`ensureWebPush`). On any page it unsubscribes when browser
- * notifications are turned off (`syncWebPush(false)`), reads whether this
- * browser holds a subscription (`detectWebPush`), and registers it again after
- * the MFA step-up (`reregisterWebPush`). Sign-out calls `stopWebPush`. Nothing
- * here toasts: a failure is logged once, and the bell and in-page
- * notifications still work.
+ * `NotificationHost` drives it, on every page while signed in. It subscribes
+ * (`ensureWebPush`), unsubscribes when browser notifications are turned off
+ * (`syncWebPush(false)`), reads whether this browser holds a subscription
+ * (`detectWebPush`), and registers it again after the MFA step-up
+ * (`reregisterWebPush`). Sign-out calls `stopWebPush`. Nothing here toasts: a
+ * failure is logged once, and the Inbox and in-page notifications still work.
  */
 
 import { isDesktop } from '../lib/desktop';
@@ -188,9 +187,9 @@ export function reregisterWebPush(): Promise<void> {
 
 /**
  * Whether this browser holds a deliverable subscription, read from the
- * browser alone (no request). A tab on a flag-off page never registers, but
- * its copy of a flag-on project's notification must still go through the
- * service worker. A registration in this page load wins.
+ * browser alone (no request), so this page's copy of a notification goes
+ * through the service worker before `ensureWebPush` has answered. A
+ * registration in this page load wins.
  */
 export function detectWebPush(): Promise<void> {
   queue = queue

@@ -812,30 +812,10 @@
       "notificationsDescription": "Notificaciones del navegador sobre eventos de sus sesiones.",
       "unsupported": "Su navegador no admite notificaciones.",
       "enableNotifications": "Activar notificaciones",
-      "permissionGranted": "Permiso del navegador concedido",
       "permissionDenied": "Bloqueadas por el navegador — cambie el permiso en la configuración del sitio",
-      "permissionDefault": "Se solicitará permiso al navegador al activarlas",
       "notificationTypes": "Tipos de notificación",
       "behavior": "Comportamiento",
       "sendTestNotification": "Enviar notificación de prueba",
-      "types": {
-        "onCompletion": {
-          "label": "Tareas completadas",
-          "description": "Cuando una sesión completa su tarea"
-        },
-        "onError": {
-          "label": "Errores",
-          "description": "Cuando una sesión encuentra un error"
-        },
-        "onQuestion": {
-          "label": "Preguntas",
-          "description": "Cuando Kortix necesita su respuesta para continuar"
-        },
-        "onPermission": {
-          "label": "Solicitudes de permiso",
-          "description": "Cuando Kortix necesita permiso para usar una herramienta"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Solo cuando la pestaña está oculta",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Muestra notificaciones en este navegador, incluso con todas las pestañas de Kortix cerradas.",
       "enableDescriptionDesktop": "Muestra notificaciones de la app de escritorio mientras su ventana esté abierta.",
       "enableDescriptionBrowser": "Muestra notificaciones en este navegador mientras haya una pestaña de Kortix abierta.",
-      "notificationTypesDescription": "Estas opciones se aplican en cada teléfono y en cada navegador. Un teléfono también tiene su propio interruptor para Turno terminado, Turno fallido, Pregunta y Solicitud de permiso. Solo los recibe mientras ambos están activados. La campana muestra todas las notificaciones de los proyectos con Centro de notificaciones activado.",
+      "notificationTypesDescription": "Estas opciones se aplican en cada teléfono y en cada navegador. Un teléfono también tiene su propio interruptor para Turno terminado, Turno fallido, Pregunta y Solicitud de permiso. Solo los recibe mientras ambos están activados. La bandeja de entrada muestra todas las notificaciones, sean cuales sean estas opciones. El correo está desactivado para la mayoría de los tipos hasta que lo actives.",
       "push": "Push",
       "email": "Correo",
       "channelSwitch": "{kind}: {channel}",
@@ -1287,10 +1267,6 @@
         "us_region": {
           "name": "Región de EE. UU.",
           "description": "Ejecuta las nuevas sesiones de este proyecto en la región Este de EE. UU. Una sesión en curso conserva su región hasta que se reinicia."
-        },
-        "notification_center": {
-          "name": "Centro de notificaciones",
-          "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y bucles. Desactivado: solo el teléfono de quien creó la sesión recibe su push, y el teléfono de un propietario de la cuenta recibe uno cuando un disparador empieza a fallar."
         },
         "event_triggers": {
           "name": "Disparadores de eventos de Composio",
@@ -3394,22 +3370,28 @@
       "capture_device_recovered": "Un ordenador de Kortix Capture que se detuvo vuelve a grabar.",
       "artifact_comment": "Comentarios, menciones y respuestas en los artefactos que puedes ver."
     },
-    "bell": {
-      "label": "Notificaciones",
-      "unreadLabel": "Notificaciones: {count} sin leer",
+    "inbox": {
+      "title": "Bandeja de entrada",
+      "description": "Novedades de las sesiones, los disparadores y los artefactos que te afectan, de todos los proyectos.",
+      "unreadLabel": "Bandeja de entrada: {count} sin leer",
+      "unreadCount": "{count} sin leer",
       "markAllRead": "Marcar todo como leído",
       "tabAll": "Todo",
       "tabNeedsYou": "Te necesitan",
       "tabDone": "Hecho",
       "emptyNeedsYou": "Nada te necesita ahora",
+      "emptyNeedsYouDescription": "Las preguntas, las solicitudes de permiso y los fallos aparecen en esta pestaña.",
       "empty": "Las notificaciones aparecerán aquí",
+      "emptyDescription": "Kortix te avisa cuando una sesión termina, necesita tu respuesta o falla.",
       "loadError": "No se pudieron cargar las notificaciones",
       "retry": "Reintentar",
       "unread": "Sin leer",
       "promptPush": "Recibe avisos cuando Kortix esté cerrado",
       "promptBackground": "Recibe avisos cuando Kortix esté en segundo plano",
       "turnOn": "Activar",
-      "dismiss": "Descartar"
+      "dismiss": "Descartar",
+      "settings": "Ajustes de notificaciones",
+      "emailOptIn": "El correo está desactivado para la mayoría de los tipos hasta que lo actives."
     },
     "arrival": {
       "inProject": "{kind} en {project}",
@@ -21225,6 +21207,31 @@
       "text116cd3982a9b": "Objetivos",
       "textb0571ad96905": "objetivos objetivo metas resultados",
       "text20d55e8c3373": "Cancelando",
+      "text3bd428ea044b": "Código de créditos creado",
+      "text340f463033e0": "Código",
+      "text24f52bfeb8a8": "Importe (USD)",
+      "textcd7767866963": "Máximo de cuentas",
+      "texta5e4b9f547aa": "Caduca después del",
+      "text58d661beb649": "Para qué sirve el código. Los clientes nunca lo ven.",
+      "textb26f2162f0be": "{value0} créditos sin caducidad por cuenta, una vez por cuenta.",
+      "text730bcc003693": "Cada cuenta canjea un código una vez.",
+      "text231db95a3c8d": "Crear código",
+      "textcc2a6d1c6f5a": "Agotado",
+      "text285d1fb4c107": "No se pudieron cargar los códigos de créditos. {value0}",
+      "text300726143d4d": "Los códigos de créditos que crees aparecerán aquí",
+      "text98e6acfa20a3": "{value0} desactivado",
+      "text471313d05b7c": "{value0} activado",
+      "text220cf152984e": "No se pudo cambiar el código",
+      "textb61216face35": "No se pudo crear el código. Inténtalo de nuevo.",
+      "text49e96d7cdf58": "Importe",
+      "texte3ca364bc6c1": "Canjeados",
+      "text8dcda9f17257": "{value0} créditos",
+      "text73b18d522cce": "Desactivar",
+      "text6d30f5727722": "Activar",
+      "textb80e926c97f3": "Códigos de créditos",
+      "textd9dbfe1691b9": "Un código añade créditos al saldo de una cuenta. Cada cuenta canjea un código una vez y los créditos nunca caducan.",
+      "text3edce074d607": "Nuevo código",
+      "texte0d1d308a679": "Códigos",
       "textc1c52c665c38": "El primer agente de IA de propósito general de código abierto. El repositorio superó las 20.000 estrellas en GitHub, y Microsoft invirtió a través del GitHub Fund.",
       "text3c21bb15ccc5": "Invita al equipo. Las personas y los agentes reciben permisos por recurso.",
       "texte898c82553c3": "02 · Miembros del proyecto",

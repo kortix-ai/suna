@@ -63,7 +63,7 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
 
   heartbeat.start();
 
-  const bunServer = Bun.serve({
+  const bunServer = Bun.serve<{ tunnelId: string }>({
     port,
     fetch(req, server) {
       const url = new URL(req.url);
@@ -91,7 +91,7 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
         }
 
         const success = server.upgrade(req, {
-          data: { tunnelId } as any,
+          data: { tunnelId },
         });
         if (success) return undefined;
 
@@ -103,13 +103,13 @@ export function startTunnelServer(config?: TunnelServerConfig): TunnelServer {
 
     websocket: {
       idleTimeout: 0,
-      open(ws: any) {
+      open(ws) {
         wsHandlers.onOpen(ws.data.tunnelId, ws);
       },
-      message(ws: any, message: string | Buffer) {
+      message(ws, message: string | Buffer) {
         wsHandlers.onMessage(ws.data.tunnelId, ws, message);
       },
-      close(ws: any) {
+      close(ws) {
         wsHandlers.onClose(ws.data.tunnelId, ws);
       },
     },

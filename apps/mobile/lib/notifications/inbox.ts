@@ -80,8 +80,3 @@ export function inboxOpenTarget(row: InboxNotification): { projectId: string; se
   }
   return { projectId: row.project_id, sessionId: row.session_id };
 }
-
-export function notificationInboxEnabled(project: { experimental?: { notification_center?: unknown; artifacts?: unknown; artifact_comments?: unknown } } | null | undefined): boolean {
-  const flags = project?.experimental;
-  return flags?.notification_center === true || (flags?.artifacts === true && flags.artifact_comments === true);
-}

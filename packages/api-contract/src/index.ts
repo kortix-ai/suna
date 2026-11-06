@@ -62,7 +62,6 @@ export const FeatureFlagMapSchema = z.object({
   pooled_provider_secrets: z.boolean(),
   us_region: z.boolean(),
   event_triggers: z.boolean(),
-  notification_center: z.boolean(),
   chat: z.boolean(),
   shared_drives: z.boolean(),
   goals: z.boolean(),
@@ -209,6 +208,8 @@ export const ProjectSchema = z.object({
     connectors_api_discover: z.literal(true).optional(),
     /** Not a flag since 2026-11-02 (My Kortix follows kortix.yaml `builtin_agents.my_kortix` alone); always `true` for older SDK and hosts. */
     meta_agent: z.literal(true).optional(),
+    /** Not a flag since 2026-11-06 (notifications are on for every project; email is opt-in per kind); always `true` for older SDK, web, CLI and mobile clients. */
+    notification_center: z.literal(true).optional(),
     /** Not a flag since 2026-11-03 (warm sessions were removed); always `false` for older SDK, web and mobile clients, which pre-create a session only while it is true. */
     warm_sessions: z.literal(false).optional(),
     /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */

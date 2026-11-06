@@ -1,8 +1,8 @@
 ---
 title: Recover OpenCode-era conversations that never reached the session log
-status: dev rehearsal done 2026-11-05 (Platinum and Daytona); prod run waits for the release that ships the script (PR #11788)
+status: prod plan + dry run 2026-11-06 found big stores over Platinum's 256 MiB download cap; the fix (parts, big-store pass) is verified on dev; the prod run waits for the release that ships it
 owner: platform
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # Recover OpenCode-era conversations that never reached the session log
@@ -40,8 +40,14 @@ Including sessions with only abandoned turns (many are a false-abandoned bug fix
 2. Boot the box at the provider, not through Kortix: the session row stays
    `stopped`, the box token stays refused (no turn, no model call, no billing), the
    sidebar does not move.
-3. Copy `opencode.db` + `-wal` (never `auth.json`) and the offloaded attachments to
-   a temp folder; delete it after the session.
+3. Measure `opencode.db` + `-wal` (never `auth.json`) in the box. Over the run's
+   cap (128 MiB by default): record `too_large` with the size and copy nothing.
+   Else split both files into 200 MiB parts in a temp folder (Platinum's file API
+   refuses a file over 256 MiB), download every part, and check that every byte
+   the box measured arrived: the store is never read without its `-wal`. Then
+   the offloaded attachments. `release` removes every `/tmp/kortix-recover.*` in
+   the box, also the one a failed download left; the local copy is deleted after
+   the session.
 4. Re-read the Kortix row; if still parked, stop and archive the box. A box a person
    woke meanwhile keeps running.
 5. Convert with the deleted kortixd exporter's mapping (`fromV1`), validate with
@@ -56,11 +62,17 @@ Outcomes: `written`, `converted` (dry run), `no_store`, `empty_store`, `box_gone
 `unsupported_store`, `invalid`, `skipped` (the session changed), `retry`, `failed`,
 `refused`, `too_large` (a store over 128 MiB or the row caps: set aside, not read).
 `empty_store` carries `store_messages=0`; a store with message rows of which none
-parse records `unsupported_store`.
+parse records `unsupported_store`. `too_large` records the store size (`bytes`)
+when the size was the reason; over the row caps its detail starts with
+`sessions=`.
 
 `retry` is mostly a box another writer stopped during the copy, for example
 Kortix's row-VM divergence sweep, which stops a running box whose row says
-`stopped`. The next run takes it again, up to 3 attempts.
+`stopped`. The next run takes it again, up to 3 attempts. A box that is not
+settled before the cycle starts (`box other`: still archiving after an earlier
+cycle, for example a dry run a minute before) spends no attempt and does not
+count for the stop rules. A part download retries a network error or a 5xx
+twice.
 
 ## Runbook
 
@@ -80,6 +92,22 @@ run '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--limit"
 run '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--apply"]'                 # all Platinum, in batches of 200
 run '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--apply","--provider","daytona","--concurrency","2"]'
 ```
+
+Big stores, after the main runs: one session at a time, on a 2 vCPU / 16 GB task
+(the worker container sets no memory limit of its own, so a task override is
+enough; Fargate allows 16 GB only from 2 vCPU, and the dev worker has 1).
+Peak memory is about 2.4 × the store (dev: 636 MB for a 262 MB store).
+
+```bash
+runbig() { aws ecs run-task --profile kortix --region $REGION --cluster $CLUSTER --task-definition "$TD" \
+  --capacity-provider-strategy capacityProvider=FARGATE,weight=1 --network-configuration "$NET" \
+  --overrides "{\"cpu\":\"2048\",\"memory\":\"16384\",\"containerOverrides\":[{\"name\":\"worker\",\"command\":$1}]}" --query 'tasks[0].taskArn' --output text; }
+runbig '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--apply","--max-store-mb","2048","--concurrency","1"]'
+runbig '["bun","src/scripts/recover-opencode-history.ts","--env","'$ENV'","--apply","--provider","daytona","--max-store-mb","2048","--concurrency","1"]'
+```
+
+`--max-store-mb` above 128 needs `--concurrency 1`. It takes the fresh candidates
+and every `too_large` set aside for its size under the new cap.
 
 The output goes to the worker log group (`/ecs/kortix-<env>…`, stream prefix
 `worker`): one `[recover]` line per session, a `done` line with the outcome counts.
@@ -119,5 +147,25 @@ are stamped and skipped.
 - Prod Daytona estimate at the dev rate: 6,069 sessions × 57 s / 2 ≈ 48 h at
   concurrency 2. Daytona's disk quota is shared by every environment, so raise the
   concurrency only while watching it.
+- 2026-11-06, prod on v0.15.0 (first image with the script): `--plan` 6,424
+  Platinum candidates (525 by a user, 72 with no root). The candidate filter takes
+  sessions with only abandoned turns too, so the earlier 1,544 was low: at the dev
+  rate, ≈15 h for Platinum. Dry run of 5 (newest user sessions): 3 `converted`
+  (40, 54, 617 messages), 2 failed on stores of 685 MB and 399 MB: Platinum's
+  file API answers `404 file too large` over 256 MiB. The old reader also read a
+  404 on the `-wal` as "no WAL", so a big `-wal` would have been dropped without
+  an error, and a failed download left its temp copy in the box. Nothing was
+  written on prod.
+- 2026-11-06, the fix on dev (local run against dev data): the 2 dev `too_large`
+  stores (227 MB, 262 MB) `written` in 2 parts each (178 and 713 messages, peak
+  RSS 636 MB). A 200 MiB cap records `too_large` from the box's measure, without a
+  copy. Single-part copies read on a Platinum box (4.5 MB) and a Daytona box
+  (9.4 MB). After the cycles, 0 `/tmp/kortix-recover.*` folders in the boxes, and
+  every box parked.
+- 2026-11-06, the deployed dev image (`a11a454428`, worker td `:222`): a one-off
+  task at 2 vCPU / 16 GB with `--apply --max-store-mb 2048 --concurrency 1` and
+  a Daytona `--apply`, both exit 0 and 0 candidates. Dev totals: 868 `written`,
+  47 `empty_store`, 3 `no_store`, 2 `box_gone`, 1 `retry` (a box stuck in Daytona
+  `archiving`).
 - Open: the prod run after the release; pi sessions with no log (146 Platinum
   since 08-19, `ses_pi…` roots) need a pi reader and are not covered.

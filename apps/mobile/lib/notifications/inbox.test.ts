@@ -8,7 +8,6 @@ import {
   inboxRowDetail,
   inboxRowLabel,
   inboxRowTitle,
-  notificationInboxEnabled,
 } from './inbox';
 
 const NOW = Date.parse('2026-10-09T12:00:00.000Z');
@@ -129,12 +128,4 @@ test('Artifact inbox rows open only a validated Artifact path for their own proj
   const path = `/projects/${projectId}/artifacts/${artifactId}`;
   expect(inboxOpenTarget(row({ kind: 'artifact_comment', project_id: projectId, session_id: null, url: path }))).toEqual({ projectId, sessionId: null, artifactPath: path });
   for (const url of ['https://evil.example.test/path', '/projects/other/artifacts/a1', `/projects/${projectId}/sessions/a1`]) expect(inboxOpenTarget(row({ kind: 'artifact_comment', project_id: projectId, url }))).toBeNull();
-});
-
-test('Artifact inbox gating requires both flags without changing the strict session feature flag', () => {
-  const project = { experimental: { notification_center: false, artifacts: true, artifact_comments: true } };
-  expect(notificationInboxEnabled(project)).toBe(true);
-  expect(project.experimental.notification_center).toBe(false);
-  for (const experimental of [{}, { artifacts: true }, { artifact_comments: true }, { artifacts: true, artifact_comments: 'true' }, { artifacts: false, artifact_comments: true }]) expect(notificationInboxEnabled({ experimental })).toBe(false);
-  expect(notificationInboxEnabled({ experimental: { notification_center: true } })).toBe(true);
 });

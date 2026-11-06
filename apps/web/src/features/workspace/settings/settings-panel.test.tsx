@@ -348,8 +348,7 @@ describe('SettingsPanelShell — real tab content gating', () => {
    * `h2` `SettingsTabHeader` emits).
    *
    * Sessions (Notifications) left this list deliberately with KRTX-1742: it
-   * reads the `notification_center` flag (`useNotificationCenter`) and the
-   * person's server record (`useNotificationPreferences`), so it is
+   * reads the person's server record (`useNotificationPreferences`), so it is
    * query-backed like the rest.
    */
   const STORE_ONLY_TABS = ['appearance'] as const;

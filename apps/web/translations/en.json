@@ -634,30 +634,10 @@
       "notificationsDescription": "Browser notifications for what happens in your sessions.",
       "unsupported": "Your browser does not support notifications.",
       "enableNotifications": "Enable notifications",
-      "permissionGranted": "Browser permission granted",
       "permissionDenied": "Blocked by browser — update in browser site settings",
-      "permissionDefault": "Will request browser permission when enabled",
       "notificationTypes": "Notification types",
       "behavior": "Behavior",
       "sendTestNotification": "Send test notification",
-      "types": {
-        "onCompletion": {
-          "label": "Task completions",
-          "description": "When a session finishes its task"
-        },
-        "onError": {
-          "label": "Errors",
-          "description": "When a session encounters an error"
-        },
-        "onQuestion": {
-          "label": "Questions",
-          "description": "When Kortix needs your input to continue"
-        },
-        "onPermission": {
-          "label": "Permission requests",
-          "description": "When Kortix needs permission to use a tool"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Only when tab is hidden",
@@ -709,7 +689,7 @@
       "enableDescriptionPush": "Shows notifications in this browser, also with every Kortix tab closed.",
       "enableDescriptionDesktop": "Shows notifications from the desktop app while its window is open.",
       "enableDescriptionBrowser": "Shows notifications in this browser while a Kortix tab is open.",
-      "notificationTypesDescription": "These choices apply on every phone and in every browser. A phone also has its own switch for Turn finished, Turn failed, Question, and Permission request. It gets these only while both are on. The bell lists every notification of a project with Notification Center on.",
+      "notificationTypesDescription": "These choices apply on every phone and in every browser. A phone also has its own switch for Turn finished, Turn failed, Question, and Permission request. It gets these only while both are on. The Inbox lists every notification, whatever these choices are. Email is off for most kinds until you turn it on.",
       "push": "Push",
       "email": "Email",
       "channelSwitch": "{kind}: {channel}",
@@ -1109,10 +1089,6 @@
         "us_region": {
           "name": "US Region",
           "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
-        },
-        "notification_center": {
-          "name": "Notification Center",
-          "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and loops. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing."
         },
         "event_triggers": {
           "name": "Composio event triggers",
@@ -3439,22 +3415,28 @@
       "capture_device_recovered": "A Kortix Capture computer that stopped records again.",
       "artifact_comment": "Feedback, mentions, and replies on Artifacts you can view."
     },
-    "bell": {
-      "label": "Notifications",
-      "unreadLabel": "Notifications: {count} unread",
+    "inbox": {
+      "title": "Inbox",
+      "description": "Updates about the sessions, triggers, and artifacts that concern you, from every project.",
+      "unreadLabel": "Inbox: {count} unread",
+      "unreadCount": "{count} unread",
       "markAllRead": "Mark all as read",
       "tabAll": "All",
       "tabNeedsYou": "Needs you",
       "tabDone": "Done",
       "emptyNeedsYou": "Nothing needs you right now",
+      "emptyNeedsYouDescription": "Questions, permission requests and failures show up in this tab.",
       "empty": "Notifications will show up here",
+      "emptyDescription": "Kortix notifies you when a session finishes, needs your answer or fails.",
       "loadError": "Could not load notifications",
       "retry": "Try again",
       "unread": "Unread",
       "promptPush": "Get notified when Kortix is closed",
       "promptBackground": "Get notified when Kortix is in the background",
       "turnOn": "Turn on",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "settings": "Notification settings",
+      "emailOptIn": "Email is off for most kinds until you turn it on."
     },
     "arrival": {
       "inProject": "{kind} in {project}",
@@ -21270,6 +21252,31 @@
       "text116cd3982a9b": "Goals",
       "textb0571ad96905": "goals goal objectives outcomes",
       "text20d55e8c3373": "Cancelling",
+      "text3bd428ea044b": "Credit code created",
+      "text340f463033e0": "Code",
+      "text24f52bfeb8a8": "Amount (USD)",
+      "textcd7767866963": "Max accounts",
+      "texta5e4b9f547aa": "Expires after",
+      "text58d661beb649": "What the code is for. Customers never see it.",
+      "textb26f2162f0be": "{value0} non-expiring credits per account, once per account.",
+      "text730bcc003693": "Each account redeems a code once.",
+      "text231db95a3c8d": "Create code",
+      "textcc2a6d1c6f5a": "Used up",
+      "text285d1fb4c107": "Could not load the credit codes. {value0}",
+      "text300726143d4d": "Credit codes you create will show up here",
+      "text98e6acfa20a3": "{value0} switched off",
+      "text471313d05b7c": "{value0} switched on",
+      "text220cf152984e": "Could not change the code",
+      "textb61216face35": "Could not create the code. Try again.",
+      "text49e96d7cdf58": "Amount",
+      "texte3ca364bc6c1": "Redeemed",
+      "text8dcda9f17257": "{value0} credits",
+      "text73b18d522cce": "Switch off",
+      "text6d30f5727722": "Switch on",
+      "textb80e926c97f3": "Credit codes",
+      "textd9dbfe1691b9": "A code adds credits to an account's balance. Each account redeems a code once, and the credits never expire.",
+      "text3edce074d607": "New code",
+      "texte0d1d308a679": "Codes",
       "textc1c52c665c38": "The first open-source general-purpose AI agent. The repo passed 20,000 GitHub stars, and Microsoft invested through the GitHub Fund.",
       "text3c21bb15ccc5": "Invite the team. People and agents get per-resource permissions.",
       "texte898c82553c3": "02 · Project members",

@@ -812,30 +812,10 @@
       "notificationsDescription": "Notifiche del browser per gli eventi delle tue sessioni.",
       "unsupported": "Il browser non supporta le notifiche.",
       "enableNotifications": "Abilita notifiche",
-      "permissionGranted": "Autorizzazione del browser concessa",
       "permissionDenied": "Bloccate dal browser — modifica l'autorizzazione nelle impostazioni del sito",
-      "permissionDefault": "All'attivazione verrà richiesta l'autorizzazione del browser",
       "notificationTypes": "Tipi di notifica",
       "behavior": "Comportamento",
       "sendTestNotification": "Invia notifica di prova",
-      "types": {
-        "onCompletion": {
-          "label": "Attività completate",
-          "description": "Quando una sessione termina la sua attività"
-        },
-        "onError": {
-          "label": "Errori",
-          "description": "Quando una sessione rileva un errore"
-        },
-        "onQuestion": {
-          "label": "Domande",
-          "description": "Quando Kortix richiede il tuo intervento"
-        },
-        "onPermission": {
-          "label": "Richieste di autorizzazione",
-          "description": "Quando Kortix richiede l'autorizzazione per usare uno strumento"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Solo quando la scheda è nascosta",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Mostra le notifiche in questo browser, anche con tutte le schede di Kortix chiuse.",
       "enableDescriptionDesktop": "Mostra le notifiche dell'app desktop finché la sua finestra è aperta.",
       "enableDescriptionBrowser": "Mostra le notifiche in questo browser finché una scheda di Kortix è aperta.",
-      "notificationTypesDescription": "Queste scelte valgono su ogni telefono e in ogni browser. Un telefono ha anche un proprio interruttore per Turno terminato, Turno non riuscito, Domanda e Richiesta di autorizzazione. Li riceve solo quando entrambi sono attivi. La campanella elenca ogni notifica dei progetti con Centro notifiche attivo.",
+      "notificationTypesDescription": "Queste scelte valgono su ogni telefono e in ogni browser. Un telefono ha anche un proprio interruttore per Turno terminato, Turno non riuscito, Domanda e Richiesta di autorizzazione. Li riceve solo quando entrambi sono attivi. La posta in arrivo elenca ogni notifica, qualunque siano queste scelte. L'email è disattivata per la maggior parte dei tipi finché non la attivi.",
       "push": "Push",
       "email": "Email",
       "channelSwitch": "{kind}: {channel}",
@@ -1287,10 +1267,6 @@
         "us_region": {
           "name": "Regione USA",
           "description": "Esegui le nuove sessioni di questo progetto nella regione USA Est. Una sessione in corso mantiene la sua regione fino al riavvio."
-        },
-        "notification_center": {
-          "name": "Centro notifiche",
-          "description": "Avvisa le persone a cui una sessione interessa (chi ha inviato il prompt, chi l’ha creata e chi la segue) con una casella con campanella, notifiche push del browser ed email, e segnala trigger e cicli che falliscono. Disattivato: solo il telefono di chi ha creato la sessione riceve il suo push, e il telefono di un proprietario dell’account ne riceve uno quando un trigger inizia a fallire."
         },
         "event_triggers": {
           "name": "Trigger di eventi Composio",
@@ -3394,22 +3370,28 @@
       "capture_device_recovered": "Un computer Kortix Capture che si era fermato registra di nuovo.",
       "artifact_comment": "Feedback, menzioni e risposte sugli artefatti che puoi visualizzare."
     },
-    "bell": {
-      "label": "Notifiche",
-      "unreadLabel": "Notifiche: {count} non lette",
+    "inbox": {
+      "title": "Posta in arrivo",
+      "description": "Aggiornamenti su sessioni, trigger e artefatti che ti riguardano, da tutti i progetti.",
+      "unreadLabel": "Posta in arrivo: {count} non lette",
+      "unreadCount": "{count} non lette",
       "markAllRead": "Segna tutto come letto",
       "tabAll": "Tutte",
       "tabNeedsYou": "Per te",
       "tabDone": "Fatto",
       "emptyNeedsYou": "Al momento nulla ti aspetta",
+      "emptyNeedsYouDescription": "Domande, richieste di autorizzazione ed errori appaiono in questa scheda.",
       "empty": "Le notifiche appariranno qui",
+      "emptyDescription": "Kortix ti avvisa quando una sessione finisce, ha bisogno della tua risposta o non riesce.",
       "loadError": "Impossibile caricare le notifiche",
       "retry": "Riprova",
       "unread": "Non letta",
       "promptPush": "Ricevi notifiche quando Kortix è chiuso",
       "promptBackground": "Ricevi notifiche quando Kortix è in background",
       "turnOn": "Attiva",
-      "dismiss": "Ignora"
+      "dismiss": "Ignora",
+      "settings": "Impostazioni delle notifiche",
+      "emailOptIn": "L'email è disattivata per la maggior parte dei tipi finché non la attivi."
     },
     "arrival": {
       "inProject": "{kind} in {project}",
@@ -21225,6 +21207,31 @@
       "text116cd3982a9b": "Obiettivi",
       "textb0571ad96905": "obiettivi obiettivo traguardi risultati",
       "text20d55e8c3373": "In annullamento",
+      "text3bd428ea044b": "Codice credito creato",
+      "text340f463033e0": "Codice",
+      "text24f52bfeb8a8": "Importo (USD)",
+      "textcd7767866963": "Account massimi",
+      "texta5e4b9f547aa": "Scade dopo il",
+      "text58d661beb649": "A cosa serve il codice. I clienti non lo vedono mai.",
+      "textb26f2162f0be": "{value0} crediti senza scadenza per account, una volta per account.",
+      "text730bcc003693": "Ogni account riscatta un codice una sola volta.",
+      "text231db95a3c8d": "Crea codice",
+      "textcc2a6d1c6f5a": "Esaurito",
+      "text285d1fb4c107": "Impossibile caricare i codici credito. {value0}",
+      "text300726143d4d": "I codici credito che crei compariranno qui",
+      "text98e6acfa20a3": "{value0} disattivato",
+      "text471313d05b7c": "{value0} attivato",
+      "text220cf152984e": "Impossibile modificare il codice",
+      "textb61216face35": "Impossibile creare il codice. Riprova.",
+      "text49e96d7cdf58": "Importo",
+      "texte3ca364bc6c1": "Riscattati",
+      "text8dcda9f17257": "{value0} crediti",
+      "text73b18d522cce": "Disattiva",
+      "text6d30f5727722": "Attiva",
+      "textb80e926c97f3": "Codici credito",
+      "textd9dbfe1691b9": "Un codice aggiunge crediti al saldo di un account. Ogni account riscatta un codice una sola volta e i crediti non scadono mai.",
+      "text3edce074d607": "Nuovo codice",
+      "texte0d1d308a679": "Codici",
       "textc1c52c665c38": "Il primo agente di IA generalista open source. Il repository ha superato le 20.000 stelle su GitHub e Microsoft ha investito tramite il GitHub Fund.",
       "text3c21bb15ccc5": "Invita il team. Persone e agenti ricevono permessi per singola risorsa.",
       "texte898c82553c3": "02 · Membri del progetto",

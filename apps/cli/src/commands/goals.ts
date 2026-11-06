@@ -17,7 +17,7 @@
  * Every write carries the `revision` of a fresh read. On `409 goal_conflict`
  * the CLI re-reads once and retries only when the move is still valid.
  */
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync, writeSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -244,10 +244,18 @@ export function withLifecycleMirror(text: string, g: Pick<Goal, 'state' | 'revis
 /** Best effort: the mirror is orientation only, so a missing or odd GOAL.md is left alone. */
 function writeMirror(g: Goal): void {
   const path = join(localFolder(g), 'GOAL.md');
+  let fd: number | undefined;
   try {
-    if (!lstatSync(path).isFile()) return;
-    writeFileSync(path, withLifecycleMirror(readFileSync(path, 'utf8'), g));
-  } catch {}
+    // One descriptor, opened without following a symlink, for the check, the read and the write.
+    fd = openSync(path, constants.O_RDWR | constants.O_NOFOLLOW);
+    if (!fstatSync(fd).isFile()) return;
+    const next = withLifecycleMirror(readFileSync(fd, 'utf8'), g);
+    ftruncateSync(fd, 0);
+    writeSync(fd, next, 0);
+  } catch {
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 /** The verifier's report, read without following a symlink. Null: not a regular, non-empty file. */
