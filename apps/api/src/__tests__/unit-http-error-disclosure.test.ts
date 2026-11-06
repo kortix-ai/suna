@@ -65,6 +65,24 @@ test('malformed JSON is a 400 and unknown deep paths return safe envelopes', asy
   expect(await missing.json()).toEqual({ error: true, message: 'Not found', status: 404 });
 });
 
+test('a literal null body is a 400 whatever the content type, never a TypeError 500', async () => {
+  const app = new OpenAPIHono();
+  installHttpMiddleware(app);
+  installHttpErrors(app);
+  app.post('/deref', async (c) => c.json({ name: (await c.req.json()).name }));
+  for (const contentType of ['application/json', 'text/plain', undefined]) {
+    const response = await app.request('/deref', {
+      method: 'POST', headers: contentType ? { 'Content-Type': contentType } : {}, body: 'null',
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: true, message: 'Request body must not be null', status: 400 });
+  }
+  const valid = await app.request('/deref', {
+    method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"name":"x"}',
+  });
+  expect(valid.status).toBe(200);
+});
+
 test('a SyntaxError that is not the request body stays a 500', async () => {
   const app = new OpenAPIHono();
   installHttpMiddleware(app);
