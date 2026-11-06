@@ -62,7 +62,7 @@ export function capabilitiesFor(goal: GoalRow, actor: GoalActor): GoalCapabiliti
     resume: manager && open && (paused || (goal.blockedReason !== null && RESUMABLE_BLOCKS.has(goal.blockedReason))),
     stop: manager && open,
     restart: manager && (goal.state === 'stopped' || ownerLost),
-    answer: manager && open && !paused,
+    answer: manager && open && !paused && !ownerLost,
     edit_criteria: manager && open,
   };
 }

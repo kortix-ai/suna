@@ -21,7 +21,7 @@ const { FakeVolume } = await import('./helpers/memory-fake-volume');
 const { ensureProjectDrive } = await import('../drives/service');
 const { setGoalEffectsForTests } = await import('../projects/goals/effects');
 const goals = await import('../projects/goals/service');
-const { admitGoalWake, adoptGoalSuccessor, goalHeartbeatEditRefusal, goalSuccessorAllowed } = await import('../projects/goals/admission');
+const { admitGoalWake, adoptGoalSuccessor, goalHeartbeatEditRefusal, goalPromptRefusal, goalSuccessorAllowed } = await import('../projects/goals/admission');
 const { runGoalReconcilerTick } = await import('../projects/goals/reconcile');
 const { wakeGoalForMergedChangeRequest } = await import('../projects/lib/goal-wake');
 const { fireGitTrigger } = await import('../projects/lib/trigger-fire');
@@ -486,6 +486,67 @@ describe('the heartbeat belongs to the API', () => {
     const verdict = await goalSuccessorAllowed(PROJECT, goal.heartbeatReminderId!);
     expect(verdict.allowed).toBe(false);
     expect(verdict.goal!.blockedReason).toBe('session_cap');
+  });
+});
+
+describe('council round 1 fixes', () => {
+  test('a goal prompt queued before a pause or stop is refused at delivery; after resume it runs', async () => {
+    const goal = await activeGoal();
+    expect(await goalPromptRefusal(goal.ownerSessionId!)).toBeNull();
+    const paused = await goals.pauseGoal(ctx(ana), goal.goalId, { revision: goal.revision });
+    expect(await goalPromptRefusal(goal.ownerSessionId!)).toContain('paused');
+    const resumed = await goals.resumeGoal(ctx(ana), goal.goalId, { revision: paused.revision });
+    expect(await goalPromptRefusal(goal.ownerSessionId!)).toBeNull();
+    await goals.stopGoal(ctx(ana), goal.goalId, { revision: resumed.revision });
+    expect(await goalPromptRefusal(goal.ownerSessionId!)).toContain('stopped');
+  });
+
+  test('an answer whose prompt did not queue answers 503; the retry with the same answer_id delivers it once', async () => {
+    const goal = await activeGoal();
+    const answerId = crypto.randomUUID();
+    failPromptOnce.add(`goal-answer:${goal.goalId}:${answerId}`);
+    const first = await refusal(goals.answerGoal(ctx(ana), goal.goalId, { answer_id: answerId, text: 'EU only' }));
+    expect(first.status).toBe(503);
+    const retry = await goals.answerGoal(ctx(ana), goal.goalId, { answer_id: answerId, text: 'EU only' });
+    expect(retry.deduped).toBe(true);
+    expect(prompts.filter((p) => p.key === `goal-answer:${goal.goalId}:${answerId}`).length).toBe(1);
+  });
+
+  test('resuming a paused draft wakes its owner (a draft has no heartbeat)', async () => {
+    const goal = await freshGoal();
+    const paused = await goals.pauseGoal(ctx(ana), goal.goalId, { revision: goal.revision });
+    prompts.length = 0;
+    await goals.resumeGoal(ctx(ana), goal.goalId, { revision: paused.revision });
+    expect(prompts.some((p) => p.sessionId === goal.ownerSessionId && p.key.startsWith(`goal-resume:${goal.goalId}:`))).toBe(true);
+  });
+
+  test('a passing verdict needs every evidence file readable', async () => {
+    const goal = await activeGoal();
+    const owner = asSession(goal.ownerSessionId!);
+    volume.put(`${goal.folder}/evidence/a.md`, 'a');
+    volume.put(`${goal.folder}/evidence/b.md`, 'b');
+    const reported = await goals.reportProgress(ctx(owner), goal.goalId, { revision: goal.revision, criteria: [{ id: 'c1', reported_met: true, evidence: 'evidence/a.md' }, { id: 'c2', reported_met: true, evidence: 'evidence/b.md' }] });
+    const verifying = await goals.requestVerification(ctx(owner), goal.goalId, { revision: reported.revision });
+    (volume as unknown as { files: Map<string, unknown> }).files.delete(`${goal.folder}/evidence/b.md`);
+    const r = await refusal(goals.giveVerdict(ctx(asSession(verifying.verifierSessionId!)), goal.goalId, { revision: verifying.revision, results: [{ criterion_id: 'c1', result: 'pass', note: '' }, { criterion_id: 'c2', result: 'pass', note: '' }] }));
+    expect(r.status).toBe(422);
+    expect(r.violations).toEqual(['Evidence evidence/b.md could not be read.']);
+    expect((await getGoal(PROJECT, goal.goalId))!.state).toBe('verifying');
+  });
+
+  test('a failed owner at the session cap becomes owner_lost in one tick, heartbeat off; answers are refused until a restart', async () => {
+    const goal = await activeGoal();
+    await db.update(projectGoals).set({ blockedReason: 'session_cap' }).where(eq(projectGoals.goalId, goal.goalId));
+    await db.update(projectSessions).set({ status: 'failed' }).where(eq(projectSessions.sessionId, goal.ownerSessionId!));
+    let cursor: string | null = null;
+    do {
+      cursor = (await runGoalReconcilerTick(cursor)).cursor;
+    } while (cursor);
+    const lost = (await getGoal(PROJECT, goal.goalId))!;
+    expect(lost.blockedReason).toBe('owner_lost');
+    expect((await heartbeat(goal.goalId))?.enabled ?? false).toBe(false);
+    expect((await eventsOf(goal.goalId)).filter((e) => e.kind === 'repaired').length).toBe(0);
+    expect((await refusal(goals.answerGoal(ctx(ana), goal.goalId, { answer_id: crypto.randomUUID(), text: 'x' }))).status).toBe(409);
   });
 });
 

@@ -204,7 +204,7 @@ export async function createGoal(
   // A chat session may turn its conversation into a goal for the person it works for ("Make this a goal").
   // A goal's own owner or verifier may not start another goal: no goal spawns goals.
   if (actor.kind === 'platform') forbidden('A person creates a goal.');
-  if (actor.kind === 'session' && (await goalOfSession(actor.sessionId))) forbidden("A goal's own session cannot start another goal.");
+  if (actor.kind === 'session' && isOpenState((await goalOfSession(actor.sessionId))?.state ?? 'done')) forbidden("A goal's own session cannot start another goal.");
   const existing = await getGoal(project.projectId, input.goal_id);
   if (existing) {
     if (existing.createdByUserId !== actor.userId) throw new GoalError(409, 'goal_conflict', 'This goal id is taken.');
@@ -587,6 +587,11 @@ async function evidenceHashes(goal: GoalRow): Promise<Record<string, string>> {
   return out;
 }
 
+/** The evidence paths a verdict cannot cover: every criterion's file must read and hash, or `done` is not proven. */
+function unhashedEvidence(goal: GoalRow, hashes: Record<string, string>): string[] {
+  return [...new Set(goal.criteria.map((c) => c.evidence).filter((p): p is string => !!p && !hashes[p]))];
+}
+
 export async function giveVerdict(ctx: GoalContext, goalId: string, req: z.infer<typeof GoalVerdictRequestSchema>): Promise<GoalRow> {
   const before = await getGoal(ctx.project.projectId, goalId);
   if (!before) throw new GoalError(404, 'goal_not_found', 'Goal not found.');
@@ -605,6 +610,8 @@ export async function giveVerdict(ctx: GoalContext, goalId: string, req: z.infer
     const violations = verdictViolations(goal.criteria, req.results);
     if (violations.length) invalid('The verdict must give exactly one result for every current criterion.', violations);
     const pass = req.results.every((r) => r.result === 'pass');
+    const unread = pass ? unhashedEvidence(goal, hashes) : [];
+    if (unread.length) invalid('Every evidence file must be readable for a passing verdict.', unread.map((p) => `Evidence ${p} could not be read.`));
     const verification: ProjectGoalVerification = {
       ...goal.verification,
       decided_at: now.toISOString(),
@@ -698,21 +705,27 @@ export async function answerGoal(ctx: GoalContext, goalId: string, req: AnswerGo
     requireManager(goal, actor);
     if (!isOpenState(goal.state)) conflict(goal, 'A closed goal takes no answers.');
     if (goal.pausedAt) conflict(goal, 'A paused goal takes no answers. Resume it first.');
+    if (goal.blockedReason === 'owner_lost') conflict(goal, 'Its owner session is lost. Start the goal again first; then answer.');
     const resumes = goal.state === 'waiting_on_user';
     return {
       patch: resumes ? { state: 'active', waitingOn: null, chaseAt: null } : {},
       event: ev(actor, 'answered', req.text.slice(0, 500), { answer_id: req.answer_id }, `answer:${req.answer_id}`),
     };
   }, { now: ctx.now });
-  if (result.deduped) return { goal: result.row, deduped: true };
   const goal = result.row;
-  await goalEffects().queuePrompt({
+  // The prompt is queued after the answer is recorded, under the answer's key, also on a
+  // deduped retry: a queue that failed the first time is tried again, and one that worked
+  // is deduped by the key. Not queued: 503, and the person's retry finishes it.
+  const question = result.deduped ? null : result.before.waitingOn;
+  const queued = await goalEffects().queuePrompt({
     project: ctx.project,
     sessionId: goal.ownerSessionId!,
     userId: actor.userId,
-    text: `${goalWakePrompt(goal.boxFolder, goal.goalId)} ${name} (user ${actor.userId}) answered${result.before.waitingOn ? ` your question "${result.before.waitingOn}"` : ''}:\n\n${req.text}`,
+    text: `${goalWakePrompt(goal.boxFolder, goal.goalId)} ${name} (user ${actor.userId}) answered${question ? ` your question "${question}"` : ''}:\n\n${req.text}`,
     key: `goal-answer:${goal.goalId}:${req.answer_id}`,
   });
+  if (!queued) throw new GoalError(503, 'goal_unavailable', 'The answer is saved but did not reach the agent yet. Send it again.');
+  if (result.deduped) return { goal, deduped: true };
   if (result.before.state === 'waiting_on_user') await applyHeartbeat(goal);
   return { goal: await reread(goal), deduped: false };
 }
@@ -746,7 +759,8 @@ export async function resumeGoal(ctx: GoalContext, goalId: string, req: GoalCont
   }, { now: ctx.now });
   const goal = result.row;
   await applyHeartbeat(goal);
-  if (goal.state === 'active' || goal.state === 'verifying') {
+  // A draft wakes too: its owner finishes the criteria and activates (a paused draft has no heartbeat to wake it).
+  if (goal.state === 'active' || goal.state === 'verifying' || goal.state === 'draft') {
     const sessionId = goal.state === 'verifying' && goal.verifierSessionId ? goal.verifierSessionId : goal.ownerSessionId!;
     await goalEffects().queuePrompt({
       project: ctx.project,
@@ -835,7 +849,8 @@ export async function restartGoal(ctx: GoalContext, goalId: string, req: GoalCon
 
 /** Should the heartbeat fire on its schedule now? */
 export function heartbeatWanted(goal: GoalRow): boolean {
-  if (goal.pausedAt || goal.blockedReason === 'setup' || goal.blockedReason === 'flag_off') return false;
+  // session_cap / owner_lost: a fire could only start a successor the cap or the lost owner forbids.
+  if (goal.pausedAt || ['setup', 'flag_off', 'session_cap', 'owner_lost'].includes(goal.blockedReason ?? '')) return false;
   return goal.state === 'active' || goal.state === 'verifying';
 }
 

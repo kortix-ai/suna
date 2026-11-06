@@ -23,6 +23,7 @@ import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, trigger
 import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
 import { captureAccountProductEvent } from '../../iam/account-analytics';
 import { admitReminderFire, goalSuccessorAllowed, goalSuccessorMetadata } from '../goals/admission';
+import { GOAL_SESSION_SOURCE } from '../goals/effects';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -616,7 +617,10 @@ async function fireReminderSuccessor(
   }
   const goalMetadata = goal.goal ? goalSuccessorMetadata(goal.goal) : {};
   const result = await createSession({
-    source: 'trigger:reminder',
+    // A goal's successor works in its creator's own folder, so it is that person's
+    // own private session (origin user), as the first owner is: a trigger origin
+    // mounts no Files (drives/service.ts isPersonalSession). `actor` is the goal's creator.
+    source: goal.goal ? GOAL_SESSION_SOURCE : 'trigger:reminder',
     project,
     userId: actor,
     requestingPrincipalType: 'human',

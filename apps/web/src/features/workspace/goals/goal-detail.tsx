@@ -316,6 +316,9 @@ function goalDescription(brief: string | null): string {
   return (brief ?? '')
     .replace(/^---\n[\s\S]*?\n---\n?/, '')
     .replace(/^\s*# [^\n]*\n+/, '')
+    // Notes for the agent (HTML comments, and the plain line goals created before it was one) are not the brief.
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/^The Kortix API holds this goal's state[^\n]*\n*/m, '')
     .replace(CONTEXT_PLACEHOLDER, '')
     .replace(/\n## (Done criteria|Done when|Success criteria)\b[\s\S]*$/i, '')
     .trim()

@@ -1,4 +1,5 @@
 import { sessionLifecycleCommands } from '@kortix/db';
+import { goalPromptRefusal } from '../goals/admission';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -174,7 +175,11 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
         ...(payload.clientMessageId ? {} : { queuedAt: row.createdAt }),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
-      payload.clientMessageId || row.source === 'system:artifact-comment' ? async () => {
+      payload.clientMessageId || row.source === 'system:artifact-comment' || row.source === 'system:goal' ? async () => {
+        if (row.source === 'system:goal') {
+          const refusal = await goalPromptRefusal(row.sessionId!);
+          if (refusal) throw new PromptDeliveryRefused(409, 'goal_not_running', refusal);
+        }
         if (payload.clientMessageId) await assertInboxDeliveryActive(row);
         if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row, overrides?.model ?? undefined);
       } : undefined);

@@ -101,6 +101,8 @@ export async function reconcileGoal(goal: GoalRow, now: Date, result: GoalReconc
           ? { unchanged: true }
           : { patch: { blockedReason: 'owner_lost' }, keepRevision: true, event: { kind: 'blocked', actorKind: 'platform', actorId: null, message: health === 'missing' ? 'The owner session is gone and no successor took over.' : 'The owner session failed and nothing wakes a successor.', data: { reason: 'owner_lost' } } },
       );
+      // Nothing may fire into the lost owner: the heartbeat goes off until a restart.
+      await applyHeartbeat(lost.row);
       await notifyGoal(lost.row, 'blocked', 'Its owner session stopped working. Restart the goal to give it a new owner.', now);
       result.ownerLost += 1;
       return;

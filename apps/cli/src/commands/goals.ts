@@ -720,7 +720,8 @@ const reportSignature = (g: Goal) => JSON.stringify([g.state, g.summary, g.crite
 
 /** What the owner must do on `g`, given how many wakes in a row reported nothing. */
 export function goalProblems(g: Goal, unchanged: number): string[] {
-  if (g.paused_at || !OPEN.has(g.state)) return [];
+  // Paused, closed or blocked (wake cap, credits, flag off, a lost owner): the API holds it; a nudge would be a turn the admission gate refused.
+  if (g.paused_at || g.blocked_reason || !OPEN.has(g.state)) return [];
   if (g.state === 'draft' && g.criteria.length === 0) {
     return [`Draft with no done criteria: write 1 to ${CRITERIA_MAX} under "## Done criteria" in GOAL.md, then kortix goals transition active --reason "…".`];
   }

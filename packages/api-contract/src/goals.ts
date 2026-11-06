@@ -173,9 +173,9 @@ export const GoalListResponseSchema = z.object({ goals: z.array(GoalSchema) });
 export const GoalResponseSchema = z.object({ goal: GoalSchema });
 export const GoalEventsResponseSchema = z.object({ events: z.array(GoalEventSchema), next_cursor: z.string().nullable() });
 
-/** `409 goal_conflict` and `403 goal_forbidden` / `422 goal_invalid` bodies. */
+/** `409 goal_conflict`, `403 goal_forbidden`, `422 goal_invalid` and `503 goal_unavailable` (retry the same request) bodies. */
 export const GoalErrorSchema = z.object({
-  error: z.enum(['goal_conflict', 'goal_forbidden', 'goal_invalid', 'goal_not_found', 'goal_flag_off']),
+  error: z.enum(['goal_conflict', 'goal_forbidden', 'goal_invalid', 'goal_not_found', 'goal_flag_off', 'goal_unavailable']),
   message: z.string(),
   /** Each reason the move was refused, one sentence each. */
   violations: z.array(z.string()).optional(),

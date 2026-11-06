@@ -26,8 +26,8 @@ export interface GoalEventInput {
 /** A refusal: the HTTP status and the contract error body (`GoalErrorSchema`). */
 export class GoalError extends Error {
   constructor(
-    readonly status: 403 | 404 | 409 | 422,
-    readonly code: 'goal_conflict' | 'goal_forbidden' | 'goal_invalid' | 'goal_not_found' | 'goal_flag_off',
+    readonly status: 403 | 404 | 409 | 422 | 503,
+    readonly code: 'goal_conflict' | 'goal_forbidden' | 'goal_invalid' | 'goal_not_found' | 'goal_flag_off' | 'goal_unavailable',
     message: string,
     readonly violations?: string[],
     readonly goal?: GoalRow,

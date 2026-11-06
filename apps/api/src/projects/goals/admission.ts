@@ -189,3 +189,16 @@ export async function goalHeartbeatEditRefusal(projectId: string, reminderId: st
   const goal = await goalByHeartbeat(projectId, reminderId);
   return goal ? `This loop is the heartbeat of goal ${goal.goalId}. Only the Kortix API changes it; a person pauses or stops the goal.` : null;
 }
+
+/**
+ * Why a goal prompt queued into `sessionId` must not run now, or null. A prompt
+ * the engine queued before a person paused or stopped the goal waits in the
+ * session inbox; it is refused at delivery, so no turn starts after the control.
+ */
+export async function goalPromptRefusal(sessionId: string): Promise<string | null> {
+  const goal = await goalOfSession(sessionId);
+  if (!goal) return null;
+  if (goal.state === 'done' || goal.state === 'stopped') return `The goal is ${goal.state}: its queued prompt does not run.`;
+  if (goal.pausedAt) return 'A person paused the goal: its queued prompt does not run.';
+  return null;
+}
