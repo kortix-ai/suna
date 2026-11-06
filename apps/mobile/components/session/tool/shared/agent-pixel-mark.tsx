@@ -7,7 +7,7 @@
 import { View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { pixelMark } from '@/lib/session/agent-pixel-mark';
+import { pixelMarkShape } from '@kortix/shared/pixel-mark';
 import { useTurnPalette } from './styles';
 
 /** My Kortix's run handle (`mykortix-1a2b3c4d`) wears My Kortix's mark. */
@@ -17,7 +17,7 @@ export function agentSlugOfHandle(handle: string): string {
 
 export function AgentPixelMark({ slug, size = 14, tile = 20 }: { slug: string; size?: 14 | 21; tile?: number }) {
   const palette = useTurnPalette();
-  const mark = pixelMark(slug);
+  const mark = pixelMarkShape(slug);
   const cell = mark.width === 7 ? size / 7 : Math.max(1, Math.floor(size / 12));
   const width = mark.width * cell;
   const height = mark.height * cell;
