@@ -100,6 +100,19 @@ const SCENARIOS: Scenario[] = [
         'A bare URL: https://kortix.com/docs',
       ].join('\n'),
   },
+  {
+    // The app has no `/drives` route: each drive link opens the file preview.
+    id: 'drive-file-links',
+    label: 'Drive file links',
+    text: (origin) =>
+      [
+        'The photo is in your Drive:',
+        '',
+        '- [Download](/drives/me/Team%20photos/avatar.jpg)',
+        `- [Download (absolute link)](${origin}/drives/me/Team%20photos/avatar.jpg)`,
+        '- [Another site](https://example.com/drives/me/avatar.jpg) stays a web link',
+      ].join('\n'),
+  },
 ];
 
 /** ~100 characters a second, about what a model streams. */
