@@ -2425,6 +2425,27 @@
       "autoTopupOn": "自动充值：余额低于 {threshold} 积分时充入 {amount}",
       "ledgerBonus": "充值赠送"
     },
+    "redeem": {
+      "toggle": "兑换积分码",
+      "codeLabel": "积分码",
+      "placeholder": "输入兑换码",
+      "action": "兑换",
+      "redeemed": "兑换成功",
+      "redeemedDescription": "已向你的余额添加 {credits} 积分。",
+      "invalid": "此兑换码无效。请检查拼写后重试。",
+      "expired": "此兑换码已过期。",
+      "exhausted": "此兑换码的兑换次数已用完。",
+      "alreadyRedeemed": "此账户已兑换过此兑换码。",
+      "noPermission": "只有此账户的所有者和管理员可以兑换。",
+      "rateLimited": "尝试次数过多。请等待一分钟后重试。",
+      "failed": "无法兑换此兑换码。请重试。",
+      "pageTitle": "兑换积分码",
+      "pageDescription": "兑换码的积分会存入你的账户余额，且永不过期。",
+      "successTitle": "已添加 {credits} 积分",
+      "successDescription": "你当前的余额为 {balance} 积分。兑换码的积分永不过期。",
+      "openKortix": "打开 Kortix",
+      "backToKortix": "返回 Kortix"
+    },
     "autoTopup": {
       "bufferError": "请输入 {minimum} 或更多：每次充值必须比阈值至少多 {buffer} 积分。",
       "addPaymentFirst": "请先添加付款方式，再开启自动充值。",

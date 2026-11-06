@@ -2425,6 +2425,27 @@
       "autoTopupOn": "Recarga automática: adiciona {amount} quando o saldo cai abaixo de {threshold} créditos",
       "ledgerBonus": "Bônus de recarga"
     },
+    "redeem": {
+      "toggle": "Resgatar um código de créditos",
+      "codeLabel": "Código de créditos",
+      "placeholder": "Digite um código",
+      "action": "Resgatar código",
+      "redeemed": "Código resgatado",
+      "redeemedDescription": "{credits} créditos adicionados ao seu saldo.",
+      "invalid": "Este código não é válido. Confira a grafia e tente novamente.",
+      "expired": "Este código expirou.",
+      "exhausted": "Este código não tem mais resgates disponíveis.",
+      "alreadyRedeemed": "Esta conta já resgatou este código.",
+      "noPermission": "Somente proprietários e administradores desta conta podem resgatar um código.",
+      "rateLimited": "Muitas tentativas. Aguarde um minuto e tente novamente.",
+      "failed": "Não foi possível resgatar o código. Tente novamente.",
+      "pageTitle": "Resgatar um código de créditos",
+      "pageDescription": "Os créditos de um código vão para o saldo da sua conta e nunca expiram.",
+      "successTitle": "{credits} créditos adicionados",
+      "successDescription": "Seu saldo agora é de {balance} créditos. Os créditos de um código nunca expiram.",
+      "openKortix": "Abrir o Kortix",
+      "backToKortix": "Voltar ao Kortix"
+    },
     "autoTopup": {
       "bufferError": "Informe {minimum} ou mais: uma recarga deve adicionar pelo menos {buffer} créditos a mais que o limite.",
       "addPaymentFirst": "Adicione um método de pagamento antes de ativar a recarga automática.",

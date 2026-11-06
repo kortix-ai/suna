@@ -2425,6 +2425,27 @@
       "autoTopupOn": "Ricarica automatica: aggiunge {amount} quando il saldo scende sotto {threshold} crediti",
       "ledgerBonus": "Bonus di ricarica"
     },
+    "redeem": {
+      "toggle": "Riscatta un codice crediti",
+      "codeLabel": "Codice crediti",
+      "placeholder": "Inserisci un codice",
+      "action": "Riscatta codice",
+      "redeemed": "Codice riscattato",
+      "redeemedDescription": "{credits} crediti aggiunti al tuo saldo.",
+      "invalid": "Questo codice non è valido. Controlla come è scritto e riprova.",
+      "expired": "Questo codice è scaduto.",
+      "exhausted": "Questo codice non ha più riscatti disponibili.",
+      "alreadyRedeemed": "Questo account ha già riscattato questo codice.",
+      "noPermission": "Solo i proprietari e gli amministratori di questo account possono riscattare un codice.",
+      "rateLimited": "Troppi tentativi. Attendi un minuto e riprova.",
+      "failed": "Impossibile riscattare il codice. Riprova.",
+      "pageTitle": "Riscatta un codice crediti",
+      "pageDescription": "I crediti di un codice vanno sul saldo del tuo account e non scadono mai.",
+      "successTitle": "{credits} crediti aggiunti",
+      "successDescription": "Il tuo saldo ora è di {balance} crediti. I crediti di un codice non scadono mai.",
+      "openKortix": "Apri Kortix",
+      "backToKortix": "Torna a Kortix"
+    },
     "autoTopup": {
       "bufferError": "Inserisci {minimum} o più: una ricarica deve aggiungere almeno {buffer} crediti in più della soglia.",
       "addPaymentFirst": "Aggiungi un metodo di pagamento prima di attivare la ricarica automatica.",
