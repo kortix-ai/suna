@@ -28,7 +28,7 @@ import { ErrorState } from '@kortix/ui/error-state';
 import { InfoBanner } from '@kortix/ui/info-banner';
 import Loading from '@kortix/ui/loading';
 import { MENU_PANEL_STATIC, menuRow } from '@kortix/ui/menu-recipe';
-import { errorToast } from '@kortix/ui/toast';
+import { errorToast, infoToast } from '@kortix/ui/toast';
 import { CardsIcon, LinkSimpleIcon, WarningIcon } from '@phosphor-icons/react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -1109,6 +1109,13 @@ function EmbedOffer({
   };
   const close = useRef(onClose);
   const pick = useRef<(choice: number) => void>(() => {});
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
     const onTransaction = ({
       transaction,
@@ -1143,13 +1150,16 @@ function EmbedOffer({
   const embed = async () => {
     setLoading(true);
     const meta = await fetchEmbed(offer.href, (url) => getLinkPreview(projectId, url));
+    // Closed while the preview loaded (Escape, typing, Keep as link): the link stays a link.
+    if (!mounted.current) return;
+    if (!meta) {
+      infoToast(t('embedUnavailable'));
+      close.current();
+      return;
+    }
     const { doc } = editor.state;
     // The link must still be where it was pasted.
-    if (
-      meta &&
-      offer.to <= doc.content.size &&
-      doc.textBetween(offer.from, offer.to) === offer.href
-    ) {
+    if (offer.to <= doc.content.size && doc.textBetween(offer.from, offer.to) === offer.href) {
       const $from = doc.resolve(offer.from);
       // A top-level paragraph that holds only the link becomes the card; otherwise the card splits it
       // (a list item must start with a paragraph).

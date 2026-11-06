@@ -142,6 +142,10 @@ import { rootRem, useElementWidth } from './use-element-width';
 const MODE_TOGGLE =
   'aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:hover:bg-foreground/90';
 
+/** A small status mark beside the title (visibility, pinned): focusable for its hint. */
+const HEADER_MARK =
+  'text-muted-foreground focus-visible:ring-ring flex shrink-0 rounded-sm outline-none focus-visible:ring-2';
+
 /** An anchor's identity: it equals the key of an offer of the same selection. */
 const anchorKey = (anchor: ArtifactCommentAnchor | null | undefined) =>
   anchor ? JSON.stringify(anchor) : '';
@@ -1014,8 +1018,11 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               ) : null}
               {artifact && VisIcon ? (
                 <Hint label={t(`visibility.${artifact.visibility}`)} side="bottom">
+                  {/* Focusable, so the keyboard reaches the hint too. */}
                   <span
-                    className="text-muted-foreground flex shrink-0"
+                    role="img"
+                    tabIndex={0}
+                    className={HEADER_MARK}
                     aria-label={t(`visibility.${artifact.visibility}`)}
                   >
                     <VisIcon weight="fill" className="size-3.5" aria-hidden />
@@ -1024,7 +1031,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               ) : null}
               {artifact?.pinned ? (
                 <Hint label={t('pinned')} side="bottom">
-                  <span className="text-muted-foreground flex shrink-0" aria-label={t('pinned')}>
+                  <span role="img" tabIndex={0} className={HEADER_MARK} aria-label={t('pinned')}>
                     <PushPinIcon weight="fill" className="size-3.5" aria-hidden />
                   </span>
                 </Hint>
@@ -1076,7 +1083,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {/* Two groups: the artifact's history and Ask AI; then Share and More. */}
             <ButtonGroup>
               <DropdownMenu open={historyOpen} onOpenChange={setHistoryOpen}>
-                <Hint label={t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })} side="bottom">
+                <Hint label={`${t('history')} · ${t('editedAgo', { time: relativeTime(artifact.updated_at, locale) })}`} side="bottom">
                   <DropdownMenuTrigger asChild>
                     <Button size="icon-sm" variant="secondary" aria-label={t('history')}>
                       <ClockCounterClockwiseIcon className="size-3.5" />

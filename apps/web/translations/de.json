@@ -25157,7 +25157,11 @@
     "viewingOldUndated": "Du siehst eine frühere Version.",
     "exportWaiting": "Deine Änderungen werden gespeichert, dann exportiert…",
     "exportBlocked": "Export abgebrochen: Deine letzten Änderungen sind nicht gespeichert.",
-    "clearFilters": "Filter zurücksetzen"
+    "clearFilters": "Filter zurücksetzen",
+    "linkCopyFailed": "Der Link konnte nicht kopiert werden. Markiere ihn im Feld und kopiere ihn.",
+    "shareDropsPeople": "{count, plural, one {Beim Speichern wird die hinzugefügte Person entfernt. Nur Privat behält eine Liste von Personen.} other {Beim Speichern werden die # hinzugefügten Personen entfernt. Nur Privat behält eine Liste von Personen.}}",
+    "askAgentHistoryError": "Frühere Chats konnten nicht geladen werden.",
+    "embedUnavailable": "Dieser Link hat keine Vorschau und bleibt ein Link."
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",

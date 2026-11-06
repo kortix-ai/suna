@@ -25040,7 +25040,7 @@
       "composerKeys": "Enter 发送 · Shift+Enter 换行",
       "closeSelection": "取消所选段落",
       "preparingSelection": "正在准备所选段落…",
-      "selectionCaptureFailed": "无法准备所选段落。请放弃此选择，再对整个作品发表评论。",
+      "selectionCaptureFailed": "无法准备所选段落。请放弃此选择，再对整个工件发表评论。",
       "commentSelection": "评论",
       "selectionTooLong": "这段内容太长，无法评论。请选择不超过 {max} 个字符。",
       "selectionUnavailable": "无法将评论关联到此段内容，请选择其他段落。",
@@ -25157,7 +25157,11 @@
     "viewingOldUndated": "你正在查看较早的版本。",
     "exportWaiting": "正在保存你的编辑，然后导出…",
     "exportBlocked": "导出已停止：你最近的编辑尚未保存。",
-    "clearFilters": "清除筛选"
+    "clearFilters": "清除筛选",
+    "linkCopyFailed": "无法复制链接。请在输入框中选中后复制。",
+    "shareDropsPeople": "{count, plural, other {保存后将移除你添加的 # 人。只有“私密”会保留人员列表。}}",
+    "askAgentHistoryError": "无法加载之前的聊天。",
+    "embedUnavailable": "此链接没有预览，因此保持为链接。"
   },
   "emailConnect": {
     "homeTitle": "收件箱所在位置",

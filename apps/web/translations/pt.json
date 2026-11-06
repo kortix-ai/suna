@@ -25157,7 +25157,11 @@
     "viewingOldUndated": "Você está vendo uma versão anterior.",
     "exportWaiting": "Salvando suas alterações e depois exportando…",
     "exportBlocked": "Exportação interrompida: suas últimas alterações não estão salvas.",
-    "clearFilters": "Limpar filtros"
+    "clearFilters": "Limpar filtros",
+    "linkCopyFailed": "Não foi possível copiar o link. Selecione-o no campo e copie.",
+    "shareDropsPeople": "{count, plural, one {Ao salvar, a pessoa adicionada é removida. Somente Privado mantém uma lista de pessoas.} other {Ao salvar, as # pessoas adicionadas são removidas. Somente Privado mantém uma lista de pessoas.}}",
+    "askAgentHistoryError": "Não foi possível carregar as conversas anteriores.",
+    "embedUnavailable": "Este link não tem prévia, então continua sendo um link."
   },
   "emailConnect": {
     "homeTitle": "Onde a caixa fica",

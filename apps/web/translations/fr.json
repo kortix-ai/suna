@@ -25157,7 +25157,11 @@
     "viewingOldUndated": "Vous consultez une version antérieure.",
     "exportWaiting": "Enregistrement de vos modifications, puis export…",
     "exportBlocked": "Export arrêté : vos dernières modifications ne sont pas enregistrées.",
-    "clearFilters": "Effacer les filtres"
+    "clearFilters": "Effacer les filtres",
+    "linkCopyFailed": "Impossible de copier le lien. Sélectionnez-le dans le champ et copiez-le.",
+    "shareDropsPeople": "{count, plural, one {L’enregistrement retire la personne ajoutée. Seul Privé conserve une liste de personnes.} other {L’enregistrement retire les # personnes ajoutées. Seul Privé conserve une liste de personnes.}}",
+    "askAgentHistoryError": "Impossible de charger les discussions précédentes.",
+    "embedUnavailable": "Ce lien n’a pas d’aperçu, il reste donc un lien."
   },
   "emailConnect": {
     "homeTitle": "Où se trouve la boîte",
