@@ -371,7 +371,11 @@ const FENCE_RENAMES: Record<string, string[]> = {
 };
 const fenceCheck = (v: string) => /^403:token-project-scope:(.+)$/.exec(v)?.[1] ?? null;
 /** A canonical route the base tree never mounted. */
-const CANONICAL = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|scim\/v2\/workspaces)(\/|$)/;
+const CANONICAL = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|v1\/webhooks\/workspaces|scim\/v2\/workspaces)(\/|$)/;
+/** Legacy-named routes the branch added (no base handler): the account-keyed token list, the person's keys, setup and restore, the deletion plan. */
+const NEW_LEGACY_ROUTES = /^\/v1\/(accounts\/:workspaceId\/tokens|accounts\/me\/tokens|projects\/:workspaceId\/(setup|restore)$|account\/deletion-plan$)/;
+/** Routes that name no workspace: they act on the caller's own (default) workspace or on the person. */
+const NO_WORKSPACE_IN_PATH = (path: string) => !/:(workspaceId|projectId|accountId|id)\b/.test(path.replace(/\/:(tokenId|installationId|sessionId)\b/g, ''));
 
 const INTENDED: Intended[] = [
   {
@@ -439,6 +443,34 @@ const INTENDED: Intended[] = [
       /^\/v1\/(projects|workspaces)\/:workspaceId\/cli-token$/.test(r.path) &&
       r.base === '403:token_mint_exceeds_parent' &&
       r.head === 'pass',
+  },
+  {
+    why: 'A legacy-named route this branch added (C5): the base tree has no handler (404); the head serves it and its own gate answers.',
+    match: (r) => r.base === '404' && NEW_LEGACY_ROUTES.test(r.path),
+  },
+  {
+    why: '"Delete my account" deletes the PERSON (DEL-7, DEL-8): the /v1/account/* deletion routes act on the caller, not on an account role; a workspace-bound or machine credential is refused (person_credential_required).',
+    match: (r) => /^\/v1\/account\/(cancel-deletion|deletion-status|delete-immediately|request-deletion|deletion-plan)$/.test(r.path) &&
+      (r.head === 'pass' || r.head === '403:person_credential_required'),
+  },
+  {
+    why: 'D3, no account at sign-up: a person in no workspace (no_grant, a machine) on a route that names no workspace acts on their own; the base resolved someone else\'s default account and refused it (403 not a member / no access).',
+    match: (r) => ['no_grant', 'machine'].includes(r.role) && NO_WORKSPACE_IN_PATH(r.path) &&
+      /^403:(You do not have access to this account|not_a_member)$/.test(r.base) &&
+      (r.head === 'pass' || r.head === '403:account_role_insufficient' || r.head === '403:person_credential_required'),
+  },
+  {
+    why: 'PROJ-48: the published CLI\'s provision into an occupied account gives a member a NEW workspace of their own instead of 403 owner/admin required.',
+    match: (r) => /^\/v1\/projects\/provision(-stream)?$/.test(r.path) && r.base === '403:Owner or admin role required' && r.head === 'pass',
+  },
+  {
+    why: 'K2: only an owner deletes a workspace; admins and managers get 403 account_role_insufficient.',
+    match: (r) => r.method === 'DELETE' && /^\/v1\/(projects|workspaces)\/:workspaceId$/.test(r.path) && ['admin', 'manager'].includes(r.role) &&
+      r.base === 'pass' && r.head === '403:account_role_insufficient',
+  },
+  {
+    why: 'A non-member no longer reads another account\'s subscription connections (the base legacy route answered 200; a closing gap, finding 30).',
+    match: (r) => r.path.endsWith('/subscription-connections') && ['no_grant', 'machine'].includes(r.role) && r.base === 'pass' && r.head.startsWith('403:'),
   },
   {
     why: 'Copy only (finding 20): the same denial now says "this workspace" (no_project_membership text, account denial text).',
