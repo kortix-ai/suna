@@ -752,9 +752,9 @@ export function registerAppsRoutes(): void {
       method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
       description:
         'The App stops serving at once; its machines and images go. An App with volumes needs `project.app.admin`: ' +
-        'each volume keeps a final snapshot for 7 days, then Kortix purges it. The triggers that name the App (its ' +
-        'work triggers, the schedule that calls it, session triggers on it) go with it, listed in `triggers_removed`; ' +
-        'that needs `project.trigger.delete` (403 `app_triggers_need_delete` without it).',
+        'each volume keeps a final snapshot for 7 days, then Kortix purges it. The project triggers that name the App ' +
+        '(its work triggers, the schedule that calls it) go with it, listed in `triggers_removed`; that needs ' +
+        '`project.trigger.delete` (403 `app_triggers_need_delete` without it). A session trigger on the App stays with its session.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
       },

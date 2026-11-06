@@ -518,8 +518,8 @@ export interface AppImageRelease {
 
 /**
  * Deletes the App, its runtimes, and every deployment image it built. The
- * triggers that name the App (its work triggers, the schedule that calls it,
- * session triggers on it) go with it: `triggers_removed` lists them.
+ * project's triggers that name the App (its work triggers, the schedule that
+ * calls it) go with it: `triggers_removed` lists them.
  */
 export async function deleteApp(
   projectId: string,

@@ -1,10 +1,10 @@
 /**
  * Integration test (real PostgreSQL): an App delete takes its runtime triggers.
  *
- * A session trigger on an App (`--on app --app <slug>`), a runtime agent
- * trigger that calls it (`run: { app }`) and one that listens to it are found
- * by the App's slug; a kortix.yaml row (no `.` in its slug), another App's
- * trigger and another project's trigger are not. Dropping them removes their
+ * A runtime agent trigger that calls an App (`run: { app }`) and one that
+ * listens to it are found by the App's slug; a session trigger on it (its
+ * session's owner removes it), a kortix.yaml row (no `.` in its slug), another
+ * App's trigger and another project's trigger are not. Dropping them removes their
  * rows and their watchers.
  */
 import { afterAll, beforeAll, expect, test } from 'bun:test';
@@ -51,23 +51,26 @@ afterAll(async () => {
   await removeSeeded([project, other]);
 });
 
-test('finds the session trigger, the caller and the listener of the App, and nothing else', async () => {
+test('finds the caller and the listener of the App; not a session trigger, a kortix.yaml row, or another App\'s', async () => {
+  // trigger.…a1 is a session trigger: its session's owner removes it (the reminder routes' gate).
   expect(await runtimeTriggersNamingApp(project.project_id, 'status-watch'))
-    .toEqual(['automation.0000000000a3', 'trigger.0000000000a1', 'trigger.0000000000a2']);
+    .toEqual(['automation.0000000000a3', 'trigger.0000000000a2']);
   expect(await runtimeTriggersNamingApp(project.project_id, 'nothing-watch')).toEqual([]);
 });
 
 test('dropping them removes their rows and watchers; the rest stay', async () => {
   const found = await runtimeTriggersNamingApp(project.project_id, 'status-watch');
   await dropRetiredAppTriggers(project.project_id, [...found, 'status-work']);
-  expect(await slugs(project)).toEqual(['trigger.0000000000b1']);
+  expect(await slugs(project)).toEqual(['trigger.0000000000a1', 'trigger.0000000000b1']);
   expect(await slugs(other)).toEqual(['trigger.0000000000c1']);
+  await db.insert(triggerWatchers).values({ projectId: project.project_id, slug: 'automation.0000000000a3', userId: WATCHER, muted: false });
+  await dropRetiredAppTriggers(project.project_id, ['automation.0000000000a3']);
   const watchers = await db.select().from(triggerWatchers)
-    .where(and(eq(triggerWatchers.projectId, project.project_id), eq(triggerWatchers.slug, 'trigger.0000000000a1')));
+    .where(and(eq(triggerWatchers.projectId, project.project_id), eq(triggerWatchers.slug, 'automation.0000000000a3')));
   expect(watchers).toEqual([]);
 });
 
 test('an empty list touches nothing', async () => {
   await dropRetiredAppTriggers(project.project_id, []);
-  expect(await slugs(project)).toEqual(['trigger.0000000000b1']);
+  expect(await slugs(project)).toEqual(['trigger.0000000000a1', 'trigger.0000000000b1']);
 });

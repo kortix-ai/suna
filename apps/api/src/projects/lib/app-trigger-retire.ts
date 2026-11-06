@@ -5,10 +5,10 @@
  * every fire, and a silence window (`expect_event_within`) raises an alert
  * that no event can clear. So an App delete removes them in the same request:
  * the kortix.yaml ones in the commit that removes the App's block, the runtime
- * ones (session triggers, `kortix triggers add`) from the trigger table.
+ * agent triggers (`kortix triggers add`) from the trigger table.
  */
 import { projectTriggerRuntime } from '@kortix/db';
-import { and, eq, inArray, like, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { extractTriggers, type GitTriggerSpec, type ParsedManifest } from '../triggers';
@@ -28,7 +28,13 @@ export function withoutAppTriggers(manifest: ParsedManifest, slug: string): { ma
   return { manifest: next, removed };
 }
 
-/** The runtime triggers (ids like `trigger.<hex>`) that name the App `slug`, session triggers included. */
+/**
+ * The project's runtime triggers (ids like `trigger.<hex>`) that name the App
+ * `slug`. A session trigger (a wake-on pinned to a session) is its session's,
+ * not the project's: only a caller who can open that session may remove it,
+ * so an App delete leaves it to its owner. With the App gone it never fires,
+ * and the silence check skips it.
+ */
 export async function runtimeTriggersNamingApp(projectId: string, slug: string): Promise<string[]> {
   const rows = await db
     .select({ slug: projectTriggerRuntime.slug })
@@ -37,6 +43,9 @@ export async function runtimeTriggersNamingApp(projectId: string, slug: string):
       eq(projectTriggerRuntime.projectId, projectId),
       // A kortix.yaml slug has no `.`; those rows belong to the manifest commit.
       like(projectTriggerRuntime.slug, '%.%'),
+      isNull(projectTriggerRuntime.sessionId),
+      sql`${projectTriggerRuntime.scheduleSpec} ->> 'pinnedSessionId' is null`,
+      sql`${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is null`,
       or(
         sql`${projectTriggerRuntime.scheduleSpec} ->> 'app' = ${slug}`,
         sql`${projectTriggerRuntime.scheduleSpec} -> 'target' ->> 'app' = ${slug}`,
