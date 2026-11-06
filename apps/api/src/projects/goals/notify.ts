@@ -3,12 +3,18 @@
  * when it needs them, is blocked, or is decided. One notification per goal,
  * kind and UTC day: the dedupe key carries all three.
  *
+ * That person is told only while they may read the project (an account member
+ * with `project.read`), the access the goal page requires. An assignee who
+ * lost the project does not silence the goal: its creator is told instead.
+ * When neither may read it, nothing is sent.
+ *
  * The goal's event log also records the event, and the goal page shows it.
  * The inbox row links to the owner session (the inbox has no goal subject
  * yet); its title names the goal.
  */
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { logger } from '../../lib/logger';
+import { filterProjectRecipients } from '../../notifications/access';
 import { deliver } from '../../notifications/notifier';
 import { utcDay } from './rules';
 import type { GoalRow } from './store';
@@ -36,10 +42,17 @@ export function goalDeepLink(goal: Pick<GoalRow, 'projectId' | 'goalId'>): strin
   return `/projects/${goal.projectId}/goals/${goal.goalId}`;
 }
 
-export async function notifyGoal(goal: GoalRow, kind: GoalNoticeKind, detail: string, now: Date): Promise<void> {
-  const recipient = goal.assignedUserId ?? goal.createdByUserId;
+export type GoalNoticeSubject = Pick<
+  GoalRow,
+  'goalId' | 'accountId' | 'projectId' | 'ownerSessionId' | 'title' | 'assignedUserId' | 'createdByUserId'
+>;
+
+export async function notifyGoal(goal: GoalNoticeSubject, kind: GoalNoticeKind, detail: string, now: Date): Promise<void> {
   const dedupeKey = `goal:${goal.goalId}:${kind}:${utcDay(now)}`;
   try {
+    const candidates = [goal.assignedUserId, goal.createdByUserId].filter((id): id is string => Boolean(id));
+    const [recipient] = await filterProjectRecipients(goal.accountId, goal.projectId, candidates);
+    if (!recipient) return;
     await deliver({
       kind: KIND[kind],
       accountId: goal.accountId,
