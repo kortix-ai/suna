@@ -20,6 +20,7 @@ import { SessionLogPageSchema } from './session-log/wire';
 import { SessionAttentionSchema, SessionBoardStateSchema, SessionInboundSchema } from './multi-agent';
 
 export * from './memory';
+export * from './goals';
 
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());

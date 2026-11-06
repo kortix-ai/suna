@@ -22,6 +22,7 @@ import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from
 import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
 import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
 import { captureAccountProductEvent } from '../../iam/account-analytics';
+import { admitReminderFire, goalSuccessorAllowed, goalSuccessorMetadata } from '../goals/admission';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -546,6 +547,11 @@ async function fireSessionReminder(
 ): ReturnType<typeof fireGitTrigger> {
   const { spec, project } = input;
   const sessionId = spec.pinnedSessionId;
+  // A goal's heartbeat runs a turn only when the goal admits the wake
+  // (projects/goals/admission.ts): flag, state, pause, the daily wake cap,
+  // billing. Any other reminder passes untouched.
+  const gate = await admitReminderFire({ project, reminderId: spec.slug, idempotencyKey: input.idempotencyKey ?? null, source: input.source });
+  if (gate.goal && !gate.admitted) return { status: 'skipped', reason: `goal wake refused: ${gate.reason}` };
   const author = spec.reminder?.promptAuthorUserId;
   // A person's reminder runs as that person. Once they leave the account it
   // has no one to run as: it pauses instead of firing as someone who no longer
@@ -596,6 +602,19 @@ async function fireReminderSuccessor(
   failedSessionId: string,
 ): ReturnType<typeof fireGitTrigger> {
   const { spec, project } = input;
+  // A goal's owner failed: the successor becomes the goal's owner (adopted in
+  // its post-create step), within the goal's session cap.
+  const goal = await goalSuccessorAllowed(project.projectId, spec.slug);
+  if (!goal.allowed) {
+    await disableSessionReminder(project.projectId, spec.slug, new Date());
+    return {
+      status: 'failed',
+      error: "The goal's owner session failed and the goal has used all its sessions, so its heartbeat is paused",
+      errorCode: 'goal_session_cap',
+      retryable: false,
+    };
+  }
+  const goalMetadata = goal.goal ? goalSuccessorMetadata(goal.goal) : {};
   const result = await createSession({
     source: 'trigger:reminder',
     project,
@@ -613,7 +632,7 @@ async function fireReminderSuccessor(
         'read what it kept in Files (/drives) before you act.',
       metadata: { reminder_successor_of: failedSessionId },
     },
-    metadata: { reminder_successor_of: failedSessionId, trigger_slug: spec.slug },
+    metadata: { reminder_successor_of: failedSessionId, trigger_slug: spec.slug, ...goalMetadata },
     postCreate: [{ type: 'repin_reminder', reminderId: spec.slug }, { type: 'adopt_chat_threads', fromSessionId: failedSessionId }],
   });
   const successorId = result.sessionId ?? result.row?.sessionId;

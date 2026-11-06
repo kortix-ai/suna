@@ -23653,7 +23653,8 @@
       "missed_wake": "O último despertar está atrasado.",
       "ask_overdue": "Um pedido passou do prazo.",
       "verification_stalled": "A verificação começou há mais de 24 horas.",
-      "unreadable": "GOAL.md não existe ou não tem o cabeçalho da meta."
+      "unreadable": "GOAL.md não existe ou não tem o cabeçalho da meta.",
+      "blocked": "Esta meta não consegue continuar sozinha."
     },
     "sessionChip": "Objetivo",
     "sessionRole": {
@@ -24467,7 +24468,43 @@
     "restart": "Reiniciar meta",
     "restartReason": "Reiniciada a partir da página da meta",
     "restartedToast": "Meta reiniciada",
-    "restartError": "Não foi possível reiniciar a meta. Tente novamente."
+    "restartError": "Não foi possível reiniciar a meta. Tente novamente.",
+    "noAccess": "Você não tem acesso a esta meta.",
+    "noAccessHint": "Peça à pessoa a quem ela se destina, ou a um administrador do projeto, para compartilhá-la com você.",
+    "notFoundHint": "Ela foi excluída, ou o link está errado.",
+    "chooseGoal": "Mais de uma meta tem este nome. Escolha uma.",
+    "goalLoadError": "Não foi possível carregar esta meta. Tente de novo.",
+    "eventsLoadError": "Não foi possível carregar a atividade.",
+    "changedToast": "Esta meta mudou antes da sua ação chegar. A página a mostra como está agora.",
+    "blockedTitle": "Bloqueada",
+    "blocked": {
+      "credits": "Os créditos acabaram, então nenhuma ativação pode começar.",
+      "wake_cap": "Ela usou as {max} ativações de hoje.",
+      "session_cap": "Ela usou as {max} sessões que pode iniciar.",
+      "owner_lost": "A sessão do agente falhou e nenhuma sessão assumiu.",
+      "storage": "Não foi possível ler ou gravar a pasta dela em Arquivos.",
+      "flag_off": "Metas estão desativadas neste projeto.",
+      "setup": "O Kortix ainda está configurando a meta."
+    },
+    "blockedNext": {
+      "credits": "Adicione créditos e retome a meta.",
+      "wake_cap": "Ela continua sozinha depois da meia-noite UTC.",
+      "session_cap": "Pare a meta, ou peça a um administrador do projeto para aumentar o limite de sessões.",
+      "owner_lost": "Inicie de novo para dar a ela uma nova sessão.",
+      "storage": "Verifique a pasta em Arquivos e retome a meta.",
+      "flag_off": "Ative Metas neste projeto e retome a meta.",
+      "setup": "Isso termina sozinho em menos de um minuto."
+    },
+    "legacyUnverifiedTitle": "Não verificada pelo Kortix",
+    "legacyUnverified": "Esta meta foi importada da pasta dela. O Kortix não conferiu o resultado.",
+    "verified": "Verificado",
+    "reportedMet": "Informado como cumprido, ainda não verificado",
+    "reportedMetHint": "O agente informa que isto está feito. A verificação independente ainda não aprovou.",
+    "verifiedCount": "{verified} de {total} verificados",
+    "checkFailed": "A verificação falhou: {note}",
+    "waitingOnPerson": "Aguardando {person}",
+    "waitNoCost": "Nenhuma verificação roda enquanto ela aguarda uma resposta.",
+    "chaseAt": "Faz o acompanhamento {time}"
   },
   "agentEditor": {
     "manage": "Gerenciar",
