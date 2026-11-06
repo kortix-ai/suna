@@ -58,7 +58,7 @@ export async function linkGitHubBackedProject(
   // PAT path: one shot, no app needed.
   if (opts.githubToken) {
     const res = await client.post<LinkRepoResponse>(
-      '/projects/link-repository',
+      '/workspaces/link-repository',
       body(opts.githubToken),
     );
     return res.project;
@@ -67,7 +67,7 @@ export async function linkGitHubBackedProject(
   // App path: retry around the one-click install.
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
-      const res = await client.post<LinkRepoResponse>('/projects/link-repository', body());
+      const res = await client.post<LinkRepoResponse>('/workspaces/link-repository', body());
       return res.project;
     } catch (err) {
       const installUrl =
@@ -280,7 +280,7 @@ export async function pushProjectBranch(
 
   let minted: GitTokenResponse;
   try {
-    minted = await client.post<GitTokenResponse>(`/projects/${project.project_id}/git-token`);
+    minted = await client.post<GitTokenResponse>(`/workspaces/${project.project_id}/git-token`);
   } catch {
     // No second transport available — report the push failure we swallowed.
     process.stderr.write(`\n${status.err('git push failed.')}\n`);
@@ -356,7 +356,7 @@ export async function resolvePushCredential(
         pushUsername: provisioned.git_username ?? 'x-access-token',
       };
     }
-    const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
+    const tok = await client.post<GitTokenResponse>(`/workspaces/${projectId}/git-token`);
     return { pushToken: tok.push_token, pushUsername: tok.git_username ?? 'x-access-token' };
   }
   return { pushToken: null, pushUsername: 'x-access-token' };
@@ -448,7 +448,7 @@ export async function resolveShipAccount(
 ): Promise<string> {
   let accounts: AccountMembership[] = [];
   try {
-    accounts = (await client.get<MeResponse>('/accounts/me')).accounts ?? [];
+    accounts = (await client.get<MeResponse>('/me')).accounts ?? [];
   } catch {
     // Couldn't list accounts — fall back to the active one.
     return auth.account_id;

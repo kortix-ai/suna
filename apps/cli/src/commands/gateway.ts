@@ -166,7 +166,7 @@ async function gatewayRouting(rest: string[], opts: CtxOpts, json: boolean): Pro
   const action = takeAction(rest, 'get');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/routing-policy`;
+  const base = `/workspaces/${ctx.projectId}/gateway/routing-policy`;
 
   try {
     if (action === 'get' || action === 'show') {
@@ -290,7 +290,7 @@ async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Prom
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/budgets`;
+  const base = `/workspaces/${ctx.projectId}/gateway/budgets`;
 
   try {
     if (action === 'ls' || action === 'list') {
@@ -377,7 +377,7 @@ async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promis
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/keys`;
+  const base = `/workspaces/${ctx.projectId}/gateway/keys`;
 
   try {
     if (action === 'ls' || action === 'list') {
@@ -443,8 +443,8 @@ async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promi
   const q = days ? `?days=${encodeURIComponent(days)}` : '';
   try {
     const [overview, breakdown] = await Promise.all([
-      ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/overview${q}`),
-      ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/breakdown${q}`),
+      ctx.client.get<any>(`/workspaces/${ctx.projectId}/gateway/overview${q}`),
+      ctx.client.get<any>(`/workspaces/${ctx.projectId}/gateway/breakdown${q}`),
     ]);
     if (json) return outJson({ overview, breakdown });
     process.stdout.write(
@@ -480,7 +480,7 @@ async function gatewaySources(rest: string[], opts: CtxOpts, json: boolean): Pro
   if (!ctx) return 1;
   const q = hours ? `?hours=${encodeURIComponent(hours)}` : '';
   try {
-    const data = await ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/sources${q}`);
+    const data = await ctx.client.get<any>(`/workspaces/${ctx.projectId}/gateway/sources${q}`);
     if (json) return outJson(data);
     const t = data.total ?? {};
     process.stdout.write(
@@ -523,7 +523,7 @@ async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promis
   try {
     if (id) {
       const row = await ctx.client.get<any>(
-        `/projects/${ctx.projectId}/gateway/logs/${encodeURIComponent(id)}`,
+        `/workspaces/${ctx.projectId}/gateway/logs/${encodeURIComponent(id)}`,
       );
       return outJson(row);
     }
@@ -532,7 +532,7 @@ async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promis
     if (failed) params.set('ok', 'false');
     const qs = params.toString();
     const data = await ctx.client.get<any>(
-      `/projects/${ctx.projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
+      `/workspaces/${ctx.projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
     );
     if (json) return outJson(data);
     if (!data.logs?.length) {
@@ -570,7 +570,7 @@ async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promis
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   try {
-    const data = await ctx.client.post<any>(`/projects/${ctx.projectId}/gateway/playground`, {
+    const data = await ctx.client.post<any>(`/workspaces/${ctx.projectId}/gateway/playground`, {
       prompt: prompt ?? 'Reply with exactly: pong',
       models,
     });

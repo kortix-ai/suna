@@ -138,7 +138,7 @@ async function resolveMemberIds(
   if (emails.length === 0) return values;
   let members: AccessMember[];
   try {
-    const resp = await client.get<{ members: AccessMember[] }>(`/projects/${projectId}/access`);
+    const resp = await client.get<{ members: AccessMember[] }>(`/workspaces/${projectId}/access`);
     members = resp.members ?? [];
   } catch (err) {
     surfaceApiError(err);
@@ -269,7 +269,7 @@ export async function runSessionsShare(argv: string[]): Promise<number> {
   let updated: SharedSession;
   try {
     updated = await client.put<SharedSession>(
-      `/projects/${projectId}/sessions/${canonicalSessionId}/sharing`,
+      `/workspaces/${projectId}/sessions/${canonicalSessionId}/sharing`,
       body,
     );
   } catch (err) {
@@ -342,7 +342,7 @@ export async function runSessionsLinks(argv: string[]): Promise<number> {
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
-  const base = `/projects/${projectId}/sessions/${session.session_id}/public-shares`;
+  const base = `/workspaces/${projectId}/sessions/${session.session_id}/public-shares`;
 
   if (sub === 'ls' || sub === 'list') {
     let shares: SessionPublicShare[];

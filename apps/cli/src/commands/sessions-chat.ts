@@ -472,7 +472,7 @@ async function resolveChatSessionId(
     if (agent) body.agent_name = agent;
     try {
       const created = await ctx.client.post<ProjectSession>(
-        `/projects/${ctx.projectId}/sessions`,
+        `/workspaces/${ctx.projectId}/sessions`,
         body,
       );
       if (!quiet) {
@@ -521,7 +521,7 @@ export async function chooseRunningSession(
 ): Promise<ProjectSession | null | 'error'> {
   let sessions: ProjectSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+    sessions = await ctx.client.get<ProjectSession[]>(`/workspaces/${ctx.projectId}/sessions`);
   } catch (err) {
     surfaceApiError(err);
     return 'error';
@@ -585,7 +585,7 @@ async function waitForRunning(
   for (let i = 0; i < 75; i += 1) {
     let s: ProjectSession;
     try {
-      s = await ctx.client.get<ProjectSession>(`/projects/${ctx.projectId}/sessions/${sessionId}`);
+      s = await ctx.client.get<ProjectSession>(`/workspaces/${ctx.projectId}/sessions/${sessionId}`);
     } catch (err) {
       surfaceApiError(err);
       return false;
@@ -1083,7 +1083,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
 
   let sessions: ProjectSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+    sessions = await ctx.client.get<ProjectSession[]>(`/workspaces/${ctx.projectId}/sessions`);
   } catch (err) {
     return surfaceApiError(err);
   }

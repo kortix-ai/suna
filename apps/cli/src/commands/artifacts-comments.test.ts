@@ -49,8 +49,8 @@ test('real CLI pins the Files history read and never posts a missing quote', asy
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain('quote not found');
     expect(requests).toEqual([
-      { method: 'GET', path: `/v1/projects/${pid}/artifacts/${aid}/versions`, version: null },
-      { method: 'GET', path: `/v1/projects/${pid}/artifacts/${aid}/content`, version: 'vc_pinned' },
+      { method: 'GET', path: `/v1/workspaces/${pid}/artifacts/${aid}/versions`, version: null },
+      { method: 'GET', path: `/v1/workspaces/${pid}/artifacts/${aid}/content`, version: 'vc_pinned' },
     ]);
   } finally {
     server.stop(true);
@@ -71,8 +71,8 @@ test('real CLI replies through the thread lookup without scanning Artifacts', as
   const server = Bun.serve({ port: 0, fetch(request) {
     const path = new URL(request.url).pathname;
     requests.push(`${request.method} ${path}`);
-    if (path === `/v1/projects/${pid}/artifact-comment-threads/${tid}`) return Response.json({ thread: { thread_id: tid, artifact_id: aid, comments: [] } });
-    if (path === `/v1/projects/${pid}/artifacts/${aid}/comments/${tid}/replies`) return Response.json({ comment: { comment_id: 'reply-id', body: 'Confirmed.' } }, { status: 201 });
+    if (path === `/v1/workspaces/${pid}/artifact-comment-threads/${tid}`) return Response.json({ thread: { thread_id: tid, artifact_id: aid, comments: [] } });
+    if (path === `/v1/workspaces/${pid}/artifacts/${aid}/comments/${tid}/replies`) return Response.json({ comment: { comment_id: 'reply-id', body: 'Confirmed.' } }, { status: 201 });
     return Response.json({ error: 'Unexpected request' }, { status: 500 });
   } });
   try {
@@ -80,8 +80,8 @@ test('real CLI replies through the thread lookup without scanning Artifacts', as
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ comment_id: 'reply-id', body: 'Confirmed.' });
     expect(requests).toEqual([
-      `GET /v1/projects/${pid}/artifact-comment-threads/${tid}`,
-      `POST /v1/projects/${pid}/artifacts/${aid}/comments/${tid}/replies`,
+      `GET /v1/workspaces/${pid}/artifact-comment-threads/${tid}`,
+      `POST /v1/workspaces/${pid}/artifacts/${aid}/comments/${tid}/replies`,
     ]);
   } finally {
     server.stop(true);

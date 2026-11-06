@@ -108,7 +108,7 @@ describe('sessions approvals / answer / attachments — characterization', () =>
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url);
-        const session = `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+        const session = `/v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`;
         if (req.method === 'GET' && url.pathname === session) return Response.json(sessionRow());
         if (req.method === 'POST' && url.pathname === `${session}/start`) {
           return Response.json({ stage: 'ready', agent_name: 'default', retriable: false, sandbox: { external_id: PROXY_ID }, runtime_session_id: 'ses_oc' });
@@ -127,7 +127,7 @@ describe('sessions approvals / answer / attachments — characterization', () =>
         if (req.method === 'GET' && url.pathname === `${session}/attachments/${ATTACHMENT_ID}`) {
           return attachmentStatus === 200 ? new Response('bytes') : Response.json({ error: 'gone' }, { status: attachmentStatus });
         }
-        const approval = url.pathname.match(new RegExp(`^/v1/projects/${PROJECT_ID}/approvals/([^/]+)$`));
+        const approval = url.pathname.match(new RegExp(`^/v1/workspaces/${PROJECT_ID}/approvals/([^/]+)$`));
         if (req.method === 'POST' && approval) {
           approvalPosts.push({ path: approval[1] ?? '', body: await req.json() });
           return approvalStatus === 200 ? Response.json({ ok: true }) : Response.json({ error: true, message: 'Only a project manager can resolve this.' }, { status: approvalStatus });

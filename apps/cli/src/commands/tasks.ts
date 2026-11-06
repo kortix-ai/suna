@@ -146,7 +146,7 @@ async function resolveLead(client: ApiClient, projectId: string, ref: string | u
   if (!self) return fail('Pass the lead session: kortix tasks <lead-session> <subcommand>. Outside a session there is no default team.');
   try {
     const session = await client.get<{ team_lead_session_id?: string | null; metadata?: Record<string, unknown> }>(
-      `/projects/${projectId}/sessions/${self}`,
+      `/workspaces/${projectId}/sessions/${self}`,
     );
     const lead = session.team_lead_session_id ?? session.metadata?.team_lead;
     return typeof lead === 'string' && lead ? lead : self;
@@ -219,7 +219,7 @@ export async function runTasks(argv: string[]): Promise<number> {
   if (!ctx) return 1;
   const lead = await resolveLead(ctx.client, ctx.projectId, leadRef);
   if (typeof lead === 'number') return lead;
-  const base = `/projects/${ctx.projectId}/sessions/${lead}/tasks`;
+  const base = `/workspaces/${ctx.projectId}/sessions/${lead}/tasks`;
 
   try {
     if (sub === 'ls') {

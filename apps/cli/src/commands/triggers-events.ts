@@ -239,12 +239,12 @@ export function eventNextStep(
 }
 
 const eventTypesPath = (projectId: string, connector: string): string =>
-  `/projects/${projectId}/triggers/event-types?connector=${encodeURIComponent(connector)}`;
+  `/workspaces/${projectId}/triggers/event-types?connector=${encodeURIComponent(connector)}`;
 
 const appEventTypesPath = (projectId: string, app: string, source?: string): string =>
-  `/projects/${projectId}/triggers/event-types?app=${encodeURIComponent(app)}${source ? `&source=${encodeURIComponent(source)}` : ''}`;
+  `/workspaces/${projectId}/triggers/event-types?app=${encodeURIComponent(app)}${source ? `&source=${encodeURIComponent(source)}` : ''}`;
 
-const eventAppsPath = (projectId: string): string => `/projects/${projectId}/triggers/event-apps`;
+const eventAppsPath = (projectId: string): string => `/workspaces/${projectId}/triggers/event-apps`;
 
 const sourceOf = (x: { source?: string; provider: string }): string => x.source ?? x.provider;
 

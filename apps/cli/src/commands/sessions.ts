@@ -569,7 +569,7 @@ async function sessionsLs(opts: CtxOpts, flags: SessionListFlags, json = false):
   let sessions: ProjectSession[];
   try {
     sessions = await ctx.client.get<ProjectSession[]>(
-      `/projects/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
+      `/workspaces/${ctx.projectId}/sessions${sessionListQuery(flags, parentId)}`,
     );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
@@ -716,7 +716,7 @@ async function sessionsNew(
 
   let created: ProjectSession;
   try {
-    created = await ctx.client.post<ProjectSession>(`/projects/${ctx.projectId}/sessions`, body);
+    created = await ctx.client.post<ProjectSession>(`/workspaces/${ctx.projectId}/sessions`, body);
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -734,13 +734,13 @@ async function sessionsNew(
       if (i > 0) await new Promise((r) => setTimeout(r, intervalMs));
       try {
         const start = await ctx.client.post<SessionStartPayload>(
-          `/projects/${ctx.projectId}/sessions/${created.session_id}/start`,
+          `/workspaces/${ctx.projectId}/sessions/${created.session_id}/start`,
           {},
         );
         const line = progress(start);
         if (line) process.stderr.write(`Session ${created.session_id}: ${line}\n`);
         created = await ctx.client.get<ProjectSession>(
-          `/projects/${ctx.projectId}/sessions/${created.session_id}`,
+          `/workspaces/${ctx.projectId}/sessions/${created.session_id}`,
         );
         if (start.stage === 'ready') {
           ready = true;
@@ -897,7 +897,7 @@ export async function prepareClientCreatedBranch(
 ): Promise<'ok' | 'error'> {
   let project: ProjectSummary;
   try {
-    project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+    project = await ctx.client.get<ProjectSummary>(`/workspaces/${ctx.projectId}`);
   } catch {
     // Let the create call surface the real API error.
     return 'ok';
@@ -1086,7 +1086,7 @@ async function sessionsPreviewCandidates(
   let candidates: PreviewCandidate[];
   try {
     const body = await located.located.client.get<{ candidates: PreviewCandidate[] }>(
-      `/projects/${located.located.projectId}/sessions/${located.located.session.session_id}/previews`,
+      `/workspaces/${located.located.projectId}/sessions/${located.located.session.session_id}/previews`,
     );
     candidates = body.candidates ?? [];
   } catch (err) {
@@ -1133,7 +1133,7 @@ async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Pr
 
   try {
     await located.located.client.post<{ ok: true; status: string }>(
-      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}/restart`,
+      `/workspaces/${located.located.projectId}/sessions/${canonicalSessionId}/restart`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -1194,7 +1194,7 @@ async function sessionsReload(
   if (statusOnly) {
     try {
       const state = await client.get<SessionConfigStatusInput>(
-        `/projects/${projectId}/sessions/${canonicalSessionId}/config`,
+        `/workspaces/${projectId}/sessions/${canonicalSessionId}/config`,
       );
       if (json) {
         process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
@@ -1209,7 +1209,7 @@ async function sessionsReload(
   }
 
   try {
-    const result = await client.post<SessionReloadOutcomeInput & { repo_refreshed: boolean }>(`/projects/${projectId}/sessions/${canonicalSessionId}/reload`, {
+    const result = await client.post<SessionReloadOutcomeInput & { repo_refreshed: boolean }>(`/workspaces/${projectId}/sessions/${canonicalSessionId}/reload`, {
       refresh_repo: !args.includes('--no-repo'),
       force,
     });
@@ -1257,7 +1257,7 @@ async function sessionsRename(
   let updated: ProjectSession;
   try {
     updated = await located.located.client.patch<ProjectSession>(
-      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
+      `/workspaces/${located.located.projectId}/sessions/${canonicalSessionId}`,
       { name },
     );
   } catch (err) {
@@ -1324,7 +1324,7 @@ async function sessionsRm(
     const host = located?.located.hostName ?? opts.hostArg;
     try {
       const deleted = await client.delete<{ ok: boolean; restore_until?: string }>(
-        `/projects/${projectId}/sessions/${canonicalSessionId}`,
+        `/workspaces/${projectId}/sessions/${canonicalSessionId}`,
       );
       // An API that predates restore answers without the window.
       const restoreUntil = deleted?.restore_until;

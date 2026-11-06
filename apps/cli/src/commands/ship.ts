@@ -297,7 +297,7 @@ async function ensureProjectEnv(
   // Which declared secrets already exist on the cloud project?
   let setNames = new Set<string>();
   try {
-    const resp = await client.get<ProjectSecretsResponse>(`/projects/${projectId}/secrets`);
+    const resp = await client.get<ProjectSecretsResponse>(`/workspaces/${projectId}/secrets`);
     setNames = new Set(resp.items.map((s) => s.name));
   } catch {
     // Couldn't read cloud secrets — don't block the ship over env setup.
@@ -346,7 +346,7 @@ async function ensureProjectEnv(
       continue;
     }
     try {
-      await client.post(`/projects/${projectId}/secrets`, { name, value });
+      await client.post(`/workspaces/${projectId}/secrets`, { name, value });
       setCount += 1;
       process.stdout.write(`    ${status.ok(`${C.bold}${name}${C.reset} set`)}\n`);
     } catch (err) {
@@ -443,7 +443,7 @@ async function shipFirstTime(
       );
       return 0;
     }
-    const prov = await client.post<ProvisionResponse>('/projects/provision', {
+    const prov = await client.post<ProvisionResponse>('/workspaces/provision', {
       name,
       ...(accountId ? { account_id: accountId } : { new_workspace: true }),
       // WE own the first commit: this folder is already a `kortix init` scaffold
@@ -490,7 +490,7 @@ async function shipExisting(
 ): Promise<number> {
   let project: ProjectSummary;
   try {
-    project = await client.get<ProjectSummary>(`/projects/${projectId}`);
+    project = await client.get<ProjectSummary>(`/workspaces/${projectId}`);
   } catch (err) {
     const handled = explainLinkedProjectError(err, projectId, auth);
     if (handled !== null) return handled;
@@ -586,7 +586,7 @@ async function bindShippedFolder(
   });
   // CLI creation is an implicit skip of the web project wizard.
   try {
-    await client.patch(`/projects/${project.project_id}/onboarding`, { completed: true });
+    await client.patch(`/workspaces/${project.project_id}/onboarding`, { completed: true });
   } catch {
     process.stderr.write('Could not dismiss workspace onboarding; skip it on your first web visit.\n');
   }

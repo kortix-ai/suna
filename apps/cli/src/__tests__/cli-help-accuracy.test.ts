@@ -120,7 +120,7 @@ beforeAll(() => {
     port: 0,
     fetch: async (req) => {
       const { pathname } = new URL(req.url);
-      if (pathname.endsWith('/accounts/me')) return Response.json(ME);
+      if (pathname.endsWith('/me')) return Response.json(ME);
       if (pathname.endsWith('/marketplace/install-session')) {
         if (req.method !== 'POST')
           return Response.json({ error: 'method not allowed' }, { status: 405 });

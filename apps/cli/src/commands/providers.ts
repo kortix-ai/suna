@@ -276,7 +276,7 @@ export function coolingSecrets<T extends StoredAccount>(rows: T[], provider: str
 async function providersRetry(provider: string | undefined, accountArg: string | undefined, opts: CtxOpts, json: boolean): Promise<number> {
   const ctx = resolveAccountContext({ accountArg, hostArg: opts.hostArg });
   if (!ctx) return 1;
-  const base = `/accounts/${encodeURIComponent(ctx.accountId)}/secret-resources`;
+  const base = `/workspaces/${encodeURIComponent(ctx.accountId)}/secret-resources`;
   // Without project_id the list holds only account-wide rows; an OAuth login
   // (ChatGPT, OpenCode) is stored on its project. Optional: no project, no filter.
   const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });
@@ -364,7 +364,7 @@ async function providersUsage(provider: string | undefined, accountArg: string |
   if (provider && !want) return fail(`"${provider}" has no plan usage. Use openai, chatgpt, codex or claude.`);
   const ctx = resolveAccountContext({ accountArg, hostArg: opts.hostArg });
   if (!ctx) return 1;
-  const base = `/accounts/${encodeURIComponent(ctx.accountId)}/secret-resources`;
+  const base = `/workspaces/${encodeURIComponent(ctx.accountId)}/secret-resources`;
   const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });
   let rows: Array<StoredAccount & { usage?: PlanUsage | null; provider_account?: PlanAccount | null }>;
   try {
@@ -425,8 +425,8 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   let secrets: { items: ProjectSecret[] };
   try {
     [oauthList, secrets] = await Promise.all([
-      ctx.client.get<OauthListResponse>(`/projects/${ctx.projectId}/oauth`),
-      ctx.client.get<{ items: ProjectSecret[] }>(`/projects/${ctx.projectId}/secrets`),
+      ctx.client.get<OauthListResponse>(`/workspaces/${ctx.projectId}/oauth`),
+      ctx.client.get<{ items: ProjectSecret[] }>(`/workspaces/${ctx.projectId}/secrets`),
     ]);
   } catch (err) {
     return surfaceApiError(err);
@@ -510,14 +510,14 @@ async function claudeLogin(opts: CtxOpts, tokenStdin: boolean): Promise<number> 
     const token = (await Bun.stdin.text()).trim();
     if (!token) return fail('stdin is empty: pipe the token `claude setup-token` printed');
     try {
-      return done(await ctx.client.put<ClaudeConnectedResponse>(`/projects/${ctx.projectId}/claude-subscription/token`, { token, sharing: { mode: 'private' } }));
+      return done(await ctx.client.put<ClaudeConnectedResponse>(`/workspaces/${ctx.projectId}/claude-subscription/token`, { token, sharing: { mode: 'private' } }));
     } catch (err) {
       return surfaceApiError(err);
     }
   }
   let flow: ClaudeLoginStartResponse;
   try {
-    flow = await ctx.client.post<ClaudeLoginStartResponse>(`/projects/${ctx.projectId}/claude-subscription/login/start`, { sharing: { mode: 'private' } });
+    flow = await ctx.client.post<ClaudeLoginStartResponse>(`/workspaces/${ctx.projectId}/claude-subscription/login/start`, { sharing: { mode: 'private' } });
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -531,7 +531,7 @@ async function claudeLogin(opts: CtxOpts, tokenStdin: boolean): Promise<number> 
   const code = (await readVisible('  Code from claude.com: ')).trim();
   if (!code) return fail('No code entered. Run the command again.');
   try {
-    return done(await ctx.client.post<ClaudeConnectedResponse>(`/projects/${ctx.projectId}/claude-subscription/login/complete`, { flow_id: flow.flow_id, code }));
+    return done(await ctx.client.post<ClaudeConnectedResponse>(`/workspaces/${ctx.projectId}/claude-subscription/login/complete`, { flow_id: flow.flow_id, code }));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -557,7 +557,7 @@ async function providersLogin(provider: string | undefined, opts: CtxOpts): Prom
   let flow: OauthFlowStartResponse;
   try {
     flow = await ctx.client.post<OauthFlowStartResponse>(
-      `/projects/${ctx.projectId}/oauth/${provider}/start`,
+      `/workspaces/${ctx.projectId}/oauth/${provider}/start`,
       {},
     );
   } catch (err) {
@@ -581,7 +581,7 @@ async function providersLogin(provider: string | undefined, opts: CtxOpts): Prom
     let resp: OauthPollResponse;
     try {
       resp = await ctx.client.post<OauthPollResponse>(
-        `/projects/${ctx.projectId}/oauth/${provider}/poll`,
+        `/workspaces/${ctx.projectId}/oauth/${provider}/poll`,
         { flow_id: flow.flow_id },
       );
     } catch (err) {
@@ -680,7 +680,7 @@ async function providersSet(
       // NAME, which is a guess the server has no business making: models.dev
       // claims `GITHUB_TOKEN` for `github-copilot`, so an ordinary GitHub PAT
       // was classified as a Copilot key and withheld from the sandbox.
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+      await ctx.client.post<ProjectSecret>(`/workspaces/${ctx.projectId}/secrets`, {
         name,
         value,
         strategy: 'broker',
@@ -703,7 +703,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
   if (!ctx) return 1;
   if (provider === CLAUDE_CLI_PROVIDER) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/claude-subscription`);
+      await ctx.client.delete(`/workspaces/${ctx.projectId}/claude-subscription`);
     } catch (err) {
       return surfaceApiError(err);
     }
@@ -716,7 +716,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
 
   if (OAUTH_PROVIDERS.has(provider)) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/oauth/${provider}`);
+      await ctx.client.delete(`/workspaces/${ctx.projectId}/oauth/${provider}`);
       removedOauth = true;
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {
@@ -728,7 +728,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
   const envVars = PROVIDER_ENV_VARS[provider] ?? [];
   for (const envVar of envVars) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/secrets/${envVar}`);
+      await ctx.client.delete(`/workspaces/${ctx.projectId}/secrets/${envVar}`);
       removedKeys.push(envVar);
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {
@@ -787,7 +787,7 @@ async function providersCustom(
   }
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/custom-providers`;
+  const base = `/workspaces/${ctx.projectId}/custom-providers`;
   let provider: CustomLlmProvider;
   try {
     provider = await ctx.client.put<CustomLlmProvider>(`${base}/${encodeURIComponent(id)}`, {
@@ -798,7 +798,7 @@ async function providersCustom(
     if (key) {
       // The same write the web Custom form makes: the gateway spends the key,
       // the sandbox never sees it.
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+      await ctx.client.post<ProjectSecret>(`/workspaces/${ctx.projectId}/secrets`, {
         name: provider.secret_name,
         value: key,
         strategy: 'broker',
@@ -826,7 +826,7 @@ async function customLs(opts: CtxOpts, json: boolean): Promise<number> {
   let providers: CustomLlmProvider[];
   try {
     ({ providers } = await ctx.client.get<{ providers: CustomLlmProvider[] }>(
-      `/projects/${ctx.projectId}/custom-providers`,
+      `/workspaces/${ctx.projectId}/custom-providers`,
     ));
   } catch (err) {
     return surfaceApiError(err);
@@ -862,7 +862,7 @@ async function customLs(opts: CtxOpts, json: boolean): Promise<number> {
 async function customRm(id: string, opts: CtxOpts): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
   let provider: CustomLlmProvider | undefined;
   try {
     const { providers } = await ctx.client.get<{ providers: CustomLlmProvider[] }>(`${base}/custom-providers`);

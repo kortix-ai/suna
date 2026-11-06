@@ -178,7 +178,7 @@ function mockApi() {
     if (has('/members')) return json([{ user_id: USER, email: 'alice@corp.com' }]);
     if (has('/access/') && method === 'DELETE') return json({ ok: true });
     if (has('/access/') && method === 'PUT') return json({ ok: true });
-    if (has(`/projects/${PROJECT}`)) {
+    if (has(`/workspaces/${PROJECT}`)) {
       return json({ project_id: PROJECT, account_id: 'account_1', name: 'demo' });
     }
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
@@ -222,7 +222,7 @@ describe('kortix access assignments', () => {
     const code = await runAccess(['assignments']);
     expect(code).toBe(0);
     const get = assignmentGet()!;
-    expect(get.url).toContain('/v1/accounts/account_1/iam/assignments');
+    expect(get.url).toContain('/v1/workspaces/account_1/iam/assignments');
     expect(get.url).toContain('scope_type=project');
     expect(get.url).toContain(`scope_id=${PROJECT}`);
     const out = stripAnsi(stdout);
@@ -244,7 +244,7 @@ describe('kortix access assignments', () => {
     const code = await runAccess(['assignments', '--account']);
     expect(code).toBe(0);
     expect(assignmentGet()!.url).toContain('scope_type=account');
-    expect(requests.some((r) => r.url.includes(`/projects/${PROJECT}`))).toBe(false);
+    expect(requests.some((r) => r.url.includes(`/workspaces/${PROJECT}`))).toBe(false);
   });
 
   test('--all drops the scope filter entirely', async () => {
@@ -480,7 +480,7 @@ describe('kortix access — the project-member form is unchanged', () => {
     const code = await runAccess(['grant', USER, '--role', 'manager']);
     expect(code).toBe(0);
     const put = requests.find((r) => r.method === 'PUT');
-    expect(put!.url).toContain(`/projects/${PROJECT}/access/${USER}`);
+    expect(put!.url).toContain(`/workspaces/${PROJECT}/access/${USER}`);
     expect(put!.body).toMatchObject({ role: 'manager' });
     // No assignment was written.
     expect(requests.some((r) => r.method === 'POST')).toBe(false);
@@ -508,7 +508,7 @@ describe('kortix access revoke', () => {
     const code = await runAccess(['revoke', USER]);
     expect(code).toBe(0);
     const del = requests.find((r) => r.method === 'DELETE')!;
-    expect(del.url).toContain(`/projects/${PROJECT}/access/${USER}`);
+    expect(del.url).toContain(`/workspaces/${PROJECT}/access/${USER}`);
     expect(stripAnsi(stdout)).toContain(`Revoked access for ${USER}`);
   });
 });

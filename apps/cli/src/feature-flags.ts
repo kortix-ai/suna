@@ -54,7 +54,7 @@ export async function enabledFeatureFlags(
   const { auth } = resolveProjectAuth({ hostArg });
   if (!ref?.projectId || !auth?.token) return null;
   const read = clientFromAuth(auth)
-    .get<{ experimental_features?: FeatureRow[] }>(`/projects/${ref.projectId}`)
+    .get<{ experimental_features?: FeatureRow[] }>(`/workspaces/${ref.projectId}`)
     .then((project) => new Set((project.experimental_features ?? []).filter((r) => r.enabled).map((r) => r.key)))
     .catch(() => null);
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs ?? 10_000).unref?.());

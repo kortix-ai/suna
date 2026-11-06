@@ -47,11 +47,11 @@ beforeAll(() => {
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname, body });
       const p = url.pathname.replace(/^\/v1/, '');
-      if (p === `/projects/${PROJECT}`) return Response.json({ project_id: PROJECT, experimental_features: [{ key: 'chat', enabled: !chatOff }] });
-      if (p === `/projects/${PROJECT}/spaces`) return Response.json({ spaces: [space(GENERAL, 'general'), space(OTHER, 'launch')] });
-      if (p === `/projects/${PROJECT}/sessions/${SESSION}`) return Response.json({ session_id: SESSION, space_id: GENERAL });
-      if (p === `/projects/${PROJECT}/access`) return Response.json({ members: [{ user_id: ANA, email: 'ana@example.test' }] });
-      if (req.method === 'PATCH' && p.startsWith(`/projects/${PROJECT}/spaces/`)) {
+      if (p === `/workspaces/${PROJECT}`) return Response.json({ project_id: PROJECT, experimental_features: [{ key: 'chat', enabled: !chatOff }] });
+      if (p === `/workspaces/${PROJECT}/spaces`) return Response.json({ spaces: [space(GENERAL, 'general'), space(OTHER, 'launch')] });
+      if (p === `/workspaces/${PROJECT}/sessions/${SESSION}`) return Response.json({ session_id: SESSION, space_id: GENERAL });
+      if (p === `/workspaces/${PROJECT}/access`) return Response.json({ members: [{ user_id: ANA, email: 'ana@example.test' }] });
+      if (req.method === 'PATCH' && p.startsWith(`/workspaces/${PROJECT}/spaces/`)) {
         if (forbidRename) return Response.json({ error: 'Only the channel’s creator or a project manager can edit it.', code: 'forbidden' }, { status: 403 });
         const id = p.split('/').pop()!;
         return Response.json({ ...space(id, (body as { name?: string }).name?.toLowerCase() ?? 'general'), ...(body as object) });
@@ -100,15 +100,15 @@ test('rename and describe default to the session’s space and PATCH it', async 
   expect((await kortix('rename', 'Launch')).code).toBe(0);
   expect((await kortix('describe', 'Everything for the November launch')).code).toBe(0);
   expect(writes()).toEqual([
-    { method: 'PATCH', path: `/v1/projects/${PROJECT}/spaces/${GENERAL}`, body: { name: 'Launch' } },
-    { method: 'PATCH', path: `/v1/projects/${PROJECT}/spaces/${GENERAL}`, body: { description: 'Everything for the November launch' } },
+    { method: 'PATCH', path: `/v1/workspaces/${PROJECT}/spaces/${GENERAL}`, body: { name: 'Launch' } },
+    { method: 'PATCH', path: `/v1/workspaces/${PROJECT}/spaces/${GENERAL}`, body: { description: 'Everything for the November launch' } },
   ]);
 });
 
 test('a named space wins over the session’s; agents set replaces the list', async () => {
   calls.length = 0;
   expect((await kortix('agents', '#launch', 'set', 'researcher', 'writer')).code).toBe(0);
-  expect(writes()).toEqual([{ method: 'PATCH', path: `/v1/projects/${PROJECT}/spaces/${OTHER}`, body: { agents: ['researcher', 'writer'] } }]);
+  expect(writes()).toEqual([{ method: 'PATCH', path: `/v1/workspaces/${PROJECT}/spaces/${OTHER}`, body: { agents: ['researcher', 'writer'] } }]);
 });
 
 test('tabs add, move and rm send the whole new list; an unknown tab is refused before any write', async () => {
@@ -128,7 +128,7 @@ test('tabs add, move and rm send the whole new list; an unknown tab is refused b
 test('members add resolves an email through the project member list', async () => {
   calls.length = 0;
   expect((await kortix('members', 'add', 'ana@example.test')).code).toBe(0);
-  expect(writes()).toEqual([{ method: 'POST', path: `/v1/projects/${PROJECT}/spaces/${GENERAL}/members`, body: { user_ids: [ANA] } }]);
+  expect(writes()).toEqual([{ method: 'POST', path: `/v1/workspaces/${PROJECT}/spaces/${GENERAL}/members`, body: { user_ids: [ANA] } }]);
 });
 
 test('the API’s 403 for a person without the right reaches the agent with its message', async () => {
@@ -156,8 +156,8 @@ test('post: a top-level message into the session’s space, a reply into a threa
   expect(top.stdout).toContain('Mentioned Ana; 1 notified.');
   expect((await kortix('post', '#launch', 'Please approve', '--thread', SESSION, '--ask')).code).toBe(0);
   expect(writes()).toEqual([
-    { method: 'POST', path: `/v1/projects/${PROJECT}/spaces/${GENERAL}/posts`, body: { text: 'Weather check done. @ana' } },
-    { method: 'POST', path: `/v1/projects/${PROJECT}/spaces/${OTHER}/posts`, body: { text: 'Please approve', thread_id: SESSION, ask: true } },
+    { method: 'POST', path: `/v1/workspaces/${PROJECT}/spaces/${GENERAL}/posts`, body: { text: 'Weather check done. @ana' } },
+    { method: 'POST', path: `/v1/workspaces/${PROJECT}/spaces/${OTHER}/posts`, body: { text: 'Please approve', thread_id: SESSION, ask: true } },
   ]);
   const refused = await kortix('post', 'hi', '--ask');
   expect(refused.code).not.toBe(0);

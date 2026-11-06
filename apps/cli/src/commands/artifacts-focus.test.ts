@@ -6,7 +6,7 @@ import { join } from 'node:path';
 const pid = '11111111-1111-4111-8111-111111111111';
 const aid = '22222222-2222-4222-8222-222222222222';
 const tid = '33333333-3333-4333-8333-333333333333';
-const agentPath = `/v1/projects/${pid}/artifacts/${aid}/live/agent`;
+const agentPath = `/v1/workspaces/${pid}/artifacts/${aid}/live/agent`;
 
 async function run(args: string[], base = 'http://127.0.0.1:1') {
   const home = mkdtempSync(join(tmpdir(), 'kortix-focus-'));

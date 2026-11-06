@@ -191,7 +191,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
 
   try {
     switch (sub) {

@@ -127,7 +127,7 @@ export async function queueSessionPrompt(
     };
   }
   return client.post<CreateSessionPromptResult>(
-    `/projects/${projectId}/sessions/${session.session_id}/prompts`,
+    `/workspaces/${projectId}/sessions/${session.session_id}/prompts`,
     body,
   );
 }
@@ -177,7 +177,7 @@ export async function runSessionsQueue(argv: string[]): Promise<number> {
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
-  const base = `/projects/${projectId}/sessions/${session.session_id}/prompts`;
+  const base = `/workspaces/${projectId}/sessions/${session.session_id}/prompts`;
 
   try {
     switch (sub) {

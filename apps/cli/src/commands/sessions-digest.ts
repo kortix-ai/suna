@@ -148,7 +148,7 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
   let sessions: ProjectSession[];
   try {
     sessions = await ctx.client.get<ProjectSession[]>(
-      `/projects/${ctx.projectId}/sessions`,
+      `/workspaces/${ctx.projectId}/sessions`,
     );
   } catch (err) {
     return surfaceApiError(err);

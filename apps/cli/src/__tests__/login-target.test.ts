@@ -143,7 +143,7 @@ describe('token login target', () => {
         },
       );
       await proc.exited;
-      expect(seen).toEqual([{ path: '/v1/accounts/me', auth: 'Bearer kortix_pat_envtarget' }]);
+      expect(seen).toEqual([{ path: '/v1/me', auth: 'Bearer kortix_pat_envtarget' }]);
     } finally {
       server.stop(true);
       rmSync(dir, { recursive: true, force: true });
@@ -265,7 +265,7 @@ describe('callback-free device login', () => {
       expect(stdout).toContain('Confirm code: 0123456789ABCDEF');
       expect(stdout).not.toContain('callback=');
       expect(stdout).not.toContain('a'.repeat(64));
-      expect(seen).toEqual(['/v1/cli/device/start', '/v1/cli/device/poll', '/v1/accounts/me']);
+      expect(seen).toEqual(['/v1/cli/device/start', '/v1/cli/device/poll', '/v1/me']);
     } finally { server.stop(true); rmSync(dir, { recursive: true, force: true }); }
   }, 15000);
   test('an approver with no workspace (409 no_workspace) is sent to the web, not to a command it cannot run', async () => {

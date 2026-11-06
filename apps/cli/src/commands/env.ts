@@ -79,7 +79,7 @@ async function envPull(outArg: string | undefined, force: boolean, opts: CtxOpts
   let resp: ProjectSecretsResponse;
   try {
     resp = await ctx.client.get<ProjectSecretsResponse>(
-      `/projects/${ctx.projectId}/secrets`,
+      `/workspaces/${ctx.projectId}/secrets`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -155,7 +155,7 @@ async function envPush(fromArg: string | undefined, opts: CtxOpts): Promise<numb
   for (const p of pairs) {
     try {
       await ctx.client.post<ProjectSecret>(
-        `/projects/${ctx.projectId}/secrets`,
+        `/workspaces/${ctx.projectId}/secrets`,
         { name: p.name, value: p.value },
       );
       okCount += 1;

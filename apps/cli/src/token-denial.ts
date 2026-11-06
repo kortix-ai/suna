@@ -146,7 +146,7 @@ async function resolveIdentity(credential: ApiErrorCredential): Promise<TokenIde
   try {
     // The client records the identity for us (api/client.ts captureIdentity),
     // so this both answers now and warms the cache for the next command.
-    await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+    await clientFromAuth(auth).get<MeResponse>('/me');
   } catch {
     // The token may be dead (401) or the network down. A stale entry still
     // names the credential, which is the point.

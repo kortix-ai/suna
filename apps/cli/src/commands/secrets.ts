@@ -277,7 +277,7 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
   let sharedWith: Array<{ principal_type: 'user'; principal_id: string }> | undefined;
   if (onlyMe) {
     try {
-      const me = await ctx.client.get<{ user_id: string }>('/accounts/me');
+      const me = await ctx.client.get<{ user_id: string }>('/me');
       sharedWith = [{ principal_type: 'user', principal_id: me.user_id }];
     } catch (err) {
       return surfaceApiError(err);
@@ -292,7 +292,7 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
         ? `${C.bold}${shownId}${C.reset} ${C.dim}→ ${p.key}${C.reset}`
         : `${C.bold}${p.key}${C.reset}`;
     try {
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+      await ctx.client.post<ProjectSecret>(`/workspaces/${ctx.projectId}/secrets`, {
         name: p.key,
         ...(identifier !== undefined ? { identifier } : {}),
         // Same two scopes as `secrets request`: connector keeps the value
@@ -322,7 +322,7 @@ async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
   let okCount = 0;
   for (const name of names) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/secrets/${encodeURIComponent(name)}`);
+      await ctx.client.delete(`/workspaces/${ctx.projectId}/secrets/${encodeURIComponent(name)}`);
       okCount += 1;
       process.stdout.write(`${status.ok(`removed ${C.bold}${name}${C.reset}`)}\n`);
     } catch (err) {
@@ -367,7 +367,7 @@ async function secretsSync(opts: CtxOpts, json = false): Promise<number> {
         agent_env_written: boolean;
         reason?: string;
       }>;
-    }>(`/projects/${ctx.projectId}/secrets/sync`, {});
+    }>(`/workspaces/${ctx.projectId}/secrets/sync`, {});
     if (json) {
       emitJson(result);
       return result.ok ? 0 : 1;

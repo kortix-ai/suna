@@ -199,7 +199,7 @@ async function reviewLs(f: Record<string, string | undefined>, json: boolean): P
       }
       const qs = query.toString();
       const page = await ctx.client.get<{ review_items: ReviewItem[]; next_cursor?: string | null }>(
-        `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
+        `/workspaces/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
       );
       for (const item of page.review_items) {
         byId.delete(item.review_item_id);
@@ -254,7 +254,7 @@ async function reviewShow(
     // The per-item GET reads `cr:` and `call:` rows too (KRTX-2316), so an
     // item is found off every page of the inbox.
     const resp = await ctx.client.get<{ review_item: ReviewItem }>(
-      `/projects/${ctx.projectId}/review/items/${encodeURIComponent(id)}`,
+      `/workspaces/${ctx.projectId}/review/items/${encodeURIComponent(id)}`,
     );
     item = resp.review_item;
   } catch (err) {
@@ -263,7 +263,7 @@ async function reviewShow(
     // adapters fold the others in, and it returned the whole inbox.
     try {
       const { review_items } = await ctx.client.get<{ review_items: ReviewItem[] }>(
-        `/projects/${ctx.projectId}/review/items`,
+        `/workspaces/${ctx.projectId}/review/items`,
       );
       item = review_items.find((row) => row.review_item_id === id) ?? null;
     } catch (listErr) {
@@ -332,7 +332,7 @@ async function reviewAct(
   }
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
 
   try {
     // ── A connector approval: one live question to the agent. Approve lets the
@@ -455,7 +455,7 @@ async function reviewBulk(
   if (plan.native.length > 0) {
     try {
       const resp = await ctx.client.post<{ updated: number; review_items: ReviewItem[] }>(
-        `/projects/${ctx.projectId}/review/bulk`,
+        `/workspaces/${ctx.projectId}/review/bulk`,
         { ids: plan.native, verdict },
       );
       updated = resp.updated;
@@ -537,7 +537,7 @@ async function reviewSubmit(f: Record<string, string | undefined>, json: boolean
 
   let item: ReviewItem;
   try {
-    item = await ctx.client.post<ReviewItem>(`/projects/${ctx.projectId}/review/items`, {
+    item = await ctx.client.post<ReviewItem>(`/workspaces/${ctx.projectId}/review/items`, {
       kind: f.kind,
       title: f.title,
       ...(f.summary ? { summary: f.summary } : {}),

@@ -207,7 +207,7 @@ async function goalFlagsOff(client: ApiClient, projectId: string): Promise<strin
   const fromBox = box ? missingGoalFlags(Object.fromEntries([...box].map((f) => [f, true]))) : null;
   if (fromBox?.length === 0) return [];
   try {
-    return missingGoalFlags((await client.get<{ experimental?: Record<string, boolean> }>(`/projects/${projectId}`)).experimental);
+    return missingGoalFlags((await client.get<{ experimental?: Record<string, boolean> }>(`/workspaces/${projectId}`)).experimental);
   } catch (err) {
     if (fromBox) return fromBox;
     throw err;
@@ -378,7 +378,7 @@ export async function runGoals(argv: string[]): Promise<number> {
   if (!sessionId) return fail('No $KORTIX_SESSION_ID: kortix goals runs inside a session.');
   const resolved = await resolveProjectContext({});
   if (!resolved) return 1;
-  const ctx: Ctx = { ...resolved, sessionId, sessionPath: `/projects/${resolved.projectId}/sessions/${sessionId}` };
+  const ctx: Ctx = { ...resolved, sessionId, sessionPath: `/workspaces/${resolved.projectId}/sessions/${sessionId}` };
   try {
     if (sub === 'new') return await newGoal(ctx, rest.join(' ').trim(), flags);
     if (sub === 'check') return await checkGoals(ctx, rest[0], flags);
@@ -495,7 +495,7 @@ async function verifyGoal(ctx: Ctx, folder: string, g: ProjectGoalDocument, flag
   if (violations.length) return refuse(flags.json, g.status, 'verifying', violations);
   // The engine starts the verifier, so no session contract ("do not spawn
   // sessions") stands between the owner and its verification.
-  const verifier = await ctx.client.post<ProjectSession>(`/projects/${ctx.projectId}/sessions`, {
+  const verifier = await ctx.client.post<ProjectSession>(`/workspaces/${ctx.projectId}/sessions`, {
     initial_prompt: verifierPrompt(folder),
     title_source: `Verify goal ${folder.split('/').at(-1)}`,
     ...(g.agent ? { agent_name: g.agent } : {}),
@@ -527,7 +527,7 @@ async function verdictGoal(ctx: Ctx, verdict: string | undefined, folderArg: str
   // Wake the owner: on done its turn-end check drops the heartbeat; on fail it works the findings.
   const owner = ownerOf(g);
   if (owner) {
-    const session = await ctx.client.get<ProjectSession>(`/projects/${ctx.projectId}/sessions/${owner}`).catch(() => null);
+    const session = await ctx.client.get<ProjectSession>(`/workspaces/${ctx.projectId}/sessions/${owner}`).catch(() => null);
     if (session) {
       await queueSessionPrompt(ctx.client, ctx.projectId, session, `${heartbeatPrompt(folder)} Verification ${verdict!.toUpperCase()}: ${flags.reason}`).catch(() => {});
     }
@@ -543,7 +543,7 @@ async function handoverGoal(ctx: Ctx, folder: string, g: ProjectGoalDocument, fl
   if (g.sessions.length >= sessionCap(g)) out.push(`The goal used ${g.sessions.length} of max_sessions ${sessionCap(g)}: ask the assigned user to raise it.`);
   if (out.length) return refuse(flags.json, g.status, g.status, out);
   appendLog(folder, `\n## Handover ${now()} from ${ctx.sessionId}\n\n${flags.note!.trim()}\n`);
-  const next = await ctx.client.post<ProjectSession>(`/projects/${ctx.projectId}/sessions`, {
+  const next = await ctx.client.post<ProjectSession>(`/workspaces/${ctx.projectId}/sessions`, {
     initial_prompt: ownerPrompt(folder, ctx.sessionId),
     title_source: `Goal ${folder.split('/').at(-1)}`,
     ...(g.agent ? { agent_name: g.agent } : {}),

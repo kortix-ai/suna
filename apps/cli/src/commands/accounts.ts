@@ -97,7 +97,7 @@ async function fetchAccounts(hostArg?: string): Promise<{ me: MeResponse } | num
   if (!auth) return 1;
   const client = clientFromAuth(auth);
   try {
-    const me = await client.get<MeResponse>('/accounts/me');
+    const me = await client.get<MeResponse>('/me');
     return { me };
   } catch (err) {
     return surface(err);

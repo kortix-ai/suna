@@ -42,11 +42,11 @@ function startServer(): string {
     fetch(req) {
       const url = new URL(req.url);
       paths.push(url.pathname);
-      if (url.pathname === '/v1/accounts/me') {
+      if (url.pathname === '/v1/me') {
         return Response.json({ user_id: 'user_1', email: 'user@example.test', accounts });
       }
-      if (url.pathname === '/v1/projects') return Response.json([]);
-      const match = url.pathname.match(/^\/v1\/projects\/([^/]+)$/);
+      if (url.pathname === '/v1/workspaces') return Response.json([]);
+      const match = url.pathname.match(/^\/v1\/workspaces\/([^/]+)$/);
       if (match) return Response.json(project(match[1]));
       return Response.json({ error: `unexpected ${url.pathname}` }, { status: 404 });
     },
@@ -151,32 +151,32 @@ describe('the workspace flag and env var', () => {
     const config = writeConfig(startServer(), 'account_1');
     const r = await runCli(['workspaces', 'features', 'ls', '--json', ...args], config, env, cwd);
     expect(`exit=${r.code} ${r.stderr}`).toBe(`exit=0 ${r.stderr}`);
-    return paths.filter((p) => p.startsWith('/v1/projects/')).at(-1);
+    return paths.filter((p) => p.startsWith('/v1/workspaces/')).at(-1);
   };
 
   test('--workspace selects the workspace', async () => {
-    expect(await infoId(['--workspace', 'ws_flag'])).toBe('/v1/projects/ws_flag');
+    expect(await infoId(['--workspace', 'ws_flag'])).toBe('/v1/workspaces/ws_flag');
   });
 
   test('--project (older name) still selects it', async () => {
-    expect(await infoId(['--project', 'ws_old_flag'])).toBe('/v1/projects/ws_old_flag');
+    expect(await infoId(['--project', 'ws_old_flag'])).toBe('/v1/workspaces/ws_old_flag');
   });
 
   test('a leading --workspace before the command is lifted', async () => {
     const config = writeConfig(startServer(), 'account_1');
     const r = await runCli(['--workspace', 'ws_lead', 'workspaces', 'features', 'ls', '--json'], config);
     expect(r.code).toBe(0);
-    expect(paths).toContain('/v1/projects/ws_lead');
+    expect(paths).toContain('/v1/workspaces/ws_lead');
   });
 
   test('KORTIX_WORKSPACE_ID wins over KORTIX_PROJECT_ID', async () => {
     expect(await infoId([], { KORTIX_WORKSPACE_ID: 'ws_env', KORTIX_PROJECT_ID: 'proj_env' })).toBe(
-      '/v1/projects/ws_env',
+      '/v1/workspaces/ws_env',
     );
   });
 
   test('KORTIX_PROJECT_ID alone still selects it', async () => {
-    expect(await infoId([], { KORTIX_PROJECT_ID: 'proj_env' })).toBe('/v1/projects/proj_env');
+    expect(await infoId([], { KORTIX_PROJECT_ID: 'proj_env' })).toBe('/v1/workspaces/proj_env');
   });
 
   test('in a session box, a script that sets KORTIX_PROJECT_ID=<other> targets <other>', async () => {
@@ -185,9 +185,9 @@ describe('the workspace flag and env var', () => {
     const envFile = join(tmp, 'agent-env.sh');
     writeFileSync(envFile, "export KORTIX_PROJECT_ID='box_project'\n");
     const box = { KORTIX_DISABLE_SANDBOX_ENV_FILE: '', BASH_ENV: envFile, KORTIX_PROJECT_ID: 'box_project' };
-    expect(await infoId([], box)).toBe('/v1/projects/box_project');
-    expect(await infoId([], { ...box, KORTIX_PROJECT_ID: 'other_project' })).toBe('/v1/projects/other_project');
-    expect(await infoId([], { ...box, KORTIX_WORKSPACE_ID: 'other_workspace' })).toBe('/v1/projects/other_workspace');
+    expect(await infoId([], box)).toBe('/v1/workspaces/box_project');
+    expect(await infoId([], { ...box, KORTIX_PROJECT_ID: 'other_project' })).toBe('/v1/workspaces/other_project');
+    expect(await infoId([], { ...box, KORTIX_WORKSPACE_ID: 'other_workspace' })).toBe('/v1/workspaces/other_workspace');
   });
 
   test('a directory link wins over KORTIX_WORKSPACE_ID', async () => {
@@ -197,7 +197,7 @@ describe('the workspace flag and env var', () => {
       join(dir, '.kortix', 'link.json'),
       JSON.stringify({ project_id: 'ws_link', account_id: 'account_1', host: 'test', linked_at: '2026-01-01T00:00:00.000Z' }),
     );
-    expect(await infoId([], { KORTIX_WORKSPACE_ID: 'ws_env' }, dir)).toBe('/v1/projects/ws_link');
+    expect(await infoId([], { KORTIX_WORKSPACE_ID: 'ws_env' }, dir)).toBe('/v1/workspaces/ws_link');
   });
 });
 
@@ -216,7 +216,7 @@ describe('projects ls (older name) keeps its output; workspaces ls surfaces a fa
       fetch(req) {
         const url = new URL(req.url);
         lsPaths.push(`${url.pathname}${url.search}`);
-        if (url.pathname === '/v1/accounts/me') {
+        if (url.pathname === '/v1/me') {
           return Response.json({
             user_id: 'user_1',
             email: 'user@example.test',
@@ -226,7 +226,7 @@ describe('projects ls (older name) keeps its output; workspaces ls surfaces a fa
             ],
           });
         }
-        if (url.pathname === '/v1/projects') {
+        if (url.pathname === '/v1/workspaces') {
           const account = url.searchParams.get('account_id') ?? '';
           if (account === failAccount) return Response.json({ error: 'synthetic outage' }, { status: 503 });
           if (account === 'account_1') return Response.json([{ ...project('ws_one'), name: 'Alpha' }]);
@@ -263,7 +263,7 @@ describe('projects ls (older name) keeps its output; workspaces ls surfaces a fa
     const r = await runCli(['projects', 'ls', '--json'], writeActiveConfig(startTwoAccountServer()));
     expect(r.code).toBe(0);
     expect((JSON.parse(r.stdout) as Array<{ project_id: string }>).map((p) => p.project_id)).toEqual(['ws_one']);
-    expect(lsPaths).toEqual(['/v1/projects?account_id=account_1']);
+    expect(lsPaths).toEqual(['/v1/workspaces?account_id=account_1']);
   });
 
   test('projects ls prints the account header and the older footer', async () => {

@@ -60,27 +60,27 @@ function startServer(): string {
     port: 0,
     fetch: async (req) => {
       const path = new URL(req.url).pathname;
-      if (path === `/v1/projects/${PROJECT}` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}` && req.method === 'GET') {
         return Response.json({
           project_id: PROJECT, account_id: 'account_1', name: 'Atlas', repo_url: 'https://example.test/r.git',
           default_branch: 'main', manifest_path: 'kortix.yaml', status: 'active', metadata: {},
           experimental: { apps: true }, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
         });
       }
-      if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}/apps` && req.method === 'GET') {
         return Response.json({ apps: [
           app({ desired_state: 'stopped', active_deployment_id: 'deployment_1', hosting_type: 'static' }),
           app({ app_id: SERVER_ID, slug: 'api-server', active_deployment_id: 'deployment_2', hosting_type: 'sandbox', always_on: false }),
           app({ app_id: NEW_ID, slug: 'draft' }),
         ] });
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/stop` && req.method === 'POST') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}/stop` && req.method === 'POST') {
         return Response.json({
           error: 'A static App has no runtime to start or stop. It serves while it has an active deployment; delete the App to take it offline.',
           code: 'static_app_no_runtime',
         }, { status: 409 });
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'GET') {
         return Response.json({ deployments: [] });
       }
       return Response.json({ error: 'not found' }, { status: 404 });

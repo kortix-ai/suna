@@ -79,7 +79,7 @@ test('real permissions and audit CLI processes send the named host account', asy
       expect(JSON.parse(stdout)).toEqual(command === 'audit' ? { events: [], next_cursor: null } : { permissions: [] });
     }
     expect(requests).toHaveLength(2);
-    expect(requests.every(path => path.includes('/accounts/other-account/'))).toBe(true);
+    expect(requests.every(path => path.includes('/workspaces/other-account/'))).toBe(true);
   } finally { server.stop(true); }
 });
 
@@ -125,8 +125,8 @@ test('real groups CLI process creates the group in the linked account', async ()
     };
     await run();
     await run('--account', 'pinned-account');
-    expect(requests.some(r => r.includes('/accounts/linked-account/'))).toBe(true);
-    expect(requests.some(r => r.includes('/accounts/pinned-account/'))).toBe(true);
-    expect(requests.some(r => r.includes('/accounts/home-account/'))).toBe(false);
+    expect(requests.some(r => r.includes('/workspaces/linked-account/'))).toBe(true);
+    expect(requests.some(r => r.includes('/workspaces/pinned-account/'))).toBe(true);
+    expect(requests.some(r => r.includes('/workspaces/home-account/'))).toBe(false);
   } finally { server.stop(true); }
 });

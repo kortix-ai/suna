@@ -551,7 +551,7 @@ export async function expandSessionIdPrefix(
 ): Promise<ProjectSession | 'ambiguous' | null> {
   for (const view of ['', '?archived=only']) {
     try {
-      const sessions = await client.get<ProjectSession[]>(`/projects/${projectId}/sessions${view}`);
+      const sessions = await client.get<ProjectSession[]>(`/workspaces/${projectId}/sessions${view}`);
       const matches = sessions.filter((s) => s.session_id.startsWith(reference));
       if (matches.length === 1) return matches[0];
       if (matches.length > 1) return 'ambiguous';
@@ -569,7 +569,7 @@ async function probeSession(
   sessionId: string,
 ): Promise<ProjectSession | false | ApiError> {
   try {
-    return await client.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`);
+    return await client.get<ProjectSession>(`/workspaces/${projectId}/sessions/${sessionId}`);
   } catch (err) {
     if (err instanceof ApiError) return err.status === 404 ? false : err;
     return false; // network hiccup on one project shouldn't kill the whole scan
@@ -581,7 +581,7 @@ async function probeProject(
   projectId: string,
 ): Promise<ProjectSummary | false | ApiError> {
   try {
-    return await client.get<ProjectSummary>(`/projects/${projectId}`);
+    return await client.get<ProjectSummary>(`/workspaces/${projectId}`);
   } catch (err) {
     if (err instanceof ApiError) return err.status === 404 ? false : err;
     return false;
@@ -610,7 +610,7 @@ async function scanHostForSession(hostName: string, sessionId: string): Promise<
   if (!auth?.token) return null;
   let me: MeResponse;
   try {
-    me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+    me = await clientFromAuth(auth).get<MeResponse>('/me');
   } catch {
     return null;
   }
@@ -618,7 +618,7 @@ async function scanHostForSession(hostName: string, sessionId: string): Promise<
     const client = clientFromAuth(auth, { accountId: acct.account_id });
     let projects: ProjectSummary[];
     try {
-      projects = await client.get<ProjectSummary[]>('/projects');
+      projects = await client.get<ProjectSummary[]>('/workspaces');
     } catch {
       continue;
     }

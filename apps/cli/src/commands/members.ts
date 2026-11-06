@@ -15,7 +15,7 @@ import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // `kortix members` — the CLI face of the account member directory:
-// `/accounts/:id/members` + `/accounts/:id/invites`.
+// `/workspaces/:id/members` + `/workspaces/:id/invites`.
 //
 // Membership is TWO facts on the server: the IDENTITY row (who belongs to this
 // account, plus the `is_super_admin` bypass flag) and the account-scope ROLE
@@ -138,7 +138,7 @@ export async function runMembers(argv: string[]): Promise<number> {
 
   const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/accounts/${encodeURIComponent(ctx.accountId)}`;
+  const base = `/workspaces/${encodeURIComponent(ctx.accountId)}`;
 
   try {
     switch (sub) {

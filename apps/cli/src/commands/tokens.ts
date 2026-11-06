@@ -321,7 +321,7 @@ async function revokeToken(
   // calling token; a failed probe never blocks the revoke.
   if (!opts.force) {
     const me = await client
-      .get<{ token_context?: { token_id?: string | null } }>('/accounts/me')
+      .get<{ token_context?: { token_id?: string | null } }>('/me')
       .catch(() => null);
     if (me?.token_context?.token_id === tokenId) {
       process.stderr.write(

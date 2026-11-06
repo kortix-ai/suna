@@ -99,7 +99,7 @@ function startApi(): void {
     async fetch(req) {
       const me = ME_BY_TOKEN[(req.headers.get('authorization') ?? '').replace('Bearer ', '')];
       if (!me) return Response.json({ error: 'unauthenticated' }, { status: 401 });
-      if (new URL(req.url).pathname.endsWith('/accounts/me')) return Response.json(me);
+      if (new URL(req.url).pathname.endsWith('/me')) return Response.json(me);
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });

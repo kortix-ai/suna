@@ -149,7 +149,7 @@ export async function triggersAddLive(
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.post<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
+      `/workspaces/${ctx.projectId}/triggers`,
       body,
     );
   } catch (err) {
@@ -279,7 +279,7 @@ export async function triggersSetLive(
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.patch<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
       body,
     );
   } catch (err) {
@@ -309,7 +309,7 @@ async function currentEvent(
 ): Promise<{ event: ProjectTriggerEvent } | { problem: string }> {
   try {
     const resp = await ctx.client.get<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers`,
+      `/workspaces/${ctx.projectId}/triggers`,
     );
     const t = resp.triggers.find((x) => x.slug === slug);
     if (!t) return { problem: `No trigger "${slug}".` };
@@ -335,7 +335,7 @@ export async function triggersRmLive(
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.delete<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -362,7 +362,7 @@ export async function triggersToggleLive(
   let resp: ProjectTriggersResponse;
   try {
     resp = await ctx.client.patch<ProjectTriggersResponse>(
-      `/projects/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
+      `/workspaces/${ctx.projectId}/triggers/${encodeURIComponent(slug)}`,
       { enabled },
     );
   } catch (err) {

@@ -40,7 +40,7 @@ function startApi() {
       if (req.headers.get('authorization') !== `Bearer ${AGENT_TOKEN}`) {
         return Response.json({ error: 'unauthenticated' }, { status: 401 });
       }
-      if (url.pathname === '/v1/accounts/me') {
+      if (url.pathname === '/v1/me') {
         return Response.json({
           user_id: 'user_123',
           email: 'owner@example.test',
@@ -58,7 +58,7 @@ function startApi() {
           ],
         });
       }
-      if (url.pathname.startsWith(`/v1/projects/${PROJECT_ID}/sessions`)) {
+      if (url.pathname.startsWith(`/v1/workspaces/${PROJECT_ID}/sessions`)) {
         return Response.json(
           { error: "You don't have permission to perform this action (project.session.read)." },
           { status: 403 },
@@ -149,7 +149,7 @@ test('a refused session read reports the CLI as authenticated and names the agen
   // The denial itself still identifies the authenticated caller.
   expect(first.stderr).not.toContain('not logged in');
   expect(first.stderr).toContain('acting as session token');
-  expect(requests).toContain(`GET /v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
+  expect(requests).toContain(`GET /v1/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`);
 
   // 2. The denial still names the action…
   expect(first.stderr).toContain('project.session.read');
@@ -162,10 +162,10 @@ test('a refused session read reports the CLI as authenticated and names the agen
   // 3. The identity was cached, so the NEXT command names the agent in its
   //    standing line from the cache. Its denial footer reads the identity live
   //    once (the grant can change between prompts): exactly one more call.
-  const meCallsAfterFirst = requests.filter((r) => r.endsWith('/v1/accounts/me')).length;
+  const meCallsAfterFirst = requests.filter((r) => r.endsWith('/v1/me')).length;
   const second = await runCli(['sessions', 'restart', SESSION_ID]);
   expect(second.stderr).toContain('agent osp-vision-route-agent');
-  expect(requests.filter((r) => r.endsWith('/v1/accounts/me')).length).toBe(meCallsAfterFirst + 1);
+  expect(requests.filter((r) => r.endsWith('/v1/me')).length).toBe(meCallsAfterFirst + 1);
 });
 
 test('the bare landing screen shows the agent row instead of a logged-out host', async () => {

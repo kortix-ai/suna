@@ -60,7 +60,7 @@ export async function bindingsLs(
   let resp: ChannelBindingsResponse;
   try {
     resp = await ctx.client.get<ChannelBindingsResponse>(
-      `/projects/${ctx.projectId}/channels/bindings`,
+      `/workspaces/${ctx.projectId}/channels/bindings`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -128,7 +128,7 @@ export async function bindingsPatch(
   let binding: ChannelBinding;
   try {
     binding = await ctx.client.patch<ChannelBinding>(
-      `/projects/${ctx.projectId}/channels/bindings/${encodeURIComponent(bindingId)}`,
+      `/workspaces/${ctx.projectId}/channels/bindings/${encodeURIComponent(bindingId)}`,
       body,
     );
   } catch (err) {

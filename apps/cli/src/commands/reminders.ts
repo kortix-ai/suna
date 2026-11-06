@@ -146,7 +146,7 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
     if (hit) sessionRef = hit.session_id;
   }
   // Every segment taken from input is encoded: an id with `/` or `?` stays one segment of this route.
-  const base = `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionRef)}/reminders`;
+  const base = `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionRef)}/reminders`;
 
   try {
     if (sub === 'add' || sub === 'create') {

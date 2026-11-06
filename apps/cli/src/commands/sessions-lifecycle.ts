@@ -199,7 +199,7 @@ export async function runSessionsStop(argv: string[]): Promise<number> {
 
   let result: { ok: boolean; session_id: string; status: string };
   try {
-    result = await client.post(`/projects/${projectId}/sessions/${session.session_id}/stop`, {});
+    result = await client.post(`/workspaces/${projectId}/sessions/${session.session_id}/stop`, {});
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -234,7 +234,7 @@ export async function runSessionsRestore(argv: string[]): Promise<number> {
   if (!ctx) return 1;
 
   try {
-    await ctx.client.post(`/projects/${ctx.projectId}/sessions/${sessionId}/restore`, {});
+    await ctx.client.post(`/workspaces/${ctx.projectId}/sessions/${sessionId}/restore`, {});
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -267,7 +267,7 @@ export async function runSessionsRecover(argv: string[]): Promise<number> {
   const { client, projectId, session } = located.located;
 
   try {
-    await client.post(`/projects/${projectId}/sessions/${session.session_id}/recover`, {});
+    await client.post(`/workspaces/${projectId}/sessions/${session.session_id}/recover`, {});
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -311,7 +311,7 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
-  const path = `/projects/${projectId}/sessions/${session.session_id}/start`;
+  const path = `/workspaces/${projectId}/sessions/${session.session_id}/start`;
 
   // Same idempotent readiness call the dashboard polls, and the same budget
   // `sessions new --wait` uses: 75 attempts, 4s apart (~5 min). One stderr
@@ -408,7 +408,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
     detail?: string;
   };
   try {
-    result = await client.put(`/projects/${projectId}/sessions/${session.session_id}/model`, {
+    result = await client.put(`/workspaces/${projectId}/sessions/${session.session_id}/model`, {
       model,
       ...(prompt && retryKey ? { prompt, idempotency_key: retryKey } : {}),
     });

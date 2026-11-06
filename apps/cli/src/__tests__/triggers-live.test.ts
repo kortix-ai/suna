@@ -121,7 +121,7 @@ function startServer(timezone = 'UTC'): string {
       const body =
         req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
-      const base = `/v1/projects/${PROJECT}/triggers`;
+      const base = `/v1/workspaces/${PROJECT}/triggers`;
 
       if (url.pathname === `${base}/event-types`) return Response.json(EVENT_TYPES);
       if (url.pathname === base && req.method === 'GET') {
@@ -272,7 +272,7 @@ describe('kortix triggers — the live (--apply) path', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/triggers`,
+      path: `/v1/workspaces/${PROJECT}/triggers`,
       body: {
         slug: 'digest',
         name: 'digest',
@@ -831,7 +831,7 @@ describe('kortix triggers — the live (--apply) path', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'PATCH',
-      path: `/v1/projects/${PROJECT}/triggers/digest`,
+      path: `/v1/workspaces/${PROJECT}/triggers/digest`,
       body: { name: 'Weekday digest', agent: 'writer' },
     });
     expect(r.stdout).toContain('Updated digest');
@@ -967,7 +967,7 @@ describe('kortix triggers — the live (--apply) path', () => {
     expect(off.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'PATCH',
-      path: `/v1/projects/${PROJECT}/triggers/digest`,
+      path: `/v1/workspaces/${PROJECT}/triggers/digest`,
       body: { enabled: false },
     });
     expect(off.stdout).toContain('Disabled digest');
@@ -987,7 +987,7 @@ describe('kortix triggers — the live (--apply) path', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'DELETE',
-      path: `/v1/projects/${PROJECT}/triggers/digest`,
+      path: `/v1/workspaces/${PROJECT}/triggers/digest`,
       body: null,
     });
     expect(r.stdout).toContain('Removed digest');

@@ -116,7 +116,7 @@ describe('a denied connector call carries its remedy', () => {
       PROJECT_ID,
     ]);
 
-    expect(captured[0]?.path).toBe(`/v1/connectors/projects/${PROJECT_ID}/call`);
+    expect(captured[0]?.path).toBe(`/v1/connectors/workspaces/${PROJECT_ID}/call`);
     expect(captured[0]?.body).toMatchObject({
       connector: 'crm',
       action: 'whoami',

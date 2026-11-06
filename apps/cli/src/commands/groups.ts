@@ -468,7 +468,7 @@ async function resolveGroup(
 async function emailMap(client: ApiClient, accountId: string): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const members = await client
-    .get<AccountMemberRow[]>(`/accounts/${encodeURIComponent(accountId)}/members`)
+    .get<AccountMemberRow[]>(`/workspaces/${encodeURIComponent(accountId)}/members`)
     .catch(() => [] as AccountMemberRow[]);
   for (const m of members) if (m.email) out.set(m.user_id, m.email);
   return out;
