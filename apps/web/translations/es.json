@@ -16681,6 +16681,12 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Abrir la página completa de aprobación",
       "textb7ddab3f7df8": "¿Eliminar {value0} y cada tiempo de ejecución? Esta acción no se puede deshacer.",
+      "text9c583fa19f1a": "También se eliminan sus activadores: {value0}.",
+      "text648f297b3b79": "Mostrar en la App",
+      "text8521b7841a0c": "Un evento: {value0}",
+      "textbede9e3c96af": "Mostrar todos los eventos",
+      "text216e5ffc0e54": "Este evento no está en el registro de los últimos 30 días.",
+      "text1ade727f7313": "Caída desde {value0}. Kortix dejó de reiniciarla.",
       "textb7de71558bf4": "Los conectores seleccionados resuelven este secreto en el servidor. El sandbox no recibe ningún valor.",
       "textb7e29198fc4e": "Clave de {value0} eliminada",
       "textb7ef1459725d": "No se pudo eliminar la cuenta de inmediato",
@@ -21272,6 +21278,7 @@
       "text856bf8853b69": "Uso de la suscripción de Claude",
       "text116cd3982a9b": "Objetivos",
       "textb0571ad96905": "objetivos objetivo metas resultados",
+      "text20d55e8c3373": "Cancelando",
       "text2590cd62a747": "Configuración del espacio de trabajo",
       "text276261b1e03d": "espacio de trabajo configuración organizaciones equipos gestionar",
       "text634ebc515b7f": "Espacio de trabajo · Claves de API",
@@ -23671,7 +23678,8 @@
       "missed_wake": "El último despertar está atrasado.",
       "ask_overdue": "Una solicitud ha vencido.",
       "verification_stalled": "La verificación empezó hace más de 24 horas.",
-      "unreadable": "GOAL.md falta o no tiene el encabezado del objetivo."
+      "unreadable": "GOAL.md falta o no tiene el encabezado del objetivo.",
+      "blocked": "Este objetivo no puede continuar por sí solo."
     },
     "sessionChip": "Objetivo",
     "sessionRole": {
@@ -24485,7 +24493,43 @@
     "restart": "Reiniciar objetivo",
     "restartReason": "Reiniciado desde la página del objetivo",
     "restartedToast": "Objetivo reiniciado",
-    "restartError": "No se pudo reiniciar el objetivo. Inténtalo de nuevo."
+    "restartError": "No se pudo reiniciar el objetivo. Inténtalo de nuevo.",
+    "noAccess": "No tienes acceso a este objetivo.",
+    "noAccessHint": "Pide a la persona a la que está asignado, o a un administrador del proyecto, que lo comparta contigo.",
+    "notFoundHint": "Se eliminó, o el enlace es incorrecto.",
+    "chooseGoal": "Más de un objetivo tiene este nombre. Elige uno.",
+    "goalLoadError": "No se pudo cargar este objetivo. Inténtalo de nuevo.",
+    "eventsLoadError": "No se pudo cargar la actividad.",
+    "changedToast": "Este objetivo cambió antes de que llegara tu acción. La página lo muestra como está ahora.",
+    "blockedTitle": "Bloqueado",
+    "blocked": {
+      "credits": "Se quedó sin créditos, así que no puede empezar ninguna activación.",
+      "wake_cap": "Usó sus {max} activaciones de hoy.",
+      "session_cap": "Usó las {max} sesiones que puede iniciar.",
+      "owner_lost": "Su sesión de agente falló y ninguna sesión tomó el relevo.",
+      "storage": "No se pudo leer ni escribir su carpeta en Archivos.",
+      "flag_off": "Los objetivos están desactivados en este proyecto.",
+      "setup": "Kortix todavía lo está configurando."
+    },
+    "blockedNext": {
+      "credits": "Añade créditos y luego reanúdalo.",
+      "wake_cap": "Continúa solo después de la medianoche UTC.",
+      "session_cap": "Detenlo, o pide a un administrador del proyecto que aumente su límite de sesiones.",
+      "owner_lost": "Vuelve a iniciarlo para darle una sesión nueva.",
+      "storage": "Revisa la carpeta en Archivos y luego reanúdalo.",
+      "flag_off": "Activa los objetivos en este proyecto y luego reanúdalo.",
+      "setup": "Esto termina solo en menos de un minuto."
+    },
+    "legacyUnverifiedTitle": "No verificado por Kortix",
+    "legacyUnverified": "Este objetivo se importó desde su carpeta. Kortix no comprobó su resultado.",
+    "verified": "Verificado",
+    "reportedMet": "Marcado como cumplido, aún sin verificar",
+    "reportedMetHint": "El agente indica que esto está hecho. La comprobación independiente aún no lo ha aprobado.",
+    "verifiedCount": "{verified} de {total} verificados",
+    "checkFailed": "La comprobación falló: {note}",
+    "waitingOnPerson": "Esperando a {person}",
+    "waitNoCost": "No se ejecutan comprobaciones mientras espera una respuesta.",
+    "chaseAt": "Hace seguimiento {time}"
   },
   "agentEditor": {
     "manage": "Gestionar",
@@ -25079,7 +25123,7 @@
         "sent_to_agent": "envió comentarios a un agente"
       },
       "person": "Persona",
-      "deleteRootDescription": "Su texto se elimina para todos y el hilo pasa a ser de solo lectura. No se puede deshacer.",
+      "deleteRootDescription": "Su texto se elimina para todos y el hilo sale de la lista de comentarios. No se puede deshacer.",
       "showPanel": "Mostrar comentarios",
       "hidePanel": "Ocultar comentarios",
       "panelTitle": "Comentarios y actividad",
@@ -25122,7 +25166,16 @@
       "pagePinLabel": "Comentario {number}",
       "showPanelCount": "Mostrar comentarios, {count} abiertos",
       "hidePanelCount": "Ocultar comentarios, {count} abiertos",
-      "commentSelectionHint": "Comentar la selección"
+      "commentSelectionHint": "Comentar la selección",
+      "threadReopened": "Hilo reabierto",
+      "noCommentsReadOnlyHint": "Los comentarios sobre este artefacto aparecen aquí.",
+      "commentTooLong": "Un comentario puede tener hasta {max} caracteres. Quita {over}.",
+      "discardDrawingTitle": "¿Descartar este dibujo?",
+      "discardDrawingHint": "Tus trazos no están guardados. No se puede deshacer.",
+      "discardDrawing": "Descartar",
+      "keepDrawing": "Seguir dibujando",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "Mover a un espacio",
     "projectWide": "En todo el espacio de trabajo",
@@ -25151,13 +25204,28 @@
       "writing": "{name} está redactando…"
     },
     "coedit": {
-      "offLarge": "La edición en vivo está desactivada: este documento supera 1 MiB. Los cambios se guardan al escribir.",
-      "offLineEndings": "La edición en vivo está desactivada: este documento mezcla finales de línea CRLF y LF. Los cambios se guardan al escribir.",
-      "offShape": "La edición en vivo está desactivada: el editor reescribiría parte del Markdown. Los cambios se guardan al escribir.",
+      "offLarge": "La edición en vivo está desactivada: este documento es demasiado grande. Los cambios se guardan al escribir.",
+      "offLineEndings": "La edición en vivo está desactivada: este documento mezcla dos tipos de saltos de línea. Los cambios se guardan al escribir.",
+      "offShape": "La edición en vivo está desactivada: el editor no puede conservar parte de este documento tal como está escrito. Los cambios se guardan al escribir.",
       "stoppedLarge": "La edición en vivo se detuvo: un cambio era demasiado grande para compartirlo. Los cambios se guardan al escribir.",
       "stoppedFailed": "La edición en vivo se detuvo: la conexión falló. Los cambios se guardan al escribir.",
-      "stoppedHistory": "La edición en vivo se detuvo: el historial de ediciones de este documento es demasiado grande. Los cambios se guardan al escribir."
-    }
+      "stoppedHistory": "La edición en vivo se detuvo: el historial de ediciones de este documento es demasiado grande. Los cambios se guardan al escribir.",
+      "offFailed": "La edición en vivo está desactivada: no se pudo conectar. Los cambios se guardan al escribir."
+    },
+    "conflictTitle": "Otra persona cambió este documento",
+    "conflictReloadTitle": "¿Cargar la versión más reciente?",
+    "conflictReloadHint": "Se descartan tus cambios desde el último guardado. No se puede deshacer.",
+    "docLoadError": "No se pudo cargar este documento.",
+    "openError": "No se pudo abrir este artefacto.",
+    "viewOnly": "Solo lectura",
+    "viewingOldUndated": "Estás viendo una versión anterior.",
+    "exportWaiting": "Guardando tus cambios y luego exportando…",
+    "exportBlocked": "Exportación detenida: tus últimos cambios no están guardados.",
+    "clearFilters": "Quitar filtros",
+    "linkCopyFailed": "No se pudo copiar el enlace. Selecciónalo en el campo y cópialo.",
+    "shareDropsPeople": "{count, plural, one {Al guardar se quita la persona que añadiste. Solo Privado mantiene una lista de personas.} other {Al guardar se quitan las # personas que añadiste. Solo Privado mantiene una lista de personas.}}",
+    "askAgentHistoryError": "No se pudieron cargar los chats anteriores.",
+    "embedUnavailable": "Este enlace no tiene vista previa, así que sigue siendo un enlace."
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",

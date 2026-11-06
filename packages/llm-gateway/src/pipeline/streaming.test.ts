@@ -263,6 +263,34 @@ describe('relayStream', () => {
 
   const noSleep = async () => undefined;
 
+  test('a client cancel while a read is pending never redispatches to a client that is gone', async () => {
+    let redispatches = 0;
+    let settled: { code?: unknown } | null | undefined;
+    // An upstream that has sent nothing yet: the pull is parked on its read.
+    const upstream = new ReadableStream<Uint8Array>({ pull: () => new Promise(() => {}) });
+    const stream = relayStream({
+      upstreamBody: upstream,
+      requestId: 'req_cancel_pending_read',
+      logger: { warn() {}, error() {} },
+      settle: async (_usage, streamError) => { settled = streamError as typeof settled; },
+      redispatch: async () => {
+        redispatches += 1;
+        return upstreamOf(encoder.encode('data: [DONE]\n\n'));
+      },
+      sleep: noSleep,
+    });
+    const reader = stream.getReader();
+    const pending = reader.read();
+    await Promise.resolve();
+    await reader.cancel('client went away');
+    await pending.catch(() => undefined);
+    // Let the parked pull resume from the cancelled upstream read.
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(redispatches).toBe(0);
+    expect(settled?.code).toBe('client_aborted');
+  });
+
   test('closes before the first byte: retries transparently and the client never sees the cut', async () => {
     const good =
       'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n' +

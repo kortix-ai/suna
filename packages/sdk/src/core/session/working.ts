@@ -3,6 +3,10 @@ import type {
   SessionTurn,
   SessionTurnEnded,
 } from '../rest/projects-client/sessions';
+import type { SessionPromptReason } from '../wire-values';
+
+/** Stop parked the row (`SESSION_PROMPT_REASONS`): it waits on the user, not on the session. */
+const HELD: SessionPromptReason = 'held';
 
 /**
  * WHICH observation decided the state.
@@ -355,7 +359,7 @@ export function countLiveInboxPrompts(prompts: readonly SessionPrompt[]): number
   let live = 0;
   for (const prompt of prompts) {
     if (prompt.state === 'queued' || prompt.state === 'delivering') live += 1;
-    else if (prompt.state === 'waiting' && prompt.reason !== 'held') live += 1;
+    else if (prompt.state === 'waiting' && prompt.reason !== HELD) live += 1;
   }
   return live;
 }

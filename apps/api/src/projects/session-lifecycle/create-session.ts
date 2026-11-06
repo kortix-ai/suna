@@ -37,6 +37,7 @@ import type {
 import { deliverThroughQueue } from './follow-up-delivery';
 import { drainSessionLifecycleQueue } from './drain';
 import { projectsView } from '../../workspaces/rows';
+import { adoptGoalSuccessor } from '../goals/admission';
 
 /**
  * The status of the `create_session` command under this key in this project, or
@@ -493,6 +494,8 @@ export async function applyPostCreateActions(input: {
         });
       } else if (action.type === 'repin_reminder') {
         await repinSessionReminder(input.projectId, action.reminderId, input.sessionId, new Date());
+        // A goal heartbeat: the successor becomes the goal's owner (G03).
+        await adoptGoalSuccessor(input.projectId, action.reminderId, input.sessionId);
       } else if (action.type === 'adopt_chat_threads') {
         await adoptChatThreads(input.projectId, action.fromSessionId, input.sessionId);
       }

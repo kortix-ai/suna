@@ -148,6 +148,12 @@ export interface ProjectTrigger {
    * silence alert started. The App's next post clears it. Absent on older servers.
    */
   silent_since?: string | null;
+  /**
+   * Set while the always-on App it names is down: it stopped 3 times in an
+   * hour and Kortix stopped restarting it. When that alert started; the App
+   * running again clears it. Absent on older servers.
+   */
+  crashed_since?: string | null;
   /** For type='event' only — see {@link ProjectTriggerEvent}. Null otherwise. */
   event: ProjectTriggerEvent | null;
   /** For type='app' only — the slug of the App whose emitted events fire this trigger. Null or absent otherwise. */

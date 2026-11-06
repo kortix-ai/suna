@@ -143,8 +143,9 @@ Subcommands:
                                     trigger listens. --status <s> --trigger <slug>
                                     --id <event-id> --limit N --cursor <c> --json.
   events emit <id|slug> <name>      Send a test event on the real path (id test-…).
-                                    --data <json|@file> --id <id> --wait[=<s>]: wait
-                                    for the outcome; exit 0 only when a trigger fired.
+                                    --data <json|@file> --id <id> --trigger <slug>
+                                    (only that trigger) --wait[=<s>]: wait for the
+                                    outcome; exit 0 only when a trigger fired.
   events credentials <id|slug>      KORTIX_APP_EVENTS_URL and KORTIX_APP_TOKEN, for code
                                     that runs outside the App. Workspace admins.
   start <id|slug>                   Permit requests and start the App.
@@ -198,7 +199,8 @@ Subcommands:
   token <id|slug>                   Print a 15-minute Kortix sign-in token for the
                                     App, naming you. --json adds expires_at.
   delete <id|slug>                  Delete the App, its runtimes, and every deployment
-                                    image it built. --yes.
+                                    image it built, with the triggers that name it (its
+                                    work triggers and the schedule that calls it). --yes.
     --deployment <id|vN>            Delete only this deployment and its image. The live
                                     deployment cannot be deleted: roll back first.
 
@@ -890,10 +892,14 @@ async function deleteCommand(
     app_id: app.app_id,
     slug: app.slug,
     images: deleted.images ?? { released: 0, pending: 0 },
+    triggers_removed: deleted.triggers_removed ?? [],
   };
   if (json) emitJson(result);
   else {
     process.stdout.write(`\n  ${status.ok(`deleted ${result.slug}`)}\n`);
+    if (result.triggers_removed.length > 0) {
+      process.stdout.write(`${C.dim}  removed its triggers: ${result.triggers_removed.join(', ')}${C.reset}\n`);
+    }
     process.stdout.write(imageLines(result.images.released, result.images.pending));
     process.stdout.write('\n');
   }

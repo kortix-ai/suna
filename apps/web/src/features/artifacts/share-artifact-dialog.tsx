@@ -6,9 +6,10 @@ import { ShareOption, SubjectPicker } from '@kortix/ui/access/sharing-picker';
 import { Button } from '@kortix/ui/button';
 import { Input } from '@kortix/ui/input';
 import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@kortix/ui/modal';
 import { RadioGroup } from '@kortix/ui/radio-group';
-import { successToast } from '@kortix/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { PROJECT_ACTIONS, useProjectCan } from '@kortix/ui/workspace';
 import { CopyIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
@@ -41,19 +42,31 @@ export function ShareArtifactDialog({
 
   const copy = async () => {
     if (!link) return;
-    await navigator.clipboard.writeText(link);
-    successToast(t('linkCopied'));
+    // The browser can refuse the clipboard (no permission, an insecure origin): say so.
+    try {
+      await navigator.clipboard.writeText(link);
+      successToast(t('linkCopied'));
+    } catch {
+      errorToast(t('linkCopyFailed'));
+    }
   };
 
   const save = async () => {
-    await update.mutateAsync({
-      artifactId: artifact.artifact_id,
-      visibility: mode,
-      shared_with_user_ids: mode === 'private' ? people : [],
-    });
+    try {
+      await update.mutateAsync({
+        artifactId: artifact.artifact_id,
+        visibility: mode,
+        shared_with_user_ids: mode === 'private' ? people : [],
+      });
+    } catch {
+      // The API client toasts the error; the dialog stays open with the choice.
+      return;
+    }
     successToast(t('shareSaved'));
     onOpenChange(false);
   };
+  // Only Private keeps a list of people: another mode saved drops the ones added.
+  const dropsPeople = mode !== 'private' && people.length > 0;
 
   return (
     <Modal open={open} onOpenChange={(value) => !update.isPending && onOpenChange(value)}>
@@ -70,6 +83,11 @@ export function ShareArtifactDialog({
                 <ShareOption key={value} value={value} label={t(`visibility.${value}`)} desc={t(`visibilityHint.${value}`)} />
               ))}
             </RadioGroup>
+            {dropsPeople ? (
+              <p className="text-muted-foreground text-xs">
+                {t('shareDropsPeople', { count: people.length })}
+              </p>
+            ) : null}
           </div>
           {mode === 'private' ? (
             <div className="space-y-2">
@@ -96,10 +114,11 @@ export function ShareArtifactDialog({
           </div>
         </ModalBody>
         <ModalFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={update.isPending}>
+          <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)} disabled={update.isPending}>
             {t('cancel')}
           </Button>
-          <Button size="sm" onClick={save} disabled={!changed || update.isPending}>
+          <Button size="sm" onClick={save} disabled={!changed || update.isPending} aria-busy={update.isPending}>
+            {update.isPending ? <Loading className="size-4 shrink-0" /> : null}
             {t('save')}
           </Button>
         </ModalFooter>

@@ -21,10 +21,15 @@ import { canEmbed, fetchEmbed } from '@kortix/ui/markdown/doc-editor/doc-embed';
 import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
 import { DocMenus } from '@kortix/ui/markdown/doc-editor/doc-menus';
 import { docRoundTrips, htmlToMarkdown, markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
+import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { ErrorState } from '@kortix/ui/error-state';
+import { InfoBanner } from '@kortix/ui/info-banner';
 import Loading from '@kortix/ui/loading';
 import { MENU_PANEL_STATIC, menuRow } from '@kortix/ui/menu-recipe';
-import { dismissToast, errorToast } from '@kortix/ui/toast';
-import { CardsIcon, LinkSimpleIcon } from '@phosphor-icons/react';
+import { errorToast, infoToast } from '@kortix/ui/toast';
+import { CardsIcon, LinkSimpleIcon, WarningIcon } from '@phosphor-icons/react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -34,6 +39,7 @@ import { createDocSaver, pendingSave, type DocSaveStatus, type DocSaver, type Kn
 import {
   CoeditUnavailable,
   createDocCoedit,
+  viewerMayGoLive,
   waitForSeed,
   type CoeditFallback,
   type DocCoeditSession,
@@ -82,6 +88,11 @@ const isConflict = (err: unknown) =>
 const NO_COMMENTS: readonly ArtifactCommentThread[] = [];
 /** A co-edited doc that has not loaded by then opens with autosave instead. */
 const COEDIT_START_MS = 10_000;
+/**
+ * After the file moves, how long a live read-only viewer waits for an open editor to merge it into
+ * the doc (a leader merges at once and flushes about 2 s later) before it shows the file instead.
+ */
+const VIEWER_CATCH_UP_MS = 8_000;
 
 /**
  * What the editor opened on. `live`: co-edited (KRTX-3670), the editor binds
@@ -201,7 +212,16 @@ export function DocEditor({
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const liveSession = loaded?.live ?? null;
   const saver = useRef<DocSaver | null>(null);
+  // Another writer changed the file under unsaved edits: autosave waits for the person's choice,
+  // shown above the doc until they make it (a toast could be closed and take the choice with it).
+  const [conflict, setConflict] = useState(false);
+  const [confirmReload, setConfirmReload] = useState(false);
   const sourceMarkdown = useRef('');
+  // The `loaded` on screen now: an editor made for an earlier one is being replaced.
+  const currentLoaded = useRef(loaded);
+  useLayoutEffect(() => {
+    currentLoaded.current = loaded;
+  });
   /**
    * A read-only editor with co-editing on stays mounted across file versions (the viewer keys it
    * so) and shows the file it last read: this one.
@@ -286,12 +306,8 @@ export function DocEditor({
       start,
       note: guard && !guard.ok && editable ? guardNote(guard) : undefined,
     });
-  useEffect(() => {
-    if (text.error) errorToast(text.error.message);
-  }, [text.error]);
-  useEffect(() => {
-    if (loaded) sourceMarkdown.current = loaded.start.text;
-  }, [loaded]);
+  // The text did not load: the doc area says so and offers a retry (below), never a spinner forever.
+  const textFailed = loaded === null && handoff === null && text.isError;
 
   const markdownOf = (editor: Editor) => htmlToMarkdown(media.restore(editor.getHTML()));
   const readNow = async (current: ArtifactDetail): Promise<Known> => {
@@ -350,6 +366,13 @@ export function DocEditor({
    * cancel; once the editor opened on the session, the `liveSession` effect
    * closes it instead.
    */
+  /** This read-only viewer may show the shared doc: it is not behind the file (`viewerMayGoLive`). */
+  const viewerDocCurrent = async () => {
+    const current = latest.current.artifact;
+    const doc = await getArtifactDoc(projectId, current.artifact_id, { after: Number.MAX_SAFE_INTEGER });
+    return viewerMayGoLive(doc, latest.current.artifact.entry_version, Date.now());
+  };
+
   const openLive = (opened: Known, onSolo: (outcome: { note?: CoeditNoteReason; unseeded?: boolean }) => void) => {
     const current = latest.current.artifact;
     const schema = docExtensions({ editable, placeholder: () => '' });
@@ -388,16 +411,20 @@ export function DocEditor({
       session.close();
       onSolo(outcome);
     };
-    const timer = window.setTimeout(() => solo({ note: 'stopped-failed' }), COEDIT_START_MS);
+    const timer = window.setTimeout(() => solo({ note: 'off-failed' }), COEDIT_START_MS);
     session.start().then(
-      () => {
+      async () => {
+        if (over) return;
+        // A read-only viewer goes live only on a doc that is not behind the file (`viewerMayGoLive`):
+        // otherwise it shows the file and waits, as for a doc nobody seeded.
+        if (!editable && !(await viewerDocCurrent().catch(() => false))) return solo({ unseeded: true });
         if (over) return;
         over = true;
         adopted = true;
         window.clearTimeout(timer);
         setLoaded({ html: '', start: opened, live: session });
       },
-      (err: unknown) => solo(err instanceof CoeditUnavailable ? { unseeded: true } : { note: 'stopped-failed' }),
+      (err: unknown) => solo(err instanceof CoeditUnavailable ? { unseeded: true } : { note: 'off-failed' }),
     );
     return () => {
       if (adopted) return;
@@ -426,18 +453,19 @@ export function DocEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startText, startVersion]);
 
-  // A read-only viewer of a doc nobody seeded goes live, without a reload, once an editor seeds it.
+  // A read-only viewer that shows the file (a doc nobody seeded, or one behind the file) goes live,
+  // without a reload, once the doc is current: an editor seeded it, or opened it and merged the file.
   useEffect(() => {
     if (!loaded?.unseeded) return;
-    const current = latest.current.artifact;
     const shown = shownFile.current ?? loaded.start;
     let cancel: (() => void) | null = null;
     const stop = waitForSeed({
-      seeded: async () =>
-        (await getArtifactDoc(projectId, current.artifact_id, { after: Number.MAX_SAFE_INTEGER })).seeded,
-      // A refusal now keeps the file on screen as it is.
+      seeded: viewerDocCurrent,
       onSeeded: () => {
-        cancel = openLive(shown, () => {});
+        // The doc fell behind again between the ask and the open: wait again (a new `loaded`).
+        cancel = openLive(shownFile.current ?? shown, ({ unseeded }) => {
+          if (unseeded) setLoaded((prev) => (prev?.unseeded ? { ...prev } : prev));
+        });
       },
     });
     return () => {
@@ -453,16 +481,10 @@ export function DocEditor({
     return () => liveSession.close();
   }, [liveSession]);
 
-  const showConflict = () => {
-    const { t: t, artifact: current } = latest.current;
-    errorToast(t('conflict'), {
-      id: `artifact-conflict-${current.artifact_id}`,
-      duration: Infinity,
-      actions: [
-        { label: t('conflictReload'), onClick: () => latest.current.onReload() },
-        { label: t('conflictKeepMine'), onClick: () => saver.current?.keepMine() },
-      ],
-    });
+  const showConflict = () => setConflict(true);
+  const keepMine = () => {
+    setConflict(false);
+    saver.current?.keepMine();
   };
 
   /**
@@ -588,6 +610,9 @@ export function DocEditor({
         },
       },
       onUpdate: ({ editor: updated }) => {
+        // Only the editor of the current `loaded` speaks: one being replaced (its session closing
+        // as the viewer falls back to the file) must not write its old Markdown over the new.
+        if (updated.isDestroyed || currentLoaded.current !== loaded) return;
         // A co-edited doc also changes under a read-only viewer: others' text arrives.
         if (editable || liveSession) {
           sourceMarkdown.current = markdownOf(updated);
@@ -611,6 +636,17 @@ export function DocEditor({
       }
     };
   }, [editor]);
+  // The Markdown that highlights, carets and new anchors map against: what this editor shows. A
+  // live editor shows the shared doc, which can be ahead of the file it opened on (an unflushed
+  // edit, an outside edit merged in), and its binding may render that without an update event.
+  // Any other editor shows the file it loaded. Set again for every new editor, before the
+  // highlights read it.
+  useEffect(() => {
+    if (!loaded) return;
+    sourceMarkdown.current =
+      loaded.live && editor && !editor.isDestroyed ? markdownOf(editor) : loaded.start.text;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, editor]);
 
   // Co-editing: the leader's duties need the mounted editor (its Markdown, the outside-edit merge).
   // Binding renders the shared doc, which may be ahead of the file it opened on, as one update:
@@ -870,7 +906,34 @@ export function DocEditor({
   const fileVersion = artifact.entry_version;
   useEffect(() => {
     // Co-edited: only the leader looks (an outside edit is merged into the live doc).
-    if (liveSession) return liveSession.fileMoved(fileVersion);
+    if (liveSession) {
+      liveSession.fileMoved(fileVersion);
+      if (editable) return;
+      // A read-only viewer cannot merge the new file into the doc; an open editor does, within
+      // seconds. With none open the doc stays behind, so the viewer shows the file instead and
+      // goes live again once an editor catches the doc up.
+      const session = liveSession;
+      let live = true;
+      const timer = window.setTimeout(() => {
+        void viewerDocCurrent()
+          .then(async (current) => {
+            if (!live || current) return;
+            const now = await readNow(latest.current.artifact);
+            if (!live) return;
+            shownFile.current = now;
+            setLoaded((prev) =>
+              prev?.live === session
+                ? { html: media.resolveHtml(markdownToHtml(now.text)), start: now, unseeded: true }
+                : prev,
+            );
+          })
+          .catch(() => {});
+      }, VIEWER_CATCH_UP_MS);
+      return () => {
+        live = false;
+        window.clearTimeout(timer);
+      };
+    }
     const shown = shownFile.current ?? loaded?.start;
     if (editor && !editable && coedit && loaded && fileVersion !== shown?.version) {
       let live = true;
@@ -935,8 +998,7 @@ export function DocEditor({
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('beforeunload', onLeave);
-      const conflictToastId = `artifact-conflict-${current.artifact_id}`;
-      dismissToast(conflictToastId);
+      setConflict(false);
       docSaver.close();
       if (saver.current === docSaver) saver.current = null;
     };
@@ -947,7 +1009,25 @@ export function DocEditor({
     <div className="kx-doc min-h-full">
       <style>{ARTIFACT_DOC_CSS}</style>
       {live ? <style>{DOC_LIVE_CSS}</style> : null}
-      {loaded === null || !editor ? (
+      {textFailed ? (
+        <div className="grid min-h-60 place-items-center">
+          <ErrorState
+            size="sm"
+            title={t('docLoadError')}
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={text.isFetching}
+                onClick={() => void text.refetch()}
+              >
+                {text.isFetching ? <Loading className="size-4 shrink-0" /> : null}
+                {t('retry')}
+              </Button>
+            }
+          />
+        </div>
+      ) : loaded === null || !editor ? (
         // One quiet spinner while the text loads (usually cached: no wait at all).
         <div className="grid min-h-60 place-items-center">
           <Loading className="size-4" />
@@ -981,6 +1061,40 @@ export function DocEditor({
             />
           ) : null}
           {loaded.note ? <CoeditNote reason={loaded.note} /> : null}
+          {editable && conflict ? (
+            // Pinned to the top of the doc while it scrolls: the choice stays in reach.
+            <div className="bg-background sticky top-0 z-10 mb-6 pt-2">
+              <InfoBanner
+                tone="warning"
+                icon={WarningIcon}
+                title={t('conflictTitle')}
+                action={
+                  <ButtonGroup>
+                    <Button size="xs" variant="outline" onClick={keepMine}>
+                      {t('conflictKeepMine')}
+                    </Button>
+                    <Button size="xs" variant="outline" onClick={() => setConfirmReload(true)}>
+                      {t('conflictReload')}
+                    </Button>
+                  </ButtonGroup>
+                }
+              >
+                {t('conflict')}
+              </InfoBanner>
+            </div>
+          ) : null}
+          <ConfirmDialog
+            open={confirmReload && conflict}
+            onOpenChange={setConfirmReload}
+            title={t('conflictReloadTitle')}
+            description={t('conflictReloadHint')}
+            confirmLabel={t('conflictReload')}
+            confirmVariant="destructive"
+            onConfirm={() => {
+              setConfirmReload(false);
+              latest.current.onReload();
+            }}
+          />
           <EditorContent editor={editor} />
           <input
             ref={picker}
@@ -1056,6 +1170,13 @@ function EmbedOffer({
   };
   const close = useRef(onClose);
   const pick = useRef<(choice: number) => void>(() => {});
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
     const onTransaction = ({
       transaction,
@@ -1090,13 +1211,16 @@ function EmbedOffer({
   const embed = async () => {
     setLoading(true);
     const meta = await fetchEmbed(offer.href, (url) => getLinkPreview(projectId, url));
+    // Closed while the preview loaded (Escape, typing, Keep as link): the link stays a link.
+    if (!mounted.current) return;
+    if (!meta) {
+      infoToast(t('embedUnavailable'));
+      close.current();
+      return;
+    }
     const { doc } = editor.state;
     // The link must still be where it was pasted.
-    if (
-      meta &&
-      offer.to <= doc.content.size &&
-      doc.textBetween(offer.from, offer.to) === offer.href
-    ) {
+    if (offer.to <= doc.content.size && doc.textBetween(offer.from, offer.to) === offer.href) {
       const $from = doc.resolve(offer.from);
       // A top-level paragraph that holds only the link becomes the card; otherwise the card splits it
       // (a list item must start with a paragraph).

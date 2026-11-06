@@ -3,8 +3,8 @@
  * stops the harness and exits with its code; a later one (a SIGTERM during an
  * agent swap) is a no-op.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { installShutdownHandlers } from '@/app/shutdown'
+import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test'
+import { installShutdownHandlers, SHUTDOWN_HARNESS_STOP_MS } from '@/app/shutdown'
 import { resetDaemonShutdownStateForTests } from '@/lib/shutdown-state'
 
 function fakeProxy() {
@@ -56,5 +56,23 @@ describe('installShutdownHandlers', () => {
     await new Promise((r) => setTimeout(r, 10))
     expect(stopped).toBe(1)
     expect(exits).toEqual([75])
+  })
+
+  test('a harness stop that never settles still exits at the deadline', async () => {
+    jest.useFakeTimers()
+    try {
+      const exits: number[] = []
+      const shutdown = installShutdownHandlers({ stop: () => new Promise<void>(() => {}) }, fakeProxy(), undefined, {
+        exit: (code) => exits.push(code),
+      })
+      shutdown({ reason: 'SIGTERM', exitCode: 0 })
+      for (let i = 0; i < 20; i += 1) await Promise.resolve()
+      expect(exits).toEqual([])
+      jest.advanceTimersByTime(SHUTDOWN_HARNESS_STOP_MS)
+      for (let i = 0; i < 20 && exits.length === 0; i += 1) await Promise.resolve()
+      expect(exits).toEqual([0])
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })

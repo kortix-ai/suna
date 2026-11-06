@@ -18,8 +18,11 @@
 import { z } from 'zod';
 import { SessionLogPageSchema } from './session-log/wire';
 import { SessionAttentionSchema, SessionBoardStateSchema, SessionInboundSchema } from './multi-agent';
+import { SESSION_PROMPT_REASONS } from './wire-values';
 
 export * from './memory';
+export * from './goals';
+export * from './wire-values';
 
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -1990,6 +1993,8 @@ export const TriggerSchema = z.object({
   last_event_at: z.string().nullable().optional(),
   /** Set while the App has been silent past `expect_event_within`: when the silence alert started. */
   silent_since: z.string().nullable().optional(),
+  /** Set while the always-on App it names is down past its restart budget: when that alert started. */
+  crashed_since: z.string().nullable().optional(),
   /** For type=app only — the slug of the App whose emitted events fire the trigger. */
   app: z.string().nullable().optional(),
   /** A fire calls this App (method path) instead of running an agent. Null: an agent run. */
@@ -2353,8 +2358,8 @@ export const SessionPromptSchema = z.object({
   wire_message_id: z.string(),
   client_sent_at_ms: z.number().nullable(),
   state: SessionPromptStateSchema,
-  /** Why admission waits: `turn_active`, `older_prompt_pending` or `held`. */
-  reason: z.string().nullable(),
+  /** Why the row is in its state (`SESSION_PROMPT_REASONS`). `held` is not live work. */
+  reason: z.enum(SESSION_PROMPT_REASONS).nullable(),
   text: z.string(),
   attempts: z.number(),
   /** Automatic re-attempts a runtime-unreachable park has spent. */

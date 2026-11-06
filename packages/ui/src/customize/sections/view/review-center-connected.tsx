@@ -54,6 +54,7 @@ import {
 } from '../../../workspace/review/review-actions';
 import { AskDeck } from '../../../session/prompts/ask-deck';
 import { ReviewCenter } from '../../../workspace/review/review-center';
+import { REVIEW_VERDICT_ANNOUNCED } from '../../../workspace/review/review-reducer';
 
 /**
  * How many session deep links the inbox warms up front. A page holds up to 50
@@ -192,18 +193,36 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
     );
   }
 
-  function handleAct(id: string, verdict: ReviewVerdict, feedback?: string) {
+  // Each branch resolves when the server accepted the verdict and rejects when
+  // it refused, so the inbox can roll its optimistic status back. A branch
+  // that shows its own success toast resolves `REVIEW_VERDICT_ANNOUNCED`.
+  function handleAct(id: string, verdict: ReviewVerdict, feedback?: string): Promise<unknown> {
+    return new Promise<unknown>((settle, refuse) => {
+      actOnItem(id, verdict, feedback, () => settle(REVIEW_VERDICT_ANNOUNCED), () => settle(undefined), refuse);
+    });
+  }
+
+  function actOnItem(
+    id: string,
+    verdict: ReviewVerdict,
+    feedback: string | undefined,
+    announced: () => void,
+    accepted: () => void,
+    refused: (error: unknown) => void,
+  ) {
     // The shared parameter-review component calls this for one exact action.
     const executionId = connectorCallId(id);
     if (executionId) {
       resolve.mutate(
         { executionId, decision: verdict === 'approve' ? 'approve' : 'deny', note: feedback },
         {
-          onSuccess: () =>
-            verdict === 'approve'
-              ? successToast(tI18nComplete.raw('text2b2b0a697042'))
-              : infoToast(tI18nComplete.raw('textda404deb110f')),
+          onSuccess: () => {
+            if (verdict === 'approve') successToast(tI18nComplete.raw('text2b2b0a697042'));
+            else infoToast(tI18nComplete.raw('textda404deb110f'));
+            announced();
+          },
           onError: (e) => {
+            refused(e);
             if (!isApprovalExpiredError(e)) return errorToast(e.message);
             errorToast(tHardcodedUi('approvalPage.expiredHint'));
             refreshInbox();
@@ -221,8 +240,10 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
           onSuccess: () => {
             successToast(tI18nComplete.raw('text0cad31cba248'));
             refreshInbox();
+            announced();
           },
           onError: (e) => {
+            refused(e);
             if ((e as { code?: string }).code === 'MERGE_CONFLICT') {
               const item = items.find((candidate) => candidate.id === id);
               const conflicts = (e as { data?: { conflicts?: string[] } }).data?.conflicts ?? [];
@@ -249,8 +270,12 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
           onSuccess: () => {
             infoToast(tI18nComplete.raw('text67382c89fdde'));
             refreshInbox();
+            announced();
           },
-          onError: (e) => errorToast(e.message),
+          onError: (e) => {
+            refused(e);
+            errorToast(e.message);
+          },
         });
       } else {
         // "Request changes" → persist the note on the change AND deliver it to the
@@ -259,6 +284,7 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
         const note = (feedback ?? '').trim();
         if (!note) {
           infoToast(tI18nComplete.raw('text8918eace1b87'));
+          refused(new Error('A change request needs a note.'));
           return;
         }
         requestChanges.mutate(
@@ -271,14 +297,27 @@ export function ReviewCenterConnected({ projectName }: { projectName: string }) 
                   : tI18nComplete.raw('text871f77182091'),
               );
               refreshInbox();
+              announced();
             },
-            onError: (e) => errorToast(e.message),
+            onError: (e) => {
+              refused(e);
+              errorToast(e.message);
+            },
           },
         );
       }
       return;
     }
-    act.mutate({ id, verdict, feedback }, { onError: (e) => errorToast(e.message) });
+    act.mutate(
+      { id, verdict, feedback },
+      {
+        onSuccess: accepted,
+        onError: (e) => {
+          refused(e);
+          errorToast(e.message);
+        },
+      },
+    );
   }
 
   // Bulk verdicts send every id the inbox chose: native, and `call:` for

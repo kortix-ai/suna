@@ -93,6 +93,7 @@ import { registerArtifactLiveRoutes } from './routes/artifact-live';
 import { registerArtifactDocRoutes } from './routes/artifact-doc';
 import { registerLinkPreviewRoutes } from './routes/link-preview';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
+import { registerGoalRoutes } from './routes/goals';
 import { registerRuntimeTriggersRoutes } from './routes/runtime-triggers';
 import { registerProjectSpacesRoutes } from './routes/project-spaces';
 import { registerProjectMemoryRoutes } from './routes/project-memory';
@@ -200,6 +201,7 @@ export function registerAllProjectRoutes(): void {
   registerArtifactDocRoutes();
   registerLinkPreviewRoutes();
   registerSessionRemindersRoutes();
+  registerGoalRoutes();
   registerRuntimeTriggersRoutes();
   registerProjectSpacesRoutes();
   registerProjectMemoryRoutes();

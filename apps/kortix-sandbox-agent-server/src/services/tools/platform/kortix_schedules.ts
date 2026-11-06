@@ -30,6 +30,8 @@ const TOOL = 'kortix_schedules' as const
 const RUNTIME_ID = /^(?:reminder|trigger|automation)\.[0-9a-f]{12}$/
 /** A kortix.yaml trigger's slug, the manifest grammar (`@kortix/manifest-schema` `SLUG_RE`). */
 const TRIGGER_SLUG = /^[a-z0-9][a-z0-9_-]{0,127}$/
+/** An App event name, as the App events API accepts it. */
+const APP_EVENT_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/
 const ACTIONS = ['follow_up', 'wake_on', 'events', 'list', 'create', 'automate', 'test', 'runs', 'pause', 'resume', 'remove', 'delete', 'run_now'] as const
 const WAKE_ON = ['cr_merged', 'webhook', 'connector_event', 'app_event'] as const
 /** An automation's source (`automate` `on`) and the kortix.yaml trigger `--type` it becomes. */
@@ -635,12 +637,22 @@ async function automate(args: Record<string, any>, context: PlatformToolContext)
   )
 }
 
-/** `test`: a dry run of an automation with a sample payload: the filter verdict, the session key and the prompt a run would get. Fires nothing. */
+/**
+ * `test`: prove an automation before the person relies on it. An App event
+ * automation gets a real test event (`testAppAutomation`). Every other kind
+ * gets a dry run with a sample payload: the filter verdict, the session key
+ * and the prompt a run would get; it fires nothing.
+ */
 async function testAutomation(args: Record<string, any>, context: PlatformToolContext) {
   const name = typeof args.name === 'string' ? args.name.trim() : typeof args.id === 'string' ? args.id.trim() : ''
   if (!TRIGGER_SLUG.test(name)) return fail(TOOL, 'test', 'Which automation?', { kind: 'invalid', message: '`name` is the automation\'s name, as list shows it.' }, context)
   if (args.payload !== undefined && (!args.payload || typeof args.payload !== 'object' || Array.isArray(args.payload))) {
     return fail(TOOL, 'test', 'Check the sample', { kind: 'invalid', message: '`payload` is a JSON object merged over the sample event, e.g. { "body": { "action": "opened" } }.' }, context)
+  }
+  const shown = await runJson<{ type?: string; app?: string | null; filter?: Record<string, unknown> | null }>(['triggers', 'show', name, '--json'], context)
+  if ('error' in shown) return fail(TOOL, 'test', `Could not test ${name}`, shown.error, context)
+  if (shown.value.type === 'app' && typeof shown.value.app === 'string' && shown.value.app) {
+    return testAppAutomation(name, shown.value.app, shown.value.filter ?? null, args.payload, context)
   }
   const read = await runJson<{ filter_matches?: boolean; session_key?: string | null; rendered_prompt?: string }>(
     ['triggers', 'fire', name, '--dry-run', ...(args.payload ? [`--payload=${JSON.stringify(args.payload)}`] : []), '--json'],
@@ -660,6 +672,62 @@ async function testAutomation(args: Record<string, any>, context: PlatformToolCo
       ],
     },
     { name, filter_matches: !!r.filter_matches, session_key: r.session_key ?? null, prompt: r.rendered_prompt ?? '' },
+  )
+}
+
+type EmitAnswer = {
+  triggers?: number
+  hint?: string
+  ids?: string[]
+  events?: Array<{ trigger?: string | null; status?: string; session_id?: string | null; reason?: string | null }>
+  pending?: boolean
+}
+
+/**
+ * An App event automation is tested the way the App would fire it: a test
+ * event through the App's log, limits and drain (`kortix apps events emit
+ * --wait`). Its id starts with `test-`, so the App's real event still fires
+ * later; the prompt starts with a TEST line. A fired test starts the work for
+ * real: the session is the proof.
+ */
+async function testAppAutomation(name: string, app: string, filter: Record<string, unknown> | null, payload: unknown, context: PlatformToolContext) {
+  const sample = (payload && typeof payload === 'object' ? (payload as { event?: unknown }).event : undefined) as { name?: unknown; data?: unknown } | undefined
+  const listened = typeof filter?.['event.name'] === 'string' ? (filter['event.name'] as string) : null
+  const event = typeof sample?.name === 'string' && sample.name.trim() ? sample.name.trim() : listened ?? 'test.event'
+  // An App event name (the API's rule): letters, digits, . _ : / -, starting with a letter or digit, so it is
+  // never read as a CLI flag (`--trigger=…` would pick another automation).
+  if (!APP_EVENT_NAME.test(event)) {
+    return fail(TOOL, 'test', 'Check the event name', { kind: 'invalid', message: '`payload.event.name` is 1-128 letters, digits and . _ : / -, starting with a letter or digit, e.g. "status.changed".' }, context)
+  }
+  const data = sample?.data && typeof sample.data === 'object' && !Array.isArray(sample.data) ? sample.data : null
+  // The CLI exits 1 when nothing fired; its JSON still says why.
+  // --trigger: only this automation gets the test; another on the same event starts nothing.
+  const run = await runKortix(['apps', 'events', 'emit', app, event, ...(data ? [`--data=${JSON.stringify(data)}`] : []), `--trigger=${name}`, '--wait', '--json'], context)
+  const answer = parseJson<EmitAnswer>(run.stdout)
+  if (!answer) return fail(TOOL, 'test', `Could not test ${name}`, cliError(run), context)
+  const row = answer.events?.find((entry) => entry.trigger === name) ?? null
+  const outcome = row?.status ?? (answer.pending ? 'pending' : 'not reached')
+  const title =
+    outcome === 'fired' ? `${name} ran on a test event`
+      : outcome === 'pending' ? `${name}: the test event is still waiting`
+        : outcome === 'skipped' ? `${name} skipped the test event`
+          : `${name} did not get the test event`
+  return ok(
+    TOOL,
+    'test',
+    {
+      title,
+      rows: [
+        { title: 'Event', detail: `${event} to ${app} (a test id)` },
+        { title: 'Outcome', detail: row?.reason ? `${outcome}: ${short(row.reason, 120)}` : outcome },
+        ...(row?.session_id ? [{ title: 'Session', detail: row.session_id }] : []),
+        ...(answer.hint ? [{ title: 'Fix', detail: short(answer.hint, 160) }] : []),
+      ],
+    },
+    {
+      name, app, event, test_id: answer.ids?.[0] ?? null, outcome,
+      reason: row?.reason ?? null, session_id: row?.session_id ?? null, ...(answer.hint ? { hint: answer.hint } : {}),
+    },
   )
 }
 
@@ -742,7 +810,7 @@ export default {
     '2) `session_key` per thing ("{{ event.data.thread_id }}", "{{ body.issue.number }}", "{{ body.email }}") so a follow-up about the same thing lands in the same session; ' +
     '3) a prompt that judges first: "If this is not <what matters>, stop: do nothing and send no message. Otherwise …", with the event fields it needs; ' +
     '4) cap it (`max_runs_per_day`, e.g. 20) and pick the agent with the least access, and a fast model for triage; ' +
-    '5) ask the person before you create it (it runs unattended and uses credits), then call automate directly: it checks the secret, the connector and the Event triggers feature itself, and its error says what is missing (never check with the shell); then `test` with a sample payload (fires nothing: the filter verdict, the session key and the prompt) and fix it until it is right; ' +
+    '5) ask the person before you create it (it runs unattended and uses credits), then call automate directly: it checks the secret, the connector and the Event triggers feature itself, and its error says what is missing (never check with the shell); then `test` with a sample payload (an App event automation gets a real test event and reports the run it started; any other fires nothing: the filter verdict, the session key and the prompt) and fix it until it is right; ' +
     '6) tell them in one line what it does, set a `follow_up` in 2-3 days to read its `runs` and tune it, and `remove` it (by name) when it is no longer wanted.',
   parameters: {
     type: 'object',
@@ -756,7 +824,7 @@ export default {
       max_runs_per_day: { type: 'number', description: 'For automate: the most runs it may start in a day.' },
       max_runs_per_hour: { type: 'number', description: 'For automate: the most runs it may start in an hour (default 60).' },
       model: { type: 'string', description: 'For automate: the model each run uses, as kortix_agents models lists it. Omit for the agent\'s own.' },
-      payload: { type: 'object', description: 'For test: a sample event, merged over the default one, e.g. { "body": { "action": "opened" } }.' },
+      payload: { type: 'object', description: 'For test: a sample event, merged over the default one, e.g. { "body": { "action": "opened" } }; for an App event automation { "event": { "name": …, "data": { … } } }.' },
       target_app: { type: 'string', description: 'For automate: each run calls this App instead of an agent (the check of a watcher App: no session, no model). No prompt needed.' },
       target_path: { type: 'string', description: 'With target_app: the App path each run calls, e.g. "/tick" (default "/").' },
       cr: { type: 'string', description: 'For wake_on cr_merged: the change request id or number.' },

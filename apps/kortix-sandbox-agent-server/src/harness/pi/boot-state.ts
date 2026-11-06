@@ -11,6 +11,8 @@ export interface PiBootState extends SandboxBootState {
   initialRuntimeSessionId?: string | null
   /** Boot-time session setup failure. */
   initialRuntimeSessionError?: string | null
+  /** The runtime did not start after every boot attempt (`startRuntimeAtBoot`): terminal for this boot. */
+  runtimeStartError?: string | null
   /** The audit relay could not start or persist; the runtime reports unhealthy. */
   auditRelayError?: string | null
 }

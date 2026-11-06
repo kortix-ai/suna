@@ -653,6 +653,47 @@ Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.
 
+## Goals
+
+A goal is what a person wants plus a definition of done (project flag
+`goals`, off by default). The API owns its state, pause, owner and verifier
+sessions, limits and verification; the goal's Drive folder holds the brief
+(`GOAL.md`), `log.md` and `evidence/`. Lifecycle fields written into
+`GOAL.md` change nothing.
+
+```ts
+import { createProjectGoal, listProjectGoals, pauseProjectGoal, ProjectGoalConflictError } from '@kortix/sdk';
+
+// goalId is the idempotency key: retry with the same id, get the same goal.
+const { goal } = await createProjectGoal(projectId, { outcome: 'EU billing live', goalId });
+
+const [first] = await listProjectGoals(projectId);
+if (first?.capabilities.pause) {
+  try {
+    const { projectGoal } = await pauseProjectGoal(projectId, first, 'Paused from my app.');
+    console.log(projectGoal.revision); // the new revision
+  } catch (error) {
+    // Someone changed the goal first: error.goal is the goal as it is now.
+    if (error instanceof ProjectGoalConflictError) console.log(error.goal.record.state);
+    else throw error;
+  }
+}
+```
+
+- Show a control only when `goal.capabilities` allows it. A read-only viewer
+  gets every capability `false`.
+- `criteria[].verified` is set only by a passed independent verification;
+  `criteria[].reported_met` is the agent's claim.
+- `blockedReason` says why a goal cannot go on (`credits`, `wake_cap`,
+  `session_cap`, `owner_lost`, `storage`, `flag_off`, `setup`).
+- `replyToProjectGoal(projectId, goal, text, { answerId })` answers as the
+  caller; one answer per `answerId`.
+- React: `useProjectGoals`, `useProjectGoal`, `useProjectGoalEvents`,
+  `useProjectGoalFiles`, `useSessionGoal`, and `useProjectGoalControl` (one
+  request per double submit, the cache updated on success and on a `409`).
+- Deprecated: `ProjectGoal.heartbeat` is always `null`;
+  `CreateProjectGoalInput.sessionId` is sent as the goal id.
+
 ## Artifact comments and activity
 
 Projects enable `artifacts` and `artifact_comments` before using comments.

@@ -751,7 +751,10 @@ parked runs on the agent's re-run of the same call: apps/api matches its
 Every new message parks every open ask at once (`parkOpenAsks`: a prompt, a
 steer, synthetic or not), and so does `POST /kortix/runtime/asks/park`, which
 the prompt inbox calls when a queued row waits behind a turn that holds a live
-ask. Abort and the turn end park what is left. A workflow run approval is the
+ask. Abort and the turn end park what is left. A permission ask is registered
+before its relay answers, as a question is: a Stop or a steer during a slow
+relay parks it, and an ask parked there never reaches the wire
+(`permission.asked` is sent only once the relay leaves it open). A workflow run approval is the
 one ask that is not parkable: it resolves as dismissed and the run is not
 started.
 
@@ -933,6 +936,31 @@ variant, and its `model` when the prompt names none. A prompt that picks none
 runs on the session's agent. A pick of a subagent, a disabled
 agent or an unknown name is logged and runs on the session's agent. pi
 packages and extensions stay the ones the session booted with.
+
+**Is a turn running.** `PiRuntime.busy()` is the one answer, and every
+consumer reads it: the daemon self-update (`configureRuntimeConvergence`
+`turnInFlight`), the memory guard, the reaper's turn probe
+(`/kortix/health?turn=1`) and config convergence (`idle()` is `!busy()`).
+It is true while a turn runs or is queued, while a `/summarize` runs, and
+while a same-session subagent runs. It derives from the turn queue
+(`PiRuntime.work`, one token per admitted item) and the active turn, never
+from the last `session.status` frame: pi's `agent_end` emits `idle` while a
+turn still compacts, and that frame does not clear it. A prompt still loading
+its images, or queued behind the running work, is in flight for the probe.
+`reconfigure()` runs on the same serial queue, so a prompt admitted during
+it runs on the whole new config.
+
+**Stop is bounded.** `abort()` waits up to `KORTIX_PI_STOP_SETTLE_MS`
+(10 s) for the turn to settle. A tool that ignores its abort signal no longer
+holds Stop, the memory guard or a restart: a runtime stop that times out
+abandons the work (the turns end `aborted`, the queue starts empty, a late
+end of the abandoned turn writes nothing). Daemon shutdown waits at most
+`SHUTDOWN_HARNESS_STOP_MS` (20 s) for the harness and then exits, so the
+supervisor restarts it.
+
+**A failed start at boot.** Boot tries the start 3 times (2 s, then 10 s
+apart, `startRuntimeAtBoot`). After the last failure readiness reports
+`runtime_start_failed` with the message, not `pi_not_ready`.
 
 ### kortix.yaml
 

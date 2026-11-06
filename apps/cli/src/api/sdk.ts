@@ -242,6 +242,14 @@ export async function sandboxDaemonRequest(
   return { status: res.status, text: await res.text() };
 }
 
+/** A non-2xx answer from /cli/device/*: the status decides retry (5xx, 429) or stop (other 4xx). */
+export class DeviceRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Device login failed (HTTP ${status}). Retry or use kortix login --token <key>.`);
+    this.name = 'DeviceRequestError';
+  }
+}
+
 /** Public device bootstrap cannot use the authenticated SDK transport: there
  * is deliberately no credential until approval. Keep it in the transport seam. */
 export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll', body: unknown, signal: AbortSignal): Promise<T> {
@@ -251,10 +259,12 @@ export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll
   });
   if (!response.ok) {
     // The approver belongs to no workspace yet (`409 no_workspace`): a key
-    // needs one, so name the two ways in instead of a bare status.
+    // needs one, so name the two ways in instead of a bare status. Still a
+    // DeviceRequestError: the poll loop stops on a 4xx.
     const refusal = await response.json().catch(() => null) as { code?: unknown; error?: unknown } | null;
-    if (refusal?.code === NO_WORKSPACE_CODE || refusal?.error === NO_WORKSPACE_CODE) throw new Error(NO_WORKSPACE_LINE);
-    throw new Error(`Device login failed (HTTP ${response.status}). Retry or use kortix login --token <key>.`);
+    const error = new DeviceRequestError(response.status);
+    if (refusal?.code === NO_WORKSPACE_CODE || refusal?.error === NO_WORKSPACE_CODE) error.message = NO_WORKSPACE_LINE;
+    throw error;
   }
   return await response.json() as T;
 }

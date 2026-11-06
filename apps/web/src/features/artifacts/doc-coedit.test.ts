@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type {
   ArtifactDocBase,
+  ArtifactDocPage,
   ArtifactDocSeed,
   ArtifactDocSync,
   ArtifactDocSyncOptions,
@@ -16,6 +17,7 @@ import {
   REMOTE_ORIGIN,
   SNAPSHOT_MS,
   createDocCoedit,
+  viewerMayGoLive,
   waitForSeed,
   SEED_POLL_MS,
   type CoeditEditor,
@@ -722,6 +724,32 @@ describe('a read-only viewer waits for the seed', () => {
     stop();
     await clock.advance(SEED_POLL_MS * 5);
     expect(asks).toBe(1);
+  });
+
+  test('a read-only viewer shows the shared doc only while it is not behind the file', () => {
+    const now = Date.parse('2026-11-06T12:00:00.000Z');
+    const page = (input: {
+      seeded?: boolean;
+      flushed?: string | null;
+      leaseUntil?: string | null;
+    }): Pick<ArtifactDocPage, 'seeded' | 'flushed' | 'lease'> => ({
+      seeded: input.seeded ?? true,
+      flushed: input.flushed === null ? null : { seq: 3, version: input.flushed ?? 'v2' },
+      lease: input.leaseUntil ? { holder: 'tab-a', expires_at: input.leaseUntil } : null,
+    });
+    // The last flush is the file the viewer knows: the doc is the file plus live edits.
+    expect(viewerMayGoLive(page({ flushed: 'v2' }), 'v2', now)).toBe(true);
+    // An agent wrote the file after the last flush and no editor has the doc open: the doc is behind.
+    expect(viewerMayGoLive(page({ flushed: 'v2' }), 'v3', now)).toBe(false);
+    // An editor holds the lease: it merges the outside edit into the doc within seconds.
+    expect(viewerMayGoLive(page({ flushed: 'v2', leaseUntil: '2026-11-06T12:00:10.000Z' }), 'v3', now)).toBe(true);
+    // A lease that ran out leads nobody.
+    expect(viewerMayGoLive(page({ flushed: 'v2', leaseUntil: '2026-11-06T11:59:50.000Z' }), 'v3', now)).toBe(false);
+    // Nothing flushed yet, or no doc at all: the file is what there is to show.
+    expect(viewerMayGoLive(page({ flushed: null }), 'v2', now)).toBe(false);
+    expect(viewerMayGoLive(page({ seeded: false }), 'v2', now)).toBe(false);
+    // A file with no version (not in Files history) cannot be matched: only a leader makes it current.
+    expect(viewerMayGoLive(page({ flushed: 'v2' }), null, now)).toBe(false);
   });
 });
 

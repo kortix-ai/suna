@@ -1,33 +1,30 @@
 /**
  * Goals (project flag `goals`): what a person wants plus a definition of
- * done. An assigned agent works it, wake after wake, until an independent
- * verifier session confirms it. A goal is a folder in the project's Files,
- * `/Company/Goals/<slug>/` by default: `GOAL.md` (front matter = definition
- * and state, `parseGoalFile`), `log.md` (append-only), `evidence/`. The
- * `kortix goals` CLI writes it inside the owner session's sandbox. Its
- * heartbeat is a loop on the owner session. Older folders hold `goal.json`.
+ * done. An assigned agent works it in an owner session until an independent
+ * verifier session passes every criterion.
  *
- * The folder stays the only source of truth; nothing here keeps a second
- * copy of a goal's state. The writes here are what a person does from the
- * app: create a goal, pause, resume or stop it, answer its question.
+ * The API owns the lifecycle (`/v1/workspaces/:projectId/goals/*`): state,
+ * pause, stop, owner, verifier, caps, wakes and verification live in the
+ * goal record, and every write carries the `revision` it read (a stale one
+ * throws `ProjectGoalConflictError` with the current goal). The goal's folder
+ * in Files holds the brief (`GOAL.md`), `log.md` and `evidence/`; lifecycle
+ * fields written into GOAL.md change nothing.
+ *
+ * Who may do what is the server's decision; `ProjectGoal.capabilities` says
+ * it per goal for the caller. A person creates, pauses, resumes, stops,
+ * restarts and answers; the owner session reports progress; only the
+ * verifier session decides done.
  */
 
-import { ApiError } from '../../http/api-client';
+import { ApiError, backendApi } from '../../http/api-client';
 import { generateSessionId } from '../../../platform/session-id';
 import { mintWireMessageId } from '../../session/wire-message-id';
 import type { ResourceBinding } from './manifest-spaces';
-import { getProjectDrive, listDriveFolder, readDriveFile, uploadDriveFile } from './drives';
-import { formatGoalFile, parseGoalFile } from './goal-file';
-import { getProjectDetail, type ProjectConfigSummary } from './projects';
-import { createProjectSession, createSessionPrompt, getProjectSession } from './sessions';
-import {
-  createSessionReminder,
-  deleteSessionReminder,
-  listProjectReminders,
-  listSessionReminders,
-  updateSessionReminder,
-  type ProjectReminder,
-} from './session-reminders';
+import { readDriveFile } from './drives';
+import type { ProjectConfigSummary } from './projects';
+import { createSessionPrompt } from './sessions';
+import type { ProjectReminder } from './session-reminders';
+import { unwrap } from './shared';
 
 export type ProjectGoalStatus =
   | 'draft'
@@ -79,8 +76,13 @@ export interface ProjectGoalTransition {
 }
 
 /**
- * A goal's definition and state: the front matter of `GOAL.md`
- * (`parseGoalFile`), or a legacy `goal.json`. `kortix goals` writes it.
+ * A goal's definition and state in the shape GOAL.md front matter had
+ * (`parseGoalFile`). `ProjectGoal.goal` holds it, derived from the server
+ * record: `success_criteria[].met` is the owner's claim (`reported_met`),
+ * never verification (read `ProjectGoal.criteria[].verified`), `items`,
+ * `transitions` and `links` are empty (read `listProjectGoalEvents`), and
+ * `body` is absent (read `getProjectGoalFiles(...).brief`). Lifecycle fields
+ * written into a GOAL.md file change nothing: the API owns them.
  */
 export interface ProjectGoalDocument {
   version: 1;
@@ -137,6 +139,8 @@ export interface ProjectGoalDocument {
  * - `ask_overdue`: an open ask is past its due time.
  * - `verification_stalled`: verification started more than 24 hours ago.
  * - `unreadable`: GOAL.md (or a legacy goal.json) is missing or has no goal.
+ * - `blocked`: the server records why the goal cannot go on by itself
+ *   (`ProjectGoal.blockedReason`: credits, a cap, a lost owner, storage, the flag, setup).
  */
 export type ProjectGoalIssue =
   | 'no_heartbeat'
@@ -145,7 +149,8 @@ export type ProjectGoalIssue =
   | 'missed_wake'
   | 'ask_overdue'
   | 'verification_stalled'
-  | 'unreadable';
+  | 'unreadable'
+  | 'blocked';
 
 export interface ProjectGoalHealth {
   /** `closed`: done or abandoned. `attention`: at least one issue. */
@@ -153,39 +158,210 @@ export interface ProjectGoalHealth {
   issues: ProjectGoalIssue[];
 }
 
+/**
+ * One goal as the API holds it (`ProjectGoalRecord`), in the shape the SDK
+ * has always returned plus the server fields. Use `goalId` to address it and
+ * send `revision` back on every write.
+ */
 export interface ProjectGoal {
-  /** The folder name. Unique within its scope. */
+  /** The folder name. Unique within the folder's parent. Use `goalId` to address a goal. */
   slug: string;
-  /** `company`: under `/Company/Goals`. `personal`: under the caller's own folder. */
+  /** `company`: a folder under `/Company/`. `personal`: any other folder (a person's own or a shared one). Read `folder` for where it is. */
   scope: 'company' | 'personal';
   driveId: string;
-  /** The folder's path in Files, for example `/Company/Goals/bank-close`. */
+  /** The folder's path in Files, for example `/Users/<user_id>/Goals/bank-close`. */
   folder: string;
-  /** Null when `goal.json` is missing or unreadable. */
+  /** The record in the shape of GOAL.md front matter (see `ProjectGoalDocument`). Never null for a server record. */
   goal: ProjectGoalDocument | null;
-  /** The coordinating session's active or paused heartbeat, or null. */
+  /**
+   * @deprecated The API owns the heartbeat and does not expose its reminder.
+   * Always null; read `record.next_wake_at` and `record.last_wake_at`.
+   */
   heartbeat: ProjectReminder | null;
+  /** The goal's current owner session (`record.owner_session_id`). */
   coordinatorSessionId: string | null;
   health: ProjectGoalHealth;
+  /** The project the goal belongs to. */
+  projectId: string;
+  /** The goal's stable id (`goal_id`): its page is `/workspaces/<projectId>/goals/<goalId>`. */
+  goalId: string;
+  /** Compare-and-set token: every write sends the revision it read. A stale one throws `ProjectGoalConflictError`. */
+  revision: number;
+  /** What the caller may do on this goal now. Show only these controls. */
+  capabilities: ProjectGoalCapabilities;
+  /** Why the goal cannot go on by itself, or null. */
+  blockedReason: ProjectGoalBlockedReason | null;
+  /** The latest independent verification, or null. */
+  verification: ProjectGoalVerification | null;
+  /** Done criteria: `reported_met` is the owner's claim, `verified` is the verifier's pass. */
+  criteria: ProjectGoalCriterionStatus[];
+  /** The server record as the API returned it. */
+  record: ProjectGoalRecord;
+}
+
+/** States of the server record. */
+export type ProjectGoalRecordState = 'draft' | 'active' | 'waiting_on_user' | 'verifying' | 'done' | 'stopped';
+
+/**
+ * Why a goal cannot make progress by itself right now.
+ * - `credits`: a wake was refused for credits; it goes on after a top-up and a person's resume.
+ * - `wake_cap`: `max_wakes_per_day` reached; it goes on the next UTC day by itself.
+ * - `session_cap`: `max_sessions` reached; a person raises the cap.
+ * - `owner_lost`: the owner session failed and no successor took over; a person restarts it.
+ * - `storage`: the goal's folder in Files could not be read or written.
+ * - `flag_off`: the project's `goals` flag is off; nothing runs until it is on and a person resumes.
+ * - `setup`: create did not finish; the API finishes it by itself.
+ */
+export type ProjectGoalBlockedReason = 'credits' | 'wake_cap' | 'session_cap' | 'owner_lost' | 'storage' | 'flag_off' | 'setup';
+
+/** What the caller may do on a goal now. A person who may not sees no control. */
+export interface ProjectGoalCapabilities {
+  read: boolean;
+  edit: boolean;
+  pause: boolean;
+  resume: boolean;
+  stop: boolean;
+  restart: boolean;
+  answer: boolean;
+  edit_criteria: boolean;
+}
+
+export interface ProjectGoalCriterionStatus {
+  id: string;
+  text: string;
+  /** The owner's claim. Not verification: see `verified`. */
+  reported_met: boolean;
+  /** A path relative to the goal folder, under `evidence/`. */
+  evidence: string | null;
+  /** True only after a passed verification of the current criteria. */
+  verified: boolean;
+}
+
+export interface ProjectGoalVerification {
+  attempt: number;
+  verifier_session_id: string;
+  criteria_revision: number;
+  started_at: string;
+  decided_at: string | null;
+  outcome: 'pending' | 'pass' | 'fail';
+  results: Array<{ criterion_id: string; result: 'pass' | 'fail' | 'inconclusive'; note: string }>;
+  /** Evidence files the verdict covered: path → sha256 at verdict time. */
+  evidence_hashes: Record<string, string>;
+}
+
+/** A goal as `GET /workspaces/:projectId/goals` returns it (`packages/api-contract` `Goal`). */
+export interface ProjectGoalRecord {
+  goal_id: string;
+  project_id: string;
+  revision: number;
+  title: string;
+  state: ProjectGoalRecordState;
+  /** The question the goal waits on while `waiting_on_user`. */
+  waiting_on: string | null;
+  /** When a `waiting_on_user` goal wakes to chase, if it asked to. */
+  chase_at: string | null;
+  summary: string;
+  paused_at: string | null;
+  paused_by_user_id: string | null;
+  stopped_at: string | null;
+  blocked_reason: ProjectGoalBlockedReason | null;
+  assigned_user_id: string | null;
+  created_by_user_id: string;
+  agent: string | null;
+  space: string | null;
+  drive_id: string;
+  /** The folder in Files, for example `/Users/<user_id>/Goals/<slug>`. */
+  folder: string;
+  /** The same folder as the owner's sandbox sees it, for example `/drives/me/Goals/<slug>`. */
+  box_folder: string;
+  slug: string;
+  owner_session_id: string | null;
+  /** Every owner and verifier session the goal used, oldest first. */
+  sessions: Array<{ id: string; role: 'owner' | 'verifier'; since: string }>;
+  criteria_revision: number;
+  criteria: ProjectGoalCriterionStatus[];
+  verification: ProjectGoalVerification | null;
+  heartbeat_every: string;
+  next_wake_at: string | null;
+  last_wake_at: string | null;
+  max_wakes_per_day: number;
+  /** Wakes the server admitted this UTC day. */
+  wakes_today: number;
+  max_sessions: number;
+  /** `legacy_unverified`: imported from a folder; a `done` there was never verified by the API. */
+  provenance: 'api' | 'legacy_unverified';
+  created_at: string;
+  updated_at: string;
+  capabilities: ProjectGoalCapabilities;
+}
+
+/** One line of a goal's audit trail (`GET …/goals/:goalId/events`). */
+export interface ProjectGoalEvent {
+  id: string;
+  goal_id: string;
+  at: string;
+  /** For example `created`, `activated`, `waiting`, `answered`, `paused`, `resumed`, `stopped`, `restarted`, `wake_admitted`, `wake_refused`, `verification_requested`, `verdict`, `handover`, `owner_adopted`, `criteria_changed`, `progress`, `blocked`, `unblocked`, `edited`. */
+  kind: string;
+  actor_kind: 'user' | 'session' | 'platform';
+  actor_id: string | null;
+  from_state: ProjectGoalRecordState | null;
+  to_state: ProjectGoalRecordState | null;
+  /** A short human-readable line. */
+  message: string;
+  data: Record<string, unknown>;
+}
+
+/** A write's result: the document as before, plus the goal as the server holds it now (with its new `revision`). */
+export interface ProjectGoalWriteResult extends ProjectGoalDocument {
+  projectGoal: ProjectGoal;
+}
+
+/**
+ * A goal write sent a stale `revision` (`409 goal_conflict`): someone or
+ * something changed the goal first. `goal` is the goal as it is now. Show it
+ * and let the person decide again; never resend the write blindly.
+ */
+export class ProjectGoalConflictError extends ApiError {
+  goal: ProjectGoal;
+  constructor(source: ApiError, goal: ProjectGoal) {
+    super(source.message || 'The goal changed.', {
+      status: source.status,
+      code: 'goal_conflict',
+      details: source.details,
+      data: source.data,
+      response: source.response,
+      name: 'ProjectGoalConflictError',
+    });
+    this.goal = goal;
+  }
 }
 
 const CLOSED = new Set<ProjectGoalStatus>(['done', 'stopped', 'abandoned']);
 const MISSED_WAKE_MS = 15 * 60_000;
 const VERIFICATION_STALLED_MS = 24 * 3_600_000;
 
-/** A goal's health from its `goal.json` and its heartbeat, at `now` (ms). */
+function isRecord(goal: ProjectGoalDocument | ProjectGoalRecord): goal is ProjectGoalRecord {
+  return typeof (goal as ProjectGoalRecord).goal_id === 'string';
+}
+
+/**
+ * A goal's health at `now` (ms). For a server record (`ProjectGoalRecord`) it
+ * reads the server fields: `blocked_reason`, `next_wake_at` (a wake more than
+ * 15 minutes overdue), and the start of a pending verification (more than 24
+ * hours). A paused or waiting goal has no wake due, unless it asked to chase.
+ * `heartbeat` is ignored for a record. A `ProjectGoalDocument` (a GOAL.md
+ * read by hand) is judged by its heartbeat reminder, as before.
+ */
 export function goalHealth(
-  goal: ProjectGoalDocument | null,
+  goal: ProjectGoalDocument | ProjectGoalRecord | null,
   heartbeat: ProjectReminder | null,
   now: number = Date.now(),
 ): ProjectGoalHealth {
   if (!goal) return { state: 'attention', issues: ['unreadable'] };
+  if (isRecord(goal)) return recordHealth(goal, now);
   if (CLOSED.has(goal.status)) return { state: 'closed', issues: [] };
-  // A person paused it: the disabled heartbeat is the pause, and nothing is due. A heartbeat
-  // that still runs means GOAL.md alone claims the pause (any session can write it): judge it as any other.
   if (goal.paused_at && heartbeat?.state !== 'active') return { state: 'healthy', issues: [] };
   const issues: ProjectGoalIssue[] = [];
-  // Started again: the owner's turn end arms the heartbeat, so its absence is a problem only after the missed-wake window.
   const restartedAt = [...(goal.transitions ?? [])].reverse().find((t) => t.from === 'stopped')?.at;
   const waking = !!restartedAt && Date.parse(restartedAt) > now - MISSED_WAKE_MS;
   if (!heartbeat || heartbeat.state === 'done') {
@@ -204,15 +380,170 @@ export function goalHealth(
   return { state: issues.length ? 'attention' : 'healthy', issues };
 }
 
-async function folderDirs(driveId: string, path: string): Promise<string[]> {
+function recordHealth(goal: ProjectGoalRecord, now: number): ProjectGoalHealth {
+  if (goal.state === 'done' || goal.state === 'stopped') return { state: 'closed', issues: [] };
+  if (goal.paused_at) return { state: 'healthy', issues: [] };
+  // The reason explains the stall; a wake check on top would say the same twice.
+  if (goal.blocked_reason) return { state: 'attention', issues: ['blocked'] };
+  const issues: ProjectGoalIssue[] = [];
+  const overdue = !!goal.next_wake_at && Date.parse(goal.next_wake_at) < now - MISSED_WAKE_MS;
+  if (goal.state === 'active') {
+    if (!goal.next_wake_at) issues.push('no_heartbeat');
+    else if (overdue) issues.push('missed_wake');
+  } else if (goal.state === 'waiting_on_user' && goal.chase_at && overdue) {
+    issues.push('missed_wake');
+  }
+  if (goal.state === 'verifying' && goal.verification?.outcome === 'pending' && Date.parse(goal.verification.started_at) < now - VERIFICATION_STALLED_MS) {
+    issues.push('verification_stalled');
+  }
+  return { state: issues.length ? 'attention' : 'healthy', issues };
+}
+
+/** The record in the shape of GOAL.md front matter, for callers that read `ProjectGoal.goal`. */
+function recordDocument(record: ProjectGoalRecord): ProjectGoalDocument {
+  return {
+    version: 1,
+    objective: record.title,
+    status: record.state,
+    summary: record.summary,
+    success_criteria: record.criteria.map((c) => ({ id: c.id, text: c.text, met: c.reported_met, evidence: c.evidence })),
+    items: [],
+    sessions: record.sessions,
+    reminder_id: null,
+    transitions: [],
+    verified_by: record.verification?.outcome === 'pass' ? record.verification.verifier_session_id : null,
+    next_wake_at: record.next_wake_at,
+    space: record.space,
+    agent: record.agent,
+    assigned_user: record.assigned_user_id,
+    links: [],
+    waiting_on: record.waiting_on,
+    heartbeat_every: record.heartbeat_every,
+    max_wakes_per_day: record.max_wakes_per_day,
+    max_sessions: record.max_sessions,
+    wake_day: null,
+    wake_count: record.wakes_today,
+    last_wake_at: record.last_wake_at,
+    paused_at: record.paused_at,
+    paused_by: record.paused_by_user_id,
+    format: 'goal.md',
+  };
+}
+
+function toProjectGoal(record: ProjectGoalRecord, now: number = Date.now()): ProjectGoal {
+  return {
+    slug: record.slug,
+    scope: record.folder.startsWith('/Company/') ? 'company' : 'personal',
+    driveId: record.drive_id,
+    folder: record.folder,
+    goal: recordDocument(record),
+    heartbeat: null,
+    coordinatorSessionId: record.owner_session_id,
+    health: goalHealth(record, null, now),
+    projectId: record.project_id,
+    goalId: record.goal_id,
+    revision: record.revision,
+    capabilities: record.capabilities,
+    blockedReason: record.blocked_reason,
+    verification: record.verification,
+    criteria: record.criteria,
+    record,
+  };
+}
+
+function written(record: ProjectGoalRecord): ProjectGoalWriteResult {
+  const projectGoal = toProjectGoal(record);
+  return { ...recordDocument(record), projectGoal };
+}
+
+/** A `409 goal_conflict` with the current goal becomes a `ProjectGoalConflictError`; anything else is thrown as is. */
+function conflict(error: unknown): unknown {
+  if (!(error instanceof ApiError) || error.status !== 409) return error;
+  const body = error.details as { error?: unknown; goal?: ProjectGoalRecord } | undefined;
+  if (body?.error !== 'goal_conflict' || !body.goal || typeof body.goal.goal_id !== 'string') return error;
+  return new ProjectGoalConflictError(error, toProjectGoal(body.goal));
+}
+
+/** Send one goal write; a `409 goal_conflict` throws `ProjectGoalConflictError`. */
+async function goalWrite(send: () => Promise<{ data?: { goal: ProjectGoalRecord }; success: boolean; error?: Error }>): Promise<ProjectGoalRecord> {
   try {
-    const { entries } = await listDriveFolder(driveId, path);
-    return entries.filter((e) => e.type === 'dir').map((e) => e.path);
+    return unwrap(await send(), 'Goal request failed').goal;
   } catch (error) {
-    // No Goals folder yet.
-    if (error instanceof ApiError && error.status === 404) return [];
+    throw conflict(error);
+  }
+}
+
+const goalsPath = (projectId: string) => `/workspaces/${encodeURIComponent(projectId)}/goals`;
+const goalPath = (projectId: string, goalId: string) => `${goalsPath(projectId)}/${encodeURIComponent(goalId)}`;
+
+/** The route is not there for this caller: no such project route (404) or the `goals` flag is off (403 `feature_disabled`). */
+function routeOff(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 404 || (error.status === 403 && error.code === 'feature_disabled'));
+}
+
+/**
+ * Every goal in the project the caller may read, from the API: their own,
+ * the ones assigned to them, the ones in folders shared with them, and all
+ * of them for a project admin. Empty when the `goals` flag is off.
+ */
+export async function listProjectGoals(projectId: string, options?: { now?: number }): Promise<ProjectGoal[]> {
+  let records: ProjectGoalRecord[];
+  try {
+    records = unwrap(await backendApi.get<{ goals: ProjectGoalRecord[] }>(goalsPath(projectId)), 'Goals request failed').goals;
+  } catch (error) {
+    if (routeOff(error)) return [];
     throw error;
   }
+  const now = options?.now ?? Date.now();
+  return records.map((record) => toProjectGoal(record, now));
+}
+
+/** One goal by its `goal_id`. Throws `ApiError` 404 (no such goal) or 403 (no access). */
+export async function getProjectGoal(projectId: string, goalId: string, options?: { now?: number }): Promise<ProjectGoal> {
+  const { goal } = unwrap(await backendApi.get<{ goal: ProjectGoalRecord }>(goalPath(projectId, goalId)), 'Goal request failed');
+  return toProjectGoal(goal, options?.now);
+}
+
+/** A page of a goal's audit trail, oldest first. Pass `nextCursor` back as `cursor` for the next page; null: no more. */
+export async function listProjectGoalEvents(
+  projectId: string,
+  goalId: string,
+  options?: { cursor?: string | null },
+): Promise<{ events: ProjectGoalEvent[]; nextCursor: string | null }> {
+  const query = options?.cursor ? `?cursor=${encodeURIComponent(options.cursor)}` : '';
+  const page = unwrap(
+    await backendApi.get<{ events: ProjectGoalEvent[]; next_cursor: string | null }>(`${goalPath(projectId, goalId)}/events${query}`),
+    'Goal events request failed',
+  );
+  return { events: page.events, nextCursor: page.next_cursor };
+}
+
+/** The goal a write addresses: its id and the revision the caller read. Other `ProjectGoal` fields are accepted and ignored. */
+type GoalTarget = Pick<ProjectGoal, 'goalId' | 'revision'> & Partial<Omit<ProjectGoal, 'goalId' | 'revision'>>;
+
+/**
+ * Bind a goal to a space or an agent (`PATCH …/goals/:goalId`): null clears
+ * one, an absent key keeps it. Grouping only: it grants nothing. A stale
+ * `revision` throws `ProjectGoalConflictError`.
+ */
+export async function setProjectGoalBinding(
+  goal: GoalTarget,
+  binding: ResourceBinding,
+): Promise<ProjectGoalWriteResult> {
+  const projectId = goal.projectId ?? goal.record?.project_id;
+  if (!projectId) throw new Error('setProjectGoalBinding needs the goal\'s projectId.');
+  return written(await goalWrite(() => backendApi.patch<{ goal: ProjectGoalRecord }>(goalPath(projectId, goal.goalId), { revision: goal.revision, ...binding })));
+}
+
+export interface ProjectGoalFiles {
+  /** `GOAL.md`: the brief (title, context, criteria as the agent reads them). */
+  brief: string | null;
+  /** `log.md`: the append-only timeline. */
+  log: string | null;
+  /** `notes.md`: request, constraints, threads, what was learned. */
+  notes: string | null;
+  /** `evidence/verification.md`: the independent verifier's report. */
+  verification: string | null;
 }
 
 async function readText(driveId: string, path: string): Promise<string | null> {
@@ -224,310 +555,47 @@ async function readText(driveId: string, path: string): Promise<string | null> {
   }
 }
 
-function parseGoalJson(text: string | null): ProjectGoalDocument | null {
-  if (!text) return null;
-  try {
-    const value = JSON.parse(text) as ProjectGoalDocument;
-    if (!value || typeof value !== 'object' || typeof value.objective !== 'string') return null;
-    // A member can write any JSON here: keep only object entries of real arrays.
-    const list = <T>(v: unknown): T[] => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : []);
-    return {
-      ...value,
-      success_criteria: list(value.success_criteria),
-      items: list(value.items),
-      sessions: list(value.sessions),
-      transitions: list(value.transitions),
-      format: 'goal.json',
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** The goal folder as a session sandbox sees it: Company at /drives/company, the caller's own folder at /drives/me. */
-function goalBoxFolder(goal: Pick<ProjectGoal, 'scope' | 'slug'>): string {
-  return `/drives/${goal.scope === 'company' ? 'company' : 'me'}/Goals/${goal.slug}`;
-}
-
-/** GOAL.md, else a legacy goal.json. */
-async function readGoalDocument(driveId: string, folder: string): Promise<ProjectGoalDocument | null> {
-  const md = await readText(driveId, `${folder}/GOAL.md`);
-  if (md !== null) return parseGoalFile(md);
-  return parseGoalJson(await readText(driveId, `${folder}/goal.json`));
-}
-
-/** The session that works the goal now: the last `owner` (or legacy `coordinator`). */
-function ownerSessionId(goal: ProjectGoalDocument | null): string | null {
-  return [...(goal?.sessions ?? [])].reverse().find((s) => s.role === 'owner' || s.role === 'coordinator')?.id ?? null;
-}
-
-/** The heartbeat: the goal's recorded reminder, else a reminder whose prompt names the goal folder. */
-function findHeartbeat(
-  reminders: readonly ProjectReminder[],
-  goal: ProjectGoalDocument | null,
-  scope: ProjectGoal['scope'],
-  slug: string,
-): ProjectReminder | null {
-  const live = reminders.filter((r) => r.state !== 'done');
-  const byId = goal?.reminder_id ? live.find((r) => r.id === goal.reminder_id) : undefined;
-  if (byId) return byId;
-  const boxFolder = goalBoxFolder({ scope, slug });
-  return live.find((r) => new RegExp(`${boxFolder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`).test(r.prompt)) ?? null;
-}
-
-/**
- * Every goal in the project the caller can see: Company goals first, then the
- * caller's own. Sorted by folder within each scope.
- */
-export async function listProjectGoals(projectId: string, options?: { now?: number }): Promise<ProjectGoal[]> {
-  const drive = await getProjectDrive(projectId).catch((error: unknown) => {
-    // No Files in this project.
-    if (error instanceof ApiError && error.status === 404) return null;
-    throw error;
-  });
-  if (!drive) return [];
-  const roots: Array<{ scope: ProjectGoal['scope']; path: string }> = [{ scope: 'company', path: '/Company/Goals' }];
-  if (drive.personalFolder) roots.push({ scope: 'personal', path: `${drive.personalFolder}/Goals` });
-  const folders = (
-    await Promise.all(roots.map(async (root) => (await folderDirs(drive.driveId, root.path)).sort().map((folder) => ({ ...root, folder }))))
-  ).flat();
-  if (folders.length === 0) return [];
-  const [{ reminders }, docs] = await Promise.all([
-    listProjectReminders(projectId),
-    Promise.all(folders.map((f) => readGoalDocument(drive.driveId, f.folder))),
-  ]);
-  const now = options?.now ?? Date.now();
-  return folders.map((f, index) => {
-    const goal = docs[index] ?? null;
-    const slug = f.folder.split('/').at(-1) ?? f.folder;
-    const heartbeat = findHeartbeat(reminders, goal, f.scope, slug);
-    return {
-      slug,
-      scope: f.scope,
-      driveId: drive.driveId,
-      folder: f.folder,
-      goal,
-      heartbeat,
-      coordinatorSessionId: ownerSessionId(goal) ?? heartbeat?.session_id ?? null,
-      health: goalHealth(goal, heartbeat, now),
-    };
-  });
-}
-
-/**
- * Bind a goal to a space or an agent: read `goal.json` with its version,
- * merge `space` / `agent` (null clears one, an absent key keeps it) and write
- * it back with `If-Match`. A concurrent write throws `ApiError` 409. Returns
- * the document as written. Grouping only: it grants nothing.
- */
-export async function setProjectGoalBinding(
-  goal: Pick<ProjectGoal, 'driveId' | 'folder'>,
-  binding: ResourceBinding,
-): Promise<ProjectGoalDocument> {
-  const path = `${goal.folder}/goal.json`;
-  const { blob, version } = await readDriveFile(goal.driveId, path);
-  const current = JSON.parse(await blob.text()) as ProjectGoalDocument;
-  const next: ProjectGoalDocument = { ...current };
-  if (binding.space !== undefined) next.space = binding.space;
-  if (binding.agent !== undefined) next.agent = binding.agent;
-  const body = new TextEncoder().encode(`${JSON.stringify(next, null, 2)}\n`);
-  await uploadDriveFile(goal.driveId, path, body, { ifMatch: version });
-  return next;
-}
-
-export interface ProjectGoalFiles {
-  /** `log.md`: the append-only timeline. */
-  log: string | null;
-  /** `notes.md`: request, constraints, threads, what was learned. */
-  notes: string | null;
-  /** `evidence/verification.md`: the independent verifier's verdict. */
-  verification: string | null;
-}
-
 /** A goal folder's text files. A missing file is null. */
 export async function getProjectGoalFiles(driveId: string, folder: string): Promise<ProjectGoalFiles> {
-  const [log, notes, verification] = await Promise.all([
+  const [brief, log, notes, verification] = await Promise.all([
+    readText(driveId, `${folder}/GOAL.md`),
     readText(driveId, `${folder}/log.md`),
     readText(driveId, `${folder}/notes.md`),
     readText(driveId, `${folder}/evidence/verification.md`),
   ]);
-  return { log, notes, verification };
+  return { brief, log, notes, verification };
 }
 
 /**
- * A person stops a goal (any open state → `stopped`): writes the state into
- * GOAL.md on the version it read (a concurrent write throws `ApiError` 409),
- * appends the move to `log.md`, and removes the heartbeat so nothing wakes it
- * again. Returns the document as written. Throws on a closed goal and on a
- * legacy `goal.json` folder.
+ * A person stops a goal (`POST …/stop`): any open state → `stopped`. The API
+ * removes the heartbeat and aborts the owner's running turn. A retry on a
+ * goal that is already stopped finishes that cleanup and succeeds.
  */
-export async function stopProjectGoal(
-  projectId: string,
-  goal: Pick<ProjectGoal, 'driveId' | 'folder' | 'heartbeat'>,
-  reason: string,
-): Promise<ProjectGoalDocument> {
-  const path = `${goal.folder}/GOAL.md`;
-  const { blob, version } = await readDriveFile(goal.driveId, path);
-  const current = parseGoalFile(await blob.text());
-  if (!current) throw new Error(`${path} is not a goal file.`);
-  if (CLOSED.has(current.status)) throw new Error(`The goal is already ${current.status}.`);
-  const at = new Date().toISOString();
-  const next: ProjectGoalDocument = {
-    ...current,
-    status: 'stopped',
-    waiting_on: null,
-    paused_at: null,
-    paused_by: null,
-    reminder_id: null,
-    next_wake_at: null,
-    transitions: [...current.transitions, { from: current.status, to: 'stopped', at, reason, by: 'person' }],
-  };
-  await uploadDriveFile(goal.driveId, path, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
-  await appendGoalLog(goal, `- ${at} ${current.status} → stopped: ${reason}`);
-  if (goal.heartbeat?.session_id && goal.heartbeat.state !== 'done') {
-    await deleteSessionReminder(projectId, goal.heartbeat.session_id, goal.heartbeat.id);
-  }
-  return next;
-}
-
-/** Append one line to the goal's `log.md` (created when missing). */
-async function appendGoalLog(goal: Pick<ProjectGoal, 'driveId' | 'folder'>, line: string): Promise<void> {
-  const log = (await readText(goal.driveId, `${goal.folder}/log.md`)) ?? '# Log\n';
-  await uploadDriveFile(goal.driveId, `${goal.folder}/log.md`, new TextEncoder().encode(`${log.trimEnd()}\n${line}\n`));
-}
-
-/** Read GOAL.md with its version. Throws on a folder without one (a legacy `goal.json`). */
-async function readGoalForWrite(goal: Pick<ProjectGoal, 'driveId' | 'folder'>): Promise<{ doc: ProjectGoalDocument; version: string | null }> {
-  const path = `${goal.folder}/GOAL.md`;
-  const { blob, version } = await readDriveFile(goal.driveId, path);
-  const doc = parseGoalFile(await blob.text());
-  if (!doc) throw new Error(`${path} is not a goal file.`);
-  return { doc, version };
+export async function stopProjectGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
+  return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/stop`, { revision: goal.revision, reason })));
 }
 
 /**
- * A person pauses a goal: GOAL.md records `paused_at` on the version it read
- * (a concurrent write throws `ApiError` 409), `log.md` records the reason,
- * and the heartbeat is disabled. The state does not change, so resuming picks
- * up where the goal was. A turn already running finishes; no new one starts.
- * Throws on a closed goal. On a goal GOAL.md already records as paused (a
- * retry after the heartbeat update failed) it only disables the heartbeat.
+ * A person pauses a goal (`POST …/pause`). The state does not change; no new
+ * turn starts until a person resumes it. A turn already running finishes,
+ * and the API refuses its lifecycle writes.
  */
-export async function pauseProjectGoal(
-  projectId: string,
-  goal: Pick<ProjectGoal, 'driveId' | 'folder' | 'heartbeat'>,
-  reason: string,
-): Promise<ProjectGoalDocument> {
-  const { doc: current, version } = await readGoalForWrite(goal);
-  if (CLOSED.has(current.status)) throw new Error(`The goal is already ${current.status}.`);
-  let next = current;
-  // Already paused: a retry after the heartbeat update failed. Finish that step only.
-  if (!current.paused_at) {
-    const at = new Date().toISOString();
-    next = { ...current, paused_at: at, paused_by: 'person' };
-    await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
-    await appendGoalLog(goal, `- ${at} paused: ${reason}`);
-  }
-  if (goal.heartbeat?.session_id && goal.heartbeat.state === 'active') {
-    await updateSessionReminder(projectId, goal.heartbeat.session_id, goal.heartbeat.id, { enabled: false });
-  }
-  return next;
+export async function pauseProjectGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
+  return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/pause`, { revision: goal.revision, reason })));
+}
+
+/** A person resumes a paused goal (`POST …/resume`): the heartbeat runs again and the owner wakes once. */
+export async function resumeProjectGoal(projectId: string, goal: GoalTarget): Promise<ProjectGoalWriteResult> {
+  return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/resume`, { revision: goal.revision })));
 }
 
 /**
- * A person resumes a paused goal, in this order: the heartbeat is enabled
- * again, GOAL.md clears `paused_at` (`log.md` records it), and the owner
- * session wakes now (its turn end re-arms a heartbeat that went missing). A
- * retry after a later step failed finishes the steps left: a goal GOAL.md
- * already records as running gets its heartbeat enabled, and a wake when it
- * has no live heartbeat.
+ * A person starts a stopped goal again (`POST …/restart`): `active` when it
+ * has criteria, else `draft`. When the owner session is gone the API starts a
+ * new one (within `max_sessions`).
  */
-export async function resumeProjectGoal(
-  projectId: string,
-  goal: Pick<ProjectGoal, 'driveId' | 'folder' | 'heartbeat' | 'scope' | 'slug' | 'coordinatorSessionId'>,
-): Promise<ProjectGoalDocument> {
-  const { doc: current, version } = await readGoalForWrite(goal);
-  if (CLOSED.has(current.status)) throw new Error(`The goal is already ${current.status}.`);
-  const pausedAt = current.paused_at;
-  // 1. The heartbeat first: whatever fails after it, something still wakes the goal.
-  const heartbeatLive = goal.heartbeat?.session_id && goal.heartbeat.state !== 'done';
-  if (goal.heartbeat?.session_id && goal.heartbeat.state === 'paused') {
-    await updateSessionReminder(projectId, goal.heartbeat.session_id, goal.heartbeat.id, { enabled: true });
-  }
-  // 2. Clear the pause. Already clear: a retry after a later step failed.
-  let next = current;
-  if (pausedAt) {
-    next = { ...current, paused_at: null, paused_by: null };
-    await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
-    await appendGoalLog(goal, `- ${new Date().toISOString()} resumed`);
-  }
-  // 3. Wake the owner now: once per pause (its id names the pause, so a repeat is deduped), or
-  // on a retry when no heartbeat would ever wake it.
-  const owner = ownerSessionId(current) ?? goal.coordinatorSessionId;
-  const wake = `${goalWakePrompt(goalBoxFolder(goal))} A person resumed it.`;
-  if (owner && pausedAt) await queueText(projectId, owner, wake, `goal-resume:${owner}:${pausedAt}`);
-  else if (owner && !heartbeatLive) await queueText(projectId, owner, wake);
-  return next;
-}
-
-/**
- * A person starts a stopped goal again, in place: GOAL.md moves `stopped` →
- * `active` (→ `draft` when it has no done criteria yet, so the owner writes
- * them first) on the version it read (a concurrent write throws `ApiError`
- * 409), `log.md` records the move, and then the owner session wakes. Its turn
- * end (`kortix goals check --enforce`) arms the heartbeat the stop removed.
- * The wake id names the stop, so a retry is deduped. A retry after the wake
- * failed (the goal is open again, but no live heartbeat wakes it) writes
- * nothing and only wakes the owner. Throws on any other goal.
- */
-export async function restartProjectGoal(
-  projectId: string,
-  goal: Pick<ProjectGoal, 'driveId' | 'folder' | 'heartbeat' | 'scope' | 'slug' | 'coordinatorSessionId'>,
-  reason: string,
-): Promise<ProjectGoalDocument> {
-  const { doc: current, version } = await readGoalForWrite(goal);
-  const heartbeatLive = !!goal.heartbeat?.session_id && goal.heartbeat.state !== 'done';
-  const retry = !CLOSED.has(current.status) && !current.paused_at && !heartbeatLive;
-  if (current.status !== 'stopped' && !retry) throw new Error(`The goal is ${current.status}, not stopped.`);
-  const stoppedAt = [...current.transitions].reverse().find((t) => t.to === 'stopped')?.at ?? null;
-  const to: ProjectGoalStatus = retry ? current.status : current.success_criteria.length ? 'active' : 'draft';
-  let next = current;
-  if (!retry) {
-    const at = new Date().toISOString();
-    next = { ...current, status: to, transitions: [...current.transitions, { from: 'stopped', to, at, reason, by: 'person' }] };
-    await uploadDriveFile(goal.driveId, `${goal.folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(next)), { ifMatch: version });
-    await appendGoalLog(goal, `- ${at} stopped → ${to}: ${reason}`);
-  }
-  const owner = ownerSessionId(current) ?? goal.coordinatorSessionId;
-  if (owner) {
-    const first =
-      to === 'draft'
-        ? 'A person started it again: write 1 to 8 done criteria someone else can check into GOAL.md, then move it to active and continue the work.'
-        : 'A person started it again: read log.md for where it stopped and continue the work.';
-    const wakeId = stoppedAt ? `goal-restart:${owner}:${stoppedAt}` : generateSessionId();
-    await queueText(projectId, owner, `${goalWakePrompt(goalBoxFolder(goal))} ${first}`, wakeId);
-  }
-  return next;
-}
-
-/** The prompt every wake of a goal starts with; the API finds a goal's heartbeat by it. Same text as `kortix goals`. */
-function goalWakePrompt(boxFolder: string): string {
-  return `Goal wake: ${boxFolder}. Load the kortix-goals skill and run one wake.`;
-}
-
-/** A goal folder name from its outcome: lowercase words joined by `-`, at most 5. Same rule as `kortix goals new`. */
-function goalSlug(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .normalize('NFKD')
-      .replace(/[^a-z0-9]+/g, '-')
-      // One `-` at most at each end: the line above leaves no `--` (and a `-+$` would backtrack).
-      .replace(/^-|-$/g, '')
-      .split('-')
-      .slice(0, 5)
-      .join('-') || 'goal'
-  );
+export async function restartProjectGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
+  return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/restart`, { revision: goal.revision, reason })));
 }
 
 const MAX_GOAL_CRITERIA = 8;
@@ -566,149 +634,75 @@ export function defaultGoalAgent(config: GoalAgentConfig): string | null {
   return pick?.name ?? null;
 }
 
-async function resolveGoalAgent(projectId: string, requested: string | null | undefined): Promise<string> {
-  const { config } = await getProjectDetail(projectId);
-  if (requested) {
-    if (!goalAgents(config).some((a) => a.name === requested)) throw new Error(`${requested} cannot work a goal: it has no Files. Pick another agent.`);
-    return requested;
-  }
-  const pick = defaultGoalAgent(config);
-  if (!pick) throw new Error('This project has no agent that can work a goal. Add an agent, then try again.');
-  return pick;
-}
-
 export interface CreateProjectGoalInput {
-  /** What should be true when the goal is done, in the person's words. */
+  /** What should be true when the goal is done, in the person's words. The first line is the title; the rest is the context. */
   outcome: string;
   /** Done criteria someone else can check: at most 8. Blank lines are dropped. None: the agent writes them. */
   criteria?: string[];
-  /** The agent that works it (`assigned_agent`). It needs Files, so never My Kortix. Omitted: the project's default agent, else the first agent that can. */
+  /** The agent that works it. It needs Files, so never My Kortix. Omitted: the server picks the project's default agent, else the first agent that can. */
   agent?: string | null;
-  /** The person it is for: a user id. Omitted: nobody named in GOAL.md. */
+  /** The person it is for: a user id. Omitted: nobody. */
   assignedUser?: string | null;
   /**
-   * The owner session's id (an RFC 4122 v4 UUID). Pass the same id to retry a
-   * create: a folder this session already owns is reused and nothing is written
-   * twice. Omitted: a new id.
+   * The goal's id (an RFC 4122 v4 UUID) and the create's idempotency key:
+   * pass the same id to retry a create, and the API returns the same goal.
+   * Omitted: `sessionId`, else a new id.
+   */
+  goalId?: string;
+  /**
+   * @deprecated Pass `goalId`. Still the idempotency key when `goalId` is
+   * omitted: it is sent as the goal id. The API picks the owner session's id.
    */
   sessionId?: string;
-  /** The creation time, UTC ISO 8601. Omitted: now. */
+  /** @deprecated Ignored: the API records the creation time. */
   now?: string;
 }
 
 export interface CreatedProjectGoal {
   slug: string;
-  /** A goal a person creates from the app is theirs: it lives in their own folder. */
+  /** A goal a person creates from the app lives in their own folder. */
   scope: 'personal';
   driveId: string;
   folder: string;
-  /** The owner session, already started on its first wake. */
+  /** The owner session, already started on its first wake. Empty while the API still finishes the setup (`blockedReason: 'setup'`). */
   sessionId: string;
+  /** The goal's id: the one sent, or the one generated. */
+  goalId: string;
+  /** The goal as the API holds it after the create. */
+  goal: ProjectGoal;
 }
 
 /**
- * A person creates a goal, in this order: the owner session (idle,
- * unattended), its heartbeat, `GOAL.md` (state `draft`, that session its
- * owner, the heartbeat recorded) and `log.md` in `<own folder>/Goals/<slug>/`,
- * then the session's first wake. Nothing runs before GOAL.md exists, so the
- * agent never races the write. The owner's turn end (`kortix goals check
- * --enforce`, run by kortixd) keeps the heartbeat alive because GOAL.md names
- * the session its owner: no step depends on the model remembering it.
- * A slug another goal holds gets `-2`, `-3`, …. Retrying with the same
- * `sessionId` is safe: a `409` session create is the session that already
- * exists, a folder it owns is reused, and the first wake is deduped.
+ * A person creates a goal (`POST /workspaces/:projectId/goals`). The API puts
+ * it in the caller's own folder, writes GOAL.md and log.md, starts the owner
+ * session with its heartbeat, and sends the first wake. `goalId` is the
+ * idempotency key: a retry with the same id returns the same goal and starts
+ * nothing twice. Throws before any request on an empty outcome or more than
+ * 8 criteria; the API refuses an agent without Files.
  */
 export async function createProjectGoal(projectId: string, input: CreateProjectGoalInput): Promise<CreatedProjectGoal> {
-  const brief = input.outcome.trim();
-  if (!brief) throw new Error('Describe the outcome.');
-  // A brief (a template filled in) names the goal by its first line; the lines after it are the Context.
-  const [firstLine = '', ...rest] = brief.split('\n');
-  const outcome = firstLine.trim();
-  const context = briefContext(rest) || "The request in the person's words, constraints, and what was learned.";
+  const text = input.outcome.trim();
+  if (!text) throw new Error('Describe the outcome.');
+  const [firstLine = '', ...rest] = text.split('\n');
+  const context = briefContext(rest);
+  const brief = context ? `${firstLine.trim()}\n${context}` : firstLine.trim();
   const criteria = (input.criteria ?? []).map((c) => c.trim()).filter(Boolean);
   if (criteria.length > MAX_GOAL_CRITERIA) throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} done criteria.`);
-  const agent = await resolveGoalAgent(projectId, input.agent);
-  const drive = await getProjectDrive(projectId);
-  if (!drive.personalFolder) throw new Error('Goals live in your personal folder in Files, and this project has none for you.');
-  const sessionId = input.sessionId ?? generateSessionId();
-  // A retry whose session already exists keeps that session's folder, even when the outcome was edited.
-  const owned = await getProjectSession(projectId, sessionId, { showErrors: false }).then(
-    (s) => /^\/drives\/me\/Goals\/([^/]+)$/.exec(String(s?.metadata?.goal ?? ''))?.[1] ?? null,
-    (error: unknown) => {
-      if (error instanceof ApiError && error.status === 404) return null;
-      throw error;
-    },
-  );
-  const base = owned ?? goalSlug(outcome);
-  let slug = base;
-  let reuse = false;
-  for (let n = 2; ; n++) {
-    const existing = await readText(drive.driveId, `${drive.personalFolder}/Goals/${slug}/GOAL.md`);
-    if (existing === null) break;
-    if (ownerSessionId(parseGoalFile(existing)) === sessionId) {
-      reuse = true;
-      break;
-    }
-    if (n > 50) throw new Error('Too many goals share this name. Reword the outcome.');
-    slug = `${base}-${n}`;
-  }
-  const folder = `${drive.personalFolder}/Goals/${slug}`;
-  const boxFolder = goalBoxFolder({ scope: 'personal', slug });
-  // 1. The owner session, idle: nothing runs in it before GOAL.md exists.
-  try {
-    await createProjectSession(projectId, {
-      session_id: sessionId,
-      // Named after the outcome: a title generated from the wake prompt reads "Goal wake".
-      name: outcome.slice(0, 120),
-      agent_name: agent,
-      metadata: { unattended: 'true', goal: boxFolder, goal_role: 'owner' },
-    });
-  } catch (error) {
-    if (!(error instanceof ApiError && error.status === 409)) throw error;
-  }
-  if (!reuse) {
-    // 2. Its heartbeat, before GOAL.md: `transition active` needs exactly one, and GOAL.md records it.
-    const { reminders } = await listSessionReminders(projectId, sessionId);
-    const heartbeat =
-      reminders.find((r) => r.state === 'active' && r.prompt.includes(boxFolder)) ??
-      (await createSessionReminder(projectId, sessionId, { prompt: goalWakePrompt(boxFolder), in: '4h', every: '4h', name: `goal ${slug}` }));
-    // 3. GOAL.md, written once, then log.md.
-    const at = input.now ?? new Date().toISOString();
-    const doc: ProjectGoalDocument = {
-      version: 1,
-      objective: outcome,
-      status: 'draft',
-      summary: '',
-      assigned_user: input.assignedUser ?? null,
-      agent,
-      space: null,
-      success_criteria: criteria.map((text, i) => ({ id: `c${i + 1}`, text, met: false, evidence: null })),
-      items: [],
-      links: [],
-      waiting_on: null,
-      heartbeat_every: '4h',
-      max_wakes_per_day: 12,
-      max_sessions: 10,
-      sessions: [{ id: sessionId, role: 'owner', since: at }],
-      reminder_id: heartbeat.id,
-      next_wake_at: heartbeat.next_fire_at ?? null,
-      verified_by: null,
-      transitions: [{ from: null, to: 'draft', at, reason: 'goal created', by: 'person' }],
-      body: `# ${outcome}\n\n## Context\n\n${context}\n`,
-    };
-    await uploadDriveFile(drive.driveId, `${folder}/GOAL.md`, new TextEncoder().encode(formatGoalFile(doc)));
-    await uploadDriveFile(drive.driveId, `${folder}/log.md`, new TextEncoder().encode(`# Log\n\n- ${at} Goal created: ${outcome}\n`));
-  } else if ((await readText(drive.driveId, `${folder}/log.md`)) === null) {
-    // A retry after the log.md upload failed.
-    const at = input.now ?? new Date().toISOString();
-    await uploadDriveFile(drive.driveId, `${folder}/log.md`, new TextEncoder().encode(`# Log\n\n- ${at} Goal created: ${outcome}\n`));
-  }
-  // 4. The first wake. Its id is fixed per session, so a retry is deduped by the server.
-  const first = criteria.length
-    ? 'It is new: check the done criteria in GOAL.md, then move it to active and start the work.'
-    : 'It is new: write 1 to 8 done criteria someone else can check into GOAL.md, then move it to active and start the work.';
-  await queueText(projectId, sessionId, `${goalWakePrompt(boxFolder)} ${first}`, `goal-start:${sessionId}`);
-  return { slug, scope: 'personal', driveId: drive.driveId, folder, sessionId };
+  const goalId = input.goalId ?? input.sessionId ?? generateSessionId();
+  const payload: Record<string, unknown> = { goal_id: goalId, brief };
+  if (criteria.length) payload.criteria = criteria;
+  if (input.agent) payload.agent = input.agent;
+  if (input.assignedUser) payload.assigned_user_id = input.assignedUser;
+  const goal = toProjectGoal(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(goalsPath(projectId), payload)));
+  return {
+    slug: goal.slug,
+    scope: 'personal',
+    driveId: goal.driveId,
+    folder: goal.folder,
+    sessionId: goal.coordinatorSessionId ?? '',
+    goalId: goal.goalId,
+    goal,
+  };
 }
 
 /**
@@ -728,26 +722,24 @@ function briefContext(lines: string[]): string {
 }
 
 /**
- * Answer a goal: queue `text` into the owner session's inbox, which wakes it.
- * The prompt names the goal folder, so the owner knows which goal the answer
- * is for. Resolves when the prompt is durable, not when it is read.
+ * A person answers a goal (`POST …/answer`): the API queues the text into
+ * the owner session, attributed to the caller, and a goal waiting on a
+ * person goes back to active. `answerId` is the idempotency key: pass the
+ * same id to retry, and the owner gets the answer once. Omitted: a new id.
+ * Resolves when the answer is durable, not when it is read.
  */
 export async function replyToProjectGoal(
   projectId: string,
-  goal: Pick<ProjectGoal, 'scope' | 'slug' | 'coordinatorSessionId'>,
+  goal: Pick<ProjectGoal, 'goalId'> & Partial<Omit<ProjectGoal, 'goalId'>>,
   text: string,
+  options?: { answerId?: string },
 ): Promise<void> {
-  if (!goal.coordinatorSessionId) throw new Error('The goal has no owner session to answer.');
-  await queueText(projectId, goal.coordinatorSessionId, `Goal reply: ${goalBoxFolder(goal)}. The assigned user answers:\n\n${text}`);
-}
-
-async function queueText(projectId: string, sessionId: string, text: string, clientMessageId: string = generateSessionId()): Promise<void> {
-  await createSessionPrompt(projectId, sessionId, {
-    clientMessageId,
-    messageId: mintWireMessageId(),
-    parts: [{ type: 'text', text }],
-    remintOnDelivery: true,
+  // The body is not read: an answer route that replies `202` with no goal is as good as one that returns it.
+  const response = await backendApi.post<{ goal?: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/answer`, {
+    answer_id: options?.answerId ?? generateSessionId(),
+    text,
   });
+  if (!response.success) throw conflict(response.error ?? new Error('Goal request failed'));
 }
 
 /** What a session reads when a person asks it to turn the conversation into a goal. */
@@ -757,5 +749,10 @@ export const MAKE_GOAL_PROMPT =
 
 /** "Make this a goal" from a chat: queue `MAKE_GOAL_PROMPT` into that session. */
 export async function makeSessionGoal(projectId: string, sessionId: string): Promise<void> {
-  await queueText(projectId, sessionId, MAKE_GOAL_PROMPT);
+  await createSessionPrompt(projectId, sessionId, {
+    clientMessageId: generateSessionId(),
+    messageId: mintWireMessageId(),
+    parts: [{ type: 'text', text: MAKE_GOAL_PROMPT }],
+    remintOnDelivery: true,
+  });
 }

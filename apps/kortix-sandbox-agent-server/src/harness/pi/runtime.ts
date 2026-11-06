@@ -24,6 +24,7 @@ import type { AssistantMessage, ImageContent, ModelThinkingLevel } from '@earend
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
 import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet, type RuntimePending } from '@kortix/api-contract/runtime-relay'
 import { KORTIX_PLATFORM_TOOL_NAMES } from '@kortix/api-contract/kortix-tool-card'
+import type { ThreadActivity } from '@kortix/api-contract/wire-values'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -332,7 +333,7 @@ interface ChildSession {
   agentName: string
   createdAt: number
   updatedAt: number
-  status: 'idle' | 'busy'
+  status: ThreadActivity
   transcript: TranscriptStore
   /** The child's pi conversation, kept so `task_id` resumes it. */
   agentMessages: AgentMessage[]
@@ -534,9 +535,15 @@ export class PiRuntime {
   /** The user message the next assistant message answers: the turn's, then the newest steered one read. */
   private turnParent: string | null = null
   private abortAfterTool: { promptId: string; messageId: string } | null = null
-  private status: 'idle' | 'busy' = 'idle'
-  /** Turns admitted and not yet finished, the running one included. */
-  private pendingTurns = 0
+  /**
+   * The work admitted on the root and not finished: each queued or running turn and each
+   * `/summarize`, one token per item. The one source of "is a turn running" ({@link busy}):
+   * no wire frame writes it, so pi's `agent_end` idle frame inside a turn cannot clear it.
+   * A forced stop ({@link stop}) clears it; a late `delete` from the abandoned item is a no-op.
+   */
+  private readonly work = new Set<object>()
+  /** The start in flight ({@link start}). */
+  private starting: Promise<void> | null = null
   /** Prompts admitted behind the running work that have not started: a turn, or a `noReply` message before its queue slot. */
   private readonly waiting = new Map<string, { retracted?: boolean }>()
   /** `noReply` messages in pi's context that no model call has read, with their session entry. */
@@ -701,8 +708,16 @@ export class PiRuntime {
     return (this.env.KORTIX_SESSION_ID ?? '').trim() || 'session-local'
   }
 
-  async start(): Promise<void> {
-    if (this.state === 'ok') return
+  /** Start the runtime. A second call while one runs joins it: one Agent, one PiSession. */
+  start(): Promise<void> {
+    if (this.state === 'ok') return Promise.resolve()
+    this.starting ??= this.startOnce().finally(() => {
+      this.starting = null
+    })
+    return this.starting
+  }
+
+  private async startOnce(): Promise<void> {
     this.state = 'starting'
     this.startError = null
     const startedAt = this.now()
@@ -851,6 +866,11 @@ export class PiRuntime {
         ms: this.now() - startedAt,
       })
     } catch (err) {
+      // A start that got as far as the session disposes it: the next start builds its own.
+      try {
+        this.pi?.session.dispose()
+      } catch {}
+      this.pi = null
       this.state = 'down'
       this.startError = err instanceof Error ? err.message : String(err)
       logger.error('[pi] runtime start failed', { err: this.startError })
@@ -861,7 +881,7 @@ export class PiRuntime {
   async stop(): Promise<void> {
     if (this.state === 'down') return
     await this.abort()
-    await this.queue.catch(() => {})
+    if (!(await settlesWithin(this.queue.catch(() => {}), this.cfg.piStopSettleMs))) this.abandonWork()
     const runner = this.runner.current
     if (runner?.hasHandlers('session_shutdown')) await runner.emit({ type: 'session_shutdown', reason: 'quit' }).catch(() => {})
     this.persist()
@@ -881,10 +901,19 @@ export class PiRuntime {
    * runs on the new settings, a running turn finishes on the old ones.
    */
   async reconfigure(): Promise<{ changed: boolean }> {
-    if (this.active) {
+    // Work admitted or running keeps its config: the next turn applies the new one (`runTurn`).
+    if (this.active || this.work.size > 0) {
       this.reconfigurePending = true
       return { changed: false }
     }
+    // On the serial queue: a prompt admitted during the awaits below runs after the whole new config.
+    const applied = this.queue.then(() => this.applyReconfigure())
+    this.queue = applied.catch(() => {})
+    return applied
+  }
+
+  /** The body of {@link reconfigure}. Runs only on the serial queue: from `reconfigure` or from `runTurn`. */
+  private async applyReconfigure(): Promise<{ changed: boolean }> {
     this.reconfigurePending = false
     if (!this.agent || !this.models) return { changed: false }
     const { createPiModels } = await import('./model')
@@ -950,14 +979,23 @@ export class PiRuntime {
 
   // ── turns ────────────────────────────────────────────────────────────────
 
-  /** True while a turn runs. */
+  /**
+   * The one authority on "work is running on this session": a turn running or queued, a
+   * `/summarize`, or a same-session subagent. The daemon self-update, the memory guard, the
+   * reaper's turn probe and config convergence read it.
+   */
   busy(): boolean {
-    return this.status === 'busy'
+    return this.active !== null || this.work.size > 0 || [...this.children.values()].some((child) => child.agent !== null)
   }
 
-  /** No turn running and none admitted behind it: a config applied now reaches the next turn whole. */
+  /** Nothing running and nothing admitted behind it: a config applied now reaches the next turn whole. */
   idle(): boolean {
-    return this.status === 'idle' && this.pendingTurns === 0
+    return !this.busy()
+  }
+
+  /** The root thread's status for the wire reads: busy from a turn's admission to its end. */
+  private rootStatus(): ThreadActivity {
+    return this.active !== null || this.work.size > 0 ? 'busy' : 'idle'
   }
 
   activeTurnMessageId(): string | null {
@@ -1012,12 +1050,12 @@ export class PiRuntime {
     this.waiting.set(messageId, turn)
     // Queued now: the v2 stream gets it at its queued seq (session-log.ts).
     reliveSessionLogMessage(messageId)
-    this.pendingTurns += 1
+    this.work.add(turn)
     this.queue = this.queue
       .then(() => this.runTurn(turn))
       .catch(() => {})
       .finally(() => {
-        this.pendingTurns -= 1
+        this.work.delete(turn)
       })
     return { messageId, done: outcome }
   }
@@ -1150,7 +1188,8 @@ export class PiRuntime {
     if (!this.pi || this.state !== 'ok') throw new PromptRejected('pi runtime is not ready')
     const session = this.pi.session
     const stops = this.stops
-    this.pendingTurns += 1
+    const token = {}
+    this.work.add(token)
     this.queue = this.queue
       .then(() => {
         // A Stop after the request drops it: no model call after a Stop.
@@ -1164,7 +1203,7 @@ export class PiRuntime {
       .catch((err) => logger.warn('[pi] compaction failed', { err: err instanceof Error ? err.message : String(err) }))
       .finally(() => {
         this.summarizing = false
-        this.pendingTurns -= 1
+        this.work.delete(token)
       })
   }
 
@@ -1279,8 +1318,44 @@ export class PiRuntime {
     this.turnRetry?.abort()
     this.active.stopRequested = true
     this.stopPi()
-    await this.active.outcome
+    const turn = this.active
+    // Bounded: a tool that ignores the abort signal must not hold Stop, the memory guard or a shutdown.
+    if (!(await settlesWithin(turn.outcome, this.cfg.piStopSettleMs))) {
+      logger.warn('[pi] the stopped turn did not settle; Stop returns without it', { messageId: turn.messageId, ms: this.cfg.piStopSettleMs })
+    }
     return true
+  }
+
+  /** The running turn's fields, back to "no turn". */
+  private clearActiveTurn(): void {
+    this.resetProgressWatchdog = null
+    this.turnRetry = null
+    this.turnSystem = null
+    this.parkOpenAsks()
+    this.active = null
+    this.turnParent = null
+    this.runningTools = 0
+    this.abortAfterTool = null
+  }
+
+  /**
+   * A stop whose work did not settle in `piStopSettleMs` (a tool that ignores the abort signal):
+   * the runtime lets go of it. The running and queued turns end `aborted`, the queue starts empty,
+   * and a late end of the abandoned turn writes nothing ({@link runTurn}'s `finally`).
+   */
+  private abandonWork(): void {
+    logger.warn('[pi] work did not settle after Stop; the runtime abandons it', { messageId: this.active?.messageId ?? null, queued: this.work.size })
+    const turn = this.active
+    if (turn) {
+      this.clearActiveTurn()
+      this.completedTurns.set(turn.messageId, 'idle')
+      this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: 'idle' })
+    }
+    for (const item of [turn, ...this.work]) (item as Turn | null)?.resolve?.('aborted')
+    for (const slot of this.waiting.values()) (slot as Partial<Turn>).resolve?.('aborted')
+    this.waiting.clear()
+    this.work.clear()
+    this.queue = Promise.resolve()
   }
 
   /**
@@ -1328,7 +1403,8 @@ export class PiRuntime {
       turn.resolve('aborted')
       return
     }
-    if (this.reconfigurePending) await this.reconfigure()
+    // A config the runtime refuses keeps the old one; the turn still runs and settles.
+    if (this.reconfigurePending) await this.applyReconfigure().catch((err) => logger.warn('[pi] deferred reconfigure failed', { err: err instanceof Error ? err.message : String(err) }))
     const modelId = turn.input.model
       ? promptModelId(turn.input.model)
       : turn.input.agent ? nativeModelId(this.compiled?.agent?.[turn.agent]?.model) : null
@@ -1342,7 +1418,6 @@ export class PiRuntime {
     this.turnPromptMapped = false
     this.turnPromptRelived = false
     this.steerReads.clear()
-    this.status = 'busy'
     this.hooks.onTurnBegin?.({ rootId: this.rootId, messageId: turn.messageId })
     // A runner's turn starts failed until its workflow ends done (a spent runner's: with its run's outcome). On a
     // caller, a notice header only asks for an API read of that runner now; no prompt text decides a run's end.
@@ -1360,6 +1435,7 @@ export class PiRuntime {
     })
     this.turnRetry = retry
     let timedOut = false
+    let abandoned = false
     let watchdog: ReturnType<typeof setTimeout> | undefined
     const armWatchdog = () => {
       clearTimeout(watchdog)
@@ -1418,22 +1494,20 @@ export class PiRuntime {
       this.publish({ type: 'session.idle', properties: { sessionID: this.rootId } })
     } finally {
       clearTimeout(watchdog)
-      this.resetProgressWatchdog = null
-      this.turnRetry = null
-      this.turnSystem = null
-      this.parkOpenAsks()
-      this.active = null
-      this.turnParent = null
-      this.runningTools = 0
-      this.abortAfterTool = null
-      this.status = 'idle'
+      // A turn a forced stop abandoned ends late: the runtime's fields belong to what runs now.
+      abandoned = this.active !== turn
+      if (!abandoned) {
+        this.clearActiveTurn()
+        this.persist()
+      }
       this.completedTurns.set(turn.messageId, outcome === 'error' ? 'error' : 'idle')
-      this.persist()
       turn.resolve(outcome)
       // A Claude turn still waiting for tool results gets none from this turn: its idle timer starts.
-      claudeSessions()?.settle(this.rootId)
-      this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: outcome === 'error' ? 'error' : 'idle', ...(error ? { error } : {}) })
+      if (!abandoned) claudeSessions()?.settle(this.rootId)
+      // `abandonWork` already reported the abandoned turn's end.
+      if (!abandoned) this.hooks.onTurnEnd?.({ rootId: this.rootId, messageId: turn.messageId, status: outcome === 'error' ? 'error' : 'idle', ...(error ? { error } : {}) })
     }
+    if (abandoned) return
     // Started while the live model list was down: fetch it again, so the next turn runs on real limits.
     if (this.models?.live === false) this.refreshModelsSoon()
     // Steered messages the turn did not read. A stopped turn drops them (the
@@ -1583,7 +1657,7 @@ export class PiRuntime {
   /** The session row changed (`time.compacting`); `log.status` says the root compacts, then what it does after. */
   private publishSessionUpdated(): void {
     this.publish({ type: 'session.updated', properties: { sessionID: this.rootId, info: this.sessionObject() } })
-    sessionLogEventBus().publish('log.status', { thread_id: this.rootId, status: this.compaction ? 'compacting' : this.status }, this.rootId)
+    sessionLogEventBus().publish('log.status', { thread_id: this.rootId, status: this.compaction ? 'compacting' : this.rootStatus() }, this.rootId)
   }
 
   private onAgentEvent(event: AgentEvent): void {
@@ -2334,7 +2408,6 @@ export class PiRuntime {
       if (!opts.busOnly) child.transcript.apply(frame)
     } else {
       this.updatedAt = this.now()
-      if (status === 'busy' || status === 'idle') this.status = status
       if (!opts.busOnly) this.transcript.apply(frame)
     }
     if (opts.transcriptOnly) return
@@ -2641,15 +2714,15 @@ export class PiRuntime {
     return (this.agent?.state.tools ?? []).map((tool) => tool.name)
   }
 
-  sessionStatus(): { type: 'idle' | 'busy' } {
-    return { type: this.status }
+  sessionStatus(): { type: ThreadActivity } {
+    return { type: this.rootStatus() }
   }
 
   /** What each thread does now and what waits on a person (`GET /kortix/runtime/pending`). */
   pendingNow(): RuntimePending {
     return {
       statuses: Object.fromEntries([
-        [this.rootId, this.compaction ? 'compacting' : this.status],
+        [this.rootId, this.compaction ? 'compacting' : this.rootStatus()],
         ...[...this.children.values()].map((child) => [child.id, child.status === 'busy' ? 'busy' : 'idle']),
       ]),
       permissions: this.permissions.records(),
@@ -2779,7 +2852,13 @@ export class PiRuntime {
     if (messageId === null) {
       return { inFlight: this.busy(), end: this.busy() ? null : this.latestEnd(), orphanedPrompt: false }
     }
-    if (this.active?.messageId === messageId || this.steered.some((entry) => entry.messageId === messageId)) return { inFlight: true, end: null, orphanedPrompt: false }
+    // A steer still loading its images and a prompt queued behind the running work are ours too.
+    if (
+      this.active?.messageId === messageId ||
+      this.steered.some((entry) => entry.messageId === messageId) ||
+      this.loadingSteers.has(messageId) ||
+      this.waiting.has(messageId)
+    ) return { inFlight: true, end: null, orphanedPrompt: false }
     const completed = this.completedTurns.get(messageId)
     if (completed) return { inFlight: false, end: completed === 'error' ? 'failed' : 'completed', orphanedPrompt: false }
     // Queued behind the running turn: on record, not yet answered, still ours.
@@ -2865,7 +2944,7 @@ export class PiRuntime {
           busy: child.agent !== null,
         }
       }),
-      busy: this.status === 'busy' || this.active !== null,
+      busy: this.rootStatus() === 'busy',
       reply: replying(this.agent, this.adapter),
       pending: { questions: this.questions.records(), permissions: this.permissions.records() },
       queued: this.queuedIds(entryMessageIds),
@@ -2975,5 +3054,19 @@ export class PiRuntime {
       logger.warn('[pi] transcript restore failed; starting empty', { err: (err as Error).message })
       return null
     }
+  }
+}
+
+/** True when `promise` settles within `ms`; false at the deadline. The timer never holds the process open. */
+async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms)
+    timer.unref?.()
+  })
+  try {
+    return await Promise.race([promise.then(() => true, () => true), deadline])
+  } finally {
+    clearTimeout(timer)
   }
 }

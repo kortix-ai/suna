@@ -16681,6 +16681,12 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Отвори целу страницу за одобрење",
       "textb7ddab3f7df8": "Избрисати {value0} и свако време извршавања? Ова радња се не може опозвати.",
+      "text9c583fa19f1a": "Бришу се и његови окидачи: {value0}.",
+      "text648f297b3b79": "Прикажи у апликацији",
+      "text8521b7841a0c": "Један догађај: {value0}",
+      "textbede9e3c96af": "Прикажи све догађаје",
+      "text216e5ffc0e54": "Овај догађај није у дневнику последњих 30 дана.",
+      "text1ade727f7313": "Не ради од {value0}. Kortix је престао да је поново покреће.",
       "textb7de71558bf4": "Изабрани конектори разрешавају ову тајну на серверу. Sandbox не добија њену вредност.",
       "textb7e29198fc4e": "Кључ {value0} је уклоњен",
       "textb7ef1459725d": "Тренутно брисање налога није успело",
@@ -21272,6 +21278,7 @@
       "text856bf8853b69": "Потрошња Claude претплате",
       "text116cd3982a9b": "Ciljevi",
       "textb0571ad96905": "ciljevi cilj ishodi rezultati",
+      "text20d55e8c3373": "Отказује се",
       "text2590cd62a747": "Podešavanja radnog prostora",
       "text276261b1e03d": "radni prostor podešavanja organizacije timovi upravljanje",
       "text634ebc515b7f": "Radni prostor · API ključevi",
@@ -23671,7 +23678,8 @@
       "missed_wake": "Poslednje buđenje kasni.",
       "ask_overdue": "Zahtevu je istekao rok.",
       "verification_stalled": "Provera je počela pre više od 24 sata.",
-      "unreadable": "GOAL.md ne postoji ili nema zaglavlje cilja."
+      "unreadable": "GOAL.md ne postoji ili nema zaglavlje cilja.",
+      "blocked": "Ovaj cilj ne može sam da nastavi."
     },
     "sessionChip": "Cilj",
     "sessionRole": {
@@ -24485,7 +24493,43 @@
     "restart": "Pokreni cilj ponovo",
     "restartReason": "Ponovo pokrenuto sa stranice cilja",
     "restartedToast": "Cilj je ponovo pokrenut",
-    "restartError": "Nije moguće ponovo pokrenuti cilj. Pokušaj ponovo."
+    "restartError": "Nije moguće ponovo pokrenuti cilj. Pokušaj ponovo.",
+    "noAccess": "Nemaš pristup ovom cilju.",
+    "noAccessHint": "Zamoli osobu kojoj je namenjen, ili administratora projekta, da ga podeli s tobom.",
+    "notFoundHint": "Obrisan je, ili je link pogrešan.",
+    "chooseGoal": "Više ciljeva ima ovo ime. Izaberi jedan.",
+    "goalLoadError": "Cilj nije učitan. Pokušaj ponovo.",
+    "eventsLoadError": "Aktivnost nije učitana.",
+    "changedToast": "Cilj se promenio pre nego što je tvoja radnja stigla. Stranica ga prikazuje kakav je sada.",
+    "blockedTitle": "Blokiran",
+    "blocked": {
+      "credits": "Ponestalo mu je kredita, pa nijedno buđenje ne može da počne.",
+      "wake_cap": "Iskoristio je svih {max} buđenja za danas.",
+      "session_cap": "Iskoristio je svih {max} sesija koje sme da pokrene.",
+      "owner_lost": "Njegova sesija agenta nije uspela i nijedna sesija je nije preuzela.",
+      "storage": "Njegova fascikla u Fajlovima nije mogla da se čita ili upisuje.",
+      "flag_off": "Ciljevi su isključeni za ovaj projekat.",
+      "setup": "Kortix ga još podešava."
+    },
+    "blockedNext": {
+      "credits": "Dodaj kredite, pa ga nastavi.",
+      "wake_cap": "Nastavlja sam posle ponoći UTC.",
+      "session_cap": "Zaustavi ga, ili zamoli administratora projekta da poveća ograničenje sesija.",
+      "owner_lost": "Pokreni ga ponovo da dobije novu sesiju.",
+      "storage": "Proveri fasciklu u Fajlovima, pa ga nastavi.",
+      "flag_off": "Uključi Ciljeve za ovaj projekat, pa ga nastavi.",
+      "setup": "Ovo se završava samo za manje od minuta."
+    },
+    "legacyUnverifiedTitle": "Kortix nije proverio",
+    "legacyUnverified": "Ovaj cilj je uvezen iz svoje fascikle. Kortix nije proverio rezultat.",
+    "verified": "Provereno",
+    "reportedMet": "Prijavljeno kao ispunjeno, još nije provereno",
+    "reportedMetHint": "Agent prijavljuje da je ovo urađeno. Nezavisna provera to još nije potvrdila.",
+    "verifiedCount": "Provereno {verified} od {total}",
+    "checkFailed": "Provera nije uspela: {note}",
+    "waitingOnPerson": "Čeka na {person}",
+    "waitNoCost": "Dok čeka odgovor, nijedna provera se ne pokreće.",
+    "chaseAt": "Proverava ponovo {time}"
   },
   "agentEditor": {
     "manage": "Upravljaj",
@@ -25079,7 +25123,7 @@
         "sent_to_agent": "шаље коментаре агенту"
       },
       "person": "Особа",
-      "deleteRootDescription": "Текст се уклања за све, а нит ће моћи само да се чита. Ово се не може опозвати.",
+      "deleteRootDescription": "Његов текст се уклања за све, а нит излази са листе коментара. Ово се не може опозвати.",
       "showPanel": "Прикажи коментаре",
       "hidePanel": "Сакриј коментаре",
       "panelTitle": "Коментари и активност",
@@ -25122,7 +25166,16 @@
       "pagePinLabel": "Коментар {number}",
       "showPanelCount": "Прикажи коментаре, отворених: {count}",
       "hidePanelCount": "Сакриј коментаре, отворених: {count}",
-      "commentSelectionHint": "Коментаришите избор"
+      "commentSelectionHint": "Коментаришите избор",
+      "threadReopened": "Нит је поново отворена",
+      "noCommentsReadOnlyHint": "Коментари на овај артефакт појављују се овде.",
+      "commentTooLong": "Коментар може имати највише {max} знакова. Уклоните {over}.",
+      "discardDrawingTitle": "Одбацити овај цртеж?",
+      "discardDrawingHint": "Ваши потези нису сачувани. Ово се не може опозвати.",
+      "discardDrawing": "Одбаци",
+      "keepDrawing": "Настави цртање",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "Премести у простор",
     "projectWide": "На нивоу радног простора",
@@ -25151,13 +25204,28 @@
       "writing": "{name} пише…"
     },
     "coedit": {
-      "offLarge": "Заједничко уређивање уживо је искључено: овај документ је већи од 1 MiB. Измене се чувају док куцате.",
-      "offLineEndings": "Заједничко уређивање уживо је искључено: овај документ меша CRLF и LF крајеве редова. Измене се чувају док куцате.",
-      "offShape": "Заједничко уређивање уживо је искључено: уређивач би преписао део Markdown-а. Измене се чувају док куцате.",
+      "offLarge": "Заједничко уређивање уживо је искључено: овај документ је превелик. Измене се чувају док куцате.",
+      "offLineEndings": "Заједничко уређивање уживо је искључено: овај документ меша две врсте прелома реда. Измене се чувају док куцате.",
+      "offShape": "Заједничко уређивање уживо је искључено: уређивач не може да задржи део овог документа тачно онако како је написан. Измене се чувају док куцате.",
       "stoppedLarge": "Заједничко уређивање уживо је заустављено: једна измена је била превелика за дељење. Измене се чувају док куцате.",
       "stoppedFailed": "Заједничко уређивање уживо је заустављено: веза није успела. Измене се чувају док куцате.",
-      "stoppedHistory": "Заједничко уређивање уживо је заустављено: историја измена овог документа је превелика. Измене се чувају док куцате."
-    }
+      "stoppedHistory": "Заједничко уређивање уживо је заустављено: историја измена овог документа је превелика. Измене се чувају док куцате.",
+      "offFailed": "Заједничко уређивање уживо је искључено: повезивање није успело. Измене се чувају док куцате."
+    },
+    "conflictTitle": "Неко други је изменио овај документ",
+    "conflictReloadTitle": "Учитати новију верзију?",
+    "conflictReloadHint": "Ваше измене од последњег чувања се одбацују. Ово се не може опозвати.",
+    "docLoadError": "Овај документ није могао да се учита.",
+    "openError": "Овај артефакт није могао да се отвори.",
+    "viewOnly": "Само за читање",
+    "viewingOldUndated": "Гледате ранију верзију.",
+    "exportWaiting": "Чувају се ваше измене, затим извоз…",
+    "exportBlocked": "Извоз је заустављен: ваше последње измене нису сачуване.",
+    "clearFilters": "Обриши филтере",
+    "linkCopyFailed": "Веза није могла да се копира. Изаберите је у пољу и копирајте.",
+    "shareDropsPeople": "{count, plural, one {Чувањем се уклања # особа коју сте додали. Само Приватно чува листу особа.} few {Чувањем се уклањају # особе које сте додали. Само Приватно чува листу особа.} other {Чувањем се уклања # особа које сте додали. Само Приватно чува листу особа.}}",
+    "askAgentHistoryError": "Ранији разговори нису могли да се учитају.",
+    "embedUnavailable": "Ова веза нема преглед, па остаје веза."
   },
   "emailConnect": {
     "homeTitle": "Gde je sanduče",

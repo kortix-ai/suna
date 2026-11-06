@@ -40,7 +40,7 @@ export interface ConnectorsScreenProps {
   height: number;
   webBaseUrl: string;
   /** `/connectors <query>`: search for it, and open the one connector it names. */
-  initialQuery?: string;
+  target?: string | null;
   onBack(): void;
   onToast(message: string, kind?: 'info' | 'error'): void;
   /** True while Esc is ours: the sheet is open, a search or a flow is active. */
@@ -63,7 +63,7 @@ function ConnectorsScreenBody({
   width,
   height,
   webBaseUrl,
-  initialQuery,
+  target: initialQuery,
   onBack,
   onToast,
   onHoldsBack,

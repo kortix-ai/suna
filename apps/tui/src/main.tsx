@@ -37,11 +37,12 @@
 
 import { createCliRenderer } from '@opentui/core';
 import { createRoot } from '@opentui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 
 import { App } from './app.tsx';
 import { QueryPolling } from './lib/query-polling.ts';
+import { forgetHostIdentity } from './lib/host-identity.ts';
 import {
   type ResolvedHost,
   hostOrigin,
@@ -215,8 +216,9 @@ interface RootProps {
  *
  * The host is state, so `Ctrl+H` is a state change and not a process restart:
  * the login screen comes back, the user picks another host, `initKortix`
- * rebuilds the one client, and the app remounts with a fresh `key` so every
- * query and every SSE stream is torn down with the old host.
+ * rebuilds the one client, the query cache and SDK identity state are cleared
+ * (`forgetHostIdentity`), and the app remounts with a fresh `key` so every
+ * observer and every SSE stream is torn down with the old host.
  */
 function Root({
   initialHost,
@@ -236,15 +238,19 @@ function Root({
   const [previousHost, setPreviousHost] = useState<ResolvedHost | null>(null);
   const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [generation, setGeneration] = useState(0);
+  const queryClient = useQueryClient();
 
   const onLoggedIn = useCallback((resolved: ResolvedHost) => {
     setNotice(null);
+    // A sign-in is an identity change: the cache and SDK state of the host
+    // before it must not render under the new one.
+    forgetHostIdentity(queryClient);
     initKortix(resolved);
     setHost(resolved);
     setPreviousHost(null);
     setProjectId(resolved.defaultProjectId ?? null);
     setGeneration((value) => value + 1);
-  }, []);
+  }, [queryClient]);
 
   // Esc on the host list. With a host behind it this is "never mind" and the
   // app comes back on the SAME host — `initKortix` again because the login

@@ -482,6 +482,13 @@ fn clip(s: &str, max: usize) -> String {
 /// computer, a re-published release). A failure again starts the wait again.
 pub const BAD_RETRY_AFTER: Duration = Duration::from_secs(7 * 86_400);
 
+/// An installer that could not run (`install_failed`) this many times in a row
+/// for one version marks it bad like a failed health check. One failure may be
+/// a locked file or a full disk; three on one version is a broken installer.
+/// Before this cap, every check re-downloaded the installer (up to 1 GiB) and
+/// failed again, forever.
+pub const INSTALL_FAILS_BEFORE_BAD: u32 = 3;
+
 /// The versions still skipped, and when each was marked. The rules: a version not
 /// newer than the installed one is dropped (it can never be offered again); a mark
 /// older than [`BAD_RETRY_AFTER`] is dropped (the version is tried again); a mark with
@@ -618,6 +625,9 @@ pub struct State {
     /// When each version in `bad` failed (ms). Absent in a state file from an older build.
     #[serde(default)]
     pub bad_at: BTreeMap<String, i64>,
+    /// Consecutive `install_failed` results per version. Cleared by any other outcome.
+    #[serde(default)]
+    pub install_failures: BTreeMap<String, u32>,
     pub updating_to: Option<String>,
 }
 
@@ -637,6 +647,7 @@ fn write_state(s: &State) {
         if let Some(disk) = read_state() {
             s.bad = disk.bad;
             s.bad_at = disk.bad_at;
+            s.install_failures = disk.install_failures;
             s.last_result = disk.last_result;
         }
         let _ = write_atomic(
@@ -709,6 +720,7 @@ pub fn reset() -> Result<()> {
         .ok_or_else(|| anyhow!("no update state: the machine service has not run yet"))?;
     s.bad.clear();
     s.bad_at.clear();
+    s.install_failures.clear();
     s.last_result = None;
     write_state_exact(&s);
     Ok(())
@@ -939,26 +951,43 @@ impl Updater {
             return;
         };
         let mut s = read_state().unwrap_or_default();
-        // An installer that failed to run says nothing about the release: retry it later.
-        let bad = matches!(r.outcome.as_str(), "rolled_back" | "failed");
-        if bad {
-            if !s.bad.contains(&r.to) {
-                s.bad.push(r.to.clone());
-            }
-            // A retry that failed again starts the wait again.
-            s.bad_at.insert(r.to.clone(), r.at_ms);
-        }
-        s.last_result = Some(LastResult {
-            at_ms: r.at_ms,
-            from: r.from,
-            to: r.to,
-            outcome: r.outcome,
-            detail: r.detail,
-        });
-        s.updating_to = None;
+        fold_result(&mut s, r);
         write_state_exact(&s);
         let _ = std::fs::remove_file(result_path());
     }
+}
+
+/// The state after one supervisor answer. `rolled_back` and `failed` mark the
+/// version bad. `install_failed` says little about the release, so it marks the
+/// version bad only after [`INSTALL_FAILS_BEFORE_BAD`] in a row.
+fn fold_result(s: &mut State, r: JobResult) {
+    let install_failed = r.outcome == "install_failed";
+    let mut bad = matches!(r.outcome.as_str(), "rolled_back" | "failed");
+    if install_failed {
+        let n = s.install_failures.entry(r.to.clone()).or_insert(0);
+        *n += 1;
+        if *n >= INSTALL_FAILS_BEFORE_BAD {
+            bad = true;
+        }
+    }
+    if bad || !install_failed {
+        s.install_failures.remove(&r.to);
+    }
+    if bad {
+        if !s.bad.contains(&r.to) {
+            s.bad.push(r.to.clone());
+        }
+        // A retry that failed again starts the wait again.
+        s.bad_at.insert(r.to.clone(), r.at_ms);
+    }
+    s.last_result = Some(LastResult {
+        at_ms: r.at_ms,
+        from: r.from,
+        to: r.to,
+        outcome: r.outcome,
+        detail: r.detail,
+    });
+    s.updating_to = None;
 }
 
 /// Apply [`prune_bad`] to `update.json`. Runs on the service thread, the only writer of `bad`.
@@ -1966,6 +1995,42 @@ mod tests {
             decide(&m, &v("0.13.57"), Channel::Stable, &keep, "linux"),
             Decision::Install(..)
         ));
+    }
+
+    #[test]
+    fn a_broken_installer_is_skipped_after_three_install_failures_in_a_row() {
+        let res = |to: &str, outcome: &str, at_ms: i64| JobResult {
+            from: "0.13.57".into(),
+            to: to.into(),
+            outcome: outcome.into(),
+            detail: None,
+            at_ms,
+        };
+        let mut s = State { updating_to: Some("0.13.58".into()), ..Default::default() };
+        fold_result(&mut s, res("0.13.58", "install_failed", 1));
+        fold_result(&mut s, res("0.13.58", "install_failed", 2));
+        assert!(s.bad.is_empty(), "two failures may be a locked file: retry");
+        assert_eq!(s.install_failures.get("0.13.58"), Some(&2));
+        assert_eq!(s.updating_to, None);
+        fold_result(&mut s, res("0.13.58", "install_failed", 3));
+        assert_eq!(s.bad, ["0.13.58"], "the third marks it bad");
+        assert_eq!(s.bad_at.get("0.13.58"), Some(&3));
+        assert!(s.install_failures.is_empty());
+        // prune_bad then skips it for a week, and a newer release still installs.
+        let (kept, _) = prune_bad(&s.bad, &s.bad_at, Some(&v("0.13.57")), 4);
+        assert_eq!(kept, ["0.13.58"]);
+    }
+
+    #[test]
+    fn a_good_install_clears_the_install_failure_count() {
+        let mut s = State::default();
+        let r = |outcome: &str| JobResult { from: "a".into(), to: "0.13.58".into(), outcome: outcome.into(), detail: None, at_ms: 1 };
+        fold_result(&mut s, r("install_failed"));
+        fold_result(&mut s, r("updated"));
+        assert!(s.install_failures.is_empty());
+        assert!(s.bad.is_empty());
+        fold_result(&mut s, r("rolled_back"));
+        assert_eq!(s.bad, ["0.13.58"], "a failed health check marks bad at once");
     }
 
     #[test]

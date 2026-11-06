@@ -400,24 +400,30 @@ export async function getArtifactCommentThread(projectId: string, threadId: stri
   return unwrap(await backendApi.get<{ thread: ArtifactCommentThread }>(`/workspaces/${projectId}/artifact-comment-threads/${threadId}`)).thread;
 }
 
+/**
+ * Comment writes throw their failure and never report it to `onError`: the caller already shows
+ * it (beside the composer, or as one toast). A global toast as well reported each failure twice.
+ */
+const CALLER_SHOWS_ERRORS = { showErrors: false } as const;
+
 export async function createArtifactComment(projectId: string, artifactId: string, input: CreateArtifactCommentInput) {
-  return unwrap(await backendApi.post<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments`, input)).thread;
+  return unwrap(await backendApi.post<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments`, input, CALLER_SHOWS_ERRORS)).thread;
 }
 
 export async function replyArtifactComment(projectId: string, artifactId: string, threadId: string, input: ReplyArtifactCommentInput) {
-  return unwrap(await backendApi.post<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/replies`, input)).comment;
+  return unwrap(await backendApi.post<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/replies`, input, CALLER_SHOWS_ERRORS)).comment;
 }
 
 export async function setArtifactCommentStatus(projectId: string, artifactId: string, threadId: string, status: ArtifactCommentStatus) {
-  return unwrap(await backendApi.patch<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments/${threadId}`, { status })).thread;
+  return unwrap(await backendApi.patch<{ thread: ArtifactCommentThread }>(`${base(projectId)}/${artifactId}/comments/${threadId}`, { status }, CALLER_SHOWS_ERRORS)).thread;
 }
 
 export async function editArtifactComment(projectId: string, artifactId: string, threadId: string, commentId: string, input: ArtifactCommentBodyInput) {
-  return unwrap(await backendApi.patch<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/${commentId}`, input)).comment;
+  return unwrap(await backendApi.patch<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/${commentId}`, input, CALLER_SHOWS_ERRORS)).comment;
 }
 
 export async function deleteArtifactComment(projectId: string, artifactId: string, threadId: string, commentId: string) {
-  return unwrap(await backendApi.delete<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/${commentId}`)).comment;
+  return unwrap(await backendApi.delete<{ comment: ArtifactComment }>(`${base(projectId)}/${artifactId}/comments/${threadId}/${commentId}`, CALLER_SHOWS_ERRORS)).comment;
 }
 
 export async function listArtifactActivity(projectId: string, artifactId: string, options: { limit?: number; cursor?: string } = {}) {
@@ -427,7 +433,7 @@ export async function listArtifactActivity(projectId: string, artifactId: string
 /** Send selected threads. A newly reserved session stays pending until its queued creation completes. */
 export async function sendArtifactComments(projectId: string, artifactId: string, input: SendArtifactCommentsInput) {
   const body = { ...input, batch_id: input.batch_id ?? crypto.randomUUID() };
-  return unwrap(await backendApi.post<SendArtifactCommentsResult>(`${base(projectId)}/${artifactId}/comments/send`, body));
+  return unwrap(await backendApi.post<SendArtifactCommentsResult>(`${base(projectId)}/${artifactId}/comments/send`, body, CALLER_SHOWS_ERRORS));
 }
 
 function query(params: Record<string, string | number | undefined>): string {

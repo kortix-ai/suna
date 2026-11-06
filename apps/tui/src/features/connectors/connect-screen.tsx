@@ -14,7 +14,7 @@
 import { buildLlmProviderCatalog, type LlmProviderCatalogSource } from '@kortix/sdk';
 import { useKeyboard } from '@opentui/react';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { kortix } from '../../kortix.ts';
 import { theme } from '../../theme.ts';
@@ -28,8 +28,8 @@ export interface ConnectScreenProps {
   focused: boolean;
   width: number;
   /** `/connect <query>`. */
-  query?: string;
-  onOpen(screen: 'providers' | 'connectors', target: string | null): void;
+  target?: string | null;
+  onOpenScreen?(screen: 'providers' | 'connectors', target: string | null): void;
 }
 
 export const CONNECT_CHOICES = [
@@ -47,7 +47,17 @@ export const CONNECT_CHOICES = [
   },
 ];
 
-export function ConnectScreen({ projectId, focused, width, query, onOpen }: ConnectScreenProps) {
+export function ConnectScreen({
+  projectId,
+  focused,
+  width,
+  target: query,
+  onOpenScreen,
+}: ConnectScreenProps) {
+  const onOpen = useCallback(
+    (screen: 'providers' | 'connectors', target: string | null) => onOpenScreen?.(screen, target),
+    [onOpenScreen],
+  );
   const [cursor, setCursor] = useState(0);
   const q = query?.trim() ?? '';
   const providers = useQuery({

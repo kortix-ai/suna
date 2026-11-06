@@ -516,13 +516,17 @@ export interface AppImageRelease {
   pending: number;
 }
 
-/** Deletes the App, its runtimes, and every deployment image it built. */
+/**
+ * Deletes the App, its runtimes, and every deployment image it built. The
+ * project's triggers that name the App (its work triggers, the schedule that
+ * calls it) go with it: `triggers_removed` lists them.
+ */
 export async function deleteApp(
   projectId: string,
   appId: string,
-): Promise<{ ok: boolean; images?: AppImageRelease }> {
+): Promise<{ ok: boolean; images?: AppImageRelease; triggers_removed?: string[] }> {
   return unwrap(
-    await backendApi.delete<{ ok: boolean; images?: AppImageRelease }>(`/workspaces/${projectId}/apps/${appId}`),
+    await backendApi.delete<{ ok: boolean; images?: AppImageRelease; triggers_removed?: string[] }>(`/workspaces/${projectId}/apps/${appId}`),
     'Failed to delete App',
   );
 }
@@ -848,12 +852,13 @@ export interface AppTestEventResult extends AppEventIngestResult {
 /**
  * Send events as if the App posted them, through the same log, limits and
  * triggers, to prove the wiring. Every id starts with `test-`, so a real event
- * with the same id still fires later. Needs project.app.deploy.
+ * with the same id still fires later. `trigger`: only that trigger gets them,
+ * so testing one automation starts no other. Needs project.app.deploy.
  */
 export async function sendAppTestEvent(
   projectId: string,
   appId: string,
-  input: AppEventInput | { events: AppEventInput[] },
+  input: (AppEventInput | { events: AppEventInput[] }) & { trigger?: string },
 ): Promise<AppTestEventResult> {
   return unwrap(
     await backendApi.post<AppTestEventResult>(`/workspaces/${projectId}/apps/${appId}/events/test`, input),

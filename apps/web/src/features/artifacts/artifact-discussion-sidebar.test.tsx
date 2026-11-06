@@ -671,7 +671,7 @@ test('selection capture blocks only new comments and preserves the draft until t
   expect(replied).toBe(1);
   await render({ ...value, selectionCapture: 'failed' });
   expect(container.textContent).toContain(
-    'Could not prepare the selected passage. Discard it to leave a whole-Artifact comment.',
+    'Could not prepare the selected passage. Discard it to leave a comment on the whole artifact.',
   );
   expect(input.value).toBe('Keep this draft');
   expect(button('Comment').disabled).toBe(true);

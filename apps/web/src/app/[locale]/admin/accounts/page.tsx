@@ -6,6 +6,7 @@ import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useLocale, useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ACCOUNT_PANEL_PARAM } from '@kortix/ui/internal/stores/account-panel-store';
 import { creditsToDollars, dollarsToCredits, formatUsdAsCredits } from '@kortix/shared';
+import { CREDIT_ACCOUNT_PAYMENT_STATUSES, type CreditAccountPaymentStatus } from '@kortix/sdk';
 import {
   ArrowDownRightIcon as ArrowDownRight,
   ArrowUpRightIcon as ArrowUpRight,
@@ -138,14 +139,18 @@ const TIER_LABELS: Record<string, string> = Object.fromEntries(
   TIER_OPTIONS.map((t) => [t.value, t.label]),
 );
 
-const PAYMENT_STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: 'active', label: 'Active' },
-  { value: 'past_due', label: 'Past due' },
-  { value: 'canceled', label: 'Canceled' },
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'incomplete', label: 'Incomplete' },
-  { value: 'trialing', label: 'Trialing' },
-];
+/** One label per `credit_accounts.payment_status` value the API stores (`CREDIT_ACCOUNT_PAYMENT_STATUSES`). */
+const PAYMENT_STATUS_LABELS: Record<CreditAccountPaymentStatus, string> = {
+  active: 'Active',
+  cancelling: 'Cancelling',
+  past_due: 'Past due',
+  failed: 'Failed',
+  deleted: 'Deleted',
+};
+
+const PAYMENT_STATUS_OPTIONS: { value: CreditAccountPaymentStatus; label: string }[] = CREDIT_ACCOUNT_PAYMENT_STATUSES.map(
+  (value) => ({ value, label: PAYMENT_STATUS_LABELS[value] }),
+);
 
 /** A held USD amount (balance, bucket) in credits: `86,815` (1 credit = $0.01). */
 function formatCredits(value: string | number | null | undefined, locale?: string) {
@@ -374,21 +379,17 @@ function LiveSubscriptionLine({ accountId }: { accountId: string }) {
   );
 }
 
+const PAYMENT_STATUS_BADGES: Record<CreditAccountPaymentStatus, React.ComponentProps<typeof Badge>['variant']> = {
+  active: 'success',
+  cancelling: 'warning',
+  past_due: 'warning',
+  failed: 'destructive',
+  deleted: 'muted',
+};
+
 function paymentStatusBadge(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
-  if (!status) return 'muted';
-  switch (status) {
-    case 'active':
-    case 'trialing':
-      return 'success';
-    case 'past_due':
-    case 'incomplete':
-      return 'warning';
-    case 'canceled':
-    case 'unpaid':
-      return 'destructive';
-    default:
-      return 'muted';
-  }
+  // A value outside the set comes from a row written before it existed.
+  return status && status in PAYMENT_STATUS_BADGES ? PAYMENT_STATUS_BADGES[status as CreditAccountPaymentStatus] : 'muted';
 }
 
 type AccountFilters = Required<

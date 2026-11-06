@@ -6,6 +6,7 @@ import {
   openSessionControlStream,
   openSessionStream,
   sessionStreamConnected,
+  sessionStreamEnded,
   sessionStreamEventClient,
   subscribeSessionStreamConnections,
 } from './control-stream';
@@ -552,4 +553,117 @@ test('schema v2 needs the runtime channel: a control-only connection does not se
   await tick();
   expect(connections[0]!.url).toBe('http://backend.test/v1/workspaces/p1/sessions/s1/events?channels=control');
   log.close();
+});
+
+// ── Terminal ends: access loss is not a transient failure ─────────────────────
+
+function refusingTransport(status: number, counter: { attempts: number }) {
+  // eslint-disable-next-line require-yield
+  return async function* () {
+    counter.attempts += 1;
+    throw Object.assign(new Error(`SSE failed: ${status}`), { status });
+  };
+}
+
+for (const [status, reason] of [
+  [403, 'forbidden'],
+  [404, 'not_found'],
+] as const) {
+  test(`a ${status} ends the stream at once as ${reason}: no retry, the host is told`, async () => {
+    const counter = { attempts: 0 };
+    configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok', eventStreamTransport: refusingTransport(status, counter) });
+    const ends: unknown[] = [];
+    let told = 0;
+    const unsubscribe = subscribeSessionStreamConnections(() => (told += 1));
+    const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, onEnded: (end) => ends.push(end), timing: TIMING });
+    await tick(60);
+    expect(counter.attempts).toBe(1);
+    expect(ends).toEqual([expect.objectContaining({ reason, status })]);
+    expect(stream.ended()).toEqual(expect.objectContaining({ reason, status }));
+    expect(sessionStreamEnded('p1', 's1')).toEqual(expect.objectContaining({ reason }));
+    expect(told).toBeGreaterThanOrEqual(1);
+    unsubscribe();
+    stream.close();
+  });
+}
+
+test('a 401 retries (a token refresh can fix it), and ends as unauthorized after five in a row', async () => {
+  const counter = { attempts: 0 };
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok', eventStreamTransport: refusingTransport(401, counter) });
+  const ends: unknown[] = [];
+  const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', onEnded: (end) => ends.push(end), timing: TIMING });
+  await tick(150);
+  expect(counter.attempts).toBe(5);
+  expect(ends).toEqual([expect.objectContaining({ reason: 'unauthorized', status: 401 })]);
+  stream.close();
+});
+
+test('kortix.stream.revoked ends the stream: disconnected, no reconnect, the host is told', async () => {
+  const ends: unknown[] = [];
+  const states: boolean[] = [];
+  const stream = openSessionStream({
+    projectId: 'p1',
+    sessionId: 's1',
+    runtime: true,
+    onEnded: (end) => ends.push(end),
+    onConnectionChange: (connected) => states.push(connected),
+    timing: TIMING,
+  });
+  await tick();
+  connections[0]!.push(hello);
+  connections[0]!.push({ channel: 'stream', type: 'kortix.stream.revoked', session_id: 's1', at: 1 });
+  connections[0]!.end();
+  await tick(60);
+  expect(connections).toHaveLength(1);
+  expect(states).toEqual([true, false]);
+  expect(ends).toEqual([expect.objectContaining({ reason: 'revoked', status: null })]);
+  stream.close();
+});
+
+test('an ended session stream opens again for a new subscriber, and the end is forgotten', async () => {
+  const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  await tick();
+  connections[0]!.push({ channel: 'stream', type: 'kortix.stream.revoked', session_id: 's1', at: 1 });
+  await tick(30);
+  expect(sessionStreamEnded('p1', 's1')).not.toBeNull();
+  stream.close();
+  const again = openSessionStream({ projectId: 'p1', sessionId: 's1', timing: TIMING });
+  await tick();
+  expect(connections).toHaveLength(2);
+  expect(sessionStreamEnded('p1', 's1')).toBeNull();
+  again.close();
+});
+
+test('the server authority lapses when kortix.control.session stops arriving: the polls come back', async () => {
+  const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, timing: { ...TIMING, livenessMs: 10_000, authorityMs: 40 } });
+  await tick();
+  connections[0]!.push(hello);
+  connections[0]!.push(sessionFrame(1));
+  await tick();
+  expect(sessionStreamConnected('p1', 's1')).toBe(true);
+  // Heartbeats keep the connection, but no session frame re-proves the authority.
+  for (let i = 0; i < 4; i += 1) {
+    await tick(15);
+    connections[0]!.push(heartbeat);
+  }
+  await tick(5);
+  expect(sessionStreamConnected('p1', 's1')).toBe(false);
+  connections[0]!.push(sessionFrame(2));
+  await tick();
+  expect(sessionStreamConnected('p1', 's1')).toBe(true);
+  stream.close();
+});
+
+test('a runtime status frame that carries parked hands it over; one without it does not invent it', async () => {
+  const statuses: unknown[] = [];
+  const stream = openSessionStream({ projectId: 'p1', sessionId: 's1', runtime: true, onRuntimeStatus: (s) => statuses.push(s), timing: TIMING });
+  await tick();
+  connections[0]!.push({ channel: 'stream', type: 'kortix.runtime.status', state: 'down', reason: 'box_paused', parked: true });
+  connections[0]!.push({ channel: 'stream', type: 'kortix.runtime.status', state: 'down', reason: 'daemon_503' });
+  await tick();
+  expect(statuses).toEqual([
+    { state: 'down', reason: 'box_paused', parked: true },
+    { state: 'down', reason: 'daemon_503' },
+  ]);
+  stream.close();
 });

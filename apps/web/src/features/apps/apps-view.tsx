@@ -154,7 +154,12 @@ export function AppsView({
       // Private window or blocked storage: the choice lasts until reload.
     }
   };
-  const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
+  // `?app=` takes the id or the slug: a trigger run links to its App by slug.
+  const openApp = apps.data?.find((item) => item.app_id === openAppId)
+    ?? apps.data?.find((item) => item.slug === openAppId)
+    ?? null;
+  // `?event=<id>`: the App's log opens on that one event (a trigger run's link).
+  const focusEventId = searchParams.get('event');
   // Agent scope: the per-App grant control. The grant stores slugs
   // (`appGrantRows`). An App whose access mode admits agents without it is
   // still grantable, and its card says so.
@@ -183,7 +188,10 @@ export function AppsView({
     const url = new URL(window.location.href);
     if ((url.searchParams.get('app') ?? null) === urlAppId) return;
     if (urlAppId) url.searchParams.set('app', urlAppId);
-    else url.searchParams.delete('app');
+    else {
+      url.searchParams.delete('app');
+      url.searchParams.delete('event');
+    }
     window.history.replaceState(window.history.state, '', url);
   }, [urlAppId]);
 
@@ -268,6 +276,7 @@ export function AppsView({
           canWrite={canWrite}
           canDeploy={canDeploy}
           canAdmin={canAdmin}
+          focusEventId={focusEventId}
           open
           onOpenChange={(next) => {
             if (!next) setOpenAppId(null);

@@ -2,7 +2,7 @@
 
 import { getPublicArtifact, type ArtifactDetail } from '@kortix/sdk';
 import { useArtifact } from '@kortix/sdk/react';
-import { ArrowSquareOut, BrowserIcon, ChatCircleIcon, FileTextIcon, X } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, BrowserIcon, ChatCircleIcon, FileTextIcon, XIcon } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 
 import { useTranslations } from '../i18n';
@@ -10,6 +10,7 @@ import { useLocalizedUiCatalog } from '../i18n/ui-catalog/use-localized-ui-catal
 import { Button } from '../primitives/button';
 import { CountBadge } from '../primitives/count-badge';
 import Hint from '../primitives/hint';
+import { Skeleton } from '../primitives/skeleton';
 import { useUiComponents, useUiRouter } from '../providers/ui-provider';
 import { ArtifactFrame } from './artifact-frame';
 import { artifactFrameKey, parseArtifactUrl } from './frame-policy';
@@ -116,9 +117,18 @@ export function ShowArtifactCard({ url, fallback }: { url: string; fallback: Rea
           <Icon className="text-muted-foreground size-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="text-foreground block truncate text-sm font-medium">{artifact?.title ?? ' '}</span>
+          {/* While the detail loads, lines in the shape of the title and the type: never a blank card. */}
+          {artifact ? (
+            <span className="text-foreground block truncate text-sm font-medium">{artifact.title}</span>
+          ) : (
+            <Skeleton className="my-0.5 h-4 w-40 max-w-full" />
+          )}
           <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <span>{artifact ? (artifact.type === 'doc' ? copy.doc : copy.page) : ' '}</span>
+            {artifact ? (
+              <span>{artifact.type === 'doc' ? copy.doc : copy.page}</span>
+            ) : (
+              <Skeleton className="my-0.5 h-3 w-16" />
+            )}
             {artifact?.openThreads ? (
               <CountBadge
                 count={artifact.openThreads}
@@ -162,13 +172,13 @@ function ArtifactPagePreview({ url, onClose }: { url: string; onClose: () => voi
         {artifact?.href ? (
           <Hint label={copy.openArtifact} side="bottom">
             <Button size="icon-sm" variant="ghost" aria-label={copy.openArtifact} onClick={() => router.push(artifact.href!)}>
-              <ArrowSquareOut className="size-3.5" />
+              <ArrowSquareOutIcon className="size-3.5" />
             </Button>
           </Hint>
         ) : null}
         <Hint label={copy.close} side="bottom">
           <Button size="icon-sm" variant="ghost" aria-label={copy.close} onClick={onClose}>
-            <X className="size-3.5" />
+            <XIcon className="size-3.5" />
           </Button>
         </Hint>
       </div>

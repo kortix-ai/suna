@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
   SERVER_WORKING_SEND_GRACE_MS,
+  SERVER_WORKING_VERDICT_MAX_MS,
   projectServerWorking,
   serverWorkingExpiryAtMs,
+  serverWorkingVerdictFresh,
 } from './working-server';
 
 const NOW = 1_000_000;
@@ -96,5 +98,21 @@ describe('serverWorkingExpiryAtMs', () => {
       abort: null,
     });
     expect(at).toBe(NOW + 10 + SERVER_WORKING_SEND_GRACE_MS);
+  });
+});
+
+describe('the server verdict has a maximum age', () => {
+  // The server re-sends an unchanged turn frame every 20 s. A connected stream
+  // that stops sending them must not hold "working" (and the Stop button) forever.
+  test('a verdict decides while the server keeps re-sending it, and not past three missed frames', () => {
+    expect(SERVER_WORKING_VERDICT_MAX_MS).toBe(60_000);
+    expect(serverWorkingVerdictFresh(NOW - 59_999, NOW)).toBe(true);
+    expect(serverWorkingVerdictFresh(NOW - 60_000, NOW)).toBe(false);
+    expect(serverWorkingVerdictFresh(undefined, NOW)).toBe(false);
+  });
+
+  test('the hook re-projects the moment the verdict ages out, with no receipt open', () => {
+    expect(serverWorkingExpiryAtMs({ optimistic: null, abort: null, atMs: NOW })).toBe(NOW + SERVER_WORKING_VERDICT_MAX_MS);
+    expect(serverWorkingExpiryAtMs({ optimistic: null, abort: null })).toBeNull();
   });
 });

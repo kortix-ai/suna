@@ -19,7 +19,7 @@ import { ApiError, type App, type AppEvent, type AppEventStatus, type ProjectTri
 import { useAppEvents, useSendAppTestEvent } from '@kortix/sdk/react';
 import { ArrowSquareOutIcon, BroadcastIcon, PaperPlaneTiltIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { UiTranslator } from '@/i18n/translator';
 
@@ -27,6 +27,8 @@ import type { UiTranslator } from '@/i18n/translator';
 const SHOWN = 20;
 /** Rows read to count the last 24 hours. */
 const COUNTED = 100;
+/** One event reaches at most this many triggers' rows. */
+const FOCUS_LIMIT = 50;
 const DAY_MS = 24 * 60 * 60_000;
 
 /** One hue per outcome (kortix-brand color.md, status table); the words stay ink. */
@@ -69,8 +71,14 @@ export function appSilentSince(app: App, triggers: ProjectTrigger[]): string | n
   return stamps.length ? stamps.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null;
 }
 
+/** The earliest open crash alert on the App's triggers: the always-on App is down past its restart budget. Null when none. */
+export function appCrashedSince(app: App, triggers: ProjectTrigger[]): string | null {
+  const stamps = appTriggers(app, triggers).startsOn.flatMap((trigger) => (trigger.crashed_since ? [trigger.crashed_since] : []));
+  return stamps.length ? stamps.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null;
+}
+
 /** "14:02", or the date and time when it is not today. */
-function clockTime(iso: string, locale: string): string {
+export function clockTime(iso: string, locale: string): string {
   const at = new Date(iso);
   const today = at.toDateString() === new Date().toDateString();
   return today
@@ -79,15 +87,24 @@ function clockTime(iso: string, locale: string): string {
 }
 
 /**
- * The overview's "Last event" fact: when the App last posted, or since when it
- * has been silent past a trigger's `expect_event_within`. Null for an App no
- * trigger listens to.
+ * The overview's "Last event" fact: when the App last posted, since when it
+ * has been down past its restart budget, or since when it has been silent
+ * past a trigger's `expect_event_within`. Null for an App no trigger listens to.
  */
 export function LastEventFact({ app, triggers }: { app: App; triggers: ProjectTrigger[] }): ReactNode {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
   if (appTriggers(app, triggers).startsOn.length === 0) return null;
   const last = appLastEventAt(app, triggers);
+  const crashed = appCrashedSince(app, triggers);
+  if (crashed) {
+    return (
+      <span className="flex items-center gap-2">
+        <span aria-hidden className="bg-kortix-red size-1.5 shrink-0 rounded-full" />
+        {t('text1ade727f7313', { value0: clockTime(crashed, locale) })}
+      </span>
+    );
+  }
   const silent = appSilentSince(app, triggers);
   if (silent) {
     return (
@@ -106,11 +123,28 @@ export function LastEventFact({ app, triggers }: { app: App; triggers: ProjectTr
  * test event that takes the real path. The App's own `kortix apps events`
  * reads further back.
  */
-export function AppEventsSection({ projectId, app, triggers }: { projectId: string; app: App; triggers: ProjectTrigger[] }) {
+export function AppEventsSection({
+  projectId,
+  app,
+  triggers,
+  focusEventId = null,
+}: {
+  projectId: string;
+  app: App;
+  triggers: ProjectTrigger[];
+  /** Show only this event's rows (a trigger run's link) until the reader asks for all. */
+  focusEventId?: string | null;
+}) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
-  const events = useAppEvents(projectId, app.app_id, { limit: COUNTED });
+  const [focus, setFocus] = useState<string | null>(focusEventId);
+  const events = useAppEvents(projectId, app.app_id, { limit: focus ? FOCUS_LIMIT : COUNTED, id: focus });
   const [testOpen, setTestOpen] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  // A link to one event lands on it: the section scrolls into view once.
+  useEffect(() => {
+    if (focusEventId) sectionRef.current?.scrollIntoView({ block: 'start' });
+  }, [focusEventId]);
   // A viewer without the operations view gets 403: the section is not theirs.
   if (events.error instanceof ApiError && events.error.status === 403) return null;
 
@@ -122,7 +156,7 @@ export function AppEventsSection({ projectId, app, triggers }: { projectId: stri
   const started = recent.filter((row) => row.status === 'fired').length;
 
   return (
-    <section className="space-y-3" aria-labelledby="app-events-title">
+    <section ref={sectionRef} className="space-y-3 scroll-mt-4" aria-labelledby="app-events-title">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <h2 id="app-events-title" className="text-foreground text-sm font-medium">
@@ -159,6 +193,26 @@ export function AppEventsSection({ projectId, app, triggers }: { projectId: stri
             </Button>
           }
         />
+      ) : focus ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-muted-foreground min-w-0 truncate text-xs">
+              {t('text8521b7841a0c', { value0: focus })}
+            </p>
+            <Button variant="ghost" size="xs" className="text-muted-foreground shrink-0 text-xs" onClick={() => setFocus(null)}>
+              {t.raw('textbede9e3c96af')}
+            </Button>
+          </div>
+          {rows.length === 0 ? (
+            <p className="text-muted-foreground text-xs">{t.raw('text216e5ffc0e54')}</p>
+          ) : (
+            <ul className="divide-border divide-y overflow-hidden rounded-md border">
+              {rows.map((row) => (
+                <EventRow key={row.log_id} projectId={projectId} row={row} locale={locale} t={t} initialOpen />
+              ))}
+            </ul>
+          )}
+        </div>
       ) : rows.length === 0 ? (
         <EmptyState
           media={<EmptyArt icon={BroadcastIcon} />}
@@ -201,8 +255,21 @@ function defaultEventName(app: App, triggers: ProjectTrigger[]): string {
   return 'status.changed';
 }
 
-function EventRow({ projectId, row, locale, t }: { projectId: string; row: AppEvent; locale: string; t: UiTranslator }) {
-  const [open, setOpen] = useState(false);
+function EventRow({
+  projectId,
+  row,
+  locale,
+  t,
+  initialOpen = false,
+}: {
+  projectId: string;
+  row: AppEvent;
+  locale: string;
+  t: UiTranslator;
+  /** Start expanded: the one event a link opened. */
+  initialOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(initialOpen);
   const reason = row.status === 'suppressed'
     ? t.raw('text4e18ffd436f1')
     : row.reason;

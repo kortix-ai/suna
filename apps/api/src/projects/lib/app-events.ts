@@ -10,9 +10,10 @@
  * App posted and why nothing ran. Unmatched rows never fire, and they do not
  * spend the event's id: a trigger added later still fires on a retry.
  */
-import { projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
-import { and, desc, eq, gte, inArray, lt, ne, or, sql } from 'drizzle-orm';
+import { apps, projectMonitorEvents, projectTriggerRuntime } from '@kortix/db';
+import { and, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
 import { MONITOR_INGEST_MAX_EVENTS, MONITOR_RATE_WINDOW_MS, truncateMonitorLine, type ParsedMonitorEvent } from './monitor-events';
@@ -36,13 +37,32 @@ const EVENT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 export const HEARTBEAT_EVENT_NAME = 'kortix.heartbeat';
 const RESERVED_PREFIX = 'kortix.';
 
+/**
+ * Events Kortix writes about an App, so an agent can repair it:
+ * - `kortix.app.silent`: a trigger's `expect_event_within` passed with no event;
+ * - `kortix.app.recovered`: the App posted again, or its machine runs again;
+ * - `kortix.app.crashed`: an always-on App's process stopped 3 times in an hour.
+ * One reaches only a `type: app` trigger whose event is that exact name
+ * (`on: { event: kortix.app.silent, app: <slug> }`), never `event: "*"`, and
+ * it never counts as the App posting.
+ */
+export const APP_PLATFORM_EVENTS = ['kortix.app.silent', 'kortix.app.recovered', 'kortix.app.crashed'] as const;
+export type AppPlatformEventName = (typeof APP_PLATFORM_EVENTS)[number];
+
+export function isAppPlatformEvent(name: string): name is AppPlatformEventName {
+  return (APP_PLATFORM_EVENTS as readonly string[]).includes(name);
+}
+
 /** The slug of an `unmatched` row: no trigger slug is empty. */
 export const UNMATCHED_SLUG = '';
 /** Unmatched events kept per App in a trailing hour. Past it they are counted, not stored. */
 export const UNMATCHED_KEPT_PER_HOUR = 60;
 
-/** Validate a POST body: one event object, or `{ events: [...] }`. */
-export function parseAppEventsBody(body: Record<string, unknown>): AppEventInput[] | { error: string } {
+/**
+ * Validate a POST body: one event object, or `{ events: [...] }`. With
+ * `platform`, the test route's option, a `kortix.app.*` name is allowed too.
+ */
+export function parseAppEventsBody(body: Record<string, unknown>, options: { platform?: boolean } = {}): AppEventInput[] | { error: string } {
   const list = Array.isArray(body.events) ? body.events : [body];
   if (list.length === 0) return { error: 'events must contain at least one event' };
   if (list.length > MONITOR_INGEST_MAX_EVENTS) return { error: `send at most ${MONITOR_INGEST_MAX_EVENTS} events per request` };
@@ -54,7 +74,7 @@ export function parseAppEventsBody(body: Record<string, unknown>): AppEventInput
     if (typeof name !== 'string' || !EVENT_NAME_RE.test(name)) {
       return { error: `${at}name must be 1-128 characters: letters, digits and . _ : / -, starting with a letter or digit` };
     }
-    if (name.startsWith(RESERVED_PREFIX) && name !== HEARTBEAT_EVENT_NAME) {
+    if (name.startsWith(RESERVED_PREFIX) && name !== HEARTBEAT_EVENT_NAME && !(options.platform && isAppPlatformEvent(name))) {
       return { error: `${at}name: names starting with "kortix." are reserved; an App sends only "${HEARTBEAT_EVENT_NAME}"` };
     }
     if (data !== undefined && (!data || typeof data !== 'object' || Array.isArray(data))) {
@@ -122,6 +142,8 @@ export async function ingestAppEvents(input: {
   events: readonly AppEventInput[];
   /** Sent through the test route: the events must already carry `test-` ids (asTestEvents). */
   test?: boolean;
+  /** The test route's `trigger`: only this trigger gets the events, so a test of one automation starts no other. */
+  only?: string;
   now?: Date;
 }): Promise<AppEventIngestResult> {
   const now = input.now ?? new Date();
@@ -134,20 +156,27 @@ export async function ingestAppEvents(input: {
     })
     .from(projectTriggerRuntime)
     .where(and(eq(projectTriggerRuntime.projectId, input.projectId), eq(projectTriggerRuntime.triggerType, 'app')));
-  const named = rows.filter((row) => (row.scheduleSpec as { app?: string } | null)?.app === input.appSlug);
-  const slugs = named.filter((row) => row.enabled !== false).map((row) => row.slug);
+  // A trigger on a kortix.app.* name hears only Kortix (emitAppPlatformEvent): an App's own event never matches it.
+  const named = rows.filter((row) => {
+    const spec = row.scheduleSpec as { app?: string; filter?: Record<string, unknown> | null } | null;
+    const event = spec?.filter?.['event.name'];
+    return spec?.app === input.appSlug && !(typeof event === 'string' && isAppPlatformEvent(event));
+  });
+  const slugs = named.filter((row) => row.enabled !== false && (!input.only || row.slug === input.only)).map((row) => row.slug);
   const heartbeats = input.events.filter((event) => event.name === HEARTBEAT_EVENT_NAME).length;
   if (heartbeats > 0) {
     const events = input.events.filter((event) => event.name !== HEARTBEAT_EVENT_NAME);
     const rest = events.length > 0 ? await ingestAppEvents({ ...input, events }) : null;
     if (!rest && input.test !== true && slugs.length > 0) {
       const silent = named.filter((row) => row.enabled !== false && row.alertSource === 'silence').map((row) => row.slug);
-      await markAppTriggersHeard(input.projectId, slugs, silent, now);
+      await markAppTriggersHeard(input.projectId, input.appSlug, slugs, silent, now);
     }
     return { ...(rest ?? { accepted: 0, deduped: 0, suppressed: 0, triggers: slugs.length, unmatched: 0 }), heartbeats };
   }
   if (slugs.length === 0) {
-    const reason = unmatchedReason(input.appSlug, named.map((row) => row.slug));
+    const reason = input.only
+      ? `trigger "${input.only}" does not listen to App "${input.appSlug}", or it is disabled: kortix triggers ls`
+      : unmatchedReason(input.appSlug, named.map((row) => row.slug));
     const kept = await keepUnmatchedEvents({ ...input, test: input.test === true, now, reason });
     return { accepted: 0, deduped: kept.deduped, suppressed: 0, triggers: 0, unmatched: input.events.length, hint: reason };
   }
@@ -163,7 +192,7 @@ export async function ingestAppEvents(input: {
   // content id while nothing changes). A test event is not the App speaking.
   if (input.test !== true) {
     const silent = named.filter((row) => row.enabled !== false && row.alertSource === 'silence').map((row) => row.slug);
-    await markAppTriggersHeard(input.projectId, slugs, silent, now);
+    await markAppTriggersHeard(input.projectId, input.appSlug, slugs, silent, now);
   }
   return { ...result, triggers: slugs.length, unmatched: 0 };
 }
@@ -171,17 +200,92 @@ export async function ingestAppEvents(input: {
 /**
  * Stamp `last_event_at` on the triggers an App just posted to, so the silence
  * check (app-trigger-silence.ts) knows the App is alive, and end the silence
- * alert of each that had one. Never throws: the events are already stored.
+ * alert of each that had one, with `kortix.app.recovered` for a repair
+ * trigger. Never throws: the events are already stored.
  */
-async function markAppTriggersHeard(projectId: string, slugs: readonly string[], silent: readonly string[], now: Date): Promise<void> {
+async function markAppTriggersHeard(projectId: string, appSlug: string, slugs: readonly string[], silent: readonly string[], now: Date): Promise<void> {
   try {
     await db
       .update(projectTriggerRuntime)
       .set({ lastEventAt: now })
       .where(and(eq(projectTriggerRuntime.projectId, projectId), inArray(projectTriggerRuntime.slug, [...slugs])));
-    for (const slug of silent) await clearTriggerAlert({ projectId, slug, source: 'silence' });
+    for (const slug of silent) {
+      if (!(await clearTriggerAlert({ projectId, slug, source: 'silence' }))) continue;
+      await emitAppPlatformEvent({
+        projectId, appSlug, name: 'kortix.app.recovered', id: `recovered:${slug}:${now.getTime()}`,
+        data: { trigger: slug, cause: 'silence' }, now,
+      });
+    }
   } catch {
     // The next event stamps it again.
+  }
+}
+
+export interface AppPlatformEventResult extends MonitorIngestResult {
+  /** Enabled triggers whose event is this exact name. */
+  triggers: number;
+  /** 1 when no trigger listens (kept as `unmatched`, so the App's log still shows it). */
+  unmatched: number;
+  hint?: string;
+}
+
+/**
+ * Write a platform event (`APP_PLATFORM_EVENTS`) to the App's log: one row per
+ * enabled trigger whose event is this exact name, then the usual limits and
+ * drain. With none, one `unmatched` row records it. It never stamps
+ * `last_event_at`: Kortix speaking about the App is not the App speaking.
+ * `id` makes one episode one event. Never throws; null when the App is gone.
+ */
+export async function emitAppPlatformEvent(input: {
+  projectId: string;
+  appSlug: string;
+  name: AppPlatformEventName;
+  id: string;
+  data: Record<string, unknown>;
+  /** From the test route: the id must already start with `test-`. */
+  test?: boolean;
+  /** The test route's `trigger`: only this trigger gets it. */
+  only?: string;
+  now?: Date;
+}): Promise<AppPlatformEventResult | null> {
+  const now = input.now ?? new Date();
+  try {
+    const [app] = await db
+      .select({ appId: apps.appId })
+      .from(apps)
+      .where(and(eq(apps.projectId, input.projectId), eq(apps.slug, input.appSlug), isNull(apps.deletedAt)))
+      .limit(1);
+    if (!app) return null;
+    const rows = await db
+      .select({ slug: projectTriggerRuntime.slug, enabled: projectTriggerRuntime.enabled, scheduleSpec: projectTriggerRuntime.scheduleSpec })
+      .from(projectTriggerRuntime)
+      .where(and(eq(projectTriggerRuntime.projectId, input.projectId), eq(projectTriggerRuntime.triggerType, 'app')));
+    const slugs = rows
+      .filter((row) => {
+        const spec = row.scheduleSpec as { app?: string; filter?: Record<string, unknown> | null } | null;
+        return row.enabled !== false && spec?.app === input.appSlug && spec.filter?.['event.name'] === input.name
+          && (!input.only || row.slug === input.only);
+      })
+      .map((row) => row.slug);
+    const event: AppEventInput = { name: input.name, data: input.data, id: input.id };
+    if (slugs.length === 0) {
+      const hint = input.only
+        ? `trigger "${input.only}" does not listen to ${input.name} on App "${input.appSlug}", or it is disabled: kortix triggers ls`
+        : `no trigger listens to ${input.name} on App "${input.appSlug}": add one with on: { event: ${input.name}, app: ${input.appSlug} } to start a repair agent`;
+      const kept = await keepUnmatchedEvents({ projectId: input.projectId, appId: app.appId, events: [event], test: input.test === true, now, reason: hint });
+      return { accepted: 0, deduped: kept.deduped, suppressed: 0, triggers: 0, unmatched: 1, hint };
+    }
+    const line = { ...eventLine(event, input.test === true), platform: true };
+    const result = await ingestMonitorEvents({
+      projectId: input.projectId,
+      boxEpoch: `app:${app.appId}`,
+      events: slugs.map((slug) => ({ slug, seq: eventSeq(input.id), kind: 'event' as const, line, emittedAt: now })),
+      now,
+    });
+    return { ...result, triggers: slugs.length, unmatched: 0 };
+  } catch (error) {
+    logger.warn('[app-events] platform event failed', { projectId: input.projectId, app: input.appSlug, name: input.name, error: String(error) });
+    return null;
   }
 }
 

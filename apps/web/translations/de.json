@@ -16681,6 +16681,12 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Vollständige Genehmigungsseite öffnen",
       "textb7ddab3f7df8": "{value0} und jede Laufzeit löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
+      "text9c583fa19f1a": "Seine Trigger werden mitgelöscht: {value0}.",
+      "text648f297b3b79": "In der App anzeigen",
+      "text8521b7841a0c": "Ein Ereignis: {value0}",
+      "textbede9e3c96af": "Alle Ereignisse anzeigen",
+      "text216e5ffc0e54": "Dieses Ereignis ist nicht im Protokoll der letzten 30 Tage.",
+      "text1ade727f7313": "Ausgefallen seit {value0}. Kortix startet sie nicht mehr neu.",
       "textb7de71558bf4": "Ausgewählte Connectors lösen dieses Secret auf dem Server auf. Die Sandbox erhält keinen Wert.",
       "textb7e29198fc4e": "{value0}-Schlüssel entfernt",
       "textb7ef1459725d": "Das Konto konnte nicht sofort gelöscht werden",
@@ -21272,6 +21278,7 @@
       "text856bf8853b69": "Nutzung des Claude-Abonnements",
       "text116cd3982a9b": "Ziele",
       "textb0571ad96905": "ziele ziel zielsetzungen ergebnisse",
+      "text20d55e8c3373": "Wird gekündigt",
       "text2590cd62a747": "Workspace-Einstellungen",
       "text276261b1e03d": "workspace einstellungen organisationen teams verwalten",
       "text634ebc515b7f": "Workspace · API-Schlüssel",
@@ -23671,7 +23678,8 @@
       "missed_wake": "Der letzte Weckruf ist überfällig.",
       "ask_overdue": "Eine Anfrage ist überfällig.",
       "verification_stalled": "Die Prüfung läuft seit mehr als 24 Stunden.",
-      "unreadable": "GOAL.md fehlt oder hat keinen Front-Matter-Block mit dem Ziel."
+      "unreadable": "GOAL.md fehlt oder hat keinen Front-Matter-Block mit dem Ziel.",
+      "blocked": "Dieses Ziel kann nicht von selbst weitermachen."
     },
     "sessionChip": "Ziel",
     "sessionRole": {
@@ -24485,7 +24493,43 @@
     "restart": "Ziel erneut starten",
     "restartReason": "Von der Zielseite erneut gestartet",
     "restartedToast": "Ziel erneut gestartet",
-    "restartError": "Das Ziel konnte nicht erneut gestartet werden. Versuche es noch einmal."
+    "restartError": "Das Ziel konnte nicht erneut gestartet werden. Versuche es noch einmal.",
+    "noAccess": "Du hast keinen Zugriff auf dieses Ziel.",
+    "noAccessHint": "Bitte die Person, für die es ist, oder einen Projektadmin, es mit dir zu teilen.",
+    "notFoundHint": "Es wurde gelöscht, oder der Link ist falsch.",
+    "chooseGoal": "Mehrere Ziele haben diesen Namen. Wähle eines aus.",
+    "goalLoadError": "Dieses Ziel konnte nicht geladen werden. Versuche es erneut.",
+    "eventsLoadError": "Die Aktivität konnte nicht geladen werden.",
+    "changedToast": "Dieses Ziel hat sich vor deiner Aktion geändert. Die Seite zeigt den aktuellen Stand.",
+    "blockedTitle": "Blockiert",
+    "blocked": {
+      "credits": "Die Credits sind aufgebraucht, daher kann kein Durchlauf starten.",
+      "wake_cap": "Alle {max} Durchläufe für heute sind verbraucht.",
+      "session_cap": "Alle {max} Sitzungen, die es starten darf, sind verbraucht.",
+      "owner_lost": "Seine Agent-Sitzung ist fehlgeschlagen, und keine Sitzung hat übernommen.",
+      "storage": "Sein Ordner in Dateien konnte nicht gelesen oder geschrieben werden.",
+      "flag_off": "Ziele sind für dieses Projekt ausgeschaltet.",
+      "setup": "Kortix richtet es noch ein."
+    },
+    "blockedNext": {
+      "credits": "Lade Credits auf und setze es dann fort.",
+      "wake_cap": "Es geht nach Mitternacht UTC von selbst weiter.",
+      "session_cap": "Stoppe es, oder bitte einen Projektadmin, das Sitzungslimit zu erhöhen.",
+      "owner_lost": "Starte es erneut, um ihm eine neue Sitzung zu geben.",
+      "storage": "Prüfe den Ordner in Dateien und setze es dann fort.",
+      "flag_off": "Schalte Ziele für dieses Projekt ein und setze es dann fort.",
+      "setup": "Das erledigt sich innerhalb einer Minute von selbst."
+    },
+    "legacyUnverifiedTitle": "Nicht von Kortix geprüft",
+    "legacyUnverified": "Dieses Ziel wurde aus seinem Ordner importiert. Kortix hat das Ergebnis nicht geprüft.",
+    "verified": "Geprüft",
+    "reportedMet": "Als erfüllt gemeldet, noch nicht geprüft",
+    "reportedMetHint": "Der Agent meldet dies als erledigt. Die unabhängige Prüfung hat es noch nicht bestätigt.",
+    "verifiedCount": "{verified} von {total} geprüft",
+    "checkFailed": "Prüfung fehlgeschlagen: {note}",
+    "waitingOnPerson": "Wartet auf {person}",
+    "waitNoCost": "Während es auf eine Antwort wartet, laufen keine Prüfungen.",
+    "chaseAt": "Hakt {time} nach"
   },
   "agentEditor": {
     "manage": "Verwalten",
@@ -25079,7 +25123,7 @@
         "sent_to_agent": "hat Feedback an einen Agenten gesendet"
       },
       "person": "Person",
-      "deleteRootDescription": "Der Text wird für alle entfernt, und der Thread wird schreibgeschützt. Das lässt sich nicht rückgängig machen.",
+      "deleteRootDescription": "Sein Text wird für alle entfernt, und der Thread verschwindet aus der Kommentarliste. Das kann nicht rückgängig gemacht werden.",
       "showPanel": "Kommentare anzeigen",
       "hidePanel": "Kommentare ausblenden",
       "panelTitle": "Kommentare und Aktivität",
@@ -25122,7 +25166,16 @@
       "pagePinLabel": "Kommentar {number}",
       "showPanelCount": "Kommentare anzeigen, {count} offen",
       "hidePanelCount": "Kommentare ausblenden, {count} offen",
-      "commentSelectionHint": "Auswahl kommentieren"
+      "commentSelectionHint": "Auswahl kommentieren",
+      "threadReopened": "Thread wieder geöffnet",
+      "noCommentsReadOnlyHint": "Kommentare zu diesem Artefakt erscheinen hier.",
+      "commentTooLong": "Ein Kommentar darf höchstens {max} Zeichen haben. Entferne {over}.",
+      "discardDrawingTitle": "Diese Zeichnung verwerfen?",
+      "discardDrawingHint": "Deine Striche sind nicht gespeichert. Das kann nicht rückgängig gemacht werden.",
+      "discardDrawing": "Verwerfen",
+      "keepDrawing": "Weiterzeichnen",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "In Bereich verschieben",
     "projectWide": "Workspace-Weit",
@@ -25151,13 +25204,28 @@
       "writing": "{name} schreibt…"
     },
     "coedit": {
-      "offLarge": "Live-Bearbeitung ist aus: Dieses Dokument ist größer als 1 MiB. Änderungen werden beim Tippen gespeichert.",
-      "offLineEndings": "Live-Bearbeitung ist aus: Dieses Dokument mischt CRLF- und LF-Zeilenenden. Änderungen werden beim Tippen gespeichert.",
-      "offShape": "Live-Bearbeitung ist aus: Der Editor würde einen Teil des Markdowns umschreiben. Änderungen werden beim Tippen gespeichert.",
+      "offLarge": "Live-Bearbeitung ist aus: Dieses Dokument ist zu groß. Änderungen werden beim Tippen gespeichert.",
+      "offLineEndings": "Live-Bearbeitung ist aus: Dieses Dokument mischt zwei Arten von Zeilenumbrüchen. Änderungen werden beim Tippen gespeichert.",
+      "offShape": "Live-Bearbeitung ist aus: Der Editor kann einen Teil dieses Dokuments nicht genau so behalten, wie er geschrieben ist. Änderungen werden beim Tippen gespeichert.",
       "stoppedLarge": "Live-Bearbeitung beendet: Eine Änderung war zu groß zum Teilen. Änderungen werden beim Tippen gespeichert.",
       "stoppedFailed": "Live-Bearbeitung beendet: Die Verbindung ist fehlgeschlagen. Änderungen werden beim Tippen gespeichert.",
-      "stoppedHistory": "Live-Bearbeitung beendet: Der Bearbeitungsverlauf dieses Dokuments ist zu groß. Änderungen werden beim Tippen gespeichert."
-    }
+      "stoppedHistory": "Live-Bearbeitung beendet: Der Bearbeitungsverlauf dieses Dokuments ist zu groß. Änderungen werden beim Tippen gespeichert.",
+      "offFailed": "Live-Bearbeitung ist aus: Es konnte keine Verbindung hergestellt werden. Änderungen werden beim Tippen gespeichert."
+    },
+    "conflictTitle": "Jemand anderes hat dieses Dokument geändert",
+    "conflictReloadTitle": "Die neuere Version laden?",
+    "conflictReloadHint": "Deine Änderungen seit dem letzten Speichern werden verworfen. Das kann nicht rückgängig gemacht werden.",
+    "docLoadError": "Dieses Dokument konnte nicht geladen werden.",
+    "openError": "Dieses Artefakt konnte nicht geöffnet werden.",
+    "viewOnly": "Nur ansehen",
+    "viewingOldUndated": "Du siehst eine frühere Version.",
+    "exportWaiting": "Deine Änderungen werden gespeichert, dann exportiert…",
+    "exportBlocked": "Export abgebrochen: Deine letzten Änderungen sind nicht gespeichert.",
+    "clearFilters": "Filter zurücksetzen",
+    "linkCopyFailed": "Der Link konnte nicht kopiert werden. Markiere ihn im Feld und kopiere ihn.",
+    "shareDropsPeople": "{count, plural, one {Beim Speichern wird die hinzugefügte Person entfernt. Nur Privat behält eine Liste von Personen.} other {Beim Speichern werden die # hinzugefügten Personen entfernt. Nur Privat behält eine Liste von Personen.}}",
+    "askAgentHistoryError": "Frühere Chats konnten nicht geladen werden.",
+    "embedUnavailable": "Dieser Link hat keine Vorschau und bleibt ein Link."
   },
   "emailConnect": {
     "homeTitle": "Wo das Postfach liegt",

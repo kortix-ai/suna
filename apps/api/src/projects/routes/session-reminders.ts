@@ -25,6 +25,7 @@ import { triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers'
 import { logger } from '../../lib/logger';
 import { fireGitTrigger, markGitTriggerFired } from '../lib/trigger-fire';
 import type { GitTriggerSpec } from '../triggers';
+import { goalHeartbeatEditRefusal } from '../goals/admission';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -146,10 +147,18 @@ export async function createSessionTrigger(
   return { row: inserted.row };
 }
 
+/** 403 when a session credential touches a goal's heartbeat: the API alone manages it (G05). */
+async function goalHeartbeatGuard(c: Context<AppEnv>, access: ReminderAccess, reminderId: string) {
+  const refusal = await goalHeartbeatEditRefusal(access.projectId, reminderId, access.agentCaller);
+  return refusal ? c.json({ error: refusal, code: 'goal_heartbeat' }, 403) : null;
+}
+
 /** Pause or resume one session-target trigger. */
 export async function setReminderEnabledResponse(c: Context<AppEnv>, access: ReminderAccess, reminderId: string, enabled: boolean) {
   const row = await getSessionReminder(access.projectId, access.sessionId, reminderId);
   if (!row) return c.json({ error: 'Loop not found' }, 404);
+  const guarded = await goalHeartbeatGuard(c, access, row.slug);
+  if (guarded) return guarded;
   if (
     enabled &&
     !row.enabled &&
@@ -172,6 +181,8 @@ export async function runReminderResponse(c: Context<AppEnv>, access: ReminderAc
   const { projectId, loaded, visible, agentCaller } = access;
   const row = await getSessionReminder(projectId, access.sessionId, reminderId);
   if (!row) return c.json({ error: 'Loop not found' }, 404);
+  const guarded = await goalHeartbeatGuard(c, access, row.slug);
+  if (guarded) return guarded;
   await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName, undefined, visible.row.spaceId);
   const spec = row.scheduleSpec as unknown as GitTriggerSpec;
   const now = new Date();
@@ -197,6 +208,8 @@ export async function runReminderResponse(c: Context<AppEnv>, access: ReminderAc
 export async function deleteReminderResponse(c: Context<AppEnv>, access: ReminderAccess, reminderId: string) {
   const row = await getSessionReminder(access.projectId, access.sessionId, reminderId);
   if (!row) return c.json({ error: 'Loop not found' }, 404);
+  const guarded = await goalHeartbeatGuard(c, access, row.slug);
+  if (guarded) return guarded;
   await deleteSessionReminder(access.projectId, row.slug);
   return c.json({ ok: true }, 200);
 }

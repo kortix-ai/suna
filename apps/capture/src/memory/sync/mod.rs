@@ -1155,6 +1155,24 @@ fn record_audio_success(
 /// Upload due audio segments (one at a time: each is about 240 KB). A segment
 /// waits until its transcript is done so the manifest carries it. Err only for
 /// an error that stops the pass.
+/// A chunk whose local file is gone can never upload. Mark it deleted
+/// (`status = 2`, what retention writes when it removes a file) so it leaves
+/// the upload queue and the pending bytes that trip the `sync_backlog` gate.
+/// Before this, the row retried every ≤ 10 min forever and could stop
+/// recording through that gate. True when the row was retired.
+pub(crate) fn retire_if_file_gone(conn: &Connection, table: &str, id: i64, src: &Path, class: ErrorClass) -> bool {
+    if class != ErrorClass::Local || src.exists() {
+        return false;
+    }
+    debug_assert!(matches!(table, "video" | "audio"));
+    tracing::warn!(table, id, path = %src.display(), "sync: local file is gone; the chunk will not upload");
+    conn.execute(
+        &format!("UPDATE {table} SET status = 2, upload_error = 'local file is gone', upload_error_class = 'local', next_upload_at = NULL WHERE id = ?1"),
+        [id],
+    )
+    .is_ok()
+}
+
 pub fn upload_pending_audio(conn: &Connection, ctx: &Ctx, s: &SyncSettings) -> Result<UploadStats> {
     let now = now_ms();
     let cutoff = if s.remote_retention_days > 0 {
@@ -1207,6 +1225,9 @@ pub fn upload_pending_audio(conn: &Connection, ctx: &Ctx, s: &SyncSettings) -> R
                     return Err(e);
                 }
                 stats.failed += 1;
+                if retire_if_file_gone(conn, "audio", a.id, &ctx.paths.audio_dir().join(&a.path), class) {
+                    continue;
+                }
                 let msg: String = format!("{e:#}").chars().take(500).collect();
                 tracing::warn!(
                     audio = a.id,
@@ -1493,6 +1514,9 @@ pub fn upload_pending(conn: &Connection, ctx: &Ctx, s: &SyncSettings) -> Result<
                                 break;
                             }
                             tally.lock().unwrap().failed += 1;
+                            if retire_if_file_gone(&wconn, "video", v.id, &ctx.paths.videos_dir().join(&v.path), class) {
+                                continue;
+                            }
                             let attempts = v.attempts + 1;
                             let msg: String = format!("{e:#}").chars().take(500).collect();
                             tracing::warn!(video = v.id, attempts, class = class.as_str(), "sync upload failed: {msg}");

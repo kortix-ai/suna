@@ -410,7 +410,7 @@ quote a price.
 ## Delete
 
 ```bash
-kortix apps delete <slug> --yes                         # the App, its machines and images; volumes keep a final snapshot 7 days
+kortix apps delete <slug> --yes                         # the App, its machines, images and the triggers that name it; volumes keep a final snapshot 7 days
 kortix apps delete <slug> --deployment <vN> --yes       # one release (not the live one)
 kortix apps volumes destroy <slug> <volume> --yes       # admins; a final snapshot is kept 7 days
 ```

@@ -99,6 +99,8 @@ export {
   projectSpaceMembers,
   projectSpaceWatchers,
   projectSpaceEvents,
+  projectGoals,
+  projectGoalEvents,
   projectSpaceKindEnum,
   projectSpaceVisibilityEnum,
   // Memory ("Used memory" records)
@@ -350,6 +352,7 @@ export type { AgentGrant, StoredAgentGrant, ArtifactCommentMention } from './sch
 export { readStoredAgentGrant } from './schema/kortix';
 export type { AccountBrandingRecord, DriveVolumeMoveRecord } from './schema/kortix';
 export type { MemoryThreadLoadLayer } from './schema/kortix';
+export type { ProjectGoalCriterion, ProjectGoalSessionRef, ProjectGoalVerification } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {
