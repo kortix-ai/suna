@@ -520,7 +520,11 @@ are just aliases").** Decided in the Naming stage:
 - `kortix.account_is_paying(account_id)` (SQL, created by identity in R1, semantics owned by
   billing): `tier NOT IN ('free','none')` OR `lifetime_purchased_precise > 0` OR a completed
   `credit_purchases` row OR an active `enterprise_contracts` row. A `stripe_subscription_id`
-  alone never counts. TS wrapper (billing): `isPayingAccount(accountId): Promise<boolean>`.
+  alone never counts. A split-off comp alone never counts either
+  (`20261106182144872_account_is_paying_excludes_comp.sql`): a paid tier with
+  `comp_plan_until` set pays only with a live Stripe subscription or a RevenueCat
+  subscription it bought. So a comped split-off is never held as paying, and a split of it
+  gives Free, never a second comp. TS wrapper (billing): `isPayingAccount(accountId): Promise<boolean>`.
 - `applySplitOffBilling(input: { runId: string; sourceAccountId: string; newAccountId: string }): Promise<SplitOffBilling>`
   ```ts
   type SplitOffBilling =
@@ -616,8 +620,18 @@ export function parseWorkspaceSettingsSection(raw: string | null | undefined): W
   null } | null`, for 30 days after the account's last move (derived from
   `workspace_split_runs`).
 - Owner email: one per (owner, source account) when the account's last move is `done`;
-  `apply` mode only; idempotency key `workspace-split-email:<from_account_id>:<user_id>`
-  recorded in the run's `plan`; owners only; never in `dry_run`.
+  owners only. The outbox is `kortix.workspace_split_emails`
+  (`20261106183012059_workspace_split_emails.sql`): one row per owner, unique on
+  `idempotency_key` = `workspace-split-email:<from_account_id>:<user_id>`. The tick
+  delivers it in `apply` mode only (`off` and `dry_run` leave the rows `pending`): a claim
+  (`FOR UPDATE SKIP LOCKED`, attempts + 1, a 5-minute lease) → `sent` | `skipped` (no
+  address, no provider, the split reversed) | `failed` (backoff 2, 4, 8, 16 min, at most 5
+  attempts). A `sending` row whose lease expired (a crash mid-send) is claimed again, so a
+  crash never loses the email. Every result write is fenced on the claim's `attempts`.
+  Delivery is at least once: only a crash after the provider accepted and before the
+  `sent` write sends twice; the message carries the key as its idempotency key, and
+  Resend drops the repeat (`Idempotency-Key`). The copy is `renderSplitOwnerEmail`, the one
+  template.
 
 #### C10. Flow ids, contract-first commits, merge order
 
@@ -789,6 +803,32 @@ under the run lock. Every split-off grant is keyed by run AND target account
 (`split_off_grant:<run>:<account>`), so a reopened run never replays the
 dormant account's grant. The owner email waits until every done run has
 `plan.billing`.
+
+**Paying holds, D3 (Billing + split stage, 2026-11-06):** a source that pays only through
+top-ups (a Free account with purchased credits or a completed purchase) or only through an
+active enterprise contract on Free is `held` (`account_has_billing`) like a paid plan: no
+auto split, its owner confirms the keeper (`confirm-keeper`). After the confirmation its
+split-offs get Free with free-credit eligibility and one Free grant, never a comp (a comp
+copies a paid plan; neither source has one). The purchased credits and the contract stay
+with the keeper. Prod read-only, 2026-11-06: 0 legacy enterprise contracts, 0 legacy
+accounts on the enterprise tier, 11 legacy accounts on Free with purchased credits (held).
+Proven in the split DB suite ("a Free account that only bought credits, or holds an
+enterprise contract, is held until an owner confirms").
+
+**Cost reads across a move (finding 31, Billing + split stage):** a project-scope cost read
+(`session-costs.ts`: the session list and its unassigned reconciliation, the project
+gateway spend per session and per source) takes a row billed to another account only
+through one of the project's own sessions. The moved history stays visible and is marked
+billed elsewhere; a sessionless row the old account paid stays in the old account's views;
+another workspace's request that named the project never reaches it. Account money views
+stay by `account_id`, and the keeper labels a moved project "Moved to another workspace".
+
+**`credit_accounts.stripe_subscription_id` has no unique index in R1 (known data issue).**
+Prod read-only, 2026-11-06: exactly 1 subscription id is shared by 2 paid-tier accounts. A
+unique index would fail to build. R1 keeps the runtime refusal (row 8: the legacy sync
+refuses a subscription another row holds) and invariant I11 (it reports the pair). The
+pair needs a manual billing review, owner-confirmed, before any index (R2 at the
+earliest). No id is written here.
 
 No index on the new `workspace_id` columns in R1 (nothing reads them until R2).
 `mixed-version-safe` annotations: the old image never names `workspaces`, the new columns,

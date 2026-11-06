@@ -93,7 +93,10 @@ the first workspace a person creates (Workspaces, 2026-11-05).
 (`tier NOT IN ('free','none')`), purchased credits
 (`lifetime_purchased_precise > 0`), a completed `credit_purchases` row, or an
 active Enterprise contract. A `stripe_subscription_id` alone never counts: 149
-legacy prod accounts carry a stale one on Free. A project-less account that
+legacy prod accounts carry a stale one on Free. A split-off comp alone never
+counts either: a paid tier with `comp_plan_until` set pays only with a live
+Stripe subscription or a RevenueCat subscription the account bought. A
+project-less account that
 pays is listed as a `setup_required` workspace, so nothing billable is
 invisible.
 
@@ -107,7 +110,11 @@ sourceAccountId, newAccountId})` after each move
 - Source on Free, or paying only through top-ups or a contract: the
   split-off goes on Free with `free_credits_eligible = true` and gets one Free
   grant (wallet key `split_off_grant:<runId>`). This is the one exception to
-  "free credits once per person"; no `free_credit_claims` row is written.
+  "free credits once per person"; no `free_credit_claims` row is written. A
+  source that pays through top-ups or a contract is held until its owner
+  confirms the keeper (the split runbook); its purchased credits and contract
+  stay with the keeper. A comped split-off is not paying, so a split of it
+  is Free too, never a second comp.
 - Source on a paid plan: the split-off gets the keeper's plan comped, with no
   Stripe subscription, until min(the keeper's current period end, now + 31 d),
   stored in `credit_accounts.comp_plan_until`. It gets the plan's monthly
@@ -123,6 +130,14 @@ sourceAccountId, newAccountId})` after each move
   marker clears.
 - `applyStripeSync` never writes a non-paid tier over an active comp, and
   `comp_plan_until` is admin-owned (operator path only).
+- Store purchases name the workspace: the mobile app sets the RevenueCat
+  subscriber attribute `kortix_workspace_id` before `purchasePackage` and the
+  paywall (empty = deleted); `resolveRevenueCatAccountId` credits that
+  workspace when the buyer is a member, else the buyer's default account. A
+  renewal follows the account that holds the store subscription.
+- Cost views across a move: a project-scope read takes a row billed to another
+  account only through one of the project's own sessions (marked billed
+  elsewhere); account money views stay by `account_id`.
 - `previewSplitOffBilling(sourceAccountId)` reports the kind, the comp end and
   the credits for the dry run. `reverseSplitOffBilling({runId, newAccountId})`
   clears the comp and forfeits the split-off credits; it refuses an account
