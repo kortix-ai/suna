@@ -11,7 +11,8 @@ import { Checkbox } from '../../../primitives/checkbox';
 import { SessionDotMatrix } from '../../../primitives/dot-matrix/session-dot-matrix';
 import type { UiTranslator } from '../../../i18n';
 import { useLocale, useTranslations } from '../../../i18n';
-import { lastRunLabel } from '../../../internal/lib/trigger-clock';
+import { lastRunLabel, nextRunIn } from '../../../internal/lib/trigger-clock';
+import { useNow } from '../../../internal/reminders/use-refetch-after-fire';
 import { cn } from '../../../internal/lib/utils';
 import type { ProjectTrigger } from '@kortix/sdk';
 import { Fragment, type ReactNode } from 'react';
@@ -19,30 +20,20 @@ import { Fragment, type ReactNode } from 'react';
 import { describeNextRun, describeWhen, triggerName, triggerSubtitle } from './schedule-copy';
 import { TriggerTile } from './trigger-tile';
 
-const DAY = 24 * 60 * 60 * 1000;
-
-/** "next Mon 09:00", "next 08:45" today, "On event" for webhooks and app events, "Paused" while paused. */
+/** "next in 5 minutes", "next in 3 hours", "next in 2 days"; "On event" for webhooks and app events; "Paused" while paused. */
 export function nextRunLabel(
   trigger: Pick<ProjectTrigger, 'type' | 'enabled' | 'next_fire_at' | 'next_cron_at' | 'auto_paused_at'>,
   t: UiTranslator,
   locale: string,
-  now: number = Date.now(),
+  now: number,
 ): string {
   // An auto-pause (KRTX-1721) is runtime state: the manifest still says enabled.
   if (!trigger.enabled || trigger.auto_paused_at) return t.raw('texte159b06187d3');
   if (trigger.type !== 'cron') return t.raw('text84b05fbb7f76');
   const iso = trigger.next_cron_at ?? trigger.next_fire_at;
-  const at = iso ? Date.parse(iso) : Number.NaN;
-  if (!Number.isFinite(at)) return '—';
-  const date = new Date(at);
-  const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' });
-  const today = new Date(now).toDateString() === date.toDateString();
-  const day = today
-    ? null
-    : at - now < 6 * DAY
-      ? date.toLocaleDateString(locale, { weekday: 'short' })
-      : date.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
-  return t('text27a2c8b3a0d2', { value0: day ? `${day} ${time}` : time });
+  if (!iso || Number.isNaN(Date.parse(iso))) return '—';
+  // `always`: "in 1 day", never "tomorrow", so the label always reads "next in <n> <unit>".
+  return t('text27a2c8b3a0d2', { value0: nextRunIn(iso, new Intl.RelativeTimeFormat(locale, { numeric: 'always' }), now) });
 }
 
 export function TriggerList({
@@ -71,10 +62,13 @@ export function TriggerList({
     onToggle: (trigger: ProjectTrigger, range: boolean) => void;
   } | null;
 }) {
+  // A 30 s tick: the list's poll keeps unchanged data, so nothing else re-renders the countdown.
+  const now = useNow();
   const row = (trigger: ProjectTrigger) => (
     <TriggerRow
       key={trigger.slug}
       trigger={trigger}
+      now={now}
       eventNames={eventNames}
       selected={!selection && trigger.slug === selectedSlug}
       running={trigger.slug === runningSlug}
@@ -108,6 +102,7 @@ export function TriggerList({
 
 function TriggerRow({
   trigger,
+  now,
   eventNames,
   selected,
   running,
@@ -117,6 +112,7 @@ function TriggerRow({
   projectPaused,
 }: {
   trigger: ProjectTrigger;
+  now: number;
   eventNames?: ReadonlyMap<string, string>;
   selected: boolean;
   running: boolean;
@@ -162,12 +158,15 @@ function TriggerRow({
       </span>
       {/* No gap and tight leading: the two lines read as one block, centred on the clock. */}
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="text-foreground truncate text-sm leading-tight font-medium">{name}</span>
+        <span title={name} className="text-foreground truncate text-sm leading-tight font-medium">
+          {name}
+        </span>
         {subtitle ? (
           <span className="text-muted-foreground truncate text-xs leading-tight">{subtitle}</span>
         ) : null}
       </span>
-      <span className="flex w-24 shrink-0 flex-col items-end text-xs tabular-nums">
+      {/* min-w, not w: a fixed width let a wider label spill over the name (KRTX-4380). */}
+      <span className="flex min-w-24 shrink-0 flex-col items-end text-xs tabular-nums">
         <span
           title={projectPaused ? undefined : describeNextRun(trigger) ?? undefined}
           className={cn(
@@ -176,7 +175,7 @@ function TriggerRow({
           )}
         >
           {/* The project switch stops every schedule: never show a next run it will not make. */}
-          {nextRunLabel(projectPaused ? { ...trigger, enabled: false } : trigger, t, locale)}
+          {nextRunLabel(projectPaused ? { ...trigger, enabled: false } : trigger, t, locale, now)}
         </span>
         {running ? (
           <span className="flex h-4 items-center">
@@ -184,7 +183,7 @@ function TriggerRow({
           </span>
         ) : (
           <span className="text-muted-foreground whitespace-nowrap">
-            {lastRunLabel(trigger, t, locale)}
+            {lastRunLabel(trigger, t, locale, now)}
           </span>
         )}
       </span>
