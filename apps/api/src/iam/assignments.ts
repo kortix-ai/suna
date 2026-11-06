@@ -30,6 +30,7 @@ import {
 import { HTTPException } from 'hono/http-exception';
 import { db } from '../shared/db';
 import { recordAuditEvent } from '../shared/audit';
+import { IMPERSONATION_INVALID_CODE, isImpersonatingAccount } from '../shared/impersonation';
 import { assertAuthorized, type Obj } from './authorize';
 import { loadSystemRoles, loadPermissionCatalog, type ObjectType, type ScopeType } from './catalog';
 import {
@@ -213,6 +214,22 @@ export async function listAssignments(filter: AssignmentFilter): Promise<Assignm
  * unique constraint at all, and `:bulk-import` happily creates duplicates).
  */
 export async function assignRole(writer: Writer, accountId: string, input: AssignRoleInput): Promise<AssignmentRow> {
+  // An operator acting as a customer never writes a grant: a role assignment
+  // outlives the one-hour act-as grant (finding 14). The route list in
+  // shared/impersonation.ts refuses the IAM subtree too; this is the floor any
+  // future route that reaches role_assignments stands on.
+  if (writer !== SYSTEM_ACTOR && isImpersonatingAccount(writer.userId, accountId)) {
+    throw new HTTPException(403, {
+      message: 'Impersonated requests cannot change role assignments',
+      res: new Response(
+        JSON.stringify({
+          error: 'Impersonated requests cannot change role assignments',
+          code: IMPERSONATION_INVALID_CODE,
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+  }
   const role = await resolveRole(accountId, input);
   const scopeType = input.scope.type;
   const scopeId = scopeType === 'project' ? (input.scope.id ?? null) : null;
@@ -300,6 +317,16 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
 
   if (input.exclusive && role.isSystem) {
     await retractSiblingSystemRoles(writer, accountId, row);
+  }
+
+  // An account-scope role makes a person a member of the workspace. Write the
+  // membership too, so the holder shows in Members and can be removed there:
+  // a role holder the member list cannot see is an invisible owner.
+  if (scopeType === 'account' && !input.object && input.principal.type === 'user') {
+    await db
+      .insert(accountMemberships)
+      .values({ userId: input.principal.id, accountId })
+      .onConflictDoNothing({ target: [accountMemberships.userId, accountMemberships.accountId] });
   }
 
   await bustCachesFor(input.principal, scopeId);
