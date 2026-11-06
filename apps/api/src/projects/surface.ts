@@ -85,6 +85,9 @@ export { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed }
 // An App delete takes the triggers that name the App (consumed by ../apps routes and app-manifest).
 export { dropRetiredAppTriggers, runtimeTriggersNamingApp, withoutAppTriggers } from './lib/app-trigger-retire';
 
+// An always-on App that keeps crashing alerts the triggers that name it (consumed by ../apps/idle-reaper).
+export { clearAppCrashAlerts, raiseAppCrashAlerts } from './lib/app-health-alerts';
+
 // Who may decide a gated connector call (consumed by ../setup-links/approval-app,
 // so the approval page refuses exactly whom the resolve route refuses).
 export { mayResolveApproval } from './lib/approval-authority';
@@ -97,6 +100,8 @@ export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets, resolveP
 export {
   APP_EVENT_LOG_STATUSES,
   asTestEvents,
+  emitAppPlatformEvent,
+  isAppPlatformEvent,
   decodeAppEventCursor,
   ingestAppEvents,
   listAppEventLog,

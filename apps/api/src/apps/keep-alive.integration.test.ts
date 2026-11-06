@@ -8,7 +8,7 @@
  * queue is real.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accounts, appArtifacts, appDeploymentEvents, appDeployments, appRuntimes, apps, projects } from '@kortix/db';
+import { accounts, appArtifacts, appDeploymentEvents, appDeployments, appRuntimes, apps, projectMonitorEvents, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 
 process.env.KORTIX_APPS_WORKER_ENABLED = 'false';
@@ -91,6 +91,8 @@ const box = (id: { rt: string }) => `box-${id.rt.slice(-3)}`;
 
 async function cleanup(): Promise<void> {
   for (const projectId of [PROJECT_ID, OTHER_PROJECT_ID]) {
+    await db.delete(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, projectId));
+    await db.delete(projectTriggerRuntime).where(eq(projectTriggerRuntime.projectId, projectId));
     await db.update(apps).set({ activeDeploymentId: null }).where(eq(apps.projectId, projectId));
     await db.delete(apps).where(eq(apps.projectId, projectId));
     await db.delete(appArtifacts).where(eq(appArtifacts.projectId, projectId));
@@ -178,6 +180,38 @@ withDb('always-on Apps', () => {
     // The VM stays up and billed throughout: no wake, no stop.
     expect(wakes).toEqual([]);
     expect(stops).toEqual([]);
+  });
+
+  test('each restart is recorded; past the budget the App\'s work trigger raises a crash alert and kortix.app.crashed is logged once; ready again ends it', async () => {
+    await seed(ALWAYS, { alwaysOn: true, status: 'running' });
+    const slug = `keep-alive-${ALWAYS.app.slice(-3)}`;
+    await db.insert(projectTriggerRuntime).values({
+      projectId: PROJECT_ID, slug: 'status-work', triggerType: 'app', enabled: true, scheduleRevision: 'a'.repeat(64),
+      scheduleSpec: { slug: 'status-work', type: 'app', agent: 'default', enabled: true, app: slug, filter: { 'event.name': 'status.changed' } },
+    });
+    const work = async () => (await db.select().from(projectTriggerRuntime).where(and(eq(projectTriggerRuntime.projectId, PROJECT_ID), eq(projectTriggerRuntime.slug, 'status-work'))))[0]!;
+    appdStatus[box(ALWAYS)] = 'down';
+    for (let pass = 0; pass < APPD_REVIVES_PER_HOUR; pass += 1) await runAppKeepAlive(new Date(), true);
+    const restarts = await db.select().from(appDeploymentEvents)
+      .where(and(eq(appDeploymentEvents.runtimeId, ALWAYS.rt), eq(appDeploymentEvents.type, 'supervisor_restarted')));
+    expect(restarts).toHaveLength(APPD_REVIVES_PER_HOUR);
+    expect((await work()).alertFailingSince).toBeNull();
+
+    // The budget is spent: the App stays down and says so, once.
+    await runAppKeepAlive(new Date(), true);
+    await runAppKeepAlive(new Date(), true);
+    expect((await work()).alertSource).toBe('crash');
+    const logged = await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, PROJECT_ID));
+    // No trigger listens to kortix.app.crashed here: one unmatched row records it.
+    expect(logged.map((row) => [(row.line as { name: string }).name, row.slug, row.status])).toEqual([['kortix.app.crashed', '', 'skipped']]);
+    expect(revivals).toHaveLength(APPD_REVIVES_PER_HOUR);
+
+    // Someone fixed it: the next pass finds it ready and ends the streak.
+    appdStatus[box(ALWAYS)] = { status: 'running', ready: true };
+    await runAppKeepAlive(new Date(), true);
+    expect((await work()).alertFailingSince).toBeNull();
+    const after = await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, PROJECT_ID));
+    expect(after.map((row) => (row.line as { name: string }).name).sort()).toEqual(['kortix.app.crashed', 'kortix.app.recovered']);
   });
 
   test('a healthy supervisor, and one failed for a named reason a restart cannot fix, are left alone', async () => {

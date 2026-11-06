@@ -140,7 +140,9 @@ test('kortix.heartbeat counts as heard and ends the alert, but is never stored; 
   const answer = await ingestAppEvents({ projectId: project.project_id, appId: APP_ID, appSlug: 'status-watch', events: [{ name: 'kortix.heartbeat' }] });
   expect(answer).toMatchObject({ heartbeats: 1, accepted: 0, unmatched: 0 });
   const after = await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, project.project_id));
-  expect(after).toHaveLength(before.length);
+  const added = after.filter((row) => !before.some((old) => old.eventId === row.eventId));
+  // The heartbeat is not stored; the alert it ended is, as kortix.app.recovered (no listener here: unmatched).
+  expect(added.map((row) => [(row.line as { name: string }).name, row.slug])).toEqual([['kortix.app.recovered', '']]);
   expect((await runtime('quiet')).alertFailingSince).toBeNull();
   expect((await inbox('quiet')).map((r) => r.kind)).toEqual(['automation_failed', 'automation_recovered', 'automation_failed', 'automation_recovered']);
 });

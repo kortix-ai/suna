@@ -5,7 +5,9 @@
  * watcher posts the same content id while nothing changes. When the stamp (or,
  * before the first event, the time the trigger was written) is older than the
  * window, the trigger's watchers hear it once (`raiseTriggerSilenceAlert`);
- * the App's next event ends it with a recovery notice.
+ * the App's next event ends it with a recovery notice. Each alert also writes
+ * `kortix.app.silent` to the App's log, so a trigger on that name can start
+ * an agent that reads the App's logs and repairs it.
  *
  * Runs on the scheduler leader at most once a minute. Stateless: the alert
  * edge (`alert_failing_since`) is the only state, so a leader change neither
@@ -15,6 +17,7 @@ import { formatDurationSeconds } from '@kortix/manifest-schema';
 import { sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { emitAppPlatformEvent } from './app-events';
 import { raiseTriggerSilenceAlert } from './trigger-alerts';
 
 export const APP_TRIGGER_SILENCE_CHECK_EVERY_MS = 60_000;
@@ -71,7 +74,17 @@ export async function checkAppTriggerSilence(now = new Date(), force = false): P
   for (const row of rows) {
     const heardAt = row.heard_at instanceof Date ? row.heard_at : new Date(row.heard_at);
     const error = silenceMessage({ app: row.app, windowSeconds: Number(row.window_seconds), heardAt }, now);
-    if (await raiseTriggerSilenceAlert({ projectId: row.project_id, slug: row.slug, accountId: row.account_id, error })) raised += 1;
+    if (!(await raiseTriggerSilenceAlert({ projectId: row.project_id, slug: row.slug, accountId: row.account_id, error }))) continue;
+    raised += 1;
+    if (row.app) {
+      await emitAppPlatformEvent({
+        projectId: row.project_id, appSlug: row.app, name: 'kortix.app.silent',
+        // One event per silence episode: the episode starts at the last time the App was heard.
+        id: `silent:${row.slug}:${heardAt.getTime()}`,
+        data: { trigger: row.slug, last_heard_at: heardAt.toISOString(), expect_event_within_seconds: Number(row.window_seconds) },
+        now,
+      });
+    }
   }
   if (raised > 0) logger.info('[app-trigger-silence] raised silence alerts', { checked: rows.length, raised });
   return { checked: rows.length, raised };

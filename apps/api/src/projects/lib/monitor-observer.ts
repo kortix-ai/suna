@@ -225,8 +225,10 @@ async function failMonitorEvent(
 }
 
 async function touchMonitorLastEvent(row: MonitorEventRow, now: Date): Promise<void> {
-  // A test event checks the wiring: it never tells the silence check the App is alive (ingest skips it too).
-  if ((row.line as { test?: unknown } | null)?.test === true) return;
+  // A test event checks the wiring, and a platform event (kortix.app.*) is Kortix speaking about the App:
+  // neither tells the silence check the App is alive (ingest skips both too).
+  const line = row.line as { test?: unknown; platform?: unknown } | null;
+  if (line?.test === true || line?.platform === true) return;
   const { projectId, slug, emittedAt } = row;
   await db
     .update(projectTriggerRuntime)

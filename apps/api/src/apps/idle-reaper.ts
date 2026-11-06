@@ -3,6 +3,7 @@ import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, or 
 import { markComputeSessionAlive, pauseComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
+import { clearAppCrashAlerts, raiseAppCrashAlerts } from '../projects/surface';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { type AppdStatus, AppHostingProvider } from './hosting';
@@ -158,6 +159,12 @@ export function takeAppdRevive(runtimeId: string, now: number, revives: Map<stri
   return true;
 }
 
+/** When the hour's restarts of `runtimeId` began: the episode a crash alert names. Null with none. Pure on the map. */
+export function appdReviveEpisodeStart(runtimeId: string, now: number, revives: Map<string, number[]> = appdRevives): number | null {
+  const recent = (revives.get(runtimeId) ?? []).filter((at) => now - at < HOUR_MS);
+  return recent.length > 0 ? Math.min(...recent) : null;
+}
+
 /**
  * Whether a running VM's supervisor needs a start. kortix-appd exits once its
  * App used its restart budget, and an always-on App takes no wake on a
@@ -302,14 +309,31 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
         if (supervisorNeedsStart(appd)) {
           if (!takeAppdRevive(runtime.runtimeId, now.getTime())) {
             logger.warn('[apps] always-on App supervisor is down and its restart budget is spent', { appId: app.appId, runtimeId: runtime.runtimeId });
+            // The App stays down: the triggers that name it say so once, and a
+            // repair trigger hears kortix.app.crashed (app-health-alerts.ts).
+            const episode = appdReviveEpisodeStart(runtime.runtimeId, now.getTime()) ?? now.getTime();
+            await raiseAppCrashAlerts({ projectId: app.projectId, appSlug: app.slug, episode: `${runtime.runtimeId}:${episode}`, restarts: APPD_REVIVES_PER_HOUR, now })
+              .catch((error) => logger.warn('[apps] crash alert failed', { appId: app.appId, error: String(error) }));
             return;
           }
           // Only the supervisor: a VM that stopped meanwhile refuses it, and the
           // next pass starts that VM through the wake gate.
           await hosting.startSupervisor(provider, runtime.externalId).then(
-            () => { revived += 1; },
+            async () => {
+              revived += 1;
+              await db.insert(appDeploymentEvents).values({
+                deploymentId: runtime.deploymentId, runtimeId: runtime.runtimeId, level: 'warn', type: 'supervisor_restarted',
+                message: `The App's process had stopped; Kortix started it again (at most ${APPD_REVIVES_PER_HOUR} times an hour).`,
+              }).catch(() => undefined);
+            },
             (error) => logger.warn('[apps] always-on App supervisor could not be started', { appId: app.appId, error: String(error) }),
           );
+          return;
+        }
+        // It runs and answers ready: a crash streak on its triggers is over.
+        if (appd?.ready) {
+          await clearAppCrashAlerts({ projectId: app.projectId, appSlug: app.slug, now })
+            .catch((error) => logger.warn('[apps] crash recovery failed', { appId: app.appId, error: String(error) }));
         }
         return;
       }
