@@ -2,10 +2,11 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 /**
- * Shared presentation engine — a keyboard-driven deck, styled 1:1 with the
- * marketing site. Each slide is a responsive full-viewport homepage-style
- * section; the engine cross-fades between them and lays a slim navbar-style
- * chrome on top. Theme-following — same light/dark system as the homepage.
+ * Shared presentation engine: a keyboard-driven deck in the landing page's
+ * frame. Each slide is one viewport of the landing (`frame.tsx`); the chrome
+ * is the landing navbar's row on top and a hairline row of tools below.
+ * Slide changes and panels are instant (motion.md: no motion on a keyboard
+ * action). Theme-following, like the landing.
  *
  * Reused by every deck route (e.g. /presentation, /presentation/platform);
  * pass the slide set in via `slides`.
@@ -25,7 +26,7 @@ import {
   NotepadIcon as Notepad,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, m } from 'motion/react';
+import { MarketingButton } from '@/features/marketing/kit/marketing-button';
 import Link from 'next/link';
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 
@@ -61,7 +62,6 @@ export function Deck({
   const [index, setIndex] = useState(0);
   /** Which build stage of the current slide is showing. */
   const [step, setStep] = useState(0);
-  const [dir, setDir] = useState(1);
   const [overview, setOverview] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   /** The drawer shows one slide's script, or the whole deck's for a rehearsal. */
@@ -76,12 +76,11 @@ export function Deck({
 
   /** Jumping to a slide always lands on its first stage. */
   const go = useCallback(
-    (n: number, direction?: number) => {
-      setDir(direction ?? (n > index ? 1 : -1));
+    (n: number) => {
       setIndex(Math.max(0, Math.min(total - 1, n)));
       setStep(0);
     },
-    [index, total],
+    [total],
   );
 
   const next = useCallback(() => {
@@ -90,7 +89,6 @@ export function Deck({
       return;
     }
     if (index >= total - 1) return;
-    setDir(1);
     setIndex(index + 1);
     setStep(0);
   }, [index, step, stepsOf, total]);
@@ -102,7 +100,6 @@ export function Deck({
       return;
     }
     if (index === 0) return;
-    setDir(-1);
     setIndex(index - 1);
     setStep(stepsOf(index - 1));
   }, [index, step, stepsOf]);
@@ -147,11 +144,11 @@ export function Deck({
         break;
       case 'Home':
         e.preventDefault();
-        go(0, -1);
+        go(0);
         break;
       case 'End':
         e.preventDefault();
-        go(total - 1, 1);
+        go(total - 1);
         break;
       case 'g':
       case 'G':
@@ -210,7 +207,10 @@ export function Deck({
 
   return (
     <div className="bg-background text-foreground fixed inset-0 overflow-hidden">
-      {/* ── Stage ──────────────────────────────────────────────────────── */}
+      {/* ── Stage ──────────────────────────────────────────────────────────
+          No animation between slides: navigation is keyboard-driven, and
+          motion.md forbids animating a keyboard action. A build step changes
+          opacity inside the slide (`Reveal`), so the tree never remounts. */}
       <div
         className="relative h-full w-full"
         onPointerDown={(e) => (touchX.current = e.clientX)}
@@ -221,218 +221,183 @@ export function Deck({
           if (Math.abs(dx) > 70) (dx < 0 ? next : prev)();
         }}
       >
-        <AnimatePresence mode="wait" custom={dir}>
-          <m.div
-            key={slide.id}
-            custom={dir}
-            initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, y: -16, filter: 'blur(6px)' }}
-            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute inset-0"
-          >
-            {stageNode}
-          </m.div>
-        </AnimatePresence>
+        <div key={slide.id} className="absolute inset-0">
+          {stageNode}
+        </div>
+      </div>
 
-        {/* ── Chrome (navbar-style) ───────────────────────────────────── */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-6 py-5 sm:px-8">
-          <KortixLogo variant="logomark" size={22} className="text-foreground" />
-          <div className="pointer-events-auto flex items-center gap-3">
-            <Link
-              href={altDeck?.href ?? '/presentations'}
-              className="text-muted-foreground hover:text-foreground hidden font-mono text-xs tracking-wider transition-colors sm:inline"
-            >
-              {altDeck?.label ?? tI18nHardcoded.raw('i18nComplete.text8195b47b3fd3')} ↗
-            </Link>
-            <span className="text-muted-foreground hidden font-mono text-xs tracking-wider tabular-nums sm:inline">
+      {/* ── Top bar: the landing navbar's row ─────────────────────────────── */}
+      <div className="absolute inset-x-0 top-0 z-20">
+        <div className="bg-border/60 h-px w-full">
+          <div className="bg-foreground h-full" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between px-4 lg:px-24">
+          <Link
+            href="/presentations"
+            className="text-foreground outline-ring flex h-16 items-center rounded-sm focus-visible:outline-2"
+          >
+            <KortixLogo size={15} variant="logomark" />
+          </Link>
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground hidden text-sm tabular-nums sm:inline">
               {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
             </span>
             <ThemeToggle />
+            <MarketingButton variant="secondary" size="sm" asChild>
+              <Link href={altDeck?.href ?? '/presentations'}>
+                {altDeck?.label ?? tI18nHardcoded.raw('i18nComplete.text8195b47b3fd3')}
+              </Link>
+            </MarketingButton>
           </div>
         </div>
-
-        {/* slide label, bottom-left */}
-        <div className="text-muted-foreground/70 pointer-events-none absolute bottom-6 left-6 font-mono text-xs tracking-wider uppercase sm:left-8">
-          {slide.label}
-        </div>
       </div>
 
-      {/* ── Progress bar ───────────────────────────────────────────────── */}
-      <div className="bg-border/40 absolute inset-x-0 top-0 h-0.5">
-        <div
-          className="bg-foreground h-full transition-[width] duration-300 ease-out"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-
-      {/* ── Floating controls ──────────────────────────────────────────── */}
-      <div className="border-border bg-card/90 absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-sm border p-1.5 shadow-sm backdrop-blur-md">
-        <Ctrl
-          onClick={prev}
-          disabled={index === 0 && step === 0}
-          label={tI18nHardcoded.raw('i18nComplete.texta57b08a480b8')}
-        >
-          <ChevronLeft className="size-4" />
-        </Ctrl>
-        <span className="text-muted-foreground px-2 font-mono text-xs tabular-nums">
-          {String(index + 1).padStart(2, '0')}
-          <span className="text-muted-foreground/40"> / {String(total).padStart(2, '0')}</span>
-        </span>
-        {/* Build pips — how many presses are left on this slide. */}
-        {slideSteps > 0 ? (
-          <span className="flex items-center gap-1 pr-1">
-            {Array.from({ length: slideSteps + 1 }, (_, i) => (
-              <span
-                key={i}
-                className={cn(
-                  'size-1.5 rounded-full transition-colors',
-                  i <= step ? 'bg-foreground' : 'bg-muted-foreground/25',
-                )}
-              />
-            ))}
+      {/* ── Bottom bar: label, steps, tools ───────────────────────────────── */}
+      <div className="absolute inset-x-0 bottom-0 z-20">
+        <div className="mx-auto grid h-16 w-full max-w-[1440px] grid-cols-3 items-center px-4 lg:px-24">
+          <span className="text-muted-foreground truncate text-sm">
+            <span className="tabular-nums">{String(index + 1).padStart(2, '0')}</span>
+            <span> · </span>
+            {slide.label}
           </span>
-        ) : null}
-        <Ctrl
-          onClick={next}
-          disabled={index === total - 1 && step === slideSteps}
-          label={tI18nHardcoded.raw('i18nComplete.text1ff57a29d7c9')}
-        >
-          <ChevronRight className="size-4" />
-        </Ctrl>
-        <span className="bg-border mx-0.5 h-4 w-px" />
-        <Ctrl
-          onClick={() => setOverview((o) => !o)}
-          label={tI18nHardcoded.raw('autoAppPresentationDeckJsxAttrLabelOverviewG38c3b5e4')}
-        >
-          <Grid2x2 className="size-3.5" />
-        </Ctrl>
-        <Ctrl
-          onClick={toggleFs}
-          label={tI18nHardcoded.raw('autoAppPresentationDeckJsxAttrLabelFullscreenF28aed7ac')}
-        >
-          <Maximize className="size-3.5" />
-        </Ctrl>
-        {hasNotes ? (
-          <Ctrl
-            onClick={() => setNotesOpen((o) => !o)}
-            label={tI18nHardcoded.raw('i18nComplete.text36a27da6cdf2')}
-          >
-            <Notepad className={cn('size-3.5', notesOpen && 'text-foreground')} />
-          </Ctrl>
-        ) : null}
+          <div className="flex items-center justify-center gap-2">
+            <Ctrl
+              onClick={prev}
+              disabled={index === 0 && step === 0}
+              label={tI18nHardcoded.raw('i18nComplete.texta57b08a480b8')}
+            >
+              <ChevronLeft className="size-4" />
+            </Ctrl>
+            {/* Build pips: how many presses are left on this slide. */}
+            <span className="flex min-w-8 items-center justify-center gap-1">
+              {Array.from({ length: slideSteps + 1 }, (_, i) => (
+                <span
+                  key={i}
+                  className={cn('size-1.5 rounded-full', i <= step ? 'bg-foreground' : 'bg-border')}
+                />
+              ))}
+            </span>
+            <Ctrl
+              onClick={next}
+              disabled={index === total - 1 && step === slideSteps}
+              label={tI18nHardcoded.raw('i18nComplete.text1ff57a29d7c9')}
+            >
+              <ChevronRight className="size-4" />
+            </Ctrl>
+          </div>
+          <div className="flex items-center justify-end gap-1">
+            <Ctrl
+              onClick={() => setOverview((o) => !o)}
+              label={tI18nHardcoded.raw('autoAppPresentationDeckJsxAttrLabelOverviewG38c3b5e4')}
+            >
+              <Grid2x2 className="size-4" />
+            </Ctrl>
+            <Ctrl
+              onClick={toggleFs}
+              label={tI18nHardcoded.raw('autoAppPresentationDeckJsxAttrLabelFullscreenF28aed7ac')}
+            >
+              <Maximize className="size-4" />
+            </Ctrl>
+            {hasNotes ? (
+              <Ctrl
+                onClick={() => setNotesOpen((o) => !o)}
+                label={tI18nHardcoded.raw('i18nComplete.text36a27da6cdf2')}
+                active={notesOpen}
+              >
+                <Notepad className="size-4" />
+              </Ctrl>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {/* ── Presenter notes ────────────────────────────────────────────────
           Never on the stage. The deck is screen-recorded, so the script lives
-          behind `N` and the recording stays clean. */}
-      <AnimatePresence>
-        {notesOpen ? (
-          <m.aside
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-            className="border-border bg-card/95 absolute inset-x-0 bottom-0 z-40 max-h-[46vh] overflow-y-auto border-t shadow-lg backdrop-blur-md"
-          >
-            <div className="mx-auto w-full max-w-4xl px-6 py-6 sm:px-8">
-              <div className="mb-4 flex items-center justify-between gap-4">
-                <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-                  {notesAll
-                    ? tI18nHardcoded.raw('i18nComplete.text46ae82eac49f')
-                    : tI18nHardcoded('i18nComplete.text390287e30d47', {
-                        value0: slide.label,
-                        value1: slideSteps > 0 ? ` · ${step + 1}/${slideSteps + 1}` : '',
-                      })}
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setNotesAll((a) => !a)}
-                    className="text-muted-foreground hover:text-foreground border-border rounded-sm border px-2.5 py-1 font-mono text-xs transition-colors"
-                  >
-                    {notesAll
-                      ? tI18nHardcoded.raw('i18nComplete.textfd792ae48d11')
-                      : tI18nHardcoded.raw('i18nComplete.text46ae82eac49f')}
-                  </button>
-                  <button
-                    onClick={() => setNotesOpen(false)}
-                    aria-label={tI18nHardcoded.raw('i18nComplete.textb0fb3804b44c')}
-                    className="text-muted-foreground hover:text-foreground flex size-7 items-center justify-center rounded-sm transition-colors"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-              </div>
-
-              {notesAll ? (
-                <ol className="space-y-6">
-                  {slides.map((s, i) => {
-                    const lines = Array.isArray(s.notes)
-                      ? s.notes
-                      : [(s.notes as string | undefined) ?? '—'];
-                    return (
-                      <li key={s.id} className="flex gap-4">
-                        <span className="text-muted-foreground/50 w-6 shrink-0 pt-0.5 font-mono text-xs tabular-nums">
-                          {String(i + 1).padStart(2, '0')}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-muted-foreground/70 font-mono text-[10px] tracking-widest uppercase">
-                            {s.label}
-                          </p>
-                          {lines.map((line, li) => (
-                            <p
-                              key={li}
-                              className="text-foreground mt-1.5 text-[15px] leading-relaxed whitespace-pre-line"
-                            >
-                              {lines.length > 1 ? (
-                                <span className="text-muted-foreground/40 font-mono text-[11px]">
-                                  {`→${li} `}
-                                </span>
-                              ) : null}
-                              {line}
-                            </p>
-                          ))}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              ) : (
-                <p className="text-foreground text-base leading-relaxed whitespace-pre-line">
-                  {noteFor(slide, step) || tI18nHardcoded.raw('i18nComplete.text1b84926d58a9')}
-                </p>
-              )}
-            </div>
-          </m.aside>
-        ) : null}
-      </AnimatePresence>
-
-      {/* ── Overview grid ──────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {overview ? (
-          <m.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="bg-background/95 absolute inset-0 z-30 overflow-y-auto backdrop-blur-sm"
-          >
-            <div className="flex items-center justify-between px-8 py-6">
-              <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-                {tI18nHardcoded.raw('autoAppPresentationDeckJsxTextKortix28fe100d')}
-                {total} {tI18nHardcoded.raw('i18nComplete.textfd2c8f1dc03c')}
+          behind `N` and the recording stays clean. Opens at once: `N` is a key. */}
+      {notesOpen ? (
+        <aside className="border-border bg-background absolute inset-x-0 bottom-0 z-40 max-h-[46vh] overflow-y-auto border-t">
+          <div className="mx-auto w-full max-w-[1440px] px-8 py-8 lg:px-28">
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <span className="text-muted-foreground text-sm">
+                {notesAll
+                  ? tI18nHardcoded.raw('i18nComplete.text46ae82eac49f')
+                  : tI18nHardcoded('i18nComplete.text390287e30d47', {
+                      value0: slide.label,
+                      value1: slideSteps > 0 ? ` · ${step + 1}/${slideSteps + 1}` : '',
+                    })}
               </span>
-              <button
+              <div className="flex items-center gap-2">
+                <MarketingButton variant="secondary" size="sm" onClick={() => setNotesAll((a) => !a)}>
+                  {notesAll
+                    ? tI18nHardcoded.raw('i18nComplete.textfd792ae48d11')
+                    : tI18nHardcoded.raw('i18nComplete.text46ae82eac49f')}
+                </MarketingButton>
+                <Ctrl
+                  onClick={() => setNotesOpen(false)}
+                  label={tI18nHardcoded.raw('i18nComplete.textb0fb3804b44c')}
+                >
+                  <X className="size-4" />
+                </Ctrl>
+              </div>
+            </div>
+
+            {notesAll ? (
+              <ol className="divide-border divide-y">
+                {slides.map((s, i) => {
+                  const lines = Array.isArray(s.notes)
+                    ? s.notes
+                    : [(s.notes as string | undefined) ?? '—'];
+                  return (
+                    <li key={s.id} className="grid grid-cols-12 gap-6 py-5">
+                      <span className="text-muted-foreground col-span-3 text-sm">
+                        <span className="tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+                        <span> · </span>
+                        {s.label}
+                      </span>
+                      <div className="col-span-9 flex flex-col gap-3">
+                        {lines.map((line, li) => (
+                          <p
+                            key={li}
+                            className="text-foreground text-base leading-relaxed whitespace-pre-line"
+                          >
+                            {line}
+                          </p>
+                        ))}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : (
+              <p className="text-foreground max-w-3xl text-lg leading-relaxed whitespace-pre-line">
+                {noteFor(slide, step) || tI18nHardcoded.raw('i18nComplete.text1b84926d58a9')}
+              </p>
+            )}
+          </div>
+        </aside>
+      ) : null}
+
+      {/* ── Overview: every slide, fully built, as hairline cells ───────────── */}
+      {overview ? (
+        <div className="bg-background absolute inset-0 z-30 overflow-y-auto">
+          <div className="mx-auto w-full max-w-[1440px]">
+            <div className="flex h-16 items-center justify-between px-4 lg:px-24">
+              <span className="text-foreground text-sm">
+                {tI18nHardcoded.raw('autoAppPresentationDeckJsxTextKortix28fe100d')} {total}{' '}
+                {tI18nHardcoded.raw('i18nComplete.textfd2c8f1dc03c')}
+              </span>
+              <Ctrl
                 onClick={() => setOverview(false)}
-                className="border-border bg-card text-muted-foreground hover:text-foreground flex size-9 items-center justify-center rounded-sm border transition-colors"
-                aria-label={tI18nHardcoded.raw(
+                label={tI18nHardcoded.raw(
                   'autoAppPresentationDeckJsxAttrAriaLabelCloseOverviewf408b52c',
                 )}
               >
                 <X className="size-4" />
-              </button>
+              </Ctrl>
             </div>
-            <div className="grid grid-cols-2 gap-5 px-8 pb-16 sm:grid-cols-3 lg:grid-cols-4">
+          </div>
+          <div className="kx-rail-fade border-y px-4 lg:px-17">
+            <div className="bg-border mx-auto grid max-w-[1440px] grid-cols-2 gap-px sm:grid-cols-3 lg:grid-cols-4">
               {slides.map((s, i) => (
                 <Thumb
                   key={s.id}
@@ -444,15 +409,26 @@ export function Deck({
                     setOverview(false);
                   }}
                 >
-                  {/* Thumbnails show the slide fully built — a half-drawn
-                      diagram is unrecognisable at 320px wide. */}
+                  {/* Thumbnails show the slide fully built: a half-drawn
+                      diagram is unrecognisable at this size. */}
                   {typeof s.node === 'function' ? s.node(s.steps ?? 0) : s.node}
                 </Thumb>
               ))}
+              {/* Fill the last row so no bare border-coloured block shows:
+                  2 columns, 3 from `sm`, 4 from `lg`. */}
+              {Array.from({ length: (4 - (total % 4)) % 4 }, (_, i) => (
+                <div key={`lg-${i}`} aria-hidden className="bg-background hidden lg:block" />
+              ))}
+              {Array.from({ length: (3 - (total % 3)) % 3 }, (_, i) => (
+                <div key={`sm-${i}`} aria-hidden className="bg-background hidden sm:block lg:hidden" />
+              ))}
+              {Array.from({ length: total % 2 }, (_, i) => (
+                <div key={`xs-${i}`} aria-hidden className="bg-background sm:hidden" />
+              ))}
             </div>
-          </m.div>
-        ) : null}
-      </AnimatePresence>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -461,11 +437,13 @@ function Ctrl({
   children,
   onClick,
   disabled,
+  active,
   label,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  active?: boolean;
   label: string;
 }) {
   return (
@@ -475,8 +453,9 @@ function Ctrl({
       aria-label={label}
       title={label}
       className={cn(
-        'text-muted-foreground flex size-8 items-center justify-center rounded-sm transition-colors',
-        disabled ? 'opacity-30' : 'hover:bg-foreground/5 hover:text-foreground',
+        'outline-ring flex size-9 items-center justify-center rounded-sm transition-colors focus-visible:outline-2',
+        active ? 'bg-muted text-foreground' : 'text-muted-foreground',
+        disabled ? 'opacity-30' : 'hover:bg-muted hover:text-foreground',
       )}
     >
       {children}
@@ -484,7 +463,7 @@ function Ctrl({
   );
 }
 
-/** Overview thumbnail: the real slide rendered into a fixed 1280×720 frame, scaled. */
+/** Overview cell: the real slide rendered into a 1440×810 frame, scaled to fit. */
 function Thumb({
   children,
   active,
@@ -499,15 +478,21 @@ function Thumb({
   onClick: () => void;
 }) {
   const W = 320;
-  const BASE = 1280;
+  const BASE = 1440;
   const s = W / BASE;
-  const H = (BASE * 9) / 16; // 720
+  const H = (BASE * 9) / 16;
   return (
-    <button onClick={onClick} className="group flex flex-col gap-2 text-left">
+    <button
+      onClick={onClick}
+      className={cn(
+        'group flex flex-col items-start gap-3 p-5 text-left transition-colors',
+        active ? 'bg-card' : 'bg-background hover:bg-card',
+      )}
+    >
       <div
         className={cn(
-          'bg-background relative overflow-hidden rounded-sm border transition-colors',
-          active ? 'border-foreground' : 'border-border group-hover:border-muted-foreground/40',
+          'bg-background relative overflow-hidden rounded-sm border',
+          active ? 'border-foreground' : 'border-border',
         )}
         style={{ width: W, height: H * s }}
       >
@@ -518,16 +503,11 @@ function Thumb({
           {children}
         </div>
       </div>
-      <div className="flex items-center gap-2 px-0.5">
-        <span className="text-muted-foreground/60 font-mono text-xs tabular-nums">
-          {String(n).padStart(2, '0')}
-        </span>
-        <span
-          className={cn('truncate text-xs', active ? 'text-foreground' : 'text-muted-foreground')}
-        >
-          {label}
-        </span>
-      </div>
+      <span className="text-sm">
+        <span className="text-muted-foreground tabular-nums">{String(n).padStart(2, '0')}</span>
+        <span className="text-muted-foreground"> · </span>
+        <span className={active ? 'text-foreground' : 'text-muted-foreground'}>{label}</span>
+      </span>
     </button>
   );
 }

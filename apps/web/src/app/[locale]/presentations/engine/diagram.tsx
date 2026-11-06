@@ -27,6 +27,7 @@ import type { SecurityDiagramContent } from '../decks/security-diagram-content';
 import { cn } from '@kortix/ui';
 import { AnimatePresence, m } from 'motion/react';
 import type { ReactNode } from 'react';
+import { Reveal } from './frame';
 
 /* ── primitives ─────────────────────────────────────────────────────────── */
 
@@ -54,33 +55,6 @@ const TONE_TEXT: Record<Tone, string> = {
   danger: 'text-kortix-red',
 };
 
-/**
- * A build-aware wrapper: ghosted until `on`, then lit. Never changes layout.
- * Exported so a deck can build non-diagram blocks (a code excerpt, a column)
- * with the same ghost instead of writing its own opacity.
- */
-export function Reveal({
-  on,
-  children,
-  className,
-  delay = 0,
-}: {
-  on: boolean;
-  children: ReactNode;
-  className?: string;
-  delay?: number;
-}) {
-  return (
-    <m.div
-      animate={{ opacity: on ? 1 : GHOST, filter: on ? 'blur(0px)' : 'blur(1.5px)' }}
-      transition={{ duration: 0.45, delay: on ? delay : 0, ease: EASE }}
-      className={className}
-    >
-      {children}
-    </m.div>
-  );
-}
-
 /** The frame every diagram sits in — the marketing card, with a caption rail. */
 export function Stage({
   children,
@@ -92,7 +66,7 @@ export function Stage({
   className?: string;
 }) {
   return (
-    <div className={cn('border-border bg-card overflow-hidden rounded-sm border', className)}>
+    <div className={cn('border-border bg-background overflow-hidden rounded-sm border', className)}>
       <div className="p-5 sm:p-8">{children}</div>
       {caption ? (
         <p className="border-border text-muted-foreground min-h-[3.25rem] border-t px-5 py-4 text-sm leading-relaxed sm:px-8">
@@ -682,7 +656,6 @@ export function LedgerDiagram({
           <Reveal
             key={r.action}
             on={step >= i}
-            delay={0.05}
             className={cn('border-border', i > 0 && 'border-t')}
           >
             <div className="grid grid-cols-12 items-center gap-3 px-4 py-3">

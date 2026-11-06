@@ -12,6 +12,14 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ## 2026-11-06
 
+### D40 A deck is the landing page at 16:9: rails, a two-tone title, one band; no eyebrow
+- **Date:** 2026-11-06
+- **Decision:** Every deck slide uses the landing page's frame (`features/marketing/kit/page-frame.tsx`): the 1440px column between two hairline rails, a two-tone title (ink line, muted line, same size and weight), an optional one-sentence sub, and one band whose hairlines cross the page and fade past the rails. The band holds the artifact: cells split by hairlines, key/value rows, code, a screenshot or a diagram. Decks carry no eyebrow, no chapter spine, no mono-uppercase label and no reveal motion. A build step changes opacity only. Slide changes and the overview and notes panels are instant. The chrome is the landing navbar's row (wordmark, counter, theme, "All decks") and a hairline row of tools. The `/presentations` index uses the same frame.
+- **Why:** founder, 2026-11-06: "remove the entire presentations ux/ui & rebuild it from scratch to be 100% on brand ux/ui & match the landing page". The landing rebuild ("Kortix 2", no eyebrows, no reveal motion) left the decks on the old site idiom (eyebrows, spine, blur entrances, rounded panels).
+- **Where:** `apps/web/src/app/[locale]/presentations/engine/frame.tsx`, `engine/deck.tsx`, `index-client.tsx`, `visual/typography.md` (eyebrow rule), `../../kortix-presentation/SKILL.md`.
+- **Supersedes:** the deck half of D4e ("Decks may use mono-uppercase eyebrows") and of K3 for decks. Marketing pages keep what the landing does.
+- **Source:** the `how-to-kortix-deck` branch.
+
 ### D39 Copy never names OpenCode as the harness; it names pi only where the sentence needs the name
 - **Date:** 2026-11-06
 - **Decision:** D9 has an answer. Customer copy names no harness product: it writes "agents", "the agent harness" or "the agent runtime". It names pi only where the sentence needs the name (D20, D24 and D27 say where). It never names OpenCode as a harness. OpenCode Zen and OpenCode Go stay as model-provider names.

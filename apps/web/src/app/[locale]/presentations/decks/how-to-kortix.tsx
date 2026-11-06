@@ -4,7 +4,7 @@
  * How to Kortix: a technical walkthrough. About five minutes, built to present.
  *
  * ── STRUCTURE ────────────────────────────────────────────────────────────
- * Four chapters and nothing else. The spine is on every chapter slide:
+ * Four chapters and nothing else. The bottom bar names the chapter:
  *
  *   01 The repo       `kortix init`: one git repo holds agents, skills, memory
  *                     and kortix.yaml. `kortix ship` deploys it.
@@ -41,25 +41,21 @@
  *     Keep it out until it graduates.
  *  7. No price on any slide.
  *
+ * Frame: engine/frame.tsx, the landing page at 16:9. No eyebrow, no kicker.
+ *
  * English only, by design: a talk presented live in English. The i18n audit
  * lists this exact file in `ignoredPathParts`.
  */
 
-import { cn } from '@kortix/ui';
-import { Badge } from '@kortix/ui/badge';
 import type { ReactNode } from 'react';
 import type { SlideDef } from '../engine/deck';
 import {
   LoopDiagram,
   LoopRing,
-  Reveal,
   type LoopDiagramContent,
   type LoopRingContent,
 } from '../engine/diagram';
-import { Dim, Mono, Panel, Rise, Slide, Spine, Terminal } from '../engine/parts';
-
-/** The whole deck, in four chapters. See the header before you add a fifth. */
-const CHAPTERS = ['The repo', 'Connectors', 'The loop', 'Three loops'] as const;
+import { Cell, Cells, Code, Mono, Reveal, Rows, Slide } from '../engine/frame';
 
 /* ── the validated kortix.yaml, cropped ─────────────────────────────────── */
 
@@ -194,69 +190,12 @@ const LOOPS: readonly Loop[] = [
   },
 ];
 
-/* ── local parts ────────────────────────────────────────────────────────── */
-
-/** Lines of a kortix.yaml crop, set as literal text. A `…` line marks a cut. */
-function YamlLines({ lines, className }: { lines: readonly string[]; className?: string }) {
-  return (
-    <pre className={cn('font-mono leading-relaxed', className)}>
-      {lines.map((line, i) => (
-        <span
-          key={i}
-          className={cn(
-            'block',
-            line.trim() === '…' ? 'text-muted-foreground' : 'text-foreground',
-          )}
-        >
-          {line}
-        </span>
-      ))}
-    </pre>
-  );
-}
-
-/** A kortix.yaml crop with its file name, the artifact the reader keeps. */
-function Yaml({
-  lines,
-  className,
-  textClassName = 'text-sm',
-}: {
-  lines: readonly string[];
-  className?: string;
-  textClassName?: string;
-}) {
-  return (
-    <div className={cn('border-border bg-background overflow-hidden rounded-sm border', className)}>
-      <p className="border-border text-muted-foreground border-b px-4 py-2 font-mono text-xs">
-        kortix.yaml
-      </p>
-      <YamlLines lines={lines} className={cn('p-5', textClassName)} />
-    </div>
-  );
-}
-
-/**
- * A chapter slide: the spine, one short title, and the machine. No lead
- * paragraph: on a build slide the words that change are the caption, and a
- * second block of prose competes with the narration.
- */
-function Chapter({ n, title, children }: { n: number; title: ReactNode; children: ReactNode }) {
-  return (
-    <Slide innerClassName="py-14 sm:py-16">
-      <Rise i={0}>
-        <Spine chapters={CHAPTERS} active={n} />
-      </Rise>
-      <Rise i={1}>
-        <h2 className="text-foreground mt-6 max-w-4xl text-3xl font-medium tracking-tight text-balance">
-          {title}
-        </h2>
-      </Rise>
-      <Rise i={2}>
-        <div className="mt-8">{children}</div>
-      </Rise>
-    </Slide>
-  );
-}
+const START_SHELL = [
+  '$ curl -fsSL https://kortix.com/install | bash',
+  '$ kortix login',
+  '$ kortix init my-company',
+  '$ cd my-company && kortix ship',
+] as const;
 
 export function useSlides(): SlideDef[] {
   return [
@@ -267,29 +206,18 @@ export function useSlides(): SlideDef[] {
       notes:
         'Hi, we are Kortix. In the next five minutes I will show you how to put agents in a loop.\n\nThe whole idea fits on this screen. These six lines live in a file called kortix.yaml. Every hour, Kortix starts a fresh session of an agent called builder and tells it to take the next task and ship it.\n\nKortix is an open-source CompanyOS. Your company is a git repository, and agents work inside it. Four parts. Let me show you.',
       node: (
-        <Slide>
-          <Rise i={0}>
-            <Badge variant="kortix" className="rounded">
-              Kortix CompanyOS
-            </Badge>
-          </Rise>
-          <Rise i={1}>
-            <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              How to Kortix.{' '}
-              <span className="block">
-                <Dim>Put your agents in a loop.</Dim>
-              </span>
-            </h1>
-          </Rise>
-          <Rise i={2}>
-            <Yaml lines={TRIGGER_YAML} className="mt-10 max-w-2xl" textClassName="text-base sm:text-lg" />
-          </Rise>
-          <Rise i={3}>
-            <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-              Kortix runs this from your repository. Every hour, a fresh session starts on its own
-              sandbox and its own branch.
-            </p>
-          </Rise>
+        <Slide
+          size="cover"
+          title="How to Kortix."
+          titleMuted="Put your agents in a loop."
+          sub="Kortix runs this from your repository. Every hour, a fresh session starts on its own sandbox and its own branch."
+        >
+          <Code
+            title="kortix.yaml"
+            lines={TRIGGER_YAML}
+            className="max-w-3xl"
+            textClassName="text-base lg:text-lg"
+          />
         </Slide>
       ),
     },
@@ -307,53 +235,36 @@ export function useSlides(): SlideDef[] {
         'And then one command. kortix ship validates the file, commits, asks for any missing secrets, pushes, and connects the connectors you declared. The first time, it creates the project. That is the deploy. Change a file, ship again.',
       ],
       node: (step) => (
-        <Chapter
-          n={0}
+        <Slide
           title={
             <>
-              <Mono>kortix init</Mono> makes a git repo. <Dim>The repo is the company.</Dim>
+              <Mono>kortix init</Mono> makes a git repo.
             </>
           }
+          titleMuted="The repo is the company."
         >
-          <div className="grid gap-6 lg:grid-cols-5">
-            <div className="border-border bg-card overflow-hidden rounded-sm border lg:col-span-3">
-              <p className="border-border text-muted-foreground border-b px-5 py-3 font-mono text-sm">
-                <span className="text-foreground">$ kortix init my-company</span>
-                <span> · git init -b main</span>
-              </p>
-              {REPO.map((row, i) => (
-                <Reveal key={row.path} on={step >= i}>
-                  <div
-                    className={cn(
-                      'border-border grid gap-2 px-5 py-4 sm:grid-cols-12 sm:gap-6',
-                      i > 0 && 'border-t',
-                    )}
-                  >
-                    <p className="text-foreground font-mono text-lg sm:col-span-5">{row.path}</p>
-                    <p className="text-muted-foreground text-sm leading-relaxed sm:col-span-7">
-                      {row.body}
-                    </p>
-                  </div>
-                </Reveal>
-              ))}
-            </div>
-            <div className="lg:col-span-2">
-              <Reveal on={step >= 4} className="flex h-full flex-col gap-4">
-                <Terminal lines={[{ kind: 'cmd', text: 'kortix ship' }]} />
-                <Panel className="flex-1 p-5">
-                  <p className="text-foreground text-lg font-medium tracking-tight">
-                    One command deploys it.
-                  </p>
-                  <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                    <Mono>kortix ship</Mono> validates <Mono>kortix.yaml</Mono>, commits, asks for
-                    missing secrets, pushes, and connects the declared connectors. The first run
-                    creates the project.
-                  </p>
-                </Panel>
-              </Reveal>
-            </div>
+          <div className="grid gap-6 lg:grid-cols-12">
+            <Rows
+              className="lg:col-span-8"
+              upTo={step}
+              rows={REPO.map((row) => ({
+                id: row.path,
+                k: <Mono className="text-lg">{row.path}</Mono>,
+                v: row.body,
+              }))}
+            />
+            <Reveal on={step >= 4} className="flex flex-col gap-4 lg:col-span-4">
+              <Code title="zsh" lines={['$ kortix ship']} />
+              <Cells>
+                <Cell title="One command deploys it.">
+                  <Mono>kortix ship</Mono> validates <Mono>kortix.yaml</Mono>, commits, asks for
+                  missing secrets, pushes, and connects the declared connectors. The first run
+                  creates the project.
+                </Cell>
+              </Cells>
+            </Reveal>
           </div>
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -368,34 +279,31 @@ export function useSlides(): SlideDef[] {
         'Two things make it safe to leave running. Connector credentials are brokered on our side and never enter the machine the model drives. And every tool gets a rule: allow, ask or block, down to the arguments. On ask, the call holds and the turn pauses. One catch for scheduled runs: a session a trigger started waits at most thirty minutes for a person, then stops.',
       ],
       node: (step) => (
-        <Chapter n={1} title="Connectors give agents real reach. Credentials stay outside the box.">
-          <div className="grid gap-6 lg:grid-cols-5">
-            <div className="flex flex-col gap-4 lg:col-span-3">
-              <Yaml lines={CONNECTOR_YAML} />
+        <Slide title="Connectors give agents real reach." titleMuted="Credentials stay outside the box.">
+          <div className="grid gap-6 lg:grid-cols-12">
+            <div className="flex flex-col gap-4 lg:col-span-7">
+              <Code title="kortix.yaml" lines={CONNECTOR_YAML} />
               <Reveal on={step >= 1}>
-                <Terminal
+                <Code
+                  title="zsh"
                   lines={[
-                    { kind: 'cmd', text: 'kortix connectors catalog x' },
-                    { kind: 'out', text: 'curated/x-com-openapi   X   REST API   The X API exposes posts…' },
-                    { kind: 'out', text: 'Ways to connect: x-mcp  MCP  X MCP (recommended)' },
+                    '$ kortix connectors catalog x',
+                    'curated/x-com-openapi   X   REST API   The X API exposes posts…',
+                    'Ways to connect: x-mcp  MCP  X MCP (recommended)',
                   ]}
+                  textClassName="text-xs lg:text-sm"
                 />
               </Reveal>
             </div>
-            <div className="border-border bg-card overflow-hidden rounded-sm border lg:col-span-2">
+            <Cells className="lg:col-span-5">
               {CONNECTORS.map((c, i) => (
-                <Reveal key={c.k} on={step >= (i === 0 ? 1 : 2)}>
-                  <div className={cn('border-border px-5 py-5', i > 0 && 'border-t')}>
-                    <p className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-                      {c.k}
-                    </p>
-                    <p className="text-foreground mt-2 text-base leading-relaxed">{c.body}</p>
-                  </div>
-                </Reveal>
+                <Cell key={c.k} label={c.k} on={step >= (i === 0 ? 1 : 2)}>
+                  <span className="text-foreground text-base">{c.body}</span>
+                </Cell>
               ))}
-            </div>
+            </Cells>
           </div>
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -411,9 +319,9 @@ export function useSlides(): SlideDef[] {
         'The work lands on main. And this is what makes it a loop: the next fire starts from the new main. If the agent improved a skill or wrote down what it learned, the next run has it.',
       ],
       node: (step) => (
-        <Chapter n={2} title="A loop has four parts. The last one feeds the first.">
+        <Slide title="A loop has four parts." titleMuted="The last one feeds the first.">
           <LoopDiagram step={step} content={LOOP} />
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -428,24 +336,24 @@ export function useSlides(): SlideDef[] {
         'Third, an X bot. Weekdays at nine, one and five, it reads mentions through the X connector and posts in your voice, from a voice skill. session reuse keeps one session across fires, so it remembers what it already said.',
       ],
       node: (step) => (
-        <Chapter n={3} title="Three loops you can build today.">
-          <div className="grid gap-10 lg:grid-cols-3">
+        <Slide title="Three loops you can build today." bandClassName="lg:py-8">
+          <Cells className="lg:grid-cols-3">
             {LOOPS.map((loop, i) => (
-              <Reveal key={loop.title} on={step >= i}>
-                <div className="flex flex-col items-center text-center">
+              <div key={loop.title} className="bg-background p-6 lg:p-8">
+                <Reveal on={step >= i} className="flex flex-col items-center text-center">
                   <LoopRing content={loop.ring} spin={step === i} />
-                  <h3 className="text-foreground mt-6 text-2xl font-medium tracking-tight">
+                  <h3 className="text-foreground mt-5 text-xl font-medium tracking-tight">
                     {loop.title}
                   </h3>
                   <p className="text-muted-foreground mt-2 font-mono text-xs">{loop.on}</p>
-                  <p className="text-muted-foreground mt-3 max-w-xs text-sm leading-relaxed">
+                  <p className="text-muted-foreground mt-3 max-w-xs text-sm leading-relaxed text-pretty">
                     {loop.line}
                   </p>
-                </div>
-              </Reveal>
+                </Reveal>
+              </div>
             ))}
-          </div>
-        </Chapter>
+          </Cells>
+        </Slide>
       ),
     },
 
@@ -456,50 +364,28 @@ export function useSlides(): SlideDef[] {
       notes:
         'So: start with one loop. Install the CLI, log in, kortix init, kortix ship. On the free plan, connect your own model key or your ChatGPT subscription first.\n\nAnd inside a session, kortix loop prompts that same session again on a schedule. It never starts a new one. Use it for things like: is CI green yet.\n\nEverything I showed you is open source. Read it, fork it, audit it.\n\nKortix. Your CompanyOS.',
       node: (
-        <Slide>
-          <Rise i={0}>
-            <h2 className="text-foreground max-w-4xl text-3xl font-medium tracking-tight text-balance sm:text-5xl">
-              Start with one loop.
-            </h2>
-          </Rise>
-          <div className="mt-10 grid gap-4 lg:grid-cols-2">
-            <Rise i={1}>
-              <Terminal
-                lines={[
-                  { kind: 'cmd', text: 'curl -fsSL https://kortix.com/install | bash' },
-                  { kind: 'cmd', text: 'kortix login' },
-                  { kind: 'cmd', text: 'kortix init my-company' },
-                  { kind: 'cmd', text: 'cd my-company && kortix ship' },
-                ]}
+        <Slide
+          title="Start with one loop."
+          titleMuted="Open source. Read it, fork it, audit it."
+          sub="On Free, connect your own model key or a ChatGPT subscription first."
+        >
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Code title="zsh" lines={START_SHELL} />
+            <div className="flex flex-col gap-4">
+              <Code
+                title="inside a session"
+                lines={['$ kortix loop "Is CI green? Fix it if not." --every 30m']}
               />
-            </Rise>
-            <Rise i={2}>
-              <div className="flex h-full flex-col gap-3">
-                <Terminal
-                  title="inside a session"
-                  lines={[
-                    { kind: 'cmd', text: 'kortix loop "Is CI green? Fix it if not." --every 30m' },
-                  ]}
-                />
-                <p className="text-muted-foreground text-sm leading-relaxed">
-                  A loop prompts the same session again. A trigger starts a new one.
-                </p>
-              </div>
-            </Rise>
-          </div>
-          <Rise i={3}>
-            <div className="border-border mt-10 flex flex-col gap-2 border-t pt-6">
-              <p className="text-muted-foreground text-base leading-relaxed">
-                On Free, connect your own model key or a ChatGPT subscription first.
-              </p>
-              <p className="text-foreground text-base leading-relaxed">
-                Open source. Read it, fork it, audit it.{' '}
-                <Mono className="text-muted-foreground">github.com/kortix-ai/CompanyOS</Mono>
-                <span className="text-muted-foreground"> · </span>
-                <Mono className="text-muted-foreground">kortix.com/docs/developers</Mono>
+              <p className="text-muted-foreground text-sm">
+                A loop prompts the same session again. A trigger starts a new one.
               </p>
             </div>
-          </Rise>
+          </div>
+          <p className="text-muted-foreground mt-8 text-sm">
+            <Mono className="text-foreground">github.com/kortix-ai/CompanyOS</Mono>
+            <span> · </span>
+            <Mono className="text-foreground">kortix.com/docs/developers</Mono>
+          </p>
         </Slide>
       ),
     },
