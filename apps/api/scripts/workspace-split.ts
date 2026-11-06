@@ -6,7 +6,8 @@
  *
  *   cd apps/api && dotenvx run -q -- bun scripts/workspace-split.ts <command>
  *
- *   status                               phase counts of kortix.workspace_split_runs
+ *   status                               phase counts of kortix.workspace_split_runs and the
+ *                                        owner email outbox (kortix.workspace_split_emails)
  *   plan [--account <account_id>]        the dry-run plan pass (moves nothing)
  *   report                               dry-run aggregates of the runs still to apply (counts and credits only)
  *   apply <run_id>                       apply one planned run now
@@ -46,7 +47,10 @@ async function main(): Promise<number> {
     case 'status': {
       const rows = await db.execute<{ phase: string; mode: string; n: number }>(sql`
         SELECT phase, mode, count(*)::int AS n FROM kortix.workspace_split_runs GROUP BY 1, 2 ORDER BY 1, 2`);
-      console.log(JSON.stringify(rows, null, 2));
+      // The owner email outbox (owner-email.ts): counts per state, no address.
+      const emails = await db.execute<{ state: string; n: number; max_attempts: number }>(sql`
+        SELECT state, count(*)::int AS n, max(attempts)::int AS max_attempts FROM kortix.workspace_split_emails GROUP BY 1 ORDER BY 1`);
+      console.log(JSON.stringify({ runs: rows, owner_emails: emails }, null, 2));
       return 0;
     }
     case 'plan': {

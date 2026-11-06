@@ -57,7 +57,7 @@ import {
 } from './split-runner';
 import { checkWorkspaceInvariants } from './invariants';
 import { workspaceSplitNotice } from './notice';
-import { renderSplitOwnerEmail } from './owner-email';
+import { deliverSplitOwnerEmails, OWNER_EMAIL_MAX_ATTEMPTS, renderSplitOwnerEmail, type SendEmail } from './owner-email';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
 import { resolveOpencodeLogin } from '../../llm-gateway/credentials/opencode-console';
 
@@ -233,6 +233,7 @@ async function cleanup(): Promise<void> {
   const targets = runs.map((run) => run.to).filter((id): id is string => Boolean(id));
   const all = [LEGACY, PAYING, ...targets];
   await db.delete(workspaceSplitRuns);
+  await db.execute(sql`DELETE FROM kortix.workspace_split_emails`);
   await db.delete(appSiteBlobs).where(inArray(appSiteBlobs.accountId, all));
   await db.delete(creditPurchases).where(inArray(creditPurchases.accountId, all));
   await db.execute(sql`DELETE FROM kortix.enterprise_contracts WHERE account_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(all)}::jsonb))`);
@@ -245,6 +246,21 @@ async function cleanup(): Promise<void> {
 function mailStub() {
   const sent: EmailMessage[] = [];
   return { sent, sendEmail: async (message: EmailMessage) => { sent.push(message); return { ok: true as const, provider: 'mailpit' as const, status: 200 }; } };
+}
+
+/** The owner email outbox rows, oldest first. */
+async function outbox() {
+  return db.execute<{ idempotency_key: string; state: string; attempts: number; last_error: string | null; due: boolean }>(sql`
+    SELECT idempotency_key, state, attempts, last_error, next_attempt_at <= now() AS due
+      FROM kortix.workspace_split_emails ORDER BY created_at, email_id`);
+}
+
+/** LEGACY split to the end in apply mode, with the email transport `send`. */
+async function splitLegacy(siteStorage: SiteStorage, send: SendEmail, mode: 'apply' | 'dry_run' = 'apply') {
+  await planWorkspaceSplits({ accountIds: [LEGACY] });
+  for (const projectId of [MOVED, OLDEST]) {
+    expect(await applyWorkspaceSplitRun((await runFor(projectId))!.runId, { siteStorage, sendEmail: send, mode })).toBe('done');
+  }
 }
 
 async function secretRow(secretId: string) {
@@ -836,9 +852,10 @@ withDb('workspace split', () => {
     const mail = mailStub();
     await planWorkspaceSplits();
     // The first move is not the last: no email yet.
-    expect(await applyWorkspaceSplitRun((await runFor(MOVED))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail })).toBe('done');
+    expect(await applyWorkspaceSplitRun((await runFor(MOVED))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail, mode: 'apply' })).toBe('done');
     expect(mail.sent).toEqual([]);
-    expect(await applyWorkspaceSplitRun((await runFor(OLDEST))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail })).toBe('done');
+    expect(await outbox()).toEqual([]);
+    expect(await applyWorkspaceSplitRun((await runFor(OLDEST))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail, mode: 'apply' })).toBe('done');
     // LEGACY has one owner; the admin and the members are not mailed.
     expect(mail.sent.map((m) => m.to)).toEqual([[`split-${OWNER.slice(-4)}@example.test`]]);
     expect(mail.sent[0]!.subject).toBe('Review your new Kortix workspaces');
@@ -847,9 +864,9 @@ withDb('workspace split', () => {
     expect(mail.sent[0]!.text).toContain(`/workspaces/${KEEPER}/admin/general`);
     // Measured: the HTML part stays above the 3,200-byte image-only spam window (brand voice 5.5).
     expect(mail.sent[0]!.html.length).toBeGreaterThan(3_200);
-    const recorded = await db.execute<{ emails: Record<string, { status: string }> }>(sql`
-      SELECT plan->'owner_emails' AS emails FROM kortix.workspace_split_runs WHERE plan ? 'owner_emails'`);
-    expect(recorded.map((r) => Object.entries(r.emails).map(([key, v]) => [key, v.status]))).toEqual([[[`workspace-split-email:${LEGACY}:${OWNER}`, 'sent']]]);
+    // The provider gets the row's key, so a resend after a crash is a repeat it drops.
+    expect(mail.sent[0]!.idempotencyKey).toBe(`workspace-split-email:${LEGACY}:${OWNER}`);
+    expect((await outbox()).map((r) => [r.idempotency_key, r.state, r.attempts])).toEqual([[`workspace-split-email:${LEGACY}:${OWNER}`, 'sent', 1]]);
     // The tick and a second finish send nothing more.
     await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage, sendEmail: mail.sendEmail } });
     expect(mail.sent).toHaveLength(1);
@@ -858,11 +875,11 @@ withDb('workspace split', () => {
   test('no owner email while a done move has no billing recorded; it goes out once the billing lands', async () => {
     const mail = mailStub();
     await planWorkspaceSplits();
-    expect(await applyWorkspaceSplitRun((await runFor(MOVED))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail })).toBe('done');
+    expect(await applyWorkspaceSplitRun((await runFor(MOVED))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail, mode: 'apply' })).toBe('done');
     // The moved run's billing failed every retry: plan.billing is absent.
     const moved = (await runFor(MOVED))!;
     await db.execute(sql`UPDATE kortix.workspace_split_runs SET plan = (plan - 'billing') || '{"billing_attempts": 5}'::jsonb WHERE run_id = ${moved.runId}`);
-    expect(await applyWorkspaceSplitRun((await runFor(OLDEST))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail })).toBe('done');
+    expect(await applyWorkspaceSplitRun((await runFor(OLDEST))!.runId, { siteStorage: storage, sendEmail: mail.sendEmail, mode: 'apply' })).toBe('done');
     await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage, sendEmail: mail.sendEmail } });
     expect(mail.sent).toEqual([]);
     // An operator fixes the billing: the next tick sends the email, and it never says Free for a run it has no billing for.
@@ -874,6 +891,74 @@ withDb('workspace split', () => {
       workspaces: [{ name: 'Moved', role: 'moved', billing: null, compedUntil: null }],
     });
     expect(unbilled.text).not.toContain('Free');
+  });
+
+  test('the owner email never goes out unless the split mode is apply; the row waits and goes out once apply runs', async () => {
+    const mail = mailStub();
+    // An operator applied the moves while the worker is in dry_run.
+    await splitLegacy(storage, mail.sendEmail, 'dry_run');
+    expect(mail.sent).toEqual([]);
+    expect((await outbox()).map((r) => [r.state, r.attempts])).toEqual([['pending', 0]]);
+    for (const mode of ['off', 'dry_run'] as const) {
+      expect(await deliverSplitOwnerEmails(mode, { send: mail.sendEmail })).toEqual({ sent: 0, failed: 0, skipped: 0 });
+      await processWorkspaceSplits({ mode, deps: { siteStorage: storage, sendEmail: mail.sendEmail } });
+    }
+    expect(mail.sent).toEqual([]);
+    await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage, sendEmail: mail.sendEmail } });
+    expect(mail.sent).toHaveLength(1);
+    expect((await outbox()).map((r) => r.state)).toEqual(['sent']);
+  });
+
+  test('a crash between the claim and the result never loses the email, and a live claim is never sent twice', async () => {
+    const mail = mailStub();
+    await splitLegacy(storage, mail.sendEmail, 'dry_run');
+    // A process claimed the row and died before it recorded a result.
+    await db.execute(sql`UPDATE kortix.workspace_split_emails
+      SET state = 'sending', attempts = 1, lease_until = now() + interval '5 minutes'`);
+    // While its lease runs, no other tick sends it: two concurrent ticks send nothing.
+    await Promise.all([deliverSplitOwnerEmails('apply', { send: mail.sendEmail }), deliverSplitOwnerEmails('apply', { send: mail.sendEmail })]);
+    expect(mail.sent).toEqual([]);
+    // The lease expires: the next tick takes it back and sends it once.
+    await db.execute(sql`UPDATE kortix.workspace_split_emails SET lease_until = now() - interval '1 second'`);
+    const [first, second] = await Promise.all([
+      deliverSplitOwnerEmails('apply', { send: mail.sendEmail }),
+      deliverSplitOwnerEmails('apply', { send: mail.sendEmail }),
+    ]);
+    expect(first.sent + second.sent).toBe(1);
+    expect(mail.sent).toHaveLength(1);
+    expect((await outbox()).map((r) => [r.state, r.attempts])).toEqual([['sent', 2]]);
+  });
+
+  test('a failed send retries after its backoff and stops after the last attempt', async () => {
+    let calls = 0;
+    const failing = async (_message: EmailMessage) => {
+      calls += 1;
+      return { ok: false as const, provider: 'mailpit' as const, status: 503, error: 'synthetic outage' };
+    };
+    await splitLegacy(storage, failing);
+    expect(calls).toBe(1);
+    const [failed] = await outbox();
+    // The stored reason keeps the status only, never the provider's text.
+    expect([failed!.state, failed!.attempts, failed!.last_error, failed!.due]).toEqual(['failed', 1, 'send_failed:503', false]);
+    // Not due yet: nothing is sent.
+    await deliverSplitOwnerEmails('apply', { send: failing });
+    expect(calls).toBe(1);
+    for (let attempt = 2; attempt <= OWNER_EMAIL_MAX_ATTEMPTS; attempt += 1) {
+      await db.execute(sql`UPDATE kortix.workspace_split_emails SET next_attempt_at = now() - interval '1 second'`);
+      await deliverSplitOwnerEmails('apply', { send: failing });
+    }
+    expect(calls).toBe(OWNER_EMAIL_MAX_ATTEMPTS);
+    // Out of attempts: it stays failed, for an operator.
+    await db.execute(sql`UPDATE kortix.workspace_split_emails SET next_attempt_at = now() - interval '1 second'`);
+    const mail = mailStub();
+    await deliverSplitOwnerEmails('apply', { send: mail.sendEmail });
+    expect(mail.sent).toEqual([]);
+    expect((await outbox()).map((r) => [r.state, r.attempts])).toEqual([['failed', OWNER_EMAIL_MAX_ATTEMPTS]]);
+    // A retry that succeeds before the cap is sent once.
+    await db.execute(sql`UPDATE kortix.workspace_split_emails SET attempts = 2, next_attempt_at = now() - interval '1 second'`);
+    await deliverSplitOwnerEmails('apply', { send: mail.sendEmail });
+    await deliverSplitOwnerEmails('apply', { send: mail.sendEmail });
+    expect(mail.sent).toHaveLength(1);
   });
 
   test('split_notice: the moved workspace and the keeper each say where they came from, for 30 days', async () => {

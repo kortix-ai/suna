@@ -1597,6 +1597,13 @@
       "when": 1793973070444,
       "tag": "20261106135110_workspaces_r1_merged",
       "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1793989812005,
+      "tag": "20261106183011_workspace_split_emails",
+      "breakpoints": true
     }
   ]
 }

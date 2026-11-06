@@ -764,6 +764,40 @@ export const workspaceSplitRuns = kortixSchema
   )
   .enableRLS();
 
+/**
+ * The split's owner email outbox (Workspaces design.md §3.2 C9): one row per
+ * (source account, owner), keyed `workspace-split-email:<from>:<user>`. The
+ * split enqueues it when the account's last move is done (apply mode only);
+ * the leader tick delivers it under a lease, retries a failure with backoff,
+ * and takes back a `sending` row whose lease expired (a crash mid-send).
+ */
+export const workspaceSplitEmails = kortixSchema
+  .table(
+    'workspace_split_emails',
+    {
+      emailId: uuid('email_id').defaultRandom().primaryKey(),
+      idempotencyKey: text('idempotency_key').notNull(),
+      fromAccountId: uuid('from_account_id').notNull(),
+      userId: uuid('user_id').notNull(),
+      /** The account's first done run: the split this email reports. */
+      runId: uuid('run_id').notNull(),
+      state: varchar('state', { length: 16 }).default('pending').notNull(),
+      attempts: integer('attempts').default(0).notNull(),
+      nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow().notNull(),
+      leaseUntil: timestamp('lease_until', { withTimezone: true }),
+      lastError: text('last_error'),
+      sentAt: timestamp('sent_at', { withTimezone: true }),
+      createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+      updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    },
+    (table) => [
+      uniqueIndex('workspace_split_emails_idempotency_key').on(table.idempotencyKey),
+      index('idx_workspace_split_emails_due').on(table.state, table.nextAttemptAt),
+      check('workspace_split_emails_state_check', sql`${table.state} IN ('pending', 'sending', 'sent', 'failed', 'skipped')`),
+    ],
+  )
+  .enableRLS();
+
 export const projectGitConnections = kortixSchema.table(
   'project_git_connections',
   {

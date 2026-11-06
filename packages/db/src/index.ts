@@ -37,6 +37,7 @@ export {
   workspaceNameBackups,
   personDeletionRequests,
   workspaceSplitRuns,
+  workspaceSplitEmails,
   auditEvents,
   auditEventsAll,
   auditArchiveChunks,

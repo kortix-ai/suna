@@ -42,7 +42,9 @@
  *                     move's own idempotent UPDATEs again, for rows a request
  *                     that started before the move wrote with the old account,
  *                     then I2 for the run (design.md §3.1 row 32)
- *   owner emails      once the account's last move is done (`owner-email.ts`)
+ *   owner emails      once the account's last move is done: one outbox row
+ *                     per owner (`kortix.workspace_split_emails`), sent in
+ *                     `apply` mode only (`owner-email.ts`)
  */
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
@@ -68,7 +70,7 @@ import {
   reverseSplitOffBilling,
 } from '../../billing/services/split-off-billing';
 import { checkSplitRunsMoved } from './invariants';
-import { sendSplitOwnerEmails, type SendEmail } from './owner-email';
+import { deliverSplitOwnerEmails, sendSplitOwnerEmails, type SendEmail } from './owner-email';
 
 export type WorkspaceSplitMode = 'off' | 'dry_run' | 'apply';
 export type WorkspaceSplitPhase = 'planned' | 'held' | 'storage_copied' | 'done' | 'failed' | 'skipped' | 'reversed';
@@ -286,6 +288,11 @@ export interface ApplyDeps {
   siteStorage?: SiteStorage;
   /** The owner email transport (test seam). Default: lib/email/transport. */
   sendEmail?: SendEmail;
+  /**
+   * The split mode the owner emails obey: they go out in `apply` only.
+   * Default: `workspaceSplitMode()` (the platform setting, else the env).
+   */
+  mode?: WorkspaceSplitMode;
 }
 
 export type ApplyOutcome = 'done' | 'busy' | 'skipped' | 'error' | 'failed';
@@ -430,7 +437,7 @@ async function finishAccountIfLast(fromAccountId: string, deps: ApplyDeps): Prom
              WHERE from_account_id = ${fromAccountId} AND phase = 'done'), '[]'::jsonb) AS targets`);
   if (!state || state.open > 0 || state.active > 1 || !state.targets.length) return;
   await fillWorkspaceIds([fromAccountId, ...state.targets]);
-  await sendSplitOwnerEmails(fromAccountId, deps.sendEmail);
+  await sendSplitOwnerEmails(fromAccountId, deps.mode ?? (await workspaceSplitMode()), deps.sendEmail);
 }
 
 export const REPAIR_AFTER_MS = 120_000;
@@ -494,17 +501,18 @@ async function finishDoneRuns(deps: ApplyDeps): Promise<number | null> {
        AND completed_at <= now() - make_interval(secs => ${REPAIR_AFTER_MS / 1000})
      ORDER BY completed_at LIMIT 20`);
   for (const { run_id } of due) await repairWorkspaceSplitRun(run_id);
+  // Accounts whose last move is done and whose owner emails are not
+  // enqueued yet (the finish after the move did not run to the end).
   const unfinished = await db.execute<{ from_account_id: string }>(sql`
     SELECT DISTINCT r.from_account_id::text FROM kortix.workspace_split_runs r
      WHERE r.phase = 'done' AND r.updated_at > now() - interval '7 days'
        AND NOT EXISTS (SELECT 1 FROM kortix.workspace_split_runs o
                         WHERE o.from_account_id = r.from_account_id AND o.phase IN ('planned', 'held', 'storage_copied'))
-       AND NOT EXISTS (SELECT 1 FROM kortix.workspace_split_runs e
-                        WHERE e.from_account_id = r.from_account_id AND e.plan ? 'owner_emails'
-                          AND NOT EXISTS (SELECT 1 FROM jsonb_each(e.plan->'owner_emails') s
-                                           WHERE s.value->>'status' = 'failed'))
+       AND NOT EXISTS (SELECT 1 FROM kortix.workspace_split_emails e WHERE e.from_account_id = r.from_account_id)
      LIMIT 20`);
   for (const { from_account_id } of unfinished) await finishAccountIfLast(from_account_id, deps);
+  // The outbox: due rows, failed rows past their backoff, expired leases.
+  await deliverSplitOwnerEmails(deps.mode ?? (await workspaceSplitMode()), { send: deps.sendEmail });
   const [next] = await db.execute<{ ms: number | null }>(sql`
     SELECT (extract(epoch FROM min(completed_at) + make_interval(secs => ${REPAIR_AFTER_MS / 1000}) - now()) * 1000)::bigint AS ms
       FROM kortix.workspace_split_runs WHERE phase = 'done' AND NOT (plan ? 'repaired_at')`);
@@ -669,7 +677,7 @@ export async function processWorkspaceSplits(options: { mode?: WorkspaceSplitMod
     logger.info('[workspace-split] plan pass', { mode, ...totals });
   }
   if (mode === 'dry_run') return { mode, planned, outcomes, nextDelayMs: DRY_RUN_EVERY_MS };
-  const deps = options.deps ?? {};
+  const deps: ApplyDeps = { ...options.deps, mode };
   const nextRepairMs = await finishDoneRuns(deps);
   const batch = options.batch ?? APPLY_BATCH;
   const runnable = await db.execute<{ run_id: string }>(sql`
