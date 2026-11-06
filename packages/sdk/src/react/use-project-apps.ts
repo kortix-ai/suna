@@ -91,7 +91,14 @@ export function useProjectApps(projectId: string | null | undefined) {
   });
   const remove = useMutation({
     mutationFn: (appId: string) => deleteApp(projectId as string, appId),
-    onSuccess: invalidate,
+    onSuccess: (_deleted: unknown, appId: string) => {
+      // The deleted App's own queries (access, deployments, events) sit under
+      // the list key; refetched, each answers 404 while its detail closes.
+      const list = projectAppsKey(projectId);
+      void queryClient.invalidateQueries({ queryKey: list, predicate: (q) => q.queryKey[list.length] !== appId });
+      // A delete takes the triggers that name the App.
+      return queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId ?? '') });
+    },
   });
 
   return { ...query, create, update, start, stop, remove };
