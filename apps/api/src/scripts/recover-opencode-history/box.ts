@@ -125,7 +125,8 @@ export function parseCopyOutput(stdout: string): CopyOutput {
   const tooLarge = /^too_large\|(\d+)$/.exec(last);
   if (tooLarge) return { kind: 'too_large', bytes: Number(tooLarge[1]) };
   const [tag, boxTemp, home, pin] = last.split('|');
-  if (tag !== 'found' || !boxTemp?.startsWith('/tmp/kortix-recover.') || !home) {
+  // Exactly what `mktemp -d /tmp/kortix-recover.XXXXXX` makes: no `/`, no `..`.
+  if (tag !== 'found' || !/^\/tmp\/kortix-recover\.[A-Za-z0-9]+$/.test(boxTemp ?? '') || !home) {
     throw new RecoverableBoxError(`unexpected copy output: ${last.slice(0, 200)}`, false);
   }
   const parts = lines.filter((l) => /^part\|opencode\.db(-wal)?\.part\.[a-z]{3}$/.test(l)).map((l) => l.slice('part|'.length));

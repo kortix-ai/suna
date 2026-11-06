@@ -207,6 +207,7 @@ describe('the box copy', () => {
     expect(parseCopyOutput('too_large|718274560')).toEqual({ kind: 'too_large', bytes: 718274560 });
     expect(parseCopyOutput('none')).toEqual({ kind: 'none' });
     expect(() => parseCopyOutput('found|/tmp/kortix-recover.x|/root|')).toThrow('lists no opencode.db');
+    expect(() => parseCopyOutput('file|opencode.db|0\nfound|/tmp/kortix-recover.x/../../etc|/root|')).toThrow('unexpected copy output');
   });
 
   test('assembles the parts in order and fails when a part comes back short', async () => {
