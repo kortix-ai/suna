@@ -13,20 +13,20 @@ import { pinNeedsRepair, storedPinWireId } from './session-model-repair';
 
 describe('storedPinWireId', () => {
   test('strips the synthetic kortix/ provider prefix', () => {
-    expect(storedPinWireId({ opencode_model: 'kortix/deepseek-v4-flash' })).toBe(
+    expect(storedPinWireId({ model: 'kortix/deepseek-v4-flash' })).toBe(
       'deepseek-v4-flash',
     );
   });
 
   test('leaves a bare id alone', () => {
-    expect(storedPinWireId({ opencode_model: 'deepseek-v4-flash' })).toBe('deepseek-v4-flash');
+    expect(storedPinWireId({ model: 'deepseek-v4-flash' })).toBe('deepseek-v4-flash');
   });
 
   test('is null for a session with no pin', () => {
     expect(storedPinWireId({})).toBeNull();
     expect(storedPinWireId(null)).toBeNull();
-    expect(storedPinWireId({ opencode_model: '' })).toBeNull();
-    expect(storedPinWireId({ opencode_model: 42 })).toBeNull();
+    expect(storedPinWireId({ model: '' })).toBeNull();
+    expect(storedPinWireId({ model: 42 })).toBeNull();
   });
 });
 
@@ -39,16 +39,16 @@ describe('pinNeedsRepair', () => {
     ['kortix/glm-5.2', 'retired, no declared successor'],
     ['kortix/grok-4.6', 'retired, no declared successor'],
   ])('%s is repaired (%s)', (pin) => {
-    expect(pinNeedsRepair({ opencode_model: pin })).toBe(true);
+    expect(pinNeedsRepair({ model: pin })).toBe(true);
   });
 
   test('a servable managed pin is left alone', () => {
-    expect(pinNeedsRepair({ opencode_model: 'kortix/deepseek-v4.1-flash' })).toBe(false);
+    expect(pinNeedsRepair({ model: 'kortix/deepseek-v4.1-flash' })).toBe(false);
   });
 
   test('a BYOK ref is left alone', () => {
-    expect(pinNeedsRepair({ opencode_model: 'anthropic/claude-sonnet-5' })).toBe(false);
-    expect(pinNeedsRepair({ opencode_model: 'kortix/openrouter/z-ai/glm-5.3-flash' })).toBe(false);
+    expect(pinNeedsRepair({ model: 'anthropic/claude-sonnet-5' })).toBe(false);
+    expect(pinNeedsRepair({ model: 'kortix/openrouter/z-ai/glm-5.3-flash' })).toBe(false);
   });
 
   test('a session with no pin is left alone — the fast path', () => {
@@ -127,7 +127,7 @@ describe('repairRetiredSessionModelOnOpen — the model push never blocks the op
       accountId: 'acct-1',
       userId: 'user-1',
       agentName: null,
-      metadata: { opencode_model: 'kortix/deepseek-v4-flash' },
+      metadata: { model: 'kortix/deepseek-v4-flash' },
     });
   }
 

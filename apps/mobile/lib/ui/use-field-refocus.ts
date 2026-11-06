@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { AppState, Keyboard, type TextInput } from 'react-native';
+import { AppState, Keyboard, type TextInputInstance } from 'react-native';
 
 /**
  * Keeps a code field reachable after the user leaves the app to fetch the
@@ -17,7 +17,7 @@ import { AppState, Keyboard, type TextInput } from 'react-native';
  * and ready to paste. The app is `active` before its window is key again, and
  * iOS ignores a focus that lands earlier, hence the 300 ms beat.
  */
-export function useFieldRefocus(ref: React.RefObject<TextInput | null>, editable = true): () => void {
+export function useFieldRefocus(ref: React.RefObject<TextInputInstance | null>, editable = true): () => void {
   const refocus = React.useCallback(() => {
     const input = ref.current;
     if (!input || !editable || Keyboard.isVisible()) return;
@@ -29,7 +29,10 @@ export function useFieldRefocus(ref: React.RefObject<TextInput | null>, editable
     let previous = AppState.currentState;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active' && previous !== 'active') timer = setTimeout(refocus, 300);
+      if (next === 'active' && previous !== 'active') {
+        if (timer !== undefined) clearTimeout(timer);
+        timer = setTimeout(refocus, 300);
+      }
       previous = next;
     });
     return () => {

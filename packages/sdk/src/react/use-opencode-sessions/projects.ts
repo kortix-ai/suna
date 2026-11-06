@@ -1,31 +1,13 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getClient } from '../../core/runtime/client';
 import type { Project, Path as PathInfo } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap } from './shared';
 import { getRuntimePathInfo, getRuntimeProjectInfo } from '../runtime-actions';
 
 // ============================================================================
 // Project Hooks
 // ============================================================================
-
-/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
-export function useOpenCodeProjects() {
-  const runtimeReady = useRuntimeReady();
-  return useQuery<Project[]>({
-    queryKey: runtimeKeys.projects(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.project.list();
-      return unwrap(result);
-    },
-    enabled: runtimeReady,
-    staleTime: Infinity,
-    gcTime: 5 * 60 * 1000,
-  });
-}
 
 export function useRuntimeCurrentProject() {
   const runtimeReady = useRuntimeReady();
@@ -55,8 +37,3 @@ export function useRuntimePathInfo() {
   });
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `useRuntimeCurrentProject`. Removed in the next major. */
-export const useOpenCodeCurrentProject = useRuntimeCurrentProject;
-/** @deprecated Renamed to `useRuntimePathInfo`. Removed in the next major. */
-export const useOpenCodePathInfo = useRuntimePathInfo;

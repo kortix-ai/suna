@@ -27,7 +27,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from '../../../i18n';
 import { useUiViewer } from '../../../providers/ui-provider';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
   forgetSubscriptionCredentials,
@@ -36,7 +36,7 @@ import {
 } from './subscription-control';
 import type { ChatGptChallenge, ChatGptPhase } from './types';
 import { sleep } from './utils';
-import { runDeviceGrant } from './device-grant';
+import { createRunGeneration, runDeviceGrant } from './device-grant';
 
 /**
  * A subscription sign-in card. `chatgpt` is the ChatGPT Plus/Pro login (Codex
@@ -125,22 +125,22 @@ export function useSubscriptionSignIn({
   /** Claude: the sign-in the pasted code completes, and whether it is being checked. */
   const [claudeFlow, setClaudeFlow] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  const cancelledRef = useRef(false);
+  // One generation per sign-in run: Cancel then Connect must not revive the
+  // old loop (see `createRunGeneration`).
+  const [runs] = useState(createRunGeneration);
 
   useEffect(() => {
-    return () => {
-      cancelledRef.current = true;
-    };
-  }, []);
+    return () => runs.cancel();
+  }, [runs]);
 
   const reset = useCallback(() => {
-    cancelledRef.current = true;
+    runs.cancel();
     setChallenge(null);
     setClaudeFlow(null);
     setChecking(false);
     setError(null);
     setPhase('idle');
-  }, []);
+  }, [runs]);
 
   const claudeConnected = useCallback(async () => {
     setPhase('done');
@@ -155,14 +155,14 @@ export function useSubscriptionSignIn({
 
   /** Claude: start `claude setup-token` and open claude.com. The tab opens inside the click, so a popup blocker lets it through. */
   const startClaude = useCallback(async () => {
-    cancelledRef.current = false;
+    const isCancelled = runs.begin();
     setError(null);
     setChallenge(null);
     setPhase('waiting');
     const popup = typeof window === 'undefined' ? null : window.open('about:blank', '_blank');
     try {
       const started = await startClaudeSubscriptionLogin(projectId);
-      if (cancelledRef.current) {
+      if (isCancelled()) {
         popup?.close();
         return;
       }
@@ -171,21 +171,23 @@ export function useSubscriptionSignIn({
       if (popup && !popup.closed) popup.location.href = started.authorize_url;
     } catch (err) {
       popup?.close();
+      if (isCancelled()) return;
       setPhase('idle');
       setError(err instanceof Error && err.message ? err.message : copy.failed);
     }
-  }, [copy.failed, projectId]);
+  }, [copy.failed, projectId, runs]);
 
   /** Claude: hand the code claude.com showed to the sign-in. A refused code ends it: the next try signs in again. */
   const submitCode = useCallback(async (code: string) => {
     if (!claudeFlow || !code.trim()) return;
+    const isCancelled = runs.current();
     setChecking(true);
     setError(null);
     try {
       await completeClaudeSubscriptionLogin(projectId, { flowId: claudeFlow, code: code.trim() });
-      if (!cancelledRef.current) await claudeConnected();
+      if (!isCancelled()) await claudeConnected();
     } catch (err) {
-      if (cancelledRef.current) return;
+      if (isCancelled()) return;
       setPhase('idle');
       setChallenge(null);
       setClaudeFlow(null);
@@ -193,11 +195,11 @@ export function useSubscriptionSignIn({
     } finally {
       setChecking(false);
     }
-  }, [claudeConnected, claudeFlow, projectId, tClaude]);
+  }, [claudeConnected, claudeFlow, projectId, tClaude, runs]);
 
   const handleConnect = useCallback(async () => {
     if (claude) return startClaude();
-    cancelledRef.current = false;
+    const isCancelled = runs.begin();
     setError(null);
     setChallenge(null);
     setPhase('waiting');
@@ -206,7 +208,7 @@ export function useSubscriptionSignIn({
       pollOAuth: (flowId) => pollProjectProviderOAuth(projectId, subscription.oauth, flowId),
       sleep,
       now: Date.now,
-      isCancelled: () => cancelledRef.current,
+      isCancelled,
       setChallenge,
       setPhase,
       setError,
@@ -220,7 +222,7 @@ export function useSubscriptionSignIn({
           onConnected(subscription.providerId);
       },
     });
-  }, [claude, startClaude, projectId, queryClient, onConnected, subscription, copy.connectedToast, copy.failed]);
+  }, [claude, startClaude, projectId, queryClient, onConnected, subscription, copy.connectedToast, copy.failed, runs]);
 
   // What the PROJECT holds, not what this component remembers doing. A
   // credential connected in another tab, another surface, or before this page

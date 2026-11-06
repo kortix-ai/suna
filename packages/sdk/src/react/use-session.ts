@@ -32,7 +32,9 @@ import {
 } from '../core/session/compaction';
 import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import {
+  claimSandboxConnection,
   markRuntimeReadyVerified,
+  sandboxConnectionKey,
   seedConnectionFromReadyStart,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
@@ -1548,6 +1550,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     !!sandbox?.external_id &&
     switchedBoxId === sandbox.external_id;
 
+  // 2b. The connection store describes the runtime this view switched to. It is
+  // one per tab: while this view owns it, another mounted session's stream
+  // cannot write its box's state there. Released when the view leaves the
+  // session; the next session to switch claims it.
+  useEffect(() => {
+    if (!switched) return;
+    return claimSandboxConnection(sandboxConnectionKey(projectId, sessionId));
+  }, [switched, projectId, sessionId]);
+
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
   // handling drives recovery (no steady-state health loop to halt — the old
@@ -1595,7 +1606,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
     sessionId,
-    pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
+    pinFromStart: startData?.runtime_session_id ?? null,
     initialPin: logRootRuntimeId ?? initialRuntimeSessionId,
     // The pin comes from `/start` and the log; the box lists nothing.
     listRuntimeSessions: false,

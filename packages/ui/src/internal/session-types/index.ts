@@ -13,19 +13,17 @@ export * from './types';
 /**
  * The framework-free turn/part helpers, from the canonical `@kortix/sdk` root.
  *
- * This was `export * from '@kortix/sdk/turns'`. That subpath is a deprecated
- * alias, but the replacement cannot be a bare `export * from '@kortix/sdk'`:
+ * This was `export * from '@kortix/sdk/turns'` (that subpath was removed in
+ * 0.15.0). The replacement cannot be a bare `export * from '@kortix/sdk'`:
  * the root carries the whole 844-name surface, which (a) collides with the web
  * view-model types in `./types` and (b) would re-expose `getClient`,
- * `getActiveOpenCodeUrl`, `createKortixPty`, `getKortixPtyWebSocketUrl` and
+ * `createKortixPty`, `getKortixPtyWebSocketUrl` and
  * `removeKortixPty` through `@/ui` — the ambient-runtime accessors that
  * eslint's no-restricted-imports forbids precisely because they resolve a
  * runtime from global state instead of from a session.
  *
- * So the names are listed. This set is exactly what `@kortix/sdk/turns`
- * exported, so every existing `@/ui` importer resolves to the same
- * declaration it did before. Regenerate from
- * `packages/sdk/src/public-*-surface.snapshot.json` under the `"./turns"` key.
+ * So the names are listed: the turn and part helpers of
+ * `packages/sdk/src/core/turns/`, as `@kortix/sdk/turns` exported them.
  */
 export {
   COST_MARKUP,

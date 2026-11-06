@@ -38,7 +38,12 @@ export const relayPort = (): Promise<number> => start()
  * host's hook for a note the voice wrote into the session outside any turn (a turn the fast lane answered, a call's
  * transcript); a host that publishes the session's log at a turn's end publishes it then too, so the chat has it now.
  */
-export function attach(pi: KortixPi, session: string, o: { persisted?: () => void } = {}): void {
+/** An agent's name as said in a call: its slug's words ("my-kortix" is "My Kortix"), letters, digits and spaces only. */
+export const spokenName = (slug: string): string =>
+  slug.replace(/[-_]+/g, ' ').replace(/[^\p{L}\p{N} ]/gu, '').trim().slice(0, 32).replace(/\b\p{Ll}/gu, (c) => c.toUpperCase())
+
+/** `agent`: the agent the session runs (its slug): the call's name, so a call to it greets as it, not as "Kortix". */
+export function attach(pi: KortixPi, session: string, o: { persisted?: () => void; agent?: string } = {}): void {
   let ctx: ContextLike | undefined
   const agent = fromExtension(pi, () => ctx)
   if (o.persisted) {
@@ -48,7 +53,7 @@ export function attach(pi: KortixPi, session: string, o: { persisted?: () => voi
       o.persisted?.()
     }
   }
-  brain.bind(session, agent, { tools: true })
+  brain.bind(session, agent, { tools: true, name: o.agent ? spokenName(o.agent) || undefined : undefined })
   pi.on('session_start', (_event: unknown, c: ContextLike) => {
     ctx = c
     void start().catch((err) => console.error(`[voice] the relay did not start on ${PORT()}: ${(err as Error).message}`))

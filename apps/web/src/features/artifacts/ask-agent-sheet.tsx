@@ -232,13 +232,23 @@ function AskAgentHistory({
             <Skeleton className="h-7 w-full" />
             <Skeleton className="h-7 w-full" />
           </div>
+        ) : history.isError && history.sessions.length === 0 ? (
+          // A failed read is not an empty history: say so, and offer the read again.
+          <div className="flex items-center justify-between gap-2 px-2 py-2">
+            <p role="alert" className="text-muted-foreground text-xs">
+              {t('askAgentHistoryError')}
+            </p>
+            <Button size="xs" variant="ghost" onClick={() => void history.refetch()}>
+              {t('retry')}
+            </Button>
+          </div>
         ) : history.sessions.length === 0 ? (
           <p className="text-muted-foreground px-2 py-3 text-xs">{t('askAgentHistoryEmpty')}</p>
         ) : (
           history.sessions.map((session) => (
             <DropdownMenuItem key={session.session_id} onSelect={() => onPick(session.session_id)} aria-current={session.session_id === current || undefined}>
               <span className="min-w-0 flex-1 truncate">{getSessionDisplayTitle(session)}</span>
-              <span className={`shrink-0 text-xs ${session.session_id === current ? 'text-foreground' : 'text-muted-foreground'}`}>
+              <span className={`shrink-0 text-xs tabular-nums ${session.session_id === current ? 'text-foreground' : 'text-muted-foreground'}`}>
                 {session.session_id === current ? t('viewing') : relativeTime(sessionLastActivityAt(session), locale)}
               </span>
             </DropdownMenuItem>

@@ -208,12 +208,14 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
     return () => query.removeEventListener('change', onChange);
   }, [setMenu]);
 
-  // A committed navigation closes the menu (Next keeps this component mounted).
+  // A committed navigation closes the menu and the drawer (Next keeps this
+  // component mounted). The drawer's site switcher links carry no pending row.
   const [menuPathname, setMenuPathname] = useState(pathname);
   if (menuPathname !== pathname) {
     setMenuPathname(pathname);
     setOpenMenu(null);
     setInstant(true);
+    setIsDrawerOpen(false);
   }
 
   useEffect(() => () => window.clearTimeout(timerRef.current), []);
@@ -406,7 +408,9 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
         ? `/brandkit/Logo/Brandmark/SVG/Brandmark ${color}.svg`
         : `/brandkit/Logo/Logomark/SVG/Logomark ${color}.svg`;
     try {
-      const svg = await (await fetch(path)).text();
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`Brand SVG fetch failed: ${response.status}`);
+      const svg = await response.text();
       await navigator.clipboard.writeText(svg);
       successToast(tHardcodedUi.raw('i18nComplete.textc46a054cc5d2'));
     } catch {
@@ -512,8 +516,9 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
 
             {/* The CompanyOS / Services switcher: centred in the bar from xl,
                 after the logo below it. Centred at lg (1024 px), it covers
-                "Pricing". */}
-            <SiteSwitcher className="mr-auto ml-4 lg:mr-0 xl:absolute xl:left-1/2 xl:m-0 xl:-translate-x-1/2" />
+                "Pricing". Below sm (640 px) it moves into the drawer, so the
+                GitHub link and the CTA keep their room in the bar. */}
+            <SiteSwitcher className="ml-4 hidden sm:mr-auto sm:flex lg:mr-0 xl:absolute xl:left-1/2 xl:m-0 xl:-translate-x-1/2" />
 
             {/* The links sit right after the logo; `mr-auto` pushes the actions to the end. */}
             <nav className="hidden items-center gap-1 lg:mr-auto lg:ml-8 lg:flex">
@@ -556,20 +561,22 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
               ))}
             </nav>
 
-            <div className="flex items-center justify-end gap-1" onPointerEnter={closeOnEnter}>
-              {/* `stars`, not `formattedStars`: the formatter returns an en dash
-                  for a missing count. No number, no chip. */}
-              {stars !== null && !starsLoading && (
-                <Link
-                  href="https://github.com/kortix-ai/CompanyOS"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(BAR_LINK, 'mr-4 hidden gap-2 xl:flex')}
-                >
-                  <Github className="size-4" />
+            <div className="ml-auto flex items-center justify-end gap-1" onPointerEnter={closeOnEnter}>
+              {/* The GitHub link shows at every width, phones included. The
+                  count joins it once it loads. `stars`, not `formattedStars`:
+                  the formatter returns an en dash for a missing count. */}
+              <Link
+                href="https://github.com/kortix-ai/CompanyOS"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-github-link=""
+                className={cn(BAR_LINK, 'hit-area-y-3 mr-2 gap-1.5 lg:mr-4 lg:gap-2')}
+              >
+                <Github className="size-4 shrink-0" />
+                {stars !== null && !starsLoading && (
                   <span className="tabular-nums">{formattedStars}</span>
-                </Link>
-              )}
+                )}
+              </Link>
               {user ? (
                 <MarketingButton asChild className="hit-area-y-3">
                   <Link href={projectsHref} prefetch>
@@ -659,6 +666,7 @@ export function Navbar({ solidAtTop = false }: { solidAtTop?: boolean } = {}) {
               <KortixLogo size={15} variant="logomark" />
               {isPending('/') && <Loading variant="spokes" />}
             </Link>
+            <SiteSwitcher className="mr-auto ml-4 sm:hidden" />
             <button
               ref={drawerCloseRef}
               type="button"

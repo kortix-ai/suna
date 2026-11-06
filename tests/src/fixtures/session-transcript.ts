@@ -106,7 +106,7 @@ export async function seedSessionTranscript(
   await db.connect();
   try {
     await db.query(
-      "UPDATE kortix.project_sessions SET status = 'stopped', opencode_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1",
+      "UPDATE kortix.project_sessions SET status = 'stopped', runtime_session_id = $2, sandbox_id = $1, sandbox_url = 'http://127.0.0.1:1' WHERE session_id = $1",
       [input.sessionId, root],
     );
     if (input.bearer) await journalSessionLog(env, { ...input, bearer: input.bearer, root, messages });

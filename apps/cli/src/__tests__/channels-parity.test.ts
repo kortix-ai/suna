@@ -58,7 +58,7 @@ const BINDING = {
   channelName: 'eng',
   channelType: 'public',
   agentName: null,
-  opencodeModel: null,
+  model: null,
   conversationPolicy: 'owner_approval',
   installedAt: '2026-01-01T00:00:00.000Z',
   effectiveAgent: { agent: 'default', source: 'project' },
@@ -174,13 +174,13 @@ function startServer(
         return Response.json({
           ...BINDING,
           agentName: (b.agentName as string | null) ?? null,
-          opencodeModel: (b.opencodeModel as string | null) ?? null,
+          model: (b.model as string | null) ?? null,
           conversationPolicy: (b.conversationPolicy as string) ?? BINDING.conversationPolicy,
           effectiveAgent: b.agentName
             ? { agent: b.agentName as string, source: 'explicit' }
             : { agent: 'default', source: 'project' },
-          effectiveModel: b.opencodeModel
-            ? { model: b.opencodeModel as string, source: 'explicit' }
+          effectiveModel: b.model
+            ? { model: b.model as string, source: 'explicit' }
             : { model: null, source: 'platform' },
         });
       }
@@ -577,7 +577,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
       method: 'PATCH',
       path: `/v1/projects/${PROJECT}/channels/bindings/bind_1`,
       query: '',
-      body: { agentName: 'reviewer', opencodeModel: 'glm-5.3-flash', conversationPolicy: 'owner_only' },
+      body: { agentName: 'reviewer', model: 'glm-5.3-flash', conversationPolicy: 'owner_only' },
     });
     expect(set.stdout).toContain('agent   reviewer (explicit)');
 
@@ -586,7 +586,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
       config,
     );
     expect(reset.code).toBe(0);
-    expect(calls.at(-1)?.body).toEqual({ agentName: null, opencodeModel: null });
+    expect(calls.at(-1)?.body).toEqual({ agentName: null, model: null });
   });
 
   test('bind rejects an unknown policy and an empty patch without a request', async () => {

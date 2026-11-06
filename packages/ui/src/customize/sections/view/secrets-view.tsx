@@ -659,7 +659,7 @@ function SecretsAccessInfo({ showEnforced }: { showEnforced: boolean }) {
               {tI18nComplete.raw('text49e63b9b35ec')} <code className="font-mono">secrets</code>{' '}
               {tI18nComplete.raw('text582967534d0f')}{' '}
               <code className="font-mono">kortix.yaml</code>;{' '}
-              <code className="font-mono">secrets: all</code>{' '}
+              <code className="font-mono">secrets: "*"</code>{' '}
               {tI18nComplete.raw('text17313fb7bf82')}
             </>
           ) : null}{' '}

@@ -516,6 +516,42 @@ function finishResponsesStream(
   controller.close();
 }
 
+/**
+ * The failed ending of a translated stream: an `error` event, then
+ * `response.failed` (status `failed`), then close. A failed turn never ends
+ * with `response.completed`.
+ */
+function failResponsesStream(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  state: ResponsesSseState,
+  error: { message?: unknown; code?: unknown },
+): void {
+  if (state.finished) return;
+  state.finished = true;
+  ensureCreated(controller, encoder, state);
+  closeTextItem(controller, encoder, state);
+  const message = typeof error.message === 'string' ? error.message : 'upstream error';
+  const code = typeof error.code === 'string' || typeof error.code === 'number' ? String(error.code) : 'server_error';
+  controller.enqueue(sseFrame(encoder, 'error', { type: 'error', code, message }));
+  controller.enqueue(
+    sseFrame(encoder, 'response.failed', {
+      type: 'response.failed',
+      response: {
+        id: state.responseId,
+        object: 'response',
+        created_at: Math.floor(Date.now() / 1000),
+        status: 'failed',
+        model: state.model,
+        output: [],
+        error: { code, message },
+        usage: state.usage,
+      },
+    }),
+  );
+  controller.close();
+}
+
 // OpenAI chat.completions SSE stream -> Responses API SSE stream.
 export function chatSseToResponsesSse(
   openAiStream: ReadableStream<Uint8Array>,
@@ -584,15 +620,9 @@ export function chatSseToResponsesSse(
             continue;
           }
           if (chunk.error) {
-            ensureCreated(controller, encoder, state);
-            const err = chunk.error as Record<string, unknown>;
-            controller.enqueue(
-              sseFrame(encoder, 'error', {
-                type: 'error',
-                message: typeof err.message === 'string' ? err.message : 'upstream error',
-              }),
-            );
-            continue;
+            failResponsesStream(controller, encoder, state, chunk.error as Record<string, unknown>);
+            await reader.cancel().catch(() => undefined);
+            return;
           }
           handleOpenAiChunk(controller, encoder, state, chunk);
         }
@@ -600,17 +630,10 @@ export function chatSseToResponsesSse(
     } catch {
       // The upstream broke before [DONE]. Report a failed turn so Codex CLI
       // retries the request instead of treating a truncated answer as done.
-      if (!cancelled && !state.finished) {
-        state.finished = true;
-        ensureCreated(controller, encoder, state);
-        closeTextItem(controller, encoder, state);
-        controller.enqueue(
-          sseFrame(encoder, 'error', {
-            type: 'error',
-            message: 'Upstream stream ended before the response completed',
-          }),
-        );
-        controller.close();
+      if (!cancelled) {
+        failResponsesStream(controller, encoder, state, {
+          message: 'Upstream stream ended before the response completed',
+        });
       }
     } finally {
       if (!cancelled) finishResponsesStream(controller, encoder, state);

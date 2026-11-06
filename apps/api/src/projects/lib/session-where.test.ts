@@ -30,10 +30,13 @@ describe('"## Where you are"', () => {
     );
   });
 
-  test('a renamed channel shows its name too; a DM names its agent', () => {
+  test('a renamed channel shows its name too; a DM reads as a private space with its agent, My Kortix as the personal space', () => {
     expect(sessionWhereText(row({ space_name: 'Engineering' }))).toContain(`- Space: #eng ("Engineering"), space ${SPACE}`);
     expect(sessionWhereText(row({ space_kind: 'dm', space_slug: null, space_name: 'worker', space_dm_agent: 'worker' }))).toContain(
-      `- Space: the direct message with worker, space ${SPACE}`,
+      `- Space: the person's private space with worker, space ${SPACE}`,
+    );
+    expect(sessionWhereText(row({ space_kind: 'dm', space_slug: null, space_name: 'mykortix', space_dm_agent: 'mykortix' }))).toContain(
+      `- Space: the person's personal space (private: only they and you), space ${SPACE}`,
     );
   });
 

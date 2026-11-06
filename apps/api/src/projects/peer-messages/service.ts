@@ -294,7 +294,7 @@ export function serializePeerMessage(row: PeerRow): PeerMessage {
 }
 
 /** The durable delivery row of a peer message into its receiver. */
-function deliveryValues(row: PeerRow, receiver: SessionRow) {
+function deliveryValues(row: PeerRow, receiver: SessionRow, noReply = false) {
   const text = peerMessagePromptText({
     kind: row.type as PeerMessageKind,
     from: row.fromHandle,
@@ -323,6 +323,8 @@ function deliveryValues(row: PeerRow, receiver: SessionRow) {
       placement: 'composer',
       delivery: 'steer',
       authorSessionId: row.fromSessionId,
+      // A space post that asks nothing: it joins the transcript, no turn runs (`space-posts.ts`).
+      ...(noReply ? { noReply: true } : {}),
     }),
   };
 }
@@ -344,12 +346,12 @@ async function expireHeld(receiverId: string): Promise<void> {
 }
 
 /** Insert a peer row, with its delivery row when it is delivered, in one transaction; then kick the drain. */
-async function storeMessage(values: typeof sessionPeerMessages.$inferInsert, receiver: SessionRow): Promise<PeerRow> {
+async function storeMessage(values: typeof sessionPeerMessages.$inferInsert, receiver: SessionRow, noReply = false): Promise<PeerRow> {
   let key: string | null = null;
   const row = await db.transaction(async (tx) => {
     const [stored] = await tx.insert(sessionPeerMessages).values(values).returning();
     if (stored!.status === 'delivered') {
-      const delivery = deliveryValues(stored!, receiver);
+      const delivery = deliveryValues(stored!, receiver, noReply);
       key = delivery.key;
       await tx.insert(sessionLifecycleCommands).values(delivery.values)
         .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
@@ -388,8 +390,15 @@ export type SendOutcome =
  * Throws PeerMessageError for a bad request (400), an unknown recipient (404)
  * or the rate limit (429).
  */
-export async function sendPeerMessage(input: { sender: SessionRow; body: PeerMessageSendBody; caller: PeerCaller }): Promise<SendOutcome> {
+export async function sendPeerMessage(input: {
+  sender: SessionRow;
+  body: PeerMessageSendBody;
+  caller: PeerCaller;
+  /** A space post that asks nothing (`space-posts.ts`): delivered `noReply`, no turn of the receiver runs. */
+  noReply?: boolean;
+}): Promise<SendOutcome> {
   const { sender, body, caller } = input;
+  const noReply = input.noReply === true;
   const type = body.type ?? 'message';
   if (body.approve !== undefined && type !== 'shutdown_response') {
     throw new PeerMessageError(400, 'approve is only for a shutdown_response', 'approve_needs_shutdown_response');
@@ -472,8 +481,8 @@ export async function sendPeerMessage(input: { sender: SessionRow; body: PeerMes
       status: 'delivered',
       decidedAt: new Date(),
       idleNoticeUntil: base.notifyWhenIdle ? new Date(now + PEER_IDLE_WATCH_TTL_MS) : null,
-    }, receiver);
-    note = deliveredNote(to!);
+    }, receiver, noReply);
+    note = noReply ? `Posted in ${to!.handle}'s thread. Its agent does not start a turn for it.` : deliveredNote(to!);
   }
   if (type === 'shutdown_response' && body.approve === true) {
     scheduleShutdown(sender, caller.userId);
@@ -637,8 +646,25 @@ export async function firePeerIdleNotices(input: {
   return sent;
 }
 
+/** The turn's last assistant answer in full, with its message id; null when the turn wrote none. */
+export async function lastTurnAnswer(sessionId: string): Promise<{ id: string | null; text: string } | null> {
+  const session = await loadSession(sessionId);
+  if (!session) return null;
+  const transcript = await buildSessionTranscriptDigest({ session, limit: 24, maxChars: 40_000 });
+  const messages = transcript.messages;
+  const lastUser = messages.map((m) => m.role).lastIndexOf('user');
+  const answer = messages.slice(lastUser + 1).filter((m) => m.role === 'assistant' && m.text.trim()).at(-1);
+  return answer ? { id: answer.id, text: answer.text.trim() } : null;
+}
+
 /** A turn of `sessionId` closed (`settleTurnEnd`): stamp its excerpt, then send the idle notices it owes. Never throws. */
 export async function onPeerTurnEnded(sessionId: string, outcome: 'idle' | 'error', errorName?: string | null): Promise<void> {
+  if (outcome === 'idle') {
+    // The space watcher (`spaces_proactive`): a watched thread's turn as a feed line, or the watcher's own decision.
+    void import('../lib/space-watch/act')
+      .then(({ onSpaceSessionTurnEnded }) => onSpaceSessionTurnEnded(sessionId))
+      .catch(() => undefined);
+  }
   try {
     const excerpt = outcome === 'idle' ? await recordResultExcerpt(sessionId) : null;
     await firePeerIdleNotices({ sessionId, outcome, errorName, excerpt });

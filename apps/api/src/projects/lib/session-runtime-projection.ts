@@ -134,15 +134,13 @@ export function projectionIdentity(doc: unknown): RuntimeProjectionIdentity {
       : undefined;
   const headSeq = identity?.head_seq;
   // The W3 names first; a daemon built before W3 sends only the OpenCode ones.
-  const runtimeSessionId = asString(identity?.runtime_session_id) ?? asString(identity?.opencode_session_id);
-  const harnessVersion = asString(identity?.harness_version) ?? asString(identity?.opencode_version);
+  const runtimeSessionId = asString(identity?.runtime_session_id);
+  const harnessVersion = asString(identity?.harness_version);
   return {
     schema: doc && typeof doc === 'object' ? asString((doc as Record<string, unknown>).schema) : null,
     harness: asString(identity?.harness),
     runtime_session_id: runtimeSessionId,
     harness_version: harnessVersion,
-    opencode_session_id: runtimeSessionId,
-    opencode_version: harnessVersion,
     daemon_build: asNumber(identity?.daemon_build),
     agent_config_etag: asString(identity?.agent_config_etag),
     head_seq:
@@ -326,8 +324,6 @@ export async function readRuntimeProjection(
             harness: row.harness ?? null,
             runtime_session_id: row.runtimeSessionId ?? null,
             harness_version: row.harnessVersion ?? null,
-            opencode_session_id: row.runtimeSessionId ?? null,
-            opencode_version: row.harnessVersion ?? null,
             daemon_build: row.daemonBuild ?? null,
             agent_config_etag: row.agentConfigEtag ?? null,
             head_seq: (row.headSeq as Record<string, number> | null) ?? null,

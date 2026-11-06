@@ -10,6 +10,7 @@ import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { participantLabel } from '../../session/participants/session-participants';
+import { PrincipalRow } from './principal-card';
 import { agentLabel, type spaceRoster } from './space-timeline';
 
 type Roster = ReturnType<typeof spaceRoster>;
@@ -24,9 +25,9 @@ const AGENTS_SHOWN = 3;
  * agent list, not the threads a viewer can load). People and agents never mix, so a glance tells them apart.
  * Hover, or a click, opens the session header's people card
  * (`SessionParticipantStack`): People, then Agents, each a label, a count and
- * plain rows. Its one action, "View all members", opens the Members tab.
+ * rows that open each one's Profile. "View all members" opens Details at People.
  */
-export function SpaceRosterButton({ roster, onViewAll }: { roster: Roster; onViewAll: () => void }) {
+export function SpaceRosterButton({ projectId, roster, onViewAll }: { projectId: string; roster: Roster; onViewAll: () => void }) {
   const t = useTranslations('spaces.view');
   const [open, setOpen] = useState(false);
   const { people, agents } = roster;
@@ -55,6 +56,7 @@ export function SpaceRosterButton({ roster, onViewAll }: { roster: Roster; onVie
                   email={person.email ?? ''}
                   name={participantLabel(person)}
                   avatarUrl={person.avatarUrl}
+                  colorKey={person.id}
                   size="xs"
                   ring
                 />
@@ -96,31 +98,30 @@ export function SpaceRosterButton({ roster, onViewAll }: { roster: Roster; onVie
           {people.length > 0 ? (
             <RosterGroup title={t('rosterTitlePeople')} count={people.length}>
               {people.map((person) => (
-                <li key={person.id} className="text-foreground flex min-h-9 items-center gap-2.5 px-2 py-1 text-sm">
-                  <UserAvatar
-                    email={person.email ?? ''}
-                    name={participantLabel(person)}
-                    avatarUrl={person.avatarUrl}
-                    size="md"
-                  />
-                  {/* The display name only: an email is not a name. */}
-                  <span className="min-w-0 flex-1 truncate">{participantLabel(person)}</span>
-                </li>
+                <PrincipalRow
+                  key={person.id}
+                  projectId={projectId}
+                  principal={{ kind: 'person', userId: person.id, name: participantLabel(person), avatarUrl: person.avatarUrl }}
+                  avatar={<UserAvatar email={person.email ?? ''} name={participantLabel(person)} avatarUrl={person.avatarUrl} colorKey={person.id} size="md" />}
+                  // The display name only: an email is not a name.
+                  name={participantLabel(person)}
+                  onOpened={() => setOpen(false)}
+                />
               ))}
             </RosterGroup>
           ) : null}
           {agents.length > 0 ? (
             <RosterGroup title={t('rosterTitleAgents')} count={agents.length}>
               {agents.map((agent) => (
-                <li key={agent} className="text-foreground flex min-h-9 items-center gap-2.5 px-2 py-1 text-sm">
-                  <AgentMark slug={agent} size={21} />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate leading-tight">{agentLabel(agent)}</span>
-                    <span className="text-muted-foreground truncate text-xs leading-tight tabular-nums">
-                      {t('agentThreads', { count: roster.agentThreads[agent] ?? 0 })}
-                    </span>
-                  </span>
-                </li>
+                <PrincipalRow
+                  key={agent}
+                  projectId={projectId}
+                  principal={{ kind: 'agent', name: agent }}
+                  avatar={<AgentMark slug={agent} size={21} />}
+                  name={agentLabel(agent)}
+                  secondary={t('agentThreads', { count: roster.agentThreads[agent] ?? 0 })}
+                  onOpened={() => setOpen(false)}
+                />
               ))}
             </RosterGroup>
           ) : null}
@@ -151,7 +152,7 @@ function RosterGroup({ title, count, children }: { title: string; count: number;
         <span>{title}</span>
         <span className="tabular-nums">{count}</span>
       </div>
-      {/* Plain rows, no hover highlight: nothing in a row is clickable. */}
+      {/* Each row opens its person's or agent's Profile (`PrincipalRow`). */}
       <ul className="p-1 pt-0">{children}</ul>
     </section>
   );

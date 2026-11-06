@@ -2,7 +2,7 @@
 
 import { adminPath } from '../../lib/routes';
 
-import { useProjectConfig } from '@kortix/sdk/react';
+import { useProjectConfig, useSessionAsks } from '@kortix/sdk/react';
 
 import { CpuIcon, GearSixIcon, ListIcon, TrayIcon } from '@phosphor-icons/react';
 import { createContext, type ReactNode, useContext } from 'react';
@@ -71,13 +71,17 @@ function RowGlyph({ children }: { children: ReactNode }) {
  * by asking an agent in a session, so the sidebar lists only the agents you
  * pinned (none pinned: the first five) and All agents when more exist, then Review (with its "needs you" count), Models, and Settings
  * (Project admin, whose top bar holds every library and Members).
- * The header's + and All agents buttons sit on the Customize row itself.
+ * The header's + (New agent) button sits on the Customize row itself.
  */
 export function ProjectCapabilityNav({ projectId }: { projectId: string }) {
   const pathname = useUiPathname();
   const config = useProjectConfig(projectId);
   const access = useCapabilityAccess(projectId);
-  const needsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
+  const reviewNeedsYou = useReviewSessionSummary(projectId, { enabled: true }).totalNeedsYou;
+  // Questions and permission asks wait in Review too (its deck). Connector
+  // approvals are already in the review summary, so they are not added twice.
+  const asks = useSessionAsks(projectId).data?.asks;
+  const needsYou = reviewNeedsYou + (asks?.filter((ask) => ask.kind !== 'approval').length ?? 0);
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
   const tTabs = useI18nTranslations('agentEditor.tabs');

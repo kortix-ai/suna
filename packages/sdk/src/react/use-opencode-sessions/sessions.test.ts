@@ -78,8 +78,7 @@ mock.module('../../core/session/runtime-actions', () => ({
   activeRuntimeAction: (method: string, path: string, body?: unknown) => actionImpl(method, path, body),
 }));
 
-const { useSummarizeRuntimeSession, useInitSession, useForkSession } = await import('./sessions');
-const { runtimeKeys } = await import('./keys');
+const { useSummarizeRuntimeSession, useForkSession } = await import('./sessions');
 
 beforeEach(() => {
   fakeQueryClient = makeFakeQueryClient();
@@ -135,52 +134,6 @@ describe('useSummarizeRuntimeSession — the compaction store', () => {
 // ============================================================================
 // useInitSession — /init command error duck-typing + refetch-on-success.
 // ============================================================================
-
-describe('useInitSession', () => {
-  test('resolves with the sessionId on success and refetches its messages', async () => {
-    clientImpl = { session: { command: async () => ({}) } };
-    const hook = useInitSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-      onSuccess: (sessionId: string) => void;
-    };
-    const result = await hook.mutationFn({ sessionId: 'ses_1' });
-    expect(result).toBe('ses_1');
-
-    hook.onSuccess('ses_1');
-    expect(fakeQueryClient.refetchCalls).toEqual([
-      { queryKey: runtimeKeys.runtimeMessages('ses_1') },
-    ]);
-  });
-
-  test('extracts a NotFoundError-shaped error message (`.data.message`)', async () => {
-    clientImpl = {
-      session: {
-        command: async () => ({
-          error: {
-            name: 'NotFoundError',
-            data: { message: 'no such session' },
-          },
-        }),
-      },
-    };
-    const { mutationFn } = useInitSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow('no such session');
-  });
-
-  test('falls back to a default message for a BadRequest-shaped error (no message field)', async () => {
-    clientImpl = {
-      session: { command: async () => ({ error: { _tag: 'BadRequest' } }) },
-    };
-    const { mutationFn } = useInitSession() as unknown as {
-      mutationFn: (args: { sessionId: string }) => Promise<string>;
-    };
-    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow(
-      'Failed to initialize project',
-    );
-  });
-});
 
 // ============================================================================
 // useForkSession — the runtime's own fork (`POST /session/{id}/fork`).

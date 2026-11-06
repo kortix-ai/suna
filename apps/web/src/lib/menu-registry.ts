@@ -65,6 +65,7 @@ import {
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
+  TargetIcon as Target,
   TerminalIcon as Terminal,
   TextAlignLeftIcon as TextAlignLeft,
   TrayIcon as Tray,
@@ -574,6 +575,28 @@ export const menuRegistry: MenuItemDef[] = [
       'models model llm gateway providers provider budgets limits anthropic openai openrouter claude gpt gemini reasoning byok',
   },
   {
+    id: 'proj-chatgpt-usage',
+    label: 'ChatGPT subscription usage',
+    icon: Cpu,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/admin/models?tab=usage&provider=codex',
+    requiresProject: true,
+    keywords: 'chatgpt openai codex subscription usage limits weekly allowance quota',
+  },
+  {
+    id: 'proj-claude-usage',
+    label: 'Claude subscription usage',
+    icon: Cpu,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/admin/models?tab=usage&provider=claude-agent',
+    requiresProject: true,
+    keywords: 'anthropic claude code subscription usage limits weekly allowance quota fable',
+  },
+  {
     id: 'proj-agents',
     label: 'Agents',
     icon: Bot,
@@ -738,6 +761,20 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'artifacts docs doc slides deck presentation board design dashboard page published share',
   },
   {
+    // The project's goals (flag `goals`): the sidebar Goals row
+    // (`project-goals-nav.tsx`), same icon, same route, same gate.
+    id: 'proj-goals',
+    label: 'Goals',
+    icon: Target,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/goals',
+    requiresProject: true,
+    requiresFlag: 'goals',
+    keywords: 'goals goal objectives outcomes',
+  },
+  {
     // The repo browser under Customize → Repo, where it moved with Drive
     // (#10258). `command-palette.tsx` gates the row on
     // the tab's own verdict, so it shows exactly when the tab does.
@@ -798,8 +835,8 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // The Customize Review tab (`reviewHref`).
-    href: '/projects/{projectId}/customize/review',
+    // Review's own page (`reviewHref`), outside Customize since 2026-11-04.
+    href: '/projects/{projectId}/review',
     requiresProject: true,
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },

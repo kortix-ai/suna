@@ -107,7 +107,7 @@ my-agent/
 ```
 
 - `kortix.yaml` turns on My Kortix (`builtin_agents: { my_kortix: true }`) and sets `default_agent: mykortix`. A session that names no agent runs My Kortix, and My Kortix hands the work to `worker` unless you name another agent.
-- `worker` is a general-purpose agent. Every grant it has is `all`. A project created before `worker` existed keeps its `kortix` agent.
+- `worker` is a general-purpose agent. Every grant it has is `"*"`: every name. A project created before `worker` existed keeps its `kortix` agent.
 - `worker` sets `workspace: { project_repository: true }`, so each session gets a checkout of the repository on its own branch in `/workspace`.
 - `kortix-cli` is the one Kortix skill in the folder. The other `kortix-*` skills are always registered and come with every session. The `skills` key in `kortix.yaml` lists the other 10.
 
@@ -153,7 +153,7 @@ git pull              # bring the merged work into your clone
 
 `1` is the change request number from `kortix cr ls`. To send the work back, run `kortix cr request-changes 1 --message "…"`. The note goes to the change request's session and wakes it if it sleeps. In the web app, use the project's **Review** page.
 
-The starter `worker` agent holds `kortix_permissions: all`, so the API lets it merge its own change request. The `kortix-system` skill tells it to wait until you ask. Who may merge: [Agents that merge](/docs/developers#agents-that-merge).
+The starter `worker` agent holds `kortix_permissions: "*"`, so the API lets it merge its own change request. The `kortix-system` skill tells it to wait until you ask. Who may merge: [Agents that merge](/docs/developers#agents-that-merge).
 
 ### Check your setup
 
@@ -379,7 +379,7 @@ IP allowlist and MFA policies of the account apply to git requests too.
 - A session pushes only its own branch, the branch named after its `session_id`.
 - Any other branch needs `project.gitops.ref.any` in the agent's `kortix_permissions`. Deleting a branch needs `project.gitops.ref.delete`.
 - A push to the default branch also needs `project.agent.write`, `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`.
-- The agent's `kortix_permissions` must list the permission, or be `all`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/guide#agents).
+- The agent's `kortix_permissions` must list the permission, or be `"*"`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/guide#agents).
 
 By default, agents land work through [change requests](#change-requests). [Agents](/docs/guide#agents) shows how to grant permissions.
 
@@ -727,8 +727,8 @@ agents:
   assistant:
     description: Answers questions about the project.
     prompt: You answer questions about this project. Read the files before you answer.
-    tools: all                               # omitted: all, with a warning
-    skills: all                              # omitted: no skills
+    tools: "*"                               # every tool; omitted: every tool, with a warning
+    skills: "*"                              # every skill; omitted: no skills
     workspace: { project_repository: true }  # omitted: no repository in /workspace
 ```
 
@@ -819,7 +819,7 @@ Each row still works. `kortix validate --fix` writes the replacement with the sa
 | --- | --- | --- |
 | `legacy-format` | A `kortix_version: 2` file, or a `kortix.toml` | The converted files: run `kortix validate --fix` (see [Older formats](#older-formats)). |
 | `drop-kortix-version` | `kortix_version: 3` | Nothing: delete the line. |
-| `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: all`, or the list of tools it needs |
+| `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: "*"`, or the list of tools it needs |
 | `agent-disable` | `disable: true` | `enabled: false` |
 | `agent-env` | An agent's `env` | `secrets` |
 | `agent-kortix-cli` | `kortix_cli` | `kortix_permissions` |
@@ -911,10 +911,10 @@ agents:
       bash:
         "*": allow
         "git push *": ask
-    tools: all
+    tools: "*"
     skills: [refund-policy, kortix-cli]
     subagents: [researcher]
-    commands: all
+    commands: "*"
     extensions: [web-access]
     connectors: [helpdesk]
     secrets: [HELPDESK_TOKEN]
@@ -984,13 +984,13 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `apps`: Apps | `apps` |
 | `agents`: other agents | `subagents` |
 
-- **A grant** is `all` (or `*`), `none` (or `""`), or a list of names. A list that contains `*` means all.
+- **A grant** is `"*"` (every name), `none` (or `""`), or a list of names. Quote the `*`: a bare `*` is a YAML alias, and `kortix validate` prints the quoted line. `all` is the accepted alias of `"*"`, and a list that contains `"*"` is every name too.
 - **Omitted means none.** An omitted `skills`, `subagents`, `commands`, `extensions`, `connectors`, `secrets`, `apps` or `kortix_permissions` grants nothing.
-- **Three keys are open by default:** `tools` is `all` (`kortix validate` warns when an agent omits it), `permission` is `allow`, and `codemode` is `on`.
+- **Three keys are open by default:** `tools` is `"*"` (`kortix validate` warns when an agent omits it), `permission` is `allow`, and `codemode` is `on`.
 - **`workspace.project_repository` defaults to `false`.** Set `true` on every agent that reads or changes the repository, runs its scripts, or opens change requests.
 - **Names must exist.** A listed skill, command, extension, subagent or tool that is not registered or built in is an error.
 - **`secrets` reaches the sandbox.** A granted secret is an environment variable or a network-enforced secret in the agent's sandbox. Model logins, connector and git credentials stay with Kortix services: the agent's model and connector settings decide their use.
-- **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
+- **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `"*"`.
 - **My Kortix runs only when the file turns it on.** `builtin_agents: { my_kortix: true }` turns it on, and the starter sets it. No key, `false`, or a file Kortix cannot read leaves it off. With it off, a request for the agent `mykortix` returns `409 builtin_agent_disabled`.
 - **Which agent a session runs.** A session or trigger that names no agent runs `default_agent`. With My Kortix on and no `default_agent`, it runs My Kortix. When My Kortix starts a session and names no agent, the session runs `default_agent`, or the first enabled agent with `mode` `primary` or `all` when `default_agent` is `mykortix`. The starter manifest sets `builtin_agents.my_kortix: true`, `default_agent: mykortix` and one project agent, `worker`, so a new project runs My Kortix, and My Kortix hands work to `worker`. A project made before `worker` existed keeps its `kortix` agent.
 - **A file with an error** still runs My Kortix when it sets `my_kortix: true`, so My Kortix can fix the file.
@@ -1037,17 +1037,17 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `color` | string or `primary`, `secondary`, `accent`, `success`, `warning`, `error`, `info` | — | Accepted. Sessions do not use it. |
 | `hidden` | boolean | `false` | `true`: agent pickers do not list the agent. |
 | `options` | map | — | Accepted. Sessions do not use it. |
-| `permission` | `ask`, `allow`, `deny` or map | `allow` | Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`. See [Permission rules](#permission-rules). |
+| `permission` | `ask`, `allow`, `deny` or map | `allow` | Which tool calls run, ask a person, or never run: `allow`, `ask` or `deny` (`"*"` and `all` also mean `allow`). `skill` and `task` belong to `skills` and `subagents`. See [Permission rules](#permission-rules). |
 | `prompt` | string | — | The system prompt. Set `prompt` or `prompt_file`, not both. |
 | `prompt_file` | string | — | A repository path to a `.md` file. The whole file is the system prompt. |
 | `enabled` | boolean | `true` | `false`: no session starts with the agent, and no agent starts it as a subagent. |
 | `codemode` | `on`, `only`, `off` | `on` | `on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`. |
 | `context` | `record`, `summary` | `record` | What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it. |
-| `tools` | `all`, `none`, list or map | `all` | The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
-| `skills` | grant or map | — | Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
+| `tools` | grant | `"*"` | The tools the agent may call: built-in tools, Kortix tools and registered tools. `"*"` (quoted; `all` is its alias) is every tool, `none` is none. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
+| `skills` | grant or map | — | Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. "*" (every name; alias `all`), "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
 | `subagents` | grant | `none` | Agents this agent may start with the `agent` tool (alias `task`): declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent. |
 | `commands` | grant | `none` | Registered commands the agent runs. |
-| `extensions` | grant or map | — | Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
+| `extensions` | grant or map | — | Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. "*" (every name; alias `all`), "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
 | `connectors` | grant | `none` | Connector slugs the agent may call. |
 | `connectors_required` | list | — | Connector slugs, a subset of `connectors`. Sessions do not check it. |
 | `policy_sets` | map | the base rules | Connector slug → the name of a policy set on that connector. See [Connector rules and approvals](#connector-rules-and-approvals). |
@@ -1136,6 +1136,7 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `max_runs_per_hour` | integer, 1 or more | `60` | Runs the trigger starts in any 60 minutes. |
 | `max_runs_per_day` | integer, 1 or more | — | Runs the trigger starts in a UTC day. |
 | `max_lateness` | string | — | Schedules only, `60s` or more. A missed fire later than this does not run. |
+| `expect_event_within` | string | — | App events only, `5m` or more. No event for this long tells the trigger's watchers once; the next event clears it. |
 | `overlap` | `skip`, `allow` | `skip` for a schedule, `allow` for others | `skip` holds a fire while the previous run is active. With `run.session: reuse`, `pinned` or `keyed`: while the previous prompt still waits in that session. |
 | `on` | map | required | What fires the trigger: a schedule (`cron`, `every` or `at`), a webhook, or an App event. |
 | `on.cron` | string | — | A 6-field cron expression, seconds first: `"0 0 9 * * 1"` is 09:00 every Monday. A trigger fires at most once every 60 seconds. |
@@ -1232,7 +1233,7 @@ permission:
   webfetch: ask
 ```
 
-- **Value.** One action for every tool: `allow`, `ask` or `deny`. Or a map of key → action, or of key → map of glob → action.
+- **Value.** One action for every tool: `allow`, `ask` or `deny`. Or a map of key → action, or of key → map of glob → action. `"*"` and `all` as an action also mean `allow`.
 - **Keys.** A capability: `read`, `edit`, `glob`, `grep`, `bash`, `external_directory`, `question`, `webfetch`, `websearch`. Or a tool's own name, which wins over its capability.
 - **Tools that follow a capability.** `write` follows `edit`. A project's own `memory` tool (the ejected copy of the retired Kortix tool) follows `edit`, or `read` when it only views. `image_gen` follows `edit`. `web_search` and `image_search` follow `websearch`. `scrape_webpage` follows `webfetch`.
 - **Action only.** `question`, `webfetch` and `websearch` take an action, not a glob map.
@@ -1497,7 +1498,7 @@ A result that arrives later must wake the session that waits for it. Every agent
 | A change request | `kortix triggers add "<text>" --on cr-merged --cr <id>` | `wake_on` with `cr_merged` |
 | A deploy, a CI run, a job | `--on webhook --secret-env <NAME>` (prints the URL to give the system), else a loop every 10 to 30 minutes | `wake_on` with `webhook` (returns the URL) |
 | A person's answer, a slow vendor | A loop | `follow_up` |
-| A page or a status with no events | A loop, or a watcher App and `--on app --app <slug>` | `wake_on` with `app_event` |
+| A page, a status or a price with no events | A watcher App and `--on app --app <slug> --expect-event-within 1h`: no model runs until it changes. A loop only for a wait that ends within a day | `wake_on` with `app_event` and `expect_event_within` |
 | A hand-off, a teammate, a workflow | Nothing: each reports back by itself | nothing |
 
 - **The fallback loop.** When the event may never come, the agent also sets a loop. The cadence fits the wait: a reply is checked first 2 to 4 hours later in the recipient's working hours, then 2 to 4 times a day; a deploy every 10 to 30 minutes; a slow vendor daily.
@@ -3318,11 +3319,11 @@ agents:
   report-writer:
     prompt: Write the weekly report from the reports App.
     kortix_permissions: [project.app.read]
-    apps: [reports]    # App slugs, all, or none (the default)
+    apps: [reports]    # App slugs, "*", or none (the default)
 ```
 
 Set the list in `kortix.yaml`, with `kortix agents scope report-writer --apps reports`
-(also `all` and `none`), or in **Customize** → **Agents** → the agent → **Apps**.
+(also `all` for every App, and `none`), or in **Customize** → **Agents** → the agent → **Apps**.
 The App's access dialog lists the agents granted to it. From code, call `apps.access.agents(appId)`. See
 [Agents](/docs/guide#agents).
 
@@ -3346,19 +3347,83 @@ An App can start agents, and triggers can call it.
 | The App called on a schedule or an event | A trigger with `run: { app, path, method, payload }`. Kortix wakes an on-demand App and sends the request. No session, no model. See [Call an App](/docs/guide#triggers). |
 | The App to call itself later | `POST /v1/projects/<project_id>/apps/<app_id>/runs` with the App token: `run_after` or `run_at`. See [Call an App](/docs/guide#triggers). |
 
-To react to the outside world, try a webhook first, then a connector event,
-then a schedule. Build a watcher App when the source sends nothing and must be
-watched around the clock: an `every` trigger calls the App's `/tick`, the App
-posts an App event only when the source changed (an `id` built from the content
-fires once per trigger for 30 days), and a session trigger
-(`kortix triggers add "<text>" --on app --app <slug>`) wakes the session that
-waits, or a `kortix.yaml` trigger starts an agent. An App never starts an agent
+To react to the outside world, try a webhook first, then a connector event.
+Build a watcher App when the source sends nothing (a page, a status, a price,
+an API): an `every` trigger calls the App's `/tick`, the App posts an App event
+only when the source changed (an `id` built from the content fires once per
+trigger for 30 days), and a session trigger
+(`kortix triggers add "<text>" --on app --app <slug> --expect-event-within 1h`)
+wakes the session that waits, or a `kortix.yaml` trigger starts an agent. No
+App event within the `expect_event_within` window tells the person once. An App never starts an agent
 itself: it posts events, and a trigger decides. Deploy a watcher App unlisted
-and on demand: it belongs in the Background list. A complete example is in the
-`kortix-system` skill, `references/scheduling.md` → Watch 24/7.
+and on demand: it belongs in the Background list.
+
+`kortix apps launch --template watcher --name status-watch` writes such an App
+to `apps/status-watch/` and deploys it. You edit one function in `watch.js`:
+`check()` returns what is true now as `[{ name, data }]`. On each `POST /tick`
+the runner posts those events with ids built from their name and data, so the
+same state never fires twice. With nothing to report it posts
+`{"name":"kortix.heartbeat"}`, which keeps `expect_event_within` satisfied and
+is never stored. Other names starting with `kortix.` are Kortix's own
+(see "Repair it" below). The
+next steps it prints add the work trigger, prove it with a test event, and add
+the check.
 
 App events and runs are REST only. They authenticate with the App token, not
-a Kortix token.
+a Kortix token. An App may send 120 requests a minute; past that it gets `429`
+with `retry_after_seconds`.
+
+**See what happened.** `GET /v1/projects/<project_id>/apps/<app_id>/events`
+(`project.app.deploy`) lists the App's events from the last 30 days, newest
+first, one row per trigger an event reached: `fired` (with `session_id`),
+`skipped` (with `reason`: a filter, a disabled trigger, a paused project, a
+run cap), `suppressed`, `failed` or `pending`. An event no enabled trigger
+listens to is kept as `unmatched` (up to 60 per App an hour), and the App's
+`POST` answer says so in `unmatched` and `hint`. Filter with `status`,
+`trigger` and `id`; page with `cursor`. CLI: `kortix apps events <app>`.
+
+**Test the wiring.** `POST /v1/projects/<project_id>/apps/<app_id>/events/test`
+(`project.app.deploy`, your own credential) sends events as if the App posted
+them, through the same log, limits and triggers. Every id starts with `test-`,
+so the App's real event with the same id still fires later. The prompt reads
+`{{ event.test }}` as `true` and starts with a TEST line. CLI:
+`kortix apps events emit <app> <name> --data '{"status":"down"}' --wait`
+waits up to 60 s for the outcome and exits `0` only when a trigger fired.
+`trigger` (CLI `--trigger <slug>`) sends the test to that one trigger, so a
+test of one automation starts no other on the same event.
+
+**Know when a watcher stops.** Add `expect_event_within` (5m to 30d) to the
+App trigger: `on: { event: status.changed, app: status-watch }` plus
+`expect_event_within: 30m`, or `kortix triggers add … --expect-event-within
+30m`. It watches the App, not one event name: when the App posts nothing at
+all for that long, the trigger's watchers get one "automation failed" notice,
+with the `notification_center` flag on or off; the App's next post sends
+"recovered". Every post counts, whatever its name, including one Kortix
+deduplicates and `kortix.heartbeat`, so a watcher that sees no change still
+counts as alive. A test event does not count.
+
+**Repair it.** Kortix writes three events about an App to its log:
+`kortix.app.silent` when a silence alert opens (`data.trigger`,
+`data.last_heard_at`), `kortix.app.crashed` when an always-on App stopped 3
+times in an hour and Kortix stopped restarting it, and `kortix.app.recovered`
+when the App posts again or runs again. Each reaches only a trigger whose event
+is that exact name, never `event: "*"`, and none counts as the App posting:
+
+```yaml
+- slug: status-watch-repair
+  on: { event: kortix.app.silent, app: status-watch }
+  run: { prompt: "status-watch went quiet. Read kortix apps logs status-watch, fix it, deploy again." }
+```
+
+An always-on App that keeps crashing also alerts its work triggers' watchers
+once, and each restart is a `supervisor_restarted` event of the release.
+Test a repair trigger with
+`kortix apps events emit status-watch kortix.app.silent --wait`.
+
+**Post from elsewhere.** `kortix apps events credentials <app>` (project
+admins) prints `KORTIX_APP_EVENTS_URL` and `KORTIX_APP_TOKEN` for code that
+runs outside the App, such as your laptop while you build it. The token posts
+events as that App: keep it out of chat, files and commits.
 
 ### Environment inside an App
 
@@ -3454,7 +3519,7 @@ Delete one release, or the whole App:
 
 ```bash
 kortix apps delete my-site --deployment v1 --yes   # one release and its image
-kortix apps delete my-site --yes                   # the App, its machines and images
+kortix apps delete my-site --yes                   # the App, its machines, images and triggers
 ```
 
 - The live release cannot be deleted (`409 deployment_live`). Roll back first.
@@ -3465,6 +3530,14 @@ kortix apps delete my-site --yes                   # the App, its machines and i
 - Deleting an App needs `project.app.write`. An App with volumes also needs
   `project.app.admin`. Each volume keeps a `final` snapshot for 7 days, then
   Kortix purges it. Export data you need first.
+- The project's triggers that name the App go with it: the ones its events
+  start (`on: { event, app }`) and the ones that call it (`run: { app, path }`).
+  They are removed from `kortix.yaml` in the same commit as the App's block,
+  and the answer lists them in `triggers_removed`. A session trigger on the
+  App belongs to its session: it stays until that session's owner removes it,
+  and it never fires or alerts without the App.
+  Removing them needs `project.trigger.delete`; without it the delete answers
+  `403 app_triggers_need_delete` and changes nothing.
 
 ### Template: Convex backend
 
@@ -4537,7 +4610,7 @@ Each run creates a new session, and the session appears in the web app with the 
 - These entry points follow semver: `@kortix/sdk`, `/react`, `/server`, `/genui`, `/genui/fence`, `/genui/react`, `/wire-message-id`, `/workspace-search` and `/capture-rules`.
 - Exported names, types included, are the public contract. A renamed export keeps a `@deprecated` alias until the next major version.
 - `@kortix/sdk/internal/*` serves the Kortix web app and has no semver. It can change in any release.
-- Other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`, are deprecated aliases of root names. They resolve until the next major version. The list is in the [SDK reference](/docs/developers#sdk-reference).
+- 0.15.0 removed the other subpaths, such as `@kortix/sdk/turns` and `@kortix/sdk/projects-client`. Import the same names from the root. The list is in [Removed in 0.15.0](/docs/developers#removed-in-0150).
 - A runtime does not serve every session control. Check a control with `runtimeSupports` before you show it: see [Gate on runtime capabilities](/docs/developers#gate-on-runtime-capabilities).
 - Changes per release are in the [CHANGELOG](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/sdk/CHANGELOG.md). Runnable examples are in [packages/sdk/examples](https://github.com/kortix-ai/CompanyOS/tree/dev/packages/sdk/examples) on GitHub. The npm package does not include them.
 
@@ -6924,7 +6997,7 @@ The fence tags `openui` and `openui-lang` mean schema version 1. The tag `openui
 
 Generative UI has no project flag and no kill switch. Every session lists the `kortix-genui` system skill by name and a one-line description. The agent loads the full catalog only when an answer needs a block, so a turn without blocks does not load it.
 
-An agent sees the skill only when its `skills` grant in `kortix.yaml` is `all` or names `kortix-genui`. The starter agents grant `all`. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
+An agent sees the skill only when its `skills` grant in `kortix.yaml` is `"*"` or names `kortix-genui`. The starter agents grant `"*"`. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
 The viewer has a separate switch. Pass `enabled={false}` to `GenuiBlock` and the block renders as markdown.
 
@@ -7981,7 +8054,7 @@ createRoot(document.getElementById('root')!).render(
 
 ### For agents
 
-`@kortix/ui` ships the `kortix-ui` skill at `packages/ui/skills/kortix-ui/SKILL.md`. Every Kortix project gets it as a managed skill. An agent loads it when its `skills` grant in `kortix.yaml` is `all` or names `kortix-ui`. It tells an agent how to set up the package, which component to compose, which primitives are banned and how to verify a page. Its references:
+`@kortix/ui` ships the `kortix-ui` skill at `packages/ui/skills/kortix-ui/SKILL.md`. Every Kortix project gets it as a managed skill. An agent loads it when its `skills` grant in `kortix.yaml` is `"*"` or names `kortix-ui`. It tells an agent how to set up the package, which component to compose, which primitives are banned and how to verify a page. Its references:
 
 | File | Holds |
 | --- | --- |
@@ -8015,8 +8088,8 @@ Conventions in this section:
 | `@kortix/sdk/wire-message-id` | Stable | `mintWireMessageId` and `WIRE_MESSAGE_ID` in one module with no imports. The root exports the same names. |
 | `@kortix/sdk/workspace-search` | Stable | `createWorkspaceSearchClient` and its ranking helpers (see [Workspace search](#workspace-search)). |
 | `@kortix/sdk/capture-rules` | Stable | The Kortix Capture constants: `CAPTURE_LAYERS`, `CAPTURE_EXCLUSION_GROUPS`, `CAPTURE_RETENTION_LIMITS`, `CAPTURE_FRAME_INTERVALS_MS`, `CAPTURE_MAX_HEIGHTS`, `CAPTURE_DEVICE_DEFAULTS`, `normalizeCaptureAppId`, `normalizeCaptureDomain`. |
-| `@kortix/sdk/internal/*` | Internal | State stores of the Kortix web app, for example `sync-store`, `server-store`, `sandbox-connection-store`, `opencode-pending-store`, `idb-sync-cache`, `diagnostics-store`, `managed-storage`. No semver. Do not import. The first four are also deprecated. |
-| Other subpaths | Deprecated | Aliases that resolve until the next major. See [Deprecated names](#deprecated-names). |
+| `@kortix/sdk/internal/*` | Internal | State stores of the Kortix web app: `idb-sync-cache`, `diagnostics-store`, `managed-storage`. No semver. Do not import. |
+| Other subpaths | Removed | 0.15.0 removed them. See [Removed in 0.15.0](#removed-in-0150). |
 
 Stable entry points follow semver. A deep path into `dist/` has no semver.
 
@@ -8127,6 +8200,7 @@ Arguments, `HeadlessAuthError` codes and limits are in [Sign users in headlessly
 | `tokens.list(accountId?, { mine? })` · `tokens.create({ accountId?, name, expiresAt?, projectId? })` · `tokens.revoke(tokenId, accountId?)` | Personal access keys (`kortix_pat_…`). `mine: true` lists only the caller's keys. `projectId` binds the key to one project. |
 | `connectedApps.list()` · `connectedApps.revoke(…)` | OAuth and MCP clients the person approved, across all accounts. Route `/oauth/grants`. |
 | `secretResources.list` · `.create` · `.rotate` · `.retry` · `.remove` · `.grant` · `.revoke` · `.setAccess` | Account-level provider secrets and the projects that may use them. |
+| `subscriptions.list(accountId, projectId)` · `.usage(accountId, secretId, projectId, storage)` | Read subscription usage for named accounts and existing ChatGPT logins. `storage` identifies `account_resource` or `project`; credentials stay in their original store. |
 | `branding.get(accountId)` · `.update(accountId, { app_name })` · `.uploadAsset(accountId, kind, file)` · `.removeAsset(accountId, kind)` · `.reset(accountId)` | Organization branding. `kind`: `logo`, `icon`, `favicon`, `logo_dark`, `icon_dark`, `favicon_dark`. |
 | `audit.log(accountId, filters?)` · `audit.export(accountId, { format: 'csv' \| 'jsonl', …filters })` | The audit log, filtered by project, session, actor, source, outcome, request, resource, action or time · the same events as a file. |
 | `audit.activity(accountId, { since?, until?, projectId?, actor?, client?, actorType?, credentialKind? })` | Activity per UTC day: per user, the active days, distinct active hours and events. `client: 'browser'` keeps only a person in a web page. |
@@ -8413,6 +8487,37 @@ When the project's agent manifest cannot be read, `context` still answers: `agen
 
 Routes: `/projects/{projectId}/artifacts…`, `/projects/{projectId}/artifact-comment-threads/{threadId}`, and `/artifacts/meta/{artifactId}` for `getPublicArtifact`. See [Artifacts](/docs/guide#artifacts).
 
+#### Goals
+
+Goals are root exports that take `projectId` first. Kortix keeps each goal as a record and is the only authority for its state, pause, owner and verifier sessions, limits and verification. A goal's Drive folder holds the brief (`GOAL.md`), `log.md` and `evidence/`. Writing a state into `GOAL.md` changes nothing. Every `/projects/{projectId}/goals…` route returns `403 feature_disabled` while the `goals` flag is off, and `listProjectGoals` returns `[]` then.
+
+| Root export | What it does |
+| --- | --- |
+| `listProjectGoals(projectId)` | Every goal the caller may read: their own, the ones assigned to them, the ones in folders shared with them, every goal for a project admin. |
+| `getProjectGoal(projectId, goalId)` | One goal by `goal_id`. `ApiError` 404: no such goal. 403: no access. |
+| `listProjectGoalEvents(projectId, goalId, { cursor? })` | The audit trail, oldest first: `{ events, nextCursor }`. |
+| `createProjectGoal(projectId, { outcome, criteria?, agent?, assignedUser?, goalId? })` | Creates a goal in the caller's own folder and starts its owner session. `goalId` is the idempotency key: a retry with the same id returns the same goal. `sessionId` is deprecated and is sent as the goal id. |
+| `pauseProjectGoal(projectId, goal, reason)` · `resumeProjectGoal(projectId, goal)` · `stopProjectGoal(projectId, goal, reason)` · `restartProjectGoal(projectId, goal, reason)` | Person controls. Pause keeps the state and starts no new turn. Stop closes the goal and stops the owner's running turn; a retry on a stopped goal succeeds. |
+| `replyToProjectGoal(projectId, goal, text, { answerId? })` | Answers the goal as the caller. `answerId` is the idempotency key: the owner gets one answer per id. A goal that waits on a person goes back to active. |
+| `setProjectGoalBinding(goal, { space?, agent? })` | Groups the goal under a space or an agent. `null` clears a field. It grants nothing. |
+| `getProjectGoalFiles(driveId, folder)` | `GOAL.md` (`brief`), `log.md`, `notes.md` and `evidence/verification.md` as text, `null` when absent. |
+| `goalHealth(goalOrRecord, heartbeat, now?)` | `healthy`, `attention` or `closed`, with issues. For a record it reads `blocked_reason` (issue `blocked`), `next_wake_at` (`missed_wake` after 15 minutes, `no_heartbeat` for an active goal with no wake) and a pending verification older than 24 hours (`verification_stalled`). |
+
+Every write sends the `revision` the caller read. A stale revision throws `ProjectGoalConflictError` (`409 goal_conflict`), whose `goal` is the goal as it is now: show it, and let the person act again. Every write returns the document as before plus `projectGoal`, the goal with its new revision.
+
+A `ProjectGoal` keeps its older fields and adds the server's: `goalId`, `projectId`, `revision`, `capabilities`, `blockedReason`, `verification`, `criteria` and `record`. Read these rules:
+
+- **Capabilities.** `capabilities` (`pause`, `resume`, `stop`, `restart`, `answer`, `edit`, `edit_criteria`) says what the caller may do on this goal now. Show only those controls. A session credential gets none of them.
+- **Verified vs reported.** In `criteria`, `reported_met` is the owner agent's claim and `verified` is set only by a passed verification of the current criteria. `goal.success_criteria[].met` is `reported_met`.
+- **Blocked.** `blockedReason` is `credits`, `wake_cap`, `session_cap`, `owner_lost`, `storage`, `flag_off` or `setup`, else `null`.
+- **Waiting costs no turns.** While `waiting_on_user`, no heartbeat runs; `next_wake_at` is the `chase_at` time the owner asked for, or `null`.
+- **Limits.** `max_wakes_per_day` and `max_sessions` are checked before a turn starts; `wakes_today` counts this UTC day.
+- **Deprecated.** `heartbeat` is always `null` (the API owns the heartbeat); `items`, `transitions` and `links` of `goal` are empty (read the events).
+
+React: `useProjectGoals(projectId)`, `useProjectGoal(projectId, goalId)`, `useProjectGoalEvents(projectId, goalId)`, `useProjectGoalFiles(projectId, goal)` and `useSessionGoal(projectId, sessionId)` read; `useProjectGoalControl(projectId)` runs `pause`, `resume`, `stop`, `restart` and `answer` as one mutation. It sends one request for a double submit, writes the result into the cache, and on a conflict writes the current goal before it rethrows.
+
+Routes: `/projects/{projectId}/goals`, `/projects/{projectId}/goals/{goalId}` and its `events`, `pause`, `resume`, `stop`, `restart` and `answer`. See [Outcomes](/docs/guide#outcomes).
+
 #### Gateway and models
 
 | Method | What it does |
@@ -8580,7 +8685,7 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | `useArtifactCommentContext(projectId, artifactId, { version?, agent?, enabled? }?)` | The comment context: rights, mention tokens, the Send target and `agents_unavailable`. A comment write refreshes it. |
 | `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? }?)` · `useInfiniteArtifactActivity(projectId, artifactId, { limit?, enabled? }?)` | One activity page · every page, as ordered and deduplicated `items`, with `olderVersions` and `fetchNextPage`. |
 | `useArtifactCommentScreenshot(projectId, artifactId, commentId)` | One comment's screenshot as a `Blob`. The hook keeps no copy after unmount. |
-| `useProjectGoals` · `useSessionGoal` · `useProjectGoalFiles` | Goals, the goal a session works on, and one goal's files. Goals are experimental and off by default. Turn them on in **Project admin** → **Feature flags**. |
+| `useProjectGoals` · `useProjectGoal` · `useProjectGoalEvents` · `useSessionGoal` · `useProjectGoalFiles` · `useProjectGoalControl` | Goals, one goal by id, its events, the goal a session works on, one goal's files, and the person controls. See [Goals](#goals). Goals are experimental and off by default. Turn them on in **Project admin** → **Feature flags**. |
 | `useProjectTriggerEventApps` · `useProjectTriggerEventTypes` | The connectors and event types for `event` triggers. |
 | `useConnectorLinkInfo(token, options)` | The `ConnectorSetupLinkInfo` behind a connect token, for a card. `undefined` while it loads, `null` when the request failed. |
 | `useCaptureWorkspace` · `useSetCaptureEnabled` · `useCaptureDevices` · `useRevokeCaptureDevice` · `useCapturePolicy` · `useSetCapturePolicy` · `useCaptureDays` · `useCaptureTimeline` · `useCaptureTimelineItems` · `useCaptureSearch` · `useCaptureChunkMedia` · `useCaptureDeviceGrant` · `useApproveCaptureDevice` · `useDenyCaptureDevice` · `useCaptureStorage` · `useSetCaptureStorage` · `useCaptureEnrollments` · `useCaptureEnrollmentTokens` and their create, approve, deny and revoke hooks · `useLinkCaptureDevice` | Kortix Capture. Each account hook takes the account id first. A `null` id sends no request. `useCaptureDevices` polls every 10 s. |
@@ -8774,7 +8879,7 @@ export function standaloneCalls(thread: SessionLogThread, busy: boolean) {
 
 #### The image card
 
-What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sdk` and `@kortix/sdk/turns`. An `image_gen` call is a deliverable: it is a `standalone` segment and is hoisted above the final text like `show`.
+What a host draws an `image_gen` call with. Pure data, exported from `@kortix/sdk`. An `image_gen` call is a deliverable: it is a `standalone` segment and is hoisted above the final text like `show`.
 
 | Name | What it does |
 | --- | --- |
@@ -8839,25 +8944,29 @@ Pure functions over v1 messages (`MessageWithParts`, `kortix.transcript.v1`, `KO
 
 The grouping and status functions accept the structural types `PartLike`, `MessageInfoLike`, `TurnLike`, `ToolStateLike` and `SessionStatusLike`, so your own message shapes work.
 
+### Removed in 0.15.0
+
+0.15.0 is a breaking release. It removed these subpaths and names. Every session runs pi, so nothing removed here reached a route a current box serves.
+
+| Removed | Use instead |
+| --- | --- |
+| Subpaths `/config`, `/auth`, `/api-client`, `/projects-client`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`, `/platform-client`, `/event-stream`, `/files`, `/session`, `/session/url`, `/turns`, `/opencode-client`, `/opencode-errors` | The same names from the root `@kortix/sdk`. |
+| Subpaths `/sync-store`, `/server-store`, `/sandbox-connection-store`, `/opencode-pending-store`, `/idb-sync-cache` and `/internal/sync-store`, `/internal/server-store`, `/internal/sandbox-connection-store`, `/internal/opencode-pending-store` | No replacement. Read session state with `useSession`. |
+| Subpath `/message-queue` and its root names (`createSessionQueue`, `enqueue`, `claimNext`, …) | `s.send`, or `useSession().send`. Kortix orders prompts on the server. |
+| Every name that contains `OpenCode` (for example `useOpenCodeSessions`, `opencodeKeys`, `OpencodeClient`, `OpenCodeEvent`) | The same name with `Runtime` (`useRuntimeSessions`, `runtimeKeys`, `RuntimeClient`, `RuntimeEvent`). |
+| The OpenCode-only hooks: MCP (`useAddMcpServer`, `useMcpAuthStart`, …), `useShareSession`, `useUnshareSession`, `useUpdatePart`, `useDeletePart`, `useRuntimeTools`, `useUpdateRuntimeSession`, `useRuntimeSessionDiff`, `useInitSession`, `useSendRuntimeMessage`, `useRuntimeAgent`, `useUpdateRuntimeConfig`, the provider auth calls (`authorizeRuntimeProvider`, …), `getRuntimeConfig`, `updateRuntimeConfig`, `refreshRuntimeConfiguration`, `logRuntimeEvent`, the `RuntimeConfigInvalidError` helpers, `NoCompactionModelError` | No replacement: pi does not serve these routes. Send a prompt with `useSession().send`; read the diff with `useRuntimeVcsDiff`. |
+| The retired admin hooks (`use-admin-analytics`, `use-admin-feedback`, `use-system-status`, `use-admin-billing`, the per-sandbox admin hooks, `useAdminAccountSandboxes`, `useAdminSetManagedModels`, `useAdminSetEnterpriseDemo`, `useAdminSetEnterpriseEntitled`) and the tunnel permission hooks (`useTunnelPermissions`, `useTunnelAuditLogs`, …) | No replacement: the API removed the routes. |
+| Field aliases `opencode_session_id`, `opencode_sessions`, `opencode_version`, `opencode_model`, `opencode_reload` on sessions, turns, transcripts, audit events and session starts, and `opencodeModel` on channel bindings | The neutral field with the same value: `runtime_session_id`, `runtime_sessions`, `harness_version`, `model`, `runtime_reload`, and `model` on channel bindings. The API no longer sends the old names. |
+| Session `metadata` keys `opencode_model`, `opencode_model_source`, `opencode_model_*` and `opencode_sessions` | `model`, `model_source`, `model_*` and `runtime_sessions`. A migration renamed the keys on every stored session. |
+
 ### Deprecated names
 
-Each name below carries `@deprecated` and resolves until the next major version. Your editor flags each use. The list is not complete: your editor flags every other deprecated name too, and its `@deprecated` tag names the replacement when one exists.
-
-#### Subpaths
-
-These subpaths re-export names that the root or `@kortix/sdk/react` already exports, or wrap internal stores.
-
-| Subpaths | Use instead |
-| --- | --- |
-| `/config`, `/auth`, `/api-client`, `/projects-client`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`, `/platform-client`, `/event-stream`, `/files`, `/session`, `/session/url`, `/turns` | The same names from the root `@kortix/sdk`. |
-| `/sync-store`, `/server-store`, `/sandbox-connection-store`, `/idb-sync-cache`, `/internal/sync-store`, `/internal/server-store`, `/internal/sandbox-connection-store` | No replacement. Read session state with `useSession`. |
-| `/message-queue` | `s.send`, or `useSession().send`. Kortix orders prompts on the server. |
+Each name below carries `@deprecated` and resolves until a later major version. Your editor flags each use. The list is not complete: your editor flags every other deprecated name too, and its `@deprecated` tag names the replacement when one exists.
 
 #### Names
 
 | Deprecated | Use instead |
 | --- | --- |
-| `claimNext`, `completeInFlight`, `createSessionQueue`, `editQueued`, `enqueue`, `failInFlight`, `removeQueued`, `reorderQueued`, `retryFailed`, `QueuedMessage`, `QueuedMessageInput`, `SessionQueue` | `s.send`, or `useSession().send`. |
 | `wireIdClock`, `wireIdClockAt`, `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`, `newestWireIdClock`, `mintWireMessageIdAbove`, `MintWireMessageIdAboveInput`, `MintedWireMessageId`, `WIRE_ID_TIME_SCALE`, `WIRE_ID_TIME_MASK`, `WIRE_ID_CLOCK_TOLERANCE`, `WIRE_ID_BACKDATE_MS` | `mintWireMessageId` and `WIRE_MESSAGE_ID`, which stay current. Message ids are opaque. |
 | `s.runtime` | The session methods: `messages`, `pendingRequests`, `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind`. |
 | `s.transcript()` · `s.transcriptSync()` | `s.log(query)`. |

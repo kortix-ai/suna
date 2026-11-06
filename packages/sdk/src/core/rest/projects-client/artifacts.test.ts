@@ -191,6 +191,41 @@ test('comment errors preserve the HTTP status and code for callers', async () =>
   }
 });
 
+test('comment writes throw their failure to the caller and never report it to the global error handler', async () => {
+  const reported: unknown[] = [];
+  configureKortix({
+    backendUrl: 'https://artifact-sdk.example/v1',
+    getToken: async () => 'session-token',
+    onError: (error) => reported.push(error),
+  });
+  response = { error: 'Comment service unavailable', code: 'artifact_comment_unavailable' };
+  status = 503;
+  const writes: Array<[string, () => Promise<unknown>]> = [
+    ['create', () => artifacts.createArtifactComment('project-a', 'artifact-a', { anchor, body: 'Review.' })],
+    ['reply', () => artifacts.replyArtifactComment('project-a', 'artifact-a', 'thread-a', { body: 'Yes.' })],
+    ['status', () => artifacts.setArtifactCommentStatus('project-a', 'artifact-a', 'thread-a', 'resolved')],
+    ['edit', () => artifacts.editArtifactComment('project-a', 'artifact-a', 'thread-a', 'comment-a', { body: 'Edited.' })],
+    ['delete', () => artifacts.deleteArtifactComment('project-a', 'artifact-a', 'thread-a', 'comment-a')],
+    ['send', () => artifacts.sendArtifactComments('project-a', 'artifact-a', { thread_ids: ['thread-a'], agent: 'writer' })],
+  ];
+  const outcomes: Array<[string, number | undefined]> = [];
+  for (const [name, write] of writes) {
+    const error = await write().then(() => null, (cause: unknown) => cause);
+    outcomes.push([name, (error as ApiError | null)?.status]);
+  }
+  expect(outcomes).toEqual(writes.map(([name]) => [name, 503]));
+  expect(reported).toEqual([]);
+  // A network failure (no answer at all) is the caller's to show as well.
+  globalThis.fetch = mock(async () => {
+    throw new TypeError('Failed to fetch');
+  }) as unknown as typeof fetch;
+  const offline = await artifacts
+    .setArtifactCommentStatus('project-a', 'artifact-a', 'thread-a', 'open')
+    .then(() => null, (cause: unknown) => cause);
+  expect(offline).toBeInstanceOf(ApiError);
+  expect(reported).toEqual([]);
+});
+
 test('the project facade exposes the Artifact comment and activity functions', async () => {
   const handle = createKortix({ backendUrl: 'https://artifact-sdk.example/v1', getToken: async () => 'session-token' }).project('project-a');
   response = { threads: [thread] };

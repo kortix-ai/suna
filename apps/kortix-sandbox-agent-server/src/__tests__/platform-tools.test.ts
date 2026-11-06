@@ -311,6 +311,8 @@ describe('kortix_schedules follow-through', () => {
     const missing = await run('kortix_schedules', { at: '2026-11-04T08:00:00Z', id: 'sticker-quote-check', in: '4d', action: 'follow_up' })
     expect(missing.error?.kind).toBe('invalid')
     expect(missing.error?.message).toStartWith('Missing `text`')
+    // A model whose long field was dropped in transit retried 5 times on dev: the error names the way out.
+    expect(missing.error?.message).toContain('send this call from codemode')
     // The example is a whole call the model can copy.
     const example = missing.error!.message.slice(missing.error!.message.indexOf('{'))
     expect(JSON.parse(example)).toMatchObject({ action: 'follow_up', in: '4d' })
@@ -560,7 +562,8 @@ describe('kortix_schedules automations', () => {
   })
 
   test('test: a dry run reports the filter verdict, the session key and the rendered prompt, and fires nothing', async () => {
-    fakeKortix(`'triggers fire issue-triage --dry-run --payload={"event":{"data":{"number":7}}} --json') echo '{"filter_matches":true,"session_key":"7","rendered_prompt":"Label Login fails","payload":{}}' ;;
+    fakeKortix(`'triggers show issue-triage --json') echo '{"slug":"issue-triage","type":"event","app":null,"filter":null}' ;;
+  'triggers fire issue-triage --dry-run --payload={"event":{"data":{"number":7}}} --json') echo '{"filter_matches":true,"session_key":"7","rendered_prompt":"Label Login fails","payload":{}}' ;;
   'triggers fire issue-triage --dry-run --json') echo '{"filter_matches":false,"session_key":null,"rendered_prompt":"Label ","payload":{}}' ;;`)
     const hit = await run('kortix_schedules', { action: 'test', name: 'issue-triage', payload: { event: { data: { number: 7 } } } })
     expect(hit.ok).toBe(true)
@@ -569,6 +572,29 @@ describe('kortix_schedules automations', () => {
     const miss = await run('kortix_schedules', { action: 'test', id: 'issue-triage' })
     expect(miss.card.title).toBe('issue-triage would skip this event')
     expect((await run('kortix_schedules', { action: 'test', name: 'x', payload: 'nope' })).ok).toBe(false)
+  })
+
+  test('test: an App automation gets a real test event (a test- id, the real drain) and reports what the work did', async () => {
+    fakeKortix(`'triggers show status-alert --json') echo '{"slug":"status-alert","type":"app","app":"status-watch","filter":{"event.name":"status.changed"}}' ;;
+  'apps events emit status-watch status.changed --data={"status":"down"} --trigger=status-alert --wait --json') echo '{"triggers":1,"accepted":1,"ids":["test-1"],"events":[{"trigger":"status-alert","status":"fired","session_id":"ses_9","reason":null}],"fired":true,"pending":false}' ;;
+  'triggers show any-event --json') echo '{"slug":"any-event","type":"app","app":"status-watch","filter":null}' ;;
+  'apps events emit status-watch test.event --trigger=any-event --wait --json') echo '{"triggers":2,"accepted":2,"ids":["test-2"],"events":[{"trigger":"status-alert","status":"skipped","reason":"filter did not match"},{"trigger":"any-event","status":"skipped","reason":"throttled"}],"fired":false,"pending":false}'; exit 1 ;;`)
+    const hit = await run('kortix_schedules', { action: 'test', name: 'status-alert', payload: { event: { data: { status: 'down' } } } })
+    expect(hit.ok).toBe(true)
+    expect(hit.card.title).toBe('status-alert ran on a test event')
+    expect(hit.data).toMatchObject({ name: 'status-alert', app: 'status-watch', event: 'status.changed', test_id: 'test-1', outcome: 'fired', session_id: 'ses_9' })
+    // A "*" automation with no sample name: a neutral name; the CLI exits 1 when nothing fired, and the verdict still comes back.
+    const skip = await run('kortix_schedules', { action: 'test', name: 'any-event' })
+    expect(skip.ok).toBe(true)
+    expect(skip.card.title).toBe('any-event skipped the test event')
+    expect(skip.data).toMatchObject({ event: 'test.event', outcome: 'skipped', reason: 'throttled', session_id: null })
+    expect(argvs().some((argv) => argv.includes('--dry-run'))).toBe(false)
+    // An event name is an App event name, never a flag: "--trigger=other" cannot pick another automation.
+    const before = argvs().length
+    const flag = await run('kortix_schedules', { action: 'test', name: 'status-alert', payload: { event: { name: '--trigger=any-event' } } })
+    expect(flag.ok).toBe(false)
+    expect(flag.error?.kind).toBe('invalid')
+    expect(argvs().slice(before).some((argv) => argv.startsWith('apps events emit'))).toBe(false)
   })
 
   test('runs: the recent runs with a tally of what started, skipped and failed, and no cost', async () => {
@@ -624,6 +650,30 @@ describe('kortix_schedules automate: an App as the event source', () => {
       expect({ bad, kind: result.error?.kind }).toEqual({ bad, kind: 'invalid' })
     }
     expect(argvs()).toHaveLength(1)
+  })
+
+  test('the work on an App event takes expect_event_within: wake_on (this chat) and automate both pass it; any other source refuses it', async () => {
+    const TEXT = 'GitHub status changed: tell the person what changed; stop on 2026-12-05.'
+    const trigger = `{"id":"trigger.cccccccccccc","origin":"runtime","name":null,"prompt":"x","agent":"meta","state":"active","source":{"type":"app","app":"github-status"},"target":{"kind":"session","session_id":"ses_1","session_name":null},"next_fire_at":null,"last_fired_at":null,"last_status":null,"last_error":null}`
+    fakeKortix(`'triggers add ${TEXT} --on=app --app=github-status --expect-event-within=1h --json') echo '${trigger}' ;;
+  'triggers add status-work '*' --apply') printf 'Added status-work (live)\\n' ;;`)
+    const woken = await run('kortix_schedules', { action: 'wake_on', text: TEXT, on: 'app_event', app: 'github-status', expect_event_within: '1h' })
+    expect(woken.ok).toBe(true)
+    const work = await run('kortix_schedules', { action: 'automate', name: 'status-work', on: 'app_event', app: 'github-status', prompt: 'Status changed.', expect_event_within: '1h' })
+    expect(work.ok).toBe(true)
+    expect(argvs()).toEqual([
+      `triggers add ${TEXT} --on=app --app=github-status --expect-event-within=1h --json`,
+      'triggers add status-work --type=app --prompt=Status changed. --app=github-status --expect-event-within=1h --apply',
+    ])
+    for (const bad of [
+      { action: 'wake_on', text: TEXT, on: 'cr_merged', cr: '42', expect_event_within: '1h' },
+      { action: 'automate', name: 'x', on: 'schedule', every: '15m', target_app: 'github-status', expect_event_within: '1h' },
+      { action: 'wake_on', text: TEXT, on: 'app_event', app: 'github-status', expect_event_within: '--all' },
+    ]) {
+      const result = await run('kortix_schedules', bad)
+      expect({ bad, kind: result.error?.kind }).toEqual({ bad, kind: 'invalid' })
+    }
+    expect(argvs()).toHaveLength(2)
   })
 })
 

@@ -469,6 +469,74 @@ describe('simple gateway pipeline', () => {
     expect(await unavailable.text()).toBe(upstreamBody);
   });
 
+  // 2026-11-02: twelve 1600x1200 PNG reads (3.6 MB base64 each, 43 MB) went to Bedrock, which
+  // refuses a body over ~32 MB with its context-overflow text at ~22k tokens. Every retry failed.
+  const sheet = (n: number) => ({ type: 'image_url', image_url: { url: `data:image/png;base64,${String(n % 10).repeat(3_620_000)}` } });
+  const sheetsRequest = (count: number) => JSON.stringify({
+    model: 'requested-model',
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'review the sheets' }, ...Array.from({ length: count }, (_, i) => sheet(i))] }],
+  });
+  const bedrockTooLong = JSON.stringify({ message: 'Input is too long for requested model.' });
+
+  test('the default image window sends a 43 MB screenshot request to the provider under 31 MB', async () => {
+    let sentBytes = 0;
+    const response = await handleChatCompletions(
+      {
+        hooks: { ...hooks([], []), resolveUpstream: async () => [primary] },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async (_url, init) => {
+          sentBytes = String(init?.body ?? '').length;
+          return new Response(JSON.stringify({ id: 'c', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+        },
+      },
+      { authorization: 'Bearer token', rawBody: sheetsRequest(12) },
+    );
+    expect(response.status).toBe(200);
+    expect(sentBytes).toBeGreaterThan(14_000_000);
+    expect(sentBytes).toBeLessThan(31_000_000);
+  });
+
+  test('a provider "too long" refusal of a body over 30 MB reaches the client and the trace as request_too_large', async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: { ...hooks([], traces), resolveUpstream: async () => [primary] },
+        logger: { info() {}, warn() {}, error() {} },
+        // The window off: the provider receives the whole 32.6 MB body, as before the byte cap.
+        imageWindow: { maxImages: 0, keepOnOverflow: 0 },
+        fetchImpl: async () => new Response(bedrockTooLong, { status: 400, headers: { 'content-type': 'application/json' } }),
+      },
+      { authorization: 'Bearer token', rawBody: sheetsRequest(9) },
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe('request_too_large');
+    expect(body.error.message).toMatch(/^The request is 32\.\d MB, more than the model provider accepts/);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(traces.at(-1)).toMatchObject({ status: 400, ok: false, errorCode: 'request_too_large' });
+  });
+
+  test('the same refusal of a small body stays context_length_exceeded, and the trace keeps the provider text', async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: { ...hooks([], traces), resolveUpstream: async () => [primary] },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => new Response(bedrockTooLong, { status: 400, headers: { 'content-type': 'application/json' } }),
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] }) },
+    );
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toEqual({
+      message: 'Input is too long for requested model.',
+      type: 'invalid_request_error',
+      code: 'context_length_exceeded',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Not "upstream HTTP 400": an own provider's refusal is the customer's to read.
+    expect(traces.at(-1)).toMatchObject({ errorCode: 'upstream_error', errorMessage: 'Input is too long for requested model.' });
+  });
+
   test('settles one successful response exactly once', async () => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
@@ -620,6 +688,45 @@ describe('simple gateway pipeline', () => {
     expect(usage[0]!.finalCost).toBeGreaterThan(0);
     // The client left: traced as 499, not as a provider failure.
     expect(traces[0]?.status).toBe(499);
+  });
+
+  test('a client that closes right after [DONE] is a served request, and an answer without a usage frame still bills its prompt', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const client = new AbortController();
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks(usage, traces),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                // An empty answer, no usage chunk, then [DONE]; the upstream's own end of body comes later.
+                controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+              },
+            }),
+            { headers: { 'content-type': 'text/event-stream' } },
+          ),
+      },
+      {
+        authorization: 'Bearer token',
+        signal: client.signal,
+        rawBody: JSON.stringify({ model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'p'.repeat(40_000) }] }),
+      },
+    );
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let seen = '';
+    while (!seen.includes('[DONE]')) seen += decoder.decode((await reader.read()).value);
+    // The OpenAI SDK closes on [DONE].
+    await reader.cancel();
+    client.abort();
+
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(10_000);
+    expect(traces[0]).toMatchObject({ status: 200, ok: true });
   });
 
   test('a stream stopped during prefill, before any output, settles the prompt', async () => {
@@ -813,6 +920,54 @@ describe('simple gateway pipeline', () => {
     expect(call).toBe(2);
     // The cut itself is not a rate limit — no cooldown from the retry path.
     expect(cooldowns).toEqual([]);
+  });
+
+  test('a stream-cut retry that answers non-2xx is a failed retry: its body never enters the SSE stream', async () => {
+    const cooldowns: Array<{ secretId: string; seconds: number }> = [];
+    const keys: string[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], []),
+          resolveUpstream: async () => [
+            { ...primary, poolSecretId: 'cut-a', apiKey: 'cut-first' },
+            { ...primary, poolSecretId: 'cut-b', apiKey: 'cut-second' },
+          ],
+          notePoolRateLimit: async (_principal, secretId, seconds) => {
+            cooldowns.push({ secretId, seconds });
+          },
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async (_url, init) => {
+          const key = new Headers(init?.headers).get('authorization') ?? '';
+          keys.push(key);
+          if (keys.length === 1) {
+            return new Response(new ReadableStream({ start(c) { c.close(); } }), {
+              headers: { 'content-type': 'text/event-stream' },
+            });
+          }
+          if (key.includes('cut-second')) {
+            return new Response('{"error":{"message":"pool key rate limited"}}', {
+              status: 429,
+              headers: { 'content-type': 'application/json', 'retry-after': '12' },
+            });
+          }
+          return new Response(
+            'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n' +
+              'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n' +
+              'data: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          );
+        },
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }], stream: true }) },
+    );
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).not.toContain('pool key rate limited');
+    expect(text).toContain('"content":"hi"');
+    expect(keys.length).toBe(3);
+    expect(cooldowns).toEqual([{ secretId: 'cut-b', seconds: 12 }]);
   });
 
   test('a stream cut after bytes are already flowing gets an explicit terminal error and a pool cooldown, never a replay', async () => {

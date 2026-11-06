@@ -82,8 +82,8 @@ export function getSessionContextMetrics(
  */
 export function sessionStartedAt(
   runtime: { id: string; time: { created: number } } | undefined,
-  row: { created_at: string; runtime_session_id?: string | null; opencode_session_id?: string | null } | null | undefined,
+  row: { created_at: string; runtime_session_id?: string | null } | null | undefined,
 ): number | undefined {
-  const own = row && (!runtime || (row.runtime_session_id ?? row.opencode_session_id) === runtime.id);
+  const own = row && (!runtime || row.runtime_session_id === runtime.id);
   return own ? Date.parse(row.created_at) : runtime?.time.created;
 }

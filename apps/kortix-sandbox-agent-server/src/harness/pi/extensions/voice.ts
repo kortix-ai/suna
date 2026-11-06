@@ -18,13 +18,14 @@ import { flushSessionLogJournal } from '../../shared/session-log-journal'
 
 export const VOICE_CALL_FLAG = 'voice_call'
 
-/** The voice for one session, `session` being the Kortix session id a call names. */
-export function voice(session: string): InlineExtension {
+/** The voice for one session, `session` being the Kortix session id a call names and `agent` the agent it runs: a call
+ * to it greets as that agent, never as the default one. */
+export function voice(session: string, agent?: string): InlineExtension {
   return {
     name: 'kortix-voice',
     factory: async (pi) => {
       const { attach } = await import('@kortix/voice/kortix')
-      attach(pi, session, { persisted: () => void flushSessionLogJournal() })
+      attach(pi, session, { persisted: () => void flushSessionLogJournal(), agent })
     },
   }
 }

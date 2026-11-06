@@ -18,8 +18,8 @@
  *
  *   agents:
  *     worker:                             # default GP agent (∩ user)
- *       connectors: all
- *       kortix_permissions: all
+ *       connectors: "*"                 # every connector (`all` is the same)
+ *       kortix_permissions: "*"
  *     release-bot:
  *       connectors: ["github"]            # which connectors
  *       kortix_permissions: ["project.trigger.create", "project.gitops.push"]   # Kortix permissions

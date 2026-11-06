@@ -1,0 +1,38 @@
+diff --git a/node_modules/react-native-uitextview/ios/RNUITextView.mm b/node_modules/react-native-uitextview/ios/RNUITextView.mm
+index 2f76e86..2a7c24b 100644
+--- a/node_modules/react-native-uitextview/ios/RNUITextView.mm
++++ b/node_modules/react-native-uitextview/ios/RNUITextView.mm
+@@ -8,7 +8,7 @@
+ #import <react/renderer/components/RNUITextViewSpec/EventEmitters.h>
+ #import <react/renderer/components/RNUITextViewSpec/Props.h>
+ #import <react/renderer/components/RNUITextViewSpec/RCTComponentViewHelpers.h>
+-#import "RCTFabricComponentsPlugins.h"
++#import <React/RCTFabricComponentsPlugins.h>
+ 
+ #include <cmath>
+ 
+diff --git a/node_modules/react-native-uitextview/ios/RNUITextViewChild.mm b/node_modules/react-native-uitextview/ios/RNUITextViewChild.mm
+index 2114aba..fa4c82d 100644
+--- a/node_modules/react-native-uitextview/ios/RNUITextViewChild.mm
++++ b/node_modules/react-native-uitextview/ios/RNUITextViewChild.mm
+@@ -4,7 +4,7 @@
+ #import <react/renderer/components/RNUITextViewSpec/EventEmitters.h>
+ #import <react/renderer/components/RNUITextViewSpec/Props.h>
+ #import <react/renderer/components/RNUITextViewSpec/RCTComponentViewHelpers.h>
+-#import "RCTFabricComponentsPlugins.h"
++#import <React/RCTFabricComponentsPlugins.h>
+ 
+ using namespace facebook::react;
+ 
+diff --git a/node_modules/react-native-uitextview/ios/RNUITextViewManager.mm b/node_modules/react-native-uitextview/ios/RNUITextViewManager.mm
+index e2e062d..47ea37e 100644
+--- a/node_modules/react-native-uitextview/ios/RNUITextViewManager.mm
++++ b/node_modules/react-native-uitextview/ios/RNUITextViewManager.mm
+@@ -1,6 +1,6 @@
+ #import <React/RCTViewManager.h>
+ #import <React/RCTUIManager.h>
+-#import "RCTBridge.h"
++#import <React/RCTBridge.h>
+ 
+ @interface RNUITextViewManager : RCTViewManager
+ @end

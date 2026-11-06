@@ -83,6 +83,3 @@ export function deriveSubdomainOpts(): ResolvedPreviewOptions {
   });
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `getActiveRuntimeUrl`. Removed in the next major. */
-export const getActiveOpenCodeUrl = getActiveRuntimeUrl;

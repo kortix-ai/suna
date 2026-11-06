@@ -12,7 +12,7 @@ function envelope(over: Partial<SessionTranscriptSyncEnvelope> = {}): SessionTra
 		source: "mirror",
 		complete: true,
 		captured_at: "2026-08-26T06:00:00.000Z",
-		opencode_session_id: ROOT,
+		runtime_session_id: ROOT,
 		message_count: 2,
 		messages: [
 			{
@@ -55,7 +55,7 @@ describe("shouldHydrateFromMirror", () => {
 		// drops what the incoming page COVERS and these sort elsewhere entirely.
 		expect(
 			shouldHydrateFromMirror({
-				envelope: envelope({ opencode_session_id: "ses_other" }),
+				envelope: envelope({ runtime_session_id: "ses_other" }),
 				runtimeSessionId: ROOT,
 				hasMessages: false,
 			}),

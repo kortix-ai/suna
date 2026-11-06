@@ -18,14 +18,15 @@
     "./permission-rules": "./src/permission-rules.ts",
     "./kortix-tool-card": "./src/kortix-tool-card.ts",
     "./multi-agent": "./src/multi-agent.ts",
-    "./claude-agent": "./src/claude-agent.ts"
+    "./claude-agent": "./src/claude-agent.ts",
+    "./wire-values": "./src/wire-values.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}\""
   },
   "dependencies": {
-    "zod": "^3.23.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",

@@ -1,8 +1,7 @@
-import { ledgerExists } from '../src/ledger-exists';
-import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { withClient, withTransaction } from '../src/with-client';
+import { verifyMigrationChecksum, withLedgerLock } from './ledger-repair';
+import { migrationNamesInDirectory } from './migration-files';
+
+export { migrationNamesInDirectory };
 
 /**
  * Idempotent CONCURRENTLY migrations that a targeted release applied before
@@ -25,14 +24,6 @@ export const EARLY_APPLIED_MIGRATIONS = [
   },
 ] as const;
 
-export function migrationNamesInDirectory(migrationsDir: string): string[] {
-  return readdirSync(migrationsDir)
-    .filter((filename) => filename.endsWith('.sql') || filename.endsWith('.ts'))
-    .filter((filename) => !filename.endsWith('.test.ts'))
-    .map((filename) => filename.replace(/\.(sql|ts)$/, ''))
-    .sort();
-}
-
 export function planEarlyAppliedMigrationRepair(
   ledgerNames: string[],
   fileNames: string[],
@@ -48,28 +39,19 @@ export async function repairEarlyAppliedMigrations(
   migrationsDir: string,
 ): Promise<string[]> {
   const fileNames = migrationNamesInDirectory(migrationsDir);
-  return withClient(databaseUrl, async (client) => {
-    if (!(await ledgerExists(client))) return [];
-
-    return withTransaction(client, async () => {
-      await client.query('lock table kortix_migrations.pgmigrations in exclusive mode');
-      const ledger = await client.query<{ name: string }>(
-        'select name from kortix_migrations.pgmigrations',
-      );
-      const release = planEarlyAppliedMigrationRepair(
-        ledger.rows.map((row) => row.name),
-        fileNames,
-      );
-      for (const name of release) {
-        const migration = EARLY_APPLIED_MIGRATIONS.find((entry) => entry.name === name);
-        const path = join(migrationsDir, migration?.filename ?? '');
-        const actual = createHash('sha256').update(readFileSync(path)).digest('hex');
-        if (actual !== migration?.sha256) {
-          throw new Error(`Early-applied migration repair checksum mismatch for ${name}: ${actual}.`);
-        }
-        await client.query('delete from kortix_migrations.pgmigrations where name = $1', [name]);
-      }
-      return release;
-    });
+  return withLedgerLock(databaseUrl, [], async (client) => {
+    const ledger = await client.query<{ name: string }>(
+      'select name from kortix_migrations.pgmigrations',
+    );
+    const release = planEarlyAppliedMigrationRepair(
+      ledger.rows.map((row) => row.name),
+      fileNames,
+    );
+    for (const name of release) {
+      const migration = EARLY_APPLIED_MIGRATIONS.find((entry) => entry.name === name);
+      if (migration) verifyMigrationChecksum(migrationsDir, migration);
+      await client.query('delete from kortix_migrations.pgmigrations where name = $1', [name]);
+    }
+    return release;
   });
 }

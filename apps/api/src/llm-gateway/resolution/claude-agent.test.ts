@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { checkClaudeAgentRef } from './claude-agent';
-import { toOpencodeModelRef, toWireModel } from './effective';
+import { toSessionModelRef, toWireModel } from './effective';
 import { validateModelChangeShape } from '../../projects/lib/session-model-change';
 
 describe('Claude subscription model refs', () => {
   test('a known id is valid and is stored and booted as-is', () => {
     expect(checkClaudeAgentRef('claude-agent/opus')).toEqual({ kind: 'valid', ref: 'claude-agent/opus' });
-    expect(toOpencodeModelRef('claude-agent/sonnet')).toBe('claude-agent/sonnet');
+    expect(toSessionModelRef('claude-agent/sonnet')).toBe('claude-agent/sonnet');
     expect(toWireModel('claude-agent/haiku')).toBe('claude-agent/haiku');
     expect(validateModelChangeShape('claude-agent/fable')).toBeNull();
   });
@@ -23,6 +23,6 @@ describe('Claude subscription model refs', () => {
   test('another provider ref is not a Claude subscription ref and keeps the gateway form', () => {
     expect(checkClaudeAgentRef('kortix/glm-5.3-flash')).toEqual({ kind: 'none' });
     expect(checkClaudeAgentRef('anthropic/claude-opus-5-5')).toEqual({ kind: 'none' });
-    expect(toOpencodeModelRef('anthropic/claude-opus-5-5')).toBe('kortix/anthropic/claude-opus-5-5');
+    expect(toSessionModelRef('anthropic/claude-opus-5-5')).toBe('kortix/anthropic/claude-opus-5-5');
   });
 });

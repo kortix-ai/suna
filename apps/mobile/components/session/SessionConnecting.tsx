@@ -36,7 +36,7 @@
  */
 
 import React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, View, type ScrollViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
   sessionLogTurns,
@@ -382,7 +382,7 @@ function SavedThread({
   restarting?: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const scrollRef = React.useRef<ScrollView>(null);
+  const scrollRef = React.useRef<ScrollViewInstance>(null);
   const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
   // The floating composer area's height: the newest turn rests above it.
   const [bottomHeight, setBottomHeight] = React.useState(0);

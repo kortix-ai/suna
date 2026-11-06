@@ -204,7 +204,7 @@ export function stoppedWakeResult(
       agent_name: agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: opencodeSessionId,
+      runtime_session_id: opencodeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: 'runtime_waking',
     };
@@ -219,7 +219,7 @@ export function stoppedWakeResult(
       agent_name: agentName ?? 'default',
       retriable: false,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: null,
+      runtime_session_id: null,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: RUNTIME_IDENTITY_UNAVAILABLE,
     };
@@ -277,7 +277,7 @@ export function stoppedWakeResult(
       agent_name: agentName ?? 'default',
       retriable: true,
       sandbox: serializeSandboxRow(row),
-      opencode_session_id: opencodeSessionId,
+      runtime_session_id: opencodeSessionId,
       runtime_url: sessionRuntimeUrlPath(row.externalId),
       reason: 'runtime_wake_cooldown',
       failure: {
@@ -301,7 +301,7 @@ export function stoppedWakeResult(
     agent_name: agentName ?? 'default',
     retriable: false,
     sandbox: serializeSandboxRow(row),
-    opencode_session_id: opencodeSessionId,
+    runtime_session_id: opencodeSessionId,
     runtime_url: sessionRuntimeUrlPath(row.externalId),
     reason: stampReason,
     failure: {

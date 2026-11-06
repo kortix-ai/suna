@@ -55,7 +55,8 @@ const buttonVariants = cva(
       },
       size: {
         default: 'h-9 px-4 py-2 has-[>svg]:px-3',
-        xs: 'h-7  gap-1.5 px-2.5 rounded-sm has-[>svg]:px-2',
+        // In a group, the radius of its icon neighbours (`icon-sm`, `icon`), so the group's outer corners match.
+        xs: 'h-7  gap-1.5 px-2.5 rounded-sm in-data-[slot=button-group]:rounded-md has-[>svg]:px-2',
         base: "h-7 gap-1 px-2.5   in-data-[slot=button-group]:rounded-2xl has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         sm: 'h-8  gap-1.5 px-3 has-[>svg]:px-2.5',
         lg: 'h-10  px-6 has-[>svg]:px-4',

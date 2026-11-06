@@ -118,7 +118,7 @@ export function claimInitialTurn(
   const denial = requireSandboxCredential(c, authenticatedSandboxId, 'initial_turn_claim');
   if (denial) return denial;
   // The pinned root, under its W3 name and its pre-W3 name (an older daemon reads it).
-  const pin = { runtime_session_id: opencodeSessionId, opencode_session_id: opencodeSessionId };
+  const pin = { runtime_session_id: opencodeSessionId };
   const sandboxMetadata = (authenticatedSandboxMetadata ?? {}) as Record<string, unknown>;
   const activeTurns =
     sandboxMetadata.activeTurns &&
@@ -549,7 +549,7 @@ export async function settleTurnEnd(
   // parks a question that still waits for its answer. Before the promotion, so
   // a question the next turn asks is never the one closed.
   if (settled.turnCompletion.outcome === 'closed') {
-    await clearOpenQuestions(ctx.sessionId).catch((err) =>
+    await clearOpenQuestions(ctx.sessionId, { keepParked: true }).catch((err) =>
       logger.warn('[turn-stream] open questions not closed at turn end', {
         sessionId: ctx.sessionId,
         err: err instanceof Error ? err.message : String(err),

@@ -34,7 +34,7 @@ import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { platinumJson, platinumRegionControlPlane } from '../../shared/platinum';
+import { platinumJson, platinumRateLimitWaitMs, platinumRegionControlPlane } from '../../shared/platinum';
 import type { CreateSandboxOpts } from '../providers/contract';
 import { WORKSPACE_VOLUME_UNREACHABLE_MESSAGE } from './sandbox-provisioning-error';
 
@@ -170,11 +170,21 @@ export function applyWorkspaceVolume(create: CreateSandboxOpts, volume: Workspac
   create.envVars = { ...env, [WORKSPACE_VOLUME_ENV]: '1' };
 }
 
-/** Open-or-create in its region, `git` sync (a single-writer working copy). Three tries over ~6 s. */
+/** A 5xx or a network failure: three tries over ~6 s. */
+const OPEN_TRIES = 3;
+/** A 429 (Platinum's org write budget): wait what Platinum asks, at most this many times (≤ 20 s). */
+const OPEN_RATE_LIMIT_WAITS = 4;
+
+/**
+ * Open-or-create in its region, `git` sync (a single-writer working copy). A 429
+ * is waited out as Platinum asks (`retry-after`); any other 4xx is final.
+ */
 async function openWorkspaceVolume(sessionId: string, volume: WorkspaceVolume): Promise<void> {
   const origin = volumeOrigin(volume);
   let lastErr: unknown;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  let tries = 0;
+  let waits = 0;
+  for (;;) {
     try {
       const body = await platinumJson<{ region?: string }>(
         `/v1/volumes/${encodeURIComponent(volume.name)}`,
@@ -188,10 +198,17 @@ async function openWorkspaceVolume(sessionId: string, volume: WorkspaceVolume): 
       return;
     } catch (err) {
       lastErr = err;
+      const rateLimitWait = platinumRateLimitWaitMs(err);
+      if (rateLimitWait !== null) {
+        if (++waits > OPEN_RATE_LIMIT_WAITS) break;
+        await Bun.sleep(rateLimitWait);
+        continue;
+      }
       // The PlatinumHttpError fields, read structurally.
       const status = Number((err as { status?: unknown } | null)?.status) || 0;
       if (status >= 400 && status < 500) break;
-      if (attempt < 3) await Bun.sleep(attempt * 2_000);
+      if (++tries >= OPEN_TRIES) break;
+      await Bun.sleep(tries * 2_000);
     }
   }
   const quota = (lastErr as { code?: unknown } | null)?.code === 'quota_exceeded';

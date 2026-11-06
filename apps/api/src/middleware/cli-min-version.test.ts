@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { Hono } from 'hono';
 import { config } from '../config';
-import { outdatedCliVersion, rejectOutdatedCli } from './cli-min-version';
+import { BUILT_IN_CLI_MIN_VERSION, outdatedCliVersion, rejectOutdatedCli } from './cli-min-version';
 
 const app = new Hono();
 app.use('/v1/*', rejectOutdatedCli);
@@ -41,13 +41,42 @@ describe('rejectOutdatedCli', () => {
     });
   });
 
-  it('passes a current CLI, another client, and everyone when unset', async () => {
+  it('passes a current CLI, another client, and a request with no version', async () => {
     Object.assign(config, { CLI_MIN_VERSION: '0.14.13' });
     expect((await get('cli/0.14.20')).status).toBe(200);
     expect((await get('mobile/1.5.3')).status).toBe(200);
+    expect((await get('cli/dev')).status).toBe(200);
     expect((await get()).status).toBe(200);
+  });
+});
+
+describe('the built-in minimum', () => {
+  // A CLI before 0.14.13 reads OpenCode routes this API and the session box no longer serve.
+  it('is 0.14.13', () => {
+    expect(BUILT_IN_CLI_MIN_VERSION).toBe('0.14.13');
+  });
+
+  it('refuses an older CLI when CLI_MIN_VERSION is unset', async () => {
     Object.assign(config, { CLI_MIN_VERSION: '' });
-    expect((await get('cli/0.1.0')).status).toBe(200);
+    const res = await get('cli/0.14.8');
+    expect(res.status).toBe(426);
+    expect(((await res.json()) as { minimum_version: string }).minimum_version).toBe('0.14.13');
+    expect((await get('cli/0.14.13')).status).toBe(200);
+  });
+
+  it('a lower CLI_MIN_VERSION cannot lower it', async () => {
+    Object.assign(config, { CLI_MIN_VERSION: '0.13.0' });
+    const res = await get('cli/0.14.8');
+    expect(res.status).toBe(426);
+    expect(((await res.json()) as { minimum_version: string }).minimum_version).toBe('0.14.13');
+  });
+
+  it('a higher CLI_MIN_VERSION raises it', async () => {
+    Object.assign(config, { CLI_MIN_VERSION: '0.15.2' });
+    const res = await get('cli/0.15.1');
+    expect(res.status).toBe(426);
+    expect(((await res.json()) as { minimum_version: string }).minimum_version).toBe('0.15.2');
+    expect((await get('cli/0.15.2')).status).toBe(200);
   });
 });
 

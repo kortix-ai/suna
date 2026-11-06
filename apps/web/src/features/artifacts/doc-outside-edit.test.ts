@@ -421,7 +421,9 @@ describe('the merge stays bounded on large docs (real clock)', () => {
     const expected = textsOf(theirs).map((text, i) => (i === 4 || i === 9_998 ? textsOf(mine)[i] : text));
     expect(textsOf(applySteps(mine, steps))).toEqual(expected);
     expect(elapsed).toBeLessThan(500);
-  });
+    // Only the plan is timed. Building and comparing 10,000 blocks takes ~3.4 s here, so a
+    // loaded CI runner passed bun's 5 s default before the 500 ms check ran.
+  }, 30_000);
 });
 
 /** The LCS length by dynamic programming: the reference for the diff's minimality. */

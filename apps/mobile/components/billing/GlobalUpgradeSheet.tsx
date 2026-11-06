@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { Platform, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';

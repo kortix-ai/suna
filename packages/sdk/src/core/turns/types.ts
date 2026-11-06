@@ -4,8 +4,7 @@
  * The turn functions are pure data transformations over opencode wire data.
  * They are typed against minimal structural ("Like") protocols instead of the
  * full generated opencode types so every host can flow its own message/part
- * unions through unchanged: web passes the rich `@kortix/sdk/opencode-client`
- * types, mobile passes its lean local mirrors, and generics preserve the
+ * unions through unchanged: web passes the rich runtime types of `@kortix/sdk`, mobile passes its lean local mirrors, and generics preserve the
  * caller's concrete types end to end.
  */
 

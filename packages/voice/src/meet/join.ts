@@ -15,6 +15,10 @@ import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { botMicrophone, readCaptions, watchScreen } from './page'
 
+/** A participant's name or words with no bracket left: the relay reads "[Name] words" by its brackets, and the owner's
+ * trust follows the name, so a display name "Vuka] [Ana" or a bracket in a caption could pass for a trusted speaker. */
+export const unbracket = (s: string) => String(s ?? '').replace(/[[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+
 export type MeetOptions = {
   /** The meeting's URL. */
   meet: string
@@ -77,6 +81,9 @@ export function joinMeet(o: MeetOptions): Meeting {
     // Keychain prompt). --channel=chrome|chromium to choose.
     const CHANNEL = o.channel ?? (o.executable ? undefined : process.platform === 'linux' && existsSync('/opt/google/chrome/chrome') ? 'chrome' : undefined)
     let quitting = false
+    // The bot is done with this meeting: leaving it (goodbye said) or shut down (left, ended, failed). The relay is
+    // never dialed again: shut() closes the relay, and its close was taken for a relay restart, every 2 s, forever.
+    const over = () => leaving || quitting
     // The relay and the browser closed, the timers stopped: a browser left behind stays in the meeting as a silent bot.
     shut = async () => {
       quitting = true
@@ -152,7 +159,8 @@ export function joinMeet(o: MeetOptions): Meeting {
     if (quitting) return void (await (browser ?? context).close().catch(() => {}))
     let outRate = 24000
     page = await context.newPage()
-    const send = (who: string, text: string) => {
+    const send = (rawWho: string, rawText: string) => {
+      const who = unbracket(rawWho), text = unbracket(rawText)
       if (!text.trim() || relay?.readyState !== 1) return
       log(`[${who}] ${text}`)
       note(who, text)
@@ -163,7 +171,8 @@ export function joinMeet(o: MeetOptions): Meeting {
     await page.exposeBinding('__kortixFrame', (_source, data: string) => void (relay?.readyState === 1 && relay.send(JSON.stringify({ type: 'image', data, from: 'the presentation' }))))
     // The words so far (their caption grows): the relay starts the lookup of a question to it before the line settles.
     let peekAt = 0
-    await page.exposeBinding('__kortixPeek', (_source, who: string, words: string) => {
+    await page.exposeBinding('__kortixPeek', (_source, rawWho: string, rawWords: string) => {
+      const who = unbracket(rawWho), words = unbracket(rawWords)
       if (Date.now() - peekAt < 300 || relay?.readyState !== 1 || !words.trim()) return
       peekAt = Date.now()
       relay.send(JSON.stringify({ type: 'peek', text: `[${who}] ${words}` }))
@@ -253,11 +262,11 @@ export function joinMeet(o: MeetOptions): Meeting {
         // bot leaves the meeting. Before, the socket's close was taken for a relay restart and it rejoined 2 s later.
         if (m.type === 'closed' && (m as { why?: string }).why === 'goodbye') void leaveMeeting()
       }
-      r.onclose = () => void (!leaving && relay === r && (log('relay closed; reconnecting'), setTimeout(again, 2000)))
+      r.onclose = () => void (!over() && relay === r && (log('relay closed; reconnecting'), setTimeout(again, 2000)))
       return new Promise<void>((ok, fail) => ((r.onopen = () => ok()), (r.onerror = () => fail(new Error(`relay ${RELAY} not reachable`)))))
     }
     // Back to the relay after it closed: tried every 2 s until it answers (a restart can take longer than one try).
-    const again = () => void (!leaving && connect(false).then(() => log('relay back'), () => (log('relay not back yet; trying again'), setTimeout(again, 2000))))
+    const again = () => void (!over() && connect(false).then(() => log('relay back'), () => (!over() && (log('relay not back yet; trying again'), setTimeout(again, 2000)))))
     await connect(true)
 
     await cameraOffMicOn() // in the call too: Meet may have kept either as it was

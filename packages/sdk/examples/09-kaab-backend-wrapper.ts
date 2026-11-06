@@ -153,7 +153,7 @@ async function startSession(
     // NB: connector_bindings is all-or-nothing — bind every alias the agent needs.
     ...(connectionId ? { connector_bindings: { [CONNECTOR_SLUG]: { connection_id: connectionId } } } : {}),
     ...(AGENT_NAME ? { agent_name: AGENT_NAME } : {}),
-    ...(MODEL ? { opencode_model: MODEL } : {}),
+    ...(MODEL ? { model: MODEL } : {}),
     // Backend-only secret narrowing. KAAB_OVERRIDES=off omits it.
     ...(includeOverrides && SECRET_ID ? { secrets: [SECRET_ID] } : {}),
   };

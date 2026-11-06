@@ -1,6 +1,5 @@
 import { Avatar as AvatarRoot, AvatarFallback } from '@/components/ui/avatar';
 import { entityChalk } from '@/lib/ui/entity-chalk';
-import * as React from 'react';
 import { Text, type ViewProps } from 'react-native';
 
 interface AvatarProps extends ViewProps {

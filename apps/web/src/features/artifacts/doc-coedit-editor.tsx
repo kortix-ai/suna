@@ -221,6 +221,8 @@ export type CoeditNoteReason =
   | 'off-large'
   | 'off-line-endings'
   | 'off-shape'
+  /** It never started: the shared doc did not load in time, or the server refused it. */
+  | 'off-failed'
   | 'stopped-large'
   | 'stopped-history'
   | 'stopped-failed';
@@ -247,6 +249,7 @@ const NOTE_KEY = {
   'off-large': 'coedit.offLarge',
   'off-line-endings': 'coedit.offLineEndings',
   'off-shape': 'coedit.offShape',
+  'off-failed': 'coedit.offFailed',
   'stopped-large': 'coedit.stoppedLarge',
   'stopped-history': 'coedit.stoppedHistory',
   'stopped-failed': 'coedit.stoppedFailed',

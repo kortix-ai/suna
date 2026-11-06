@@ -141,7 +141,7 @@ test('a rate-limited send cools the SSO interstitial link button down', async ()
     expect(JSON.stringify(root.toJSON())).toContain('Email rate limit exceeded');
     expect(linkButton.props.disabled).toBe(true);
     expect(JSON.stringify(root.toJSON())).toContain('Resend in');
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 60; i++) {
       await act(async () => {
         jest.advanceTimersByTime(1000);
       });

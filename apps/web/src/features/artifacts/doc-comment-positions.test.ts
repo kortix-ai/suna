@@ -176,6 +176,33 @@ describe('doc comment source positions', () => {
     ).toMatchObject({ anchor: { quote: 'After' } });
   });
 
+  test('a space the editor holds but Markdown cannot write keeps every other passage mapped', () => {
+    // Enter, a space, then text: the editor keeps " Live B."; the Markdown file holds "Live B.".
+    const markdown = 'Review final forecast.\n\nLive B. Then more.\n\nLast line.\n';
+    const doc = schema.node('doc', null, [
+      schema.node('paragraph', null, [schema.text('Review final forecast.')]),
+      schema.node('paragraph', null, [schema.text('  Live B. Then more. ')]),
+      schema.node('paragraph', null, [schema.text('Last line.')]),
+    ]);
+    const map = docMarkdownPositions(markdown, doc);
+    expect(map).not.toBeNull();
+    const final = at(doc, 'final');
+    expect(
+      docRangesForSource(map, markdown.indexOf('final'), markdown.indexOf('final') + 5),
+    ).toEqual([{ from: final, to: final + 5 }]);
+    // The passage in the spaced paragraph maps onto its own text, not onto the spaces.
+    const then = at(doc, 'Then');
+    expect(
+      docRangesForSource(map, markdown.indexOf('Then'), markdown.indexOf('Then') + 4),
+    ).toEqual([{ from: then, to: then + 4 }]);
+    const last = at(doc, 'Last');
+    expect(
+      docRangesForSource(map, markdown.indexOf('Last'), markdown.indexOf('Last') + 4),
+    ).toEqual([{ from: last, to: last + 4 }]);
+    // Different words are still a different text: no map.
+    expect(docMarkdownPositions('Review final forecast.\n\nLive C.\n', doc)).toBeNull();
+  });
+
   test('ambiguous and stale selections fail without manufacturing an anchor', () => {
     const block = `${'a'.repeat(40)}quote${'b'.repeat(40)}`;
     const duplicate = `${block}\n\n${block}\n`;

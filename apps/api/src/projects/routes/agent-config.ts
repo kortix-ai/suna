@@ -19,6 +19,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { ignoredAgentSettings } from '@kortix/api-contract/runtime-relay';
 import { projects } from '@kortix/db';
 import {
+  EVERY_GRANT,
   type ManifestIssue,
   isManifestSyntaxError,
   SLUG_RE,
@@ -62,8 +63,10 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
 // A grant set on the wire: an allowlist, or the "all"/"none" sentinels. The
 // deep per-entry validation (grantable kortix_permissions actions, etc.) happens in
 // validateManifest via applyAgentConfigV3 — this schema only guards the shape.
+// `"*"` is kortix.yaml's spelling of every name; `all` is the wire's (both accepted).
 const GrantSetSchema = z.union([
   z.literal('all'),
+  z.literal('*'),
   z.literal('none'),
   z.array(z.string().min(1).max(200)).max(500),
 ]);
@@ -75,10 +78,11 @@ const ExcludableGrantSetSchema = z.union([
   z.object({ exclude: z.array(z.string().min(1).max(200)).max(500) }).strict(),
 ]);
 
-// `agents.<name>.tools`: all/none, an allowlist, or an exclude list.
+// `agents.<name>.tools`: "*"/all, none, an allowlist, or an exclude list.
 // validateManifest checks the names.
 const AgentToolsSchema = z.union([
   z.literal('all'),
+  z.literal('*'),
   z.literal('none'),
   z.array(z.string().min(1).max(200)).max(500),
   z.object({ exclude: z.array(z.string().min(1).max(200)).max(500) }).strict(),
@@ -491,7 +495,7 @@ export function registerAgentConfigRoutes(): void {
       if (writtenBlock) dropEmptyPolicySets(writtenBlock);
       // `tools` omitted is every tool, the one grant that defaults open: write
       // it so the file says what the agent holds.
-      if (writtenBlock && writtenBlock.tools === undefined) writtenBlock.tools = 'all';
+      if (writtenBlock && writtenBlock.tools === undefined) writtenBlock.tools = EVERY_GRANT;
       // Re-parse through the runtime grant reader before committing.
       const parsedCheck = extractAgents({ ...manifest, raw: edit.raw });
       const parseProblem = parsedCheck.errors.find((e) => e.name === agentName);

@@ -16,6 +16,7 @@
 
 import { authenticatedFetch } from '../http/auth';
 import { getActiveRuntimeUrl } from './server-store/active';
+import type { RuntimeCapability } from '../wire-values';
 
 export type SessionHealthResponse = {
   status?: string;
@@ -51,33 +52,11 @@ export type SessionHealthResponse = {
 };
 
 /**
- * A session feature a runtime may or may not serve. Mirrors
- * `RUNTIME_CAPABILITIES` in `@kortix/api-contract/runtime-relay`.
- *
- *   - `session.rewind`    revert to a message, and restore it
- *   - `session.compact`   summarize the conversation on demand
- *   - `session.commands`  project slash commands
- *   - `session.fork`      fork a session at a message
- *   - `session.subagents` subagent child sessions
- *   - `session.mcp`       MCP servers the runtime connects itself
- *   - `session.todo`      the runtime's todo list
- *   - `session.shell`     a shell command run as a turn
- *   - `session.attach`    attach the harness's own terminal client
- *   - `session.config`    a runtime config document (`/global/config`)
- *   - `session.context_record` a full context resets onto the session's searchable record, with nothing summarized
+ * A session feature a runtime may or may not serve: `RUNTIME_CAPABILITIES`
+ * (`core/wire-values`, the contract's own list). Read one with
+ * {@link runtimeSupports}.
  */
-export type RuntimeCapability =
-  | 'session.rewind'
-  | 'session.compact'
-  | 'session.commands'
-  | 'session.fork'
-  | 'session.subagents'
-  | 'session.mcp'
-  | 'session.todo'
-  | 'session.shell'
-  | 'session.attach'
-  | 'session.config'
-  | 'session.context_record';
+export type { RuntimeCapability } from '../wire-values';
 
 /**
  * Does the session's runtime serve `capability`? Pass the health

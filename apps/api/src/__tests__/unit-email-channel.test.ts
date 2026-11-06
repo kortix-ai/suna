@@ -623,7 +623,7 @@ describe("handleEmailEvent", () => {
       [CHANNEL_ON],
       [],
       [PROJECT_ROW],
-      [{ agentName: "veyris", opencodeModel: null }],
+      [{ agentName: "veyris", sessionModel: null }],
       [{ eventId: "email:threadcreate:inb-1:thr-1" }],
     ];
 
@@ -701,7 +701,7 @@ describe("handleEmailEvent", () => {
       [CHANNEL_ON],
       [],
       [PROJECT_ROW],
-      [{ agentName: null, opencodeModel: null }],
+      [{ agentName: null, sessionModel: null }],
       [{ eventId: "email:threadcreate:inb-1:thr-1" }],
     ];
 
@@ -741,7 +741,7 @@ describe("handleEmailEvent", () => {
       // The stale thread is dropped, then the session plan reads the project and the binding.
       [],
       [PROJECT_ROW],
-      [{ agentName: null, opencodeModel: null }],
+      [{ agentName: null, sessionModel: null }],
       [{ eventId: "email:threadcreate:inb-1:thr-1" }],
     ];
 

@@ -5,6 +5,7 @@
  * Dependency-free (like `connector-headers.ts`) so the validator, the JSON
  * Schema and apps/api's parser share one ruleset without an import cycle.
  */
+import { isEveryGrant } from './constants';
 import type { ManifestIssue } from './index';
 
 /** A set name. `base` is reserved: it names the connector's base rules. */
@@ -114,12 +115,11 @@ function declaredSets(connectors: unknown): Map<string, Set<string>> {
   return out;
 }
 
-/** The connector slugs an agent block grants: `'all'`, or a list. */
+/** The connector slugs an agent block grants: `'all'` (`"*"` / `all`), or a list. */
 function grantedConnectors(block: Record<string, unknown>): 'all' | Set<string> {
   const value = block.connectors;
-  if (value === 'all' || value === '*') return 'all';
+  if (isEveryGrant(value)) return 'all';
   if (Array.isArray(value)) {
-    if (value.includes('*')) return 'all';
     return new Set(value.filter((v): v is string => typeof v === 'string').map((v) => v.trim()));
   }
   return new Set();

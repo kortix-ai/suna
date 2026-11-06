@@ -158,7 +158,7 @@ export function savedCopyEmptyRoot(
     envelope.complete &&
     envelope.total === 0 &&
     envelope.messages.length === 0
-    ? (envelope.runtime_session_id ?? envelope.opencode_session_id ?? null)
+    ? (envelope.runtime_session_id ?? null)
     : null;
 }
 

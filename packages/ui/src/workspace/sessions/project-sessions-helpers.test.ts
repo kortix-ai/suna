@@ -40,14 +40,14 @@ function makeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
     sandbox_provider: 'daytona',
     sandbox_id: 'session-1',
     sandbox_url: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     name: 'Investigate checkout',
     custom_name: null,
     agent_name: 'kortix',
     status: 'running',
     error: null,
     metadata: {},
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_at: '2026-07-20T10:00:00.000Z',
     updated_at: '2026-07-20T10:00:00.000Z',
     ...overrides,
@@ -147,7 +147,7 @@ describe('sessionDetailFields', () => {
       sandbox_provider: null,
       agent_name: null,
       runtime_status: null,
-      opencode_session_id: null,
+      runtime_session_id: null,
       created_by: null,
       owner_type: undefined,
     });
@@ -196,7 +196,7 @@ describe('sessionDetailFields', () => {
         sandbox_provider: null,
         agent_name: null,
         runtime_status: null,
-        opencode_session_id: null,
+        runtime_session_id: null,
         created_by: null,
         owner_type: undefined,
       }),
@@ -256,10 +256,10 @@ describe('sessionDetailFields', () => {
     ).not.toContain('Conversations');
 
     const withConversations = makeSession({
-      opencode_sessions: [
+      runtime_sessions: [
         { id: 'a', parent_id: null, archived_at: null },
         { id: 'b', parent_id: 'a', archived_at: '2026-07-20T10:00:00.000Z' },
-      ] as ProjectSession['opencode_sessions'],
+      ] as ProjectSession['runtime_sessions'],
     });
     expect(sessionDetailFields(withConversations, FORMATTED, testUiTranslator)).toContainEqual({
       label: 'Conversations',
@@ -385,7 +385,7 @@ describe('filterProjectSessions', () => {
       session_id: 'newer',
       // Bookkeeping is older, but the conversation itself is newer.
       updated_at: '2026-07-19T10:00:00.000Z',
-      opencode_sessions: [
+      runtime_sessions: [
         {
           id: 'oc-newer',
           title: null,

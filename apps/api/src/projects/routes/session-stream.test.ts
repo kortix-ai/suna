@@ -408,7 +408,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 3);
 
     const status = frames.find((frame) => frame.event === 'kortix.runtime.status');
-    expect(status?.data).toMatchObject({ state: 'down', reason: 'no_sandbox' });
+    expect(status?.data).toMatchObject({ state: 'down', reason: 'no_sandbox', parked: true });
 
     const queue = frames.find((frame) => frame.event === 'kortix.control.queue');
     expect(queue?.data).toMatchObject({ channel: 'control', cseq: 1 });
@@ -422,7 +422,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 2);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'sandbox_stopped' });
+    ).toMatchObject({ state: 'down', reason: 'sandbox_stopped', parked: true });
     expect(attachCalls).toHaveLength(0);
   });
 
@@ -465,7 +465,7 @@ describe('box down — the stream still serves', () => {
     expect(response.status).toBe(200);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'daemon_503' });
+    ).toMatchObject({ state: 'down', reason: 'daemon_503', parked: false });
   });
 
   test('a control-plane read failure degrades to a reason, not to a dead stream', async () => {
@@ -474,7 +474,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 2);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'control_plane_unavailable' });
+    ).toMatchObject({ state: 'down', reason: 'control_plane_unavailable', parked: false });
   });
 });
 
@@ -799,7 +799,7 @@ describe('R5.2: a runtime turn end reaches the reconciler at once', () => {
           // The daemon had already sequenced 5 frames when this stream attached.
           'event: kortix.hello\ndata: {"type":"kortix.hello","epoch":"ep-turn","head_seq":5,"first_seq":1,"since":3,"at":1}\n\n',
           // Replay: an old turn end. It must not end a newer turn.
-          'event: kortix.turn\nid: 4\ndata: {"seq":4,"type":"kortix.turn","at":2,"payload":{"opencode_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
+          'event: kortix.turn\nid: 4\ndata: {"seq":4,"type":"kortix.turn","at":2,"payload":{"runtime_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
           // Live: pi names `runtime_session_id`.
           'event: kortix.turn\nid: 6\ndata: {"seq":6,"type":"kortix.turn","at":3,"payload":{"runtime_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
         ],

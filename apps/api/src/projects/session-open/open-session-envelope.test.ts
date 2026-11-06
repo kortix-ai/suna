@@ -219,7 +219,7 @@ describe('openSession response envelope — one pin per orchestration branch', (
     expect(result.retriable).toBe(true);
     expect(result.reason).toBe('runtime_waking');
     expect(result.agent_name).toBe('default');
-    expect(result.opencode_session_id).toBeNull();
+    expect(result.runtime_session_id).toBeNull();
     expect(result.runtime_url).toBe('/p/ext-1/8000');
     expect(result.sandbox?.sandbox_id).toBe('sess-1');
     expect(result.sandbox?.external_id).toBe('ext-1');
@@ -332,7 +332,7 @@ describe('openSession response envelope — one pin per orchestration branch', (
     expect(result.stage).toBe('starting');
     expect(result.retriable).toBe(true);
     expect(result.reason).toBe('runtime_restoring_in_place');
-    expect(result.opencode_session_id).toBe('oc-current');
+    expect(result.runtime_session_id).toBe('oc-current');
     expect(result.runtime_url).toBe('/p/ext-1/8000');
     expect(result.sandbox?.metadata).toEqual({ runtimeIdentityState: 'recovering' });
     expect(result.action).toBe('restored');
@@ -397,7 +397,7 @@ describe('openSession response envelope — one pin per orchestration branch', (
     expect(result.stage).toBe('starting');
     expect(result.retriable).toBe(true);
     expect(result.reason).toBe('not_ready');
-    expect(result.opencode_session_id).toBeNull();
+    expect(result.runtime_session_id).toBeNull();
     expect(result.sandbox?.external_id).toBe('ext-1');
     expect(result.runtime_url).toBe('/p/ext-1/8000');
     // Booting answers skip the guarantee and admission phases entirely.
@@ -414,7 +414,7 @@ describe('openSession response envelope — one pin per orchestration branch', (
     expect(result.stage).toBe('ready');
     expect(result.retriable).toBe(false);
     expect(result.reason).toBe('unchanged');
-    expect(result.opencode_session_id).toBe('oc-pin-1');
+    expect(result.runtime_session_id).toBe('oc-pin-1');
     expect(result.runtime_url).toBe('/p/ext-1/8000');
     expect(result.sandbox?.status).toBe('active');
     expect(result.action).toBe('checked_provider');

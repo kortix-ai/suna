@@ -55,7 +55,6 @@ beforeEach(() => {
         complete: page.next_cursor === null,
         captured_at: '2026-10-16T00:00:00.000Z',
         runtime_session_id: 'ses_root',
-        opencode_session_id: 'ses_root',
         message_count: page.messages.length,
         next_cursor: page.next_cursor,
         messages: page.messages,

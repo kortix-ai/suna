@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionDisplayStatus } from '../actions/session-label';
-import { SessionStatusMark } from '../../workspace/sidebar/session-status-mark';
+import { SessionStatusMark } from '../list/session-status-mark';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
 import type { WorkflowAgentStatus, WorkflowPhaseStatus } from '../tool/tools/workflow-run';

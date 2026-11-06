@@ -9,7 +9,9 @@ on:
     # working environment plus its Postgres volume. The explicit off switches are
     # removing the `preview` label and deleting the branch.
     # No push event: a push never deploys. Adding the label is the one
-    # explicit trigger; re-add it (or dispatch) to deploy a newer head.
+    # explicit trigger. To deploy a newer head, DISPATCH (`-f run_tests=false`
+    # skips the suite). Never remove and re-add the label: `unlabeled` runs
+    # teardown, which deletes the sandbox and its Postgres volume.
     types: [labeled, unlabeled]
   # Branch deleted: the one event that retires a branch environment. It carries
   # no pull request, so `teardown-branch` below identifies the sandbox by branch.
@@ -20,6 +22,11 @@ on:
         description: Pull request number with the preview label
         required: true
         type: number
+      run_tests:
+        description: Run `pnpm test -- --target-full` (40-80 min) after the deploy; false = redeploy only
+        required: false
+        default: true
+        type: boolean
       provider:
         description: Preview sandbox provider (Platinum only; `auto` means Platinum)
         required: true
@@ -47,8 +54,8 @@ jobs:
     name: Authorize exact preview SHA
     # Only an explicit act deploys: a writer adds the `preview` label, or
     # dispatches this workflow. A push to a labelled branch does nothing; the
-    # environment keeps serving its last deployed commit until someone re-adds
-    # the label. Same-repository pull requests only, and the actor needs write.
+    # environment keeps serving its last deployed commit until someone
+    # dispatches. Same-repository pull requests only, and the actor needs write.
     if: >-
       (github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -325,13 +332,13 @@ jobs:
       # push and stays bookmarkable until the label comes off or the branch is
       # deleted. See previewSandboxIdentity in tests/src/core.
       # The label deploys (~7 min) and never runs the deployed suite. Only an
-      # explicit dispatch (`gh workflow run deploy-preview.yml -f pr_number=N`)
-      # runs --target-full (40-80 min: real sandboxes, managed repos, Stripe)
+      # explicit dispatch (`gh workflow run deploy-preview.yml -f pr_number=N`;
+      # `-f run_tests=false` redeploys without it) runs --target-full (40-80 min: real sandboxes, managed repos, Stripe)
       # against the preview. The `test` label runs the ~9 min local suite; the
       # prod release gate runs --target-full against staging. On 2026-09-28
       # five label suites ran at once and rate-limited each other on the one
       # preview GitHub App.
-      PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+      PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_tests && '1' || '0' }}
       PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.persistent_branch }}
       PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}
       PREVIEW_PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}

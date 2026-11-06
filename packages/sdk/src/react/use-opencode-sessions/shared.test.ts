@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   asRuntimeList,
   canQueryRuntimeSession,
-  clearProjectProviderCache,
   unwrap,
 } from './shared';
 import { pruneAllRegisteredCaches } from '../../platform/storage/managed-storage';
@@ -158,10 +157,6 @@ describe('runtime list caches (localStorage stubbed)', () => {
     expect(localStorage.length).toBe(6);
   });
 
-  test('clearProjectProviderCache stays callable and writes nothing', () => {
-    expect(() => clearProjectProviderCache('p1')).not.toThrow();
-    expect(localStorage.length).toBe(0);
-  });
 });
 
 // ============================================================================

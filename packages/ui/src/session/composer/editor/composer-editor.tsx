@@ -11,6 +11,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { textToParagraphs } from '../composer-logic';
 import { COMPOSER_TEXT_METRICS } from '../composer-text-metrics';
 import { useLatestRef } from '../hooks/use-latest-ref';
+import type { SpaceMentionSource } from '../menus/space-mentions';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import type { SlashAction } from '../menus/slash-actions';
 import { localizedSlashActions } from '../menus/slash-actions';
@@ -153,6 +154,8 @@ export interface ComposerEditorProps {
   sessions?: Session[];
   /** Excluded from the `@` session list — you can't mention the session you're in. */
   currentSessionId?: string;
+  /** Inside a space: the `@` menu lists the space's people and agents only. */
+  spaceMentions?: SpaceMentionSource | null;
 
   /** `/` menu data + the two things a row selection can produce — see `menus/slash-controller.ts`. */
   commands?: Command[];
@@ -399,6 +402,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       agents,
       sessions,
       currentSessionId,
+      spaceMentions,
       commands,
       onSelectCommand,
       onSelectAction,
@@ -437,6 +441,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     // whatever was current the moment the editor first mounted.
     const agentsRef = useLatestRef(agents ?? []);
     const sessionsRef = useLatestRef(sessions ?? []);
+    const spaceMentionsRef = useLatestRef(spaceMentions ?? null);
     const currentSessionIdRef = useLatestRef(currentSessionId);
     const commandsRef = useLatestRef(commands ?? []);
 
@@ -569,6 +574,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             getAgents: () => agentsRef.current,
             getSessions: () => sessionsRef.current,
             getCurrentSessionId: () => currentSessionIdRef.current,
+            getSpaceMentions: () => spaceMentionsRef.current,
             onOwnsEnterChange: (ownsEnter) => {
               mentionOwnsEnterRef.current = ownsEnter;
             },

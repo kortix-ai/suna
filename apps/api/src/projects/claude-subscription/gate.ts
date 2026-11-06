@@ -23,7 +23,7 @@ export function promptModelRef(raw: unknown): string | null {
   return `${model.providerID}/${model.modelID}`;
 }
 
-/** The model a session runs when a prompt names none (`metadata.opencode_model`). */
+/** The model a session runs when a prompt names none (`metadata.model`). */
 export async function sessionModelPin(sessionId: string): Promise<string | null> {
   const [row] = await db
     .select({ metadata: projectSessions.metadata })
@@ -31,7 +31,7 @@ export async function sessionModelPin(sessionId: string): Promise<string | null>
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   const metadata = (row?.metadata ?? {}) as Record<string, unknown>;
-  return typeof metadata.opencode_model === 'string' ? metadata.opencode_model : null;
+  return typeof metadata.model === 'string' ? metadata.model : null;
 }
 
 /**

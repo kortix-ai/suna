@@ -5,7 +5,6 @@
  */
 import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE, type RuntimeCommandInfo } from '@kortix/api-contract/runtime-relay'
 import type { SessionLogMessage } from '@kortix/api-contract/session-log'
-import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessTurnResponse, HarnessTurnService, RuntimePromptInput } from '../contract/turns'
 import { CommandNotEnabled, PromptRejected, parsePromptBody, type PiRuntime, type PromptInput } from './runtime'
 import { sessionLogView } from '../shared/session-log-journal'
@@ -66,6 +65,8 @@ function toPrompt(input: RuntimePromptInput): PromptInput | HarnessTurnResponse 
       ...(input.variant ? { variant: input.variant } : {}),
       ...(input.noReply ? { noReply: true } : {}),
       ...(input.system ? { system: input.system } : {}),
+      ...(input.threadFiles ? { thread_files: input.threadFiles } : {}),
+      ...(input.spaceAgents ? { space_agents: input.spaceAgents } : {}),
     })
   } catch (err) {
     return answer(400, { error: err instanceof Error ? err.message : String(err) })
@@ -123,25 +124,6 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       return answer(200, true)
     },
 
-    async readMessage(sessionId, messageId) {
-      const rt = runtime()
-      if (!rt) return NOT_STARTED
-      const message = transcriptOf(rt, sessionId)?.messageById(messageId)
-      if (!message) return answer(404, { error: 'unknown message' })
-      const ref = (id: string, partId: string) =>
-        `/kortix/part/${encodeURIComponent(sessionId)}/${encodeURIComponent(id)}/${encodeURIComponent(partId)}`
-      return answer(200, stripInlineAttachmentBytes(message, ref).value)
-    },
-
-    // pi removes only what no model call has read, so a removal is a retract.
-    async removeMessage(sessionId, messageId) {
-      const rt = runtime()
-      if (!rt) return NOT_STARTED
-      const outcome = retract(rt, sessionId, messageId)
-      if (outcome === 'retracted') return answer(200, true)
-      return outcome === 'read' ? READ : answer(404, { error: 'unknown message' })
-    },
-
     async retractMessage(sessionId, messageId) {
       const rt = runtime()
       if (!rt) return NOT_STARTED
@@ -166,6 +148,12 @@ export function createPiTurnService(runtime: () => PiRuntime | null): HarnessTur
       const rt = runtime()
       if (!rt) return NOT_STARTED
       return rt.questions.reject(requestId) ? OK : answer(404, { error: 'no such question' })
+    },
+
+    async parkAsks() {
+      const rt = runtime()
+      if (!rt) return answer(200, { parked: 0 })
+      return answer(200, { parked: rt.parkOpenAsks() })
     },
 
     async compact(sessionId) {

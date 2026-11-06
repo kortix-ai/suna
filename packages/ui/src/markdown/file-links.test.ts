@@ -42,6 +42,13 @@ describe('workspaceFileLinkPath — document-relative resolution', () => {
     expect(workspaceFileLinkPath('/etc/passwd', DIR)).toBeNull();
   });
 
+  test('a session drive path (a worker result file in a thread folder) is a file link; traversal out of it is not', () => {
+    expect(workspaceFileLinkPath('/drives/launch/threads/t-1a2b3c4d/results/report-1.md')).toBe('/drives/launch/threads/t-1a2b3c4d/results/report-1.md');
+    expect(workspaceFileLinkPath('/drives/launch/threads/t-1a2b3c4d/results/report-1.md', DIR)).toBe('/drives/launch/threads/t-1a2b3c4d/results/report-1.md');
+    expect(workspaceFileLinkPath('/drives/../etc/passwd', DIR)).toBeNull();
+    expect(workspaceFileLinkPath('/drives/../etc/passwd')).toBeNull();
+  });
+
   test('sandbox and file schemes resolve to their absolute path', () => {
     expect(workspaceFileLinkPath('sandbox:/workspace/a.md', DIR)).toBe('/workspace/a.md');
     expect(workspaceFileLinkPath('file:///workspace/a.md', DIR)).toBe('/workspace/a.md');

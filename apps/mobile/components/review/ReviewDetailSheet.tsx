@@ -78,10 +78,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { Icon } from '@/components/ui/icon';
 import { ChatsTeardropIcon, GlobeIcon, XCircleIcon } from '@/lib/icons';
 import { useChangeRequestDiff, useChangeRequestMergePreview } from '@/lib/projects/hooks';
-import type { ChangeRequestDiff } from '@/lib/projects/projects-client';
 import { hasMergeConflicts, resolveConflictsPrompt } from '@/lib/review/change-request-recovery';
 import { changeRequestWebUrl, reviewDetailRows, splitFilePath } from '@/lib/review/review-detail';
 import { ReviewBody } from '@/components/review/ReviewItemBody';

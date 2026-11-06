@@ -1,10 +1,18 @@
 # Decisions
 
 Update this file whenever a decision is made or changes. Newest first inside
-each section. "Marko" = the decision owner.
+each section. Decision owner: Marko until 2026-11-05, Jay from 2026-11-06.
 
 ## Decided
 
+- 2026-11-06 · **Goal state lives in a server goal record** (`project_goals`
+  and companions). The API owns lifecycle, pause/stop, verifier, caps and
+  owner generation; `GOAL.md` stays the human-readable brief, `log.md` and
+  `evidence/` stay artifacts, and file edits to lifecycle fields are inert.
+  Reverses the 2026-10-19 "folder, not a table" decision: the agent being
+  evaluated could edit the evaluation (forged done reproduced locally). The
+  `goals` flag stays, default off. Plan: `prod-readiness.md`. Decision owner
+  for Goals from this date: Jay. (Jay)
 - 2026-10-28 · **Goals engine plan approved** (goals-plan, "execute"): three
   concepts (Agent = who, Trigger = when (called Automation until 2026-10-28), Goal = what done means); goals
   are company-based, default `Goals/<slug>/`, shared or private by Files

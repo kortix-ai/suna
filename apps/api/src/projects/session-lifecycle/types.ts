@@ -37,6 +37,10 @@ export type SessionInvocationSource =
   | 'system:auto-recovery'
   /** Kortix started a thread in the person's chat (`projects/routes/chat-threads.ts`, flag `chat`). */
   | 'system:chat-post'
+  /** A space's watcher (`projects/lib/space-watch/`, flag `spaces_proactive`): one hidden session per space. */
+  | 'system:space-watcher'
+  /** The goal engine (`projects/goals/`, flag `goals`): owner and verifier sessions and their prompts. */
+  | 'system:goal'
   | 'admin';
 
 export type QueuePolicy = 'never' | 'on_backpressure' | 'always';

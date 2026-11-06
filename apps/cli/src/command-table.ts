@@ -265,7 +265,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'goals',
             args: '<subcommand>',
-            blurb: 'Work a goal until a verifier confirms it done: new, verify, verdict, handover, ls (in a session)',
+            blurb: 'Work a goal through the Goals API until a verifier passes every criterion: transition, progress, verify, verdict, handover, check, ls, status',
             featureFlag: 'goals',
           },
           {
@@ -273,6 +273,12 @@ export const TIERS: readonly CommandTier[] = [
             args: '<subcommand>',
             blurb: 'Share and review docs and pages: publish, comments, reply, activity',
             featureFlag: 'artifacts',
+          },
+          {
+            name: 'spaces',
+            args: '<subcommand>',
+            blurb: 'Post into a space and configure it for its person: post (main chat or a thread, @mentions), rename, describe, tabs, agents, members',
+            featureFlag: 'chat',
           },
           {
             name: 'capture',

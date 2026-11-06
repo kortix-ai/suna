@@ -145,7 +145,7 @@ describe('session-log rejects', () => {
   test('another schema id', () => {
     const issue = firstIssue(SessionLogSchema.safeParse({ ...load('golden21.v2.json'), schema: 'kortix.session/3' }));
     expect(issue.path).toEqual(['schema']);
-    expect(issue.code).toBe('invalid_literal');
+    expect(issue.code).toBe('invalid_value');
   });
 
   test('an unknown block type', () => {
@@ -154,7 +154,7 @@ describe('session-log rejects', () => {
     blocks.push({ type: 'hologram' } as never);
     const issue = firstIssue(SessionLogSchema.safeParse(record));
     expect(issue.path).toEqual(['threads', 0, 'messages', 0, 'blocks', blocks.length - 1, 'type']);
-    expect(issue.code).toBe('invalid_union_discriminator');
+    expect(issue.code).toBe('invalid_union');
     expect(() => upcast(record)).toThrow();
   });
 });

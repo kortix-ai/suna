@@ -55,6 +55,34 @@ import { readPiSnapshot } from './session-log-restore'
 import { afterFirstTurn } from '../shared/after-first-turn'
 import { preloadPiRuntimeModules } from './runtime'
 
+/** The waits between boot's start attempts: a transient failure (a catalog or package fetch) gets two more tries. */
+export const BOOT_START_RETRY_DELAYS_MS = [2_000, 10_000] as const
+
+/**
+ * Start the runtime at boot, retrying a failed start. After the last attempt the failure is
+ * terminal: `bootState.runtimeStartError` holds it and readiness reports `runtime_start_failed`
+ * with the message, not a `pi_not_ready` that looks like a start still in progress.
+ */
+export async function startRuntimeAtBoot(lifecycle: { start(): Promise<void> }, bootState: PiBootState): Promise<boolean> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await lifecycle.start()
+      bootState.runtimeStartError = null
+      return true
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const delay = BOOT_START_RETRY_DELAYS_MS[attempt]
+      if (delay === undefined) {
+        bootState.runtimeStartError = message
+        logger.error('[boot] pi runtime failed to start; the box stays observable', { err: message, attempts: attempt + 1 })
+        return false
+      }
+      logger.warn('[boot] pi runtime failed to start; retrying', { err: message, attempt: attempt + 1, retryInMs: delay })
+      await Bun.sleep(delay)
+    }
+  }
+}
+
 /** The first runtime-assets pass waits for the first turn to end, at most this long after ready. */
 const FIRST_ASSETS_PASS_MAX_DELAY_MS = 15_000
 
@@ -133,15 +161,9 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     onSteerRead: ({ rootId, messageId }) => {
       void relaySteerRead(rootId, messageId)
     },
-    onQuestionAsked: (request, answer) => {
-      void relayQuestion(request).then((answers) => {
-        if (answers) answer(answers)
-      })
-    },
-    // Report only: apps/api pushes "needs your approval"; the request stays open for the user.
-    onPermissionAsked: (request) => {
-      void relayPermission(request)
-    },
+    // apps/api stores each ask and says how long it waits live before it parks (interactions.ts).
+    onQuestionAsked: (request, ask) => relayQuestion(request, ask),
+    onPermissionAsked: (request, call) => relayPermission(request, call),
     onFrame: (frame) => {
       // A child session or a new title: apps/api lists the tree from the pushed projection.
       if (sessionTreeChanged(frame)) scheduleRuntimeProjectionPush(frame.type)
@@ -247,13 +269,11 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
   await gitReady
-  try {
-    await harness.lifecycle.start()
-  } catch (err) {
-    logger.error('[boot] pi runtime failed to start; the box stays observable', { err: (err as Error).message })
-    return
-  }
+  if (!(await startRuntimeAtBoot(harness.lifecycle, bootState))) return
   const runtime = harness.runtime()!
+  // A restore at boot means this box did not hold the conversation: on a volume session that is a new
+  // computer, so the model hears that programs from before are not running (TEMPORARY_COMPUTER).
+  if (cfg.workspaceVolume && logBoot && logBoot.cursors.length > 0) runtime.markNewComputer()
   logger.info('[boot] proxy up; pi runtime ready', { servicePort: cfg.servicePort, rootId: runtime.rootId })
   convergeAfterReady(harness)
   // The reconcile floor: every 60 s the box re-checks its release and its

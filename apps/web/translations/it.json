@@ -1296,17 +1296,13 @@
           "name": "Trigger di eventi Composio",
           "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario. Gli eventi arrivano da Composio. Kortix controlla anche da solo le tue app collegate."
         },
-        "session_log_restore": {
-          "name": "Ripristino dal log di sessione",
-          "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
-        },
         "goals": {
           "name": "Obiettivi",
           "description": "Assegna a un agente un obiettivo di cui resta responsabile finché un controllo indipendente non conferma il risultato. Pianifica, lavora, attende, sollecita le persone e conserva il suo stato in una cartella Goals in File. Richiede Volumi e Cicli attivi."
         },
         "workspace_volume": {
-          "name": "Volume del workspace",
-          "description": "Mantiene la /workspace di ogni nuova sessione su un volume dedicato, così una sandbox ferma può essere eliminata e la successiva si avvia con gli stessi file e la stessa conversazione. Kortix lo attiva per progetto."
+          "name": "Sandbox senza stato",
+          "description": "Ogni sessione conserva solo /workspace, su un volume dedicato. Una sandbox ferma da un'ora viene eliminata e l'apertura successiva ne avvia una nuova con gli stessi file e la stessa conversazione. I programmi della sandbox precedente non sono più in esecuzione. Kortix lo attiva per progetto."
         },
         "artifacts": {
           "name": "Artefatti",
@@ -1317,8 +1313,8 @@
           "description": "Dai all'agente una casella email su Resend: la posta in arrivo avvia e continua le sessioni, e l'agente legge, risponde e invia dalla casella. Usa la tua chiave API Resend e il tuo dominio."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Chat con Kortix in stile Slack: ogni messaggio è un thread, l'ultima risposta di Kortix appare sotto, Kortix può avviare thread e gli spazi si condividono con altre persone. Sostituisce l'elenco delle sessioni nella barra laterale."
+          "name": "Spazi",
+          "description": "Spazi con Kortix in stile Slack: ogni messaggio è un thread, l'ultima risposta di Kortix appare sotto, Kortix può avviare thread e gli spazi si condividono con altre persone. Sostituisce l'elenco delle sessioni nella barra laterale."
         },
         "session_groups": {
           "name": "Gruppi di sessioni",
@@ -1345,17 +1341,21 @@
           "description": "Drive che tutto il team può usare: un admin crea un Drive e vi aggiunge agenti. Ogni sessione di quegli agenti lo monta, e chi può usare uno di loro può aprirlo. Disattivato, ogni persona ha solo I miei file."
         },
         "chat_input": {
-          "name": "Input della chat",
+          "name": "Spaces-ChatInput",
           "description": "Un solo controllo sotto il compositore per chi risponde e come: scegli l’agente e ogni altra impostazione resta su Automatico, ereditata da quell’agente. Apri una riga per sostituire modello, sforzo di ragionamento, segreti, chiavi del provider o sandbox per questa sessione, e torna ad Automatico con un clic."
         },
         "chat_front": {
-          "name": "Thread solo conversazione",
-          "description": "Con Chat attivo, un nuovo messaggio in uno spazio avvia un thread il cui agente si limita a parlare. Passa ogni richiesta a una sessione My Kortix nascosta che fa il lavoro e risponde con messaggi brevi, solo con ciò che conta. Richiede My Kortix attivo in kortix.yaml."
+          "name": "Spaces-Router",
+          "description": "Con Spaces attivo, l’agente con cui chatti in un thread è un router: svolge da sé il lavoro rapido (una risposta, un testo breve, uno sguardo ai file del thread) e passa il lavoro più lungo agli agenti dello spazio. Risponde come una persona, con messaggi brevi. Un agente salva il risultato completo come file nel thread, e il router collega quel file invece di riscriverlo. «Mostra lavoro» sotto un messaggio apre il lavoro dietro. Richiede My Kortix attivo in kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "Con gli Spazi attivi, uno spazio può sorvegliarsi da solo: attiva Proattivo nei suoi dettagli e un agente legge cosa succede (thread conclusi, domande rimaste aperte, persone che entrano) e scrive in chat solo quando conta: un risultato da condividere, una decisione da prendere o qualcosa in ritardo. Può anche avviare un thread che fa il lavoro. Riepilogo giornaliero facoltativo alle 9:00."
         }
       },
       "channelsSwitch": {
         "onTitle": "Attivare gli Spazi per {project}?",
-        "onBody": "Tutti in questo progetto ottengono Spazi e Messaggi diretti al posto dell’elenco delle sessioni. Tutte le sessioni esistenti passano in #general. Puoi disattivarlo in qualsiasi momento; non viene eliminato nulla.",
+        "onBody": "Tutti in questo progetto ottengono gli Spazi al posto dell’elenco delle sessioni. Tutte le sessioni esistenti passano in #general. Puoi disattivarlo in qualsiasi momento; non viene eliminato nulla.",
         "drive": "Attiva anche Drive, così gli spazi hanno i File.",
         "turnOn": "Attiva",
         "cancel": "Annulla",
@@ -1867,13 +1867,19 @@
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Cerca app",
+    "searchArtifacts": "Cerca artefatti",
     "appsNoMatches": "Nessun risultato",
     "spaces": {
       "channels": "Spazi",
-      "directMessages": "Messaggi diretti",
       "addChannel": "Nuovo spazio",
       "loadError": "Impossibile caricare gli spazi.",
-      "newAgent": "Nuovo agente"
+      "newAgent": "Nuovo agente",
+      "review": "Revisione",
+      "personal": "Il tuo spazio",
+      "personalNamed": "Spazio di {name}",
+      "private": "Privato",
+      "noMessages": "Ancora nessun messaggio",
+      "more": "Altro"
     }
   },
   "dashboard": {
@@ -2118,7 +2124,8 @@
       "noCommandMatch": "Nessun comando, file o azione corrispondente",
       "commandsAndActions": "Comandi e azioni",
       "toUse": "da usare",
-      "use": "Usa"
+      "use": "Usa",
+      "noOneMatches": "Nessuno corrisponde"
     },
     "history": {
       "restoreTitle": "Non è stato possibile ripristinare parte del contenuto precedente",
@@ -2142,7 +2149,23 @@
       "fullTextRetry": "Riprova"
     },
     "turn": {
-      "autoRetried": "Kortix ha riprovato automaticamente il modello {count, plural, one {una volta} other {# volte}} prima di questo errore."
+      "autoRetried": "Kortix ha riprovato automaticamente il modello {count, plural, one {una volta} other {# volte}} prima di questo errore.",
+      "typing": "{name} sta scrivendo…",
+      "showWork": "Mostra lavoro",
+      "hideWork": "Nascondi lavoro",
+      "starting": "Avvio…",
+      "workingFor": "Al lavoro · {time}",
+      "agentWorking": "sta lavorando",
+      "agentWorkingFor": "sta lavorando · {time}",
+      "stopped": "Interrotto",
+      "agentWorkingOn": "sta lavorando a {task}",
+      "agentWorkingOnFor": "sta lavorando a {task} · {time}",
+      "somethingWrong": "Qualcosa è andato storto",
+      "notSent": "Non inviato",
+      "retry": "Riprova",
+      "resume": "Riprendi",
+      "agentIsWorking": "{agent} sta lavorando",
+      "needsYouOn": "Serve a te: {header}"
     }
   },
   "agents": {
@@ -2950,7 +2973,8 @@
         "notReceived": "Non hai ricevuto il link?",
         "confirmNotReceived": "Non hai ricevuto l'email di conferma?",
         "resendIn": "Invia di nuovo tra {seconds}",
-        "resend": "Invia di nuovo"
+        "resend": "Invia di nuovo",
+        "checkSpam": "Non c'è? Controlla la cartella spam o posta indesiderata."
       },
       "credentials": {
         "signin": {
@@ -16402,6 +16426,30 @@
       "textb1fa39a2b442": "Venerdì alle 17:00",
       "textb1fb183269ba": "Limita chi può avviare sessioni",
       "textb205bb47f81a": "Apri sessione",
+      "text76456efd96b6": "Lavoro avviato",
+      "textd5a6dc64b5d4": "Trattenuto",
+      "text95d2f57f8fa4": "Non avviato",
+      "text6119feb6e4f5": "Nessun trigger",
+      "text7b5f87420cb2": "Nessun evento da {value0}",
+      "textadb85cf22bfc": "Nessuno finora",
+      "text8d14f6e72de8": "Eventi",
+      "textc235cb1df45b": "Cosa ha inviato questa App negli ultimi 30 giorni e l'esito di ogni evento.",
+      "textbcd7586101a4": "Invia evento di test",
+      "textb31f231088c9": "Impossibile caricare gli eventi dell'App.",
+      "text863f2373ad58": "Gli eventi inviati da questa App compaiono qui",
+      "text4b97770f1f09": "Invia un evento di test per verificare il collegamento, oppure inviane uno dall'App a KORTIX_APP_EVENTS_URL.",
+      "text66a6b0caa7b8": "{value0} nelle ultime 24 ore · {value1} hanno avviato lavoro",
+      "text4e18ffd436f1": "Oltre il limite del trigger: 60 eventi all'ora, 30 al minuto.",
+      "text532eaabd9574": "Test",
+      "text119ec5b50a07": "I dati devono essere un oggetto JSON.",
+      "text07aaf9c9f315": "Evento di test inviato",
+      "text72b8a74d4eee": "Impossibile inviare l'evento di test",
+      "text028284e97d7d": "Invia un evento di test",
+      "text568b8fae25a4": "Segue lo stesso percorso di un evento dell'App. Il suo ID inizia con test-, quindi l'evento dell'App con lo stesso ID verrà comunque eseguito in seguito.",
+      "text25bc9efedfb7": "Nome dell'evento",
+      "text0760ef976f73": "Dati (JSON)",
+      "texta76d8716b0ff": "Ultimo evento",
+      "textba1daad907a0": "Ultimo evento {value0}",
       "textb205c515d0be": "Non hai un URL ospitato a portata di mano? Passa a \"Manual configuration\" e incolla invece l’XML da SSO → More Actions → SAML Metadata: sono gli stessi metadati.",
       "textb205e3c57a77": "Open source · Qualsiasi modello, le tue chiavi · Self-hosted, VPC o on-prem",
       "textb20e428d9c27": "Push groups: nella scheda \"Provisioning\" dell'app, in \"Entitlements\", fai clic su \"Refresh\" per caricare i gruppi di Kortix. Poi nella scheda \"Rules\" aggiungi una regola: una condizione (ad esempio, membro di un ruolo OneLogin) con l'azione \"Set Groups in Kortix\" → il gruppo.",
@@ -16613,6 +16661,12 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Apri la pagina completa di approvazione",
       "textb7ddab3f7df8": "Eliminare {value0} e ogni runtime? Questa azione non può essere annullata.",
+      "text9c583fa19f1a": "Anche i suoi trigger vengono eliminati: {value0}.",
+      "text648f297b3b79": "Mostra nell'App",
+      "text8521b7841a0c": "Un evento: {value0}",
+      "textbede9e3c96af": "Mostra tutti gli eventi",
+      "text216e5ffc0e54": "Questo evento non è nel registro degli ultimi 30 giorni.",
+      "text1ade727f7313": "Inattiva da {value0}. Kortix ha smesso di riavviarla.",
       "textb7de71558bf4": "I connettori selezionati risolvono questo segreto sul server. La sandbox non riceve alcun valore.",
       "textb7e29198fc4e": "Chiave {value0} rimossa",
       "textb7ef1459725d": "Impossibile eliminare immediatamente l’account",
@@ -19774,6 +19828,8 @@
       "text7a84bdb22767": "Distribuzione della Kortix App visualizzata",
       "text516e80d9f8dc": "Distribuzione della Kortix App eliminata",
       "text2d430c4c81a2": "Log della distribuzione della Kortix App visualizzati",
+      "text567cd42b6a31": "Eventi della Kortix App visualizzati",
+      "textcd413277c842": "Evento di prova della Kortix App inviato",
       "textea0b84c2ddf0": "Skill di sistema Kortix visualizzata",
       "text16faff6ae525": "File della skill di sistema Kortix visualizzato",
       "text04a6fbab3598": "Catalogo LLM visualizzato",
@@ -21190,7 +21246,19 @@
       "text507c24b6792d": "Quando una richiesta di modifica viene unita in {branch}, {agent} esegue la tua istruzione.",
       "text05ee1d6181f3": "Quando una richiesta di modifica viene unita, {agent} esegue la tua istruzione.",
       "texte608495c45ce": "Unita in {branch}",
-      "text80ca527b0d55": "Trigger della richiesta di modifica creato"
+      "text80ca527b0d55": "Trigger della richiesta di modifica creato",
+      "authEmailAlreadySent": "Abbiamo inviato questa email meno di un minuto fa. Controlla la posta in arrivo e la cartella spam prima di richiederne un'altra.",
+      "textfe0dab79db43": "Parla con Kortix in un'unica chat: ogni messaggio è un thread e la risposta più recente di Kortix appare sotto di esso.",
+      "text2e914b62b832": "Link Markdown",
+      "text7bed093239f3": "Le risorse riconosciute mostrano l'icona dell'app e un'etichetta compatta. Passa il mouse per vedere l'URL originale.",
+      "textaf4df8fff726": "Termina lo streaming",
+      "textc5bb2bbce674": "Mostra lo streaming",
+      "textfc19d1c660c8": "Profili, repository, pull request, issue e commit di GitHub; issue di Linear; messaggi e conversazioni di Slack; design, board e slide di Figma; pagine di Notion; Google Docs, Sheets e Slides. Le etichette usano solo l'URL. Titoli, permessi e stato in tempo reale non vengono recuperati.",
+      "textba98740fde39": "Utilizzo dell'abbonamento ChatGPT",
+      "text856bf8853b69": "Utilizzo dell'abbonamento Claude",
+      "text116cd3982a9b": "Obiettivi",
+      "textb0571ad96905": "obiettivi obiettivo traguardi risultati",
+      "text20d55e8c3373": "In annullamento"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -21279,6 +21347,39 @@
       "prCommits": "{count, plural, one {# commit} other {# commit}}",
       "prCommitsBy": "{count, plural, one {# commit} other {# commit}} di {author}",
       "prDraft": "Pull request in bozza"
+    },
+    "askDeck": {
+      "label": "Cosa ti aspetta",
+      "remaining": "{count, plural, one {# ti aspetta} other {# ti aspettano}}",
+      "yes": "Sì",
+      "no": "No",
+      "skip": "Salta",
+      "send": "Invia risposta",
+      "approve": "Approva",
+      "deny": "Nega",
+      "dismiss": "Ignora",
+      "undo": "Annulla",
+      "allowSession": "Consenti {tool} per la sessione",
+      "typeAnswer": "Oppure scrivi la tua risposta",
+      "answered": "Risposta inviata",
+      "dismissed": "Domanda ignorata",
+      "approved": "Approvato",
+      "denied": "Negato",
+      "failed": "La decisione non è andata a buon fine",
+      "askedAgo": "Chiesto {time} fa",
+      "fromWorker": "da una sessione worker",
+      "inSession": "In {title}",
+      "permissionTitle": "Eseguire {tool}?",
+      "approvalTitle": "Eseguire questa chiamata al connettore?",
+      "emptyTitle": "Niente ti aspetta",
+      "emptyDescription": "Le domande e le approvazioni dei tuoi agenti compaiono qui.",
+      "loadFailed": "Impossibile caricare cosa ti aspetta",
+      "retry": "Riprova",
+      "kind": {
+        "question": "Domanda",
+        "permission": "Permesso",
+        "approval": "Approvazione connettore"
+      }
     },
     "reviewBulk": {
       "approve": "Approva",
@@ -23553,7 +23654,8 @@
       "missed_wake": "L'ultimo risveglio è in ritardo.",
       "ask_overdue": "Una richiesta è scaduta.",
       "verification_stalled": "La verifica è iniziata più di 24 ore fa.",
-      "unreadable": "GOAL.md manca o non ha l’intestazione dell’obiettivo."
+      "unreadable": "GOAL.md manca o non ha l’intestazione dell’obiettivo.",
+      "blocked": "Questo obiettivo non può proseguire da solo."
     },
     "sessionChip": "Obiettivo",
     "sessionRole": {
@@ -23617,10 +23719,6 @@
     "stopError": "Impossibile fermare l’obiettivo. Riprova.",
     "needsAttention": "Richiede attenzione",
     "newGoal": "Nuovo obiettivo",
-    "newGoalTitle": "Nuovo obiettivo",
-    "newGoalDescription": "Descrivi il risultato. Un agente ci lavora finché una verifica indipendente conferma che è fatto.",
-    "newGoalPlaceholder": "Per esempio: il nostro sito di documentazione è online su docs.example.com",
-    "newGoalStart": "Avvia obiettivo",
     "cancel": "Annulla",
     "forPerson": "per {person}",
     "answerInChat": "Rispondi nella chat",
@@ -23645,14 +23743,6 @@
       "workingNoWake": "In corso."
     },
     "startedToast": "Obiettivo avviato",
-    "outcomeLabel": "Risultato",
-    "doneWhenLabel": "Fatto quando",
-    "doneWhenHint": "Facoltativo. Lascialo vuoto e l’agente scrive i criteri prima di iniziare.",
-    "criterionPlaceholder": "Per esempio: il sito si carica su docs.example.com",
-    "criterionLabel": "Criterio di completamento {n}",
-    "removeCriterion": "Rimuovi criterio",
-    "removeCriterionN": "Rimuovi criterio di completamento {n}",
-    "addCriterion": "Aggiungi criterio",
     "startError": "Impossibile avviare l’obiettivo. Riprova.",
     "updated": "aggiornato {time}",
     "attentionTitle": "Richiede attenzione",
@@ -23715,7 +23805,707 @@
     "lastCheckAt": "Ultimo controllo {time}",
     "neverChecked": "Non ancora controllato",
     "wakesTodayCount": "{count} di {max} risvegli oggi",
-    "filesLabel": "File"
+    "filesLabel": "File",
+    "roleTab": {
+      "founder": "Fondatore",
+      "sales": "Vendite",
+      "marketing": "Marketing",
+      "support": "Supporto",
+      "finance": "Finanza",
+      "operations": "Operazioni",
+      "people": "Persone",
+      "engineering": "Ingegneria"
+    },
+    "galleryTitle": "Inizia un nuovo obiettivo",
+    "galleryDescription": "Descrivi un risultato o parti da un modello. Un agente ci lavora finché un controllo indipendente non conferma che è completato.",
+    "composerPlaceholder": "Descrivi il risultato che vuoi ottenere",
+    "templates": {
+      "draftInvestorUpdate": {
+        "title": "Bozza di aggiornamento per gli investitori",
+        "description": "Raccoglie le metriche aziendali in una bozza di aggiornamento per gli investitori in Files.",
+        "prompt": "Scrivi la bozza del nostro aggiornamento per gli investitori relativo a [il mese scorso].\n- Metriche: [ricavi, crescita, burn, runway] da [Stripe e il nostro foglio finanziario]\n- Risultati positivi: [lanci, successi, assunzioni chiave]\n- Aspetti negativi e rischi: [cosa è slittato o è a rischio]\n- Richieste: [presentazioni, assunzioni, consigli di cui abbiamo bisogno]\nConfronta ogni numero con il periodo precedente.",
+        "criterion": "Files/founder/investor-update.md contiene il periodo selezionato, le metriche con fonte, le variazioni rispetto al periodo precedente, i risultati positivi, i rischi, le richieste e le lacune nei dati segnalate.",
+        "start": "Raccogli le metriche",
+        "done": "Aggiornamento in bozza"
+      },
+      "compareCompetitors": {
+        "title": "Confronta la concorrenza",
+        "description": "Confronta i concorrenti e salva in Files un documento di posizionamento con fonti.",
+        "prompt": "Confrontaci con [concorrente A, concorrente B, concorrente C].\n- Cosa vendiamo: [una riga sul prodotto e su chi lo acquista]\n- Confronta: prezzi, acquirente target, funzionalità principali, lanci recenti\n- Fonti: i loro siti web, pagine dei prezzi, documentazione e recensioni pubbliche\nConcludi con 3 opzioni di posizionamento per noi.",
+        "criterion": "Files/founder/competitor-brief.md copre ogni concorrente indicato con link alle fonti datati, acquirenti target, prezzi o dati sconosciuti, differenze principali e 3 opzioni di posizionamento.",
+        "start": "Ricerca i concorrenti",
+        "done": "Documento pronto"
+      },
+      "summarizeCustomerFeedback": {
+        "title": "Trova le priorità dei clienti",
+        "description": "Raggruppa i feedback dei clienti in un documento di priorità ordinate in Files.",
+        "prompt": "Individua cosa chiedono più spesso i clienti [negli ultimi 90 giorni].\n- Fonti: [ticket di supporto, note delle chiamate, commenti dei sondaggi, note di vendita]\n- Raggruppa per tema e ordina per numero di clienti unici\n- Per ogni tema: 2 citazioni, link alle fonti, ricavi in gioco\nConcludi con le 3 azioni che suggerisci.",
+        "criterion": "Files/founder/customer-priorities.md elenca i temi ordinati per numero di clienti unici, con citazioni, link alle fonti, impatto sul business, azioni suggerite e l'ambito dei feedback.",
+        "start": "Leggi i feedback",
+        "done": "Priorità ordinate"
+      },
+      "prepareDecisionBrief": {
+        "title": "Prepara un documento decisionale",
+        "description": "Analizza una decisione di business e salva in Files opzioni con costi e compromessi.",
+        "prompt": "Prepara un documento decisionale: [dovremmo aumentare i prezzi per i nuovi clienti?]\n- Scadenza: [entro quando dobbiamo decidere]\n- Vincoli: [budget, team, tempistiche]\n- Confronta almeno 3 opzioni, inclusa quella di non cambiare nulla\nIndica costi, rischi e una raccomandazione, con una fonte per ogni numero.",
+        "criterion": "Files/founder/decision-brief.md enuncia la decisione, confronta almeno 3 opzioni inclusa quella di non cambiare nulla, ed elenca costi con fonte, compromessi, ipotesi e una raccomandazione.",
+        "start": "Raccogli le evidenze",
+        "done": "Opzioni confrontate"
+      },
+      "prepareBoardPack": {
+        "title": "Prepara il materiale per il CdA",
+        "description": "Crea in Files la scaletta della riunione del CdA con numeri con fonte.",
+        "prompt": "Prepara il materiale per la riunione del CdA di [questo trimestre].\n- Sezioni: KPI, dati finanziari, prodotto, assunzioni, rischi, decisioni necessarie\n- Dati: [Stripe, foglio finanziario, CRM, roadmap]\n- Decisioni per il CdA: [cosa dobbiamo far approvare]\nMantieni al massimo 12 slide. Indica la fonte di ogni numero.",
+        "criterion": "Files/founder/board-pack.md contiene una scaletta di al massimo 12 slide con KPI, dati finanziari, prodotto, assunzioni, rischi, decisioni necessarie e una fonte per ogni numero.",
+        "start": "Raccogli i numeri",
+        "done": "Scaletta pronta"
+      },
+      "draftQuarterlyOkrs": {
+        "title": "Bozza di OKR trimestrali",
+        "description": "Propone in Files obiettivi misurabili con valori di partenza e responsabili.",
+        "prompt": "Scrivi la bozza dei nostri OKR per [il prossimo trimestre].\n- Focus aziendale: [la cosa più importante]\n- Team: [prodotto, vendite, marketing]\n- Risultati del trimestre scorso: [link o percorso in Files]\nAl massimo 3 obiettivi. Per ciascuno indica da 2 a 4 risultati chiave misurabili con un valore di partenza e un ruolo responsabile.",
+        "criterion": "Files/founder/okrs.md contiene al massimo 3 obiettivi, ciascuno con da 2 a 4 risultati chiave misurabili che indicano valore di partenza, target e ruolo responsabile.",
+        "start": "Rivedi i risultati",
+        "done": "OKR in bozza"
+      },
+      "sizeMarket": {
+        "title": "Dimensiona il mercato",
+        "description": "Crea in Files una stima di TAM, SAM e SOM con fonti.",
+        "prompt": "Dimensiona il mercato per [il nostro prodotto] in [regione].\n- Acquirente: [chi acquista e la dimensione della sua azienda]\n- Prezzo: [il nostro prezzo annuo medio]\nCalcola TAM, SAM e SOM sia bottom-up sia top-down. Cita una fonte datata per ogni input.",
+        "criterion": "Files/founder/market-size.md contiene stime di TAM, SAM e SOM bottom-up e top-down, la formula di ciascuna e una fonte datata per ogni input.",
+        "start": "Trova i dati",
+        "done": "Mercato dimensionato"
+      },
+      "buildInvestorList": {
+        "title": "Crea una lista di investitori",
+        "description": "Ordina gli investitori per affinità con un round e salva in Files una lista con fonti.",
+        "prompt": "Crea una lista di [40] investitori per il nostro round [seed].\n- Settore e fase: [software B2B, seed]\n- Dimensione del ticket: [da 500k$ a 2M$]\n- Regione: [USA ed Europa]\nPer ciascuno: fondo, partner, operazioni recenti rilevanti, motivo di affinità e link alle fonti.",
+        "criterion": "Files/founder/investors.csv copre il numero richiesto con fondo, partner, operazioni recenti rilevanti, motivo di affinità, link alle fonti e priorità rispetto alla fase e alla dimensione del ticket indicate.",
+        "start": "Ricerca gli investitori",
+        "done": "Lista ordinata"
+      },
+      "writeTeamUpdate": {
+        "title": "Scrivi l'aggiornamento per il team",
+        "description": "Scrive in Files la bozza dell'aggiornamento aziendale settimanale con lavoro e numeri reali.",
+        "prompt": "Scrivi l'aggiornamento per il team di [questa settimana].\n- Rilasciato: da [GitHub, l'issue tracker]\n- Trattative e clienti: dal [nostro CRM]\n- Metriche: da [Stripe, analytics di prodotto]\n- Prossima settimana: [priorità]\nMantienilo sotto le 400 parole. Solo bozza: non inviarlo.",
+        "criterion": "Files/founder/team-update.md è sotto le 400 parole e contiene il lavoro rilasciato con link, novità su clienti e trattative, metriche chiave con fonti e le priorità della prossima settimana.",
+        "start": "Raccogli gli aggiornamenti",
+        "done": "Aggiornamento in bozza"
+      },
+      "mapCompanyRisks": {
+        "title": "Mappa i rischi aziendali",
+        "description": "Elenca in Files i principali rischi per il piano con responsabili e mitigazioni.",
+        "prompt": "Elenca i principali rischi per [il raggiungimento del nostro piano di quest'anno].\n- Aree: runway, clienti, team, prodotto, legale, sicurezza\n- Fonti: [foglio finanziario, CRM, roadmap, registro degli incidenti]\nPer ogni rischio: probabilità, impatto, un ruolo responsabile e una mitigazione.",
+        "criterion": "Files/founder/risk-register.md elenca almeno 8 rischi nelle aree indicate, ciascuno con probabilità, impatto, ruolo responsabile, mitigazione e la fonte che lo supporta.",
+        "start": "Rivedi le fonti",
+        "done": "Rischi mappati"
+      },
+      "researchTargetAccounts": {
+        "title": "Ricerca gli account target",
+        "description": "Ordina gli account target per affinità e salva in Files una lista di prospect con fonti.",
+        "prompt": "Trova [25] account target in linea con il nostro cliente ideale.\n- Cliente ideale: [settore, dimensione aziendale, regione]\n- Segnali d'acquisto: [assunzioni, finanziamenti, nuovi strumenti, espansione]\n- Escludi: clienti attuali e trattative aperte nel [nostro CRM]\nPer ciascuno: azienda, sito web, motivo di affinità, un segnale con il link alla fonte e priorità.",
+        "criterion": "Files/sales/target-accounts.csv copre il numero di account richiesto con azienda, sito web, motivo di affinità, segnali d'acquisto, link alle fonti e priorità rispetto al profilo d'acquirente fornito.",
+        "start": "Ricerca gli account",
+        "done": "Prospect ordinati"
+      },
+      "draftDealFollowups": {
+        "title": "Bozze di follow-up per le trattative",
+        "description": "Usa lo storico delle trattative per preparare bozze di follow-up non inviate nella casella collegata.",
+        "prompt": "Scrivi follow-up per [le mie trattative aperte senza risposta da 7 giorni].\n- Trattative: [fase del CRM o nomi delle trattative]\n- Tono: [breve e diretto]\n- Ogni bozza: l'ultimo contesto, un prossimo passo chiaro, un orario proposto\nSalvale come bozze nella casella collegata. Non inviarle.",
+        "criterion": "La casella collegata contiene una bozza non inviata per ogni trattativa selezionata con destinatario, contesto della trattativa e prossimo passo; Files/sales/follow-ups.md associa i link delle trattative ai link delle bozze.",
+        "start": "Rivedi le trattative",
+        "done": "Bozze pronte"
+      },
+      "enrichSelectedLeads": {
+        "title": "Arricchisci i lead selezionati",
+        "description": "Compila nel CRM collegato i campi dei lead con fonti e salva in Files un registro delle modifiche.",
+        "prompt": "Arricchisci [i lead creati questa settimana] nel [nostro CRM].\n- Campi: [settore, numero di dipendenti, ruolo, sito web]\n- Compila solo i campi vuoti. Non sovrascrivere mai un valore.\nRegistra ogni modifica con la sua fonte. Lascia vuoto un campo se nessuna fonte lo conferma.",
+        "criterion": "Files/sales/lead-enrichment.csv copre ogni lead selezionato con il link al CRM, il campo, i valori prima e dopo, il link alla fonte e lo stato aggiornato o non risolto.",
+        "start": "Controlla i lead",
+        "done": "Campi arricchiti"
+      },
+      "draftSalesProposal": {
+        "title": "Bozza di proposta commerciale",
+        "description": "Trasforma le note di discovery e i prezzi approvati in una bozza di proposta in Files.",
+        "prompt": "Scrivi la bozza di una proposta per [azienda].\n- Note di discovery: [percorso in Files o trattativa nel CRM]\n- Ambito: [cosa acquistano]\n- Prezzi: [prezzo e condizioni approvati]\n- Tempistiche: [data di inizio]\nCollega ogni esigenza dell'acquirente a una nota. Elenca le domande aperte. Contrassegnala come bozza.",
+        "criterion": "Files/sales/proposal.md contiene le esigenze dell'acquirente collegate alle note di discovery, l'ambito proposto, i prezzi approvati, le esclusioni, le tempistiche, le domande aperte e l'indicazione di bozza.",
+        "start": "Leggi la discovery",
+        "done": "Proposta in bozza"
+      },
+      "prepareCallBrief": {
+        "title": "Prepara un documento per la chiamata",
+        "description": "Raccoglie storico dell'account e notizie in un documento di una pagina in Files.",
+        "prompt": "Prepara un documento per la mia chiamata con [azienda].\n- Incontro: [data e obiettivo della chiamata]\n- Raccogli: storico del CRM, email passate, ticket di supporto, loro notizie recenti e annunci di lavoro\nConcludi con 5 domande da porre e i 3 rischi da tenere d'occhio.",
+        "criterion": "Files/sales/call-brief.md sta in una pagina e contiene lo storico dell'account, le notizie recenti con link alle fonti, 5 domande da porre e 3 rischi da tenere d'occhio.",
+        "start": "Leggi lo storico",
+        "done": "Documento pronto"
+      },
+      "writeOutboundSequence": {
+        "title": "Scrivi una sequenza outbound",
+        "description": "Scrive in Files una breve sequenza di email in più passaggi per un ruolo d'acquisto.",
+        "prompt": "Scrivi una sequenza di [4] email outbound per [ruolo dell'acquirente].\n- Problema che risolviamo: [una riga]\n- Prova: [il risultato di un cliente o un caso di studio]\n- Invito all'azione: [una chiamata di 15 minuti]\nMantieni ogni email sotto le 120 parole. Solo bozza.",
+        "criterion": "Files/sales/outbound-sequence.md contiene il numero di email richiesto, ciascuna sotto le 120 parole, con oggetto, giorno di invio, la prova indicata e un solo invito all'azione.",
+        "start": "Studia l'acquirente",
+        "done": "Sequenza scritta"
+      },
+      "cleanUpPipeline": {
+        "title": "Riordina la pipeline",
+        "description": "Segnala le trattative ferme nel CRM e propone correzioni da approvare in Files.",
+        "prompt": "Riordina la nostra pipeline nel [nostro CRM].\n- Segnala le trattative senza attività da [30] giorni, con date di chiusura scadute, importi mancanti o responsabili mancanti\n- Suggerisci la prossima azione per ciascuna\nNon modificare nessuna trattativa. Elenca le modifiche proposte da farmi approvare.",
+        "criterion": "Files/sales/pipeline-cleanup.csv elenca ogni trattativa segnalata con il link al CRM, il problema, la modifica proposta e la prossima azione; nessun record del CRM è stato modificato.",
+        "start": "Analizza la pipeline",
+        "done": "Correzioni proposte"
+      },
+      "analyzeLostDeals": {
+        "title": "Analizza le trattative perse",
+        "description": "Raggruppa le trattative perse per motivo e valore e salva i risultati in Files.",
+        "prompt": "Scopri perché abbiamo perso trattative [negli ultimi 6 mesi].\n- Fonti: [motivi di perdita nel CRM, note delle chiamate, email]\n- Raggruppa per motivo, con numero di trattative e valore perso\nConcludi con 3 modifiche a prodotto, prezzi o processo.",
+        "criterion": "Files/sales/lost-deals.md raggruppa le trattative perse per motivo con numero di trattative, valore perso e link alle fonti, e termina con 3 modifiche raccomandate.",
+        "start": "Leggi le trattative",
+        "done": "Motivi individuati"
+      },
+      "buildBattlecard": {
+        "title": "Crea una battlecard",
+        "description": "Crea in Files una battlecard con fonti contro un concorrente.",
+        "prompt": "Crea una battlecard di vendita contro [concorrente].\n- Includi: i loro punti di forza e di debolezza, i prezzi, le obiezioni più comuni con le nostre risposte e le nostre prove a favore\n- Le nostre vittorie contro di loro: [nomi delle trattative o filtro del CRM]\nCita una fonte datata per ogni affermazione su di loro.",
+        "criterion": "Files/sales/battlecard.md copre punti di forza, debolezze, prezzi, obiezioni con risposte e prove a favore, con una fonte datata per ogni affermazione sul concorrente.",
+        "start": "Ricerca il rivale",
+        "done": "Battlecard pronta"
+      },
+      "forecastQuarter": {
+        "title": "Previsione del trimestre",
+        "description": "Crea in Files previsioni commit e best case a partire dal CRM.",
+        "prompt": "Prepara la previsione di vendita per [questo trimestre].\n- Pipeline: [il nostro CRM]\n- Regole: [commit = fase avanzata, best case = fase intermedia]\n- Obiettivo: [quota]\nIndica i totali di commit, best case e pipeline, confrontali con l'obiettivo ed elenca le trattative che spostano il numero.",
+        "criterion": "Files/sales/forecast.md indica i totali di commit, best case e pipeline rispetto all'obiettivo, le regole di fase usate e le trattative che spostano il numero con i link al CRM.",
+        "start": "Leggi la pipeline",
+        "done": "Previsione pronta"
+      },
+      "draftLaunchCampaign": {
+        "title": "Bozza di campagna di lancio",
+        "description": "Trasforma un brief di prodotto in testi della campagna e checklist di lancio in Files.",
+        "prompt": "Scrivi la bozza della campagna di lancio per [funzionalità o prodotto].\n- Brief: [percorso in Files o breve descrizione]\n- Pubblico: [a chi è rivolto]\n- Canali: [email, blog, LinkedIn, X]\n- Data di lancio: [data]\nScrivi ogni contenuto, collega una fonte per ogni affermazione e aggiungi una checklist di lancio.",
+        "criterion": "Files/marketing/launch-campaign.md contiene il pubblico, il messaggio, le bozze per ogni canale richiesto, gli inviti all'azione, i link alle fonti per le affermazioni e una checklist di lancio.",
+        "start": "Leggi il brief",
+        "done": "Campagna in bozza"
+      },
+      "findContentGaps": {
+        "title": "Trova lacune nei contenuti",
+        "description": "Confronta le pagine esistenti con l'intento di ricerca e salva in Files brief di articoli ordinati.",
+        "prompt": "Trova lacune nei contenuti su [il nostro sito web] per [argomento].\n- Concorrenti: [2 o 3 siti web]\n- Pubblico: [chi cerca questo argomento]\nOrdina [10] argomenti per intento di ricerca e affinità. Fornisci un brief e una scaletta per ciascuno.",
+        "criterion": "Files/marketing/content-gaps.md contiene il numero concordato di argomenti ordinati, l'intento del pubblico, le lacune delle pagine esistenti, fonti di ricerca datate e una scaletta per argomento.",
+        "start": "Confronta le pagine",
+        "done": "Brief pronti"
+      },
+      "rewriteLandingPage": {
+        "title": "Riscrivi una landing page",
+        "description": "Analizza una landing page e salva in Files testi rivisti con affermazioni supportate.",
+        "prompt": "Riscrivi la nostra landing page all'indirizzo [URL].\n- Pubblico: [chi ci arriva]\n- Obiettivo: [iscrizioni, richieste di demo]\n- Prove che possiamo usare: [loghi dei clienti, numeri, citazioni]\nMantieni solo le affermazioni che possiamo sostenere. Contrassegna ogni modifica e il motivo.",
+        "criterion": "Files/marketing/landing-page.md contiene il testo rivisto per ogni sezione, il motivo di ogni modifica e una fonte per ogni affermazione.",
+        "start": "Rivedi la pagina",
+        "done": "Testi in bozza"
+      },
+      "analyzeCampaignResults": {
+        "title": "Analizza i risultati della campagna",
+        "description": "Controlla spesa e conversioni della campagna e salva in Files un report dei risultati.",
+        "prompt": "Crea un report sui risultati di [campagna].\n- Dati: [piattaforme pubblicitarie, CRM, web analytics]\n- Periodo: [date]\n- Obiettivo: [costo per lead o conversioni]\nIndica spesa, lead, costo per lead e conversioni per canale. Raccomanda cosa tagliare e cosa potenziare.",
+        "criterion": "Files/marketing/campaign-results.md contiene spesa, lead, costo per lead e conversioni per canale nel periodo, un confronto con l'obiettivo, le fonti dei dati e raccomandazioni.",
+        "start": "Raccogli i risultati",
+        "done": "Report pronto"
+      },
+      "writeBlogPost": {
+        "title": "Scrivi un articolo per il blog",
+        "description": "Ricerca un argomento e salva in Files una bozza di articolo con fonti.",
+        "prompt": "Scrivi un articolo per il blog su [argomento].\n- Lettore: [chi è e cosa vuole imparare]\n- Taglio: [il nostro punto di vista]\n- Lunghezza: [1.200 parole]\nCollega una fonte per ogni fatto. Aggiungi una meta description e 3 opzioni di titolo.",
+        "criterion": "Files/marketing/blog-post.md contiene una bozza vicina alla lunghezza richiesta, 3 opzioni di titolo, una meta description sotto i 160 caratteri e un link alla fonte per ogni fatto.",
+        "start": "Ricerca l'argomento",
+        "done": "Articolo in bozza"
+      },
+      "planContentCalendar": {
+        "title": "Pianifica un calendario editoriale",
+        "description": "Pianifica in Files un mese di contenuti per canale, data e obiettivo.",
+        "prompt": "Pianifica il nostro calendario editoriale per [il prossimo mese].\n- Canali: [blog, LinkedIn, newsletter]\n- Temi: [lanci, storie di clienti, guide]\n- Frequenza: [post a settimana]\nPer ogni contenuto: data, canale, titolo, ruolo responsabile e obiettivo.",
+        "criterion": "Files/marketing/content-calendar.csv copre il mese alla frequenza indicata con data, canale, titolo, tema, ruolo responsabile e obiettivo per ogni contenuto.",
+        "start": "Scegli i temi",
+        "done": "Calendario pianificato"
+      },
+      "draftNewsletter": {
+        "title": "Bozza di newsletter",
+        "description": "Raccoglie novità di prodotto e dei clienti in una bozza di newsletter in Files.",
+        "prompt": "Scrivi la bozza della nostra newsletter [mensile].\n- Includi: aggiornamenti di prodotto da [il changelog], [una storia di un cliente], prossimi eventi\n- Lettore: [clienti e potenziali clienti]\nFornisci 3 oggetti email. Mantienila sotto le 500 parole. Solo bozza: non inviarla.",
+        "criterion": "Files/marketing/newsletter.md è sotto le 500 parole e contiene 3 oggetti email, gli aggiornamenti di prodotto con link, una storia di un cliente e i prossimi eventi.",
+        "start": "Raccogli le novità",
+        "done": "Newsletter in bozza"
+      },
+      "repurposeContent": {
+        "title": "Riutilizza i contenuti",
+        "description": "Trasforma un contenuto lungo in post social per ogni canale in Files.",
+        "prompt": "Trasforma [articolo del blog o link a un webinar] in post social.\n- Canali: [LinkedIn, X]\n- Quantità: [5 per canale]\nOgni post è autonomo, rimanda alla fonte e rispetta il limite di lunghezza del canale.",
+        "criterion": "Files/marketing/social-posts.md contiene la quantità richiesta per canale, ciascun post entro il limite di lunghezza del canale e con link al contenuto di origine.",
+        "start": "Leggi la fonte",
+        "done": "Post scritti"
+      },
+      "auditSeo": {
+        "title": "Esegui un audit SEO",
+        "description": "Controlla le pagine chiave alla ricerca di problemi SEO e ordina le correzioni in Files.",
+        "prompt": "Esegui un audit SEO di [il nostro sito web].\n- Pagine di riferimento: [home, prezzi, i 10 migliori articoli del blog]\nControlla titoli, meta description, intestazioni, link rotti, velocità della pagina e link interni. Ordina le correzioni per impatto.",
+        "criterion": "Files/marketing/seo-audit.md elenca ogni pagina controllata con i suoi problemi, le evidenze per ciascuno e le correzioni ordinate per impatto.",
+        "start": "Analizza le pagine",
+        "done": "Correzioni ordinate"
+      },
+      "writeCaseStudy": {
+        "title": "Scrivi un caso di studio",
+        "description": "Trasforma il materiale di un cliente in una bozza di caso di studio in Files.",
+        "prompt": "Scrivi un caso di studio su [cliente].\n- Materiale di partenza: [registrazione della chiamata, note, metriche]\n- Struttura: sfida, soluzione, risultati con numeri, una citazione\nUsa solo fatti presenti nelle fonti. Contrassegna le citazioni che richiedono l'approvazione del cliente.",
+        "criterion": "Files/marketing/case-study.md contiene sfida, soluzione, risultati con numeri con fonte, citazioni contrassegnate per l'approvazione e una fonte per ogni fatto.",
+        "start": "Leggi le fonti",
+        "done": "Caso di studio in bozza"
+      },
+      "draftSupportReplies": {
+        "title": "Bozze di risposte al supporto",
+        "description": "Prepara, senza inviarle, bozze di risposta ai ticket aperti a partire dal centro assistenza.",
+        "prompt": "Scrivi bozze di risposta ai [ticket aperti da più di 24 ore].\n- Helpdesk: [l'helpdesk o la casella di supporto collegata]\n- Tono: [cordiale e breve]\n- Usa il centro assistenza e le risposte passate, e citali\nSalva solo bozze. Non inviare. Segnala i ticket a cui non puoi rispondere.",
+        "criterion": "Ogni ticket selezionato ha una bozza di risposta non inviata che cita un articolo di assistenza o una risposta passata; Files/support/reply-drafts.md elenca i link dei ticket, lo stato delle bozze e i ticket segnalati come senza risposta.",
+        "start": "Leggi i ticket",
+        "done": "Risposte in bozza"
+      },
+      "triageSupportBacklog": {
+        "title": "Smista gli arretrati",
+        "description": "Etichetta e dà priorità ai ticket aperti e salva lo smistamento in Files.",
+        "prompt": "Smista i nostri ticket di supporto arretrati nell'[helpdesk collegato].\n- Etichette: bug, domanda, richiesta di funzionalità, fatturazione, urgente\n- Regola di priorità: [prima i clienti paganti]\nRaggruppa i duplicati. Elenca i 5 problemi principali per numero di ticket.",
+        "criterion": "Files/support/triage.csv copre ogni ticket aperto con link, etichetta, priorità e gruppo di duplicati; Files/support/triage.md elenca i 5 problemi principali per numero di ticket.",
+        "start": "Leggi gli arretrati",
+        "done": "Arretrati smistati"
+      },
+      "draftHelpArticle": {
+        "title": "Bozza di articolo di assistenza",
+        "description": "Trasforma ticket e comportamento del prodotto in un articolo di assistenza passo passo in Files.",
+        "prompt": "Scrivi un articolo di assistenza su [funzionalità o domanda].\n- Fonti: [ticket, documentazione, il prodotto]\n- Lettore: [nuovi utenti]\nScrivi passo passo, indicando il risultato atteso di ogni passaggio e gli errori più comuni.",
+        "criterion": "Files/support/help-article.md contiene passaggi numerati con risultati attesi, errori comuni con soluzioni e link ai ticket e alla documentazione su cui si basa.",
+        "start": "Leggi i ticket",
+        "done": "Articolo in bozza"
+      },
+      "flagAtRiskAccounts": {
+        "title": "Segnala gli account a rischio",
+        "description": "Trova gli account con segnali di abbandono e salva in Files una lista ordinata.",
+        "prompt": "Trova gli account a rischio di abbandono [nei prossimi 60 giorni].\n- Segnali: [utilizzo in calo, ticket aperti, punteggi bassi nei sondaggi, data di rinnovo]\n- Dati: [analytics di prodotto, helpdesk, CRM]\nOrdina per ricavi a rischio. Per ciascuno indica le evidenze e un'azione suggerita.",
+        "criterion": "Files/support/at-risk-accounts.md ordina gli account per ricavi a rischio, con i segnali, i link alle fonti e un'azione suggerita per ciascuno.",
+        "start": "Controlla i segnali",
+        "done": "Rischi segnalati"
+      },
+      "buildFaqFromTickets": {
+        "title": "Crea le FAQ",
+        "description": "Trova le domande più frequenti e salva in Files risposte con fonti.",
+        "prompt": "Crea le FAQ dai ticket [del mese scorso].\n- Quantità: le [20] domande più frequenti\n- Risposte: dal centro assistenza e dalle risposte passate\nSegnala ogni domanda che non ha un articolo di assistenza.",
+        "criterion": "Files/support/faq.md elenca il numero di domande richiesto ordinate per numero di ticket, ciascuna con una risposta, un link alla fonte e una segnalazione quando non esiste un articolo di assistenza.",
+        "start": "Conta le domande",
+        "done": "FAQ create"
+      },
+      "reviewReplyQuality": {
+        "title": "Valuta la qualità delle risposte",
+        "description": "Assegna un punteggio a un campione di risposte del supporto e salva in Files note di coaching.",
+        "prompt": "Valuta la qualità delle risposte del supporto [della settimana scorsa].\n- Campione: [30] risposte\n- Punteggio: accuratezza, tono, rapidità, risoluzione\nFornisci esempi e 3 punti di coaching.",
+        "criterion": "Files/support/quality-review.md assegna un punteggio a ogni risposta campionata sui 4 criteri con link ai ticket ed elenca 3 punti di coaching con esempi.",
+        "start": "Campiona le risposte",
+        "done": "Valutazione completata"
+      },
+      "writeSavedReplies": {
+        "title": "Scrivi risposte predefinite",
+        "description": "Scrive in Files risposte riutilizzabili per le domande più comuni.",
+        "prompt": "Scrivi risposte predefinite per le nostre [10] domande più comuni.\n- Fonte: [l'helpdesk collegato]\n- Tono: [cordiale e breve]\nOgni risposta collega l'articolo di assistenza corretto e include un segnaposto per il nome del cliente.",
+        "criterion": "Files/support/saved-replies.md contiene il numero di risposte richiesto, ciascuna con la domanda a cui risponde, il numero di ticket e il link a un articolo di assistenza.",
+        "start": "Trova le domande",
+        "done": "Risposte scritte"
+      },
+      "turnBugsIntoIssues": {
+        "title": "Trasforma le segnalazioni di bug in issue",
+        "description": "Unisce i ticket di bug in issue di ingegneria riproducibili in Files.",
+        "prompt": "Trasforma le segnalazioni di bug [di questa settimana] in issue di ingegneria.\n- Fonte: [ticket con tag bug nell'helpdesk collegato]\n- Per ciascuna: passaggi per riprodurre, numero di clienti coinvolti, gravità, link ai ticket\nUnisci i duplicati. Salva le issue così che io possa rivederle prima che venga aperto qualcosa.",
+        "criterion": "Files/support/bug-issues.md contiene una issue per ogni bug distinto con passaggi per riprodurlo, numero di clienti coinvolti, gravità e tutti i link ai ticket correlati.",
+        "start": "Leggi i ticket di bug",
+        "done": "Issue in bozza"
+      },
+      "findOutdatedArticles": {
+        "title": "Trova articoli di assistenza obsoleti",
+        "description": "Confronta il centro assistenza con il prodotto e salva le correzioni in Files.",
+        "prompt": "Trova gli articoli obsoleti nel nostro centro assistenza all'indirizzo [URL].\n- Confronta con: il prodotto attuale e [il changelog]\nPer ogni affermazione obsoleta: il link all'articolo, il testo vecchio e il testo corretto.",
+        "criterion": "Files/support/outdated-articles.md elenca ogni affermazione obsoleta con il link all'articolo, il testo vecchio, il testo corretto e la fonte della correzione.",
+        "start": "Leggi gli articoli",
+        "done": "Correzioni elencate"
+      },
+      "reportSupportMetrics": {
+        "title": "Report sulle metriche di supporto",
+        "description": "Riporta in Files volumi, rapidità e soddisfazione per un periodo.",
+        "prompt": "Crea un report sulle prestazioni del supporto per [il mese scorso].\n- Dati: [l'helpdesk collegato]\nIndica tempo di prima risposta, tempo di risoluzione, volume per categoria e soddisfazione. Confronta ciascuno con il periodo precedente.",
+        "criterion": "Files/support/metrics.md contiene tempo di prima risposta, tempo di risoluzione, volume per categoria e soddisfazione per il periodo, ciascuno confrontato con il periodo precedente.",
+        "start": "Estrai i dati",
+        "done": "Report pronto"
+      },
+      "reconcileExpenses": {
+        "title": "Riconcilia le spese",
+        "description": "Abbina transazioni, ricevute e categorie in Files.",
+        "prompt": "Riconcilia le spese de [il mese scorso].\n- Conti: [conti bancari e carte]\n- Ricevute: [cartella in Files o casella di posta]\nAbbina ogni transazione a una ricevuta e a una categoria. Elenca gli elementi non abbinati.",
+        "criterion": "Files/finance/expense-reconciliation.csv copre ogni transazione del periodo con importo, categoria, link alla ricevuta abbinata o stato non abbinato.",
+        "start": "Leggi le transazioni",
+        "done": "Spese abbinate"
+      },
+      "prepareInvoiceFollowups": {
+        "title": "Sollecita le fatture scadute",
+        "description": "Prepara i solleciti per le fatture scadute, senza inviarli.",
+        "prompt": "Prepara i solleciti per le fatture scadute da più di [14 giorni].\n- Fonte: [Stripe o lo strumento di contabilità]\n- Tono: [cortese, più deciso dopo 30 giorni]\nSalva solo le bozze. Non inviarle.",
+        "criterion": "La posta in arrivo collegata contiene una bozza non inviata per ogni fattura scaduta; Files/finance/invoice-followups.md elenca numero fattura, cliente, importo, giorni di ritardo e link alla bozza.",
+        "start": "Trova le scadute",
+        "done": "Solleciti preparati"
+      },
+      "auditSubscriptionSpend": {
+        "title": "Verifica la spesa software",
+        "description": "Trova abbonamenti duplicati e inutilizzati e classifica i risparmi in Files.",
+        "prompt": "Verifica i nostri abbonamenti software degli [ultimi 12 mesi].\n- Fonti: [estratti conto delle carte, lo strumento di contabilità]\nTrova duplicati, licenze inutilizzate e aumenti di prezzo. Classifica i risparmi.",
+        "criterion": "Files/finance/subscription-audit.md elenca ogni abbonamento con costo annuo, responsabile, prove di utilizzo e risparmi classificati, con la fonte di ogni cifra.",
+        "start": "Trova gli addebiti",
+        "done": "Risparmi classificati"
+      },
+      "prepareCashForecast": {
+        "title": "Prepara una previsione di cassa",
+        "description": "Crea in Files una previsione di cassa settimanale con tre scenari.",
+        "prompt": "Crea una previsione di cassa a [13] settimane.\n- Cassa iniziale: [saldo bancario o fonte]\n- Entrate: [Stripe, fatture aperte]\n- Uscite: [stipendi, affitto, fornitori]\nFornisci lo scenario base, quello basso e quello alto. Segnala le settimane in cui la cassa scende sotto [3 mesi di burn].",
+        "criterion": "Files/finance/cash-forecast.csv copre le settimane richieste con entrate, uscite e cassa finale negli scenari base, basso e alto; le settimane segnalate sono contrassegnate.",
+        "start": "Raccogli i saldi",
+        "done": "Previsione creata"
+      },
+      "prepareMonthEndClose": {
+        "title": "Prepara la chiusura di fine mese",
+        "description": "Controlla ogni passaggio della chiusura e salva in Files cosa è fatto e cosa resta.",
+        "prompt": "Prepara la chiusura di fine mese per [il mese scorso].\n- Passaggi: [riconciliazione bancaria, ratei, ricavi differiti, stipendi, intercompany]\n- Strumenti: [lo strumento di contabilità, Stripe]\nElenca ogni passaggio come completato o aperto, con le prove o con ciò che lo blocca.",
+        "criterion": "Files/finance/month-end-close.md elenca ogni passaggio della chiusura come completato o aperto, con le prove per quelli completati e il blocco per quelli aperti.",
+        "start": "Controlla i passaggi",
+        "done": "Chiusura preparata"
+      },
+      "explainBudgetVariance": {
+        "title": "Spiega gli scostamenti di budget",
+        "description": "Confronta consuntivo e budget e spiega in Files i grandi scostamenti.",
+        "prompt": "Confronta il consuntivo con il budget per [lo scorso trimestre].\n- Budget: [percorso in Files]\n- Consuntivo: [lo strumento di contabilità]\nSpiega ogni voce che si discosta di oltre [10%].",
+        "criterion": "Files/finance/budget-variance.md confronta consuntivo e budget per voce e spiega ogni voce oltre la soglia con le transazioni che la determinano.",
+        "start": "Confronta le voci",
+        "done": "Scostamenti spiegati"
+      },
+      "calculateUnitEconomics": {
+        "title": "Calcola le unit economics",
+        "description": "Calcola CAC, LTV e payback con formule in Files.",
+        "prompt": "Calcola le nostre unit economics per [lo scorso trimestre].\n- Suddividi per: [piano o segmento di clientela]\n- Dati: [Stripe, CRM, spesa pubblicitaria]\nFornisci CAC, LTV, payback e margine lordo. Mostra ogni formula e fonte.",
+        "criterion": "Files/finance/unit-economics.md contiene CAC, LTV, payback e margine lordo per segmento, con formula e fonte dei dati per ciascuno.",
+        "start": "Estrai i dati",
+        "done": "Unit economics calcolate"
+      },
+      "collectTaxDocuments": {
+        "title": "Raccogli i documenti fiscali",
+        "description": "Raccoglie ciò che serve al commercialista ed elenca le lacune in Files.",
+        "prompt": "Raccogli i documenti che servono al nostro commercialista per [la dichiarazione dei redditi di quest'anno].\n- Checklist: [l'elenco del commercialista, o un percorso in Files]\n- Fonti: [Files, posta in arrivo, lo strumento di contabilità]\nCollega ogni documento trovato. Elenca ciò che manca.",
+        "criterion": "Files/finance/tax-documents.md elenca ogni voce della checklist con il link al documento trovato o lo stato di mancante.",
+        "start": "Cerca nei file",
+        "done": "Documenti raccolti"
+      },
+      "reviewRenewals": {
+        "title": "Rivedi i prossimi rinnovi",
+        "description": "Elenca in Files i contratti in rinnovo a breve con date di preavviso e consigli.",
+        "prompt": "Rivedi i contratti con i fornitori che si rinnovano [nei prossimi 90 giorni].\n- Contratti: [cartella in Files o strumento per i contratti]\nPer ciascuno: data di rinnovo, termine di preavviso, prezzo, rinnovo automatico e una raccomandazione tra rinnovare, rinegoziare o disdire.",
+        "criterion": "Files/finance/renewals.md elenca ogni contratto in rinnovo nel periodo con data di rinnovo, termine di preavviso, prezzo, rinnovo automatico e una raccomandazione.",
+        "start": "Leggi i contratti",
+        "done": "Rinnovi rivisti"
+      },
+      "modelHiringCost": {
+        "title": "Modella il costo delle assunzioni",
+        "description": "Modella in Files il costo di un piano di assunzioni e l'effetto sul runway.",
+        "prompt": "Modella il costo di [assumere 5 ingegneri il prossimo anno].\n- Stipendi: [intervalli, oppure fai un benchmark]\n- Date di inizio: [per trimestre]\n- Burn e cassa attuali: [foglio finanziario]\nIncludi benefit, tasse, attrezzature e recruiting. Mostra l'effetto sul runway.",
+        "criterion": "Files/finance/hiring-cost.csv contiene il costo mensile per assunzione con stipendio, benefit, tasse, attrezzature e recruiting, e il runway risultante con e senza le assunzioni.",
+        "start": "Raccogli i costi",
+        "done": "Costo modellato"
+      },
+      "compareVendorQuotes": {
+        "title": "Confronta i preventivi dei fornitori",
+        "description": "Confronta i preventivi con i requisiti e salva una raccomandazione in Files.",
+        "prompt": "Confronta i preventivi per [ciò che stiamo acquistando].\n- Preventivi: [cartella in Files o thread email]\n- Requisiti irrinunciabili: [requisiti]\nConfronta prezzo, condizioni, consegna e assistenza. Raccomanda un fornitore.",
+        "criterion": "Files/operations/vendor-comparison.md confronta ogni preventivo su prezzo, condizioni, consegna, assistenza e ogni requisito irrinunciabile, con una fonte per ogni valore e una raccomandazione.",
+        "start": "Leggi i preventivi",
+        "done": "Fornitore scelto"
+      },
+      "documentBusinessProcess": {
+        "title": "Documenta un processo",
+        "description": "Scrive in Files un documento passo passo del processo, basato su fonti reali.",
+        "prompt": "Documenta come [accogliamo un nuovo cliente].\n- Fonti: [appunti, strumenti, thread di chat]\nPer ogni passaggio: ruolo responsabile, strumento, input, output e cosa può andare storto.",
+        "criterion": "Files/operations/process.md contiene passaggi numerati, ciascuno con ruolo responsabile, strumento, input, output, punti di errore e la fonte da cui è stato ricavato.",
+        "start": "Raccogli gli appunti",
+        "done": "Processo documentato"
+      },
+      "reconcileInventoryRecords": {
+        "title": "Riconcilia l'inventario",
+        "description": "Confronta l'inventario tra due sistemi ed elenca le differenze in Files.",
+        "prompt": "Riconcilia l'inventario tra [il negozio] e [il foglio del magazzino].\n- Abbina per: [SKU]\nElenca ogni differenza con entrambe le quantità e la causa probabile.",
+        "criterion": "Files/operations/inventory-reconciliation.csv elenca ogni SKU con una differenza, entrambe le quantità, lo scarto e la causa probabile.",
+        "start": "Confronta i record",
+        "done": "Differenze elencate"
+      },
+      "prepareProjectHandoff": {
+        "title": "Prepara il passaggio di consegne di un progetto",
+        "description": "Raccoglie in Files stato, responsabili e lavoro aperto di un progetto in un documento di consegne.",
+        "prompt": "Prepara il passaggio di consegne per [progetto].\n- Nuovo responsabile: [ruolo]\n- Fonti: [cartella in Files, issue tracker, canale di chat]\nIncludi obiettivo, stato attuale, lavoro aperto, decisioni prese, contatti per ruolo e rischi.",
+        "criterion": "Files/operations/handoff.md contiene obiettivo, stato attuale, lavoro aperto con link, decisioni prese, contatti per ruolo e rischi.",
+        "start": "Raccogli il contesto",
+        "done": "Consegne pronte"
+      },
+      "auditToolAccess": {
+        "title": "Verifica gli accessi agli strumenti",
+        "description": "Trova account a rischio o inutilizzati negli strumenti ed elenca le correzioni in Files.",
+        "prompt": "Verifica chi ha accesso a [i nostri strumenti di lavoro].\n- Strumenti: [suite email, code host, chat]\n- Confronta con: [l'elenco attuale del team]\nSegnala gli account di chi se n'è andato, gli account inutilizzati e gli admin in più. Non modificare nulla.",
+        "criterion": "Files/operations/access-audit.md elenca ogni account segnalato con strumento, motivo e azione consigliata; nessun accesso è stato modificato.",
+        "start": "Elenca gli account",
+        "done": "Accessi verificati"
+      },
+      "planTeamOffsite": {
+        "title": "Pianifica un offsite di team",
+        "description": "Confronta le sedi e crea in Files budget e programma.",
+        "prompt": "Pianifica il nostro offsite di team per [20 persone] a [città, mese].\n- Budget: [totale]\n- Obiettivi: [pianificazione, tempo insieme]\nFornisci 3 opzioni di sede, un budget, un programma e note di viaggio.",
+        "criterion": "Files/operations/offsite-plan.md contiene 3 opzioni di sede con prezzi e link, un budget entro il totale indicato, un programma giorno per giorno e note di viaggio.",
+        "start": "Trova le sedi",
+        "done": "Offsite pianificato"
+      },
+      "findAutomationWork": {
+        "title": "Trova attività da automatizzare",
+        "description": "Trova le attività manuali ripetitive e stima il tempo risparmiato in Files.",
+        "prompt": "Trova il lavoro manuale che possiamo automatizzare in [finanza e operations].\n- Fonti: [documenti di processo, thread di chat, attività ricorrenti]\nPer ogni attività: frequenza, tempo impiegato, strumento per automatizzarla e ore risparmiate al mese.",
+        "criterion": "Files/operations/automation-candidates.md classifica le attività per ore risparmiate al mese, ciascuna con frequenza, tempo impiegato, strumento proposto e fonte.",
+        "start": "Trova le attività",
+        "done": "Risparmi classificati"
+      },
+      "trackDelayedOrders": {
+        "title": "Monitora gli ordini in ritardo",
+        "description": "Trova gli ordini in ritardo e le cause e li salva in Files.",
+        "prompt": "Trova gli ordini in ritardo di oltre [3 giorni] in [il negozio o il sistema ordini].\nPer ciascuno: ordine, cliente, data promessa, stato attuale e causa. Suggerisci una soluzione per le cause principali.",
+        "criterion": "Files/operations/delayed-orders.csv elenca ogni ordine in ritardo con data promessa, stato e causa; Files/operations/delayed-orders.md indica le cause principali e le soluzioni.",
+        "start": "Controlla gli ordini",
+        "done": "Ritardi trovati"
+      },
+      "prepareComplianceChecklist": {
+        "title": "Prepara una checklist di conformità",
+        "description": "Associa i controlli alle evidenze ed elenca le lacune in Files.",
+        "prompt": "Prepara una checklist di preparazione a [SOC 2].\n- Ambito: [sistemi e team]\n- Evidenze: [cartella in Files, strumenti]\nPer ogni controllo: evidenza attuale, lacuna e ruolo responsabile.",
+        "criterion": "Files/operations/compliance-checklist.md elenca ogni controllo nell'ambito con evidenza collegata o una lacuna, e un ruolo responsabile.",
+        "start": "Associa i controlli",
+        "done": "Lacune elencate"
+      },
+      "writeWeeklyOpsReport": {
+        "title": "Scrivi il report operativo",
+        "description": "Raccoglie i numeri operativi in un report settimanale in Files.",
+        "prompt": "Scrivi il report operativo per [questa settimana].\n- Numeri: [ordini, tempi di evasione, ticket, costi]\n- Fonti: [il negozio, helpdesk, strumento di contabilità]\nConfronta ogni numero con la settimana scorsa. Indica le 3 cose che richiedono attenzione.",
+        "criterion": "Files/operations/weekly-report.md contiene ogni numero richiesto con la fonte e la variazione rispetto alla settimana scorsa, e 3 punti che richiedono attenzione.",
+        "start": "Estrai i numeri",
+        "done": "Report scritto"
+      },
+      "draftJobDescription": {
+        "title": "Scrivi una job description",
+        "description": "Scrive in Files una job description con risultati e requisiti chiari.",
+        "prompt": "Scrivi una job description per [senior backend engineer].\n- Team e manager: [team, ruolo del manager]\n- Risultati del primo anno: [di cosa sarà responsabile]\n- Requisiti irrinunciabili: [competenze]\n- Sede e fascia retributiva: [dettagli]\nUsa un linguaggio inclusivo. Mantieni il testo sotto le 600 parole.",
+        "criterion": "Files/people/job-description.md è sotto le 600 parole e contiene sintesi del ruolo, risultati del primo anno, competenze indispensabili e gradite, sede e fascia retributiva.",
+        "start": "Definisci il ruolo",
+        "done": "Descrizione scritta"
+      },
+      "buildOnboardingPlan": {
+        "title": "Crea un piano di onboarding",
+        "description": "Crea in Files un piano di onboarding a 30-60-90 giorni dai documenti del team.",
+        "prompt": "Crea un piano di onboarding a 30-60-90 giorni per [ruolo].\n- Documenti del team: [cartella in Files]\n- Strumenti da imparare: [gli strumenti che userà]\n- Buddy: [ruolo]\nIndica obiettivi, attività e un check-in per ogni periodo.",
+        "criterion": "Files/people/onboarding-plan.md contiene obiettivi, attività e un check-in per i giorni 1-30, 31-60 e 61-90, con link ai documenti usati da ogni attività.",
+        "start": "Leggi i documenti",
+        "done": "Piano pronto"
+      },
+      "prepareInterviewKit": {
+        "title": "Prepara un kit per i colloqui",
+        "description": "Scrive in Files domande strutturate e schede di valutazione per i colloqui.",
+        "prompt": "Crea un kit per i colloqui per [ruolo].\n- Job description: [percorso in Files]\n- Fasi: [screening, tecnico, team, finale]\nPer ogni fase: domande, cosa dimostra una risposta forte e una scheda di valutazione da 1 a 4.",
+        "criterion": "Files/people/interview-kit.md copre ogni fase con domande, segnali di una risposta forte e una scheda di valutazione da 1 a 4 legata alla job description.",
+        "start": "Leggi il ruolo",
+        "done": "Kit pronto"
+      },
+      "organizePeopleHandbook": {
+        "title": "Organizza il manuale del personale",
+        "description": "Raccoglie le policy del personale in un unico manuale con le lacune segnalate in Files.",
+        "prompt": "Organizza il nostro manuale del personale a partire da [cartella in Files].\n- Sezioni: ferie e permessi, benefit, rimborsi spese, lavoro da remoto, condotta, sicurezza\nSegnala le policy in conflitto, mancanti o non aggiornate.",
+        "criterion": "Files/people/handbook.md contiene ogni sezione elencata con i documenti di origine e segnala ogni policy in conflitto, mancante o obsoleta.",
+        "start": "Leggi le policy",
+        "done": "Manuale organizzato"
+      },
+      "sourceCandidates": {
+        "title": "Cerca candidati",
+        "description": "Trova candidati da fonti pubbliche e li classifica per idoneità in Files.",
+        "prompt": "Trova [20] candidati per [ruolo].\n- Requisiti irrinunciabili: [competenze ed esperienza]\n- Sede: [regione o remoto]\nUsa solo fonti pubbliche. Per ciascuno: link al profilo, motivo di idoneità ed evidenze.",
+        "criterion": "Files/people/candidates.csv elenca il numero richiesto con link al profilo pubblico, ruolo attuale, motivo di idoneità ed evidenze per ogni requisito irrinunciabile.",
+        "start": "Cerca i profili",
+        "done": "Candidati classificati"
+      },
+      "benchmarkCompensation": {
+        "title": "Fai il benchmark retributivo",
+        "description": "Confronta in Files la retribuzione per ruolo e sede con dati di mercato documentati.",
+        "prompt": "Fai il benchmark retributivo per [ruolo] a [sede].\n- Livello: [mid, senior, staff]\n- Il nostro intervallo attuale: [intervallo]\nIndica l'intervallo di mercato per base, bonus ed equity, con una fonte datata per ogni valore.",
+        "criterion": "Files/people/pay-benchmark.md contiene gli intervalli di mercato di base, bonus ed equity per ruolo, livello e sede, ciascuno con una fonte datata, e un confronto con il nostro intervallo.",
+        "start": "Trova i dati",
+        "done": "Benchmark completato"
+      },
+      "prepareReviewCycle": {
+        "title": "Prepara un ciclo di valutazione",
+        "description": "Scrive in Files le domande di valutazione, una scala di giudizio e un calendario.",
+        "prompt": "Prepara il ciclo di valutazione delle performance per [questo semestre].\n- Team: [tutti i team]\n- Formato: [autovalutazione, valutazione del manager, feedback dei colleghi]\nIndica le domande, una scala di giudizio con le definizioni e un calendario con le date.",
+        "criterion": "Files/people/review-cycle.md contiene le domande per tipo di valutazione, una scala di giudizio con una definizione per livello e un calendario con date.",
+        "start": "Scrivi le domande",
+        "done": "Ciclo pronto"
+      },
+      "summarizeEngagementSurvey": {
+        "title": "Riassumi un sondaggio",
+        "description": "Raggruppa in Files le risposte del sondaggio in temi e azioni.",
+        "prompt": "Riassumi il nostro sondaggio sul coinvolgimento da [percorso in Files].\n- Confronta con: [l'ultimo sondaggio]\nIndica i punteggi per domanda e per team, i temi principali dei commenti e 3 azioni suggerite. Non nominare mai una persona.",
+        "criterion": "Files/people/survey-summary.md contiene i punteggi per domanda e per team con la variazione rispetto all'ultimo sondaggio, i temi dei commenti senza nomi e 3 azioni.",
+        "start": "Leggi le risposte",
+        "done": "Temi trovati"
+      },
+      "draftOfferLetter": {
+        "title": "Scrivi una lettera di offerta",
+        "description": "Prepara in Files una lettera di offerta dai termini approvati, da rivedere.",
+        "prompt": "Scrivi una lettera di offerta per [ruolo].\n- Termini: [stipendio, equity, data di inizio, sede]\n- Modello: [percorso in Files del nostro modello di offerta]\nUsa solo i termini approvati. Contrassegnala per la revisione legale.",
+        "criterion": "Files/people/offer-letter.md usa solo il modello e i termini indicati, riporta ogni termine in un unico punto ed è contrassegnata per la revisione legale.",
+        "start": "Leggi il modello",
+        "done": "Offerta scritta"
+      },
+      "planTeamTraining": {
+        "title": "Pianifica la formazione del team",
+        "description": "Crea in Files un piano di formazione con sessioni e materiali.",
+        "prompt": "Pianifica la formazione per [il team vendite] su [argomento].\n- Livello: [nuovi o esperti]\n- Tempo disponibile: [ore a settimana]\nIndica sessioni, materiali con link, esercizi e un modo per verificare cosa è stato appreso.",
+        "criterion": "Files/people/training-plan.md contiene sessioni datate entro il tempo disponibile, materiali con link, esercizi e una verifica per sessione.",
+        "start": "Trova i materiali",
+        "done": "Piano pronto"
+      },
+      "fixReportedBug": {
+        "title": "Correggi un bug segnalato",
+        "description": "Riproduce un bug e prepara una correzione testata in una change request da rivedere.",
+        "prompt": "Correggi questo bug: [cosa succede e dove].\n- Atteso: [cosa dovrebbe succedere]\n- Passaggi per riprodurlo: [passaggi o link a un ticket]\n- Repo: [repository]\nRiproducilo prima, aggiungi un test che fallisce, poi correggilo in una change request.",
+        "criterion": "Files/engineering/bug-fix.md collega la change request e contiene i passaggi di riproduzione, gli output prima e dopo, i comandi di test con i risultati e le limitazioni residue.",
+        "start": "Riproduci il bug",
+        "done": "Correzione pronta"
+      },
+      "buildScopedFeature": {
+        "title": "Sviluppa una funzionalità circoscritta",
+        "description": "Sviluppa una piccola funzionalità con test e apre una change request.",
+        "prompt": "Sviluppa [funzionalità] in [repository].\n- User story: [chi ne ha bisogno e perché]\n- Accettazione: [cosa deve essere vero a lavoro finito]\n- Fuori ambito: [cosa non sviluppare]\nAggiungi test per ogni punto di accettazione e apri una change request.",
+        "criterion": "Files/engineering/feature.md collega la change request e associa ogni punto di accettazione a un test e al relativo output superato.",
+        "start": "Leggi l'ambito",
+        "done": "Funzionalità sviluppata"
+      },
+      "improveSlowFlow": {
+        "title": "Velocizza un flusso lento",
+        "description": "Misura una pagina o un endpoint lento e rilascia una correzione misurata.",
+        "prompt": "Rendi più veloce [pagina o endpoint].\n- Oggi: [quanto è lento, oppure misuralo]\n- Obiettivo: [tempo o percentuale]\nMisura prima e dopo con lo stesso metodo, poi apri una change request.",
+        "criterion": "Files/engineering/performance.md contiene il metodo di misurazione, i numeri prima e dopo, il link alla change request e se l'obiettivo è stato raggiunto.",
+        "start": "Misura il flusso",
+        "done": "Velocità migliorata"
+      },
+      "patchVulnerableDependencies": {
+        "title": "Correggi le dipendenze vulnerabili",
+        "description": "Aggiorna i pacchetti vulnerabili e apre una change request testata.",
+        "prompt": "Correggi le dipendenze vulnerabili in [repository].\n- Gravità: [alta e critica]\nAggiorna ogni pacchetto, esegui i test e apri una change request. Elenca quelli che non hai potuto aggiornare e perché.",
+        "criterion": "Files/engineering/dependency-patch.md elenca ogni advisory con versioni vecchia e nuova, i risultati dei test, il link alla change request e ogni pacchetto rimasto con il relativo motivo.",
+        "start": "Analizza i pacchetti",
+        "done": "Patch pronte"
+      },
+      "addMissingTests": {
+        "title": "Aggiungi i test mancanti",
+        "description": "Copre con test un modulo non testato e apre una change request.",
+        "prompt": "Aggiungi test per [modulo o flusso] in [repository].\n- Focus: [i casi che si sono rotti in passato, casi limite]\nTesta il comportamento attraverso l'interfaccia pubblica. Apri una change request.",
+        "criterion": "Files/engineering/tests.md collega la change request ed elenca ogni nuovo test con il comportamento che verifica e il relativo output superato.",
+        "start": "Leggi il codice",
+        "done": "Test aggiunti"
+      },
+      "reviewChangeRequest": {
+        "title": "Rivedi una change request",
+        "description": "Rivede una modifica per bug e rischi e salva i risultati in Files.",
+        "prompt": "Rivedi [link alla change request] per bug e rischi.\n- Focus: [correttezza, sicurezza, prestazioni]\nPer ogni problema: file e riga, il problema e una correzione suggerita. Non approvare né fare il merge.",
+        "criterion": "Files/engineering/review.md elenca ogni problema con file e riga, gravità, il problema e una correzione suggerita; la change request non è stata approvata né sottoposta a merge.",
+        "start": "Leggi il diff",
+        "done": "Revisione pronta"
+      },
+      "writeTechnicalSpec": {
+        "title": "Scrivi una specifica tecnica",
+        "description": "Scrive in Files una specifica con opzioni e compromessi a partire dal codice.",
+        "prompt": "Scrivi una specifica tecnica per [funzionalità].\n- Problema: [cosa gli utenti non possono fare oggi]\n- Vincoli: [scadenza, sistemi che dobbiamo usare]\nConfronta almeno 2 soluzioni con i relativi compromessi. Includi modifiche ai dati, modifiche alle API, rilascio e test.",
+        "criterion": "Files/engineering/spec.md contiene il problema, almeno 2 soluzioni con compromessi, la soluzione scelta, le modifiche a dati e API, il rilascio e un piano di test.",
+        "start": "Leggi il codice",
+        "done": "Specifica scritta"
+      },
+      "writePostmortem": {
+        "title": "Scrivi un postmortem",
+        "description": "Ricostruisce in Files la cronologia di un incidente e la causa radice dai log.",
+        "prompt": "Scrivi un postmortem per [incidente].\n- Quando: [ora di inizio e di fine]\n- Fonti: [log, alert, thread di chat, deploy]\nIndica una cronologia, la causa radice, l'impatto e le azioni di follow-up. Non incolpare nessuna persona.",
+        "criterion": "Files/engineering/postmortem.md contiene una cronologia con fonti, la causa radice, l'impatto e azioni di follow-up con ruoli responsabili, e non indica alcuna persona come causa.",
+        "start": "Leggi i log",
+        "done": "Postmortem scritto"
+      },
+      "upgradeFramework": {
+        "title": "Aggiorna un framework",
+        "description": "Aggiorna la versione di un framework e corregge ciò che si rompe in una change request.",
+        "prompt": "Aggiorna [framework] dalla [versione attuale] alla [versione di destinazione] in [repository].\nSegui la guida ufficiale alla migrazione. Correggi ciò che si rompe, esegui i test e apri una change request.",
+        "criterion": "Files/engineering/upgrade.md collega la change request ed elenca ogni passaggio di migrazione, ogni breaking change corretta e i risultati dei test.",
+        "start": "Leggi la guida",
+        "done": "Aggiornamento pronto"
+      },
+      "documentModule": {
+        "title": "Documenta un modulo",
+        "description": "Spiega in Files un servizio o un modulo ai nuovi ingegneri.",
+        "prompt": "Documenta [servizio o modulo] per i nuovi ingegneri.\n- Repository: [repository]\nSpiega cosa fa, le sue parti principali, come fluiscono i dati, come eseguirlo e testarlo e le trappole note.",
+        "criterion": "Files/engineering/module-guide.md spiega scopo, parti principali con link ai file, flusso dei dati, comandi per eseguirlo e testarlo e trappole note.",
+        "start": "Leggi il codice",
+        "done": "Guida scritta"
+      }
+    },
+    "templateSteps": "{start}, poi {done}",
+    "rolesLabel": "Modelli per ruolo",
+    "startNoFiles": "Un obiettivo parte da un testo. Rimuovi i file, poi invia di nuovo.",
+    "startNeedsSubject": "Sostituisci la parte tra [parentesi quadre] nella prima riga, poi invia.",
+    "templateFooter": "Dove una parte è ancora tra [parentesi quadre], ricavala dai nostri strumenti collegati e da Files. Chiedimi solo ciò che non riesci a trovare.",
+    "restart": "Riavvia l'obiettivo",
+    "restartReason": "Riavviato dalla pagina dell'obiettivo",
+    "restartedToast": "Obiettivo riavviato",
+    "restartError": "Impossibile riavviare l'obiettivo. Riprova.",
+    "noAccess": "Non hai accesso a questo obiettivo.",
+    "noAccessHint": "Chiedi alla persona a cui è destinato, o a un amministratore del progetto, di condividerlo con te.",
+    "notFoundHint": "È stato eliminato, oppure il link è errato.",
+    "chooseGoal": "Più obiettivi hanno questo nome. Scegline uno.",
+    "goalLoadError": "Impossibile caricare questo obiettivo. Riprova.",
+    "eventsLoadError": "Impossibile caricare l'attività.",
+    "changedToast": "Questo obiettivo è cambiato prima della tua azione. La pagina lo mostra com'è ora.",
+    "blockedTitle": "Bloccato",
+    "blocked": {
+      "credits": "Ha finito i crediti, quindi nessun risveglio può partire.",
+      "wake_cap": "Ha usato tutti i {max} risvegli di oggi.",
+      "session_cap": "Ha usato tutte le {max} sessioni che può avviare.",
+      "owner_lost": "La sua sessione agente è fallita e nessuna sessione è subentrata.",
+      "storage": "Non è stato possibile leggere o scrivere la sua cartella in File.",
+      "flag_off": "Gli obiettivi sono disattivati per questo progetto.",
+      "setup": "Kortix lo sta ancora configurando."
+    },
+    "blockedNext": {
+      "credits": "Aggiungi crediti, poi riprendilo.",
+      "wake_cap": "Riprende da solo dopo la mezzanotte UTC.",
+      "session_cap": "Fermalo, o chiedi a un amministratore del progetto di aumentare il limite di sessioni.",
+      "owner_lost": "Avvialo di nuovo per dargli una nuova sessione.",
+      "storage": "Controlla la cartella in File, poi riprendilo.",
+      "flag_off": "Attiva gli obiettivi per questo progetto, poi riprendilo.",
+      "setup": "Si completa da solo entro un minuto."
+    },
+    "legacyUnverifiedTitle": "Non verificato da Kortix",
+    "legacyUnverified": "Questo obiettivo è stato importato dalla sua cartella. Kortix non ne ha verificato il risultato.",
+    "verified": "Verificato",
+    "reportedMet": "Segnalato come raggiunto, non ancora verificato",
+    "reportedMetHint": "L'agente lo segnala come fatto. Il controllo indipendente non l'ha ancora approvato.",
+    "verifiedCount": "{verified} di {total} verificati",
+    "checkFailed": "Controllo non superato: {note}",
+    "waitingOnPerson": "In attesa di {person}",
+    "waitNoCost": "Nessun controllo viene eseguito mentre attende una risposta.",
+    "chaseAt": "Sollecita {time}"
   },
   "agentEditor": {
     "manage": "Gestisci",
@@ -24309,7 +25099,7 @@
         "sent_to_agent": "ha inviato commenti a un agente"
       },
       "person": "Persona",
-      "deleteRootDescription": "Il testo viene rimosso per tutti e la discussione diventa di sola lettura. L’operazione non può essere annullata.",
+      "deleteRootDescription": "Il suo testo viene rimosso per tutti e la discussione esce dall’elenco dei commenti. L’operazione non si può annullare.",
       "showPanel": "Mostra commenti",
       "hidePanel": "Nascondi commenti",
       "panelTitle": "Commenti e attività",
@@ -24352,7 +25142,16 @@
       "pagePinLabel": "Commento {number}",
       "showPanelCount": "Mostra commenti, {count} aperti",
       "hidePanelCount": "Nascondi commenti, {count} aperti",
-      "commentSelectionHint": "Commenta la selezione"
+      "commentSelectionHint": "Commenta la selezione",
+      "threadReopened": "Discussione riaperta",
+      "noCommentsReadOnlyHint": "I commenti su questo artefatto compaiono qui.",
+      "commentTooLong": "Un commento può avere al massimo {max} caratteri. Rimuovine {over}.",
+      "discardDrawingTitle": "Scartare questo disegno?",
+      "discardDrawingHint": "I tuoi tratti non sono salvati. L’operazione non si può annullare.",
+      "discardDrawing": "Scarta",
+      "keepDrawing": "Continua a disegnare",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "moveTo": "Sposta nello spazio",
     "projectWide": "A livello di progetto",
@@ -24381,13 +25180,28 @@
       "writing": "{name} sta redigendo…"
     },
     "coedit": {
-      "offLarge": "La modifica dal vivo è disattivata: questo documento supera 1 MiB. Le modifiche si salvano mentre scrivi.",
-      "offLineEndings": "La modifica dal vivo è disattivata: questo documento mescola fine riga CRLF e LF. Le modifiche si salvano mentre scrivi.",
-      "offShape": "La modifica dal vivo è disattivata: l'editor riscriverebbe parte del Markdown. Le modifiche si salvano mentre scrivi.",
+      "offLarge": "La modifica dal vivo è disattivata: questo documento è troppo grande. Le modifiche si salvano mentre scrivi.",
+      "offLineEndings": "La modifica dal vivo è disattivata: questo documento mescola due tipi di a capo. Le modifiche si salvano mentre scrivi.",
+      "offShape": "La modifica dal vivo è disattivata: l’editor non può mantenere una parte di questo documento esattamente come è scritta. Le modifiche si salvano mentre scrivi.",
       "stoppedLarge": "La modifica dal vivo si è interrotta: una modifica era troppo grande da condividere. Le modifiche si salvano mentre scrivi.",
       "stoppedFailed": "La modifica dal vivo si è interrotta: la connessione non è riuscita. Le modifiche si salvano mentre scrivi.",
-      "stoppedHistory": "La modifica dal vivo si è interrotta: la cronologia delle modifiche di questo documento è troppo grande. Le modifiche si salvano mentre scrivi."
-    }
+      "stoppedHistory": "La modifica dal vivo si è interrotta: la cronologia delle modifiche di questo documento è troppo grande. Le modifiche si salvano mentre scrivi.",
+      "offFailed": "La modifica dal vivo è disattivata: impossibile connettersi. Le modifiche si salvano mentre scrivi."
+    },
+    "conflictTitle": "Qualcun altro ha modificato questo documento",
+    "conflictReloadTitle": "Caricare la versione più recente?",
+    "conflictReloadHint": "Le tue modifiche dall’ultimo salvataggio vengono scartate. L’operazione non si può annullare.",
+    "docLoadError": "Impossibile caricare questo documento.",
+    "openError": "Impossibile aprire questo artefatto.",
+    "viewOnly": "Sola lettura",
+    "viewingOldUndated": "Stai visualizzando una versione precedente.",
+    "exportWaiting": "Salvataggio delle modifiche, poi esportazione…",
+    "exportBlocked": "Esportazione interrotta: le ultime modifiche non sono salvate.",
+    "clearFilters": "Rimuovi filtri",
+    "linkCopyFailed": "Impossibile copiare il link. Selezionalo nel campo e copialo.",
+    "shareDropsPeople": "{count, plural, one {Salvando si rimuove la persona aggiunta. Solo Privato mantiene un elenco di persone.} other {Salvando si rimuovono le # persone aggiunte. Solo Privato mantiene un elenco di persone.}}",
+    "askAgentHistoryError": "Impossibile caricare le chat precedenti.",
+    "embedUnavailable": "Questo link non ha un’anteprima, quindi resta un link."
   },
   "emailConnect": {
     "homeTitle": "Dove si trova la casella",
@@ -24705,9 +25519,9 @@
     },
     "create": {
       "title": "Crea uno spazio",
-      "description": "Tutti in questo progetto possono vedere e usare lo spazio.",
+      "description": "Uno spazio organizza un’area di lavoro, come Marketing, Assunzioni o Ops. Persone e agenti lavorano nei suoi thread.",
       "nameLabel": "Nome",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "nome-spazio",
       "descriptionLabel": "Descrizione (facoltativa)",
       "descriptionPlaceholder": "A cosa serve questo spazio",
@@ -24736,9 +25550,9 @@
     },
     "view": {
       "welcomeTitle": "Benvenuto in #{name}",
-      "welcomeEmpty": "Avvia il primo thread in #{name}. Ogni messaggio avvia un nuovo thread.",
+      "welcomeEmpty": "Uno spazio organizza un’area di lavoro. Persone e agenti lavorano qui nei thread: ogni messaggio ne avvia uno.",
       "welcomeStart": "Qui inizia #{name}.",
-      "dmIntro": "Questa conversazione è solo tra te e {agent}.",
+      "dmIntro": "Solo tu e {agent} vedete questo spazio.",
       "today": "Oggi",
       "yesterday": "Ieri",
       "openThread": "Apri thread",
@@ -24926,15 +25740,15 @@
         "add": "Add tab",
         "full": "A space holds at most {max} tabs. Remove one first.",
         "noArtifacts": "No artifacts yet",
-        "noApps": "No Apps in this project",
+        "noApps": "Nessuna app in questo progetto",
         "spaceFiles": "This space’s files",
         "otherFolder": "Another folder…",
         "fileItem": "File…",
         "linkItem": "Link…",
         "linkTitle": "Add a link",
-        "linkHint": "An https page, shown inside the tab.",
+        "linkHint": "Una pagina https, mostrata all'interno della scheda.",
         "folderTitle": "Add a folder",
-        "folderHint": "A Drive folder, by its path.",
+        "folderHint": "Una cartella di Drive, indicata dal suo percorso.",
         "fileTitle": "Aggiungi un file",
         "fileHint": "Qualsiasi file nel Drive, tramite il percorso. Un file .html appare come pagina.",
         "url": "URL",
@@ -24952,17 +25766,18 @@
         "remove": "Remove tab",
         "removed": "Removed {name}",
         "undo": "Undo",
-        "saveError": "The tabs could not be saved",
-        "openLink": "Open in new tab",
+        "saveError": "Impossibile salvare le schede",
+        "openLink": "Apri in una nuova scheda",
         "linkCard": {
           "description": "{host} non consente ad altri siti di mostrarlo in una scheda.",
           "open": "Apri"
         },
         "missing": {
-          "title": "This tab’s content is gone",
-          "description": "It was deleted or renamed, or it is not shared with you."
+          "title": "Il contenuto di questa scheda non c'è più",
+          "description": "È stato eliminato o rinominato, oppure non è condiviso con te."
         }
-      }
+      },
+      "spaceDetails": "Dettagli di {name}"
     },
     "details": {
       "about": "Informazioni",
@@ -25012,13 +25827,14 @@
       "leaveHintPrivate": "Perdi l’accesso ai suoi thread, file e memoria, compresi i tuoi thread. Un membro dovrà aggiungerti di nuovo.",
       "leavePrivateTitle": "Uscire da #{name}?",
       "addMembers": "Aggiungi membri",
-      "privateLimits": "Privato nasconde lo spazio alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati."
+      "privateLimits": "Privato nasconde lo spazio alle altre persone. Le modifiche al codice (branch git) e gli strumenti degli agenti non sono privati.",
+      "agentAdded": "{agent} aggiunto a #{name}."
     },
     "folder": {
       "memory": "Memoria",
       "loadError": "Impossibile caricare questa cartella",
       "memoryNoteChannel": "Ciò che ricordano gli agenti in {place}. Gli agenti lo leggono all’inizio di ogni thread.",
-      "memoryNoteDm": "Ciò che {agent} ricorda di questo DM. Lo legge all’inizio di ogni thread.",
+      "memoryNoteDm": "Ciò che {agent} ricorda di questo spazio. Lo legge all’inizio di ogni thread.",
       "off": {
         "title": "Nessun Drive qui",
         "description": "File e memoria di {place} sono nel Drive. Questa istanza Kortix non archivia un Drive: serve Platinum."
@@ -25032,7 +25848,7 @@
         "threads": "Ogni nuovo messaggio avvia un thread.",
         "memory": "Gli agenti ricordano ciò che ogni spazio decide.",
         "gotIt": "Ho capito",
-        "tabs": "Every space has its own tabs. Add, rename and reorder them, or ask Kortix to."
+        "tabs": "Ogni spazio ha le sue schede. Aggiungile, rinominale e riordinale, oppure chiedi a Kortix di farlo."
       },
       "getStarted": {
         "dismiss": "Chiudi",
@@ -25191,7 +26007,78 @@
     },
     "filter": "Filtra per spazio",
     "all": "Tutti",
-    "projectWide": "A livello di progetto"
+    "projectWide": "A livello di progetto",
+    "panel": {
+      "title": "Dettagli di {name}",
+      "heading": "Dettagli",
+      "close": "Chiudi dettagli",
+      "private": "Privato",
+      "rename": "Rinomina e descrivi",
+      "personalDescription": "Il tuo spazio privato con My Kortix. Lo vedi solo tu.",
+      "privateDescription": "Solo le persone e gli agenti al suo interno vedono questo spazio.",
+      "noDescription": "Ancora nessuna descrizione.",
+      "agents": "Agenti",
+      "addAgent": "Aggiungi agente",
+      "default": "Predefinito",
+      "projectDefault": "Predefinito del progetto",
+      "people": "Persone",
+      "addPeople": "Aggiungi persone",
+      "you": "Tu",
+      "tabs": "Schede",
+      "addTab": "Aggiungi scheda",
+      "routines": "Routine",
+      "addRoutine": "Aggiungi routine",
+      "routinesPrivate": "Uno spazio privato non accetta ancora routine.",
+      "proactive": "Proattivo",
+      "proactiveWatch": "Sorveglia questo spazio",
+      "proactiveWatchHint": "Un agente legge cosa succede qui e scrive solo quando conta.",
+      "proactiveBrief": "Riepilogo giornaliero",
+      "proactiveBriefHint": "Un breve riepilogo alle 9:00 nei giorni con novità.",
+      "proactiveFailed": "L'impostazione non è stata salvata. Riprova.",
+      "allSettings": "Tutte le impostazioni",
+      "askHint": "Puoi anche chiederlo in chat: «aggiungi un agente qui», «fissa il documento del lancio come scheda».",
+      "noAgentsToAdd": "Tutti gli agenti del progetto sono già in questo spazio."
+    },
+    "profile": {
+      "viewProfile": "Mostra il profilo di {name}",
+      "viewProfileShort": "Vedi profilo",
+      "agent": "Agente",
+      "openProfile": "Apri profilo",
+      "you": "(tu)",
+      "message": "Messaggio",
+      "messageFailed": "Impossibile aprire uno spazio privato. Riprova.",
+      "dmSpaceName": "{a} e {b}",
+      "heading": "Profilo",
+      "close": "Chiudi profilo",
+      "model": "Modello",
+      "modelDefault": "Il modello predefinito del progetto",
+      "connectors": "Connettori",
+      "connectorsAll": "Tutti i connettori",
+      "connectorsNone": "Nessun connettore",
+      "projectDefault": "Predefinito del progetto",
+      "projectDefaultYes": "Risponde ai nuovi thread senza agente impostato",
+      "email": "Email",
+      "sharedSpaces": "Spazi in comune",
+      "yourSpaces": "I tuoi spazi",
+      "addTo": "Aggiungi a {space}",
+      "addedTo": "{agent} aggiunto a {space}",
+      "addFailed": "Impossibile aggiungere l’agente. Riprova.",
+      "spacesIn": "Spazi di cui fa parte",
+      "spacesInNone": "Ancora in nessuno spazio",
+      "default": "Predefinito"
+    },
+    "mentions": {
+      "people": "Persone",
+      "agents": "Agenti",
+      "addToSpace": "Non è in {space}: chiedi di aggiungerlo",
+      "added": "{agent} aggiunto a {space}",
+      "addFailed": "Impossibile aggiungere l’agente. Riprova.",
+      "askAdd": "Aggiungere {agent} a {space}?",
+      "askAddConfirm": "Aggiungi",
+      "askNotNow": "Non ora",
+      "askAdmin": "{agent} non è in {space}. Chiedi a un admin dello spazio di aggiungerlo.",
+      "dismiss": "Chiudi"
+    }
   },
   "imageGen": {
     "generating": "Generazione immagine",
@@ -25645,5 +26532,86 @@
     "googleSlides": "Google Slides",
     "pullRequest": "PR #{number}",
     "issue": "Problema #{number}"
+  },
+  "subscriptionUsage": {
+    "fiveHour": "5-hour limit",
+    "weekly": "Weekly limit",
+    "weeklyModel": "Weekly · {model}",
+    "reconnect": "Reconnect",
+    "disabledTitle": "L'utilizzo dell'abbonamento non è disponibile",
+    "disabledDescription": "Le connessioni degli abbonamenti non sono abilitate per questo progetto.",
+    "text0": "Reconnect needed",
+    "text1": "Inactive",
+    "text2": "Refresh failed",
+    "text3": "Awaiting usage",
+    "text4": "Limit reached",
+    "text5": "Last known usage",
+    "text6": "Usage reported",
+    "text7": "Subscription",
+    "text8": "used",
+    "text9": "Orario di reset trascorso · aggiorna per l'utilizzo attuale",
+    "text10": "Orario di reset non indicato",
+    "text11": "Checking provider usage…",
+    "text12": "Nessun utilizzo ancora segnalato. Aggiorna dopo aver usato questo abbonamento.",
+    "text13": "Impossibile aggiornare. Vengono mostrati gli ultimi dati noti.",
+    "text14": "In attesa dei dati del provider",
+    "text15": "Checking…",
+    "text16": "Refresh",
+    "text17": "Subscription usage",
+    "text18": "Tieni traccia dei limiti dei tuoi abbonamenti ChatGPT e Claude collegati.",
+    "text19": "Impossibile caricare l'utilizzo",
+    "text20": "Prova a ricaricare i tuoi abbonamenti collegati.",
+    "text21": "Retry",
+    "text22": "No connected subscriptions",
+    "text23": "Collega ChatGPT o Claude in Provider per vedere l'utilizzo segnalato e gli orari di reset.",
+    "text24": "Connect a subscription",
+    "text25": "L'utilizzo è condiviso tra le app che usano lo stesso abbonamento. Il controllo avviene automaticamente ogni minuto finché questa scheda è aperta.",
+    "text26": "I limiti variano in base al piano. Qui compaiono solo le finestre segnalate dalla tua connessione; dati mancanti non significano utilizzo illimitato. I limiti dei file non sono segnalati. La spesa API appare in Costi.",
+    "resets": "Resets {time}",
+    "observed": "Observed {time}",
+    "meterLabel": "{label}: {percent}% used",
+    "refreshLabel": "Refresh {label} usage",
+    "fiveHourNotReported": "Finestra di cinque ore non segnalata da questa connessione.",
+    "fableIncluded": "L'utilizzo di Fable conta anche per la tua quota settimanale complessiva.",
+    "chatgptUsage": "ChatGPT subscription usage",
+    "claudeUsage": "Claude subscription usage",
+    "allSubscriptions": "All subscriptions"
+  },
+  "gatewayRouting": {
+    "exceptions": "Eccezioni",
+    "modeLabel": "Quando un modello fallisce",
+    "modeCustom": "Usa le mie riserve",
+    "modeInherit": "Lascia scegliere Kortix",
+    "modeDisabled": "Mostra l’errore",
+    "stopNote": "L’errore viene mostrato subito.",
+    "addBackups": "Aggiungi riserve",
+    "add": "Aggiungi",
+    "noBackups": "Nessuna riserva · viene mostrato l’errore",
+    "sendImages": "Invia le immagini a <model></model>",
+    "autoModel": "Auto ({model})",
+    "sameModels": "Gli stessi modelli",
+    "chooseModel": "Scegli modello",
+    "addException": "Aggiungi eccezione",
+    "removeException": "Rimuovi eccezione",
+    "noExceptions": "Nessuna eccezione.",
+    "modelDefaults": "Impostazioni del modello",
+    "searchModels": "Cerca modelli",
+    "noModels": "Nessun modello trovato",
+    "notConnected": "Provider non connesso",
+    "removeModel": "Rimuovi {model}",
+    "unsaved": "Modifiche non salvate",
+    "discard": "Annulla",
+    "save": "Salva",
+    "ifThisFails": "Se questo fallisce",
+    "tryInOrder": "Prova in ordine",
+    "onlyOnHeader": "Solo con",
+    "projectDefault": "Predefinito del progetto · ogni richiesta",
+    "kortixPicks": "Kortix sceglie",
+    "useMyOwn": "Usa i miei"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "Sessione agente · {id}",
+    "human": "Persona",
+    "listLabel": "Cambi di modello"
   }
 }

@@ -13,6 +13,7 @@ import type { ForwardRequest, ForwardState } from './forward/context';
 
 const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 const closed: Array<{ sessionId: string; scope: unknown }> = [];
+const decided: Array<{ sessionId: string; requestId: string; reply: string; decidedBy: string | null }> = [];
 
 const realBackend = await import('./backend');
 mock.module('./backend', () => ({ ...realBackend, markSandboxUsed: async () => undefined }));
@@ -22,6 +23,10 @@ mock.module('../projects/surface', () => ({
   clearOpenQuestions: async (sessionId: string, scope: unknown) => {
     closed.push({ sessionId, scope });
     return 1;
+  },
+  closeRepliedPermission: async (input: { sessionId: string; requestId: string; reply: string; decidedBy: string | null }) => {
+    decided.push(input);
+    return true;
   },
 }));
 
@@ -57,25 +62,28 @@ function request(method: string, remainingPath: string, upstreamPort = 8000): Fo
   } as unknown as ForwardRequest;
 }
 
-const state = { requestBody: undefined } as unknown as ForwardState;
-const respond = (method: string, path: string, status: number, port?: number) =>
-  respondFromUpstream(request(method, path, port), state, new Response('true', { status }), 'stall-key');
+const stateWith = (body?: unknown) =>
+  ({ requestBody: body === undefined ? undefined : new TextEncoder().encode(JSON.stringify(body)).buffer }) as unknown as ForwardState;
+const respond = (method: string, path: string, status: number, port?: number, body?: unknown) =>
+  respondFromUpstream(request(method, path, port), stateWith(body), new Response('true', { status }), 'stall-key');
 
 beforeEach(() => {
   closed.length = 0;
+  decided.length = 0;
 });
 
 describe('a question answered through the proxy', () => {
   test('a reply the runtime took closes that stored question', async () => {
     const response = await respond('POST', '/question/que_1/reply', 200);
     expect(response.status).toBe(200);
-    expect(closed).toEqual([{ sessionId: SESSION_ID, scope: { requestId: 'que_1' } }]);
+    expect(closed).toEqual([{ sessionId: SESSION_ID, scope: { requestId: 'que_1', keepParked: false } }]);
   });
 
-  test('a dismissal closes it, and so does a runtime that holds no such question (404)', async () => {
+  test('a dismissal closes it; a runtime that holds no such question (404) closes it unless it parked', async () => {
     await respond('POST', '/proxy/4096/question/que_2/reject', 200);
     await respond('POST', '/question/que_3/reply', 404);
-    expect(closed.map((call) => call.scope)).toEqual([{ requestId: 'que_2' }, { requestId: 'que_3' }]);
+    // A parked question still waits for its answer from the stored card.
+    expect(closed.map((call) => call.scope)).toEqual([{ requestId: 'que_2', keepParked: false }, { requestId: 'que_3', keepParked: true }]);
   });
 
   test('a reply the runtime refused keeps it open', async () => {
@@ -89,5 +97,23 @@ describe('a question answered through the proxy', () => {
     await respond('POST', '/session/ses_1/abort', 200);
     await respond('POST', '/question/que_5/reply', 200, 3000);
     expect(closed).toEqual([]);
+  });
+});
+
+describe('a permission request answered through the proxy', () => {
+  test('a reply the runtime took records the decision and who made it', async () => {
+    await respond('POST', '/permission/perm_1/reply', 200, undefined, { reply: 'always' });
+    await respond('POST', '/kortix/runtime/permissions/perm_2/reply', 200, undefined, { reply: 'reject' });
+    expect(decided).toEqual([
+      { sessionId: SESSION_ID, requestId: 'perm_1', reply: 'always', decidedBy: 'user-1' },
+      { sessionId: SESSION_ID, requestId: 'perm_2', reply: 'reject', decidedBy: 'user-1' },
+    ]);
+  });
+
+  test('a parked request (404), a refused reply, or a body without a reply records nothing', async () => {
+    await respond('POST', '/permission/perm_3/reply', 404, undefined, { reply: 'once' });
+    await respond('POST', '/permission/perm_3/reply', 500, undefined, { reply: 'once' });
+    await respond('POST', '/permission/perm_3/reply', 200, undefined, { reply: 'sometimes' });
+    expect(decided).toEqual([]);
   });
 });

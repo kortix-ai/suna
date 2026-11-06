@@ -27,7 +27,7 @@ import {
 } from '../../llm-gateway/resolution/default-model';
 import {
   type ModelSource,
-  toOpencodeModelRef,
+  toSessionModelRef,
 } from '../../llm-gateway/resolution/effective';
 import { checkClaudeAgentRef } from '../../llm-gateway/resolution/claude-agent';
 import { claudeSubscriptionRequiredBody, missingClaudeSubscription } from '../claude-subscription/gate';
@@ -94,7 +94,8 @@ import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext, reservedRuntimeContextRefusal } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { FRONT_THREAD_CONTEXT_KEY, FRONT_THREAD_METADATA_KEY, sessionIsFrontThread, startsFrontThread } from './front-thread';
+import { FRONT_THREAD_CONTEXT_KEY, FRONT_THREAD_METADATA_KEY, sessionIsFrontThread, sessionSpaceAgents, spaceRosterAllows, startsFrontThread } from './front-thread';
+import { SPACE_WATCHER_SOURCE, WATCHER_CONTEXT_KEY } from './space-watch/keys';
 import { resolveMyKortixSandbox } from './my-kortix-agent';
 import { spaceAccessFor } from '../../shared/space-access';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, forkSourceVisibility, findLiveChannel, findSessionSpace, inheritedPrivateSpace, spaceSessionVisibility } from './project-spaces';
@@ -623,13 +624,30 @@ async function resolveSessionAgent(params: {
     callerIsMeta &&
     isWorkflowRunnerContext(body.runtime_context) &&
     !(await sessionIsWorkflowRunner(input.callerSessionId!));
-  // A talk-only front (flag `chat_front`, front-thread.ts) only talks: its one worker is a My Kortix session.
-  const frontWorker =
-    platformMetaAgent &&
+  // A router (flag `chat_front`, front-thread.ts) only talks: it may start My Kortix workers.
+  const callerIsFront =
     callerIsMeta &&
     !myKortixWorkflowRunner &&
     resolveFeatureFlag(input.project.metadata, 'chat_front') &&
     (await sessionIsFrontThread(input.callerSessionId!));
+  const frontWorker = platformMetaAgent && callerIsFront;
+  // A space's agents are a boundary: a router's worker runs only an agent of its space.
+  if (callerIsFront) {
+    const spaceAgents = await sessionSpaceAgents(input.callerSessionId!);
+    const check = spaceAgents ? spaceRosterAllows(spaceAgents, projectDefaultAgent, agentName) : null;
+    if (check && !check.allowed) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `"${agentName}" is not an agent of this space. Pick one of: ${check.roster.join(', ')}.`,
+            code: 'AGENT_NOT_IN_SPACE',
+            roster: check.roster,
+          },
+        },
+      };
+    }
+  }
   if (platformMetaAgent && callerIsMeta && !myKortixWorkflowRunner && !frontWorker) {
     return {
       error: {
@@ -689,8 +707,8 @@ async function resolveSessionModel(params: {
 }): Promise<
   SessionCreateStep<{
     providerSecretPools: Record<string, string[]> | undefined;
-    opencodeModel: string | null;
-    opencodeModelSource: ModelSource | null;
+    sessionModel: string | null;
+    sessionModelSource: ModelSource | null;
   }>
 > {
   const { input, accountId, projectId, agentName, loadedAgents, visibility, origin } = params;
@@ -713,9 +731,9 @@ async function resolveSessionModel(params: {
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
-  const requestedModel = normalizeString(body.model ?? body.opencode_model ?? body.opencodeModel);
-  let opencodeModel: string | null = null;
-  let opencodeModelSource: ModelSource | null = null;
+  const requestedModel = normalizeString(body.model);
+  let sessionModel: string | null = null;
+  let sessionModelSource: ModelSource | null = null;
   if (requestedModel) {
     if (/\s/.test(requestedModel)) {
       return {
@@ -795,8 +813,8 @@ async function resolveSessionModel(params: {
         },
       };
     }
-    opencodeModel = toOpencodeModelRef(requestedModel);
-    opencodeModelSource = 'explicit';
+    sessionModel = toSessionModelRef(requestedModel);
+    sessionModelSource = 'explicit';
   } else {
     try {
       const resolved = await resolveEffectiveModel({
@@ -812,15 +830,15 @@ async function resolveSessionModel(params: {
       // its own connected model (already in `resolved`) or none.
       const concreteModel = resolved.model ?? (freeModelsOnly ? null : platformDefaultModelId() || null);
       if (concreteModel) {
-        opencodeModel = toOpencodeModelRef(concreteModel);
-        opencodeModelSource = resolved.model ? resolved.source : 'platform';
+        sessionModel = toSessionModelRef(concreteModel);
+        sessionModelSource = resolved.model ? resolved.source : 'platform';
       } else {
         // No default: the box would boot with no model, and pi does not start
         // without one. The web names the person's pick only on the first prompt.
         const picked = firstPromptModelRef(body.pending_prompt);
         if (picked && (await isModelServableForAccount({ userId, accountId, projectId, freeModelsOnly, model: picked, providerSecretPools }))) {
-          opencodeModel = toOpencodeModelRef(picked);
-          opencodeModelSource = 'explicit';
+          sessionModel = toSessionModelRef(picked);
+          sessionModelSource = 'explicit';
         }
       }
     } catch (error) {
@@ -836,7 +854,7 @@ async function resolveSessionModel(params: {
       };
     }
   }
-  return { providerSecretPools, opencodeModel, opencodeModelSource };
+  return { providerSecretPools, sessionModel, sessionModelSource };
 }
 
 /** Every explicitly bound connector must be granted to the agent and resolve to a usable connection. */
@@ -1134,8 +1152,8 @@ function buildSessionCreateMetadata(params: {
   initialPrompt: string | null;
   initialContext: string | null;
   pendingPromptConversion: PendingPromptConversion | null;
-  opencodeModel: string | null;
-  opencodeModelSource: ModelSource | null;
+  sessionModel: string | null;
+  sessionModelSource: ModelSource | null;
   parentSession: ParentSession;
   repositoryAccess: boolean;
   sandboxSlug: string;
@@ -1157,8 +1175,8 @@ function buildSessionCreateMetadata(params: {
     initialPrompt,
     initialContext,
     pendingPromptConversion,
-    opencodeModel,
-    opencodeModelSource,
+    sessionModel,
+    sessionModelSource,
     parentSession,
     repositoryAccess,
     sandboxSlug,
@@ -1246,8 +1264,8 @@ function buildSessionCreateMetadata(params: {
     ...(explicitTitleSource
       ? { title_source: explicitTitleSource.slice(0, TITLE_SOURCE_MAX_CHARS) }
       : {}),
-    ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
-    ...(opencodeModelSource ? { opencode_model_source: opencodeModelSource } : {}),
+    ...(sessionModel ? { model: sessionModel } : {}),
+    ...(sessionModelSource ? { model_source: sessionModelSource } : {}),
     ...(input.metadata ?? {}),
     // Persist the coordinator→worker link. The sidebar badges child sessions
     // with it, and the turn-end deadline shortener stops child sandboxes on a
@@ -1503,7 +1521,7 @@ async function provisionCreatedSession(params: {
   accountId: string;
   baseRef: string;
   agentName: string;
-  opencodeModel: string | null;
+  sessionModel: string | null;
   platformMetaAgent: boolean;
   repositoryAccess: boolean;
   providerName: SandboxProviderName;
@@ -1518,7 +1536,7 @@ async function provisionCreatedSession(params: {
     accountId,
     baseRef,
     agentName,
-    opencodeModel,
+    sessionModel,
     platformMetaAgent,
     repositoryAccess,
     providerName,
@@ -1575,7 +1593,7 @@ async function provisionCreatedSession(params: {
           repoUrl: project.repoUrl,
           baseRef,
           agentName,
-          opencodeModel,
+          sessionModel,
           platformMetaAgent,
           freshSession: true,
           projectSnapshotMode,
@@ -1825,7 +1843,7 @@ export async function createProjectSession(input: {
     origin,
   });
   if (model.error) return { error: model.error };
-  const { providerSecretPools, opencodeModel, opencodeModelSource } = model;
+  const { providerSecretPools, sessionModel, sessionModelSource } = model;
 
   const connectors = await validateSessionConnectorsForAgent({
     input,
@@ -1926,8 +1944,8 @@ export async function createProjectSession(input: {
     initialPrompt,
     initialContext,
     pendingPromptConversion,
-    opencodeModel,
-    opencodeModelSource,
+    sessionModel,
+    sessionModelSource,
     parentSession,
     repositoryAccess,
     sandboxSlug,
@@ -1936,7 +1954,7 @@ export async function createProjectSession(input: {
     workspaceVolume: providerName === 'platinum' && !isMyKortixSandboxSlug(sandboxSlug) ? workspaceVolume : null,
   });
 
-  // Talk-only threads (`chat_front`): server-side state alone makes this session a front, never the body.
+  // The router (`chat_front`): server-side state alone makes this session a front, never the body.
   const front = startsFrontThread({
     projectMetadata: project.metadata,
     spaceId,
@@ -1947,9 +1965,13 @@ export async function createProjectSession(input: {
     source: (input.metadata as Record<string, unknown> | undefined)?.source,
   });
   const sessionMetadata = front ? { ...metadata, [FRONT_THREAD_METADATA_KEY]: true } : metadata;
+  // A space's watcher (flag `spaces_proactive`, space-watch/): only the API's own create sets this source.
+  const watcher = (input.metadata as Record<string, unknown> | undefined)?.source === SPACE_WATCHER_SOURCE;
   const runtimeContext = front
     ? { ...parsedRuntimeContext.context, [FRONT_THREAD_CONTEXT_KEY]: true }
-    : parsedRuntimeContext.context;
+    : watcher
+      ? { ...parsedRuntimeContext.context, [WATCHER_CONTEXT_KEY]: true }
+      : parsedRuntimeContext.context;
 
   let sessionRow: ProjectSessionRow | null = null;
   try {
@@ -2031,7 +2053,7 @@ export async function createProjectSession(input: {
   }
 
   // A prompt supplied at create is claimed by the session daemon. This is the
-  // earliest title source. No modelHint: the row already carries `opencode_model`.
+  // earliest title source. No modelHint: the row already carries `model`.
   const titleSource = titleSourceForCreate(body);
   if (titleSource) {
     void generateSessionTitleFromFirstPrompt({
@@ -2052,7 +2074,7 @@ export async function createProjectSession(input: {
     accountId,
     baseRef,
     agentName,
-    opencodeModel,
+    sessionModel,
     platformMetaAgent,
     repositoryAccess,
     providerName,

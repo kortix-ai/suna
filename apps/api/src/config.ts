@@ -249,6 +249,11 @@ const envSchema = z.object({
   KORTIX_MODEL_CATALOG_LIVE_ENABLED: optStr,
   // /health/live answers 503 above this event-loop lag.
   HEALTH_MAX_EVENT_LOOP_LAG_MS: optInt(5000),
+  // The space watcher (flag `spaces_proactive`, projects/lib/space-watch/):
+  // how long an ask stays open before it wakes the watcher, and the least time
+  // between two wakes of one space. Local verification shortens them.
+  KORTIX_SPACE_WATCH_ASK_OVERDUE_MS: optInt(2 * 60 * 60_000),
+  KORTIX_SPACE_WATCH_DEBOUNCE_MS: optInt(10 * 60_000),
   // True runs the durable job queue even when KORTIX_WORKERS_ENABLED is false.
   // The deterministic test stack sets it: held connector calls and Capture
   // ingest run only as queued jobs.
@@ -339,13 +344,10 @@ const envSchema = z.object({
   // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
   // retries with backoff, so turning it back on loses nothing the boxes still hold.
   SESSION_LOG_INGEST_ENABLED: optBoolTrue,
-  // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1).
-  // On by default. Off answers 503 and claims nothing: the box boots without a restore.
+  // Operator switch for the session-log restore (`POST …/sessions/:s/log/restore`, P6.1). On by
+  // default. Off answers 503 and claims nothing: every box boots on its own native store. The
+  // project flag `session_log_restore` graduated on 2026-11-05; this switch is the only way off.
   SESSION_LOG_RESTORE_ENABLED: optBoolTrue,
-  // Default of the project flag `session_log_restore` for a project with no stored value. On by
-  // default (2026-10-28). A project's stored value wins. Rollback: set it to "false" in the
-  // deployment's env (ECS overrides); removing the key keeps the running task's value.
-  SESSION_LOG_RESTORE_DEFAULT_ENABLED: optBoolTrue,
   // The largest restore the API answers (`POST …/log/restore`), in bytes: the live messages' stored
   // JSON lengths plus 2/5 of the session's live blob bytes (full texts, attachments; ~15x in the daemon,
   // 30 MB of images: +455 MB; `SESSION_LOG_BLOB_WEIGHT`). So 24 MiB allows 24 MiB of records or 60 MiB
@@ -381,7 +383,8 @@ const envSchema = z.object({
   ),
   // A Kortix CLI older than CLI_MIN_VERSION (`major.minor.patch`) gets `426`
   // with the update command on every /v1 request (middleware/cli-min-version.ts).
-  // Unset: no gate. A malformed value is a boot error, as above.
+  // It only raises the built-in minimum (BUILT_IN_CLI_MIN_VERSION, 0.14.13);
+  // unset or lower: the built-in minimum. A malformed value is a boot error, as above.
   CLI_MIN_VERSION: optStr.refine(
     (v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()),
     {
@@ -885,6 +888,11 @@ const envSchema = z.object({
   // its stopped box after this many minutes (projects/reaping/idle-volume-retire.ts);
   // the next open boots a fresh box on the volume. -1 keeps every stopped box.
   KORTIX_SANDBOX_IDLE_DELETE_MINUTES: optInt(60),
+  // Platinum writes per second the worker's background sweeps may send from one process (the
+  // reaper, the idle lane, the active-turn renewal; shared/platinum-write-lane.ts). Platinum gives
+  // an org 20 writes/s in all (`org_mutation`), so 8 leaves 12/s for session starts and previews.
+  // 0 turns the pacing off.
+  KORTIX_PLATINUM_BACKGROUND_WRITES_PER_SECOND: optInt(8),
   // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
   // auto_stop_minutes) — a LAST-RESORT backstop for boxes this API can no
   // longer reach, NOT the primary stop. It used to be derived from
@@ -1144,7 +1152,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (!result.success) {
     for (const issue of result.error.issues) {
       const varName = issue.path.join('.');
-      issues.push({ var: varName, message: issue.message, level: 'error' });
+      // zod 4 words a missing variable as "Invalid input: expected string, received undefined".
+      const missing = issue.code === 'invalid_type' && process.env[varName] === undefined;
+      issues.push({ var: varName, message: missing ? 'Required' : issue.message, level: 'error' });
     }
   }
 
@@ -1421,6 +1431,8 @@ export const config = {
   KORTIX_MODEL_CATALOG_LIVE_ENABLED: env.KORTIX_MODEL_CATALOG_LIVE_ENABLED,
   HEALTH_MAX_EVENT_LOOP_LAG_MS: env.HEALTH_MAX_EVENT_LOOP_LAG_MS,
   KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
+  KORTIX_SPACE_WATCH_ASK_OVERDUE_MS: Math.max(60_000, env.KORTIX_SPACE_WATCH_ASK_OVERDUE_MS),
+  KORTIX_SPACE_WATCH_DEBOUNCE_MS: Math.max(60_000, env.KORTIX_SPACE_WATCH_DEBOUNCE_MS),
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   RETENTION_ERASURE_MODE: env.RETENTION_ERASURE_MODE,
   RETENTION_ERASURE_AFTER_DAYS: env.RETENTION_ERASURE_AFTER_DAYS,
@@ -1439,7 +1451,6 @@ export const config = {
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   SESSION_LOG_RESTORE_ENABLED: env.SESSION_LOG_RESTORE_ENABLED,
-  SESSION_LOG_RESTORE_DEFAULT_ENABLED: env.SESSION_LOG_RESTORE_DEFAULT_ENABLED,
   SESSION_LOG_RESTORE_MAX_BYTES: env.SESSION_LOG_RESTORE_MAX_BYTES,
   SESSION_LOG_BLOB_READ_MS: env.SESSION_LOG_BLOB_READ_MS,
   SESSION_LOG_PURGE_ENABLED: env.SESSION_LOG_PURGE_ENABLED,
@@ -1627,6 +1638,7 @@ export const config = {
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_IDLE_DELETE_MINUTES: env.KORTIX_SANDBOX_IDLE_DELETE_MINUTES,
+  KORTIX_PLATINUM_BACKGROUND_WRITES_PER_SECOND: env.KORTIX_PLATINUM_BACKGROUND_WRITES_PER_SECOND,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,

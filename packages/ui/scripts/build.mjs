@@ -51,7 +51,19 @@ function fail(message) {
 // 1–3. Clean (keep the committed stylesheet), compile, fix specifiers, copy CSS.
 mkdirSync(DIST, { recursive: true });
 for (const name of readdirSync(DIST)) if (!KEEP.has(name)) rmSync(join(DIST, name), { recursive: true, force: true });
-const tsc = (bin, args) => execFileSync(join(BIN, bin), args, { cwd: PKG_DIR, stdio: 'inherit' });
+// The declaration build needs ~3 GB of heap (2.96 GB on 2026-11-05); Node's default
+// on a CI runner is 2 GB, so tsc gets at least 6 GB whatever the caller (smoke:install,
+// publish, tests) sets. A caller's other NODE_OPTIONS and a larger heap are kept; Node
+// takes the last --max-old-space-size, so the floor is appended.
+const TSC_HEAP_MB = 6144;
+const callerOptions = process.env.NODE_OPTIONS ?? '';
+const callerHeapMb = Number([...callerOptions.matchAll(/--max[-_]old[-_]space[-_]size=(\d+)/g)].at(-1)?.[1] ?? 0);
+const TSC_ENV = {
+  ...process.env,
+  NODE_OPTIONS:
+    callerHeapMb >= TSC_HEAP_MB ? callerOptions : `${callerOptions} --max-old-space-size=${TSC_HEAP_MB}`.trim(),
+};
+const tsc = (bin, args) => execFileSync(join(BIN, bin), args, { cwd: PKG_DIR, stdio: 'inherit', env: TSC_ENV });
 tsc('tsc', ['-p', 'tsconfig.build.json']);
 tsc('tsc-alias', ['-p', 'tsconfig.build.json', '--resolve-full-paths']);
 mkdirSync(join(DIST, 'styles'), { recursive: true });

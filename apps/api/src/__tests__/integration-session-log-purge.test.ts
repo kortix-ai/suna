@@ -490,6 +490,7 @@ const SESSION_TABLES: Record<string, 'purged' | 'scrubbed' | `kept: ${string}`> 
   'session_log_messages.session_id': 'purged',
   'session_log_blobs.session_id': 'purged',
   'voice_call_turns.session_id': 'purged',
+  'session_pending_permissions.session_id': 'purged',
   'session_pending_questions.session_id': 'purged',
   'session_runtime_projections.session_id': 'purged',
   'project_session_runtime_contexts.session_id': 'purged',

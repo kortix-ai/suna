@@ -807,17 +807,13 @@ const catalog = {
           "name": "Composio event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event. Events come from Composio. Kortix also checks your connected apps itself."
         },
-        "session_log_restore": {
-          "name": "Session log restore",
-          "description": "Rebuilds a session from its saved session log when its computer lost the conversation. Kortix enables it per project."
-        },
         "goals": {
           "name": "Goals",
           "description": "Give an agent an objective it owns until an independent check confirms the outcome. It plans, works, waits, follows up with people, and keeps its state in a Goals folder in Files. Needs Volumes and Loops on."
         },
         "workspace_volume": {
-          "name": "Workspace volume",
-          "description": "Keeps each new session's /workspace on its own volume, so a stopped sandbox can be deleted and the next open boots a new one on the same files and conversation. Kortix enables it per project."
+          "name": "Stateless sandboxes",
+          "description": "Every session keeps only /workspace, on its own volume. A sandbox stopped for an hour is deleted, and the next open starts a new one with the same files and conversation. Programs that ran in the old sandbox are not running. Kortix enables it per project."
         },
         "artifacts": {
           "name": "Artifacts",
@@ -828,8 +824,8 @@ const catalog = {
           "description": "Give the agent an email inbox on Resend: inbound mail starts and continues sessions, and the agent reads, replies and sends from the inbox. Bring your own Resend API key and domain."
         },
         "chat": {
-          "name": "Chat",
-          "description": "Slack-style chat with Kortix: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and spaces you share with people. Replaces the session list in the sidebar."
+          "name": "Spaces",
+          "description": "Spaces with Kortix, the way Slack works: every message is a thread, Kortix's newest reply shows under it, Kortix can start threads, and you share spaces with people. Replaces the session list in the sidebar."
         },
         "session_groups": {
           "name": "Session groups",
@@ -856,17 +852,21 @@ const catalog = {
           "description": "Drives the whole team can use: an admin makes a Drive and adds agents to it. Every session of those agents mounts it, and everyone who may use one of them can open it. Off, every person has only My files."
         },
         "chat_input": {
-          "name": "Chat input",
+          "name": "Spaces-ChatInput",
           "description": "One control under the composer for who answers and how: pick the agent, and every other setting stays on Auto, inherited from that agent. Open a row to override the model, thinking effort, secrets, provider keys or sandbox for this session, and reset it to Auto in one click."
         },
         "chat_front": {
-          "name": "Talk-only threads",
-          "description": "With Chat on, a new message in a space starts a thread whose agent only talks. It hands every request to one hidden My Kortix session that does the work, and answers in short messages with only what matters. Needs My Kortix on in kortix.yaml."
+          "name": "Spaces-Router",
+          "description": "With Spaces on, the agent you chat with in a thread is a router: it does quick work itself (an answer, a short text, a look at the thread files) and hands longer work to the Space's agents. It writes back like a person, in short messages. An agent saves its full result as a file in the thread, and the router links that file instead of retyping it. Show work under a message opens the work behind it. Needs My Kortix on in kortix.yaml."
+        },
+        "spaces_proactive": {
+          "name": "Spaces-Proactive",
+          "description": "With Spaces on, a space can watch itself: turn on Proactive in its details, and an agent reads what happens there (finished threads, questions left open, people who join) and writes in the chat only when it matters: a result worth sharing, a decision you need to make, or something overdue. It can also start a thread that does the work. Optional daily brief at 9:00."
         }
       },
       "channelsSwitch": {
         "onTitle": "Turn on Spaces for {project}?",
-        "onBody": "Everyone in this project gets Spaces and Direct messages instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
+        "onBody": "Everyone in this project gets Spaces instead of the session list. All existing sessions move into #general. You can turn it off any time; nothing is deleted.",
         "drive": "Turn on Drive too, so spaces get Files.",
         "turnOn": "Turn on",
         "cancel": "Cancel",
@@ -1346,13 +1346,19 @@ const catalog = {
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Search apps",
+    "searchArtifacts": "Search artifacts",
     "appsNoMatches": "No matches",
     "spaces": {
       "channels": "Spaces",
-      "directMessages": "Direct messages",
       "addChannel": "New space",
       "loadError": "Could not load spaces.",
-      "newAgent": "New agent"
+      "newAgent": "New agent",
+      "review": "Review",
+      "personal": "Your space",
+      "personalNamed": "{name}'s space",
+      "private": "Private",
+      "noMessages": "No messages yet",
+      "more": "More"
     }
   },
   "sessionPage": {
@@ -1497,7 +1503,8 @@ const catalog = {
       "noCommandMatch": "No matching command, file, or action",
       "commandsAndActions": "Commands and actions",
       "toUse": "to use",
-      "use": "Use"
+      "use": "Use",
+      "noOneMatches": "No one matches"
     },
     "history": {
       "restoreTitle": "Some earlier content could not be restored",
@@ -1521,7 +1528,23 @@ const catalog = {
       "fullTextRetry": "Try again"
     },
     "turn": {
-      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure."
+      "autoRetried": "Kortix automatically retried the model {count, plural, one {once} other {# times}} before this failure.",
+      "typing": "{name} is typing…",
+      "showWork": "Show work",
+      "hideWork": "Hide work",
+      "starting": "Starting…",
+      "workingFor": "Working · {time}",
+      "agentWorking": "is working",
+      "agentWorkingFor": "is working · {time}",
+      "stopped": "Stopped",
+      "agentWorkingOn": "is working on {task}",
+      "agentWorkingOnFor": "is working on {task} · {time}",
+      "somethingWrong": "Something went wrong",
+      "notSent": "Not sent",
+      "retry": "Retry",
+      "resume": "Resume",
+      "agentIsWorking": "{agent} is working",
+      "needsYouOn": "Needs you: {header}"
     }
   },
   "agents": {
@@ -1748,7 +1771,8 @@ const catalog = {
         "notReceived": "Didn't receive the link?",
         "confirmNotReceived": "Didn't receive the confirmation email?",
         "resendIn": "Resend in {seconds}",
-        "resend": "Resend"
+        "resend": "Resend",
+        "checkSpam": "Not there? Check your spam or junk folder."
       },
       "credentials": {
         "signin": {
@@ -4810,6 +4834,7 @@ const catalog = {
       "textb7668a581f59": "Failed to disconnect",
       "textb79cac926e0b": "Help",
       "textb7d2844482b4": "Open the full approval page",
+      "text648f297b3b79": "Show in App",
       "textb7de71558bf4": "Selected connectors resolve this secret on the server. The sandbox receives no value.",
       "textb7e29198fc4e": "{value0} key removed",
       "textb80a37564fbb": "Query",
@@ -6185,6 +6210,39 @@ const catalog = {
       "prCommits": "{count, plural, one {# commit} other {# commits}}",
       "prCommitsBy": "{count, plural, one {# commit} other {# commits}} by {author}",
       "prDraft": "Draft pull request"
+    },
+    "askDeck": {
+      "label": "What waits on you",
+      "remaining": "{count, plural, one {# waits on you} other {# wait on you}}",
+      "yes": "Yes",
+      "no": "No",
+      "skip": "Skip",
+      "send": "Send answer",
+      "approve": "Approve",
+      "deny": "Deny",
+      "dismiss": "Dismiss",
+      "undo": "Undo",
+      "allowSession": "Allow {tool} for the session",
+      "typeAnswer": "Or type your answer",
+      "answered": "Answer sent",
+      "dismissed": "Question dismissed",
+      "approved": "Approved",
+      "denied": "Denied",
+      "failed": "The decision did not go through",
+      "askedAgo": "Asked {time} ago",
+      "fromWorker": "from a worker session",
+      "inSession": "In {title}",
+      "permissionTitle": "Run {tool}?",
+      "approvalTitle": "Run this connector call?",
+      "emptyTitle": "Nothing waits on you",
+      "emptyDescription": "Questions and approvals from your agents show up here.",
+      "loadFailed": "Could not load what waits on you",
+      "retry": "Retry",
+      "kind": {
+        "question": "Question",
+        "permission": "Permission",
+        "approval": "Connector approval"
+      }
     },
     "reviewBulk": {
       "approve": "Approve",
@@ -7740,27 +7798,17 @@ const catalog = {
   },
   "goals": {
     "title": "Goals",
-    "gateDescription": "Agents own an objective until it is verifiably done: the goal lives in Files, a daily heartbeat wakes it, the agent chases people for what it needs, and an independent check closes it.",
     "empty": "No goals yet",
-    "emptyHint": "A goal is an outcome an agent works on until a check confirms it is done. Start one here, or say \"make this a goal\" in any chat.",
-    "spaceEmpty": "No goals in {space} yet",
-    "loadError": "Could not load goals. Try again.",
     "retry": "Try again",
     "needsYou": "Needs you",
     "open": "Open",
     "closed": "Closed",
-    "waitingFor": "Waiting for: {title}",
     "criteria": "{met}/{total} criteria",
     "nextWake": "Next wake {time}",
     "noWake": "No wake scheduled",
     "heartbeat": "Heartbeat",
-    "heartbeatPaused": "Paused",
     "lastWakeLabel": "Last wake",
     "progress": "Progress",
-    "scope": {
-      "company": "Company",
-      "personal": "Only you"
-    },
     "status": {
       "draft": "Draft",
       "active": "Active",
@@ -7783,7 +7831,8 @@ const catalog = {
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
       "verification_stalled": "Verification started more than 24 hours ago.",
-      "unreadable": "This folder has no goal file."
+      "unreadable": "This folder has no goal file.",
+      "blocked": "This goal cannot go on by itself."
     },
     "sessionChip": "Goal",
     "sessionRole": {
@@ -7792,79 +7841,14 @@ const catalog = {
       "verifier": "This session verifies this goal."
     },
     "openGoal": "Open goal",
-    "openSession": "Open main session",
-    "openFolder": "Open folder",
-    "back": "All goals",
-    "healthTitle": "Health",
-    "successCriteria": "Done criteria",
-    "met": "Met",
-    "notMet": "Not met",
-    "items": "Items",
-    "noItems": "No items yet.",
-    "noCriteria": "No criteria yet: the agent writes them before the goal becomes active.",
-    "kind": {
-      "task": "Task",
-      "ask": "Ask",
-      "wait": "Wait"
-    },
-    "itemStatus": {
-      "open": "open",
-      "doing": "doing",
-      "done": "done",
-      "dropped": "dropped"
-    },
-    "due": "Due {time}",
     "sessions": "Sessions",
-    "role": {
-      "owner": "Owner",
-      "coordinator": "Main session",
-      "worker": "Worker",
-      "verifier": "Verifier"
-    },
-    "timeline": "Timeline",
-    "verification": "Verification",
-    "notes": "Notes",
-    "log": "Log",
-    "notFound": "This goal no longer exists.",
-    "showAll": "Show all",
-    "spaceScope": "{space} · {scope}",
-    "allGoals": "All",
-    "assignedToMe": "Assigned to me",
-    "noneAssigned": "No goals are assigned to you",
-    "lastWake": "Last wake {time}",
-    "assignedUser": "For",
-    "assignedAgent": "Agent",
     "you": "You",
     "anotherMember": "A teammate",
-    "wakesToday": "Wakes today",
-    "ofMax": "{count} of {max}",
-    "links": "Links",
-    "context": "Context",
-    "share": "Share",
-    "stop": "Stop goal",
-    "stopTitle": "Stop this goal?",
-    "stopDescription": "Nothing wakes it again. Its folder stays in Files.",
-    "stopReason": "Stopped from the Goal page",
-    "stoppedToast": "Goal stopped",
-    "stopError": "Could not stop the goal. Try again.",
-    "needsAttention": "Needs attention",
-    "newGoal": "New goal",
-    "newGoalTitle": "New goal",
-    "newGoalDescription": "Describe the outcome. An agent works it until an independent check confirms it is done.",
-    "newGoalPlaceholder": "For example: our docs site is live on docs.example.com",
-    "newGoalStart": "Start goal",
-    "cancel": "Cancel",
-    "forPerson": "for {person}",
-    "answerInChat": "Answer in chat",
-    "forYou": "for you",
-    "forMember": "for a teammate",
-    "working": "In progress",
-    "pausedGroup": "Paused",
     "paused": "Paused",
     "criteriaMet": "{met} of {total} done criteria met",
     "state": {
       "done": "Done. An independent check confirmed every criterion.",
-      "stopped": "Stopped. Nothing wakes it again.",
+      "stopped": "Stopped. Nothing wakes it until you start it again.",
       "abandoned": "Abandoned.",
       "paused": "Paused {time}. Nothing wakes it until you resume it.",
       "waitingOn": "Waiting for an answer.",
@@ -7873,78 +7857,24 @@ const catalog = {
       "working": "In progress. Next check {time}.",
       "workingNoWake": "In progress."
     },
-    "startedToast": "Goal started",
-    "outcomeLabel": "Outcome",
-    "doneWhenLabel": "Done when",
-    "doneWhenHint": "Optional. Leave it empty and the agent writes the criteria before it starts.",
-    "criterionPlaceholder": "For example: the site loads on docs.example.com",
-    "criterionLabel": "Done criterion {n}",
-    "removeCriterion": "Remove criterion",
-    "removeCriterionN": "Remove done criterion {n}",
-    "addCriterion": "Add criterion",
-    "startError": "Could not start the goal. Try again.",
-    "updated": "updated {time}",
-    "attentionTitle": "Needs attention",
-    "doneWhen": "Done when",
-    "results": "Results",
-    "activity": "Activity",
-    "answerSentToast": "Answer sent",
-    "answerError": "Could not send the answer. Try again.",
-    "answerPlaceholder": "Write your answer",
-    "answerLabel": "Your answer",
-    "answerSent": "Answer sent. The agent picks it up now.",
-    "sendAnswer": "Send answer",
-    "resume": "Resume goal",
-    "resumedToast": "Goal resumed",
-    "resumeError": "Could not resume the goal. Try again.",
-    "pause": "Pause goal",
-    "pauseReason": "Paused from the Goal page",
-    "pausedToast": "Goal paused",
-    "pauseError": "Could not pause the goal. Try again.",
-    "moreActions": "More goal actions",
-    "shareTitle": "Share goal",
-    "scopeLabel": "Visible to",
-    "showReport": "Show report",
-    "openInFiles": "Open folder in Files",
-    "openFolderOf": "Open the folder of {file} in Files",
-    "hideReport": "Hide report",
-    "questionForYou": "Question for you",
-    "messagePlaceholder": "Leave a note for the agent…",
-    "messageLabel": "Note to the agent",
-    "messageSentToast": "Note sent",
-    "messageError": "Could not send the note. Try again.",
-    "messageSent": "Note sent. The agent picks it up now.",
-    "sendMessage": "Send note",
-    "send": "Send",
-    "agentLog": "Agent log",
-    "shareAccessLabel": "Who has access",
-    "shareOwner": "Owner",
-    "shareAdminsRole": "Can open",
-    "shareLoadError": "Could not load who has access.",
-    "shareVisibility": "Visible to: {scope}. Share goal",
-    "copyLink": "Copy link",
-    "linkCopied": "Link copied",
-    "linkCopyError": "Could not copy the link",
-    "properties": "Properties",
-    "stateLabel": "State",
-    "nextCheck": "Next check",
-    "lastCheck": "Last check",
-    "feed": {
-      "created": "Goal created",
-      "moved": "Moved to {status}",
-      "update": "Latest update",
-      "paused": "Paused",
-      "movedPrefix": "Moved to"
+    "blocked": {
+      "credits": "It ran out of credits, so no wake can start.",
+      "wake_cap": "It used all {max} wakes for today.",
+      "session_cap": "It used all {max} sessions it may start.",
+      "owner_lost": "Its agent session failed, and no session took over.",
+      "storage": "Its folder in Files could not be read or written.",
+      "flag_off": "Goals is turned off for this project.",
+      "setup": "Kortix is still setting it up."
     },
-    "showMore": "Show more",
-    "showLess": "Show less",
-    "noAgent": "No agent",
-    "nextCheckAt": "Next check {time}",
-    "noCheck": "No check scheduled",
-    "lastCheckAt": "Last checked {time}",
-    "neverChecked": "Not checked yet",
-    "wakesTodayCount": "{count} of {max} wakes today",
-    "filesLabel": "Files"
+    "blockedNext": {
+      "credits": "Add credits, then resume it.",
+      "wake_cap": "It goes on by itself after midnight UTC.",
+      "session_cap": "Stop it, or ask a project admin to raise its session limit.",
+      "owner_lost": "Start it again to give it a new session.",
+      "storage": "Check the folder in Files, then resume it.",
+      "flag_off": "Turn on Goals for this project, then resume it.",
+      "setup": "This finishes by itself within a minute."
+    }
   },
   "agentEditor": {
     "manage": "Manage",
@@ -8499,7 +8429,7 @@ const catalog = {
       "composerKeys": "Enter to send · Shift+Enter for a new line",
       "closeSelection": "Discard selected passage",
       "preparingSelection": "Preparing selected passage…",
-      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a whole-Artifact comment.",
+      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a comment on the whole artifact.",
       "commentSelection": "Comment",
       "selectionTooLong": "This passage is too long to comment on. Select {max} characters or fewer.",
       "selectionUnavailable": "This passage cannot be anchored. Select another passage.",
@@ -8507,8 +8437,8 @@ const catalog = {
       "commentSaveFailed": "Could not save the document. Try again before commenting.",
       "events": {
         "saved": "saved a version",
-        "published": "published the Artifact",
-        "renamed": "renamed the Artifact",
+        "published": "published the artifact",
+        "renamed": "renamed the artifact",
         "visibility_changed": "changed visibility",
         "shared_with_changed": "changed who can view",
         "restored": "restored a version",
@@ -8520,7 +8450,7 @@ const catalog = {
         "sent_to_agent": "sent feedback to an agent"
       },
       "person": "Person",
-      "deleteRootDescription": "Its text is removed for everyone, and the thread becomes read-only. This cannot be undone.",
+      "deleteRootDescription": "Its text is removed for everyone, and the thread leaves the comments list. This cannot be undone.",
       "showPanel": "Show comments",
       "hidePanel": "Hide comments",
       "panelTitle": "Comments and activity",
@@ -8563,7 +8493,16 @@ const catalog = {
       "pagePinLabel": "Comment {number}",
       "showPanelCount": "Show comments, {count} open",
       "hidePanelCount": "Hide comments, {count} open",
-      "commentSelectionHint": "Comment on the selection"
+      "commentSelectionHint": "Comment on the selection",
+      "threadReopened": "Thread reopened",
+      "noCommentsReadOnlyHint": "Comments on this artifact appear here.",
+      "commentTooLong": "A comment can be up to {max} characters. Remove {over}.",
+      "discardDrawingTitle": "Discard this drawing?",
+      "discardDrawingHint": "Your strokes are not saved. This cannot be undone.",
+      "discardDrawing": "Discard",
+      "keepDrawing": "Keep drawing",
+      "activityLine": "<name>{actor}</name> <action>{verb}</action>",
+      "activityLabel": "{actor} {verb}"
     },
     "insertMedia": "Image or video…",
     "diagram": "Diagram",
@@ -8591,7 +8530,7 @@ const catalog = {
     "showAll": "Show all",
     "live": {
       "here": "Here now",
-      "hereLabel": "On this Artifact now: {names}",
+      "hereLabel": "On this artifact now: {names}",
       "reconnecting": "Reconnecting…",
       "you": "You",
       "agents": "Agents",
@@ -8610,13 +8549,28 @@ const catalog = {
       "writing": "{name} is writing…"
     },
     "coedit": {
-      "offLarge": "Live co-editing is off: this doc is over 1 MiB. Changes save as you type.",
-      "offLineEndings": "Live co-editing is off: this doc mixes CRLF and LF line endings. Changes save as you type.",
-      "offShape": "Live co-editing is off: the editor would rewrite part of this doc's Markdown. Changes save as you type.",
+      "offLarge": "Live co-editing is off: this doc is too large. Changes save as you type.",
+      "offLineEndings": "Live co-editing is off: this doc mixes two kinds of line breaks. Changes save as you type.",
+      "offShape": "Live co-editing is off: the editor cannot keep part of this doc exactly as written. Changes save as you type.",
       "stoppedLarge": "Live co-editing stopped: one change was too large to share. Changes save as you type.",
       "stoppedFailed": "Live co-editing stopped: the connection failed. Changes save as you type.",
-      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type."
-    }
+      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type.",
+      "offFailed": "Live co-editing is off: it could not connect. Changes save as you type."
+    },
+    "conflictTitle": "Someone else changed this doc",
+    "conflictReloadTitle": "Reload the newer version?",
+    "conflictReloadHint": "Your edits since the last save are discarded. This cannot be undone.",
+    "docLoadError": "Could not load this doc.",
+    "openError": "Could not open this artifact.",
+    "viewOnly": "View only",
+    "viewingOldUndated": "You are viewing an earlier version.",
+    "exportWaiting": "Saving your edits, then exporting…",
+    "exportBlocked": "Export stopped: your latest edits are not saved.",
+    "clearFilters": "Clear filters",
+    "linkCopyFailed": "Could not copy the link. Select it in the field and copy it.",
+    "shareDropsPeople": "{count, plural, one {Saving removes the person you added. Only Private keeps a list of people.} other {Saving removes the # people you added. Only Private keeps a list of people.}}",
+    "askAgentHistoryError": "Could not load earlier chats.",
+    "embedUnavailable": "This link has no preview, so it stays a link."
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",
@@ -8966,10 +8920,10 @@ const catalog = {
     },
     "create": {
       "title": "Create a space",
-      "description": "Everyone in this project can see and use the space.",
+      "description": "A space organises one area of work, like Marketing, Hiring or Ops. People and agents work in its threads.",
       "nameLabel": "Name",
       "name": "Name",
-      "namePlaceholder": "marketing",
+      "namePlaceholder": "Marketing",
       "slugPlaceholder": "space-name",
       "descriptionLabel": "Description (optional)",
       "descriptionPlaceholder": "What this space is for",
@@ -8997,9 +8951,9 @@ const catalog = {
     },
     "view": {
       "welcomeTitle": "Welcome to #{name}",
-      "welcomeEmpty": "Start the first thread in #{name}. Every message starts a new thread.",
+      "welcomeEmpty": "A space organises one area of work. People and agents work here in threads: every message starts one.",
       "welcomeStart": "This is the start of #{name}.",
-      "dmIntro": "This conversation is just between you and {agent}.",
+      "dmIntro": "Only you and {agent} see this space.",
       "today": "Today",
       "yesterday": "Yesterday",
       "openThread": "Open thread",
@@ -9223,7 +9177,8 @@ const catalog = {
           "title": "This tab’s content is gone",
           "description": "It was deleted or renamed, or it is not shared with you."
         }
-      }
+      },
+      "spaceDetails": "{name} details"
     },
     "details": {
       "about": "About",
@@ -9273,13 +9228,14 @@ const catalog = {
       "leaveHintPrivate": "You lose access to its threads, files and memory, your own threads included. A member must add you again.",
       "leavePrivateTitle": "Leave #{name}?",
       "addMembers": "Add members",
-      "privateLimits": "Private hides the space from other people. Code changes (git branches) and the agents’ own tools aren’t private."
+      "privateLimits": "Private hides the space from other people. Code changes (git branches) and the agents’ own tools aren’t private.",
+      "agentAdded": "{agent} added to #{name}."
     },
     "folder": {
       "memory": "Memory",
       "loadError": "Couldn't load this folder",
       "memoryNoteChannel": "What agents in {place} remember. Agents read this at the start of every thread.",
-      "memoryNoteDm": "What {agent} remembers from this DM. It reads this at the start of every thread.",
+      "memoryNoteDm": "What {agent} remembers from this space. It reads this at the start of every thread.",
       "off": {
         "title": "No Drive here",
         "description": "Files and memory for {place} live in the Drive. This Kortix stores no Drive: it needs Platinum."
@@ -9376,6 +9332,77 @@ const catalog = {
       "noApp": "No app selected yet.",
       "noFile": "No file yet.",
       "loadingApp": "Loading app…"
+    },
+    "panel": {
+      "title": "{name} details",
+      "heading": "Details",
+      "close": "Close details",
+      "private": "Private",
+      "rename": "Rename and describe",
+      "personalDescription": "Your private space with My Kortix. Only you see it.",
+      "privateDescription": "Only the people and agents in it see this space.",
+      "noDescription": "No description yet.",
+      "agents": "Agents",
+      "addAgent": "Add agent",
+      "default": "Default",
+      "projectDefault": "Project default",
+      "people": "People",
+      "addPeople": "Add people",
+      "you": "You",
+      "tabs": "Tabs",
+      "addTab": "Add tab",
+      "routines": "Routines",
+      "addRoutine": "Add routine",
+      "routinesPrivate": "A private space takes no routines yet.",
+      "proactive": "Proactive",
+      "proactiveWatch": "Watch this space",
+      "proactiveWatchHint": "An agent reads what happens here and writes only when it matters.",
+      "proactiveBrief": "Daily brief",
+      "proactiveBriefHint": "A short summary at 9:00 on days with news.",
+      "proactiveFailed": "The setting was not saved. Try again.",
+      "allSettings": "All settings",
+      "askHint": "You can also ask in chat: \"add an agent here\", \"pin the launch doc as a tab\".",
+      "noAgentsToAdd": "Every project agent is in this space."
+    },
+    "profile": {
+      "viewProfile": "Show the profile of {name}",
+      "viewProfileShort": "View profile",
+      "agent": "Agent",
+      "openProfile": "Open profile",
+      "you": "(you)",
+      "message": "Message",
+      "messageFailed": "Could not open a private space. Try again.",
+      "dmSpaceName": "{a} and {b}",
+      "heading": "Profile",
+      "close": "Close profile",
+      "model": "Model",
+      "modelDefault": "The project's default model",
+      "connectors": "Connectors",
+      "connectorsAll": "All connectors",
+      "connectorsNone": "No connectors",
+      "projectDefault": "Project default",
+      "projectDefaultYes": "Answers new threads where no agent is set",
+      "email": "Email",
+      "sharedSpaces": "Spaces you share",
+      "yourSpaces": "Your spaces",
+      "addTo": "Add to {space}",
+      "addedTo": "{agent} added to {space}",
+      "addFailed": "Could not add the agent. Try again.",
+      "spacesIn": "Spaces it is in",
+      "spacesInNone": "Not in a space yet",
+      "default": "Default"
+    },
+    "mentions": {
+      "people": "People",
+      "agents": "Agents",
+      "addToSpace": "Not in {space}: ask to add",
+      "added": "{agent} added to {space}",
+      "addFailed": "Could not add the agent. Try again.",
+      "askAdd": "Add {agent} to {space}?",
+      "askAddConfirm": "Add",
+      "askNotNow": "Not now",
+      "askAdmin": "{agent} isn't in {space}. Ask a Space admin to add it.",
+      "dismiss": "Dismiss"
     }
   },
   "imageGen": {
@@ -9870,6 +9897,87 @@ const catalog = {
     "googleSlides": "Google Slides",
     "pullRequest": "PR #{number}",
     "issue": "Issue #{number}"
+  },
+  "subscriptionUsage": {
+    "fiveHour": "5-hour limit",
+    "weekly": "Weekly limit",
+    "weeklyModel": "Weekly · {model}",
+    "reconnect": "Reconnect",
+    "disabledTitle": "Subscription usage is unavailable",
+    "disabledDescription": "Subscription connections are not enabled for this project.",
+    "text0": "Reconnect needed",
+    "text1": "Inactive",
+    "text2": "Refresh failed",
+    "text3": "Awaiting usage",
+    "text4": "Limit reached",
+    "text5": "Last known usage",
+    "text6": "Usage reported",
+    "text7": "Subscription",
+    "text8": "used",
+    "text9": "Reset time passed · refresh for current usage",
+    "text10": "Reset time not reported",
+    "text11": "Checking provider usage…",
+    "text12": "No usage reported yet. Refresh after using this subscription.",
+    "text13": "Could not update. Showing last known data.",
+    "text14": "Waiting for provider data",
+    "text15": "Checking…",
+    "text16": "Refresh",
+    "text17": "Subscription usage",
+    "text18": "Track the limits of your connected ChatGPT and Claude subscriptions.",
+    "text19": "Usage could not load",
+    "text20": "Try loading your connected subscriptions again.",
+    "text21": "Retry",
+    "text22": "No connected subscriptions",
+    "text23": "Connect ChatGPT or Claude in Providers to see reported usage and reset times.",
+    "text24": "Connect a subscription",
+    "text25": "Usage is shared across apps that use the same subscription. Checks automatically every minute while this tab is open.",
+    "text26": "Limits vary by plan. Only windows reported by your connection appear here; missing data does not mean unlimited usage. File limits are not reported. API spend appears in Costs.",
+    "resets": "Resets {time}",
+    "observed": "Observed {time}",
+    "meterLabel": "{label}: {percent}% used",
+    "refreshLabel": "Refresh {label} usage",
+    "fiveHourNotReported": "Five-hour window not reported by this connection.",
+    "fableIncluded": "Fable usage also counts toward your overall weekly allowance.",
+    "chatgptUsage": "ChatGPT subscription usage",
+    "claudeUsage": "Claude subscription usage",
+    "allSubscriptions": "All subscriptions"
+  },
+  "gatewayRouting": {
+    "exceptions": "Exceptions",
+    "modeLabel": "When a model fails",
+    "modeCustom": "Use my backups",
+    "modeInherit": "Let Kortix pick",
+    "modeDisabled": "Show the error",
+    "stopNote": "The error is shown right away.",
+    "addBackups": "Add backups",
+    "add": "Add",
+    "noBackups": "No backups · the error is shown",
+    "sendImages": "Send images to <model></model>",
+    "autoModel": "Auto ({model})",
+    "sameModels": "The same models",
+    "chooseModel": "Choose model",
+    "addException": "Add an exception",
+    "removeException": "Remove exception",
+    "noExceptions": "No exceptions.",
+    "modelDefaults": "Model defaults",
+    "searchModels": "Search models",
+    "noModels": "No models found",
+    "notConnected": "Provider not connected",
+    "removeModel": "Remove {model}",
+    "unsaved": "Unsaved changes",
+    "discard": "Discard",
+    "save": "Save",
+    "ifThisFails": "If this fails",
+    "tryInOrder": "Try in order",
+    "onlyOnHeader": "Only on",
+    "projectDefault": "Project default · every request",
+    "kortixPicks": "Kortix picks",
+    "useMyOwn": "Use my own"
+  },
+  "sessionModelSwitch": {
+    "agentSession": "Agent session · {id}",
+    "human": "Human",
+    "listLabel": "Model switches"
   }
 };
 

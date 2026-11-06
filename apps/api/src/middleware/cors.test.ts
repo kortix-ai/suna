@@ -6,7 +6,7 @@ import {
   PROXY_UPSTREAM_STATUS_HEADER,
 } from '../sandbox-proxy/proxy-hop';
 import { portUnreachableResponse } from '../sandbox-proxy/routes/preview';
-import { createCorsMiddleware } from './cors';
+import { createCorsMiddleware, trustedWebOrigins, webAppFrameAncestors } from './cors';
 
 describe('createCorsMiddleware', () => {
   test('an allowed origin receives a cacheable authenticated preflight response', async () => {
@@ -206,5 +206,24 @@ describe('createCorsMiddleware', () => {
     const allowed = response.headers.get('access-control-allow-headers')?.toLowerCase() ?? '';
     expect(allowed).toContain('mcp-protocol-version');
     expect(allowed).toContain('mcp-session-id');
+  });
+
+  // `new.kortix.com` is a dangling CNAME (unclaimed hosting deployment): whoever claims it
+  // would otherwise get credentialed CORS access to the API and may frame the web app.
+  test('a dangling subdomain is not a trusted web origin', async () => {
+    const app = new Hono();
+    app.use('*', createCorsMiddleware({ internalEnvironment: 'prod', extraOrigins: [] }));
+    app.get('/v1/read', (context) => context.json({ ok: true }));
+
+    const response = await app.request('/v1/read', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://new.kortix.com', 'Access-Control-Request-Method': 'GET' },
+    });
+
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    expect(trustedWebOrigins([]).has('https://new.kortix.com')).toBe(false);
+    expect(webAppFrameAncestors({ internalEnvironment: 'prod', extraOrigins: [] })).not.toContain(
+      'new.kortix.com',
+    );
   });
 });

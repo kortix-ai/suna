@@ -62,7 +62,7 @@ describe('the session runtime is the SDK', () => {
   test('the matcher passes the neutral forms', () => {
     expect(findings(`import { useRuntimeSessions } from '@kortix/sdk/react';`)).toEqual([]);
     expect(findings(`import { openCode } from './local';\nimport { useSession } from '@kortix/sdk/react';`)).toEqual([]);
-    expect(findings(`const id = ps.runtime_session_id ?? ps.opencode_session_id;`)).toEqual([]);
+    expect(findings(`const id = ps.runtime_session_id;`)).toEqual([]);
   });
 
   test('no non-test source file breaks the boundary', () => {

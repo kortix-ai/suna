@@ -20,14 +20,14 @@ test('web-created user is not rejected during session hydration or password sign
   assert.equal(hydrationBlock.includes('canAdmitMobileSession'), false);
   assert.equal(hydrationBlock.includes('isNewlyCreatedUser'), false);
 
-  const signedInStart = source.indexOf("if (_event === 'SIGNED_IN' && mobileOAuthAdmissionPendingRef.current)");
+  const signedInStart = source.indexOf("if (_event === 'SIGNED_IN' && takeOAuthAdmission())");
   assert.notEqual(signedInStart, -1);
 
   const signInStart = source.indexOf('const signIn = useCallback');
   const signInEnd = source.indexOf('const signUp = useCallback', signInStart);
   const signInMethod = source.slice(signInStart, signInEnd);
 
-  assert.equal(signInMethod.includes('mobileOAuthAdmissionPendingRef'), false);
+  assert.equal(signInMethod.includes('armOAuthAdmission'), false);
   assert.equal(signInMethod.includes('admitMobileOAuthSession'), false);
 });
 

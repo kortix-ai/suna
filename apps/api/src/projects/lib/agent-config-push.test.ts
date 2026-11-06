@@ -137,7 +137,7 @@ let daemonRunningConfig: Record<string, unknown> | null = null;
     agent_env_written: daemonProof,
     // How the daemon applied it. 'kept-old' is the verified swap declining a
     // config that would not boot — the push landed, the config did not.
-    opencode_reload: daemonReload,
+    runtime_reload: daemonReload,
   });
 };
 

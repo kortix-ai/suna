@@ -54,7 +54,7 @@ function ledgerRow(overrides: {
   turn_token: string;
   state?: 'delivering' | 'active' | 'ended';
   message_id?: string | null;
-  opencode_session_id?: string | null;
+  runtime_session_id?: string | null;
   started_at?: Date;
   accepted_at?: Date | null;
   end_reason?: string | null;
@@ -65,7 +65,7 @@ function ledgerRow(overrides: {
     session_id: SESSION_ID,
     state: 'active',
     message_id: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     started_at: new Date('2026-08-17T00:00:00.000Z'),
     accepted_at: null,
     end_reason: null,
@@ -425,7 +425,6 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
           state: 'delivering',
           message_id: 'msg_boot',
           runtime_session_id: null,
-          opencode_session_id: null,
           started_at: '2026-08-17T00:00:00.000Z',
           accepted_at: null,
         },
@@ -520,7 +519,6 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
         state: 'active',
         message_id: 'msg_1',
         runtime_session_id: 'ses_root',
-        opencode_session_id: 'ses_root',
         started_at: '2026-08-17T00:00:00.000Z',
         accepted_at: '2026-08-17T00:00:01.000Z',
       },

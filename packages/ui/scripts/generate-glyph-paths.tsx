@@ -1,13 +1,13 @@
 /**
  * Writes packages/ui/src/primitives/glyph-paths.generated.ts: the path data of every
- * catalogue glyph in the app's icon weight (DEFAULT_ICON_WEIGHT).
+ * catalogue glyph in GLYPH_WEIGHT (fill, see glyph-paths-source.tsx).
  *
  * Why: EntityAvatar drew each glyph through its Phosphor component, and each
  * component carries every shipped weight. The avatar is on every app page, so
  * the 202-glyph registry was the largest client chunk (345 KB decoded on the
  * project home, measured 2026-09-27) for 84 KB of path data it ever draws.
  *
- * Run after changing DEFAULT_ICON_WEIGHT or the glyph catalogue:
+ * Run after changing GLYPH_WEIGHT or the glyph catalogue:
  *   bun packages/ui/scripts/generate-glyph-paths.tsx
  * glyph-face.test.tsx fails while the file is stale.
  */

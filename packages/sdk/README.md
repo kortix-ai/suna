@@ -306,10 +306,8 @@ Install the optional peers before you use the React entry:
 npm install @kortix/sdk react @tanstack/react-query
 ```
 
-Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
-`@deprecated`. Import from the root instead — see **Entry points** below, and
-the [SDK reference](https://kortix.com/docs/#deprecated-names) for the full
-list of aliases (21 of them).
+The older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) were removed in
+0.15.0. Import from the root instead — see **Entry points** below.
 
 > **React Native / Expo:** REST works. Live streaming works with a host
 > transport: pass `configureKortix({ eventStreamTransport })` (one connection's
@@ -655,6 +653,47 @@ Message retries keep the originating sandbox URL after navigation. A `404` or
 `410` message read stops automatic retries and preserves the cached transcript.
 An explicit reconciliation can recover the controller when the session returns.
 
+## Goals
+
+A goal is what a person wants plus a definition of done (project flag
+`goals`, off by default). The API owns its state, pause, owner and verifier
+sessions, limits and verification; the goal's Drive folder holds the brief
+(`GOAL.md`), `log.md` and `evidence/`. Lifecycle fields written into
+`GOAL.md` change nothing.
+
+```ts
+import { createProjectGoal, listProjectGoals, pauseProjectGoal, ProjectGoalConflictError } from '@kortix/sdk';
+
+// goalId is the idempotency key: retry with the same id, get the same goal.
+const { goal } = await createProjectGoal(projectId, { outcome: 'EU billing live', goalId });
+
+const [first] = await listProjectGoals(projectId);
+if (first?.capabilities.pause) {
+  try {
+    const { projectGoal } = await pauseProjectGoal(projectId, first, 'Paused from my app.');
+    console.log(projectGoal.revision); // the new revision
+  } catch (error) {
+    // Someone changed the goal first: error.goal is the goal as it is now.
+    if (error instanceof ProjectGoalConflictError) console.log(error.goal.record.state);
+    else throw error;
+  }
+}
+```
+
+- Show a control only when `goal.capabilities` allows it. A read-only viewer
+  gets every capability `false`.
+- `criteria[].verified` is set only by a passed independent verification;
+  `criteria[].reported_met` is the agent's claim.
+- `blockedReason` says why a goal cannot go on (`credits`, `wake_cap`,
+  `session_cap`, `owner_lost`, `storage`, `flag_off`, `setup`).
+- `replyToProjectGoal(projectId, goal, text, { answerId })` answers as the
+  caller; one answer per `answerId`.
+- React: `useProjectGoals`, `useProjectGoal`, `useProjectGoalEvents`,
+  `useProjectGoalFiles`, `useSessionGoal`, and `useProjectGoalControl` (one
+  request per double submit, the cache updated on success and on a `409`).
+- Deprecated: `ProjectGoal.heartbeat` is always `null`;
+  `CreateProjectGoalInput.sessionId` is sent as the goal id.
+
 ## Artifact comments and activity
 
 Projects enable `artifacts` and `artifact_comments` before using comments.
@@ -939,7 +978,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,retry,remove,grant,revoke,setAccess}` · `subscriptions.{list,usage}` (project-authorized usage for named and legacy ChatGPT logins; reads credentials in place) · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}`. A project installs an item through `createMarketplaceInstallSession(projectId, itemId)`, which starts a session whose agent merges the item into the project and opens a change request; it resolves `{ session_id }` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
@@ -1463,8 +1502,8 @@ learn it once.
 
 | import | when you use it | why it is separate |
 | --- | --- | --- |
-| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
-| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks. Its deprecated aliases are listed in the [SDK reference](https://kortix.com/docs/#deprecated-names) | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health (`runtimeSupports` reads a runtime's `capabilities`), `classifyPart`/`classifyTurn`/`toolViewModel`/`toToolView`/`toolKind`, `openEventStream`, `narrowChatEvent`, the error classes, and every domain type | — |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useRuntime*` hook, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
 | `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
 | `@kortix/sdk/genui/fence`, `@kortix/sdk/genui`, `@kortix/sdk/genui/react` | Generative UI: split `openui` blocks out of text, parse them, render them (see **Generative UI** below) | `genui` and `genui/react` need the optional peers `zod` and `@openuidev/lang-core`; `genui/fence` loads neither |
 | `@kortix/sdk/wire-message-id` | `mintWireMessageId` and `WIRE_MESSAGE_ID`: mint and validate a Kortix message id. Its clock helpers are `@deprecated` | not a dependency split: the root exports the same names. A server that mints ids loads this one import-free module instead of the whole barrel |
@@ -1476,7 +1515,7 @@ The root really is canonical, and that is a test rather than a promise:
 `src/root-canonical.test.ts` asserts that every name exported by every other
 isomorphic subpath is also exported from `@kortix/sdk`. The only subpaths it
 permits to be missing are `react`, `server`, the three `genui` entries,
-`workspace-search` and the browser-only stores above — `zustand` is a
+`workspace-search` and the browser-only `./internal/*` modules above — `zustand` is a
 forbidden import in the root's `isomorphic-core` tier, so they cannot live
 there.
 
@@ -1485,18 +1524,15 @@ import { createKortix, classifyTurn, listFiles, openEventStream } from '@kortix/
 import { useSession } from '@kortix/sdk/react';
 ```
 
-### Legacy aliases — do not use in new code
+### Removed subpaths (0.15.0)
 
-`package.json` still declares 21 more subpaths, for example `/turns`, `/files`,
-`/session`, `/projects-client`, `/event-stream` and the un-prefixed store
-aliases. The full list is in the
-[SDK reference](https://kortix.com/docs/#deprecated-names).
-
-Twenty of them are one-line `export *` re-exports under `src/deprecated/`, and
-`/message-queue` is a deprecated module of its own. They stay only so an
-existing `npm install` does not break. **They add nothing
-the root does not already export.** They are removed at the next major; new
-code imports the root.
+0.15.0 removed 25 legacy subpaths: `/turns`, `/files`, `/session`,
+`/session/url`, `/projects-client`, `/platform-client`, `/api-client`,
+`/config`, `/auth`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`,
+`/event-stream`, `/opencode-client`, `/opencode-errors`, `/idb-sync-cache`,
+`/message-queue`, the four un-prefixed store aliases and the four
+`/internal/*` session stores. Every name they exported (except the message
+queue and the stores) is exported from the root. See `CHANGELOG.md`.
 
 ## Configuration
 

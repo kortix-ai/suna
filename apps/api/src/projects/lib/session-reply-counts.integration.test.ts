@@ -67,7 +67,9 @@ beforeAll(async () => {
 
   // Session log: a prompt answered in two steps, a steer answered once, and
   // rows that are not replies: an automation prompt, a hidden failed attempt,
-  // a tombstone, a compaction and a sub-agent thread.
+  // a tombstone, a compaction and a sub-agent thread. A background worker's
+  // report arrives as a platform notice with no origin: its answer is a
+  // reply, the notice itself is not.
   await db.insert(sessionLogs).values({
     sessionId: logSession, projectId, accountId, v: 1, harnessCurrent: 'pi', restoreGrade: 'full', record: {},
   });
@@ -81,6 +83,12 @@ beforeAll(async () => {
   await logRow('u2', 'user', { origin: 'steer' });
   await logRow('a3', 'assistant', { reply_to: 'u2' });
   await logRow('u3', 'user', { origin: 'automation' });
+  await logRow('n1', 'user', {
+    blocks: [{ type: 'text', text: 'A background subagent you started has finished. This message is from the platform, not from the user.\ntask_id: x' }],
+  });
+  await logRow('a6', 'assistant', { reply_to: 'n1' });
+  await logRow('n2', 'user', { blocks: [{ type: 'text', text: 'Your teammate reviewer finished its turn and is idle. This message is from the platform, not from the user.' }] });
+  await logRow('n3', 'user', { blocks: [{ type: 'text', text: '[idle notice from reviewer · session 3f2a1b9c · #m_1]' }] });
   await logRow('a4', 'assistant', { reply_to: 'u9', hidden_reason: 'failed_attempt' });
   await logRow('a5', 'assistant', { reply_to: 'u8' }, { deletedAt: at(50) });
   await logRow('c1', 'assistant', { reply_to: 'u1' }, { kind: 'compaction' });
@@ -101,9 +109,10 @@ test('replies are the person messages after the first plus one answer per answer
   expect(replyCount(0, 0)).toBe(0);
 });
 
-test('the session log count drops automation, hidden, deleted, compaction and sub-agent rows', async () => {
+test('the session log count drops automation, platform notices, hidden, deleted, compaction and sub-agent rows', async () => {
   const counts = await readSessionReplyCounts(sessionIds);
-  expect(counts.get(logSession)).toBe(3);
+  // u2 + the answers to u1, u2 and the notice n1.
+  expect(counts.get(logSession)).toBe(4);
 });
 
 test('a session with no log answers 0', async () => {

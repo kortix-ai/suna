@@ -28,10 +28,10 @@ export interface MirrorMessage {
 export interface MirrorSnapshot {
   /** The OpenCode session whose messages this window holds: the root, or
    *  the sub-agent session a child read asked for. */
-  opencode_session_id: string | null;
+  runtime_session_id: string | null;
   /** The OpenCode root the mirror was captured from. Equal to
-   *  `opencode_session_id` for a root read. */
-  root_opencode_session_id?: string | null;
+   *  `runtime_session_id` for a root read. */
+  root_runtime_session_id?: string | null;
   captured_at: string;
   /** Every message the mirror holds for this session, not just this window. */
   total: number;

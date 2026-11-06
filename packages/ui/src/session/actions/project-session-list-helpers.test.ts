@@ -176,7 +176,7 @@ describe('session last activity', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-08T08:00:09.000Z',
-      opencode_sessions: [openCodeSession('2026-01-03T04:05:06.000Z')],
+      runtime_sessions: [openCodeSession('2026-01-03T04:05:06.000Z')],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-03T04:05:06.000Z');
@@ -187,7 +187,7 @@ describe('session last activity', () => {
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-01T00:00:00.000Z',
       metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
-      opencode_sessions: [],
+      runtime_sessions: [],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-09T10:00:00.000Z');
@@ -196,13 +196,13 @@ describe('session last activity', () => {
   test('the newer of the prompt stamp and the conversation snapshot wins', () => {
     const staleSnapshot = makeSession({
       metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
-      opencode_sessions: [openCodeSession('2026-01-02T00:00:00.000Z')],
+      runtime_sessions: [openCodeSession('2026-01-02T00:00:00.000Z')],
     });
     // The agent keeps replying after the prompt was stamped, so the snapshot
     // legitimately leads the stamp.
     const stalePrompt = makeSession({
       metadata: { last_activity_at: '2026-01-09T10:00:00.000Z' },
-      opencode_sessions: [openCodeSession('2026-01-09T10:04:00.000Z')],
+      runtime_sessions: [openCodeSession('2026-01-09T10:04:00.000Z')],
     });
 
     expect(sessionLastActivityAt(staleSnapshot)).toBe('2026-01-09T10:00:00.000Z');
@@ -214,7 +214,7 @@ describe('session last activity', () => {
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-01T00:00:00.000Z',
       metadata: { last_activity_at: 'not a date' },
-      opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
+      runtime_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-03T00:00:00.000Z');
@@ -222,7 +222,7 @@ describe('session last activity', () => {
 
   test('a snapshot entry with no timestamp does not mask a later one', () => {
     const session = makeSession({
-      opencode_sessions: [
+      runtime_sessions: [
         openCodeSession(null, 'oc-a'),
         openCodeSession('2026-01-05T00:00:00.000Z', 'oc-b'),
       ],
@@ -237,7 +237,7 @@ describe('session last activity', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-08T08:00:09.000Z',
-      opencode_sessions: [],
+      runtime_sessions: [],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-08T08:00:09.000Z');
@@ -247,7 +247,7 @@ describe('session last activity', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: undefined,
-      opencode_sessions: [],
+      runtime_sessions: [],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-01T00:00:00.000Z');
@@ -259,7 +259,7 @@ describe('session last activity', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-20T00:00:00.000Z',
-      opencode_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
+      runtime_sessions: [openCodeSession('2026-01-03T00:00:00.000Z')],
     });
 
     expect(sessionLastActivityAt(session)).toBe('2026-01-03T00:00:00.000Z');
@@ -272,20 +272,20 @@ describe('session last activity', () => {
       session_id: 'a',
       created_at: '2026-01-03T00:00:00.000Z',
       updated_at: '2026-01-20T00:00:00.000Z',
-      opencode_sessions: [openCodeSession('2026-01-04T00:00:00.000Z', 'oc-a')],
+      runtime_sessions: [openCodeSession('2026-01-04T00:00:00.000Z', 'oc-a')],
     });
     const middle = makeSession({
       session_id: 'b',
       created_at: '2026-01-02T00:00:00.000Z',
       updated_at: '2026-01-19T00:00:00.000Z',
-      opencode_sessions: [openCodeSession('2026-01-05T00:00:00.000Z', 'oc-b')],
+      runtime_sessions: [openCodeSession('2026-01-05T00:00:00.000Z', 'oc-b')],
     });
     const newest = makeSession({
       session_id: 'c',
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-18T00:00:00.000Z',
       metadata: { last_activity_at: '2026-01-06T00:00:00.000Z' },
-      opencode_sessions: [],
+      runtime_sessions: [],
     });
 
     const result = sortSessionsByLastActivity([oldest, newest, middle]);

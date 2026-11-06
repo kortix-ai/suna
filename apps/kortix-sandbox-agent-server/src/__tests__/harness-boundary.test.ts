@@ -19,17 +19,6 @@ describe('harness ownership boundary', () => {
     expect(() => loadConfig({ KORTIX_HARNESS: 'codex' })).toThrow('Unsupported harness: codex')
   })
 
-  test('a box OpenCode booted asks for the session-log restore; a pi box keeps what apps/api set', () => {
-    for (const harness of ['opencode', ' OpenCode ', '', undefined]) {
-      const env: NodeJS.ProcessEnv = { KORTIX_HARNESS: harness, KORTIX_PROJECT_AUTO_CLONE: '0' }
-      loadConfig(env)
-      expect(env.KORTIX_SESSION_LOG_RESTORE).toBe('1')
-    }
-    const pi: NodeJS.ProcessEnv = { KORTIX_HARNESS: 'pi', KORTIX_PROJECT_AUTO_CLONE: '0' }
-    loadConfig(pi)
-    expect(pi.KORTIX_SESSION_LOG_RESTORE).toBeUndefined()
-  })
-
   test("a box OpenCode booted keeps OpenCode's data directory and variables away from the agent", () => {
     expect(harnessProtectedPathSegments()).toContain('/.local/share/opencode/')
     expect(isHarnessInternalVariable('OPENCODE_SERVER_PASSWORD')).toBe(true)
@@ -75,7 +64,7 @@ describe('harness ownership boundary', () => {
         report: unexpected, logSources: () => [], readLog: unexpected,
       },
       queries: { bind: () => queries },
-      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected, replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected, compact: unexpected, command: unexpected, setGrants: unexpected, commands: unexpected, pending: unexpected, readLog: unexpected, readLogMessage: unexpected, readBlob: unexpected, workflows: unexpected, controlWorkflow: unexpected },
+      turns: { prompt: unexpected, steer: unexpected, abort: unexpected, retractMessage: unexpected, agents: unexpected, replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected, parkAsks: unexpected, compact: unexpected, command: unexpected, setGrants: unexpected, commands: unexpected, pending: unexpected, readLog: unexpected, readLogMessage: unexpected, readBlob: unexpected, workflows: unexpected, controlWorkflow: unexpected },
       background: { start: unexpected },
       assets: {
         harness: 'test', componentNames: [],          reconcile: async () => ({ components: {}, reasons: {}, state: {} }),

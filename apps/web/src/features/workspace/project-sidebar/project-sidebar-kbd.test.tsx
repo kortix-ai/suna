@@ -201,26 +201,37 @@ test('the mobile sheet renders no keyboard shortcut hint (KRTX-2005)', async () 
   expect(document.body.innerHTML).not.toContain('data-slot="kbd-group"');
 });
 
-test('with chat on, the spaces list replaces the New session row (Cmd+J still opens the new-session composer), the session list sits below it as the secondary list; My Kortix is the first DM, no Chat row', async () => {
+test('with chat on, the sidebar is Spaces only (Cmd+J still opens the new-session composer): Review, the personal chat at /chat, the live channels, and the session list waiting in More as the secondary list', async () => {
+  // The layout #11783 set (ProjectSpacesNav, SidebarMoreGroup): no New session
+  // row and no Direct messages section; a DM is one more space in the list.
   channelsOn = true;
   await mountSidebar(1280);
+  // The session list waits in "More" at the bottom, closed by default.
+  expect(container!.innerHTML).not.toContain('data-testid="session-list"');
+  const more = [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'more');
+  expect(more).toBeDefined();
+  await act(async () => {
+    more!.click();
+  });
   const html = container!.innerHTML;
-  expect(html).toContain('data-testid="session-list" data-secondary="true"');
-  expect(html.indexOf('data-testid="session-list"')).toBeGreaterThan(html.indexOf('spaces.directMessages'));
   expect(html).not.toContain('newSession');
-  // No separate Chat row: the person's chat with Kortix is the My Kortix DM.
   expect(html).not.toContain('oneChat');
-  expect(html).not.toContain('href="/projects/synthetic-project/chat"');
-  // Channels: live channels only, then the add row. Direct messages: one row per agent, My Kortix first.
-  expect(html).toContain('spaces.channels');
-  expect(html).toContain('href="/projects/synthetic-project/c/general"');
+  expect(html).not.toContain('spaces.directMessages');
+  // Review first, then the person's own space (their chat with My Kortix, at /chat), then the channels.
+  const review = html.indexOf('href="/projects/synthetic-project/review"');
+  const personal = html.indexOf('href="/projects/synthetic-project/chat"');
+  const general = html.indexOf('href="/projects/synthetic-project/c/general"');
+  expect(review).toBeGreaterThan(-1);
+  expect(personal).toBeGreaterThan(review);
+  expect(general).toBeGreaterThan(personal);
+  // The My Kortix DM is that personal row, never a second row of its own.
+  expect(html).not.toContain('href="/projects/synthetic-project/dm/kortix"');
+  // Live channels only, then the add row.
   expect(html).not.toContain('/c/old');
-  expect(html).toContain('spaces.addChannel');
-  expect(html).toContain('spaces.directMessages');
-  expect(html).toContain('href="/projects/synthetic-project/dm/kortix"');
-  expect(html).toContain('href="/projects/synthetic-project/dm/meta"');
-  expect(html.indexOf('>My Kortix<')).toBeGreaterThan(-1);
-  expect(html.indexOf('>My Kortix<')).toBeLessThan(html.indexOf('>Kortix<'));
+  expect(html.indexOf('spaces.addChannel')).toBeGreaterThan(general);
+  // The session list is the secondary list, below the spaces.
+  expect(html).toContain('data-testid="session-list" data-secondary="true"');
+  expect(html.indexOf('data-testid="session-list"')).toBeGreaterThan(html.indexOf('spaces.addChannel'));
   await act(async () => {
     win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'j', metaKey: true }));
   });

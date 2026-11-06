@@ -5,7 +5,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import { callbackTimeoutMessage, callbackUnreachableMessage } from './callback-errors';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@kortix/ui/button';
 import { Input } from '@kortix/ui/input';
@@ -66,6 +66,9 @@ function CliAuthorizeInner() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [typedCode, setTypedCode] = useState('');
+  // Synchronous in-flight guard (the pattern of `tokens-tab.tsx`): two clicks
+  // before the re-render that disables the button minted two API keys.
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     if (isLoading) return;
@@ -103,7 +106,8 @@ function CliAuthorizeInner() {
             className="space-y-3"
             onSubmit={async (event) => {
               event.preventDefault();
-              if (!confirmed || approving) return;
+              if (!confirmed || approving || inFlightRef.current) return;
+              inFlightRef.current = true;
               setPhase('authorizing');
               setError(null);
               try {
@@ -112,6 +116,8 @@ function CliAuthorizeInner() {
               } catch (err) {
                 setError((err as Error).message);
                 setPhase('error');
+              } finally {
+                inFlightRef.current = false;
               }
             }}
           >
@@ -156,7 +162,8 @@ function CliAuthorizeInner() {
   }
 
   async function authorize() {
-    if (!callback || !state) return;
+    if (!callback || !state || inFlightRef.current) return;
+    inFlightRef.current = true;
     setPhase('authorizing');
     setError(null);
 
@@ -172,6 +179,11 @@ function CliAuthorizeInner() {
         createAccountToken({ name }),
         MINT_TIMEOUT_MS,
         'Timed out asking the Kortix API to mint an API key. Is the API reachable?',
+        // The timeout does not cancel the mint. A key that arrives after it
+        // never reaches the CLI: revoke it, so no orphan key stays live.
+        (late) => {
+          revokeAccountToken(late.token_id).catch(() => {});
+        },
       );
 
       const controller = new AbortController();
@@ -213,6 +225,8 @@ function CliAuthorizeInner() {
     } catch (err) {
       setError((err as Error).message);
       setPhase('error');
+    } finally {
+      inFlightRef.current = false;
     }
   }
 
@@ -282,14 +296,25 @@ function CliAuthorizeInner() {
 
 /** Race a promise against a timeout. Rejects with `message` if the
  *  promise doesn't settle in time — keeps the UI from sitting on a
- *  silent "Authorizing…" spinner if the network stalls. */
-function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+ *  silent "Authorizing…" spinner if the network stalls. The promise still
+ *  runs: `onLate` gets a value that resolves after the timeout. */
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  message: string,
+  onLate?: (value: T) => void,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(message)), ms);
+    let timedOut = false;
+    const t = setTimeout(() => {
+      timedOut = true;
+      reject(new Error(message));
+    }, ms);
     p.then(
       (v) => {
         clearTimeout(t);
-        resolve(v);
+        if (timedOut) onLate?.(v);
+        else resolve(v);
       },
       (err) => {
         clearTimeout(t);

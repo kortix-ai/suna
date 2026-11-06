@@ -39,6 +39,7 @@ import { KORTIX_TOOL, parseArgs, runCli } from './cli';
 import { CONNECTOR_TOOLS, isConnectorTool, runConnectorTool, type Host } from './connectors';
 import { blockedPath, canonicalPath, requestBodyShape, searchOperations, shapeTranscript, type Operation } from './shape';
 import { bearerToken } from '../shared/bearer-token';
+import { PROVISIONING_SESSION_STATUSES } from '../projects/surface';
 
 type Dispatch = (request: Request) => Promise<Response>;
 
@@ -365,7 +366,7 @@ function pageLines(content: string, input: Record<string, unknown>): ToolResult 
 // ─── Sessions ───────────────────────────────────────────────────────────────
 
 /** A session is busy while it boots, runs a turn, or holds queued prompts. */
-const BOOTING = new Set(['queued', 'branching', 'provisioning']);
+const BOOTING = new Set<string>(PROVISIONING_SESSION_STATUSES);
 
 async function sessionActivity(ctx: ToolContext, path: string) {
   const [session, turn, prompts] = await Promise.all([
@@ -880,7 +881,7 @@ async function sendMessageTool(ctx: ToolContext, input: Record<string, unknown>)
   if (found.status >= 400) return apiResult(found);
   const session = JSON.parse(found.body);
   // The same body `kortix sessions chat --queue` sends (apps/cli/src/commands/sessions-queue.ts).
-  const model = typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : '';
+  const model = typeof session.metadata?.model === 'string' ? session.metadata.model : '';
   const slash = model.indexOf('/');
   const overrides = {
     ...(session.agent_name ? { agent: session.agent_name } : {}),
