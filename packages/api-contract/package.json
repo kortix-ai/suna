@@ -18,7 +18,8 @@
     "./permission-rules": "./src/permission-rules.ts",
     "./kortix-tool-card": "./src/kortix-tool-card.ts",
     "./multi-agent": "./src/multi-agent.ts",
-    "./claude-agent": "./src/claude-agent.ts"
+    "./claude-agent": "./src/claude-agent.ts",
+    "./wire-values": "./src/wire-values.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",

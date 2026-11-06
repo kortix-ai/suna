@@ -12,6 +12,7 @@ import type { SessionLogPage } from '../session-log/source';
 import type { SessionLogMessage } from '../session-log/types';
 import { RuntimeNotReadyError } from '../runtime/runtime-not-ready-error';
 import { getActiveRuntimeUrl } from './server-store/active';
+import type { RuntimeThreadStatus } from '../wire-values';
 
 /** The health capability of a box that serves the session-log actions. */
 export const RUNTIME_ACTIONS_CAPABILITY = 'runtime.actions.v1';
@@ -19,8 +20,8 @@ export const RUNTIME_ACTIONS_CAPABILITY = 'runtime.actions.v1';
 /** The health capability of a box whose log reads answer whole pages, with the prompts waiting on it. */
 export const RUNTIME_LOG_CAPABILITY = 'runtime.log.v1';
 
-/** What a thread does now; a retry reads as `busy`. */
-export type RuntimeThreadStatus = 'idle' | 'busy' | 'compacting';
+/** What a thread does now; a retry reads as `busy` (`toRuntimeThreadStatus`). */
+export type { RuntimeThreadStatus } from '../wire-values';
 
 /** One request the runtime waits on: a permission request or a question. */
 export interface RuntimePendingRecord {

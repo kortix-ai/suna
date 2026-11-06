@@ -24,6 +24,7 @@ import type { AssistantMessage, ImageContent, ModelThinkingLevel } from '@earend
 import type { AgentSessionEvent, SessionEntry, SessionHeader, Skill } from '@earendil-works/pi-coding-agent'
 import { KORTIX_RUNTIME_SCHEMA, toolAllowed, type CompiledAgent, type CompiledAgentSet, type RuntimePending } from '@kortix/api-contract/runtime-relay'
 import { KORTIX_PLATFORM_TOOL_NAMES } from '@kortix/api-contract/kortix-tool-card'
+import type { ThreadActivity } from '@kortix/api-contract/wire-values'
 import type { KortixAssistantMessageInfo, KortixMessage, KortixMessageError, RuntimePermissionRequest, RuntimeQuestionRequest, RuntimeToolRef, TurnErrorCode } from '@kortix/api-contract/transcript'
 import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -331,7 +332,7 @@ interface ChildSession {
   agentName: string
   createdAt: number
   updatedAt: number
-  status: 'idle' | 'busy'
+  status: ThreadActivity
   transcript: TranscriptStore
   /** The child's pi conversation, kept so `task_id` resumes it. */
   agentMessages: AgentMessage[]
@@ -992,7 +993,7 @@ export class PiRuntime {
   }
 
   /** The root thread's status for the wire reads: busy from a turn's admission to its end. */
-  private rootStatus(): 'idle' | 'busy' {
+  private rootStatus(): ThreadActivity {
     return this.active !== null || this.work.size > 0 ? 'busy' : 'idle'
   }
 
@@ -2712,7 +2713,7 @@ export class PiRuntime {
     return (this.agent?.state.tools ?? []).map((tool) => tool.name)
   }
 
-  sessionStatus(): { type: 'idle' | 'busy' } {
+  sessionStatus(): { type: ThreadActivity } {
     return { type: this.rootStatus() }
   }
 
