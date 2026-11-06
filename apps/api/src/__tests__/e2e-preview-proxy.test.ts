@@ -18,10 +18,11 @@
  * whatever the provider answers. Unauthenticated 401 through the REAL auth
  * middleware is the SEC-G flow.
  */
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { logger } from '../lib/logger';
 import { runWithContext } from '../lib/request-context';
 import { isPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import * as realProviders from '../platform/providers';
@@ -809,6 +810,35 @@ describe('Preview proxy: forwarding', () => {
     expect(await res.text()).toBe('ok');
     expect(mockFetchReturned[0]!.status).toBe(502);
     expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  // A user's own dev server that is down answers 502 on every poll, and each
+  // retry used to log a `warn` that the log sweep filed as a new pattern
+  // (KRTX-4365: one client polling a dead app port, 60 lines in an hour). Only
+  // the runtime's ports (the session-data ports) keep the warn.
+  test.each([
+    [TEST_PORT, 'warn', 'info'],
+    [8000, 'info', 'warn'],
+  ] as const)('a not-ready 502 on port %p retries at the right log level', async (port, quiet, loud) => {
+    mockFetchResponses = [
+      { status: 502, body: 'bad gateway' },
+      { status: 200, body: 'ok' },
+    ];
+    const lines: Record<'warn' | 'info', string[]> = { warn: [], info: [] };
+    const spies = (['warn', 'info'] as const).map((level) =>
+      spyOn(logger, level).mockImplementation((message: string) => void lines[level].push(message)),
+    );
+    try {
+      const res = await createProxyTestApp().request(`/v1/p/${TEST_SANDBOX_ID}/${port}/page`, {
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    const notReady = (l: string[]) => l.filter((x) => x.includes('port not ready'));
+    expect(notReady(lines[quiet])).toHaveLength(0);
+    expect(notReady(lines[loud])).toHaveLength(1);
   });
 
   // A port the API exposed a moment ago: Platinum's routes lag the expose by up
