@@ -23,7 +23,7 @@
  *     is absent. A daemon built before this file sees no compiled config at all.
  *
  * kortixd reads through `readCompiledAgentConfigEnv` and writes through
- * `writeCompiledAgentConfigEnv`. OpenCode, git, every PTY and every other child
+ * `writeCompiledAgentConfigEnv`. Git, every PTY and every other child process
  * inherits the daemon's env, so the daemon must never hold the oversized raw
  * form either. That includes values that arrive later, from a config release
  * or a `/kortix/env` push.

@@ -85,7 +85,6 @@ export const PROJECT_ACTIONS = {
    */
   PROJECT_ROOM_WRITE: 'project.room.write',
   PROJECT_ARTIFACT_READ: 'project.artifact.read',
-  PROJECT_ARTIFACT_COMMENT: 'project.artifact.comment',
   PROJECT_ARTIFACT_WRITE: 'project.artifact.write',
   PROJECT_ARTIFACT_MANAGE: 'project.artifact.manage',
   PROJECT_ARTIFACT_PUBLIC: 'project.artifact.public',
@@ -190,7 +189,6 @@ export const WORKSPACE_ACTION_BY_LEGACY = {
   'project.review.submit': 'workspace.review.submit',
   'project.review.act': 'workspace.review.act',
   'project.artifact.read': 'workspace.artifact.read',
-  'project.artifact.comment': 'workspace.artifact.comment',
   'project.artifact.write': 'workspace.artifact.write',
   'project.artifact.manage': 'workspace.artifact.manage',
   'project.artifact.public': 'workspace.artifact.public',

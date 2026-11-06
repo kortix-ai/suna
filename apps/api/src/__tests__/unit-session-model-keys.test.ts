@@ -35,7 +35,7 @@ mock.module('../projects/lib/personal-resources', () => ({
 const probes: Array<Record<string, unknown>> = [];
 let storedKeys: string[] | null = null;
 let managedServable = false;
-/** The gateway wire id: a stored session model carries OpenCode's `kortix/` prefix. */
+/** The gateway wire id: a stored session model carries the runtime's `kortix/` provider prefix. */
 const wire = (model: string) => model.replace(/^kortix\//, '');
 mock.module('../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async (input: {

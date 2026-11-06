@@ -11,7 +11,7 @@ const BASE_ENV = {
 
 const TIMELINE = [
   { label: 'repo-materialized', atMs: 6686 },
-  { label: 'opencode-session-created', atMs: 12066 },
+  { label: 'runtime-session-created', atMs: 12066 },
 ]
 
 const realFetch = globalThis.fetch

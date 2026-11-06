@@ -8,7 +8,7 @@
  *
  * It REUSES the legacy screen's connect/streaming/tab-store/sandbox engine 1:1:
  * every hook, ref, effect and handler that drives session creation, the /start
- * connect loop, and OpenCode pinning is copied verbatim from
+ * connect loop, and runtime session pinning is copied verbatim from
  * ProjectScreenLegacy (roughly lines 904–1780). Only the presentation (the old
  * three-pane drawer JSX) is replaced.
  *
@@ -90,7 +90,7 @@ import { useReviewNeedsYou } from '@/lib/review/use-review';
 import { needsYouBySession } from '@/lib/session/needs-you';
 import { runtimeSessionsOf, sessionParentId } from '@kortix/sdk';
 import { KortixProjectProvider, useNotificationInbox, useSessionsNeedingInput } from '@kortix/sdk/react';
-import { NOTIFICATION_INBOX_LIMIT, notificationInboxEnabled } from '@/lib/notifications/inbox';
+import { NOTIFICATION_INBOX_LIMIT } from '@/lib/notifications/inbox';
 import { carryOverLegacyKinds } from '@/lib/notifications/registration';
 import { useSavedCopy } from '@/hooks/useSavedCopy';
 import type { ProjectSession } from '@/lib/projects/projects-client';
@@ -192,16 +192,11 @@ export function ProjectScreen() {
   const closeSwitcher = useCallback(() => setSwitcherOpen(false), []);
   const { data: project } = useProject(projectId);
 
-  // KRTX-1742 (the inbox, its home bell, reading a session's notifications)
-  // is behind the project's `notification_center` flag, off by default.
-  // Unknown while the project loads: off.
-  const notificationCenterOn = project?.experimental?.notification_center === true;
-  const notificationInboxOn = notificationInboxEnabled(project);
-  // This phone's opt-outs reach the user's record once, only for a user who
-  // opens such a project.
+  // This phone's opt-outs reach the user's record once (KRTX-1742). A no-op
+  // after the first success (`legacyKindsMigrated`).
   useEffect(() => {
-    if (notificationCenterOn) void carryOverLegacyKinds();
-  }, [notificationCenterOn]);
+    void carryOverLegacyKinds();
+  }, []);
 
   // Persisted tab state (survives app restarts)
   const activeSessionId = useTabStore((s) => s.activeSessionId);
@@ -251,11 +246,11 @@ export function ProjectScreen() {
   // The caller's notifications across every project (KRTX-1742): the home bell's
   // Notifications count. The Notifications page reads the same query (same
   // limit). It polls every 60 s while the app is in the foreground, and not
-  // while a root screen covers the project or the flag is off.
+  // while a root screen covers the project.
   const inbox = useNotificationInbox({
     userId,
     limit: NOTIFICATION_INBOX_LIMIT,
-    enabled: isFocused && notificationInboxOn,
+    enabled: isFocused,
   });
   const notificationsUnreadCount = inbox.unreadCount;
   const inboxRef = useRef(inbox);
@@ -392,15 +387,12 @@ export function ProjectScreen() {
   // refetch). Known to have nothing unread: no request. Keyed by the newest
   // unread row (the inbox lists newest first): a failed read restores the same
   // row, and that row is not sent again, so a failing server sees no loop.
-  // Flag off: no read (the disabled inbox is not `isSuccess`, so the check
-  // below would send one).
   const shownUnreadRowId = shownSessionId
     ? (inbox.data?.notifications.find((row) => !row.read && row.session_id === shownSessionId)?.id ?? null)
     : null;
   const readSessionRef = useRef<string | null>(null);
   const readSentRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!notificationCenterOn) return;
     const opened = readSessionRef.current !== shownSessionId;
     readSessionRef.current = shownSessionId;
     if (!shownSessionId || (!opened && !shownUnreadRowId)) return;
@@ -410,7 +402,7 @@ export function ProjectScreen() {
     if (isSuccess && unreadCount === 0) return;
     readSentRef.current = sent;
     markSessionRead(shownSessionId).catch(() => {});
-  }, [notificationCenterOn, shownSessionId, shownUnreadRowId]);
+  }, [shownSessionId, shownUnreadRowId]);
 
   // A tapped notification for this project (a push, or a Notifications row):
   // open its session, the same path as the Sessions page. The session already
@@ -784,8 +776,8 @@ export function ProjectScreen() {
   // A second tap finds `inbox` on top and does nothing (`drawerRouteMove`).
   const openNotifications = useCallback(() => navigateProjectRoute(PROJECT_INBOX_ROUTE), [navigateProjectRoute]);
   const homeNotifications = useMemo(
-    () => (notificationInboxOn ? { unreadCount: notificationsUnreadCount, onOpen: openNotifications } : undefined),
-    [notificationInboxOn, notificationsUnreadCount, openNotifications]
+    () => ({ unreadCount: notificationsUnreadCount, onOpen: openNotifications }),
+    [notificationsUnreadCount, openNotifications]
   );
   const homeContent = useMemo(
     () => (

@@ -127,9 +127,17 @@ export async function reserveSwitchTransition(
 
     // Newer intent supersedes any older live SWITCH (NULL-generation prebuilds
     // are excluded by `lt`, so a switch never nukes an unrelated prebuild).
+    // The epoch bump fences the runner that still drives the old row: every
+    // fenced write it makes after this matches 0 rows, so it cannot write
+    // `building`/`ready` over the terminal `superseded`.
     await tx
       .update(providerTransitions)
-      .set({ status: 'superseded', heartbeatAt: null, updatedAt: new Date() })
+      .set({
+        status: 'superseded',
+        heartbeatAt: null,
+        leaseEpoch: sql`COALESCE(${providerTransitions.leaseEpoch}, 0) + 1`,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(providerTransitions.projectId, input.identity.projectId),

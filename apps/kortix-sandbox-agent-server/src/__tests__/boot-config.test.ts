@@ -279,10 +279,10 @@ describe('the pointer', () => {
 describe('quarantine and pruning', () => {
   test('a quarantined release is recorded by release_id; another release_id is not blocked', async () => {
     const bad = 'd'.repeat(64)
-    await quarantineRelease(store, bad, 'the new opencode did not start')
+    await quarantineRelease(store, bad, 'the new runtime did not start')
     const entries = await readQuarantine(store)
     expect(Object.keys(entries)).toEqual([bad])
-    expect(entries[bad]!.reason).toBe('the new opencode did not start')
+    expect(entries[bad]!.reason).toBe('the new runtime did not start')
     expect(entries['e'.repeat(64)]).toBeUndefined()
   })
 

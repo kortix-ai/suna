@@ -433,7 +433,7 @@ interface SessionChatProps {
    * the not-found card — rather than its own "starting" loader.
    *
    * The project-session route crossfades the instant boot shell into this
-   * component over 300ms. It used to start that fade as soon as an OpenCode
+   * component over 300ms. It used to start that fade as soon as a runtime
    * session id existed, which is earlier than this component has anything to
    * show: the fade landed on the compact `SessionStartingLoader` below, which
    * then swapped to the transcript. Two handovers where the user asked for one.
@@ -938,9 +938,9 @@ export function SessionChat({
     () =>
       channelRunnableAgents(
         projectSpaces?.find((space) => space.space_id === projectSessionRow?.space_id),
-        projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+        projectConfig?.default_agent,
       ),
-    [projectSpaces, projectSessionRow?.space_id, projectConfig?.default_agent, projectConfig?.open_code_default_agent],
+    [projectSpaces, projectSessionRow?.space_id, projectConfig?.default_agent],
   );
   const agents = useMemo(() => withChannelAgents(rosterAgents, threadChannelAgents), [rosterAgents, threadChannelAgents]);
   // Edit-and-rewind only on the viewer's own message with nobody else's after it.
@@ -959,7 +959,7 @@ export function SessionChat({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent,
     projectSession: projectSessionRow,
     lastPromptModel: latestPromptModel(messages),
   });
@@ -975,7 +975,7 @@ export function SessionChat({
   const composerAgent = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
   const composerAgentName = composerAgent.selected;
@@ -1191,7 +1191,7 @@ export function SessionChat({
   // every other session of the same agent, and was skipped whenever the
   // account had a default model.
   // A NEW user bubble in the transcript is a queue row that just landed —
-  // OpenCode persisted a forwarded prompt. Re-read the inbox NOW so the row
+  // the runtime persisted a forwarded prompt. Re-read the inbox NOW so the row
   // leaves the strip in the same beat its bubble appears, instead of on the
   // next poll: the two were visible together for up to a poll interval.
   const newestUserBubbleId = lastUserMessage?.message_id;
@@ -1242,7 +1242,7 @@ export function SessionChat({
   const canStop = sessionState?.canStop ?? true;
 
   // The one transcript-derived gate that survives, and the only one that
-  // carries proof: during a provider 429 OpenCode stamps `info.error` with
+  // carries proof: during a provider 429 the runtime stamps `info.error` with
   // `data.isRetryable === true` and keeps writing the SAME assistant message,
   // while the status frame this tab holds can read non-busy for all of it. The
   // projection cannot substitute — a frame stamped after the last `/turn` read
@@ -1591,7 +1591,7 @@ export function SessionChat({
         undoLabel: tHardcodedUi.raw('i18nComplete.texta737e54996f8'),
         // The SAME `clientMessageId`, so an undo re-creates ONE row and a
             // double-click cannot create two. A FRESH wire id, because
-            // OpenCode orders by id and the original one was minted before the
+            // the runtime orders by id and the original one was minted before the
             // turn that has been writing higher ids since. The parts and
             // overrides are the ORIGINALS, straight from the delete's own
             // response — see `createQueueUndoAction`.
@@ -1890,7 +1890,7 @@ export function SessionChat({
   /**
    * The runtime is parked on an answer only the user can give.
    *
-   * Both lists are already session-scoped above. Either one means OpenCode has
+   * Both lists are already session-scoped above. Either one means the runtime has
    * stopped inside the turn and is blocked on a reply — the `question` tool, or
    * a tool asking for permission — so the turn row stays `active` and every
    * observer keeps reporting `working` with nothing to bound it but the reader.
@@ -2714,7 +2714,7 @@ export function SessionChat({
   // ============================================================================
   // Billing: DISABLED — billing is handled server-side by the LLM gateway
   // (it deducts credits per LLM call).
-  // This frontend useEffect was causing double-billing once opencode.jsonc
+  // This frontend useEffect was causing double-billing once the runtime config
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
 
@@ -3070,13 +3070,13 @@ export function SessionChat({
         // actual response body still arrives via the sync store.
         //
         // Don't send part IDs. `ascendingId` encodes the HIGH bits of the id
-        // clock where opencode encodes the LOW 48 (see the warning on it in the
+        // clock where the wire id encodes the LOW 48 (see the warning on it in the
         // SDK), so a client id of that shape sorts before EVERY server id: the
         // server's "has this prompt already been answered?" ordering check reads
         // a stale assistant reply as the answer and the turn never runs.
         //
         // The `messageID` is a different matter and IS sent — by the SDK, not
-        // from here. `promptOpenCodeMessage` mints it in opencode's own wire
+        // from here. `promptRuntimeMessage` mints it in the Kortix message id
         // format and places it above everything already in this session's
         // transcript, which is what makes it safe; without one, two identical
         // prompts inside 60s hash to a single proxy delivery and the second is
@@ -3123,7 +3123,7 @@ export function SessionChat({
 
         // THE ONE SEND PATH: the server-side prompt inbox.
         //
-        // This used to POST straight into the sandbox's OpenCode server, and
+        // This used to POST straight into the sandbox's runtime server, and
         // anything the user typed while the agent was busy went into a browser
         // queue instead — which meant a closed tab, a second device, or a crash
         // lost it silently, and two tabs on one session disagreed about what was
@@ -3133,7 +3133,7 @@ export function SessionChat({
         // guess whether a turn is in flight.
         //
         // The WIRE id is minted here, by the SDK, and never by the control plane:
-        // OpenCode resolves "has this prompt already been answered?" by id ORDER,
+        // The runtime resolves "has this prompt already been answered?" by id ORDER,
         // and only this process holds the transcript to place one against. It is
         // `messageID` above. `clientMessageId` is only the inbox idempotency key.
         // The prompt is out of this tab's hands the moment the row lands, so the
@@ -3155,9 +3155,9 @@ export function SessionChat({
               // the two, and the server orders racing sends by THIS.
               clientSentAtMs: sentAtMs,
               overrides: {
-                // Pass the session's directory so opencode resolves project-scoped
-                // agents (.opencode/agent/*.md under the project) and applies them
-                // when the user picked a project agent from the picker.
+                // Pass the session's directory so the runtime resolves project-scoped
+                // agents and applies them when the user picked a project agent
+                // from the picker.
                 ...(session?.directory ? { directory: session.directory } : {}),
                 ...(selectedAgent ? { agent: selectedAgent } : {}),
                 ...(selectedModel ? { model: formatPromptModel(selectedModel) } : {}),
@@ -3191,7 +3191,7 @@ export function SessionChat({
             // A kept send is settled below: its painted message stays.
             if (keepsPainted) return { ok: false, cause, error: null } as const;
             // Ask the INBOX, not the runtime. This prompt's home is a durable
-            // control-plane row; OpenCode's transcript cannot see it until the
+            // control-plane row; the runtime's transcript cannot see it until the
             // admission gate delivers it, so a rehydrate always reports it
             // missing and the recovery used to delete the bubble on that answer —
             // while the row was already running. Reported from a live self-host:
@@ -3287,7 +3287,7 @@ export function SessionChat({
   // "Changes" side panel's "Ask agent to open a change request" button) can
   // drive the agent through the SAME robust path the input uses — optimistic
   // message, SSE wiring, error propagation — instead of copying a prompt to the
-  // clipboard. Keyed by the OpenCode chat session id (`sessionId`).
+  // clipboard. Keyed by the runtime chat session id (`sessionId`).
   const registerSender = useChatSendStore((s) => s.registerSender);
   const unregisterSender = useChatSendStore((s) => s.unregisterSender);
   useEffect(() => {
@@ -3668,7 +3668,7 @@ export function SessionChat({
       const handleCommandError = (err?: unknown) => {
         // A command that was DELIVERED and then lost its connection is not a
         // failed command. `/command` blocks for the whole turn, so both proxy
-        // hops routinely stop waiting while opencode is still working — and the
+        // hops routinely stop waiting while the runtime is still working — and the
         // request was already on the wire when they did. Clearing the session
         // to `idle` and painting an error here told the user their message had
         // not sent while the agent was actively answering it, and invited the
@@ -3887,7 +3887,7 @@ export function SessionChat({
   /**
    * Where this session's unsent draft is persisted.
    *
-   * `projectSessionId` — the KORTIX session id — not the OpenCode `sessionId`:
+   * `projectSessionId` — the KORTIX session id — not the runtime `sessionId`:
    * it is the id the boot shell also keys on, so a draft typed in the instant
    * shell is still there after the crossfade into this component, and it is
    * the same id every other per-session handoff store uses
@@ -4196,7 +4196,7 @@ export function SessionChat({
   // `SessionComposerReadiness`.
   const runtimePhase = useRuntimePhase();
   // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
-  // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
+  // answering with a 503 (a runtime wedged mid-boot) resets the probe's
   // failure counter every tick, so `unreachable` never fires no matter how
   // long it stays wedged. See `useRuntimeBootStalled`.
   const runtimeStalled = useRuntimeBootStalled();

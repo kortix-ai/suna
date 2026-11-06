@@ -6,7 +6,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { sessionStartKey, type SessionStartResult } from '../core/rest/projects-client';
 import { noteSessionDeleted } from '../core/http/session-stopped';
 import { getCurrentRuntimeSandboxId, setCurrentRuntime } from '../core/session/current-runtime';
-import { useSession } from './opencode';
+import { useSession } from './runtime-hooks';
 
 /**
  * A session keeps its `sandbox_id` (the session id) while its box changes: a

@@ -32,9 +32,10 @@ describe('agents — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('78 grantable actions: all 85 workspace actions minus the 7 HUMAN_ONLY', () => {
-    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(78);
-    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.artifact.comment')).toBe(true);
+  test('77 grantable actions: all 84 workspace actions minus the 7 HUMAN_ONLY', () => {
+    // 54 → 53: artifact comments (project.artifact.comment) were removed (2026-11-06).
+    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(77);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.artifact.comment')).toBe(false);
   });
 
   // The git ref leaves are grantable on purpose: a project that WANTS an agent

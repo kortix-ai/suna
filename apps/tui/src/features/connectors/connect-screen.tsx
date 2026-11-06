@@ -3,8 +3,7 @@
  *
  * Two choices, as Marko asked: model providers (`/providers`: ChatGPT,
  * Claude, API keys) and connectors (`/connectors`: the apps and tools agents
- * use). OpenCode's `/connect` lists every integration in one list; Kortix
- * keeps the two pages and lets this screen route to either.
+ * use). Kortix keeps the two pages and lets this screen route to either.
  *
  * `/connect <query>` skips the question when the query names exactly one
  * model provider (`/providers <id>`), and otherwise searches connectors

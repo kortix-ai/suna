@@ -303,39 +303,6 @@ describe('secretDeliveryBlockedReason', () => {
     expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'denied', declarative([]))).toBeNull();
   });
 
-  // The commonest broken setup, and the one that sent a real user hunting for
-  // hours: an egress secret on a project whose manifest declares no `agents:`.
-  // `resolveConfigAgents` reports 'opencode' only when the manifest produced no
-  // specs AND no errors, so this state is certain, not unknown.
-  test('opencode discovery means no manifest grant exists, which is certain', () => {
-    const config: SecretAgentGrantConfig = { agent_discovery: 'opencode', agents: [] };
-    expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'egress', config)).toBe('no_agent_grant');
-  });
-
-  test('a native opencode agent does not rescue an egress secret', () => {
-    // Grants come only from manifest specs. A discovered `.opencode/agent/*.md`
-    // carries none, so it cannot make an egress secret deliverable.
-    const config: SecretAgentGrantConfig = {
-      agent_discovery: 'opencode',
-      agents: [
-        {
-          name: 'build',
-          description: null,
-          mode: null,
-          path: '.opencode/agent/build.md',
-          source: 'opencode',
-          enabled: true,
-        },
-      ],
-    };
-    expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'egress', config)).toBe('no_agent_grant');
-  });
-
-  test('runtime secrets are unaffected by opencode discovery', () => {
-    const config: SecretAgentGrantConfig = { agent_discovery: 'opencode', agents: [] };
-    expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'runtime', config)).toBeNull();
-  });
-
   // A caller may hand over a config it only partly resolved. Reading `agents`
   // off it threw a TypeError and turned GET /secrets into a 500, so the shape is
   // checked rather than trusted.
@@ -538,10 +505,8 @@ describe('secret audit agent grants', () => {
       canManageShared: true, agentGrants: config,
     })).toHaveProperty('agents', ['agent-0']);
   });
-  test('reports unrestricted runtime agents and no agents for denied delivery', () => {
+  test('reports no agents for denied delivery', () => {
     const base = { identifier: 'AUDIT_KEY', name: 'AUDIT_KEY', canManageShared: true };
-    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'runtime' }),
-      agentGrants: { agent_discovery: 'opencode', agents: [] } })).toHaveProperty('agents', 'all');
     expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'denied' }),
       agentGrants: declarative([['AUDIT_KEY']]) })).toHaveProperty('agents', []);
   });

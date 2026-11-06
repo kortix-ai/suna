@@ -42,7 +42,6 @@ import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../lib/se
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
 import { notifySessionShared } from '../lib/notification-recipients';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { createSession, deleteSession, restoreSession } from '../session-lifecycle';
 import { sessionRestoreUntil } from '../session-log-purge';
 import { readSessionConversationModels } from '../session-log-read';
@@ -101,7 +100,10 @@ async function sessionReadResponse(c: Context<AppEnv>, projectId: string, sessio
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
 
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+  // A read: a subagent finds the session that spawned it (`kortix sessions log <parent>`).
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c), {
+    spawnAncestorRead: true,
+  });
   if (!visible) return c.json({ error: 'Not found' }, 404);
   // A soft-deleted session is gone for a read-by-id, exactly as it is for the
   // default list. `deleteSession` only stamps `metadata.deletedAt`
@@ -882,22 +884,19 @@ export function registerProjectSessionsRoutes(): void {
     }
 
     await setSessionSharing(sessionId, intent);
-    // "Shared with you" for the people this change newly names (KRTX-1742),
-    // only with the project's notification_center flag on. `visible.grants`
-    // and `visible.row.visibility` were read BEFORE the change.
+    // "Shared with you" for the people this change newly names (KRTX-1742).
+    // `visible.grants` and `visible.row.visibility` were read BEFORE the change.
     // Fire-and-forget: it never throws and never delays or fails the share.
-    if (notificationsEnabled(loaded.row.metadata)) {
-      void notifySessionShared({
-        accountId: loaded.row.accountId,
-        projectId,
-        sessionId,
-        sharerId: loaded.userId,
-        creatorId: visible.row.createdBy,
-        priorGrants: visible.grants,
-        priorVisibility: visible.row.visibility,
-        intent,
-      });
-    }
+    void notifySessionShared({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+      sharerId: loaded.userId,
+      creatorId: visible.row.createdBy,
+      priorGrants: visible.grants,
+      priorVisibility: visible.row.visibility,
+      intent,
+    });
 
     const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
       return c.json(
@@ -1010,7 +1009,7 @@ export function registerProjectSessionsRoutes(): void {
 
     // A user-set name is the AUTHORITATIVE display name. It lives in
     // metadata.custom_name — a separate key from metadata.name (the server-side
-    // auto title mirrored from OpenCode during session reads) so a rename is never
+    // auto title mirrored from the runtime during session reads) so a rename is never
     // clobbered by a later sync. Passing name: "" (or null) clears the override
     // and reverts the session to its auto title.
     const hasNameField = hasOwn(body, 'name');

@@ -469,8 +469,8 @@ flow(
         });
       });
 
-      await ctx.step("preflight to opencode (the same harness) → 200 not available (same_harness), no loss; the read claimed nothing (a journal batch at generation 0 → 200)", async () => {
-        (await preflight("opencode")).status(200).body().has("$.available", false).has("$.reason", "same_harness").has("$.losses", []).has("$.unsupported", []);
+      await ctx.step("preflight to opencode → 400: no session can switch to OpenCode; the reads claimed nothing (a journal batch at generation 0 → 200)", async () => {
+        (await preflight("opencode")).status(400);
         (await box.post(JOURNAL, batch(0, [{ rev: REV + 5, message: message("msg_u3", 3) }]), { params, raw: true, headers: { "content-type": "application/json", "content-encoding": "gzip" } })).status(200);
       });
 

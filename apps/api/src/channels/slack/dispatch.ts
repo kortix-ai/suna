@@ -807,7 +807,7 @@ async function routeSlackThread(
 
       // outcome === 'no-session': the durable projectSessions row itself is gone
       // (deleted; the chat_threads FK cascade should already have dropped this
-      // mapping). With the 404-heal in the shared lifecycle delivery path a stale OpenCode
+      // mapping). With the 404-heal in the shared lifecycle delivery path a stale runtime
       // root no longer masquerades as 'no-session', so this is now ONLY a truly
       // deleted session. Drop the stale mapping and recreate — atomically, below,
       // so the recreate can never shadow a live session.

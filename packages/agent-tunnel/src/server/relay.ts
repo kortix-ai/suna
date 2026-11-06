@@ -11,8 +11,15 @@ import {
   TunnelErrorCode,
 } from '../shared/types';
 
+/** What the relay uses of an agent's socket. A DOM `WebSocket` and Bun's `ServerWebSocket` both fit it. */
+export interface AgentSocket {
+  readonly readyState: number;
+  send(data: string): void;
+  close(code?: number, reason?: string): void;
+}
+
 interface AgentConnection {
-  ws: WebSocket;
+  ws: AgentSocket;
   signingKey: string;
   nonce: number;
   lastResponseNonce: number;
@@ -43,7 +50,7 @@ export class TunnelRelay extends EventEmitter {
 
   registerAgent(
     tunnelId: string,
-    ws: WebSocket,
+    ws: AgentSocket,
     signingKey: string,
     metadata?: Record<string, unknown>,
   ): void {
@@ -70,7 +77,7 @@ export class TunnelRelay extends EventEmitter {
     console.log(`[tunnel-relay] Agent registered: ${tunnelId} (total: ${this.agents.size})`);
   }
 
-  unregisterAgent(tunnelId: string, ws?: WebSocket): boolean {
+  unregisterAgent(tunnelId: string, ws?: AgentSocket): boolean {
     const existing = this.agents.get(tunnelId);
     if (!existing) {
       return false;
@@ -139,7 +146,7 @@ export class TunnelRelay extends EventEmitter {
     return true;
   }
 
-  handleAgentMessage(tunnelId: string, ws: WebSocket, raw: string | Buffer): void {
+  handleAgentMessage(tunnelId: string, ws: AgentSocket, raw: string | Buffer): void {
     let msg: any;
     try {
       msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf-8'));

@@ -55,8 +55,6 @@ export * from './runtime-triggers';
 export * from './rooms';
 export * from './multi-agent';
 export * from './artifacts';
-export * from './artifact-live';
-export * from './artifact-doc';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';

@@ -67,7 +67,7 @@ interface StartSandboxPortProxyOpts {
   runtimeUrl: string;
   token: string;
   /** Read for every request and WebSocket upgrade; falls back to `token`. A
-   *  proxy lives as long as `opencode attach`, longer than one credential. */
+   *  proxy lives as long as a `sessions forward`, longer than one credential. */
   getToken?: () => string | null | undefined | Promise<string | null | undefined>;
   port?: number;
 }
@@ -81,10 +81,9 @@ interface ProxyWsData {
 
 /**
  * Expose one SDK-resolved sandbox port (any `/p/{externalId}/{port}` proxy
- * route — OpenCode on 8000 for `opencode attach`, or an arbitrary dev-server
- * port for `sessions forward` / the TUI Ports panel) on localhost, injecting
- * the Kortix bearer token. This adapter owns the only raw HTTP/WebSocket
- * transport allowed in the CLI. `startSandboxPortProxy` below is this same
+ * route — a dev-server port for `sessions forward` / the TUI Ports panel) on
+ * localhost, injecting the Kortix bearer token. This adapter owns the only raw
+ * HTTP/WebSocket transport allowed in the CLI. `startSandboxPortProxy` below is this same
  * function under its established name at the one call site that predates the
  * generalization.
  */

@@ -26,6 +26,8 @@
  * from the rest of the text — then no later opener can close either.
  */
 
+import { lineEnd } from './tool-output/scan';
+
 /** A region of text: `text.slice(index, end)`. */
 export interface TextSpan {
   /** Index of the first character. */
@@ -87,15 +89,6 @@ const NEWLINE = 10; // \n
 const WHITESPACE = /\s/;
 /** A regex `\w` without the `u` flag: `[A-Za-z0-9_]`. */
 const WORD = /\w/;
-
-/** The first line terminator (`\n`, `\r`, U+2028, U+2029) at or after `from`, or the length of the text. */
-function lineEnd(text: string, from: number): number {
-  for (let i = from; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (code === 10 || code === 13 || code === 0x2028 || code === 0x2029) return i;
-  }
-  return text.length;
-}
 
 /** `A`–`Z` to `a`–`z` and nothing else: the case folding of a regex `i` flag without `u`. */
 function fold(code: number): number {

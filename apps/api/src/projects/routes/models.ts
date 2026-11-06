@@ -97,10 +97,9 @@ async function modelAccessDefault(userId: string, accountId: string, projectId: 
 
 export function registerModelsRoutes(): void {
   // GET /v1/projects/:projectId/llm-catalog
-  // Server-side source of truth for the gateway model catalog. The seed daemon
-  // fetches it at PARK with a sandbox token so the no-restart warm-fork bakes the
-  // full picker into opencode config. The web UI also reads it with normal project
-  // auth so the model picker is available before the sandbox runtime answers.
+  // Server-side source of truth for the gateway model catalog. The web UI reads
+  // it with normal project auth so the model picker is available before the
+  // sandbox runtime answers. A session sandbox credential may read it too.
   // The catalog is non-secret; access is still scoped to this project.
   projectsApp.openapi(
     createRoute({
@@ -166,7 +165,7 @@ export function registerModelsRoutes(): void {
 
   // GET /v1/projects/:projectId/model-picker
   // UI-specific, connection-aware projection of the runtime catalog. The full
-  // /llm-catalog response remains available for sandbox/OpenCode configuration;
+  // /llm-catalog response remains available for sandbox configuration;
   // interactive selectors should use this bounded payload instead.
   projectsApp.openapi(
     createRoute({

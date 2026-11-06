@@ -171,7 +171,10 @@ async function sessionReadGate(
   if (binding.kind === 'error') return { denied: binding.response };
   const { loaded } = binding;
   await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
-  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+  // A read: a subagent reads the conversation of the sessions that spawned it.
+  const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c), {
+    spawnAncestorRead: true,
+  });
   // A deleted session reads nothing (KRTX-2744, as `GET …/transcript`): its stored log and
   // loss report are content of a session the trash model advertises as gone. The restore
   // claim takes the session sandbox credential, not this gate, so a fresh box still claims.
@@ -411,7 +414,7 @@ export function registerSessionLogRoutes(): void {
       tags: ['sessions'],
       summary: 'List what a session would lose on another harness',
       description:
-        'Read only: claims nothing, changes nothing. Body `{ to: "pi" | "opencode" }`. Answers `SessionLogSwitchPreflight`: ' +
+        'Read only: claims nothing, changes nothing. Body `{ to: "pi" }`. Answers `SessionLogSwitchPreflight`: ' +
         '`available` and `reason` (`same_harness`: a switch that cannot happen is still a 200), ' +
         '`restores` (the project restores session logs; false puts a `history` line first in `losses`), ' +
         '`losses` (each feature or runtime control the stored log uses that `to` handles worse, with counts; `degraded`: ' +

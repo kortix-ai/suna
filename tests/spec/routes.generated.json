@@ -1,7 +1,7 @@
 {
   "generatedAt": "static",
-  "count": 1762,
-  "aliases": 691,
+  "count": 1746,
+  "aliases": 671,
   "routes": [
     {
       "method": "GET",
@@ -1117,6 +1117,18 @@
       "path": "/v1/admin/api/accounts/:id/users"
     },
     {
+      "method": "GET",
+      "path": "/v1/admin/api/credit-codes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/credit-codes"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/admin/api/credit-codes/:id"
+    },
+    {
       "method": "POST",
       "path": "/v1/admin/api/impersonate"
     },
@@ -1399,6 +1411,10 @@
     {
       "method": "POST",
       "path": "/v1/billing/reactivate-subscription"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/redeem-code"
     },
     {
       "method": "POST",
@@ -2709,8 +2725,7 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:workspaceId/artifact-comment-threads/:threadId",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifact-comment-threads/:threadId"
+      "path": "/v1/projects/:workspaceId/artifact-comment-threads/:threadId"
     },
     {
       "method": "GET",
@@ -2744,53 +2759,43 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/activity",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/activity"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/activity"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:commentId/screenshot",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:commentId/screenshot"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:commentId/screenshot"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:threadId",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:threadId"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:threadId"
     },
     {
       "method": "DELETE",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:threadId/:commentId",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:threadId/:commentId"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:threadId/:commentId"
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:threadId/:commentId",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:threadId/:commentId"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:threadId/:commentId"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:threadId/replies",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:threadId/replies"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/:threadId/replies"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/context",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/context"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/context"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/send",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/send"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/comments/send"
     },
     {
       "method": "GET",
@@ -2799,48 +2804,39 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/flushed",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/flushed"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/flushed"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/lease",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/lease"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/lease"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/reset",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/reset"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/reset"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/seed",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/seed"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/seed"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/updates",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/updates"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/doc/updates"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/live",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/live"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/live"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/live/agent",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/live/agent"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/live/agent"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/live/ticket",
-      "aliasOf": "/v1/workspaces/:workspaceId/artifacts/:artifactId/live/ticket"
+      "path": "/v1/projects/:workspaceId/artifacts/:artifactId/live/ticket"
     },
     {
       "method": "DELETE",
@@ -5500,10 +5496,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/workspaces/:workspaceId/artifact-comment-threads/:threadId"
-    },
-    {
-      "method": "GET",
       "path": "/v1/workspaces/:workspaceId/artifacts"
     },
     {
@@ -5528,83 +5520,7 @@
     },
     {
       "method": "GET",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/activity"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:commentId/screenshot"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:threadId"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:threadId/:commentId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:threadId/:commentId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/:threadId/replies"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/context"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/comments/send"
-    },
-    {
-      "method": "GET",
       "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/content"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/flushed"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/lease"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/reset"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/seed"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/doc/updates"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/live"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/live/agent"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/artifacts/:artifactId/live/ticket"
     },
     {
       "method": "DELETE",

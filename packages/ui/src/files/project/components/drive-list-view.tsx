@@ -48,7 +48,6 @@ import { ownClicks } from './own-clicks';
 
 const ELEVATED_DIR_META: Record<string, string> = {
   '.kortix': 'Workspace config, tasks, context',
-  '.opencode': 'Agents, skills, commands',
 };
 
 function ChalkBadge({ label }: { label: string }) {

@@ -48,11 +48,9 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   '  - slug: gmail-read': 'textc5fe821106fd',
   '  - slug: memory-reflector': 'text8012e38cdeb6',
   '  - slug: support-inbox': 'text2a53504249e4',
-  '  "$schema": "https://opencode.ai/config.json",': 'texte0eb65e020e7',
   '  "default_agent": "kortix",': 'text3e2a105fd278',
   '  "permission": "allow"': 'text214c21aedcef',
   '  "theme": "system",': 'text9c4061948874',
-  '  // Docs: https://opencode.ai/docs/': 'text797041ba00c3',
   '  // policy.': 'textf4510b04848b',
   '  // The session is already an isolated machine on a': 'text77101dffaadc',
   '  // throwaway branch, so the agent starts wide open.': 'textfe03288dc0ba',
@@ -244,8 +242,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'kortix.yaml': 'text1965f383021e',
   'kortix.yaml — triggers': 'text6e68758082bc',
   'kortix.yaml grants': 'text9c9582a7f332',
-  'kortix.yaml is the Kortix layer: the machine sessions boot on, the connectors, the triggers, the secret names, and what each agent is allowed to touch. The OpenCode config is the runtime the agents think in. Everything past those two is files in the repo.':
-    'textbd49211479cd',
   'launch-note.md': 'textdd6b0b63da5a',
   'launch-note.md · +64 −0': 'textbbd67a03b342',
   'Link or unlink your chat identity to your Kortix account': 'textc562664bad32',
@@ -279,7 +275,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'One honest limit: the card carries the decision and a link back into Kortix. Reading the actual diff of a change request happens in the web app, where a diff belongs — Slack is not a code review tool and we are not going to pretend it is.':
     'text635ccd16e45c',
   'One is live. Three are behind a switch. We will say which.': 'text738439725624',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
   'One repo': 'texta086ad00c629',
   'One search, whole company': 'text0948fa9a3378',
   'One session per conversation. session_key renders from the payload, so a single trigger fans out into a session per chat, per customer, or per repository — separate threads rather than one blended transcript.':
@@ -290,8 +285,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.':
     'text1d9a8dde5629',
   'Open the repo': 'text1fa449139a48',
-  'OpenCode, declared in the repo': 'text8eb07f243576',
-  'opencode:': 'text4ba79f911c93',
   'opened by invoice-clerk': 'textad42c6b4c691',
   'Operator switch': 'text7d92aa0e75c4',
   owner_approval: 'text76f126541788',
@@ -299,8 +292,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'permission:': 'textefde4d0d22b4',
   project_open: 'text7053053ce5eb',
   'project:': 'text633dcfcb4a68',
-  'Prompts, models, tools, plugins and permissions. An agent is a stock OpenCode agent — markdown at baseline, and past that the tools, plugins and model config sitting beside it in the same repo. Read the directory and you know exactly what that agent will do.':
-    'text6e3e333d775c',
   'Put it in the thread people already use.': 'text586e55500de2',
   'Reach it where people already work.': 'text438420b155ba',
   'read once, used every session': 'text91549baf8cfd',
@@ -315,7 +306,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'text5b4d78bf9475',
   'Run the workspace without leaving the conversation.': 'text429be41120e9',
   Runtime: 'text109311589787',
-  'runtime: opencode': 'text02bb33646c32',
   'Same rules': 'text24c56b85c01b',
   'sandbox:': 'textdb84fa521ad4',
   'Secret values': 'text036141a7185f',
@@ -331,7 +321,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Start a workspace': 'text58265cc01151',
   'Telegram, WhatsApp, SMS and Discord are not channels, and this page will not imply they are on a roadmap it cannot promise. There is also no build-your-own-channel API — the platform list is a closed enum. What there is instead is a signed webhook trigger, and we would rather tell you its limits than sell you the word "extensible".':
     'textd447ff3bae61',
-  'The agent — a stock OpenCode agent file. What it says lives here.': 'text11e51402c1de',
   'The agent answers in the thread. Work it means to keep is committed on the session’s own branch and reaches main only through a change request a person reviews.':
     'textf25f2920368a',
   'The agent works': 'text3a259d3f4995',
@@ -353,7 +342,6 @@ export const CHANNELS_COMPANY_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'text3f5c55e70abc',
   'The manifest names secrets and grants them per agent. The values are encrypted in the platform, injected into the machine at runtime, and never written to the repo or the logs.':
     'text71971aadbf54',
-  'The OpenCode config decides': 'textc681d401ded0',
   'The reply lands': 'text52c4b3e90433',
   'The reply lands in the thread as one message that fills in, not a wall of updates. The agent finalises that message rather than posting a second one underneath it.':
     'text1b7b2078f271',

@@ -46,7 +46,7 @@ const REVIEWER_BLOCK = {
   skills: 'all',
   kortix_permissions: 'all',
   workspace: 'runtime',
-  opencode: { description: 'Reviews diffs', mode: 'primary', prompt: 'You review code.' },
+  behavior: { description: 'Reviews diffs', mode: 'primary', prompt: 'You review code.' },
 };
 
 /** A v3 GET block that carries `network_egress`, which the PUT schema
@@ -57,14 +57,13 @@ const EGRESS_BLOCK = {
   network_egress: { version: 1, default: 'deny', rules: [] },
   file: 'agents/egress.md',
   behavior: { description: 'Egress', mode: 'primary', prompt: 'You fetch.' },
-  opencode: { description: 'Egress', mode: 'primary', prompt: 'You fetch.' },
 };
 
 /** The keys AgentBlockSchema accepts. Any other key is a 400. */
 const PUT_KEYS = new Set([
   'enabled', 'tools', 'sandbox', 'connectors', 'connectors_required', 'connectors_personal',
   'secrets', 'skills', 'apps', 'kortix_permissions', 'subagents', 'commands', 'extensions',
-  'codemode', 'kortix_cli', 'repository_access', 'workspace', 'file', 'behavior', 'opencode',
+  'codemode', 'kortix_cli', 'repository_access', 'workspace', 'file', 'behavior',
 ]);
 
 /** The fake server serves exactly the /detail shape the API does, so the agent
@@ -494,7 +493,7 @@ describe('kortix agents — default, scope, config', () => {
         'config',
         'reviewer',
         '--set',
-        'opencode.model=glm-5.3-flash',
+        'behavior.model=glm-5.3-flash',
         '--set',
         'enabled=false',
         '--project',
@@ -516,7 +515,7 @@ describe('kortix agents — default, scope, config', () => {
       body: {
         ...REVIEWER_BLOCK,
         enabled: false,
-        opencode: { ...REVIEWER_BLOCK.opencode, model: 'glm-5.3-flash' },
+        behavior: { ...REVIEWER_BLOCK.behavior, model: 'glm-5.3-flash' },
       },
     });
     expect(r.stdout).toContain('reviewer config saved');

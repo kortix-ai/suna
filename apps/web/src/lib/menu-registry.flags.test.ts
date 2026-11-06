@@ -28,11 +28,14 @@ describe('menu registry feature-flag gating', () => {
     expect(registrySource).not.toContain('ExperimentalFeatureKey');
   });
 
-  test('every declared requiresFlag value is a real feature flag key', () => {
+  test('every declared requiresFlag value is a key the API serves', () => {
+    // `artifacts` graduated on 2026-11-06 but is still served: it reads whether
+    // the platform stores Files (Platinum), as `drives` does.
+    const served = [...FEATURE_FLAG_KEYS, 'artifacts'];
     const declared = menuRegistry.flatMap((item) => (item.requiresFlag ? [item.requiresFlag] : []));
     expect(declared.length).toBeGreaterThan(0);
     for (const key of declared) {
-      expect(FEATURE_FLAG_KEYS).toContain(key);
+      expect(served).toContain(key);
     }
   });
 
@@ -62,9 +65,10 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('the palette honours requiresFlag for the entries that still declare one', () => {
-    // `proj-artifacts` (`artifacts`, #10842) and `proj-goals` (`goals`,
-    // KRTX-4222) are the flagged palette entries (Apps and Drive graduated off
-    // the flag system in 2026-10 and 2026-11). The filter
+    // `proj-artifacts` (`artifacts`, #10842: Artifacts availability since it
+    // graduated on 2026-11-06) and `proj-goals` (`goals`, KRTX-4222) are the
+    // flagged palette entries (Apps and Drive graduated off the flag system in
+    // 2026-10 and 2026-11). The filter
     // line is the whole gate, so it is pinned literally — a rename or a fail-OPEN
     // rewrite of it would otherwise pass every other test here.
     const flagged = menuRegistry.filter(

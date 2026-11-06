@@ -16,13 +16,12 @@ import { logger } from '../../lib/logger';
 import { workspaceIdParam } from '../../shared/route-params';
 
 // POST /v1/projects/:projectId/turn-permission
-// Sandbox-to-apps/api relay for a harness permission request, from OpenCode
-// and pi alike (apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts `relayPermission`).
+// Sandbox-to-apps/api relay for a harness permission request
+// (apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts `relayPermission`).
 // It stores the ask (lib/pending-permissions.ts), so it outlives the call that
 // parks and waits in Review, and sends one "needs your approval" notification
 // per request id to the person who prompted the running turn and the session's
-// watchers (KRTX-1742), or, with the project's notification_center flag off, to
-// the session creator's phones. It answers how long the call may wait live
+// watchers (KRTX-1742). It answers how long the call may wait live
 // (`live_wait_ms`), and `approved` when a person approved this exact call
 // (`args_hash`) while it was parked: the agent's re-run then runs. Session
 // resolution matches POST /turn-question (routes/turn-questions.ts), but only a

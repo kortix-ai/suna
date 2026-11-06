@@ -39,6 +39,70 @@ project id. New names:
 `resendAccountInvite`, `leaveAccount`, `listAccountTokens`, `createAccountToken` and
 `revokeAccountToken` name their workspace equivalent. They are never removed.
 
+### Changed (notifications are on for every project)
+- The `notification_center` project flag graduated (2026-11-06): every project has the
+  notification inbox, push, session watch and alerts. `FeatureFlagKey` keeps
+  `notification_center`, marked `@deprecated`; `FEATURE_FLAG_KEYS` no longer lists it, and
+  `useFeatureFlag(projectId, 'notification_center')` reports `enabled: true`.
+  `KortixProject.experimental.notification_center` is optional now, like `meta_agent`.
+  Removed in the next major.
+- `useSession({ presencePageExit })` defaults to `true`: a closing tab ends its presence lease
+  at once, so a notification that arrives a second later reaches the person. Pass `false` to
+  keep the lease until it expires.
+- `DEFAULT_NOTIFICATION_PREFERENCES`: email is off by default for `turn_done`, `turn_error`,
+  `question`, `permission`, `shared`, `automation_recovered` and `capture_device_recovered`;
+  a person turns it on per kind. `automation_failed`, `capture_device_down` and
+  `artifact_comment` keep email on.
+
+### Added (harness-neutral name)
+- `harnessVersion` on the runtime connection store (`useSandboxConnectionStore`,
+  `useRuntimeConnectionStore`): the session runtime's harness version from `/kortix/health`,
+  `null` until a probe answers. `openCodeVersion` holds the same value and is `@deprecated`.
+  Removed in the next major.
+
+### Changed (OpenCode leftovers)
+- The runtime query keys sit under `['runtime', …]`, not `['opencode', …]`. Build a key with
+  `runtimeKeys` and drop them all with `resetRuntimeQueries`: a hand-typed `['opencode', …]`
+  key no longer matches anything.
+- No daemon or API answers "opencode not ready" since OpenCode left the box (2026-10-30).
+  `RUNTIME_NOT_READY_MARKERS` lists `runtime_not_ready` and `sandbox runtime not ready` only,
+  and `isSandboxNotReadyError`, `isRuntimeNotReadyResponse` and `isRuntimeStartingError` no
+  longer match the OpenCode phrases. `useCreateRuntimeSession` retries the daemon's current
+  not-ready answer.
+- The model picks persist in `localStorage` under `kortix-model-store-v1`, not
+  `opencode-model-store-v1`. The store reads a value saved under the old key once, writes it
+  under the new key and removes the old key. `resetIdentityState` removes both keys.
+- The message-id clock exports (`WIRE_ID_TIME_SCALE`, `WIRE_ID_TIME_MASK`,
+  `WIRE_ID_CLOCK_TOLERANCE`, `WIRE_ID_BACKDATE_MS`, `wireIdClock`, `wireIdClockAt`,
+  `wireIdClockDelta`, `maxWireIdClock`, `isWireIdAheadOf`, `newestWireIdClock`,
+  `mintWireMessageIdAbove`, `MintWireMessageIdAboveInput`, `MintedWireMessageId`) are not
+  deprecated. Their `@deprecated` tag ("Removed with OpenCode support") was wrong: the pi
+  harness mints its reply ids with `mintWireMessageIdAbove` and apps/api places prompts with
+  the clock. They are the Kortix message id format and stay.
+- The API no longer sends `ProjectConfigSummary.open_code_raw` and
+  `ProjectConfigSummary.open_code_default_agent`. Both fields are optional now, so the type
+  says what arrives. `getProjectDetail`, `selectableProjectAgents`,
+  `projectConfigAgentsToRuntimeAgents` and `useSession().defaultAgent` read `default_agent`
+  only: they no longer fall back to `open_code_default_agent`.
+- The npm `description` no longer names OpenCode.
+
+### Deprecated (OpenCode-era fields and names)
+Each is removed in the next major.
+- `LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME` (`OPENCODE_AUTH_JSON`): no sign-in writes the secret,
+  and the API no longer reads it, counts it as a ChatGPT login or deletes it on disconnect.
+  The SDK connection checks still count it.
+- `ProjectConfigSummary.open_code_raw` and `ProjectConfigSummary.open_code_default_agent`
+  (read `default_agent`): the API no longer sends them.
+- The `'opencode'` member of `ProjectConfigSummary.agent_discovery`: no API sends it. The API
+  sends `'declarative'` for every project, and `null` in a response filtered by the caller's
+  `project.agent.read` access.
+- `KortixMasterProject.opencode_id`: no daemon sends it.
+- `SessionHealthResponse.opencode` and `AgentConfigBlock.opencode` now name the major that
+  removes them.
+- `useRuntimeConfig`, `configKeys`, `useRuntimeSessionTodo`, `isShellMode` and
+  `getShellModePart` serve only a daemon built before 2026-10-30. Their tags said "Removed with
+  OpenCode support"; they now say "Removed in the next major."
+
 ### Removed (breaking: the OpenCode-era surface, 0.15.0)
 Every session runs pi; OpenCode is gone from the box. This release removes the names that
 only served OpenCode and the aliases kept "until the next major". No first-party host imports

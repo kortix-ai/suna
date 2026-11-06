@@ -348,6 +348,8 @@ export {
   connectorProjectPoliciesRelations,
   connectorProjectSettingsRelations,
   selfHostSignupPolicy,
+  creditCodes,
+  creditCodeRedemptions,
 } from './schema/kortix';
 export type { AgentGrant, StoredAgentGrant, StoredKeyScopes, ArtifactCommentMention } from './schema/kortix';
 export { readStoredAgentGrant } from './schema/kortix';

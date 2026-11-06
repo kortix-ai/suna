@@ -3,15 +3,15 @@
  *
  * The model a turn runs lives in THREE places:
  *   1. `project_sessions.metadata.model` — the row's pin
- *   2. `KORTIX_OPENCODE_MODEL`                    — the box's process env
- *   3. OpenCode's own per-session state           — what the turn ACTUALLY uses
+ *   2. `KORTIX_MODEL`                    — the box's process env
+ *   3. the runtime's own session state   — what the turn ACTUALLY uses
  *
  * #7957 converged (1) and (2). Measured on dev immediately afterwards: the row
  * read `deepseek-v4.1-flash` with `model_source: 'repointed'`, the box
  * carried the new env, and the very next turn still ran `grok-4.6` and still
  * died on "The grok-4.6 model was retired from Kortix's managed lineup".
- * `KORTIX_OPENCODE_MODEL` only seeds the default for a NEW OpenCode session; an
- * existing one keeps the model it was created with, forever.
+ * On OpenCode, `KORTIX_MODEL` only seeded the default for a NEW session; an
+ * existing one kept the model it was created with, forever.
  *
  * So a re-pointed pin has to ride the prompt. `triggerModelOverride` already
  * carries this exact rule for triggers — its comment records the same shape
@@ -49,7 +49,7 @@ export function promptModelOverride(
   }
   const metadata = sessionMetadata ?? {};
   // `model_restored`: the revert moved the pin back off a fallback
-  // (session-model-fallback-revert.ts) and OpenCode still runs the fallback.
+  // (session-model-fallback-revert.ts) and the runtime still runs the fallback.
   const rides =
     metadata.model_source === 'repointed' ||
     metadata.model_source === 'fallback' ||

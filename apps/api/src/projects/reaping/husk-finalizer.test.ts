@@ -38,7 +38,7 @@ const { finalizeHuskTurn } = await import('./husk-finalizer');
 const TARGET = {
   sandboxId: 'sb-1',
   externalId: 'ext-1',
-  opencodeSessionId: 'ses_root',
+  runtimeSessionId: 'ses_root',
   messageId: 'msg_turn_1',
 };
 
@@ -143,14 +143,11 @@ describe('finalizeHuskTurn', () => {
     expect(fetchCalls).toHaveLength(1);
   });
 
-  // The shared-predicate pin: a retryable error is a turn OpenCode still owns,
-  // not a closed one. Diverging from opencode-turn-state.ts here would leave the
-  // exact class of husk this module exists to close.
   // ── ownership: the abort is ROOT-scoped, the terminal evidence is not ──
-  // Every prompt of a session runs on one OpenCode root and `activeTurns` holds
+  // Every prompt of a session runs on one runtime root and `activeTurns` holds
   // one record per prompt, so the reaper reaches this module for turn A while
-  // turn B is streaming on the SAME root — `opencodeDeliveryInFlight` reports A
-  // terminal the moment B's user message follows it. Aborting the root there
+  // turn B is streaming on the SAME root: A reads terminal the moment B's user
+  // message follows it. Aborting the root there
   // ends B mid-answer and the UI renders it "Interrupted".
   test('never aborts when the open assistant message answers ANOTHER turn on the same root', async () => {
     responses = [
@@ -173,7 +170,7 @@ describe('finalizeHuskTurn', () => {
   });
 
   // The same shape for a `delivering` record whose prompt never reached
-  // OpenCode: no assistant message can belong to it, so nothing may be aborted.
+  // the runtime: no assistant message can belong to it, so nothing may be aborted.
   test('never aborts when this turn has no message on the root at all', async () => {
     responses = [
       transcript(

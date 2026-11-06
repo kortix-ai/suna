@@ -8,7 +8,7 @@
 import { isRecord } from '@kortix/shared/guards';
 
 /** Per string: a text-like part, or one string in a tool call's payload. Real
- *  messages are 2-10 KB and OpenCode cuts a tool's output at 50 KB, so this
+ *  messages are 2-10 KB and the runtime truncates a tool's output, so this
  *  only stops one pathological string from becoming a pathological row. */
 export const MIRROR_MAX_PART_CHARS = 200_000;
 
@@ -19,17 +19,17 @@ export const MIRROR_WINDOW_MAX_CHARS = 1_000_000;
 
 /** One mirrored message in the shape the sync store hydrates from. */
 export interface MirrorMessage {
-  /** OpenCode's message envelope, verbatim (`Message` in @opencode-ai/sdk). */
+  /** The message envelope of the `kortix.transcript.v1` wire (OpenCode 1.18 field names). */
   info: Record<string, unknown>;
   /** The message's parts. */
   parts: Array<Record<string, unknown>>;
 }
 
 export interface MirrorSnapshot {
-  /** The OpenCode session whose messages this window holds: the root, or
+  /** The runtime session whose messages this window holds: the root, or
    *  the sub-agent session a child read asked for. */
   runtime_session_id: string | null;
-  /** The OpenCode root the mirror was captured from. Equal to
+  /** The runtime root the mirror was captured from. Equal to
    *  `runtime_session_id` for a root read. */
   root_runtime_session_id?: string | null;
   captured_at: string;
@@ -55,7 +55,7 @@ export interface MirrorSnapshot {
 const normalizeToolName = (name: unknown) =>
   (typeof name === 'string' ? name : '').replace(/^oc-/, '').replace(/-/g, '_');
 
-/** A tool call that has ended. OpenCode's schema gives both a required `input`. */
+/** A tool call that has ended. The v1 wire schema gives both a required `input`. */
 const isSettledToolStatus = (status: unknown) => status === 'completed' || status === 'error';
 
 const SKILL_TITLE = 'Loaded skill: ';

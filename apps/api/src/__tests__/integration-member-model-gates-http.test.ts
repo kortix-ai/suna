@@ -69,8 +69,8 @@ beforeAll(async () => {
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
   ]);
   // A RUNNING session the member OWNS. Ownership matters: `mayChangeSessionModel`
-  // gates on owner-or-manager (a live model change restarts opencode and would
-  // kill someone else's in-flight turn), and `canChangeSessionModel` refuses a
+  // gates on owner-or-manager (a live model change moves the model of someone
+  // else's running session), and `canChangeSessionModel` refuses a
   // terminal status. Both must be satisfied for the role floor to be what this
   // suite is actually reading.
   await db.insert(projectSessions).values({

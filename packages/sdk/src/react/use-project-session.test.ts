@@ -35,7 +35,7 @@ describe('useProjectSession — one contract and one fetcher for qk.project.sess
     expect(config.queryKey).toEqual(qk.project.session('proj-1', 'sess-1'));
   });
 
-  // The drift this hook exists to remove: `use-canonical-opencode-session.ts`
+  // The drift this hook exists to remove: `use-canonical-runtime-session.ts`
   // set a bare `staleTime: 10_000` on the same entry two `apps/web` panels
   // read on `contract('inventory')`. `staleTime` is per-observer, so the
   // window depended on which surface happened to be mounted.

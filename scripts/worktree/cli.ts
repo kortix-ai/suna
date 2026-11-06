@@ -110,7 +110,7 @@ function warnOnStackPressure(current: string, reg: Registry): void {
  * delivery, session-lifecycle commands, sandbox env sync. Whichever API instance
  * grabs a job pushes ITS `KORTIX_URL`-derived gateway URL into the box. If that
  * other stack's tunnel has rotted (quick tunnels do, every few hours), the next
- * prompt it picks up dies inside OpenCode with
+ * prompt it picks up dies inside the agent runtime with
  * `Cannot connect to API … <other-stack>.trycloudflare.com/v1/llm-gateway`, and
  * nothing in THIS stack's log explains it. 2026-08-22: `mw-perf`'s dead tunnel
  * was pushed into a `timeline-parity` box this way. Say it at start, where the
@@ -127,7 +127,7 @@ function warnOnSharedDbCrosstalk(current: string, reg: Registry): void {
   if (others.length === 0) return;
   warn(`${plural(others.length, 'other stack is', 'other stacks are')} live on the SAME shared DB: ${others.join(', ')}`);
   sub('they share one work queue (prompt delivery, session lifecycle, env sync) — whichever API grabs a job pushes ITS KORTIX_URL into the sandbox;');
-  sub(`a rotted tunnel over there surfaces HERE as OpenCode "Cannot connect to API …trycloudflare.com/v1/llm-gateway" on the first prompt.`);
+  sub(`a rotted tunnel over there surfaces HERE as "Cannot connect to API …trycloudflare.com/v1/llm-gateway" on the first prompt.`);
   sub(`run one stack at a time (${pc.cyan('pnpm worktree stop <name>')}), or recreate this worktree with ${pc.cyan('--db')} for an isolated database.`);
 }
 

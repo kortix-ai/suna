@@ -151,9 +151,9 @@ export function withUpstreamHeadersTimeout(
   };
 }
 
-/** The provider's own error, relayed with its status and a `retry-after` when it sent one. */
-export function rawProviderError(error: UpstreamHttpError): Response {
-  return new Response(providerClientErrorBody(error.status, error.body || JSON.stringify({ error: { message: error.message } })), {
+/** The provider's own error, relayed with its status and a `retry-after` when it sent one. `sentBytes` is the body's size, for `request_too_large`. */
+export function rawProviderError(error: UpstreamHttpError, sentBytes = 0): Response {
+  return new Response(providerClientErrorBody(error.status, error.body || JSON.stringify({ error: { message: error.message } }), sentBytes), {
     status: error.status,
     headers: {
       'content-type': 'application/json',
@@ -417,7 +417,7 @@ export async function dispatch(
     const secretId = failure.attempt.descriptor.poolSecretId;
     if (!secretId || failure.status !== 429) return;
     const seconds = (await usageLimitResetSeconds(failure)) ?? clampRetryAfterSeconds(retryAfterOf(failure)) ?? 30;
-    // OpenCode waits out a retry-after verbatim, so the client hears at most a minute.
+    // A client can wait out a retry-after verbatim (OpenCode did), so the client hears at most a minute.
     const clientSeconds = Math.min(seconds, MAX_RELAYED_RETRY_AFTER_SECONDS);
     earliestPoolRetryAt = Math.min(earliestPoolRetryAt, Date.now() + clientSeconds * 1000);
     if (!ctx.notePoolRateLimit) return;

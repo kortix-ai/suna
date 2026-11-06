@@ -16,10 +16,10 @@ describe('internal app SDK boundary', () => {
       import { forwardKortixRequest } from '@kortix/sdk/server';
       const es = new EventSource('https://api.kortix.com/v1/x');
       import { cn } from '@kortix/ui/lib/utils';
-      import { createClient } from '@opencode-ai/sdk';
+      const runtimeLabel = 'OpenCode';
     `;
     expect(new Set(scanSource(fixture).map((v) => v.rule))).toEqual(
-      new Set(['client-server-sdk', 'raw-transport', 'deep-ui-entry', 'opencode-package', 'provider-term']),
+      new Set(['client-server-sdk', 'raw-transport', 'deep-ui-entry', 'provider-term']),
     );
   });
 

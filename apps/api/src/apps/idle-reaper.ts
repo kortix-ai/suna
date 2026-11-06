@@ -8,6 +8,7 @@ import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { type AppdStatus, AppHostingProvider } from './hosting';
 import { groupAlwaysOn, groupMinRunning, releaseConfigOf } from './release-config';
+import { transitionAppRuntime, transitionAppRuntimes } from './runtime-status';
 
 /** Does keep-alive look after this release: an always-on group, or a group with `min_machines_running`? */
 function releaseKeptUp(app: typeof apps.$inferSelect, deployment: typeof appDeployments.$inferSelect): boolean {
@@ -30,13 +31,11 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
   if (running) return { candidates: 0, stopped: 0, errors: 0 };
   running = true;
   try {
-    await db
-      .update(appRuntimes)
-      .set({ status: 'running', updatedAt: now })
-      .where(and(
-        eq(appRuntimes.status, 'stopping'),
-        lt(appRuntimes.updatedAt, new Date(now.getTime() - STALE_STOPPING_MS)),
-      ));
+    await transitionAppRuntimes(
+      'releaseIdleStop',
+      lt(appRuntimes.updatedAt, new Date(now.getTime() - STALE_STOPPING_MS)),
+      { updatedAt: now },
+    );
     const rows = await db
       .select({ runtime: appRuntimes, app: apps, deployment: appDeployments })
       .from(appRuntimes)
@@ -69,32 +68,32 @@ export async function runAppIdleReaper(now = new Date()): Promise<{ candidates: 
           ));
           if (runningCount <= min) continue;
         }
-        const [claimed] = await db
-          .update(appRuntimes)
-          .set({ status: 'stopping', updatedAt: now })
-          .where(and(
+        const claimed = await transitionAppRuntime(
+          'claimIdleStop',
+          and(
             eq(appRuntimes.runtimeId, runtime.runtimeId),
-            eq(appRuntimes.status, 'running'),
             lte(appRuntimes.idleDeadlineAt, now),
             or(isNull(appRuntimes.activityLeaseUntil), lt(appRuntimes.activityLeaseUntil, now)),
-          ))
-          .returning();
+          ),
+          { updatedAt: now },
+        );
         if (!claimed) continue;
         await hosting.stop(claimed.provider as SandboxProviderName, claimed.externalId);
         const stoppedAt = new Date();
-        await db.update(appRuntimes).set({
-          status: 'stopped',
-          stoppedAt,
-          activityLeaseUntil: null,
-          updatedAt: stoppedAt,
-        }).where(eq(appRuntimes.runtimeId, claimed.runtimeId));
+        // Only this reaper's own claim: a wake that leased the row while the
+        // provider stop ran started the box again, and its `running` stands.
+        const finished = await transitionAppRuntime(
+          'finishIdleStop',
+          eq(appRuntimes.runtimeId, claimed.runtimeId),
+          { stoppedAt, activityLeaseUntil: null, updatedAt: stoppedAt },
+        );
+        if (!finished) continue;
         await pauseComputeSession(claimed.runtimeId, stoppedAt);
         stopped += 1;
       } catch (error) {
         errors += 1;
-        await db.update(appRuntimes).set({ status: 'running', updatedAt: new Date() })
-          .where(and(eq(appRuntimes.runtimeId, runtime.runtimeId), eq(appRuntimes.status, 'stopping')))
-          .catch(() => {});
+        await transitionAppRuntime('releaseIdleStop', eq(appRuntimes.runtimeId, runtime.runtimeId), { updatedAt: new Date() })
+          .catch(() => null);
         logger.error('[apps] idle stop failed', {
           runtimeId: runtime.runtimeId,
           error: error instanceof Error ? error.message : String(error),
@@ -284,9 +283,9 @@ async function stopUnaffordableRuntimes(hosting: AppHostingProvider) {
 async function stopForCost(hosting: AppHostingProvider, runtime: RuntimeRow, type: string, message: string) {
   await hosting.stop(runtime.provider as SandboxProviderName, runtime.externalId);
   const stoppedAt = new Date();
-  await db.update(appRuntimes).set({
-    status: 'stopped', stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null, updatedAt: stoppedAt,
-  }).where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+  await transitionAppRuntime('stop', eq(appRuntimes.runtimeId, runtime.runtimeId), {
+    stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null, updatedAt: stoppedAt,
+  });
   await pauseComputeSession(runtime.runtimeId, stoppedAt);
   await db.insert(appDeploymentEvents).values({
     deploymentId: runtime.deploymentId, runtimeId: runtime.runtimeId, level: 'warn', type, message,
@@ -345,9 +344,9 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
       // The row says running; the provider says it is not. Record the truth,
       // close the compute window, then start it through the wake gate.
       const stoppedAt = new Date();
-      const [corrected] = await db.update(appRuntimes).set({
-        status: 'stopped', stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null, updatedAt: stoppedAt,
-      }).where(and(eq(appRuntimes.runtimeId, runtime.runtimeId), eq(appRuntimes.status, 'running'))).returning();
+      const corrected = await transitionAppRuntime('lost', eq(appRuntimes.runtimeId, runtime.runtimeId), {
+        stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null, updatedAt: stoppedAt,
+      });
       if (!corrected) return 'other';
       await pauseComputeSession(runtime.runtimeId, stoppedAt);
       runtime = corrected;

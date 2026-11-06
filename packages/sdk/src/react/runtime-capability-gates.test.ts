@@ -15,15 +15,15 @@ mock.module('@tanstack/react-query', () => ({
   useQueryClient: () => ({}),
 }));
 
-const realKeys = await import('./use-opencode-sessions/keys');
-mock.module('./use-opencode-sessions/keys', () => ({ ...realKeys, useRuntimeReady: () => true }));
+const realKeys = await import('./use-runtime-sessions/keys');
+mock.module('./use-runtime-sessions/keys', () => ({ ...realKeys, useRuntimeReady: () => true }));
 mock.module('./use-runtime-supports', () => ({
   useRuntimeSupports: (capability: string) => supported.has(capability),
 }));
 
-const { useRuntimeCommands } = await import('./use-opencode-sessions/commands');
-const { useRuntimeConfig } = await import('./use-opencode-config');
-const { useRuntimeSessionTodo } = await import('./use-opencode-sessions/sessions');
+const { useRuntimeCommands } = await import('./use-runtime-sessions/commands');
+const { useRuntimeConfig } = await import('./use-runtime-config');
+const { useRuntimeSessionTodo } = await import('./use-runtime-sessions/sessions');
 
 beforeEach(() => {
   supported = new Set();

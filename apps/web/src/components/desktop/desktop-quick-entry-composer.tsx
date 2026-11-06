@@ -52,7 +52,7 @@ export function QuickEntryComposer({
   const { data: providers } = useRuntimeProviders();
   const { data: config } = useRuntimeConfig();
   const projectConfig = useProjectConfig(projectId);
-  const defaultAgentName = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent;
+  const defaultAgentName = projectConfig?.default_agent;
   const local = useSessionModelSelection({ agents, providers, config, defaultAgentName });
   const agent = resolveComposerAgent({
     agents,

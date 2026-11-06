@@ -1,5 +1,4 @@
 import type { Context } from 'hono';
-import { recordDriveCommitAuthor } from '../../artifacts/events-store';
 import { normalizeDrivePath } from '../../drives/access';
 import { assertDriveFilesFit, assertDriveWriteFits, forgetDriveUsage } from '../../drives/limits';
 import { noteDriveWrite } from '../../drives/conflicts';
@@ -35,7 +34,6 @@ import {
   statVolumeFile,
   writeVolumeFile,
 } from '../../drives/volumes';
-import { parseVolumeWriteCommit } from '../../drives/volume-commit';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { isUuid } from '../../shared/validate';
 import { logger } from '../../lib/logger';
@@ -308,8 +306,7 @@ export function registerSessionDriveSyncRoutes(): void {
     );
     if (written instanceof Response) return written;
     if (written === REMOTE_CHANGED) return remoteChanged(c);
-    const { commit, ...file } = written;
-    await recordDriveCommitAuthor(got.drive.driveId, commit, { sessionId: param(c, 'sessionId') });
+    const { commit: _commit, ...file } = written;
     noteDriveWrite(got.drive.driveId);
     forgetDriveUsage(got.drive.platinumVolumeName);
     return c.json(file);
@@ -385,7 +382,6 @@ export function registerSessionDriveSyncRoutes(): void {
     );
     if (r instanceof Response) return r;
     if (r === REMOTE_CHANGED) return remoteChanged(c);
-    await recordDriveCommitAuthor(drive.driveId, parseVolumeWriteCommit(r), { sessionId: param(c, 'sessionId') });
     await forgetUploadPlan(scope.sandboxId, uploadId).catch((err) =>
       logger.warn(`[drive-sync] forgetting upload ${uploadId} failed:`, { error: err instanceof Error ? err.message : String(err) }),
     );

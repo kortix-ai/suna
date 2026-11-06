@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { getClient } from '../core/runtime/client';
 import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
@@ -20,7 +20,7 @@ const STALE_RUNNING_MS = 10_000;
  *   started. Transiently true for every tool for a frame or two, durably true
  *   for one blocked on a permission ask. (`pending` with EMPTY input is the
  *   known "session ended abruptly" stale shape — ignored.)
- * - `running` for a long time: covers opencode versions/tools where a blocked
+ * - `running` for a long time: covers runtime versions/tools where a blocked
  *   part reports `running`. Fuzzy on purpose — a long bash command looks the
  *   same — so callers poll this shape on a much slower cadence.
  *

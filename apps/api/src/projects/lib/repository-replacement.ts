@@ -13,6 +13,7 @@ import {
 } from './project-git-write';
 import { resolveGitHubImportWithPat } from './git';
 import { metadataReplace, projectsView, updateProjectRowsReturning } from '../../workspaces/rows';
+import { ACTIVE_SESSION_STATUSES } from './session-status';
 
 export class RepositoryChangedError extends Error {}
 export class RepositoryManifestMissingError extends Error {}
@@ -114,7 +115,7 @@ export async function persistProjectRepositoryReplacement(input: {
     const [activeSession] = await tx.select({ sessionId: projectSessions.sessionId })
       .from(projectSessions).where(and(
         eq(projectSessions.projectId, input.projectId),
-        inArray(projectSessions.status, ['queued', 'branching', 'provisioning', 'running']),
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
       )).limit(1);
     if (activeSession) throw new RepositoryChangedError('Stop active sessions before changing the repository');
     const [openChangeRequest] = await tx.select({ crId: changeRequests.crId })

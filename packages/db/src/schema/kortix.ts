@@ -842,6 +842,8 @@ export const projectGitConnections = kortixSchema.table(
     uniqueIndex('idx_project_git_connections_project').on(table.projectId),
     index('idx_project_git_connections_provider_repo').on(table.provider, table.externalRepoId),
     index('idx_project_git_connections_status').on(table.status),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('project_git_connections_status_check', sql`${table.status} in ('connected', 'error')`),
   ],
 );
 
@@ -902,6 +904,8 @@ export const projectSnapshotArchives = kortixSchema.table(
   (table) => [
     uniqueIndex('idx_project_snapshot_archives_project_sha').on(table.projectId, table.commitSha),
     index('idx_project_snapshot_archives_claim').on(table.status, table.nextAttemptAt),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('project_snapshot_archives_status_check', sql`${table.status} in ('queued', 'building', 'ready', 'failed')`),
   ],
 );
 
@@ -2411,8 +2415,8 @@ export const projectSessionPublicShares = kortixSchema.table(
 );
 
 /**
- * Runtime state for triggers defined in the project repo
- * (.opencode/triggers/<slug>.md). The repo holds the trigger config; this
+ * Runtime state for triggers declared in the project repo (the `triggers:`
+ * list of `kortix.yaml`). The repo holds the trigger config; this
  * row holds the cron scheduler's "last fired" state so we don't need to
  * write a git commit on every fire.
  */
@@ -2858,6 +2862,9 @@ export const projectTriggerExecutions = kortixSchema.table(
     index('idx_project_trigger_executions_open_run')
       .on(table.sessionId)
       .where(sql`${table.runStatus} = 'running'`),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('project_trigger_executions_status_check', sql`${table.status} in ('queued', 'running', 'succeeded', 'skipped', 'dead_lettered', 'failed', 'rejected', 'requeued')`),
+    check('project_trigger_executions_run_status_check', sql`${table.runStatus} in ('running', 'succeeded', 'failed')`),
   ],
 );
 
@@ -3066,6 +3073,8 @@ export const chatThreadParticipants = kortixSchema.table(
     ),
     index('idx_chat_thread_participants_session').on(table.sessionId),
     index('idx_chat_thread_participants_user').on(table.userId),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('chat_thread_participants_status_check', sql`${table.status} in ('pending', 'approved', 'denied')`),
   ],
 );
 
@@ -5408,6 +5417,9 @@ export const creditAccounts = kortixSchema.table(
     // BitmapOr of two probes on this index. `tier` alone cannot help: 99.7% of
     // rows are `free`.
     index('idx_credit_accounts_tier_next_credit_grant').on(table.tier, table.nextCreditGrant),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('credit_accounts_payment_status_check', sql`${table.paymentStatus} in ('active', 'cancelling', 'past_due', 'failed', 'deleted', 'pending')`),
+    check('credit_accounts_trial_status_check', sql`${table.trialStatus} in ('none', 'active', 'expired', 'converted', 'revoked', 'cancelled')`),
   ],
 );
 
@@ -6262,6 +6274,8 @@ export const accountDeletionRequests = kortixSchema.table(
     uniqueIndex('uniq_account_deletion_requests_pending')
       .on(table.accountId)
       .where(sql`${table.status} = 'pending'`),
+    // NOT VALID (migration 20261106140140429_lifecycle_status_checks): every value a writer writes or a live row holds.
+    check('account_deletion_requests_status_check', sql`${table.status} in ('pending', 'processing', 'completed', 'cancelled')`),
   ],
 );
 
@@ -9697,7 +9711,9 @@ export const cliDeviceGrants = kortixSchema.table('cli_device_grants', {
   // Workspaces R1 expand (design.md §3.3 M7): set by a BEFORE trigger from
   // account_id (kortix.workspace_id_of_account). Nothing reads it before Release 2.
   workspaceId: uuid('workspace_id'),
-});
+}, (table) => [
+  check('cli_device_grants_status_check', sql`${table.status} in ('pending', 'approved', 'denied', 'consumed')`),
+]);
 
 /**
  * An artifact (flag `artifacts`): a path in the project's Files volume shared
@@ -10067,4 +10083,51 @@ export const selfHostSignupPolicy = kortixSchema.table('self_host_signup_policy'
 }, (table) => [
   check('self_host_signup_policy_singleton', sql`${table.id}`),
   check('self_host_signup_policy_mode_check', sql`${table.signupMode} in ('open', 'invite', 'closed')`),
+]).enableRLS();
+
+// Credit codes: a code a person types (or opens as /redeem?code=…) to add
+// credits to an account's wallet, e.g. a campaign code worth $100. Staff
+// create them in the admin console (apps/api/src/admin/credit-codes.ts). The
+// grant goes through the wallet like every other credit
+// (apps/api/src/billing/services/credit-codes.ts).
+export const creditCodes = kortixSchema.table('credit_codes', {
+  codeId: uuid('code_id').defaultRandom().primaryKey(),
+  /** Upper-case, as typed with the case folded: `FRONTIER`. */
+  code: text('code').notNull(),
+  /** USD added to the non-expiring bucket per redemption (1 USD = 100 credits). */
+  amountUsd: numeric('amount_usd', { precision: 12, scale: 2 }).notNull(),
+  /** Null: no limit on the number of accounts. */
+  maxRedemptions: integer('max_redemptions'),
+  redemptionCount: integer('redemption_count').default(0).notNull(),
+  /** Null: never expires. */
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  /** False: switched off by staff; the code then reads as unknown. */
+  active: boolean('active').default(true).notNull(),
+  /** Staff note: what the code is for. Never shown to the customer. */
+  description: text('description'),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('uniq_credit_codes_code').on(table.code),
+  check('credit_codes_amount_positive', sql`${table.amountUsd} > 0`),
+  check('credit_codes_max_redemptions_positive', sql`${table.maxRedemptions} IS NULL OR ${table.maxRedemptions} > 0`),
+  check('credit_codes_code_shape', sql`${table.code} ~ '^[A-Z0-9_-]{3,64}$'`),
+]).enableRLS();
+
+// One row per account that redeemed a code: an account redeems a code once.
+export const creditCodeRedemptions = kortixSchema.table('credit_code_redemptions', {
+  redemptionId: uuid('redemption_id').defaultRandom().primaryKey(),
+  codeId: uuid('code_id')
+    .notNull()
+    .references(() => creditCodes.codeId, { onDelete: 'cascade' }),
+  accountId: uuid('account_id')
+    .notNull()
+    .references(() => accounts.accountId, { onDelete: 'cascade' }),
+  /** The person who redeemed it for the account. */
+  redeemedBy: uuid('redeemed_by'),
+  amountUsd: numeric('amount_usd', { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('uniq_credit_code_redemptions_code_account').on(table.codeId, table.accountId),
+  index('idx_credit_code_redemptions_account').on(table.accountId),
 ]).enableRLS();

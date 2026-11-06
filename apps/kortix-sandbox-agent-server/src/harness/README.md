@@ -914,7 +914,7 @@ resolves the same root and restores the transcript from
 `$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`. The root's title stays
 `New session`, also after a restore: the session title is Kortix's
 (`metadata.name`, generated from the first prompt), and the API drops the
-placeholder (`isPlaceholderOpencodeTitle`).
+placeholder title.
 
 Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
@@ -1557,6 +1557,30 @@ own token (`pi/extensions/control-plane.ts`), so every call acts as this
 session for its person. No tool waits on another session: each call is one
 API request (at most `CONTROL_PLANE_CALL_TIMEOUT_MS`, 10 s), and a person's
 message during the turn is steered in at the next step as always.
+
+### Session ids, and context by retrieval
+
+Every agent's system prompt carries a `## Session ids` section
+(`sessionIdsSection`, `pi/runtime.ts`): `session_id`, `project_id`,
+`parent_session_id` (the session that started it, `KORTIX_PARENT_SESSION_ID`)
+and `space_id`, plus the read command `kortix sessions log <session_id> -n 50`.
+A subagent inside the session (`session: "same"`) names the session's main
+conversation as its parent. The ids never change during a session, so the
+section keeps the prompt cache valid.
+
+A subagent does not get a copy of its parent's conversation. Its parent writes
+the task and the facts it depends on, and the subagent reads the rest from the
+parent's session log when it needs it. The API lets a session token read every
+session up its spawn chain (`metadata.spawned_by_session`, written only when a
+box creates its own child; `isSpawnAncestor`,
+`apps/api/src/projects/lib/session-visibility.ts`), as a reader, never an
+owner, and only on the read routes (`GET …/sessions/:id`, `GET …/sessions/:id/log`):
+a prompt, a permission answer or any other write to a parent stays `404`. The
+box's live log stays closed too (`403` on `/p/<box>/8000/kortix/runtime/log`);
+the CLI reads the stored log, which the box journals every 5 s during a turn.
+A person-set `parent_session_id` grants no read. `fork: true` (a full
+copy) stays opt-in: a copy is a large input, and it does not reuse the
+parent's prompt cache, because the `agent` tool text differs by depth.
 
 | Tool | Where | What |
 | --- | --- | --- |

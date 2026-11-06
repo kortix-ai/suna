@@ -14,9 +14,7 @@ function config(agents: ConfigAgent[], defaultAgent: string | null = null): Proj
     is_kortix_repo: true,
     signals: {},
     manifest_raw: null,
-    open_code_raw: null,
     default_agent: defaultAgent,
-    open_code_default_agent: defaultAgent,
     agent_discovery: 'declarative',
     agents,
   } as ProjectConfigSummary;
@@ -78,10 +76,10 @@ describe('selectableProjectAgents', () => {
     expect(roster.map((a) => a.name)).toEqual(['kortix', 'engineering']);
   });
 
-  test('falls back to the deprecated open_code_default_agent', () => {
+  test('reads only default_agent: the deprecated open_code_default_agent does not reorder', () => {
     const summary = config([agent('a'), agent('b')]);
     summary.open_code_default_agent = 'b';
-    expect(selectableWorkspaceAgents(summary).map((a) => a.name)).toEqual(['b', 'a']);
+    expect(selectableWorkspaceAgents(summary).map((a) => a.name)).toEqual(['a', 'b']);
   });
 
   test('does not mutate the config it reads', () => {

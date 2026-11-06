@@ -82,7 +82,7 @@ interface SessionDigest {
     created_at: string;
     updated_at: string;
     error: string | null;
-    /** The session's root conversation in its runtime (OpenCode or pi). */
+    /** The session's root conversation in its runtime. */
     runtime_session_id: string | null;
     /** Titles of the runtime's conversations. */
     runtime_titles: string[];

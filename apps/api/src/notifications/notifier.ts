@@ -16,6 +16,7 @@ import {
   IMMEDIATE_EMAIL_KINDS,
   NEVER_DIGESTED_KINDS,
   NOTIFICATION_DIGEST_DELAY_MS,
+  type NotificationDefaultsOverride,
   type NotificationKindName,
   type NotificationKindPreferences,
 } from '@kortix/shared/notification-kinds';
@@ -36,8 +37,6 @@ export interface DeliverInput {
   projectId?: string | null;
   sessionId?: string | null;
   triggerSlug?: string | null;
-  artifactId?: string | null;
-  artifactThreadId?: string | null;
   /** Subject: the session title or the trigger name. */
   title: string;
   /** Detail: question text, error, share line. May be empty. */
@@ -49,6 +48,13 @@ export interface DeliverInput {
   recipients: readonly string[];
   /** False: inbox only (a channel thread already carried the event). */
   pushAllowed?: boolean;
+  /**
+   * The email default of this kind for this delivery, for a recipient who never
+   * chose. Absent: the kind's default. A trigger alert that went out only with
+   * the notification center on passes false, so it mails only people who
+   * opted in (notification-kinds.ts, DEFAULT_NOTIFICATION_PREFERENCES).
+   */
+  emailDefault?: boolean;
 }
 
 export interface PresenceState {
@@ -59,7 +65,8 @@ export interface PresenceState {
 export interface NotifierDeps {
   pushEnabled: boolean;
   inbox: Pick<InboxStore, 'insert' | 'markRead' | 'markEmailed'>;
-  loadPreferences(userIds: readonly string[]): Promise<Map<string, NotificationKindPreferences>>;
+  /** `defaults` replaces kind defaults for this delivery; a saved choice wins over it. */
+  loadPreferences(userIds: readonly string[], defaults?: NotificationDefaultsOverride): Promise<Map<string, NotificationKindPreferences>>;
   /** Recipients with a live lease on the session; absent users are not present. */
   presence(sessionId: string, userIds: readonly string[]): Promise<Map<string, PresenceState>>;
   listDevices(userId: string): Promise<readonly PushDeviceTokenRow[]>;
@@ -90,7 +97,10 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
   if (recipients.length === 0) return [];
   const records: DeliveryRecord[] = [];
   try {
-    const prefs = await deps.loadPreferences(recipients);
+    const prefs = await deps.loadPreferences(
+      recipients,
+      input.emailDefault === undefined ? undefined : { [input.kind]: { email: input.emailDefault } },
+    );
     const presence = input.sessionId ? await deps.presence(input.sessionId, recipients) : new Map<string, PresenceState>();
     const pushAllowed = input.pushAllowed !== false;
     const expoMessages: ExpoPushMessage[] = [];
@@ -111,8 +121,6 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
-        artifactId: input.artifactId ?? null,
-        artifactThreadId: input.artifactThreadId ?? null,
         kind: input.kind,
         title: input.title,
         body: input.body ?? '',
@@ -139,8 +147,6 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
-        artifactId: input.artifactId ?? null,
-        artifactThreadId: input.artifactThreadId ?? null,
         accountId: input.accountId,
       });
 
@@ -216,7 +222,7 @@ export function liveNotifierDeps(overrides: Partial<NotifierDeps> = {}): Notifie
   return {
     pushEnabled: config.PUSH_NOTIFICATIONS_ENABLED,
     inbox: inboxStore(),
-    loadPreferences: (userIds) => loadEffectivePreferences(userIds),
+    loadPreferences: (userIds, defaults) => loadEffectivePreferences(userIds, undefined, defaults),
     presence: loadSessionPresence,
     listDevices: (userId) => devices.listByUser(userId),
     sendExpo: (messages) =>

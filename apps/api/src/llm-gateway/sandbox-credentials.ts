@@ -1,12 +1,9 @@
 import { primaryAuthEnvVars } from '@kortix/llm-catalog';
 import { runtimeModelCatalog } from './models/runtime-catalog';
 
-// Provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …). When any of these is
-// present in opencode's process env, opencode auto-connects a NATIVE provider and
-// talks to it DIRECTLY, bypassing the gateway. These must be withheld from the
-// opencode process (the daemon enforces this) so the gateway is the only LLM path.
-// CODEX_AUTH_JSON is gateway-only. OPENCODE_AUTH_JSON remains a legacy managed
-// name until its native OpenCode path is removed.
+// Provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …). The gateway is the
+// only LLM path, so these are withheld from the runtime process (the daemon
+// enforces this). CODEX_AUTH_JSON is gateway-only.
 let cachedRevision = -1;
 let cachedProviderEnv = new Set<string>();
 
@@ -23,9 +20,7 @@ function providerCredentialEnv(): Set<string> {
 }
 
 function isManagedEnv(name: string): boolean {
-  return name === 'CODEX_AUTH_JSON'
-    || name === 'OPENCODE_AUTH_JSON'
-    || providerCredentialEnv().has(name);
+  return name === 'CODEX_AUTH_JSON' || providerCredentialEnv().has(name);
 }
 
 export function isGatewayManagedEnv(name: string): boolean {

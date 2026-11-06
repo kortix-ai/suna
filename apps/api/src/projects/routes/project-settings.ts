@@ -328,8 +328,6 @@ export function registerProjectSettingsRoutes(): void {
     // archive, the project answers 404, so a release could never be retried.
     const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
     await releasePromptAttachmentsForProject(projectId);
-    const { releaseArtifactCommentScreenshotsForProject } = await import('../../artifacts/comment-screenshot-objects');
-    await releaseArtifactCommentScreenshotsForProject(projectId);
 
     // The helper no-ops for user-connected/BYO repositories and never touches
     // them. Delete before hiding the project so provider failures remain

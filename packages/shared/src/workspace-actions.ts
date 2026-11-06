@@ -114,7 +114,6 @@ export const WORKSPACE_ACTION_BY_LEGACY = {
   'project.review.submit': 'workspace.review.submit',
   'project.review.act': 'workspace.review.act',
   'project.artifact.read': 'workspace.artifact.read',
-  'project.artifact.comment': 'workspace.artifact.comment',
   'project.artifact.write': 'workspace.artifact.write',
   'project.artifact.manage': 'workspace.artifact.manage',
   'project.artifact.public': 'workspace.artifact.public',

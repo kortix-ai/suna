@@ -145,8 +145,8 @@ mock.module('../instance-release', () => ({
   loadSandboxMetadataForSessions: async () => new Map(),
   releaseCommandToOwningInstance: async () => {},
 }));
-mock.module('../../opencode-mapping', () => ({
-  sandboxOpencodeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
+mock.module('../../runtime-session-mapping', () => ({
+  sandboxRuntimeEndpoint: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
 mock.module('../../../platform/service-key', () => ({
   serviceKeyForExternalId: async () => 'svc-key-1',

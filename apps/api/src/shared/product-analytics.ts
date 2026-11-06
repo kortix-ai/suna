@@ -133,7 +133,12 @@ export function captureProductEvent(input: ProductEventInput): void {
         ...input.properties,
         account_id: input.accountId,
         // A local stack runs as INTERNAL_KORTIX_ENV=dev; keep it out of dev's numbers.
-        environment: config.KORTIX_LOCAL_DEV ? 'local' : config.INTERNAL_KORTIX_ENV,
+        // The web client's names: `production`, `staging`, `dev`, `local`.
+        environment: config.KORTIX_LOCAL_DEV
+          ? 'local'
+          : config.INTERNAL_KORTIX_ENV === 'prod'
+            ? 'production'
+            : config.INTERNAL_KORTIX_ENV,
         $lib_custom: 'kortix-api',
       },
     });

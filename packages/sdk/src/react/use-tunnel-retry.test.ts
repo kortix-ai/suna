@@ -3,7 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from '../core/http/api/errors';
 
 // Engine-level proof for the 4xx no-retry rule (see
-// `use-opencode-sessions/providers.test.ts` for the callback-level tests).
+// `use-runtime-sessions/providers.test.ts` for the callback-level tests).
 // The real React Query engine runs each hook's own queryFn + retry config, so
 // the fetch count is the observable: a dead-token 401 must produce ONE fetch.
 // The web app's QueryClient defaults are mirrored here
@@ -44,7 +44,7 @@ mock.module('./route-project', () => ({
   useKortixRouteWorkspaceId: () => routeProjectId,
 }));
 
-mock.module('./use-opencode-sessions/keys', () => ({
+mock.module('./use-runtime-sessions/keys', () => ({
   useRuntimeReady: () => true,
   runtimeKeys: { providers: () => ['runtime', 'providers'] },
 }));
@@ -94,7 +94,7 @@ const webDefaultRetry = (failureCount: number, error: unknown): boolean => {
   return failureCount < 3;
 };
 
-const providers = (await import('./use-opencode-sessions/providers')) as unknown as {
+const providers = (await import('./use-runtime-sessions/providers')) as unknown as {
   useRuntimeProviders: () => {
     queryFn: () => Promise<unknown>;
     retry: (failureCount: number, error: unknown) => boolean;

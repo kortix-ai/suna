@@ -48,7 +48,7 @@ export const EFFECTIVE_MESSAGE_ID_HEADER = 'X-Kortix-Effective-Message-Id';
 export const WIRE_ID_PLACED_HEADER = 'X-Kortix-Wire-Id-Placed';
 
 /**
- * Only OpenCode's two prompt routes need the proxy to place the id: a direct
+ * Only the box's two OpenCode-shaped prompt routes need the proxy to place the id: a direct
  * client sends them. The Kortix prompt route is the API's own delivery, which
  * the inbox placed already.
  */
@@ -72,15 +72,15 @@ export function promptTranscriptReadPath(path: string, limit: number): string {
 
 export interface PromptWireIdRepairResult {
   body: ArrayBuffer;
-  /** The id OpenCode will see: the client's, or the re-mint. Null when the body
-   *  carried none (OpenCode mints its own). */
+  /** The id the runtime will see: the client's, or the re-mint. Null when the body
+   *  carried none (the runtime mints its own). */
   effectiveMessageId: string | null;
   outcome: 'none' | 'kept' | 'reminted';
 }
 
 /** The client-minted `messageID` a prompt body carries, or null. Cheap peek so
  *  the caller only pays for a transcript read when there is an id to place —
- *  a body with none lets OpenCode mint, and no read can change that. */
+ *  a body with none lets the runtime mint, and no read can change that. */
 export function promptBodyMessageId(body: ArrayBuffer | undefined): string | null {
   if (!body?.byteLength) return null;
   try {

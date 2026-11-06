@@ -33,7 +33,7 @@ export interface AuditEventInput {
   accountId?: string | null;
   projectId?: string | null;
   sessionId?: string | null;
-  opencodeSessionId?: string | null;
+  runtimeSessionId?: string | null;
   turnId?: string | null;
   messageId?: string | null;
   toolCallId?: string | null;
@@ -369,7 +369,7 @@ function buildAuditRow(rawInput: AuditEventInput): AuditRow {
     accountId: uuidOrNull(input.accountId || request?.accountId),
     projectId: uuidOrNull(input.projectId || request?.projectId),
     sessionId: input.sessionId || request?.sessionId || null,
-    runtimeSessionId: input.opencodeSessionId ?? null,
+    runtimeSessionId: input.runtimeSessionId ?? null,
     turnId: input.turnId ?? null,
     messageId: input.messageId ?? null,
     toolCallId: input.toolCallId ?? null,
@@ -762,18 +762,8 @@ const AUDIT_INGEST_ACTION = 'audit.session.ingest';
  * keeps its row.
  *   audit.session.ingest       the sandbox relay's delivery of audit events:
  *                              the events it carries are the record
- *   project.artifact.doc.push  a co-edited doc's push (KRTX-3670): one per
- *                              keystroke batch, up to 20 a second per typist.
- *                              Who wrote is recorded at the flush: one
- *                              `project.artifact.doc.edit` row per writer.
- * The seed, the lease, the flush and every pull that returns the document
- * keep their rows; an incremental pull marks itself a heartbeat
- * (`isIncrementalDocPull`, `markInboundAuditHeartbeat`).
  */
-const UNAUDITED_ON_SUCCESS: ReadonlySet<string> = new Set([
-  AUDIT_INGEST_ACTION,
-  'project.artifact.doc.push',
-]);
+const UNAUDITED_ON_SUCCESS: ReadonlySet<string> = new Set([AUDIT_INGEST_ACTION]);
 
 /**
  * Write the one row for an inbound request. Idempotent per scope, and never

@@ -366,7 +366,8 @@ export function registerReviewItemsRoutes(): void {
         feedback: normalizeString(body.feedback),
         actingUserId: loaded.userId,
       });
-      if (!row) return c.json({ error: 'Review item not found' }, 404);
+      // Null after the read above: another reviewer decided it first.
+      if (!row) return c.json({ error: 'Review item is already decided' }, 409);
       return c.json(serializeReviewItem(row));
     },
   );

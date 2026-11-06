@@ -185,7 +185,7 @@ flow(
 // resulting login is saved as CODEX_AUTH_JSON. `list`/`delete` manage it. We
 // assert the boundaries only — completing a real device login needs a live
 // ChatGPT account the harness can't drive, and calling `start` for a real
-// provider would spawn a server-side OpenCode flow, so we exercise `start`'s
+// provider would request a real device code from auth.openai.com, so we exercise `start`'s
 // unknown-provider guard instead.
 flow(
   'PROJ-13',
@@ -276,7 +276,7 @@ flow(
 // PROJ-16 — turn-question relay. A normal user token authorizes via project
 // read; the relay validates session_id first, then scopes it to the project,
 // then validates questions. A missing id is 400; an unknown id is 404. We assert the
-// no-session negative so it runs locally without a live OpenCode session.
+// no-session negative so it runs locally without a live runtime session.
 flow(
   'PROJ-16',
   { domain: 'projects', routes: ['POST /v1/workspaces/:projectId/turn-question'] },
@@ -315,7 +315,7 @@ flow(
   },
 );
 
-// PROJ-38 — turn-permission relay. The daemon reports OpenCode
+// PROJ-38 — turn-permission relay. The daemon reports the runtime's
 // `permission.asked`; the route pushes "needs your approval" once per request
 // id and never answers the permission. Only the session's own sandbox
 // credential may call it: a user token would let any member push another
@@ -557,31 +557,22 @@ flow(
     }
 
     await ctx.step(
-      'the behavior half reads and writes as `behavior`; a round trip that edits only its pre-W4 name `opencode` keeps that edit; two different edits → 400',
+      'the behavior half reads and writes as `behavior` only; the pre-W4 name `opencode` is not served, and a PUT that sends it → 400',
       async () => {
         const params = { projectId: project.id, agentName: 'worker' };
         const path = '/v1/workspaces/:projectId/agents/:agentName/config';
         const owner = ctx.client.as(ctx.P.OWNER);
         const current = (await owner.get(path, { params })).status(200).json<any>().block.behavior;
         const neutral = { ...current, description: 'Written as behavior' };
-        const saved = await owner.put(path, { behavior: neutral }, { params });
-        saved.status(200).body()
-          .has('$.block.behavior.description', 'Written as behavior')
-          .has('$.block.opencode.description', 'Written as behavior');
+        const saved = (await owner.put(path, { behavior: neutral }, { params })).status(200).json<any>().block;
+        if (saved.behavior?.description !== 'Written as behavior') throw new Error('PUT did not save the behavior');
+        if ('opencode' in saved) throw new Error('PUT response still serves the pre-W4 `opencode` name');
         const served = (await owner.get(path, { params })).status(200).json<any>().block;
-        if (JSON.stringify(served.behavior) !== JSON.stringify(served.opencode)) {
-          throw new Error('GET serves different values under behavior and opencode');
-        }
-        const olderClient = { ...served.opencode, description: 'Edited as opencode' };
-        (await owner.put(path, { behavior: served.behavior, opencode: olderClient }, { params }))
-          .status(200);
+        if (served.behavior?.description !== 'Written as behavior') throw new Error('GET does not read back the behavior');
+        if ('opencode' in served) throw new Error('GET still serves the pre-W4 `opencode` name');
+        (await owner.put(path, { opencode: { ...current, description: 'Edited as opencode' } }, { params })).status(400);
         (await owner.get(path, { params })).status(200).body()
-          .has('$.block.behavior.description', 'Edited as opencode');
-        (await owner.put(
-          path,
-          { behavior: { ...current, description: 'A' }, opencode: { ...current, description: 'B' } },
-          { params },
-        )).status(400);
+          .has('$.block.behavior.description', 'Written as behavior');
       },
     );
 

@@ -2,8 +2,6 @@
 export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'A Kortix agent is a markdown persona with a deny-by-default reach into connectors, secrets and skills. A skill is the markdown that encodes how your company does one job. Both are files in your repo, versioned and reviewed.':
     'texte436179861c8',
-  'A Kortix workspace is backed by a git repo, and that repo is the company. kortix.yaml and the OpenCode config define it; agents, skills and memory are files beside your code. Every change is a commit a person approves.':
-    'text023827a097e3',
   'About Kortix': 'text56d4e6956bc3',
   'Browse skills, agents, and commands from every source. Add them to a Kortix workspace in one click.':
     'text3d41d76bb5fb',
@@ -22,8 +20,6 @@ export const PUBLIC_METADATA_TRANSLATION_KEYS: Readonly<Record<string, string>> 
   'Download Kortix': 'text5a0cac0326d5',
   'Every Kortix release, straight from the source. New features, fixes, and improvements — versioned and dated.':
     'text3efe2d7294ba',
-  'Every Kortix session gets its own computer: an isolated Linux machine that clones your repo, cuts a branch named after the session, and runs OpenCode. Work lands through a change request a person approves.':
-    'textb57f2c70525f',
   'Field notes on building, running, and governing AI agents that do real work — from the team building Kortix CompanyOS.':
     'text3661bf7ae497',
   'Get Kortix for macOS, Windows, Linux, iOS, and Android.': 'textd587acccbf63',

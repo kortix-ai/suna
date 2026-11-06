@@ -20,7 +20,7 @@ import { parseKortixSessionScope } from './server-transcript-mirror';
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
   /**
-   * The generated OpenCode client RESOLVES with `{ error }` on a non-2xx
+   * The runtime REST client RESOLVES with `{ error }` on a non-2xx
    * response — it never throws unless the caller opted into `throwOnError`, and
    * we do not. So the ONLY place a 503 or a runtime failure is visible is here.
    * Reading `data ?? []` and ignoring this is exactly how a cold-boot 503
@@ -139,7 +139,7 @@ function messageKey(info: { id: string; time?: { created?: number } }): string {
 /**
  * The most specific message a failed `client.session.messages` response
  * carries. `error` is genuinely `unknown` (its shape varies per endpoint), so
- * this duck-types the same way `unwrap` (react/use-opencode-sessions/shared.ts)
+ * this duck-types the same way `unwrap` (react/use-runtime-sessions/shared.ts)
  * does, and falls back to the status code.
  */
 function messagePageErrorText(result: MessagesResponse, status: number | undefined): string {

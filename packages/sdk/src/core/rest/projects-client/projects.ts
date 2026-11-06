@@ -89,6 +89,7 @@ export type FeatureFlagKey =
   | 'agent_principal'
   | 'us_region'
   | 'event_triggers'
+  /** @deprecated Graduated 2026-11-06 — notifications (the inbox, push, session watch, alerts, per-kind notification settings) are on for every project. The API sends `true` for every project, so `useFeatureFlag(id, 'notification_center')` reports `enabled: true`. Removed in the next major. */
   | 'notification_center'
   /** @deprecated Graduated 2026-11-02 — every project has a Drive. The API sends `true` wherever the platform stores a Drive (Platinum). Removed in the next major. */
   | 'volumes'
@@ -114,7 +115,9 @@ export type FeatureFlagKey =
   | 'shared_drives'
   | 'goals'
   | 'workspace_volume'
+  /** @deprecated Graduated 2026-11-06 — every project has Artifacts wherever the platform stores Files (Platinum). The API sends `true` there, so `useFeatureFlag(id, 'artifacts')` reads Artifacts availability. Removed in the next major. */
   | 'artifacts'
+  /** @deprecated Withdrawn 2026-11-06 — artifact comments, live presence, co-editing and the activity feed were removed. The API sends `false`. Removed in the next major. */
   | 'artifact_comments'
   /** The email channel: a Resend inbox that starts and continues sessions. Experimental, off by default. */
   | 'email_channel'
@@ -135,7 +138,7 @@ export type FeatureFlagKey =
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
-/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `session_log_restore`, `pi_harness`, `genui`, `meta_agent`) sends a constant `true`, or (`volumes`, `drives`) sends whether the platform stores a Drive. */
+/** The keys of {@link FeatureFlagKey} that are no flag: the API never sends them, or (`llm_gateway`, `session_log`, `session_log_restore`, `pi_harness`, `genui`, `meta_agent`, `notification_center`) sends a constant `true`, or (`volumes`, `drives`, `artifacts`) sends whether the platform stores a Drive, or (`artifact_comments`) sends a constant `false`. */
 type GraduatedFeatureFlagKey =
   | 'agent_tunnel'
   | 'teams'
@@ -162,7 +165,10 @@ type GraduatedFeatureFlagKey =
   | 'meta_agent'
   | 'warm_sessions'
   | 'volumes'
-  | 'drives';
+  | 'drives'
+  | 'notification_center'
+  | 'artifacts'
+  | 'artifact_comments';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -178,13 +184,10 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pooled_provider_secrets',
   'us_region',
   'event_triggers',
-  'notification_center',
   'chat',
   'shared_drives',
   'goals',
   'workspace_volume',
-  'artifacts',
-  'artifact_comments',
   'email_channel',
   'session_groups',
   'chrome',
@@ -318,17 +321,23 @@ export interface ProjectConfigSummary {
   manifest_raw: string | null;
   /** kortix.yaml problems for this project. Absent from an API released before the one-schema manifest. */
   manifest_health?: ProjectManifestHealth;
-  /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-  open_code_raw: string | null;
-  /** Provider-neutral project default. The SDK derives this from legacy servers. */
+  /** @deprecated The API no longer sends it (an older API sends `null`). Removed in the next major. */
+  open_code_raw?: string | null;
+  /** The project's default agent (`kortix.yaml` `default_agent`), or null. */
   default_agent?: string | null;
-  /** @deprecated Use `default_agent`. */
-  open_code_default_agent: string | null;
+  /** @deprecated The API no longer sends it; read `default_agent`. Removed in the next major. */
+  open_code_default_agent?: string | null;
   /** Which built-in agents the project runs (`builtin_agents` in kortix.yaml;
    *  `true` = on, absent = off). `my_kortix` is My Kortix, the agent named `mykortix`.
    *  Absent from an older API. */
   builtin_agents?: { my_kortix: boolean };
-  agent_discovery: 'opencode' | 'declarative';
+  /**
+   * Where `agents` comes from. The API sends `declarative` (the agents
+   * `kortix.yaml` declares) for every project; a response filtered by the
+   * caller's `project.agent.read` access sends `null`.
+   * `opencode` is `@deprecated`: no API sends it. It stays in the union until the next major.
+   */
+  agent_discovery: 'declarative' | 'opencode';
   agents: Array<{
     name: string;
     path: string;
@@ -339,7 +348,8 @@ export interface ProjectConfigSummary {
     /** The agent's `model:` frontmatter (`provider/model`); absent on older
      *  servers, null when it follows the project default. */
     model?: string | null;
-    /** The server sends `kortix.yaml`. `kortix.toml` is never sent; it stays in the union until the next major. */
+    /** The server sends `kortix.yaml`. `opencode` and `kortix.toml` are never sent; they stay
+     *  in the union until the next major. */
     source?: 'opencode' | 'kortix.yaml' | 'kortix.toml';
     enabled?: boolean;
     /** True for a platform-owned agent (SUNA — the coordinator) that the API
@@ -353,8 +363,8 @@ export interface ProjectConfigSummary {
      *  null/absent is Project-wide (see `groupBySpace`). */
     space?: string | null;
     /** Per-agent governance from `kortix.yaml` `agents:` (read-only mirror).
-     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent for
-     *  OpenCode-discovered agents (not governed by `agents:`). */
+     *  `'all'` = unscoped; a list = the allowlist; `[]` = none. Absent when
+     *  `agents:` does not govern the agent. */
     scope?: {
       env: string[] | 'all';
       connectors: string[] | 'all';
@@ -441,7 +451,7 @@ export interface GatewayCatalogModel {
   /**
    * The REAL upstream provider serving this model ('anthropic', 'openai',
    * 'amazon-bedrock', ...). Every gateway model is registered under the one
-   * synthetic `kortix` opencode provider, so this is the ONLY reliable way to
+   * synthetic `kortix` runtime provider, so this is the ONLY reliable way to
    * group/label a model by who actually serves it — Bedrock ids are
    * dot-namespaced (`us.anthropic.claude-opus-4-8`), so the legacy
    * split-on-slash heuristic cannot recover it.
@@ -779,7 +789,7 @@ export async function getWorkspaceDetail(projectId: string, options?: ApiClientO
     ...detail,
     config: {
       ...detail.config,
-      default_agent: detail.config.default_agent ?? detail.config.open_code_default_agent ?? null,
+      default_agent: detail.config.default_agent ?? null,
     },
   };
 }
@@ -802,7 +812,7 @@ export const getProjectLlmCatalog = getWorkspaceLlmCatalog;
 /**
  * Load the compact, connection-aware catalog intended for interactive model
  * selectors. Unlike `getProjectLlmCatalog`, this does not transfer the complete
- * runtime models.dev projection used to configure OpenCode sandboxes.
+ * runtime models.dev projection used to configure sandboxes.
  */
 export async function getWorkspaceModelPicker(projectId: string, options?: ApiClientOptions) {
   return unwrap(

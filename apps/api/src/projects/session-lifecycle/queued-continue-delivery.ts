@@ -24,21 +24,6 @@ import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocat
 const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 type Status = 'succeeded' | 'queued' | 'failed';
 
-export async function refreshArtifactCommentQueuedPrompt(row: SessionLifecycleCommandRow, modelOverride?: { providerID?: string; modelID?: string }): Promise<{ text: string; parts?: PromptPartWire[] }> {
-  const { ArtifactCommentDeliveryError } = await import('../../artifacts/comment-delivery');
-  const { rebuildArtifactCommentScreenshotMessage } = await import('../../artifacts/comment-screenshot-delivery');
-  const { ArtifactCommentScreenshotError } = await import('../../artifacts/comment-screenshot-validation');
-  const { ArtifactCommentAuthorityError } = await import('../../artifacts/comment-authority');
-  try {
-    return await rebuildArtifactCommentScreenshotMessage(row, modelOverride);
-  } catch (error) {
-    if (error instanceof ArtifactCommentDeliveryError || error instanceof ArtifactCommentAuthorityError || error instanceof ArtifactCommentScreenshotError && error.status !== 503) {
-      throw new PromptDeliveryRefused(error.status, error.code, error.message);
-    }
-    throw error;
-  }
-}
-
 async function settleDelivery(row: SessionLifecycleCommandRow, delivery: Exclude<SessionDeliveryOutcome, 'delivered'>): Promise<Status> {
   if (delivery === 'unreachable') {
     const parked = await parkPromptForUnreachableRuntime(row, DELIVERY_FAILURE_COPY[delivery], { sessionId: row.sessionId });
@@ -118,8 +103,8 @@ async function repairPlacement(row: SessionLifecycleCommandRow, wireMessageId: s
  * A continuation that names no model (approval resume, connector connected,
  * secret submitted, auto-recovery, a trigger without its own model) runs on the
  * agent/model/variant of the session's newest turn that named one. Without
- * this OpenCode falls back to the default agent's own `model:` pin, which can
- * be a model the user no longer uses or the gateway cannot serve.
+ * this the runtime falls back to its default model (`KORTIX_MODEL`, else the
+ * agent's own `model:` pin), which can be a model the user no longer uses or the gateway cannot serve.
  */
 export async function continuationOverrides(
   sessionId: string,
@@ -174,7 +159,6 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         materializationKey: row.commandId,
         ...(noReply ? { noReply } : {}),
         ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
-        ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
         ...(payload.clientMessageId ? {} : { queuedAt: row.createdAt }),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
       async () => {
@@ -184,7 +168,6 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         const refusal = await goalPromptRefusal(row.sessionId!);
         if (refusal) throw new PromptDeliveryRefused(409, 'goal_not_running', refusal);
         if (payload.clientMessageId) await assertInboxDeliveryActive(row);
-        if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row, overrides?.model ?? undefined);
       });
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
@@ -265,16 +248,11 @@ export async function deliverSteer(row: SessionLifecycleCommandRow, payload: Que
   try {
     if (payload.clientMessageId) await assertInboxDeliveryActive(row);
     const target = await awakeDeliveryTarget(sessionId);
-    if (!target?.externalId || !target.opencodeSessionId) throw new SteerNotTaken('turn_ended');
-    if (row.source === 'system:artifact-comment') {
-      const fresh = await refreshArtifactCommentQueuedPrompt(row);
-      promptText = fresh.text;
-      payload.parts = fresh.parts;
-    }
+    if (!target?.externalId || !target.runtimeSessionId) throw new SteerNotTaken('turn_ended');
     const wireMessageId = payload.remintOnDelivery
       ? await steerWireMessageId(row, payload, target.externalId)
       : payload.wireMessageId!;
-    const delivery = await postPrompt(target.externalId, target.opencodeSessionId, promptText, row.actorUserId!, sessionId,
+    const delivery = await postPrompt(target.externalId, target.runtimeSessionId, promptText, row.actorUserId!, sessionId,
       `${attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId}:steer`, {
         ...(payload.parts?.length ? { parts: payload.parts } : {}),
         wireMessageId, materializationKey: row.commandId,

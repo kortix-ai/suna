@@ -61,7 +61,7 @@ for (const [key, value] of Object.entries(AUDIT_ROUTE_LABELS)) {
   byAction.set(value.action, value);
   routeKeyByAction.set(value.action, key);
 }
-/** `opencode.*` → prefix `opencode.`; the longest prefix is tried first. */
+/** `agent.*` → prefix `agent.`; the longest prefix is tried first. */
 const families: Array<[prefix: string, title: string]> = [];
 for (const [key, title] of Object.entries(AUDIT_EVENT_LABELS)) {
   if (key.endsWith('.*')) families.push([key.slice(0, -1), title]);

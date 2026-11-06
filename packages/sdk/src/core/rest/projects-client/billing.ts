@@ -869,6 +869,38 @@ export async function purchaseCredits(input: PurchaseCreditsInput): Promise<Purc
   );
 }
 
+export interface RedeemCreditCodeInput {
+  /** As the person typed it; the API ignores case and surrounding spaces. */
+  code: string;
+  accountId?: string;
+}
+
+/** USD, like every billing amount: 1 USD = 100 credits. */
+export interface RedeemCreditCodeResult {
+  code: string;
+  amount_usd: number;
+  /** The account's balance after the grant. */
+  balance: number;
+}
+
+/**
+ * Redeem a credit code for an account (`billing.write`). Adds the code's
+ * amount to the non-expiring credits, once per account. A refusal throws an
+ * `ApiError` whose `code` is `credit_code_invalid`, `credit_code_expired`,
+ * `credit_code_exhausted` or `credit_code_already_redeemed`, and whose
+ * message is the sentence to show.
+ */
+export async function redeemCreditCode(input: RedeemCreditCodeInput): Promise<RedeemCreditCodeResult> {
+  return unwrap(
+    await backendApi.post<RedeemCreditCodeResult>(
+      '/billing/redeem-code',
+      { code: input.code, account_id: input.accountId },
+      { showErrors: false },
+    ),
+    'Failed to redeem the code',
+  );
+}
+
 export interface AutoTopupSettings {
   enabled: boolean;
   threshold: number;

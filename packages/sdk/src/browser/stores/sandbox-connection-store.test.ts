@@ -16,7 +16,7 @@ import {
  * `use-runtime-reconnect` already distinguishes a PARKED box (the platform
  * answered the health probe from the session row — `hop === 'control_plane'`,
  * i.e. `503 sandbox not ready (status: stopped)`, nothing was ever dialled)
- * from a BOOTING one (the proxy reached the box and OpenCode is still coming
+ * from a BOOTING one (the proxy reached the box and the runtime is still coming
  * up). It passed that distinction to `setRuntimeHealth` only to keep the
  * stall clock off, and then dropped it.
  *
@@ -35,6 +35,7 @@ function resetStore() {
 		wasConnected: false,
 		reconnectAttempts: 0,
 		disconnectedAt: null,
+		harnessVersion: null,
 		openCodeVersion: null,
 		healthy: null,
 		runtimeError: null,
@@ -142,5 +143,24 @@ describe("a ready start seeds the connection", () => {
 		seedConnectionFromReadyStart("http://runtime-c.test", ["session.subagents"]);
 		seedConnectionFromReadyStart("http://runtime-d.test", null);
 		expect(useSandboxConnectionStore.getState().runtimeCapabilities).toBeNull();
+	});
+});
+
+describe("harness version", () => {
+	beforeEach(resetStore);
+
+	test("a health answer's version is the harness version; the deprecated openCodeVersion holds the same value", () => {
+		setRuntimeHealth(true, "1.4.0");
+		const state = useSandboxConnectionStore.getState();
+		expect(state.harnessVersion).toBe("1.4.0");
+		expect(state.openCodeVersion).toBe("1.4.0");
+	});
+
+	test("a server switch forgets the previous runtime's version", () => {
+		setRuntimeHealth(true, "1.4.0");
+		resetForServerSwitch("https://api.example/p/sbx_version/8000");
+		const state = useSandboxConnectionStore.getState();
+		expect(state.harnessVersion).toBeNull();
+		expect(state.openCodeVersion).toBeNull();
 	});
 });

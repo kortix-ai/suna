@@ -872,7 +872,7 @@ async function sendPromptToSession(
 ): Promise<void> {
   const handle = kortixFromAuth(ctx.auth).session(ctx.projectId, session.session_id);
   // Carry the session's persisted model + agent: a prompt delivered without
-  // them lets OpenCode fall back to a model Kortix sandboxes don't provision.
+  // them lets the runtime fall back to a model Kortix sandboxes don't provision.
   const defaults = sessionPromptDefaults(session);
   await handle.prompts.create({
     clientMessageId: randomUUID(),

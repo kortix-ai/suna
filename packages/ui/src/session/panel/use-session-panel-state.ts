@@ -46,7 +46,7 @@ export function useSessionPanelView({
   //
   // A transient sub-session has no Kortix session row for `/turn` to answer
   // about, so it keeps the stream slot — repaired on every stream (re)connect
-  // by the status-snapshot reconciler in `use-opencode-events`.
+  // by the status-snapshot reconciler in `use-runtime-events`.
   const sessionStatus = useSessionStateStore((s) => s.sessionStatus[sessionId]);
   const working = useSessionWorking(projectId ?? '', projectSessionId ?? '', {
     enabled: !!projectId && !!projectSessionId,
@@ -113,7 +113,7 @@ export function useSessionPanelSessionSync({
   // `continuity` names the Kortix project session behind this layout id and
   // whether this mount is the transient boot shell. The store uses it for one
   // thing: the boot→ready crossfade renames the layout from the Kortix session
-  // id (shell) to the OpenCode id (real chat) for the SAME session — that
+  // id (shell) to the runtime session id (real chat) for the SAME session — that
   // handoff must carry an open panel across instead of slamming it shut.
   useEffect(() => {
     if (!isVisibleLayout) return;

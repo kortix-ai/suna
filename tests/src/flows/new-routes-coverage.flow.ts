@@ -543,7 +543,7 @@ flow(
     });
 
     await ctx.step('Session turn read refuses an anonymous caller', async () => {
-      // The turn ledger carries the OpenCode session id and the client-minted
+      // The turn ledger carries the runtime session id and the client-minted
       // message id — session CONTENT, never public.
       const response = await ctx.client
         .as(ctx.P.ANON)

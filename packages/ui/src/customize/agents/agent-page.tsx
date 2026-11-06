@@ -357,7 +357,7 @@ function useAgentUseCounts(projectId: string, agentName: string, config: Project
     ...contract('inventory'),
   });
   // A trigger stored as `default` starts the project's default agent.
-  const fallback = config.default_agent ?? config.open_code_default_agent ?? null;
+  const fallback = config.default_agent ?? null;
   return {
     triggerCount: triggers.data
       ? triggers.data.triggers.filter(
@@ -407,7 +407,7 @@ function HeaderBadges({ agent, config, block }: { agent: Agent; config: ProjectC
   const tPage = useI18nTranslations('agentEditor.page');
   const enabled = block.enabled !== false;
   const mode = (block.behavior?.mode ?? agent.mode ?? 'primary').toLowerCase();
-  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
+  const isDefault = config.default_agent === agent.name;
   return (
     <>
       {isDefault ? (
@@ -574,7 +574,7 @@ function AgentActions({
   const configure = useConfigureThread(projectId);
   const makeDefault = useDefaultAgent(projectId);
   const [confirm, setConfirm] = useState<'edit' | 'delete' | null>(null);
-  const isDefault = (config.default_agent ?? config.open_code_default_agent) === agent.name;
+  const isDefault = config.default_agent === agent.name;
   const mode = agent.mode?.toLowerCase();
   const startBlocked =
     agent.enabled === false
@@ -772,7 +772,7 @@ function EditableAgentPage({
   );
   const policySetControl = useAgentPolicySetControls(projectId, editor, policySetOptions);
   const surface = { kind: 'agent', agentName: agent.name } as const;
-  const defaultAgent = config.default_agent ?? config.open_code_default_agent;
+  const defaultAgent = config.default_agent;
   const name = agentDisplayName(agent.name);
   const sourcePath = editor.draft.file ?? configEntitySourcePath(agent.path);
 
@@ -1133,7 +1133,7 @@ function ReadOnlyAgentPage({
             <TriggersPage
               projectId={projectId}
               surface={{ kind: 'agent', agentName: agent.name }}
-              defaultAgent={config.default_agent ?? config.open_code_default_agent}
+              defaultAgent={config.default_agent}
             />
           </Embedded>
         );

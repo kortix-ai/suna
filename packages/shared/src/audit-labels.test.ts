@@ -165,6 +165,14 @@ describe('action lookup', () => {
       must(AUDIT_EVENT_LABELS['opencode.tool.updated'], 'opencode.tool.updated'),
     );
     expect(auditLabelForAction('opencode.session.idle')?.action).toBe('opencode.session.idle');
+    // New rows name the same events `agent.*`.
+    expect(auditLabelForAction('agent.message.part.reasoning.updated')?.title).toBe(
+      must(AUDIT_EVENT_LABELS['agent.message.part.*'], 'agent.message.part.*'),
+    );
+    expect(auditLabelForAction('agent.tool.updated')?.title).toBe(
+      must(AUDIT_EVENT_LABELS['agent.tool.updated'], 'agent.tool.updated'),
+    );
+    expect(auditLabelForAction('agent.session.idle')?.title).toBe(must(AUDIT_EVENT_LABELS['agent.*'], 'agent.*'));
   });
 
   test('a route action names the route it labels; an event action names none', () => {

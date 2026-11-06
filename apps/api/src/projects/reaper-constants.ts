@@ -12,7 +12,7 @@ export const REAP_CONCURRENCY = 6;
  * idle" counts as an ORPHANED PROMPT rather than a turn that is merely starting.
  *
  * The daemon's `turn_orphaned_prompt` is a statement about the messages on
- * record, and for a few moments after OpenCode ACKs a prompt those messages look
+ * record, and for a few moments after the runtime ACKs a prompt those messages look
  * identical to a dropped one: the user message exists, nothing has answered it,
  * and `/session/status` has not flipped busy yet. Redelivering into that window
  * runs the prompt twice. 30s is far past that window — a root that is genuinely

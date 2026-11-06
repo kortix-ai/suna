@@ -134,8 +134,7 @@ export interface ProjectHomeProps {
   onOpenDrawer: () => void;
   /**
    * The bell at the top right (KRTX-1742): the caller's unread count and the
-   * move to the Notifications page. Omitted while the project's
-   * `notification_center` flag is off: no bell.
+   * move to the Notifications page. Omitted: no bell.
    */
   notifications?: { unreadCount: number; onOpen: () => void };
   /** A cancelled connection's immutable draft, acknowledged after the composer commits. */
@@ -214,7 +213,7 @@ export function ProjectHome({
     () => (projectConfig ? threadAgents(projectConfig) : undefined),
     [projectConfig],
   );
-  const defaultAgent = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
+  const defaultAgent = projectConfig?.default_agent ?? null;
   // `/`: home has no session runtime, so the list is the project config's
   // skills and commands, the same list web's home composer shows.
   const homeCommands = React.useMemo<Command[]>(() => {

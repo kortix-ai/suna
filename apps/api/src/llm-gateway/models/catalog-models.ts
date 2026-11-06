@@ -25,8 +25,8 @@ interface GatewayModel {
   family?: string;
   // The REAL upstream provider this model resolves against ('anthropic',
   // 'openai', 'codex', 'kortix', ...). Every model here is registered under
-  // the single synthetic `kortix` opencode provider (see the sandbox agent
-  // server's `buildKortixProvider`) — this is the one field a client can
+  // the one provider id `kortix` (`KORTIX_PROVIDER_ID`, `createPiModels` in
+  // kortixd's harness/pi/model.ts) — this is the one field a client can
   // group/brand by without parsing `<provider>/<model>` out of the wire id.
   // See packages/ui/src/session/models/model-selector.tsx's `pickerGroupId`.
   provider?: string;
@@ -83,7 +83,7 @@ function codexName(id: string): string {
 
 // A model's limits exactly as models.dev reports them: each positive field
 // passes through on its own, and an unknown one stays unset. A model with no
-// known window gets no `limit`; the harness then sizes it (pi, OpenCode).
+// known window gets no `limit`; the runtime then sizes it.
 function servedLimit(limit?: { context?: number; input?: number; output?: number }) {
   const out: { context?: number; input?: number; output?: number } = {};
   for (const key of ['context', 'input', 'output'] as const) {
@@ -103,7 +103,7 @@ function servedLimit(limit?: { context?: number; input?: number; output?: number
 // (the chat runtime's effort control reads it straight off the served model,
 // no second catalog lookup); `cost`/`modalities`/`structured_output`/
 // `knowledge` ride along so nothing #4995/#5002-adjacent UI needs is dropped
-// between models.dev and opencode's registered model dict.
+// between models.dev and the runtime's registered models.
 function capabilitiesOf(model: CatalogModel | undefined): Omit<GatewayModel, 'name' | 'provider'> {
   if (model && model.attachment !== undefined) {
     return {
@@ -225,7 +225,7 @@ export function gatewayModelsAll(
     for (const model of provider.models) {
       // BYOK models ARE catalog entries — capabilities come straight from models.dev.
       // `provider` is the REAL upstream id (e.g. "anthropic") — every model here
-      // is registered under the single synthetic `kortix` opencode provider, so
+      // is registered under the one provider id `kortix`, so
       // this is what the picker groups/brands by instead of parsing the wire id.
       out[`${provider.id}/${model.id}`] = {
         name: model.name,

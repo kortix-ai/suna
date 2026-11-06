@@ -23,7 +23,7 @@
  * from `worker/jobs/session-model-fallback.ts`.
  *
  * No push to the box: each prompt carries its model, so the next one runs on
- * the fallback without an OpenCode restart.
+ * the fallback without a runtime restart.
  */
 import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { MAX_HOLD_SECONDS, SETUP_HOLD_SECONDS, type GatewayTrace } from '@kortix/llm-gateway';
@@ -72,7 +72,7 @@ export interface FallbackSwitch {
   sessionId: string;
   projectId: string;
   accountId: string;
-  /** Opencode refs (`kortix/<wire>`). */
+  /** Session model refs (`kortix/<wire>`). */
   from: string;
   to: string;
   reason: string;
@@ -109,7 +109,7 @@ export function fallbackSwitchOf(
   };
 }
 
-/** The model of the session's newest prompt, as an opencode ref, or null when it named none. */
+/** The model of the session's newest prompt, as a session model ref (`kortix/<wire>`), or null when it named none. */
 async function latestPromptModelRef(sessionId: string): Promise<string | null> {
   const [row] = await db
     .select({ model: sql<{ providerID?: unknown; modelID?: unknown } | null>`${sessionLifecycleCommands.payload}->'overrides'->'model'` })

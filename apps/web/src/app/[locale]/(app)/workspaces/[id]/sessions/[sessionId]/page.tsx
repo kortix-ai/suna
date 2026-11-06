@@ -26,7 +26,6 @@ import { Button } from '@kortix/ui/button';
 import Loading from '@kortix/ui/loading';
 import { errorToast, successToast } from '@kortix/ui/toast';
 import { ErrorState } from '@kortix/ui/error-state';
-import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
 import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
@@ -153,7 +152,7 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  * /workspaces/[id]/sessions/[sessionId] — project-scoped session view.
  *
  * The entire runtime lifecycle (POST /start, the sandbox switch, the SSE stream,
- * readiness seeding, and the canonical OpenCode pin) is owned by the SDK's
+ * readiness seeding, and the canonical runtime session pin) is owned by the SDK's
  * `useSession` hook — the page no longer hand-rolls the 7-step mount. The page
  * keeps its rich shell: the billing gate, the instant-shell/loader crossfade, the
  * fresh-session + pending-prompt hand-off, and the restart/error cards.
@@ -273,7 +272,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   );
 
   // ONE hook owns the runtime: POST /start (idempotent provision/resume + the
-  // server-resolved OpenCode pin), the sandbox switch, the SSE stream, readiness
+  // server-resolved runtime session pin), the sandbox switch, the SSE stream, readiness
   // seeding (no client health poll), and the canonical id. The billing gate is
   // monotonic (see canPollSessionStart) so a no-plan account still stops polling
   // for a sandbox that won't provision, without the old open→shut→open flip
@@ -281,18 +280,15 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
-  // With the project's `notification_center` flag on (KRTX-1742), a tab that
-  // shows its own OS notification tells the server so, and the server then
-  // holds back the phone push and Web Push for this session; closing the page
-  // ends the presence lease at once. With the flag off, presence is as before.
-  const notificationCenter = useNotificationCenter(projectId);
+  // A tab that shows its own OS notification tells the server so, and the
+  // server then holds back the phone push and Web Push for this session
+  // (KRTX-1742). Closing the page ends the presence lease at once (the SDK's
+  // `presencePageExit` default).
   const browserNotificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
   const notificationPermission = useWebNotificationStore((s) => s.permission);
   const session = useSession(projectId, sessionId, {
     browserPresence: !!user,
-    presenceAlerts:
-      notificationCenter && browserNotificationsOn && notificationPermission === 'granted',
-    presencePageExit: notificationCenter,
+    presenceAlerts: browserNotificationsOn && notificationPermission === 'granted',
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialRuntimeSessionId,
@@ -302,8 +298,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     subscribeMessages: false,
   });
   // The presence write marks this session's notifications read on the server;
-  // this clears them from the bell at once. Flag off: there is no bell.
-  useOpenSessionRead(notificationCenter ? user?.id : null, sessionId);
+  // this clears them from the Inbox and its sidebar count at once.
+  useOpenSessionRead(user?.id, sessionId);
   // `/start` no longer refuses a session created before a repository
   // replacement, so there is no error to detect and no mode to flip into: the
   // session starts, gets the project's current config release, and converges
@@ -428,7 +424,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const runtimeProbed = useRuntimeConnectionStore((s) => s.initialCheckDone);
   const runtimeHealthy = useRuntimeConnectionStore((s) => s.healthy === true);
   const runtimeConnectionStatus = useRuntimeConnectionStore((s) => s.status);
-  const runtimeVersion = useRuntimeConnectionStore((s) => s.openCodeVersion);
+  const runtimeVersion = useRuntimeConnectionStore((s) => s.harnessVersion);
   const runtimeProbeError = useRuntimeConnectionStore((s) => s.runtimeError);
   // Only an ESTABLISHED runtime is woken. A session whose first sandbox is
   // still being built (`external_id` null, "Sandbox build running…") is not
@@ -761,7 +757,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   });
   // Read the RAW `/start` stage, never `session.phase` — `phase` folds a
   // terminal stage together with a typed `/start` error and a transient
-  // OpenCode REST error, so a still-provisioning session used to be classified
+  // runtime REST error, so a still-provisioning session used to be classified
   // as a hard provisioning failure. See session-terminal-state.ts.
   const terminalState = {
     stage: session.stage ?? null,
@@ -1595,7 +1591,7 @@ function ActiveSessionChat({
 
   // Migrate the home-composer prompt onto the canonical SDK start-stash. Every
   // producer (project-home composer, `useConfigureThread`, the instant shell)
-  // stashes under the ROUTE session id, before the canonical OpenCode session
+  // stashes under the ROUTE session id, before the canonical runtime session
   // exists; once it resolves, hand the stash off to `chatSessionId`'s stash,
   // which `readStartStash` (SessionChat's pending-prompt effect, or
   // `useSession`'s own replay) reads uniformly. `migrateStash` understands both
@@ -1612,7 +1608,7 @@ function ActiveSessionChat({
     if (!chatSessionId) return;
     migrateStash(sessionId, chatSessionId);
     // No queue hand-off beside it any more. The browser queue was keyed by the
-    // OpenCode session id, which changes as the pin resolves, so the instant
+    // runtime session id, which changes as the pin resolves, so the instant
     // shell's messages had to be moved from the route id onto the pin or they
     // were orphaned (#6110). The inbox is keyed by the KORTIX session id — the
     // route id — which never changes, so there is nothing to adopt.
@@ -1633,7 +1629,7 @@ function ActiveSessionChat({
     if (runtimeReady) sessionMark(sessionId, 'runtime-ready');
   }, [runtimeReady, sessionId]);
   useEffect(() => {
-    if (sessionsListed) sessionMark(sessionId, 'opencode-listed');
+    if (sessionsListed) sessionMark(sessionId, 'runtime-sessions-listed');
   }, [sessionsListed, sessionId]);
   useEffect(() => {
     if (!chatSessionId) return;

@@ -3,11 +3,11 @@
  *
  * They speak the Kortix session routes — `POST /start`, `POST /prompts`,
  * `GET /turn`, `GET /transcript`, `GET /events` — so one flow body runs
- * unchanged on OpenCode and on pi (`harnessFlow` in core/flow.ts). Two calls
+ * unchanged on any harness (`harnessFlow` in core/flow.ts). Two calls
  * still go to the session runtime behind the preview proxy, because no Kortix
  * route exists for them yet: the abort the web Stop button sends
  * (`POST /session/<root>/abort`) and the daemon's own `GET /kortix/health`.
- * Both harnesses serve both.
+ * The box serves both.
  */
 import { SessionStartResultSchema } from '@kortix/api-contract';
 import { isKe2eRetryableError } from '../core/client';

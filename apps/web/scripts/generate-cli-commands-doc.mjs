@@ -16,8 +16,6 @@ const SCRIPT = 'apps/web/scripts/generate-cli-commands-doc.mjs';
 
 /** In the table, never in the docs. */
 const UNDOCUMENTED = {
-  // Attaches the OpenCode TUI; a pi session has no `session.attach` and the command exits 1.
-  connect: 'OpenCode only',
   // Served only where KORTIX_CHROME_ENABLED is on (dev) until the Chrome Web Store listing is public.
   chrome: 'not launched',
 };
@@ -64,6 +62,7 @@ const COMMANDS = {
   marketplace: ['Search, show, install and uninstall marketplace skills.', '[Skills](/docs/guide#skills)'],
   files: ['Read the committed repository: files, history, branches, commits, diffs and a zip download.', '[Git](/docs/developers#git)'],
   drive: ["The project's Drive: list, read, upload, move and delete files, and share folders.", '[Drive](/docs/guide#drive)'],
+  artifacts: ['Publish, save, share and list docs and pages from Drive, and read their versions.', '[Artifact commands](#artifact-commands)'],
   search: ["Search the project's Drive by file name and text, with your folder access. Inside a session it covers every folder the session may mount, also the ones past its mounts.", '[Drive](/docs/guide#drive)'],
   cr: ['Change requests: list, show, diff, open, merge, request changes, close and reopen.', '[Git](/docs/developers#git)'],
   review: ['The review inbox: change requests, held connector calls and submitted outputs.', '[Git](/docs/developers#git)'],

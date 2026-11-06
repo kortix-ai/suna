@@ -233,8 +233,8 @@ test('session presence returns the awake window the server wrote', async () => {
   expect(res.data?.awake_cap_at).toBe('2026-10-12T11:40:00.000Z');
 });
 
-// `useSession` sends an absent report without `keepalive` while the project's
-// `notification_center` flag is off, as before KRTX-1742.
+// `useSession` sends an absent report without `keepalive` when the host passes
+// `presencePageExit: false`, as before KRTX-1742.
 test('session presence takes an explicit keepalive, and the body stays the report', async () => {
   const inits: RequestInit[] = [];
   globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {

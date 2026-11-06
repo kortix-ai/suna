@@ -39,8 +39,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const { auditApiRequest } = await import('../middleware/audit');
-const { DocReadAuditThrottle, isIncrementalDocPull } = await import('../artifacts/doc-rules');
-const { annotateAuditEvent, attachInboundAuditScope, bindAuditPrincipal, markInboundAuditHeartbeat } = await import(
+const { annotateAuditEvent, attachInboundAuditScope, bindAuditPrincipal } = await import(
   '../shared/audit-scope'
 );
 const { __clearProjectAccountLookupForTests } = await import('../shared/project-account-lookup');
@@ -146,104 +145,6 @@ describe('the audit ingest endpoint does not audit itself', () => {
     expect(res.status).toBe(401);
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0]).toMatchObject({ action: 'audit.session.ingest', httpStatus: 401 });
-  });
-});
-
-describe('a co-edited doc’s successful pushes and pulls write no row (KRTX-3670)', () => {
-  // The real route templates: the action comes from the audit route labels.
-  const DOC = `/v1/projects/${PROJECT}/artifacts/${PROJECT}/doc`;
-  const docApp = (status: number) => {
-    const app = new Hono();
-    app.use('*', auditApiRequest);
-    const answer = (c: Context) => {
-      (c as any).set('accountId', ACCOUNT);
-      return c.json({}, status as 200);
-    };
-    // As `routes/artifact-doc.ts`: a catch-up pull past the first one in 10 min marks itself a heartbeat; a full read never does.
-    app.get('/v1/projects/:projectId/artifacts/:artifactId/doc', (c) => {
-      const query = { after: Number(c.req.query('after') ?? 0), base: c.req.query('base') === 'true' };
-      if (isIncrementalDocPull(query) && !catchUp.shouldRecord(`${USER}:${PROJECT}`, Date.now())) markInboundAuditHeartbeat();
-      return answer(c);
-    });
-    for (const route of ['seed', 'updates', 'lease', 'flushed']) app.post(`/v1/projects/:projectId/artifacts/:artifactId/doc/${route}`, answer);
-    return app;
-  };
-  let catchUp = new DocReadAuditThrottle();
-  const push = (status: number) => docApp(status).request(`${DOC}/updates`, { method: 'POST', body: '{}' });
-  const rows = () => auditRows.map((row) => [row.action, row.httpStatus]);
-
-  beforeEach(() => {
-    auditRows = [];
-    catchUp = new DocReadAuditThrottle();
-  });
-
-  test('a 200 push writes no row; of three 200 catch-up pulls (after > 0, no base) only the first writes one', async () => {
-    expect((await push(200)).status).toBe(200);
-    expect(auditRows).toHaveLength(0);
-    for (const after of [3, 4, 5]) expect((await docApp(200).request(`${DOC}?after=${after}`)).status).toBe(200);
-    expect(rows()).toEqual([['project.artifact.doc.read', 200]]);
-  });
-
-  test('a 200 full read keeps its row: from seq 0, or with the file text (base=true), as a file read does', async () => {
-    expect((await docApp(200).request(DOC)).status).toBe(200);
-    expect((await docApp(200).request(`${DOC}?after=0`)).status).toBe(200);
-    expect((await docApp(200).request(`${DOC}?after=5&base=true`)).status).toBe(200);
-    expect(rows()).toEqual([
-      ['project.artifact.doc.read', 200],
-      ['project.artifact.doc.read', 200],
-      ['project.artifact.doc.read', 200],
-    ]);
-  });
-
-  test('a refused or failed push or pull keeps its row', async () => {
-    for (const status of [403, 413, 429, 500]) expect((await push(status)).status).toBe(status);
-    expect((await docApp(404).request(DOC)).status).toBe(404);
-    expect(rows()).toEqual([
-      ['project.artifact.doc.push', 403],
-      ['project.artifact.doc.push', 413],
-      ['project.artifact.doc.push', 429],
-      ['project.artifact.doc.push', 500],
-      ['project.artifact.doc.read', 404],
-    ]);
-  });
-
-  test('a successful seed, lease and flush keep their rows', async () => {
-    for (const route of ['seed', 'lease', 'flushed']) {
-      expect((await docApp(200).request(`${DOC}/${route}`, { method: 'POST', body: '{}' })).status).toBe(200);
-    }
-    expect(rows()).toEqual([
-      ['project.artifact.doc.seed', 200],
-      ['project.artifact.doc.lease', 200],
-      ['project.artifact.doc.flush', 200],
-    ]);
-  });
-
-  test('a lease renewal (the handler marks a heartbeat) writes no row; an acquire, a release, a contested call and a failed renewal do', async () => {
-    // As `routes/artifact-doc.ts`: the handler marks a heartbeat only for kind `renew`.
-    const leaseApp = (kind: 'acquire' | 'renew' | 'release' | 'contested', status: number) => {
-      const app = new Hono();
-      app.use('*', auditApiRequest);
-      app.post('/v1/projects/:projectId/artifacts/:artifactId/doc/lease', (c) => {
-        (c as any).set('accountId', ACCOUNT);
-        if (kind === 'renew') markInboundAuditHeartbeat();
-        return c.json({ kind }, status as 200);
-      });
-      return app;
-    };
-    const lease = (kind: 'acquire' | 'renew' | 'release' | 'contested', status = 200) =>
-      leaseApp(kind, status).request(`${DOC}/lease`, { method: 'POST', body: '{}' });
-    for (let i = 0; i < 3; i++) expect((await lease('renew')).status).toBe(200);
-    expect(auditRows).toHaveLength(0);
-    await lease('acquire');
-    await lease('contested');
-    await lease('release');
-    await lease('renew', 409);
-    expect(rows()).toEqual([
-      ['project.artifact.doc.lease', 200],
-      ['project.artifact.doc.lease', 200],
-      ['project.artifact.doc.lease', 200],
-      ['project.artifact.doc.lease', 409],
-    ]);
   });
 });
 

@@ -24,7 +24,7 @@ import { sandboxExplorerSource } from './sandbox-explorer-source';
 
 /**
  * The shared Drive-style explorer ({@link DriveExplorer}) bound to the live
- * sandbox workspace: writable, searchable, and gated on the sandbox OpenCode
+ * sandbox workspace: writable, searchable, and gated on the sandbox runtime
  * server being reachable. Mount inside a FilesStoreProvider for scoped
  * navigation state, or bare to drive the global files store (desktop tabs).
  */
@@ -65,7 +65,7 @@ export function SandboxFileExplorer({
 }
 
 /**
- * Renders children only while the sandbox OpenCode server is reachable.
+ * Renders children only while the sandbox runtime is reachable.
  *
  * The session panel's tabs now sit ABOVE this gate rather than being threaded
  * through it, so a booting or unreachable workspace can no longer take the

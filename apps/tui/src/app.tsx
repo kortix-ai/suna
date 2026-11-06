@@ -405,7 +405,7 @@ export function App({
   }, [renderer, ui.title.on, windowTitle]);
   useEffect(() => () => renderer.setTerminalTitle(''), [renderer]);
 
-  // Drag over any text to copy it (OSC 52), as OpenCode does: the TUI holds the mouse, so
+  // Drag over any text to copy it (OSC 52): the TUI holds the mouse, so
   // the terminal's own selection never sees the drag.
   useCopyOnSelect(
     useCallback(
@@ -855,8 +855,8 @@ export function App({
     const row = sessions.sessions.find((entry) => entry.session_id === id);
     return { sessionId: id, title: row ? sessionTitle(row) : id.slice(0, 8) };
   });
-  // The draft is a tab too: the session it is about to start (opencode's
-  // "New session" tab), so the bar never prints an empty-state sentence.
+  // The draft is a tab too: the session it is about to start (a "New session"
+  // tab), so the bar never prints an empty-state sentence.
   if (!sessionId && route === 'session') tabs.push({ sessionId: DRAFT_TAB, title: 'New session' });
   const tabsNode = tabsShown ? (
     <TabsBar

@@ -200,6 +200,59 @@ const replicaLocal = {
   },
 };
 
+/**
+ * The tables whose lifecycle status has one owner module. A status write
+ * anywhere else is a blind write that loses races: it reads the row, checks
+ * the status in code, then writes `WHERE id = ?`. The owner writes through
+ * named `{ from, to }` transitions (`shared/status-transition.ts`), one
+ * compare-and-set each. Path: the owner's file, relative to src/.
+ * @type {Record<string, string[]>}
+ */
+export const GUARDED_STATUS_OWNERS = {
+  projectSessions: ['projects/session-lifecycle/status-transitions.ts'],
+  sessionSandboxes: ['projects/session-lifecycle/status-transitions.ts'],
+  changeRequests: ['projects/change-requests.ts'],
+  projectAccessRequests: ['projects/lib/access-requests.ts'],
+  reviewItems: ['projects/review-items.ts'],
+  captureEnrollments: ['capture/enrollment.ts'],
+  connectorConnections: ['connectors/connection-status.ts'],
+  appRuntimes: ['apps/runtime-status.ts'],
+  accountDeletionRequests: ['billing/repositories/account-deletion.ts'],
+  enterpriseContracts: ['billing/services/enterprise-contracts.ts'],
+};
+
+/** @type {import('eslint').Rule.RuleModule} */
+const guardedStatus = {
+  meta: {
+    type: 'problem',
+    messages: {
+      blind:
+        "A `status` write on {{table}} outside its owner ({{owners}}). Call the owner's named transition: one compare-and-set (`WHERE status IN (from)`) that reports a lost race (shared/status-transition.ts).",
+    },
+    schema: [],
+  },
+  create(context) {
+    const rel = relative(SRC, context.filename).split(sep).join('/');
+    return {
+      /** `<x>.update(<table>).set({ status: ... })` */
+      'CallExpression[callee.property.name="set"]'(/** @type {any} */ node) {
+        const update = node.callee.object;
+        if (update?.type !== 'CallExpression' || update.callee?.property?.name !== 'update') return;
+        const table = update.arguments[0];
+        if (table?.type !== 'Identifier' || !(table.name in GUARDED_STATUS_OWNERS)) return;
+        const owners = GUARDED_STATUS_OWNERS[/** @type {keyof typeof GUARDED_STATUS_OWNERS} */ (table.name)];
+        if (owners.includes(rel)) return;
+        const set = node.arguments[0];
+        if (set?.type !== 'ObjectExpression') return;
+        const status = set.properties.find(
+          (/** @type {any} */ p) => p.type === 'Property' && (p.key?.name === 'status' || p.key?.value === 'status'),
+        );
+        if (status) context.report({ node: status, messageId: 'blind', data: { table: table.name, owners: owners.join(', ') } });
+      },
+    };
+  },
+};
+
 export default tseslint.config(
   // Tests reach whatever they exercise. One-off ops scripts talk to a terminal.
   { ignores: ['src/**/*.test.ts', 'src/**/__tests__/**', 'src/scripts/**'] },
@@ -209,7 +262,13 @@ export default tseslint.config(
     linterOptions: { reportUnusedDisableDirectives: 'off' },
     plugins: {
       'kortix-api': {
-        rules: { layers, 'projects-surface': projectsSurface, 'replica-local': replicaLocal, 'workspace-store-only': workspaceStoreOnly },
+        rules: {
+          layers,
+          'projects-surface': projectsSurface,
+          'replica-local': replicaLocal,
+          'workspace-store-only': workspaceStoreOnly,
+          'guarded-status': guardedStatus,
+        },
       },
     },
     rules: {
@@ -217,6 +276,7 @@ export default tseslint.config(
       'kortix-api/projects-surface': 'error',
       'kortix-api/replica-local': 'error',
       'kortix-api/workspace-store-only': 'error',
+      'kortix-api/guarded-status': 'error',
       'no-console': 'error',
       // A statement after a return is dead code that still reads as live.
       // KRTX-2987: a model assignment after a `return` saved every channel

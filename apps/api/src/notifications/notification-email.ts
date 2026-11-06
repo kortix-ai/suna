@@ -27,7 +27,6 @@ export const KIND_LABELS: Record<NotificationKindName, string> = {
   automation_recovered: 'Trigger recovered',
   capture_device_down: 'Computer not recording',
   capture_device_recovered: 'Computer recording again',
-  artifact_comment: 'Artifact comment',
 };
 
 /** The settings pane that holds the per-kind Push and Email switches. */

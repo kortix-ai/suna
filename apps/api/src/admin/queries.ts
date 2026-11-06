@@ -159,13 +159,14 @@ export async function listAdminAccountProjects(accountId: string) {
   const { projectSessions } = await import('@kortix/db');
   const { projectsView } = await import('../workspaces/rows');
   const { eq, desc, sql } = await import('drizzle-orm');
+  const { ACTIVE_SESSION_STATUSES } = await import('../projects/surface');
 
   const sessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)})`;
   const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
       WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)}
-        AND ps.status IN ('queued', 'branching', 'provisioning', 'running'))`;
+        AND ps.status IN (${sql.join(ACTIVE_SESSION_STATUSES.map((status) => sql`${status}`), sql`, `)}))`;
   const lastSessionAt = sql<string | null>`(
       SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)})`;
 

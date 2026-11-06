@@ -267,16 +267,16 @@ export function registerSessionScopeRoutes(): void {
       // prompt routes through `POST :8000 /session/{id}/{prompt_async|message}`
       // (a prompt sent any other way slips past it), and even when it fired the
       // daemon took the ~51ms dispose fast path for a pure secret change — and a
-      // dispose re-reads the opencode config file only, NOT the child's process
-      // env, so opencode kept its stale 0/47 PID while `agent-env.sh` got the new
+      // dispose re-read the OpenCode config file only, NOT the child's process
+      // env, so OpenCode kept its stale 0/47 PID while `agent-env.sh` got the new
       // set. The box reported a stale OpenCode until something else forced a
       // respawn.
       //
       // Push here, the same pattern the `/model` PUT uses: re-derive the snapshot
       // from the row we just committed, POST it to the daemon, and restart
-      // opencode so `spawnChild` re-runs `mergeProjectEnv` + the gateway strip.
+      // the runtime so it starts with the new project env.
       // Only when the effective set actually moved — a no-op re-scope (same
-      // allowlist) must not restart opencode and kill an in-flight turn for
+      // allowlist) must not restart the runtime and kill an in-flight turn for
       // nothing. `applied_live` tells the caller whether it is in effect NOW or
       // only at the next boot, exactly like the model route.
       let scopeAppliedLive = false;
@@ -316,8 +316,8 @@ export function registerSessionScopeRoutes(): void {
   /**
    * Change the model a session uses, mid-flight.
    *
-   * `model` was create-only: the sandbox reads `KORTIX_OPENCODE_MODEL`
-   * when opencode builds its config at spawn, and nothing re-pushed it — so a live
+   * `model` was create-only: the sandbox reads `KORTIX_MODEL`
+   * when the runtime builds its config at start, and nothing re-pushed it — so a live
    * box kept its boot model for the rest of the session. The only way to "change"
    * it was to plant a value through PATCH metadata, which skipped the account
    * servability check entirely (now blocked; see SERVER_MANAGED_METADATA_KEYS).
@@ -379,7 +379,7 @@ export function registerSessionScopeRoutes(): void {
 
       const loaded = await loadProjectForUser(c, projectId, 'session');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
-      // A live model change restarts opencode and can terminate the target
+      // A live model change restarts the runtime and can terminate the target
       // session's in-flight turn. Scoped agent tokens therefore need the same
       // destructive capability as the stop route (no-op for human/PAT tokens).
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
@@ -387,7 +387,7 @@ export function registerSessionScopeRoutes(): void {
       if (!visible) return c.json({ error: 'Not found' }, 404);
       // Seeing a session is not permission to mutate it: visibility 'project'
       // makes it readable by every member, but changing the model restarts
-      // opencode and destroys the OWNER's in-flight turn. Same gate as the
+      // the runtime and destroys the OWNER's in-flight turn. Same gate as the
       // sharing and stop routes above.
       if (!mayChangeSessionModel(visible)) {
         return c.json(

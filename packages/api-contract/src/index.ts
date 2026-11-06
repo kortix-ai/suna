@@ -62,13 +62,10 @@ export const FeatureFlagMapSchema = z.object({
   pooled_provider_secrets: z.boolean(),
   us_region: z.boolean(),
   event_triggers: z.boolean(),
-  notification_center: z.boolean(),
   chat: z.boolean(),
   shared_drives: z.boolean(),
   goals: z.boolean(),
   workspace_volume: z.boolean(),
-  artifacts: z.boolean(),
-  artifact_comments: z.boolean(),
   email_channel: z.boolean(),
   session_groups: z.boolean(),
   chrome: z.boolean(),
@@ -211,10 +208,16 @@ export const ProjectSchema = z.object({
     connectors_api_discover: z.literal(true).optional(),
     /** Not a flag since 2026-11-02 (My Kortix follows kortix.yaml `builtin_agents.my_kortix` alone); always `true` for older SDK and hosts. */
     meta_agent: z.literal(true).optional(),
+    /** Not a flag since 2026-11-06 (notifications are on for every project; email is opt-in per kind); always `true` for older SDK, web, CLI and mobile clients. */
+    notification_center: z.literal(true).optional(),
     /** Not a flag since 2026-11-03 (warm sessions were removed); always `false` for older SDK, web and mobile clients, which pre-create a session only while it is true. */
     warm_sessions: z.literal(false).optional(),
     /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
     volumes: z.boolean().optional(),
+    /** Not a flag since 2026-11-06 (every project has Artifacts); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI, TUI and hosts. */
+    artifacts: z.boolean().optional(),
+    /** Not a flag since 2026-11-06 (artifact comments were removed); always `false` for older SDK, web, TUI and mobile clients, which show comments only while it is true. */
+    artifact_comments: z.literal(false).optional(),
     /** Not a flag since 2026-11-02 (every project has a Drive); `true` wherever the platform stores a Drive (Platinum), for older SDK, CLI and hosts. */
     drives: z.boolean().optional(),
     /** @deprecated Merged into `chat` (2026-11); equal to `chat`, for released TUI, mobile and CLI builds that show Channels only while it is true. */
@@ -450,7 +453,7 @@ export const SessionScopeSchema = z
     connector_bindings_inherit_unbound: z.boolean(),
     /**
      * True when the new secrets scope was pushed to the live sandbox and
-     * OpenCode was restarted to pick it up — the change is in effect NOW.
+     * the runtime reloaded it — the change is in effect NOW.
      * False when there was no active sandbox to push to (the change is stored
      * and applies at the next boot), or when `secrets` was not part of this
      * request. Mirrors the model route's `applied_live`.
@@ -966,7 +969,7 @@ export const PendingSessionPromptSchema = z
     variant: z.string().min(1).nullable().optional(),
     attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
     /**
-     * Full prompt parts, in OpenCode's own wire shape. Lets the first prompt
+     * Full prompt parts, in the runtime's prompt-part wire shape. Lets the first prompt
      * carry attachments as `data:` URLs — the session's sandbox does not exist
      * yet, so there is nowhere to upload into. The API converts the whole
      * pending prompt into a durable inbox row at create; the inbox's own
@@ -1130,8 +1133,8 @@ export const SessionUpdateInputSchema = z.object({
 export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
 
 /** A project session as serialized by `serializeSession`. */
-/** One conversation of a session's runtime, as the snapshot writer stores it
- *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
+/** One conversation of a session's runtime, as the snapshot stores it
+ *  (`apps/api/src/projects/lib/runtime-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
   fork_source_id: z.string().optional(),
@@ -1194,7 +1197,7 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
-  /** The session's root conversation in its runtime (OpenCode or pi). */
+  /** The session's root conversation in its runtime. */
   runtime_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
@@ -1896,10 +1899,10 @@ export const SessionStartResultSchema = z.object({
   runtime_session_id: z.string().nullable(),
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),
-  /** Server-selected OpenCode REST transport. */
+  /** Server-selected runtime REST transport. */
   runtime_transport: z.literal('rest').optional(),
   /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000),
+   * Relative proxy path for this session's runtime (the daemon, port 8000),
    * composed by the client against its configured backend URL. The server owns
    * the proxy scheme; absent until the box has an external_id.
    */

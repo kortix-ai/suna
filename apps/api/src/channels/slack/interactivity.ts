@@ -287,11 +287,19 @@ async function handleReviewAction(
     return;
   }
 
-  await applyVerdict(parsed.id, thread.projectId, {
+  const decided = await applyVerdict(parsed.id, thread.projectId, {
     verdict,
     feedback: null,
     actingUserId: actor.userId,
   });
+  if (decided === null) {
+    // Someone decided it first (another click, the web inbox): change nothing.
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      text: `*${escapeMrkdwn(item.title)}* was already decided.`,
+    });
+    return;
+  }
 
   // Ephemeral ack only (NOT replace_original) — keep the card so a sibling button
   // or a re-click still works, mirroring handleQuestionAnswer.
@@ -756,11 +764,15 @@ export async function handleViewSubmission(
   }
 
   const feedback = readReviewFeedback(payload.view ?? {});
-  await applyVerdict(meta.reviewItemId, meta.projectId, {
+  const decided = await applyVerdict(meta.reviewItemId, meta.projectId, {
     verdict: 'changes',
     feedback,
     actingUserId: actor.userId,
   });
+  if (decided === null) {
+    await notify(`*${escapeMrkdwn(item.title)}* was already decided.`);
+    return;
+  }
 
   await notify(
     feedback

@@ -196,9 +196,8 @@ export interface ProjectAgentGovernance {
 }
 
 /**
- * The project's launchable agents from the server-side config summary:
- * declarative `kortix.yaml` `agents:` for adopted projects, OpenCode markdown
- * discovery for legacy projects. Touches git, so callers must use the async
+ * The project's launchable agents from the server-side config summary (the
+ * `kortix.yaml` `agents:` block). Touches git, so callers must use the async
  * slash response path (response_url) to stay inside Slack's 3s window.
  */
 export async function loadProjectAgentGovernance(projectId: string): Promise<ProjectAgentGovernance> {

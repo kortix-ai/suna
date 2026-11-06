@@ -274,7 +274,6 @@
     "./internal/hooks/use-channel-bindings": "./src/internal/hooks/use-channel-bindings.ts",
     "./internal/hooks/use-copy": "./src/internal/hooks/use-copy.ts",
     "./internal/hooks/use-debounced-value": "./src/internal/hooks/use-debounced-value.ts",
-    "./internal/hooks/use-notification-center": "./src/internal/hooks/use-notification-center.ts",
     "./internal/hooks/use-slash-focus": "./src/internal/hooks/use-slash-focus.ts",
     "./internal/icons/claude": "./src/internal/icons/claude.tsx",
     "./internal/icons/discord": "./src/internal/icons/discord.tsx",
@@ -341,6 +340,7 @@
     "./internal/lib/utils/time-budget": "./src/internal/lib/utils/time-budget.ts",
     "./internal/lib/web-notifications": "./src/internal/lib/web-notifications.ts",
     "./internal/notifications/notification-bell": "./src/internal/notifications/notification-bell.tsx",
+    "./internal/notifications/notification-inbox": "./src/internal/notifications/notification-inbox.tsx",
     "./internal/notifications/notification-rows": "./src/internal/notifications/notification-rows.ts",
     "./internal/notifications/session-toast-cards": "./src/internal/notifications/session-toast-cards.tsx",
     "./internal/notifications/web-push": "./src/internal/notifications/web-push.ts",
@@ -1568,10 +1568,6 @@
         "types": "./dist/internal/hooks/use-debounced-value.d.ts",
         "import": "./dist/internal/hooks/use-debounced-value.js"
       },
-      "./internal/hooks/use-notification-center": {
-        "types": "./dist/internal/hooks/use-notification-center.d.ts",
-        "import": "./dist/internal/hooks/use-notification-center.js"
-      },
       "./internal/hooks/use-slash-focus": {
         "types": "./dist/internal/hooks/use-slash-focus.d.ts",
         "import": "./dist/internal/hooks/use-slash-focus.js"
@@ -1835,6 +1831,10 @@
       "./internal/notifications/notification-bell": {
         "types": "./dist/internal/notifications/notification-bell.d.ts",
         "import": "./dist/internal/notifications/notification-bell.js"
+      },
+      "./internal/notifications/notification-inbox": {
+        "types": "./dist/internal/notifications/notification-inbox.d.ts",
+        "import": "./dist/internal/notifications/notification-inbox.js"
       },
       "./internal/notifications/notification-rows": {
         "types": "./dist/internal/notifications/notification-rows.d.ts",

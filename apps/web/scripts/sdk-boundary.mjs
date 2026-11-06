@@ -75,14 +75,6 @@ const CANONICAL_SDK_ENTRIES = new Set([
 
 const FORBIDDEN_IMPORTS = [
   {
-    kind: 'opencode-import',
-    match: (source) => source.toLowerCase().includes('opencode'),
-  },
-  {
-    kind: 'opencode-package',
-    match: (source) => source === '@opencode-ai/sdk' || source.startsWith('@opencode-ai/sdk/'),
-  },
-  {
     kind: 'non-canonical-sdk-entry',
     /**
      * An ALLOWLIST, not a denylist. `@kortix/sdk` publishes ~27 subpaths; all
@@ -106,10 +98,7 @@ const FORBIDDEN_IMPORTS = [
   {
     kind: 'host-runtime-module',
     match: (source) =>
-      source.startsWith('@/hooks/opencode/') ||
-      source === '@/lib/opencode-sdk' ||
       source === '@/stores/server-store' ||
-      source.startsWith('@/stores/opencode-') ||
       source === '@/stores/pending-queue-store' ||
       source === '@/stores/pending-files-store',
   },
@@ -146,8 +135,11 @@ const FORBIDDEN_KORTIX_NETWORK_PATHS = [
   /\/user-roles/,
 ];
 
-const RUNTIME_NOT_READY_PHRASE = /opencode not ready/i;
-const RUNTIME_QUERY_KEY_ROOT = 'opencode';
+// The daemon's not-ready answer: its `code`, then the `error` text of a daemon
+// without the code. The SDK's `RUNTIME_NOT_READY_MARKERS` holds both.
+const RUNTIME_NOT_READY_PHRASE = /\bruntime_not_ready\b|sandbox runtime not ready/i;
+// The SDK's runtime query-key root (`runtimeKeys.all`).
+const RUNTIME_QUERY_KEY_ROOT = 'runtime';
 
 const QUERY_CACHE_METHODS = new Set([
   'cancelQueries',
@@ -252,26 +244,6 @@ export function scanSdkBoundary(sourceRoot) {
         if (kind) {
           violations.push({ file, line: lineOf(sourceFile, node), kind, source });
         }
-        if (ts.isImportDeclaration(node) && node.importClause) {
-          const importedNames = [];
-          if (node.importClause.name) importedNames.push(node.importClause.name.text);
-          const bindings = node.importClause.namedBindings;
-          if (bindings && ts.isNamedImports(bindings)) {
-            for (const element of bindings.elements) {
-              importedNames.push(element.propertyName?.text ?? element.name.text);
-            }
-          }
-          for (const importedName of importedNames) {
-            if (importedName.toLowerCase().includes('opencode')) {
-              violations.push({
-                file,
-                line: lineOf(sourceFile, node),
-                kind: 'opencode-import',
-                source: importedName,
-              });
-            }
-          }
-        }
       }
       if (
         ts.isIdentifier(node) &&
@@ -304,9 +276,7 @@ export function scanSdkBoundary(sourceRoot) {
         });
       }
       if (ts.isTemplateExpression(node)) {
-        const templateText = `${node.head.text}${node.templateSpans
-          .map((span) => `\${}${span.literal.text}`)
-          .join('')}`;
+        const templateText = networkTargetText(node);
         if (runtimePathViolation(templateText)) {
           violations.push({
             file,
@@ -316,10 +286,9 @@ export function scanSdkBoundary(sourceRoot) {
           });
         }
       }
-      // F2: the daemon's not-ready answer differs per harness and the SDK
-      // classifies every spelling (`isRuntimeNotReadyResponse`,
-      // `isRuntimeStartingError`, `RUNTIME_NOT_READY_MARKERS`). A phrase
-      // spelled here covers one harness and drifts.
+      // F2: the SDK classifies every spelling of the daemon's not-ready answer
+      // (`isRuntimeNotReadyResponse`, `isRuntimeStartingError`,
+      // `RUNTIME_NOT_READY_MARKERS`). A phrase spelled here drifts from it.
       const literalText = ts.isTemplateExpression(node)
         ? networkTargetText(node)
         : ts.isStringLiteral(node) ||

@@ -8,146 +8,127 @@
 
 import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
 import * as Sentry from '@sentry/nextjs';
-import { shouldIgnoreSentryNoiseEvent } from '@kortix/ui/internal/lib/browser-error-noise';
-
-const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
-
-function isBrowserNoiseEvent(event: Sentry.ErrorEvent, hint?: Sentry.EventHint): boolean {
-  return shouldIgnoreSentryNoiseEvent(event, hint);
-}
+import { SENTRY_DSN, sentryOptions } from './sentry.options';
 
 if (SENTRY_DSN) {
-  Sentry.init({
-    dsn: SENTRY_DSN,
-    environment: process.env.NEXT_PUBLIC_KORTIX_ENV || 'dev',
+  // Tunnel is auto-configured by `tunnelRoute: '/monitoring'` in next.config.ts
+  // No need to set `tunnel` manually here.
+  Sentry.init(
+    sentryOptions({
+      // Capture 100% of errors
+      // Sample 10% of page loads for performance (keep low on client)
+      tracesSampleRate: 0.1,
 
-    // Capture 100% of errors
-    // Sample 10% of page loads for performance (keep low on client)
-    tracesSampleRate: 0.1,
+      // Ignore noisy browser errors
+      ignoreErrors: [
+        // Non-Error rejection noise (KRTX-2948); anchor to the SDK prefix so
+        // real Error exceptions and messages that only quote it still report.
+        /^Non-Error promise rejection captured/,
+        // Browser extensions and ad-blockers
+        'ResizeObserver loop',
+        'ResizeObserver loop completed with undelivered notifications',
+        // Network errors (user went offline)
+        'Failed to fetch',
+        'NetworkError',
+        'Load failed',
+        'ChunkLoadError',
+        // Next.js navigation errors (expected)
+        'NEXT_NOT_FOUND',
+        'NEXT_REDIRECT',
+        // User-initiated aborts
+        'AbortError',
+        'The operation was aborted',
+        // Ad-blocker blocked requests
+        'ERR_BLOCKED_BY_CLIENT',
+        // Transient "session runtime not ready" — `RuntimeNotReadyError`
+        // (`[kortix-runtime] Server URL not ready — sandbox is still loading`) from
+        // `getClient()` for the ~1s window before a session's runtime URL pins.
+        // Expected + self-healing on every session switch/provisioning; never an
+        // error. `app/error.tsx` already suppresses the render-path case, but the
+        // throw can also surface via `<ClientErrorBoundary>`, `route-error`/
+        // `system-fault`, the network branch of `error-handler`, and unhandled
+        // promise rejections — drop them all here.
+        'Server URL not ready',
+        'sandbox is still loading',
+        // The daemon's not-ready 503, in every spelling the SDK knows.
+        ...RUNTIME_NOT_READY_MARKERS,
+        // Expected billing-gate HTTP 402 outcomes (insufficient credits / no
+        // account / subscription required — the exact strings emitted by
+        // `apps/api/src/billing/services/billing-gate.ts:assertBillingActive`).
+        // They are user-facing business states handled by a top-up toast / upgrade
+        // dialog (`error-handler.tsx`), but the SDK's `ApiError` can leak to
+        // Sentry through capture paths that bypass `handleApiError`'s 402 guard
+        // (route/system-fault boundaries, `<ClientErrorBoundary>`, and the Sentry
+        // SDK's own `onunhandledrejection`). Drop them at the SDK level too so an
+        // expected billing state never pages Better Stack. Real `ApiError`s keep
+        // reporting — these regexes are exact after optional canonical wrappers.
+        /^(?:Unhandled promise rejection: )?(?:ApiError: )?Out of credits\. Top up to continue\.$/,
+        /^(?:Unhandled promise rejection: )?(?:ApiError: )?No credit account found\. Complete account setup first\.$/,
+        /^(?:Unhandled promise rejection: )?(?:ApiError: )?Subscribe to activate your seat\. \$40\/teammate per month includes wallet credits for compute and LLM usage\.$/,
+        // External Safari / WebView video probing noise
+        'webkitPresentationMode',
+        "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",
+        // Old WebKit (Safari/iOS < 16.4) cannot parse lookbehind assertions
+        // (`(?<=…)` / `(?<!…)`): JSC reads `(?<` as a named-capture-group opener,
+        // sees `=` / `!`, and throws `SyntaxError: Invalid regular expression:
+        // invalid group specifier name` at chunk PARSE time, failing the whole
+        // chunk. The lookbehind literals live in bundled third-party deps
+        // (`mdast-util-gfm-autolink-literal` GFM email-autolink regex +
+        // `@pierre/diffs` `SPLIT_WITH_NEWLINES = /(?<=\n)/`), the wording is
+        // WebKit-specific (V8/Node say "Invalid group"), and only very old
+        // Safari/iOS visitors hit it. `browser-error-noise.ts` drops it from
+        // `beforeSend` too; this string gate covers frameless onerror captures.
+        'invalid group specifier name',
+        // Browser extension/runtime bridge noise
+        'Invalid call to runtime.sendMessage(). Tab not found.',
+        // A third-party injected script's `chrome: call method` window-message
+        // RPC (page world → extension world) rejects when no receiver answers
+        // in time. Extension noise, never app code — `browser-error-noise.ts`
+        // drops it from `beforeSend` too; this string gate covers frame-less
+        // onerror/onunhandledrejection captures.
+        'Window message "chrome: call method" timed out.',
+        // Firefox: an extension set `window.onerror` before this SDK loaded, and
+        // the SDK's chained `_oldOnErrorHandler.apply(...)` is refused across the
+        // extension compartment. The frame is the SDK in our bundle, so only
+        // this anchored message gate can drop it.
+        /^(?:Error: )?Permission denied to access property "apply"$/,
+        // Third-party injected scripts / wallet extensions
+        'MetaMask extension not found',
+        'Looks like your website URL has changed',
+        'CookieYes account',
+        // Browser-native <img> / next/image load failures. Anchor this so real
+        // viewer errors such as "Failed to load image for duotone processing"
+        // remain reportable. See browser-error-noise.ts.
+        /^(?:Error: )?Failed to load image$/,
+        // Injected scripts / extensions / scanner bots monkey-patching the native
+        // (read-only) Promise prototype, e.g. `promise.then = ...`. Always external.
+        "Cannot assign to read only property 'then' of object '#<Promise>'",
+        'Cannot assign to read only property',
+        // Storage-disabled in-app WebViews (e.g. the Dola Android `wv` browser)
+        // resolve `window.localStorage` / `window.sessionStorage` to `null`. Any
+        // direct `storage.getItem/setItem/removeItem` then throws
+        // `TypeError: Cannot read properties of null (reading 'getItem')` (V8) /
+        // `Cannot read property 'getItem' of null` (JSC). Browser-environment
+        // noise, not an app defect — `getItem/setItem/removeItem` are Web Storage
+        // API method names, so matching them on a `null` access is specific. See
+        // browser-error-noise.ts `STORAGE_NULL_ACCESS_NOISE_PATTERNS`.
+        "Cannot read properties of null (reading 'getItem')",
+        "Cannot read properties of null (reading 'setItem')",
+        "Cannot read properties of null (reading 'removeItem')",
+        "Cannot read property 'getItem' of null",
+        "Cannot read property 'setItem' of null",
+        "Cannot read property 'removeItem' of null",
+        // Test-only synthetic events
+        'E2E FINAL:',
+        'E2E test:',
+      ],
 
-    // Tunnel is auto-configured by `tunnelRoute: '/monitoring'` in next.config.ts
-    // No need to set `tunnel` manually here.
-
-    // Don't send PII
-    sendDefaultPii: false,
-
-    // Ignore noisy browser errors
-    ignoreErrors: [
-      // Non-Error rejection noise (KRTX-2948); anchor to the SDK prefix so
-      // real Error exceptions and messages that only quote it still report.
-      /^Non-Error promise rejection captured/,
-      // Browser extensions and ad-blockers
-      'ResizeObserver loop',
-      'ResizeObserver loop completed with undelivered notifications',
-      // Network errors (user went offline)
-      'Failed to fetch',
-      'NetworkError',
-      'Load failed',
-      'ChunkLoadError',
-      // Next.js navigation errors (expected)
-      'NEXT_NOT_FOUND',
-      'NEXT_REDIRECT',
-      // User-initiated aborts
-      'AbortError',
-      'The operation was aborted',
-      // Ad-blocker blocked requests
-      'ERR_BLOCKED_BY_CLIENT',
-      // Transient "session runtime not ready" — `RuntimeNotReadyError`
-      // (`[kortix-runtime] Server URL not ready — sandbox is still loading`) from
-      // `getClient()` for the ~1s window before a session's runtime URL pins.
-      // Expected + self-healing on every session switch/provisioning; never an
-      // error. `app/error.tsx` already suppresses the render-path case, but the
-      // throw can also surface via `<ClientErrorBoundary>`, `route-error`/
-      // `system-fault`, the network branch of `error-handler`, and unhandled
-      // promise rejections — drop them all here.
-      'Server URL not ready',
-      'sandbox is still loading',
-      // The daemon's not-ready 503, in every spelling (code, pi, OpenCode).
-      ...RUNTIME_NOT_READY_MARKERS,
-      // Expected billing-gate HTTP 402 outcomes (insufficient credits / no
-      // account / subscription required — the exact strings emitted by
-      // `apps/api/src/billing/services/billing-gate.ts:assertBillingActive`).
-      // They are user-facing business states handled by a top-up toast / upgrade
-      // dialog (`error-handler.tsx`), but the SDK's `ApiError` can leak to
-      // Sentry through capture paths that bypass `handleApiError`'s 402 guard
-      // (route/system-fault boundaries, `<ClientErrorBoundary>`, and the Sentry
-      // SDK's own `onunhandledrejection`). Drop them at the SDK level too so an
-      // expected billing state never pages Better Stack. Real `ApiError`s keep
-      // reporting — these regexes are exact after optional canonical wrappers.
-      /^(?:Unhandled promise rejection: )?(?:ApiError: )?Out of credits\. Top up to continue\.$/,
-      /^(?:Unhandled promise rejection: )?(?:ApiError: )?No credit account found\. Complete account setup first\.$/,
-      /^(?:Unhandled promise rejection: )?(?:ApiError: )?Subscribe to activate your seat\. \$40\/teammate per month includes wallet credits for compute and LLM usage\.$/,
-      // External Safari / WebView video probing noise
-      'webkitPresentationMode',
-      "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",
-      // Old WebKit (Safari/iOS < 16.4) cannot parse lookbehind assertions
-      // (`(?<=…)` / `(?<!…)`): JSC reads `(?<` as a named-capture-group opener,
-      // sees `=` / `!`, and throws `SyntaxError: Invalid regular expression:
-      // invalid group specifier name` at chunk PARSE time, failing the whole
-      // chunk. The lookbehind literals live in bundled third-party deps
-      // (`mdast-util-gfm-autolink-literal` GFM email-autolink regex +
-      // `@pierre/diffs` `SPLIT_WITH_NEWLINES = /(?<=\n)/`), the wording is
-      // WebKit-specific (V8/Node say "Invalid group"), and only very old
-      // Safari/iOS visitors hit it. `browser-error-noise.ts` drops it from
-      // `beforeSend` too; this string gate covers frameless onerror captures.
-      'invalid group specifier name',
-      // Browser extension/runtime bridge noise
-      'Invalid call to runtime.sendMessage(). Tab not found.',
-      // A third-party injected script's `chrome: call method` window-message
-      // RPC (page world → extension world) rejects when no receiver answers
-      // in time. Extension noise, never app code — `browser-error-noise.ts`
-      // drops it from `beforeSend` too; this string gate covers frame-less
-      // onerror/onunhandledrejection captures.
-      'Window message "chrome: call method" timed out.',
-      // Firefox: an extension set `window.onerror` before this SDK loaded, and
-      // the SDK's chained `_oldOnErrorHandler.apply(...)` is refused across the
-      // extension compartment. The frame is the SDK in our bundle, so only
-      // this anchored message gate can drop it.
-      /^(?:Error: )?Permission denied to access property "apply"$/,
-      // Third-party injected scripts / wallet extensions
-      'MetaMask extension not found',
-      'Looks like your website URL has changed',
-      'CookieYes account',
-      // Browser-native <img> / next/image load failures. Anchor this so real
-      // viewer errors such as "Failed to load image for duotone processing"
-      // remain reportable. See browser-error-noise.ts.
-      /^(?:Error: )?Failed to load image$/,
-      // Injected scripts / extensions / scanner bots monkey-patching the native
-      // (read-only) Promise prototype, e.g. `promise.then = ...`. Always external.
-      "Cannot assign to read only property 'then' of object '#<Promise>'",
-      'Cannot assign to read only property',
-      // Storage-disabled in-app WebViews (e.g. the Dola Android `wv` browser)
-      // resolve `window.localStorage` / `window.sessionStorage` to `null`. Any
-      // direct `storage.getItem/setItem/removeItem` then throws
-      // `TypeError: Cannot read properties of null (reading 'getItem')` (V8) /
-      // `Cannot read property 'getItem' of null` (JSC). Browser-environment
-      // noise, not an app defect — `getItem/setItem/removeItem` are Web Storage
-      // API method names, so matching them on a `null` access is specific. See
-      // browser-error-noise.ts `STORAGE_NULL_ACCESS_NOISE_PATTERNS`.
-      "Cannot read properties of null (reading 'getItem')",
-      "Cannot read properties of null (reading 'setItem')",
-      "Cannot read properties of null (reading 'removeItem')",
-      "Cannot read property 'getItem' of null",
-      "Cannot read property 'setItem' of null",
-      "Cannot read property 'removeItem' of null",
-      // Test-only synthetic events
-      'E2E FINAL:',
-      'E2E test:',
-    ],
-
-    // Opaque third-party vendor scripts outside our build pipeline — their
-    // parse-time SyntaxErrors in old browsers are unfixable from here.
-    denyUrls: [
-      /^https:\/\/d2mvefebd70kbz\.cloudfront\.net\//,
-      /^https:\/\/www\.googletagmanager\.com\//,
-    ],
-
-    // Filter out internal/low-value errors before sending
-    beforeSend(event, hint) {
-      if (isBrowserNoiseEvent(event, hint)) {
-        return null;
-      }
-      return event;
-    },
-  });
+      // Opaque third-party vendor scripts outside our build pipeline — their
+      // parse-time SyntaxErrors in old browsers are unfixable from here.
+      denyUrls: [
+        /^https:\/\/d2mvefebd70kbz\.cloudfront\.net\//,
+        /^https:\/\/www\.googletagmanager\.com\//,
+      ],
+    }),
+  );
 }

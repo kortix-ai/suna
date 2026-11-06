@@ -41,7 +41,7 @@ export const FAIL_THRESHOLD_RECONNECT = 2;
 /** Interval between health checks (ms) */
 export const POLL_CONNECTED = 30_000; // 30s when healthy
 // Tight cadence while a sandbox is booting/unhealthy. This is the gate between
-// "sandbox active" and "OpenCode healthy" AND the enable-gate for the opencode
+// "sandbox active" and "runtime healthy" AND the enable-gate for the runtime
 // session list — so every extra interval is visible dead time after the backend
 // is already ready. 150ms keeps the healthy flip (and the session-list start)
 // tracking actual daemon readiness tightly; the health probe is a cheap GET.
@@ -143,7 +143,7 @@ export function shouldCountProbeFailure(input: {
  *
  * A cold boot answers `{status:'starting', reason:'schema not ready'}` (503) —
  * `reason`/`message`/`status` are routine PROGRESS, not failures. Treating them
- * as `store.runtimeError` painted a terminal "OpenCode runtime is not ready"
+ * as `store.runtimeError` painted a terminal "runtime is not ready"
  * card over a session that was simply booting (RC-1). Only `boot_error` — set
  * by the daemon when a boot actually failed — is an error worth surfacing;
  * everything else is null.
@@ -213,9 +213,9 @@ export function classifyProbeResult(result: ProbeResultLike): ProbeOutcome {
   }
 
   if (result.status === 503) {
-    // OpenCode still booting behind an already-live sandbox proxy — this is
+    // The runtime is still booting behind an already-live sandbox proxy — this is
     // progress, not failure: reset the fail counter and report "connected"
-    // (sandbox is up) with `healthy: false` (OpenCode isn't yet).
+    // (sandbox is up) with `healthy: false` (the runtime isn't yet).
     return { kind: 'booting', health: result.health };
   }
 
@@ -299,7 +299,7 @@ export function nextPollDelay(
   }
   if (status === 'connected') return POLL_CONNECTED;
   if (status === 'unreachable') return POLL_UNREACHABLE;
-  // Initial "connecting" phase (sandbox just went active, opencode still
+  // Initial "connecting" phase (sandbox just went active, runtime still
   // booting) — poll fast so the runtime appears the moment it's healthy
   // instead of waiting out a long interval.
   return POLL_FAILING;
@@ -321,7 +321,7 @@ export function shouldApplyProbeResult(input: {
 
 /**
  * useRuntimeReconnect — monitors the active session's runtime reachability
- * mid-session (see `react/opencode.ts` for how this fits alongside the
+ * mid-session (see `react/runtime-hooks.ts` for how this fits alongside the
  * server-truth boot readiness and the SSE heartbeat).
  *
  * Probes `getSessionHealth` (the SDK's `/kortix/health`) and maps the result
@@ -458,7 +458,7 @@ export function useRuntimeReconnect() {
             resetSandboxFail();
             // A 503 the proxy attributes to `control_plane` was answered from
             // the session row without dialling the box: the sandbox is PARKED
-            // (stopped/queued), not "OpenCode booting behind a live proxy". It
+            // (stopped/queued), not "runtime booting behind a live proxy". It
             // resumes only on the next SEND, so it must not be reported as
             // `connected`, and its stall clock must stay off (RC-3) — otherwise
             // the idle session escalates to "taking longer than usual" forever.

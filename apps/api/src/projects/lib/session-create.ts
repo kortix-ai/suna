@@ -162,6 +162,12 @@ type PostgresErrorFields = {
  * A `23505` unique violation on the session PK means the caller retried a
  * create with a `session_id` that already exists; that is an idempotent race,
  * not a defect, so it maps to a typed 409 (`createProjectGoal` retries rely on it).
+ *
+ * A `42703` undefined column or `42P01` undefined table means the schema is
+ * ahead of this code: a release migration renamed or dropped what this
+ * (previous) API task still names, and the task serves until the rollout
+ * replaces it (v0.15.0: ~8 min, KRTX-4341). That window is accepted downtime,
+ * so it maps to a typed, retryable 503 the web does not report as an error.
  */
 export function resolveSessionInsertFailure(error: unknown): SessionCreateError {
   // Drizzle throws its own `Failed query: …` error and keeps the postgres.js
@@ -190,6 +196,13 @@ export function resolveSessionInsertFailure(error: unknown): SessionCreateError 
     return {
       status: 409,
       body: { error: 'A session with this id already exists', code: 'session_already_exists' },
+    };
+  }
+  if (pg.code === '42703' || pg.code === '42P01') {
+    return {
+      status: 503,
+      headers: { 'Retry-After': '30' },
+      body: { error: 'An update is in progress. Try again in a moment.', code: 'deploy_in_progress', retry: true },
     };
   }
   return {
@@ -723,11 +736,11 @@ async function resolveSessionModel(params: {
   let providerSecretPools = body.provider_secret_pools as Record<string, string[]> | undefined;
 
   // Model: normalize + fail-fast at create. Validate against the same
-  // servability resolver the gateway uses and store the OPENCODE ref form
+  // servability resolver the gateway uses and store the runtime ref form
   // (`kortix/<wire>`). An unservable / retired / typo'd pin previously only
   // failed at prompt time (a dead turn); a bare managed id (`claude-opus-4-8`)
-  // silently dropped to the daemon's default because opencode addresses
-  // managed models as `kortix/<id>`.
+  // silently dropped to the daemon's default because OpenCode addressed
+  // managed models only as `kortix/<id>`.
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
@@ -1119,11 +1132,6 @@ function resolveSessionIdentity(params: {
         sessionId,
         actorUserId: userId,
         authorSessionId: input.callerSessionId ?? null,
-        ...(input.metadata?.source === 'system:artifact-comment' ? {
-          source: 'system:artifact-comment' as const,
-          artifactId: input.artifactId,
-          artifactCommentDelivery: input.metadata.artifactCommentDelivery as { job_id: string; target_key: string } | undefined,
-        } : {}),
       })
     : null;
   if (pendingPromptConversion?.error) {
@@ -1189,7 +1197,7 @@ function buildSessionCreateMetadata(params: {
   // `metadata.custom_name`, NOT `metadata.name`: `name` is the auto-title slot
   // the first prompt fills, and it is the WEAKEST link in the display chain
   // (`custom_name ?? runtimeTitle ?? name`). Writing it there let the runtime's
-  // own auto-title (`runtimeTitle` from the OpenCode snapshot, and the client
+  // own auto-title (`runtimeTitle` from the runtime snapshot, and the client
   // mirror that copies it) displace the name the user chose, seconds after the
   // first prompt. `custom_name` is the single authoritative key every reader
   // (`serializeSession`, `getSessionDisplayTitle`, `patchKortixSessionTitleMirrors`)
@@ -1349,8 +1357,8 @@ async function insertSessionAndBindings(
       baseRef,
       sandboxProvider: providerName,
       sandboxId: sessionId,
-      // Do not set opencodeSessionId during wrapper-session creation.
-      // Runtime root discovery persists it only after OpenCode creates its root.
+      // Do not set runtimeSessionId during wrapper-session creation.
+      // Runtime root discovery persists it only after the runtime creates its root.
       agentName,
       status: 'provisioning',
       // Sessions are private to their creator by default; share via the
@@ -1562,7 +1570,7 @@ async function provisionCreatedSession(params: {
     // with gitAuth (folded into the env-build chain, not awaited inline).
     let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
     // The hint is what lets the daemon boot with ZERO proxied git requests
-    // (scaffold + delta) and spawn OpenCode before the checkout. Bounded by the 2 s race below; a miss
+    // (scaffold + delta) and start the runtime before the checkout. Bounded by the 2 s race below; a miss
     // just means the daemon's fetch fallback.
     const fastBootGitHintPromise = Promise.race([
       projectWithGitAuthPromise
@@ -1695,7 +1703,6 @@ async function provisionCreatedSession(params: {
 }
 
 export async function createProjectSession(input: {
-  artifactId?: string;
   attachmentSourceCommandId?: string;
   /** The `create_session` command to link the new session to, atomically. */
   createCommandId?: string;

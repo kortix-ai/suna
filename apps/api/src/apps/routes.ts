@@ -70,6 +70,7 @@ import {
 import { captureProductEvent } from '../shared/product-analytics';
 import { analyticsSource } from '../middleware/analytics-source';
 import { workspaceIdParam } from '../shared/route-params';
+import { transitionAppRuntime } from './runtime-status';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -1176,15 +1177,14 @@ export function registerAppsRoutes(): void {
           if (runtime) {
             await new AppHostingProvider().stop(runtime.provider as SandboxProviderName, runtime.externalId);
             const now = new Date();
-            await db.update(appRuntimes).set({
-              status: 'stopped',
+            await transitionAppRuntime('stop', eq(appRuntimes.runtimeId, runtime.runtimeId), {
               stoppedAt: now,
               activityLeaseUntil: null,
               idleDeadlineAt: null,
               wakeLeaseOwner: null,
               wakeLeaseUntil: null,
               updatedAt: now,
-            }).where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+            });
             await pauseComputeSession(runtime.runtimeId, now);
           }
           // Stopped on purpose: keep-alive no longer checks it, so its crash streaks end here.

@@ -22,6 +22,7 @@ import {
   listEntitledConnectorConnections,
 } from '../projects/lib/session-connector-bindings';
 import { db } from '../shared/db';
+import { completeConnection, connectConnection } from './connection-status';
 import { connectorAttachmentStore } from './attachments';
 import { notifyConnectorSession } from './notify-session';
 import {
@@ -456,34 +457,25 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         .where(eq(connectorConnections.connectionId, connectionId))
         .limit(1);
       const previous = (previousRow?.metadata ?? {}) as Record<string, unknown>;
-      await db
-        .update(connectorConnections)
-        .set({
-          status: 'active',
-          // INVARIANT (2026-09-16, account_required rule): never set is_default
-          // here — an auto-authorized account is not a deliberately pinned one.
-          // `connectorFinalize` below finds this row back by recency
-          // (`updatedAt`), not by `is_default`, so dropping this never breaks
-          // the handshake.
-          // Clear any previous account binding before authorization starts.
-          // Pending rows stay active because the DB enum has no needs_auth
-          // value. The gateway still fails closed on missing auth metadata.
-          metadata: {
-            ...rowMetadata(previous),
-            provider: 'composio',
-            toolkit: conn.app,
-            requesting_session_id: requestingSessionId ?? null,
-          },
-          updatedAt: sql`now()`,
-        })
-        .where(
-          and(
-            eq(connectorConnections.accountId, conn.accountId),
-            eq(connectorConnections.projectId, projectId),
-            eq(connectorConnections.connectorId, conn.connectorId),
-            eq(connectorConnections.connectionId, connectionId),
-          ),
-        );
+      // A person starts the authorization now: a deliberate (re)connect
+      // (connectors/connection-status.ts).
+      // INVARIANT (2026-09-16, account_required rule): never set is_default
+      // here — an auto-authorized account is not a deliberately pinned one.
+      // `connectorFinalize` below finds this row back by recency
+      // (`updatedAt`), not by `is_default`, so dropping this never breaks
+      // the handshake.
+      // Clear any previous account binding before authorization starts.
+      // Pending rows stay active because the DB enum has no needs_auth
+      // value. The gateway still fails closed on missing auth metadata.
+      await connectConnection(connectionId, {
+        metadata: {
+          ...rowMetadata(previous),
+          provider: 'composio',
+          toolkit: conn.app,
+          requesting_session_id: requestingSessionId ?? null,
+        },
+        updatedAt: sql`now()`,
+      });
       const stableUserId = composioStableUserId(connectionId);
       const result = await composio.composioConnectUrl({
         projectId,
@@ -493,35 +485,25 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         stableUserId,
         redirects,
       });
-      await db
-        .update(connectorConnections)
-        .set({
-          status: 'active',
-          metadata: composioConnectionMetadata({
-            toolkit: conn.app,
-            stableUserId,
-            sessionId: result.sessionId,
-            authRequestId: result.authRequestId,
-            connectedAccountId: result.connectedAccountId,
-            isNoAuth: result.isNoAuth,
-            requestingSessionId,
-            previous,
-            // An already-active account kept its identity. A new authorization
-            // has none until finalize probes it.
-            connectedAs:
-              result.connectedAccountId &&
-              result.connectedAccountId === previous.connected_account_id
-                ? connectedAsOf(previous)
-                : null,
-          }),
-          updatedAt: sql`now()`,
-        })
-        .where(and(
-          eq(connectorConnections.accountId, conn.accountId),
-          eq(connectorConnections.projectId, projectId),
-          eq(connectorConnections.connectorId, conn.connectorId),
-          eq(connectorConnections.connectionId, connectionId),
-        ));
+      await connectConnection(connectionId, {
+        metadata: composioConnectionMetadata({
+          toolkit: conn.app,
+          stableUserId,
+          sessionId: result.sessionId,
+          authRequestId: result.authRequestId,
+          connectedAccountId: result.connectedAccountId,
+          isNoAuth: result.isNoAuth,
+          requestingSessionId,
+          previous,
+          // An already-active account kept its identity. A new authorization
+          // has none until finalize probes it.
+          connectedAs:
+            result.connectedAccountId &&
+            result.connectedAccountId === previous.connected_account_id
+              ? connectedAsOf(previous)
+              : null,
+        }),
+      });
       return {
         provider: 'composio',
         app: conn.app,
@@ -650,32 +632,25 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
                 : Promise.resolve(null),
           })
         : null;
-      await db
-        .update(connectorConnections)
-        .set({
-          // An incomplete authorization is a retryable needs-auth state. The
-          // gateway derives it from metadata and rejects execution until an
-          // account id exists or the toolkit is explicitly no-auth.
-          status: 'active',
-          metadata: composioConnectionMetadata({
-            toolkit: conn.app,
-            stableUserId,
-            sessionId: result.sessionId,
-            authRequestId: result.authRequestId ?? authRequestId,
-            connectedAccountId,
-            isNoAuth: result.isNoAuth,
-            requestingSessionId,
-            previous: metadata,
-            connectedAs,
-          }),
-          updatedAt: sql`now()`,
-        })
-        .where(and(
-          eq(connectorConnections.accountId, conn.accountId),
-          eq(connectorConnections.projectId, projectId),
-          eq(connectorConnections.connectorId, conn.connectorId),
-          eq(connectorConnections.connectionId, connection.connectionId),
-        ));
+      // An in-flight completion (connectors/connection-status.ts): a revoke
+      // that landed while the person was signing in wins, and the account
+      // stays revoked. An incomplete authorization is a retryable needs-auth
+      // state: the gateway derives it from metadata and rejects execution
+      // until an account id exists or the toolkit is explicitly no-auth.
+      const live = await completeConnection(connection.connectionId, null, {
+        metadata: composioConnectionMetadata({
+          toolkit: conn.app,
+          stableUserId,
+          sessionId: result.sessionId,
+          authRequestId: result.authRequestId ?? authRequestId,
+          connectedAccountId,
+          isNoAuth: result.isNoAuth,
+          requestingSessionId,
+          previous: metadata,
+          connectedAs,
+        }),
+      });
+      if (!live) return { provider: 'composio', connected: false };
       // The agent that minted the link is blocked waiting on this. Tell it the
       // account landed so it resumes instead of posting a second link next run.
       // Fire-and-forget: the credential is already saved, and a notification

@@ -195,7 +195,7 @@ export function buildSpawnPrompt(prompt: string, opts: { fromSandbox: boolean })
 /**
  * The persisted model + agent a prompt to this session must carry (mirrors
  * the SDK's own `send()` resolution). An async prompt WITHOUT them lets
- * OpenCode fall back to its built-in default model, which is not provisioned
+ * the runtime fall back to its built-in default model, which is not provisioned
  * in Kortix sandboxes — the message lands but the agent loop never starts.
  */
 export function sessionPromptDefaults(session: {

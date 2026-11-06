@@ -19,9 +19,9 @@ import {
  * minutes at a time, and the api's own logging suppresses these requests as
  * healthy noise.
  *
- * A zero-byte SSE stream is that failure's exact signature: opencode writes
+ * A zero-byte SSE stream is that failure's exact signature: the runtime writes
  * its `server.connected` event immediately on a real connection, so a stream
- * that closed without EVER writing did not reach opencode. Record it, and let
+ * that closed without EVER writing did not reach the runtime. Record it, and let
  * the NEXT connect for that sandbox re-resolve ingress instead of trusting
  * the cache.
  */

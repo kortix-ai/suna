@@ -246,13 +246,20 @@ export async function applyStripeSync(
     return;
   }
 
+  // A closed account (`payment_status = 'deleted'`) is terminal: no provider
+  // write moves it, whatever the webhook says. The guard is in the statement.
   if (ctx.mode === 'update') {
-    await updateCreditAccount(accountId, next);
+    await updateCreditAccount(accountId, next, { unlessDeleted: true });
   } else {
-    await upsertCreditAccount(accountId, next);
+    await upsertCreditAccount(accountId, next, { unlessDeleted: true });
   }
 
   invalidateAccountBilling(accountId);
+}
+
+/** A closed account: `payment_status = 'deleted'` (account-deletion.ts). Terminal. */
+export function isClosedBillingAccount(account: { paymentStatus?: string | null } | null | undefined): boolean {
+  return account?.paymentStatus === 'deleted';
 }
 
 /**

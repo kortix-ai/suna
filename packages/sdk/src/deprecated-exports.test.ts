@@ -13,11 +13,13 @@ import * as kortixMasterHooks from './react/use-kortix-master';
  */
 
 /**
- * The message-id clock arithmetic: an ordering detail of OpenCode's ids that
- * clients must not depend on. Kortix message ids are opaque; `mintWireMessageId`
- * and `WIRE_MESSAGE_ID` stay.
+ * The Kortix message id format and its clock arithmetic. They are current, not
+ * deprecated: the pi harness (`apps/kortix-sandbox-agent-server/src/harness/pi/message-id.ts`)
+ * mints its reply ids with them and apps/api places prompts with them.
  */
-const MESSAGE_ID_CLOCK_EXPORTS = [
+const MESSAGE_ID_EXPORTS = [
+  'mintWireMessageId',
+  'WIRE_MESSAGE_ID',
   'WIRE_ID_TIME_SCALE',
   'WIRE_ID_TIME_MASK',
   'WIRE_ID_CLOCK_TOLERANCE',
@@ -134,10 +136,6 @@ describe('deprecated exports', () => {
     expect(isDeprecated(name)).toBe(true);
   });
 
-  test.each(MESSAGE_ID_CLOCK_EXPORTS)('%s is @deprecated', (name) => {
-    expect(isDeprecated(name)).toBe(true);
-  });
-
   test.each(TRANSCRIPT_SHARE_EXPORTS)(
     '%s is @deprecated and removed in the next major',
     (name) => {
@@ -172,7 +170,7 @@ describe('deprecated exports', () => {
     },
   );
 
-  test.each(['mintWireMessageId', 'WIRE_MESSAGE_ID'])('%s stays current (the Kortix message id format)', (name) => {
+  test.each(MESSAGE_ID_EXPORTS)('%s stays current (the Kortix message id format)', (name) => {
     expect(isDeprecated(name)).toBe(false);
   });
 });

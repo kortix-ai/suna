@@ -25,7 +25,6 @@ export type SessionInvocationSource =
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
-  | 'system:artifact-comment'
   /** A background subagent finished a turn: its report, delivered into the parent (`projects/subagent-notice.ts`). */
   | 'system:subagent-finished'
   /** A cross-session message (`send_message`) or its idle notice (`projects/peer-messages`). */
@@ -95,7 +94,6 @@ export type SessionLifecycleStatus =
   | 'deleted';
 
 export interface CreateSessionCommand {
-  artifactId?: string;
   /** Internal retained-upload authority from an already accepted create command. */
   attachmentSourceCommandId?: string;
   /**
@@ -160,8 +158,6 @@ export interface ContinueSessionCommand {
   /** Legacy plain-text form. Ignored when `parts` is present. */
   text: string;
   userId?: string | null;
-  /** Allow-listed env applied to OpenCode before server-side prompt delivery. */
-  opencodeEnv?: Record<string, string | null>;
   /** The full prompt body, when the producer has one (the prompt inbox). Text-only
    *  producers keep sending `text` and get the same single-part body as before. */
   parts?: PromptPartWire[];
@@ -178,7 +174,7 @@ export interface ContinueSessionCommand {
   wireMessageId?: string;
   /** Stable lifecycle row identity used only for deterministic workspace paths. */
   materializationKey?: string;
-  /** Persist the message without starting an agent loop (OpenCode `noReply`). */
+  /** Persist the message without starting an agent loop (`noReply`). */
   noReply?: boolean;
   /** `userId` is the person who sent this prompt: the session token acts as
    *  them from this turn on (`bindSessionTurnIdentity`). Set by the prompt
@@ -226,7 +222,7 @@ export interface StartSessionCommand {
  * How one hand-off of a prompt to the runtime ended.
  *
  * The RETRY CLASS is the whole point of the split:
- *  - `delivered`     — OpenCode holds the message. Terminal, success.
+ *  - `delivered`     — the runtime holds the message. Terminal, success.
  *  - `pending`       — the runtime did not become ready inside this attempt's
  *                      budget. Worth another pass soon.
  *  - `unreachable`   — the RUNTIME is down: the provider has the box stopped,

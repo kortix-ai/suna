@@ -1,5 +1,5 @@
 /**
- * Client-side message ids in OpenCode's wire format.
+ * Client-side message ids in the runtime wire format.
  *
  * The SDK's `mintWireMessageId` is the one implementation
  * (`packages/sdk/src/core/session/wire-message-id.ts`, pinned by

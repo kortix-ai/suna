@@ -129,7 +129,7 @@ const defaultDependencies: FastBootGitHintDependencies = {
  * A cached hint is reused when the remote tip still equals its `base_sha`
  * (one `ls-remote`, no mirror refresh). Otherwise the mirror is refreshed and
  * the hint rebuilt; every buildable hint is persisted — even a bare
- * `{ baseSha, opencodeConfigDir }` — so the next create pays only the tip check.
+ * `{ baseSha }` — so the next create pays only the tip check.
  */
 export async function resolveFastBootGitHintWithCache(
   project: GitBackedProject,

@@ -302,7 +302,7 @@ export function registerSessionConfigRoutes(): void {
         refreshRepo: body.refresh_repo !== false,
         force: body.force === true,
       });
-      // A reload restarts opencode, which ENDS the turn in flight. Refused by
+      // A reload restarts the runtime, which ENDS the turn in flight. Refused by
       // default rather than discarding someone's work without saying so.
       if (
         result.reason === 'session is mid-turn' ||

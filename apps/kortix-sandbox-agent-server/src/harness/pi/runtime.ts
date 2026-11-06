@@ -59,7 +59,7 @@ import type { WorkflowControlBody } from '@kortix/api-contract/multi-agent'
 import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay'
 import { PARKED, PermissionBroker, QuestionBroker, compilePermissionPolicy, type AskRelayAnswer, resolvePolicyRule, skillGranted, type PermissionPolicy, type PermissionRule, type SessionPermissionRule } from './interactions'
 import type { CatalogModel, PiModels, SelectedModel } from './model'
-import { KORTIX_PROVIDER_ID, compactionSettings, nativeModelId, promptModelId, selectId } from './model'
+import { IMAGE_RESIZE, KORTIX_PROVIDER_ID, compactionSettings, nativeModelId, promptModelId, selectId } from './model'
 import { claudeSessions } from './claude/provider'
 import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent'
 import { TranscriptStore, type RuntimeFrame } from './transcript'
@@ -172,6 +172,41 @@ export const PARKED_PERMISSION_REASON =
   'This call needs a person\'s approval and did not run. The request waits in their Review inbox; nobody answered it yet. ' +
   'Continue with work that does not need this call. When they approve, you get a message: then run exactly the same call again and it runs. ' +
   'If nothing else is left, end your turn and say in one line what you wait for. Do not retry the call before that message.'
+
+/**
+ * Every agent's ids: its session, its project, the session that started it
+ * and its space (`KORTIX_SESSION_ID`, `KORTIX_PROJECT_ID`,
+ * `KORTIX_PARENT_SESSION_ID`, `KORTIX_SPACE_ID`). A subagent reads the
+ * conversation that started it with `kortix sessions log` instead of relying
+ * on its brief alone: the API lets a session read the sessions that spawned
+ * it (apps/api `session-visibility.ts` `isSpawnAncestor`). A subagent inside
+ * this session (`session: "same"`) has this session's main conversation as
+ * its parent. The ids never change during a session, so the section never
+ * breaks the prompt cache. Null on a box with no session id (a local box).
+ */
+export function sessionIdsSection(input: {
+  sessionId?: string
+  projectId?: string
+  parentSessionId?: string
+  spaceId?: string
+  /** A subagent that runs inside this session. */
+  inProcessChild?: boolean
+}): string | null {
+  const session = input.sessionId?.trim()
+  if (!session) return null
+  const parent = input.inProcessChild ? null : input.parentSessionId?.trim()
+  return [
+    '## Session ids',
+    `- session_id: ${session} (this session)`,
+    ...(input.projectId?.trim() ? [`- project_id: ${input.projectId.trim()}`] : []),
+    ...(input.inProcessChild ? [`- parent: the main conversation of this session (${session}), which started you`] : []),
+    ...(parent ? [`- parent_session_id: ${parent} (the session that started you)`] : []),
+    ...(input.spaceId?.trim() ? [`- space_id: ${input.spaceId.trim()}`] : []),
+    'Read a session\'s conversation with `kortix sessions log <session_id> -n 50` (`--json` for scripts; pipe it to rg or jq to search). It is always current.',
+    ...(input.inProcessChild || parent ? ['Read your parent\'s conversation when your task needs context your brief does not give.'] : []),
+    'Pass a session_id to a subagent or a command instead of copying a conversation into a prompt or a file.',
+  ].join('\n')
+}
 
 /** The system prompt's `Today's date` line, with the box's time zone. Without it an agent with no shell cannot resolve "yesterday". */
 export const todayLine = (now: number) => `Today's date: ${new Date(now).toDateString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
@@ -2479,7 +2514,8 @@ export class PiRuntime {
   /** The prompt's images (images.ts), when the selected model reads images. Otherwise its `<file>` tags carry the paths alone. */
   private async images(input: PromptInput): Promise<ImageContent[]> {
     if (!this.selected?.images || !this.coding) return []
-    return promptImages(input, this.cfg.workspace || '/workspace', this.coding.resizeImage)
+    const resize = this.coding.resizeImage
+    return promptImages(input, this.cfg.workspace || '/workspace', (bytes, mime) => resize(bytes, mime, IMAGE_RESIZE))
   }
 
   // ── configuration ────────────────────────────────────────────────────────
@@ -2611,6 +2647,14 @@ export class PiRuntime {
     const releaseNotice = this.releases?.notice()
     if (releaseNotice) parts.push(releaseNotice)
     if (this.cfg.workspaceVolume) parts.push(this.newComputer ? `${TEMPORARY_COMPUTER}\n${NEW_COMPUTER_NOTE}` : TEMPORARY_COMPUTER)
+    const ids = sessionIdsSection({
+      sessionId: this.env.KORTIX_SESSION_ID,
+      projectId: this.env.KORTIX_PROJECT_ID,
+      parentSessionId: this.env.KORTIX_PARENT_SESSION_ID,
+      spaceId: this.env.KORTIX_SPACE_ID,
+      inProcessChild: Boolean(child),
+    })
+    if (ids) parts.push(ids)
     parts.push(
       [
         '## Runtime capabilities',

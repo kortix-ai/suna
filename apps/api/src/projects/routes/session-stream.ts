@@ -89,7 +89,6 @@ import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
 import { isPgBroadcastListening, waitForSessionChange } from '../../shared/pg-broadcast';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { PRESENCE_RENEW_MS, expireSessionPresence, renewSessionPresence } from '../lib/session-presence';
 import {
   CONTROL_EPOCH,
@@ -298,9 +297,6 @@ export function registerSessionStreamRoutes(): void {
           ? {
               userId: String(loaded.userId),
               tabId: presenceTabId,
-              // KRTX-1742, only with the `notification_center` flag on: the
-              // stream end expires the lease. Off, it lives to its expiry.
-              expireOnClose: notificationsEnabled(loaded.row.metadata),
               extendDeadline: await projectCapabilityAllowed(
                 c,
                 String(loaded.userId),
@@ -500,7 +496,7 @@ export function registerSessionStreamRoutes(): void {
               // of its lease. Only the expiry this stream wrote: a newer stream
               // of the same tab (a reconnect, a control-to-runtime upgrade) may
               // have renewed it since. A reconnecting stream's renewal restores it.
-              if (presenceRenewal.expireOnClose && leaseWrittenUntil) {
+              if (leaseWrittenUntil) {
                 void expireSessionPresence(
                   presenceRenewal.userId,
                   sessionId,
@@ -816,7 +812,7 @@ function watchRuntimeHealth(args: PumpArgs, externalId: string, signal: AbortSig
  *
  * The envelope is written back out with exactly two additions — `channel` and
  * `epoch` — and no other change. `seq` is the daemon's number and stays the
- * daemon's number; `payload` is OpenCode's `properties` verbatim, which is what
+ * daemon's number; `payload` is the runtime event's `properties` verbatim, which is what
  * lets an existing SDK reducer apply it unchanged.
  */
 async function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: string): Promise<void> {

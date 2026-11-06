@@ -31,7 +31,6 @@ function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreat
  * promise. `availableAt` in the future = a scheduled grace window.
  */
 export interface EnqueueContinueSessionCommandInput {
-  artifactId?: string;
   source: SessionInvocationSource;
   projectId: string;
   accountId: string;
@@ -66,7 +65,6 @@ export interface EnqueueContinueSessionCommandInput {
   /** See `QueuedContinueSessionPayload.mayStopAnyTurn`. */
   mayStopAnyTurn?: boolean;
   noReply?: boolean;
-  opencodeEnv?: Record<string, string | null>;
   directFollowUp?: boolean;
   /** See `QueuedContinueSessionPayload.resumesTurn`. */
   resumesTurn?: string;
@@ -94,7 +92,6 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.authorSessionId ? { authorSessionId: input.authorSessionId } : {}),
     ...(input.mayStopAnyTurn ? { mayStopAnyTurn: true } : {}),
     ...(input.noReply ? { noReply: true } : {}),
-    ...(input.opencodeEnv ? { opencodeEnv: input.opencodeEnv } : {}),
     ...(input.directFollowUp ? { directFollowUp: true } : {}),
     ...(input.resumesTurn ? { resumesTurn: input.resumesTurn } : {}),
   };
@@ -105,7 +102,6 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     projectId: input.projectId,
     accountId: input.accountId,
     actorUserId: input.actorUserId,
-    ...(input.artifactId ? { artifactId: input.artifactId } : {}),
     sessionId: input.sessionId,
     idempotencyKey: input.idempotencyKey ?? null,
     payload: payload as unknown as Record<string, unknown>,
@@ -197,7 +193,6 @@ function buildCreateSessionCommandValues(
     projectId: command.project.projectId,
     accountId: command.project.accountId,
     actorUserId: command.userId,
-    ...(command.artifactId ? { artifactId: command.artifactId } : {}),
     idempotencyKey: command.idempotencyKey ?? null,
     payload: createSessionCommandPayload(command) as unknown as Record<string, unknown>,
     result: opts.reason ? { reason: opts.reason } : {},

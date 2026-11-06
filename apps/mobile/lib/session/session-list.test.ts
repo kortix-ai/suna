@@ -147,7 +147,7 @@ describe('sessionDisplayStatus', () => {
 });
 
 describe('sessionLastActivityAt', () => {
-  test('uses the latest OpenCode conversation activity, not row bookkeeping', () => {
+  test('uses the latest runtime conversation activity, not row bookkeeping', () => {
     const session = makeSession({
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-08T08:00:09.000Z',

@@ -162,7 +162,7 @@ export async function transcribe(ask: { file?: unknown; language?: unknown }, o:
   chargeStt(model, seconds)
   const lang = j.language ? ISO[j.language.toLowerCase()] ?? j.language.toLowerCase() : language
   const heardWords = (Array.isArray(j.segments) ? j.segments.filter(heard).map((s) => s.text).join('') : String(j.text ?? '')).trim()
-  // On unclear audio Whisper can read its prompt back ("Kortix, OpenCode, Bun"): words that are all the hint's are none.
+  // On unclear audio Whisper can read its prompt back ("Kortix, Bun, TypeScript"): words that are all the hint's are none.
   const hinted = new Set(hint.join(' ').toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [])
   const said = heardWords.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
   const words = said.length && said.every((w) => hinted.has(w)) ? '' : heardWords

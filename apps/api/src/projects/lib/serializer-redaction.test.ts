@@ -47,7 +47,7 @@ describe('serializeSession redaction', () => {
   test('an inaccessible row leaks no CONVERSATION-DERIVED field either', () => {
     // name / custom_name / runtime_sessions are all computed FROM metadata
     // before the redaction, so redacting the metadata object alone left the
-    // OpenCode-synced title (which summarises the conversation) and the
+    // runtime-synced title (which summarises the conversation) and the
     // conversation-tree snapshot exposed.
     const out = serializeSession(
       row({

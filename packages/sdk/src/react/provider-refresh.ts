@@ -4,8 +4,8 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import { listWorkspaceSecrets } from '../core/rest/projects-client';
 import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
-import { configKeys } from './use-opencode-config';
-import { runtimeKeys } from './use-opencode-sessions';
+import { configKeys } from './use-runtime-config';
+import { runtimeKeys } from './use-runtime-sessions';
 import { qk } from './query-keys';
 
 type RefreshProjectProviderStateOptions = {
@@ -14,7 +14,7 @@ type RefreshProjectProviderStateOptions = {
    * Provider id (e.g. 'anthropic', 'codex') whose credential was just saved.
    * When set, the refresh keeps polling until the project's secrets actually
    * resolve that provider as connected — instead of a fixed retry window that
-   * a slow save/opencode restart can outlive, leaving the picker stale until
+   * a slow save/runtime restart can outlive, leaving the picker stale until
    * a hard page refresh.
    */
   expectProviderId?: string;
@@ -65,7 +65,7 @@ function invalidateProviderQueries(
   const fetchOptions = supersede ? undefined : { cancelRefetch: false };
   // FIRST, and never optional: the gateway provider list is a PROJECTION of
   // `/model-picker`, which lives under its own key at the `config` tier (60s)
-  // and is read through `fetchQuery` (use-opencode-sessions/providers.ts).
+  // and is read through `fetchQuery` (use-runtime-sessions/providers.ts).
   // `fetchQuery` skips the network for an entry that is neither stale nor
   // invalidated, so refetching the projection alone re-served the pre-connect
   // catalog and the session picker kept the old model list until a hard
@@ -120,7 +120,7 @@ export function refreshWorkspaceProviderState(
   };
 
   // Saving provider credentials hot-pushes env vars into active sandboxes and
-  // restarts OpenCode; the secret write itself can also land after the save
+  // restarts the runtime; the secret write itself can also land after the save
   // call returns. A refetch that races either one accepts the OLD state as
   // final — and with staleTime:Infinity on the provider list nothing ever asks
   // again, so the picker stays stale until a hard refresh. So: don't fire a

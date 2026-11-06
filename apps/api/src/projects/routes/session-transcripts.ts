@@ -61,7 +61,7 @@ export function registerSessionTranscriptsRoutes(): void {
   //
   // Two shapes, one route. `shape=compact` (the default, unchanged for every
   // existing caller) returns the digest rows, without tool inputs/outputs.
-  // `shape=sync` returns OpenCode message envelopes with every part 1:1 except
+  // `shape=sync` returns OpenCode-shaped message envelopes with every part 1:1 except
   // attachment bytes — the shape the SDK sync store hydrates from — and is
   // served from the durable mirror only, in windows bounded by count and size.
   //
@@ -131,7 +131,7 @@ export function registerSessionTranscriptsRoutes(): void {
       if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // The saved-history read: it serves the mirror only for the session's
-      // current OpenCode root.
+      // current runtime root.
       const history = c.req.query('history') === 'true';
 
       if (c.req.query('shape') === 'sync') {
@@ -142,7 +142,7 @@ export function registerSessionTranscriptsRoutes(): void {
         if (before !== undefined && (before.length === 0 || before.length > 128)) {
           return c.json({ error: 'Invalid cursor' }, 400);
         }
-        // A sub-agent's own saved transcript, by its OpenCode session id. Only
+        // A sub-agent's own saved transcript, by its runtime session id. Only
         // rows stored under THIS session can answer, so an id from anywhere
         // else reads as nothing saved.
         const child = c.req.query('child');

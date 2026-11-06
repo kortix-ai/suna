@@ -448,24 +448,6 @@ export function isNonErrorObjectNotFoundRejectionNoise(input: {
   return true;
 }
 
-// A Supabase refresh can race with sign-out on the anonymous landing page.
-// The SDK rejects with AuthSessionMissingError when its stored session has
-// disappeared; there is no session to recover and no user to notify.
-export function isAnonymousAuthRefreshRace(input: {
-  message?: unknown;
-  requestUrl?: string;
-  mechanism?: unknown;
-  frames?: Array<{ function?: unknown; filename?: unknown }>;
-}): boolean {
-  if (normalizeString(input.message) !== 'Auth session missing!' ||
-      input.requestUrl !== 'https://kortix.com/' ||
-      input.mechanism !== 'auto.browser.global_handlers.onunhandledrejection') return false;
-  const frames = input.frames ?? [];
-  return frames.some((frame) => normalizeString(frame.function).includes('refreshSession') &&
-    isBrowserBundleSource(frame.filename)) &&
-    !frames.some((frame) => isFirstPartyResolvedSource(frame.filename));
-}
-
 // An `HTMLMediaElement.play()` promise the browser's autoplay policy denied.
 // The HTML spec fixes the DOMException message: `NotAllowedError: The play
 // method is not allowed by the user agent or the platform in the current
@@ -584,7 +566,6 @@ export const REJECTION_RULES: readonly NoiseRule[] = [
     appliesTo: 'sentry',
     match: isNonErrorUndefinedRejectionNoise,
   },
-  { id: 'anonymous-auth-refresh-race', appliesTo: 'sentry', match: isAnonymousAuthRefreshRace },
   { id: 'pop-error-scope', appliesTo: 'sentry', match: isOperationErrorPopErrorScopeNoise },
   { id: 'supabase-token-expired', appliesTo: 'sentry', match: isSupabaseTokenExpiredNoise },
   {

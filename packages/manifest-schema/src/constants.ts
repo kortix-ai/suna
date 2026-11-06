@@ -328,9 +328,9 @@ export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, reado
  * Actions retired with their feature. A manifest that still grants one keeps
  * validating with a warning, and the grant holds nothing: rejecting it would
  * fail the agent's parse and give it an EMPTY grant. `project.room.*`: Rooms,
- * removed 2026-11.
+ * removed 2026-11. `project.artifact.comment`: artifact comments, removed 2026-11-06.
  */
-export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write'];
+export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write', 'project.artifact.comment', 'workspace.artifact.comment'];
 
 /** Kortix skills retired with their feature. An agent that still grants one validates with a warning. `kortix-rooms`: Rooms, removed 2026-11. */
 export const RETIRED_KORTIX_SKILL_NAMES: readonly string[] = ['kortix-rooms'];
@@ -531,6 +531,6 @@ export const CONTEXT_VALUES = ['record', 'summary'] as const;
 export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
 /**
  * OpenCode's built-in agents that v3 disables unless the manifest declares the name.
- * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only: OpenCode is deleted (2026-10-30). See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
-export const OPENCODE_BUILTIN_AGENTS_V3 = ['build', 'plan', 'general', 'explore'] as const;
+export const RUNTIME_BUILTIN_AGENTS = ['build', 'plan', 'general', 'explore'] as const;

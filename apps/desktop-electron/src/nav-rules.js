@@ -22,6 +22,7 @@ const APP_PATH_PREFIXES = [
   // them; next.config.ts redirects both to /workspaces, inside the window.
   '/projects',
   '/new',
+  '/inbox',
   '/settings',
   '/invites',
   '/admin',

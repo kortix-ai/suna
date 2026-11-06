@@ -12,7 +12,6 @@ import {
   SETTINGS_TAB_SUBMENU_PAGE,
   SUBMENU_PAGE_BY_ID,
 } from '@/features/workspace/command-palette';
-import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { getItemsForSurface } from '@/lib/menu-registry';
 
 /**
@@ -108,9 +107,7 @@ function isLiveRoute(href: string): boolean {
   return ROUTES.some((route) => routeMatches(route, path));
 }
 
-const paletteRows = getItemsForSurface('commandPalette').filter(
-  (item) => !LEGACY_PALETTE_HIDDEN.has(item.id),
-);
+const paletteRows = getItemsForSurface('commandPalette');
 
 /** Every href the palette can offer, unresolved. */
 const paletteHrefs = new Set(

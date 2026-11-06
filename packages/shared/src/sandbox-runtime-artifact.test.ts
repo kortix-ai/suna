@@ -35,6 +35,8 @@ async function createCliFixture(): Promise<{ cliRoot: string; sdkRoot: string }>
   for (const relativePath of CLI_CONNECTOR_SHARED_FILES) {
     await writeFile(join(sharedRoot, relativePath), `${relativePath}:v1\n`);
   }
+  await mkdir(join(sharedRoot, 'src', 'utils'), { recursive: true });
+  await writeFile(join(sharedRoot, 'src', 'utils', 'string.ts'), 'string:v1\n');
   await writeFile(join(sharedRoot, 'package.json'), '{"name":"@kortix/shared"}\n');
   return { cliRoot, sdkRoot };
 }

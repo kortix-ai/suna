@@ -1,8 +1,10 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { projectAccessRequests } from '@kortix/db';
 import { projectManagerUserIds } from '../../iam/project-managers';
 import { sendProjectAccessRequestEmail } from '../../accounts/email';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { type TransitionResult, transitionStatus } from '../../shared/status-transition';
 import { lookupEmailsByUserIds } from './access';
 import { projectsView } from '../../workspaces/rows';
 
@@ -57,4 +59,44 @@ export async function notifyProjectAccessRequestManagers(input: {
       }
     }),
   );
+}
+
+type AccessRequestRow = typeof projectAccessRequests.$inferSelect;
+
+/**
+ * The review of a project access request: `pending` to `approved` or
+ * `rejected`, once. Each is a compare-and-set on `pending`, so a concurrent
+ * approve and reject cannot both apply, and the approve route claims the
+ * request BEFORE it grants the role: a reject that lost the claim grants
+ * nothing, and an approve that lost it grants nothing either.
+ */
+export const ACCESS_REQUEST_TRANSITIONS = {
+  approve: { from: ['pending'], to: 'approved' },
+  reject: { from: ['pending'], to: 'rejected' },
+  /** The approve's grant failed after the claim: the request is pending again. */
+  releaseApproval: { from: ['approved'], to: 'pending' },
+} as const;
+
+export function reviewProjectAccessRequest(input: {
+  requestId: string;
+  projectId: string;
+  verdict: 'approve' | 'reject';
+  reviewedBy: string;
+}): Promise<TransitionResult<AccessRequestRow>> {
+  const now = new Date();
+  return transitionStatus(projectAccessRequests, projectAccessRequests.status, ACCESS_REQUEST_TRANSITIONS[input.verdict], {
+    where: and(
+      eq(projectAccessRequests.requestId, input.requestId),
+      eq(projectAccessRequests.projectId, input.projectId),
+    ),
+    set: { reviewedBy: input.reviewedBy, reviewedAt: now, updatedAt: now },
+  });
+}
+
+/** Undo an approve claim whose grant threw, so the request can be reviewed again. */
+export async function releaseProjectAccessApproval(requestId: string, reviewedBy: string): Promise<void> {
+  await transitionStatus(projectAccessRequests, projectAccessRequests.status, ACCESS_REQUEST_TRANSITIONS.releaseApproval, {
+    where: and(eq(projectAccessRequests.requestId, requestId), eq(projectAccessRequests.reviewedBy, reviewedBy)),
+    set: { reviewedBy: null, reviewedAt: null, updatedAt: new Date() },
+  });
 }

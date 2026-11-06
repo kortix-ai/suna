@@ -851,7 +851,7 @@ function SpaceComposer({
   // A channel's agents lead its picker; the first one the project still offers starts a new thread.
   const visible = useVisibleAgents({ projectId });
   const projectConfig = useProjectConfig(projectId);
-  const projectDefault = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
+  const projectDefault = projectConfig?.default_agent ?? null;
   // A member with no agent grant still posts here with the channel's agents.
   const runnable = useMemo(() => channelRunnableAgents(space, projectDefault), [space, projectDefault]);
   const offered = useMemo(

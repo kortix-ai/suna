@@ -42,6 +42,15 @@ import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { accountIdParam } from '../../shared/route-params';
 import { projectsView } from '../../workspaces/rows';
+import { isUuid } from '../../shared/validate';
+
+/**
+ * A `{userId}` that is not a UUID reaches a `::uuid` cast in the membership
+ * reads and fails with SQLSTATE 22P02, which surfaces as a 500. Callers run
+ * this after their authorization check so the 400 reveals nothing.
+ */
+const badMemberId = (c: Context, userId: string) =>
+  isUuid(userId) ? null : c.json({ error: 'userId must be a UUID' }, 400);
 
 /**
  * WHICH principal `/effective` answers about, and with WHICH credential.
@@ -106,6 +115,8 @@ export function registerIamMembersRoutes(): void {
     const accountId = accountIdParam(c);
     const targetUserId = c.req.param('userId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     const body = await readJsonObject(c);
     // Accept camelCase or snake_case, but the field MUST be present and an
@@ -186,7 +197,7 @@ export function registerIamMembersRoutes(): void {
       request: { params: MemberParams },
       responses: {
         200: json(z.object({ groups: z.array(GroupSchema) }), 'Groups the member belongs to'),
-        ...errors(401, 403),
+        ...errors(400, 401, 403),
       },
     }),
     async (c: any) => {
@@ -199,6 +210,8 @@ export function registerIamMembersRoutes(): void {
     if (callerId !== targetUserId) {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
     }
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     const rows = await listGroupsForMember(accountId, targetUserId);
     return c.json({
@@ -229,7 +242,7 @@ export function registerIamMembersRoutes(): void {
       request: { params: MemberParams },
       responses: {
         200: json(z.object({ projects: z.array(ProjectAccessSchema) }), 'Projects the member can reach'),
-        ...errors(401, 403),
+        ...errors(400, 401, 403),
       },
     }),
     async (c: any) => {
@@ -240,6 +253,8 @@ export function registerIamMembersRoutes(): void {
     if (callerId !== targetUserId) {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
     }
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     type Role = 'manager' | 'member';
     const rank: Record<Role, number> = { member: 1, manager: 2 };
@@ -411,6 +426,8 @@ export function registerIamMembersRoutes(): void {
     if (callerId !== targetUserId) {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
     }
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     const action = c.req.query('action');
     if (!action) {
@@ -457,6 +474,8 @@ export function registerIamMembersRoutes(): void {
     if (callerId !== targetUserId) {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_READ);
     }
+    const badId = badMemberId(c, targetUserId);
+    if (badId) return badId;
 
     const body = await readJsonObject(c);
     const rawProbes = body.probes ?? body.queries;

@@ -32,12 +32,9 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { notifySessionEvent } from '../../notifications/session-push';
-import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
 import { askNotificationContext } from '../lib/notification-recipients';
 import { workspaceIdParam } from '../../shared/route-params';
-import { projectsView } from '../../workspaces/rows';
 
 export function registerTurnQuestionsRoutes(): void {
   // POST /v1/projects/:projectId/turn-question
@@ -45,8 +42,8 @@ export function registerTurnQuestionsRoutes(): void {
   // agent calls the `question` tool, the sandbox relays its RuntimeQuestion[]
   // (`@kortix/api-contract/transcript`) here.
   // We post a Block Kit form, block on Submit, return `answers: string[][]`,
-  // and the sandbox POSTs the same payload to opencode's
-  // /question/{requestID}/reply so the tool resumes.
+  // and the sandbox POSTs the same payload to the box's
+  // `/question/{requestID}/reply` route so the tool resumes.
 
   projectsApp.openapi(
     createRoute({
@@ -143,10 +140,8 @@ export function registerTurnQuestionsRoutes(): void {
           origin: projectSessions.origin,
           metadata: projectSessions.metadata,
           parentSessionId: projectSessions.parentSessionId,
-          projectMetadata: projectsView.metadata,
         })
         .from(projectSessions)
-        .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
         .where(
           and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
         )
@@ -154,12 +149,6 @@ export function registerTurnQuestionsRoutes(): void {
       if (!turnQuestionSession) {
         return c.json({ error: 'Not found' }, 404);
       }
-      // KRTX-1742 is behind the project's notification_center flag. Off, this
-      // route keeps its earlier contract: any caller's new question pushes the
-      // session creator before the relay, and a relay that throws fails the
-      // request.
-      const notificationCenter = notificationsEnabled(turnQuestionSession.projectMetadata);
-
       if (!Array.isArray(body.questions) || body.questions.length === 0) {
         return c.json({ error: 'at least one question is required' }, 400);
       }
@@ -200,7 +189,7 @@ export function registerTurnQuestionsRoutes(): void {
       // extension: the reaper renews nothing for it and ends it after the wait
       // bound (`turnWaitingMaxMs`, box-reaper.ts `holdWaitingTurn`), and its box
       // is parked. The bounded-lifetime invariant depends on it. What parking
-      // used to destroy is the question itself: opencode restarts cold, so the
+      // used to destroy is the question itself: the runtime restarts cold, so the
       // user returned to a session that had forgotten what it asked. Storing it
       // out here lets the box die on time and the conversation survive it. See
       // lib/pending-questions.ts.
@@ -222,7 +211,7 @@ export function registerTurnQuestionsRoutes(): void {
           projectId,
           sessionId,
           requestId: pendingRequestId,
-          opencodeSessionId: body.runtime_session_id ?? null,
+          runtimeSessionId: body.runtime_session_id ?? null,
           questions,
           parkable,
           surfaceSessionId: await surfaceSessionIdOf(sessionId, turnQuestionSession),
@@ -239,13 +228,7 @@ export function registerTurnQuestionsRoutes(): void {
         // session's own sandbox notifies (KRTX-1742): a person's token may
         // store a question, but its text must never reach other people's
         // inbox, phone and email.
-        notify = notificationCenter && recorded?.inserted === true && callerSandboxSessionId !== null;
-        // Flag off: the session creator's phones, for any caller, before the relay.
-        if (!notificationCenter && recorded?.inserted) {
-          void notifySessionPushLegacy({ type: 'question', sessionId, projectId, question: questions[0]?.question }).catch(
-            (err) => logger.warn('[push] question notification failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
-          );
-        }
+        notify = recorded?.inserted === true && callerSandboxSessionId !== null;
       }
 
       // Non-blocking: post the question(s) into the thread and return immediately
@@ -259,7 +242,6 @@ export function registerTurnQuestionsRoutes(): void {
       // would make the relay look broken for every non-Slack session.
       // A relay that throws (a DB read before anything is posted) must not cost
       // the stored question its notification: the daemon never retries it.
-      // Flag off, the push went out above and a throw fails the request.
       const runtimeRequestId = body.request_id?.trim();
       // Only the session's own sandbox posts into a session-addressed chat
       // (Telegram): a person's token may store a question, but its text never
@@ -275,12 +257,10 @@ export function registerTurnQuestionsRoutes(): void {
       // A Slack or Teams button names the stored question only when the runtime
       // named it, for the same reason.
       const buttonsFor = runtimeRequestId ? pendingId : null;
-      const result = notificationCenter
-        ? await relayTurnQuestion(sessionId, questions, chat, buttonsFor).catch((err): { ok: false; error: string } => {
-            logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
-            return { ok: false, error: 'relay_failed' };
-          })
-        : await relayTurnQuestion(sessionId, questions, chat, buttonsFor);
+      const result = await relayTurnQuestion(sessionId, questions, chat, buttonsFor).catch((err): { ok: false; error: string } => {
+        logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+        return { ok: false, error: 'relay_failed' };
+      });
 
       // Release the runtime's BLOCKING `question` call for a chat-channel session
       // — see channels/question-release.ts. Keyed on the session's own metadata,
@@ -304,7 +284,6 @@ export function registerTurnQuestionsRoutes(): void {
             threadCarriesAsk: channel !== null && result.ok,
           },
           {
-            notificationCenter: true,
             context: () =>
               askNotificationContext({
                 sessionId,

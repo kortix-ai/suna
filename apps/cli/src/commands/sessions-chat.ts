@@ -155,7 +155,7 @@ function blockToText(block: SessionLogBlock, streaming: boolean): string {
     case 'compaction':
       return block.summary ?? '';
     case 'harness': {
-      // A file the harness keeps in its own form (OpenCode inlines a text file) holds its v1 part.
+      // A file the harness keeps in its own form (a text file inlined by the harness) holds its v1 part.
       const data = block.data as { type?: unknown; filename?: unknown } | null;
       return block.kind === 'file' && data?.type === 'file' ? fileText(typeof data.filename === 'string' ? data.filename : undefined) : '';
     }
@@ -250,7 +250,7 @@ session (or starts one with --new).
 In the REPL: type a message + Enter to send. Ctrl-D or \`exit\` quits.`;
 
 /**
- * `kortix sessions chat` — send prompts to a session's OpenCode agent and
+ * `kortix sessions chat` — send prompts to a session's agent and
  * print replies. One-shot with --prompt; interactive REPL otherwise.
  */
 export async function runSessionsChat(argv: string[]): Promise<number> {
@@ -728,7 +728,11 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
       liveError = err instanceof SessionRuntimeError ? (err.cause ?? err) : err;
     }
   }
-  const why = liveError !== null ? 'its sandbox is not answering' : `session is ${session.status}`;
+  // A 403 is the box refusing this credential (a subagent reading its parent), not a box that is down.
+  const refused = (liveError as { status?: unknown } | null)?.status === 403;
+  const why = liveError === null
+    ? `session is ${session.status}`
+    : refused ? 'the live turn is not open to this credential' : 'its sandbox is not answering';
 
   let stored: StoredSessionLog | null = null;
   const handle = kortixFromAuth(auth).session(projectId, session.session_id);

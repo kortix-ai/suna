@@ -109,7 +109,7 @@ const ext = (name: string) => {
 };
 
 /** Pinned config dirs: always first (web parity). */
-const ELEVATED = new Set(['.kortix', '.opencode']);
+const ELEVATED = new Set(['.kortix']);
 
 type SortBy = 'name' | 'type';
 type SortOrder = 'asc' | 'desc';

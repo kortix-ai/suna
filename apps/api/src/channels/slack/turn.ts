@@ -543,7 +543,7 @@ function buildFinalPlanBlocks(
 
 // ── Turn-stream relays ──────────────────────────────────────────────────────
 // Driven by the in-sandbox agent CLI (POST /turn-stream: `step`/`answer`) and by
-// the sandbox's opencode session.idle/error watcher (`end`). They own the live
+// kortixd's turn-end relay (`end`, harness/shared/turn-relay.ts). They own the live
 // in-thread message lifecycle, so they live with the rest of it here in turn.ts.
 
 /**
@@ -750,9 +750,9 @@ export async function postAnswerWithoutTurnDetailed(
   return fallback != null ? { ok: true } : { ok: false, reason: 'post_failed' };
 }
 
-// Called when the agent's turn ends — opencode `session.idle` (finished) or
-// `session.error` (died) on the ROOT session, relayed by the sandbox. The
-// sandbox already filters to the root by opencode's parentID before relaying, so
+// Called when the agent's turn ends — `session.idle` (finished) or
+// `session.error` (died) on the ROOT runtime session, relayed by kortixd. The
+// daemon relays only the root session's turn end, so
 // we finalize unconditionally: there is NO server-side pin re-check. Comparing
 // the relayed id against a possibly-stale DB pin is exactly what used to drop a
 // real turn's idle and leave the ⏳ spinning forever. If the agent already
@@ -809,7 +809,7 @@ export async function relayTurnEnd(
   }
   if (!(await claimFinalize(sessionId))) return false;
   if (status === 'error') {
-    // Turn the opencode error into honest, specific copy (out of credits /
+    // Turn the runtime error into honest, specific copy (out of credits /
     // usage limit / provider auth / the real error), not a blank failure line.
     const classified = classifyTurnError(errorInfo);
     await finalizeTurn(
@@ -851,7 +851,7 @@ registerSessionFailureNotifier(relayProvisioningFailure);
 
 /**
  * Closing the card is not ending the run. A turn this sweep reaps has been
- * silent for 30 minutes, but OpenCode can still hold its assistant message
+ * silent for 30 minutes, but the runtime can still hold its assistant message
  * OPEN — and while it does, every later prompt in that conversation is
  * accepted and never runs. Seen on dev 2026-09-19: two messages vanished that
  * way over two days. Imported lazily so the channel modules keep no static

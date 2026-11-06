@@ -569,7 +569,7 @@ function renderPolicySets(map: Record<string, string>, fallback: string): string
 
 /** The other file a saved config commits: the agent's `prompt_file` (an inline prompt stays in kortix.yaml). */
 function savedPromptFile(resp: { block: AgentConfigBlock }, sent: AgentConfigBlock): string {
-  if (!(sent.behavior ?? sent.opencode)) return '';
+  if (!sent.behavior) return '';
   return resp.block?.file ? ` + ${resp.block.file}` : '';
 }
 
@@ -578,7 +578,7 @@ function savedPromptFile(resp: { block: AgentConfigBlock }, sent: AgentConfigBlo
 const AGENT_CONFIG_PUT_KEYS = new Set([
   'enabled', 'tools', 'sandbox', 'connectors', 'connectors_required', 'connectors_personal',
   'secrets', 'skills', 'apps', 'kortix_permissions', 'subagents', 'commands', 'extensions',
-  'codemode', 'kortix_cli', 'repository_access', 'workspace', 'file', 'behavior', 'opencode',
+  'codemode', 'kortix_cli', 'repository_access', 'workspace', 'file', 'behavior',
 ]);
 
 /** `a.b.c=value` → set `a.b.c`. The value is JSON when it parses, else a

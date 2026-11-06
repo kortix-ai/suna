@@ -4,11 +4,10 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { readFileSync } from 'node:fs';
 
-// Settings → Notifications (app/(settings)/notifications.tsx, KRTX-1742).
-// Without a `notification_center` project: the page from before KRTX-1742,
-// this phone's switches only, no request. With one: this phone's two switches,
-// then the 7 Push switches from the user's record (a session kind ANDed with
-// this phone's switch); no Email switch on mobile. Real: the kinds, the kind
+// Settings → Notifications (app/(settings)/notifications.tsx, KRTX-1742; on
+// for every project since 2026-11-06): this phone's two switches, then one
+// Push switch per kind from the user's record (a session kind ANDed with this
+// phone's switch); no Email switch on mobile. Real: the kinds, the kind
 // labels, the push rules, this phone's store. Every other import is a stub.
 
 const SCREEN = `${import.meta.dir}/../../app/(settings)/notifications.tsx`;
@@ -18,7 +17,6 @@ const Empty = () => null;
 
 let record: any;
 let recordOptions: any;
-let centerOn = false;
 let rows: any[] = [];
 let groups: string[] = [];
 const calls: { name: string; args: unknown[] }[] = [];
@@ -54,7 +52,6 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/contexts': { useAuthContext: () => ({ user: { id: 'user-1' } }) },
   '@/lib/haptics': { haptics: { tap() {}, selection() {} } },
   '@/lib/notifications/registration': { carryOverLegacyKinds: async () => spy('carryOver')() },
-  '@/lib/projects/hooks': { useHasNotificationInboxProject: () => centerOn },
 };
 const real = new Set([
   'react',
@@ -111,7 +108,6 @@ beforeEach(() => {
   groups = [];
   record = recordWith();
   recordOptions = undefined;
-  centerOn = true;
   useNotificationStore.setState({ preferences: PHONE });
 });
 afterEach(async () => {
@@ -128,56 +124,7 @@ async function render() {
 }
 const row = (label: string) => rows.filter((props) => props.label === label).at(-1);
 
-describe('Settings → Notifications without a notification_center project', () => {
-  beforeEach(() => {
-    centerOn = false;
-  });
-
-  test("the page from before KRTX-1742: this phone's 4 per-kind switches, no request", async () => {
-    useNotificationStore.setState({ preferences: { ...PHONE, onError: false } });
-    await render();
-    expect(recordOptions).toBeUndefined();
-    expect(seen('carryOver')).toEqual([]);
-    expect(groups).toEqual(['General', 'Notification types', 'This device']);
-    expect(rows.map((props) => props.label)).toEqual([
-      'Notifications',
-      'Play sound',
-      'Task completions',
-      'Errors',
-      'Questions',
-      'Permission requests',
-      'Device settings',
-    ]);
-    expect(row('Errors').right.props.checked).toBe(false);
-    expect(row('Questions').right.props.checked).toBe(true);
-  });
-
-  test('a switch changes this phone only', async () => {
-    await render();
-    await act(async () => row('Questions').right.props.onCheckedChange(false));
-    await act(async () => row('Play sound').right.props.onCheckedChange(false));
-    expect(useNotificationStore.getState().preferences).toEqual({ ...PHONE, onQuestion: false, playSound: false });
-    expect(seen('update')).toEqual([]);
-  });
-
-  test('with this phone off, Play sound and the per-kind switches hide', async () => {
-    useNotificationStore.setState({ preferences: { ...PHONE, enabled: false } });
-    await render();
-    expect(groups).toEqual(['General', 'This device']);
-    expect(rows.map((props) => props.label)).toEqual(['Notifications', 'Device settings']);
-  });
-
-  test('a flag-on project appears: the page switches to the record', async () => {
-    await render();
-    expect(groups).toEqual(['General', 'Notification types', 'This device']);
-    centerOn = true;
-    await render();
-    expect(groups).toEqual(['General', 'Push', 'This device']);
-    expect(recordOptions).toEqual({ userId: 'user-1' });
-  });
-});
-
-describe('Settings → Notifications with a notification_center project', () => {
+describe('Settings → Notifications', () => {
   test("this phone's switches, then one Push switch per kind from the user's record, no Email", async () => {
     record = recordWith({ data: { kinds: KINDS, email_available: true, hidden_kinds: [] } });
     await render();
@@ -196,7 +143,6 @@ describe('Settings → Notifications with a notification_center project', () => 
       'Recovery alert',
       'Capture computer stopped',
       'Capture computer recording again',
-      'Artifact comments',
       'Device settings',
     ]);
     expect(row('Turn failed').right.props.checked).toBe(false);

@@ -17,13 +17,18 @@ import {
 const ORIGIN = 'https://kortix.com';
 
 describe('posthogProjectForHost', () => {
-  test('Kortix hosts report to the project with their environment', () => {
+  test('only kortix.com reports, as production', () => {
     expect(posthogProjectForHost('kortix.com', undefined)).toEqual({
       key: POSTHOG_PROJECT_KEY,
       environment: 'production',
     });
-    expect(posthogProjectForHost('dev.kortix.com', undefined)?.environment).toBe('dev');
-    expect(posthogProjectForHost('staging.kortix.com', undefined)?.environment).toBe('staging');
+    expect(posthogProjectForHost('www.kortix.com', undefined)?.environment).toBe('production');
+  });
+
+  test('dev and staging never report', () => {
+    expect(posthogProjectForHost('dev.kortix.com', undefined)).toBeNull();
+    expect(posthogProjectForHost('staging.kortix.com', undefined)).toBeNull();
+    expect(posthogProjectForHost('dev.kortix.com', 'phc_local')).toBeNull();
   });
 
   test('a self-hosted or preview host never reports, even with the local key set', () => {

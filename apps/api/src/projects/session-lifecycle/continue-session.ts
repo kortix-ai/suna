@@ -22,7 +22,7 @@ import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awakeDeliveryTarget, deliverAfterWake, undoDeliveryWake, type SendOutcome } from './deliver';
-import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { sandboxRuntimeEndpoint } from '../runtime-session-mapping';
 import { sessionTransitionLeaves, transitionSession } from './status-transitions';
 import { promptAgent } from './agent-availability';
 import { effortVariantForPrompt } from '../lib/effort-default';
@@ -45,18 +45,9 @@ export async function continueSession(
   // rely on for dedupe.
   commandId?: string,
   tl?: ProvisionTimeline,
-  beforeSend?: () => Promise<void | Pick<ContinueSessionCommand, 'text' | 'parts'>>,
+  beforeSend?: () => Promise<void>,
 ): Promise<SessionDeliveryOutcome> {
-  const { sessionId } = command;
-  let text = command.text;
-  const revalidateBeforeSend = beforeSend ? async () => {
-    const refreshed = await beforeSend();
-    if (refreshed) {
-      text = refreshed.text;
-      command.text = refreshed.text;
-      command.parts = refreshed.parts;
-    }
-  } : undefined;
+  const { sessionId, text } = command;
   const idempotencyKey = commandId ?? randomUUID();
   // The fast-path target is one JOINED read of the session and its sandbox, and
   // it does not depend on the session read below — so it goes out with it
@@ -162,15 +153,15 @@ export async function continueSession(
   const turnAgent = promptAgent(command.overrides?.agent, session.agentName);
   const sendPrompt = async (
     externalId: string,
-    opencodeSessionId: string,
+    runtimeSessionId: string,
     sandboxRecord?: SandboxRecord,
   ): Promise<SendOutcome> => {
-    await revalidateBeforeSend?.();
+    await beforeSend?.();
     await turnIdentity;
     let bodyBytes = 0;
     const delivery = await postPrompt(
       externalId,
-      opencodeSessionId,
+      runtimeSessionId,
       text,
       userId,
       sessionId,
@@ -214,9 +205,9 @@ export async function continueSession(
       const landing = await confirmPromptLanded({
         messageId: command.wireMessageId,
         readMessage: async (messageId) => {
-          const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+          const endpoint = await sandboxRuntimeEndpoint(externalId, userId);
           if (!endpoint) throw new Error('no runtime endpoint');
-          return readRuntimeMessage({ endpoint, opencodeSessionId, externalId }, messageId);
+          return readRuntimeMessage({ endpoint, runtimeSessionId, externalId }, messageId);
         },
       });
       if (landing === 'unknown') {
@@ -274,7 +265,7 @@ export async function continueSession(
         error: err instanceof Error ? err.message : String(err),
       }),
     );
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, turnAgent, awakeEarly, sendPrompt, beforeSend: revalidateBeforeSend, identityBound: turnIdentity, tl })
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, turnAgent, awakeEarly, sendPrompt, beforeSend, tl })
     .catch(async (err) => {
       if (wokeFrom) await undoWake();
       throw err;

@@ -103,6 +103,10 @@ export function cliConnectorRuntimeArtifacts(
       label: `kortix-shared-${relativePath.replace(/^src\//, '')}`,
       path: resolve(cliRoot, '../../packages/shared', relativePath),
     })),
+    {
+      label: 'kortix-shared-utils-string',
+      path: resolve(cliRoot, '../../packages/shared/src/utils/string.ts'),
+    },
     { label: 'kortix-shared-pkg', path: resolve(cliRoot, '../../packages/shared/package.json') },
   ];
 }

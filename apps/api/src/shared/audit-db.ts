@@ -27,7 +27,7 @@ import { errorSqlstate, isAuditContentionError } from './error-cause';
  * and the queue behind it drains 4x faster. statement_timeout still covers the
  * non-lock case.
  *
- * Use ONLY for the audit event queue flush, OpenCode audit ingestion, and
+ * Use ONLY for the audit event queue flush, runtime audit ingestion, and
  * gateway_request_logs writes (whose trigger fans out an audit row). Never route
  * auth/app/billing queries here.
  */

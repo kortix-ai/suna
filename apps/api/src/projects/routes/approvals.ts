@@ -229,12 +229,12 @@ export function registerApprovalsRoutes(): void {
       if (kortixIds.length === 0) return c.json({ total: 0, sessions: {} });
 
       // Look these sessions up to (a) gate non-managers to their own and (b) map to
-      // the OpenCode session id the sidebar list keys on. The response carries BOTH
+      // the runtime session id (`runtime_session_id`) the sidebar list keys on. The response carries BOTH
       // id forms → the caller matches whichever it holds.
       const sess = await db
         .select({
           sessionId: projectSessions.sessionId,
-          opencodeSessionId: projectSessions.runtimeSessionId,
+          runtimeSessionId: projectSessions.runtimeSessionId,
           createdBy: projectSessions.createdBy,
           origin: projectSessions.origin,
           spaceId: projectSessions.spaceId,
@@ -269,7 +269,7 @@ export function registerApprovalsRoutes(): void {
           : 0;
         if (n <= 0) continue;
         sessions[s.sessionId] = (sessions[s.sessionId] ?? 0) + n;
-        if (s.opencodeSessionId) sessions[s.opencodeSessionId] = sessions[s.sessionId]!;
+        if (s.runtimeSessionId) sessions[s.runtimeSessionId] = sessions[s.sessionId]!;
         for (const surface of surfacesOf[s.sessionId] ?? []) sessions[surface] = (sessions[surface] ?? 0) + n;
         total += n;
       }

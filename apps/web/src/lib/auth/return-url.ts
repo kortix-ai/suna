@@ -40,6 +40,9 @@ const SIGNUP_SAFE_RETURN_PREFIXES = [
   '/github/setup',
   '/marketplace',
   '/use-cases',
+  // A credit-code link (`/redeem?code=…`): the code is redeemed for the
+  // signed-in account itself, so a seconds-old account can act on it.
+  '/redeem',
 ] as const;
 
 /** Prefix match on path segment boundaries, so `/marketplace` never matches `/marketplace-evil`. */

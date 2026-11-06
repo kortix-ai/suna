@@ -36,6 +36,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db, withDbTransaction } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
+import { cancelDeletionRequest } from '../billing/repositories/account-deletion';
 import { asWorkspaceId, type WorkspaceAccountKey, type WorkspaceId } from './ids';
 import { accountIsPaying, getWorkspace, type WorkspaceRecord } from './store';
 
@@ -257,12 +258,8 @@ export async function restoreWorkspace(input: { workspaceId: WorkspaceId; actorU
         .set({ status: 'active', updatedAt: new Date() })
         .where(and(eq(projects.projectId, record.projectId), eq(projects.accountId, record.accountId)));
     }
-    const done = await db
-      .update(accountDeletionRequests)
-      .set({ status: 'cancelled', cancelledAt: new Date().toISOString() })
-      .where(and(eq(accountDeletionRequests.id, request.id), eq(accountDeletionRequests.status, 'pending')))
-      .returning({ id: accountDeletionRequests.id });
-    if (done.length === 0) {
+    // The owner's compare-and-set: false when the deletion worker claimed it first.
+    if (!(await cancelDeletionRequest(request.id))) {
       throw new WorkspaceLifecycleError(
         'workspace_deletion_in_progress',
         409,

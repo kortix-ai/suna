@@ -22,7 +22,7 @@ import { classifyRuntimeRequest } from './runtime-request';
  *     data-path GET routes alone, each one the client's reconnect hydrate
  *     racing a park (KRTX-397).
  *   - `daemon` 503 on a GET where the daemon itself answered 503 — the box's
- *     own daemon answered `runtime_not_ready` while its opencode runtime
+ *     own daemon answered `runtime_not_ready` while its runtime
  *     restarts behind a live box, and the proxy passed it through on purpose
  *     (no retry; the client re-polls, the box recovers within seconds). The
  *     passthrough carries the attribution (forward/retry.ts), so the hop plus

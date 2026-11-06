@@ -74,7 +74,7 @@ describe('promptDeliveryKey', () => {
 
     test('different messageID, IDENTICAL body text → DIFFERENT key (never swallowed)', () => {
       // The swallow trap this exists to fix: a user sending "continue" twice on
-      // purpose must reach opencode twice, not get answered
+      // purpose must reach the runtime twice, not get answered
       // `200 {"deduplicated":true}` on the second send just because the text
       // matches the first.
       const a = promptDeliveryKey({

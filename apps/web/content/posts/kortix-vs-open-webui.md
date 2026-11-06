@@ -5,7 +5,7 @@ date: "2026-10-02"
 canonical: "https://kortix.com/blog/kortix-vs-open-webui"
 author: "team"
 tags: ["Comparisons"]
-updated: "2026-10-22"
+updated: "2026-11-06"
 slug: "/kortix-vs-open-webui"
 ---
 Open WebUI gives people a private interface to their own models, and it does that job properly; Kortix CompanyOS takes the next question: what happens to the work once an answer is written. The agents that do the work, and the memory they draw on, live in your own repo.
@@ -32,7 +32,7 @@ Open WebUI is designed around a conversation. Everything else in it arranges its
 
 Kortix takes the open question Open WebUI leaves and answers it with files. The agents, their instructions and the connections to other systems are files in a repository the company holds. A change arrives as a diff. ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS))
 
-A new teammate clones it and inherits the same working setup. An agent is a Markdown file under `agents/`, plus its own `agents.<name>` block in `kortix.yaml`, which carries the governance. The agent file and `kortix.yaml`, with the OpenCode config, define the project. A reviewer can read the setup like documentation and review a change like code.
+A new teammate clones it and inherits the same working setup. An agent is a Markdown file under `agents/`, plus its own `agents.<name>` block in `kortix.yaml`, which carries the governance. The agent file and `kortix.yaml` define the project. A reviewer can read the setup like documentation and review a change like code.
 
 ## The work comes back for review
 

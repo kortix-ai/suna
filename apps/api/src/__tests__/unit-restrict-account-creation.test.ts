@@ -47,10 +47,9 @@ let insertedAccount: { name: string } | null = null;
 mockIamAssignments();
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
+  afterDbCommit: (action: () => void) => action(),
   hasDatabase: () => true,
-  // workspaces/lifecycle.ts (in the graph through workspaces/surface) imports these.
-  withDbTransaction: async (fn: (tx: unknown) => unknown) => fn(undefined),
-  afterDbCommit: (fn: () => unknown) => fn(),
   db: {
     insert: (table: any) => ({
       values: (vals: any) => {

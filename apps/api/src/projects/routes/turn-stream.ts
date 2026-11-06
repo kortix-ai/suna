@@ -18,7 +18,7 @@ import {
   acceptTurn,
   beginTurn,
   claimInitialTurn,
-  pinOpencodeSession,
+  pinRuntimeSession,
   readSteer,
   relayContent,
   settleTurnEnd,
@@ -166,7 +166,7 @@ export function registerTurnStreamRoutes(): void {
           createdBy: projectSessions.createdBy,
           origin: projectSessions.origin,
           metadata: projectSessions.metadata,
-          opencodeSessionId: projectSessions.runtimeSessionId,
+          runtimeSessionId: projectSessions.runtimeSessionId,
         })
         .from(projectSessions)
         .where(
@@ -206,7 +206,7 @@ export function registerTurnStreamRoutes(): void {
             authenticatedSandboxId,
             authenticatedSandboxMetadata,
             turnStreamMetadata,
-            turnStreamSession.opencodeSessionId ?? null,
+            turnStreamSession.runtimeSessionId ?? null,
           );
         case 'turn_abandoned':
           return abandonTurn(c, body, authenticatedSandboxId);
@@ -230,7 +230,7 @@ export function registerTurnStreamRoutes(): void {
             },
           });
         case 'runtime_session':
-          return pinOpencodeSession(c, body, authenticatedSandboxId, projectId, sessionId);
+          return pinRuntimeSession(c, body, authenticatedSandboxId, projectId, sessionId);
         default:
           return relayContent(c, body, sessionId);
       }

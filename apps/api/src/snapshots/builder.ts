@@ -693,7 +693,7 @@ async function runInlineBuild(
       // Built where its sessions boot, so they never wait for a copy.
       region: identity.region,
       // Cold-only, unified with Daytona: Platinum builds a cold rootfs template
-      // and cold-boots it (entrypoint re-runs → opencode re-inits, ~6s) on spawn
+      // and cold-boots it (entrypoint re-runs → the runtime re-inits) on spawn
       // AND on resume — the SAME path Daytona takes, no provider divergence.
       // Stateful/warm capture used to resume opencode mid-state off a CH memory
       // snapshot, which intermittently wedged it (virtio-net RX stall after

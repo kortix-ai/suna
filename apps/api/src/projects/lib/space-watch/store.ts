@@ -11,6 +11,7 @@ import { and, asc, desc, eq, gt, lt, sql } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../../../feature-flags/registry';
 import { logger } from '../../../lib/logger';
 import { db } from '../../../shared/db';
+import { qualifiedColumn } from '../../../shared/sql-qualified-column';
 import { SPACE_EVENTS_KEEP, SPACE_EVENTS_RETENTION_DAYS, type SpaceEventKind } from './policy';
 import { projectsView } from '../../../workspaces/rows';
 
@@ -132,9 +133,9 @@ export async function loadWatchCandidates(now: Date): Promise<WatchCandidate[]> 
       projectMetadata: projectsView.metadata,
       accountId: projectsView.accountId,
       space: projectSpaces,
-      pending: sql<number>`(SELECT count(*)::int FROM kortix.project_space_events e WHERE e.space_id = ${projectSpaceWatchers.spaceId} AND e.event_id > ${projectSpaceWatchers.cursor})`,
-      urgent: sql<boolean>`EXISTS (SELECT 1 FROM kortix.project_space_events e WHERE e.space_id = ${projectSpaceWatchers.spaceId} AND e.event_id > ${projectSpaceWatchers.cursor} AND e.urgent)`,
-      lastDay: sql<number>`(SELECT count(*)::int FROM kortix.project_space_events e WHERE e.space_id = ${projectSpaceWatchers.spaceId} AND e.created_at > ${dayAgo.toISOString()}::timestamptz)`,
+      pending: sql<number>`(SELECT count(*)::int FROM kortix.project_space_events e WHERE e.space_id = ${qualifiedColumn(projectSpaceWatchers.spaceId)} AND e.event_id > ${qualifiedColumn(projectSpaceWatchers.cursor)})`,
+      urgent: sql<boolean>`EXISTS (SELECT 1 FROM kortix.project_space_events e WHERE e.space_id = ${qualifiedColumn(projectSpaceWatchers.spaceId)} AND e.event_id > ${qualifiedColumn(projectSpaceWatchers.cursor)} AND e.urgent)`,
+      lastDay: sql<number>`(SELECT count(*)::int FROM kortix.project_space_events e WHERE e.space_id = ${qualifiedColumn(projectSpaceWatchers.spaceId)} AND e.created_at > ${dayAgo.toISOString()}::timestamptz)`,
     })
     .from(projectSpaceWatchers)
     .innerJoin(projectsView, eq(projectsView.projectId, projectSpaceWatchers.projectId))

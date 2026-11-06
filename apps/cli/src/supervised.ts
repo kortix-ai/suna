@@ -2,13 +2,12 @@
 // "Am I a binary the platform owns?"
 //
 // Inside a managed Kortix sandbox the platform — not the CLI — decides which
-// `kortix` and which `opencode` exist. The daemon converges both against a
-// signed manifest (kortix-sandbox-agent-server runtime-assets.ts), and the
-// image pins OpenCode's own autoupdate off. A CLI that fetches its own
-// replacement from a PUBLIC release, or pulls a 40 MB OpenCode tarball from
-// registry.npmjs.org, breaks that ownership in a way the platform cannot heal:
-// kortix.com/install writes ~/.local/bin/kortix, which is FIRST on the image
-// PATH, while runtime-assets only ever converges /usr/local/bin/kortix.
+// `kortix` exists. The daemon converges it against a signed manifest
+// (kortix-sandbox-agent-server services/runtime-assets). A CLI that fetches
+// its own replacement from a PUBLIC release breaks that ownership in a way the
+// platform cannot heal: kortix.com/install writes ~/.local/bin/kortix, which
+// is FIRST on the image PATH, while runtime-assets only ever converges
+// /usr/local/bin/kortix.
 //
 // The signal is `KORTIX_SUPERVISED=1`, exported unconditionally by
 // apps/sandbox/entrypoint.sh before it execs the daemon. Every descendant
@@ -29,4 +28,4 @@ export function isSupervised(): boolean {
 
 /** One sentence, used wherever a supervised refusal has to explain itself. */
 export const SUPERVISED_NOTICE =
-  'This sandbox is platform-managed: Kortix converges the `kortix` and `opencode` binaries itself.';
+  'This sandbox is platform-managed: Kortix converges the `kortix` binary itself.';

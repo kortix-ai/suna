@@ -98,8 +98,6 @@ function buildItemInstallPrompt(
  * session would pin is servable (the account's own key). The agent layer is
  * resolved from the metadata mirror only — loading the manifest agents here
  * would duplicate session-create's work for a case the mirror covers.
- * Native (gateway-off) projects have no plan gate: the box runs OpenCode's own
- * providers from the project's keys.
  */
 async function installModelGate(
   loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,

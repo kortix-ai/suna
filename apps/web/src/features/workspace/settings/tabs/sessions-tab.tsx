@@ -4,11 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import {
   BellIcon as BellSolid,
-  CheckCircleIcon as CheckCircleSolid,
-  WarningIcon as DangerTriangleSolid,
   EyeSlashIcon as EyeOffSolid,
-  QuestionIcon as QuestionCircleSolid,
-  ShieldCheckIcon as ShieldCheckSolid,
   SpeakerHighIcon as Volume2,
   type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
@@ -25,7 +21,6 @@ import { Slider } from '@kortix/ui/slider';
 import { Switch } from '@kortix/ui/switch';
 import { NotificationToggle } from '@/features/accounts/settings/notifications-tab';
 import { ErrorState } from '@kortix/ui/error-state';
-import { useNotificationCenter, useNotificationInboxEnabled } from '@kortix/ui/internal/hooks/use-notification-center';
 import { webPushSupported } from '@kortix/ui/internal/notifications/web-push';
 import { useAuth } from '@/features/providers/auth-provider';
 import { isDesktop } from '@kortix/ui/internal/lib/desktop';
@@ -48,7 +43,7 @@ import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-he
 
 const SOUND_PACKS: { id: SoundPack }[] = [
   { id: 'off' },
-  { id: 'opencode' },
+  { id: 'classic' },
   { id: 'kortix' },
 ];
 
@@ -60,7 +55,6 @@ const SOUND_EVENTS: { id: SoundEvent }[] = [
 ];
 
 type NotificationPrefKey = Exclude<keyof WebNotificationPreferences, 'enabled'>;
-type NotificationTypeKey = 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission';
 type NotificationBehaviorKey = 'onlyWhenHidden' | 'playSound';
 /** Where "Enable notifications" can reach: Web Push, the desktop app, or open tabs only. */
 type NotificationReach = 'push' | 'desktop' | 'browser';
@@ -74,28 +68,6 @@ interface LabelDescription {
   label: string;
   description: string;
 }
-
-const NOTIFICATION_TYPE_TOGGLES: {
-  key: NotificationTypeKey;
-  icon: PhosphorIcon;
-}[] = [
-  {
-    key: 'onCompletion',
-    icon: CheckCircleSolid,
-  },
-  {
-    key: 'onError',
-    icon: DangerTriangleSolid,
-  },
-  {
-    key: 'onQuestion',
-    icon: QuestionCircleSolid,
-  },
-  {
-    key: 'onPermission',
-    icon: ShieldCheckSolid,
-  },
-];
 
 const NOTIFICATION_BEHAVIOR_TOGGLES: {
   key: NotificationBehaviorKey;
@@ -113,10 +85,6 @@ const NOTIFICATION_BEHAVIOR_TOGGLES: {
 
 const DEFAULT_NOTIFICATION_PREFERENCES: WebNotificationPreferences = {
   enabled: false,
-  onCompletion: true,
-  onError: true,
-  onQuestion: true,
-  onPermission: true,
   onlyWhenHidden: true,
   playSound: false,
 };
@@ -144,10 +112,6 @@ export interface SessionsTabViewProps {
   ) => void;
   onSendTestNotification?: () => void;
 
-  /** The `notification_center` flag. Off: the four per-browser kind switches; on: the server record. */
-  notificationCenter?: boolean;
-  /** The inbox can also be enabled by Artifact comments. */
-  notificationInbox?: boolean;
   // Notification types (the person's server record)
   notificationKinds?: NotificationPreferences['kinds'];
   /** False when the deployment sends no email: the Email column is hidden. */
@@ -182,8 +146,6 @@ export function SessionsTabView({
   onToggleNotificationsEnabled = () => {},
   onNotificationPreferenceChange = () => {},
   onSendTestNotification = () => {},
-  notificationCenter = false,
-  notificationInbox = notificationCenter,
   notificationKinds = DEFAULT_KIND_PREFERENCES,
   emailAvailable = true,
   hiddenKinds = [],
@@ -222,11 +184,7 @@ export function SessionsTabView({
                 description={
                   notificationPermission === 'denied'
                     ? copy.permissionDenied
-                    : notificationCenter
-                      ? copy.enableDescription[notificationReach]
-                      : notificationPermission === 'granted'
-                        ? copy.permissionGranted
-                        : copy.permissionDefault
+                    : copy.enableDescription[notificationReach]
                 }
                 enabled={notificationPreferences.enabled}
                 onToggle={onToggleNotificationsEnabled}
@@ -254,27 +212,6 @@ export function SessionsTabView({
 
             {notificationPreferences.enabled && (
               <>
-                {!notificationCenter && (
-                  <div className="flex flex-col space-y-3">
-                    <p className="text-muted-foreground text-sm font-medium">
-                      {copy.notificationTypes}
-                    </p>
-                    <div className="divide-y rounded-md border">
-                      {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
-                        <NotificationToggle
-                          key={toggle.key}
-                          icon={toggle.icon}
-                          label={copy.notificationTypesCopy[toggle.key].label}
-                          description={copy.notificationTypesCopy[toggle.key].description}
-                          enabled={notificationPreferences[toggle.key] as boolean}
-                          onToggle={(v) => onNotificationPreferenceChange(toggle.key, v)}
-                          idPrefix="pref-notif-"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 <div className="flex flex-col space-y-3">
                   <p className="text-muted-foreground text-sm font-medium">
                     {copy.behavior}
@@ -303,84 +240,80 @@ export function SessionsTabView({
         )}
       </section>
 
-      {notificationInbox && (
-        <>
-          <Separator />
+      <Separator />
 
-          {/* The person's record, not this browser's: visible whether or not this
-              browser shows notifications, because it also decides what the phone
-              and the email digest get. */}
-          <section className="space-y-3">
-            <SettingsSubsectionHeader
-              title={copy.notificationTypes}
-              description={copy.notificationTypesDescription}
-            />
-            {notificationKindsState === 'error' ? (
-              <ErrorState
-                size="sm"
-                title={copy.preferencesLoadError}
-                action={
-                  <Button variant="outline" size="sm" onClick={onRetryNotificationKinds}>
-                    {copy.retry}
-                  </Button>
-                }
-              />
-            ) : (
-              // A list, not a `Table`: a table earns the pane the wide tier
-              // (tab-content-width.test.ts). Each switch carries the kind and the
-              // channel in its name, so the column labels are visual only.
-              <div className="divide-y rounded-md border">
-                <div
-                  aria-hidden
-                  className="text-muted-foreground flex items-center gap-4 px-4 py-2 text-xs"
-                >
-                  <span className="flex-1" />
-                  <span className={CHANNEL_COLUMN}>{copy.push}</span>
-                  {emailAvailable && <span className={CHANNEL_COLUMN}>{copy.email}</span>}
-                </div>
-                {INBOX_NOTIFICATION_KINDS.filter((kind) => !hiddenKinds.includes(kind)).map((kind) => {
-                  const label = copy.kinds[kind].label;
-                  const channelCell = (channel: NotificationChannel) => (
-                    <span className={CHANNEL_COLUMN}>
-                      {notificationKindsState === 'loading' ? (
-                        <Skeleton className="mx-auto h-5 w-9 rounded-full py-0" />
-                      ) : (
-                        <Switch
-                          aria-label={copy.channelSwitch(
-                            label,
-                            channel === 'push' ? copy.push : copy.email,
-                          )}
-                          checked={notificationKinds[kind][channel]}
-                          onCheckedChange={(value) =>
-                            onNotificationKindChange(kind, channel, value)
-                          }
-                        />
+      {/* The person's record, not this browser's: visible whether or not this
+          browser shows notifications, because it also decides what the phone
+          and the email digest get. */}
+      <section className="space-y-3">
+        <SettingsSubsectionHeader
+          title={copy.notificationTypes}
+          description={copy.notificationTypesDescription}
+        />
+        {notificationKindsState === 'error' ? (
+          <ErrorState
+            size="sm"
+            title={copy.preferencesLoadError}
+            action={
+              <Button variant="outline" size="sm" onClick={onRetryNotificationKinds}>
+                {copy.retry}
+              </Button>
+            }
+          />
+        ) : (
+          // A list, not a `Table`: a table earns the pane the wide tier
+          // (tab-content-width.test.ts). Each switch carries the kind and the
+          // channel in its name, so the column labels are visual only.
+          <div className="divide-y rounded-md border">
+            <div
+              aria-hidden
+              className="text-muted-foreground flex items-center gap-4 px-4 py-2 text-xs"
+            >
+              <span className="flex-1" />
+              <span className={CHANNEL_COLUMN}>{copy.push}</span>
+              {emailAvailable && <span className={CHANNEL_COLUMN}>{copy.email}</span>}
+            </div>
+            {INBOX_NOTIFICATION_KINDS.filter((kind) => !hiddenKinds.includes(kind)).map((kind) => {
+              const label = copy.kinds[kind].label;
+              const channelCell = (channel: NotificationChannel) => (
+                <span className={CHANNEL_COLUMN}>
+                  {notificationKindsState === 'loading' ? (
+                    <Skeleton className="mx-auto h-5 w-9 rounded-full py-0" />
+                  ) : (
+                    <Switch
+                      aria-label={copy.channelSwitch(
+                        label,
+                        channel === 'push' ? copy.push : copy.email,
                       )}
-                    </span>
-                  );
-                  return (
-                    <div key={kind} className="flex items-center gap-4 px-4 py-3">
-                      <div className="min-w-0 flex-1 space-y-0.5">
-                        <p className="text-sm font-medium">{label}</p>
-                        <p className="text-muted-foreground text-xs text-pretty">
-                          {copy.kinds[kind].description}
-                        </p>
-                      </div>
-                      {channelCell('push')}
-                      {emailAvailable &&
-                        (NEVER_EMAILED.includes(kind) ? (
-                          <span aria-hidden className={CHANNEL_COLUMN} />
-                        ) : (
-                          channelCell('email')
-                        ))}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </>
-      )}
+                      checked={notificationKinds[kind][channel]}
+                      onCheckedChange={(value) =>
+                        onNotificationKindChange(kind, channel, value)
+                      }
+                    />
+                  )}
+                </span>
+              );
+              return (
+                <div key={kind} className="flex items-center gap-4 px-4 py-3">
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <p className="text-sm font-medium">{label}</p>
+                    <p className="text-muted-foreground text-xs text-pretty">
+                      {copy.kinds[kind].description}
+                    </p>
+                  </div>
+                  {channelCell('push')}
+                  {emailAvailable &&
+                    (NEVER_EMAILED.includes(kind) ? (
+                      <span aria-hidden className={CHANNEL_COLUMN} />
+                    ) : (
+                      channelCell('email')
+                    ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <Separator />
 
@@ -471,9 +404,9 @@ function notificationReach(): NotificationReach {
 }
 
 /** Container: owns every store hook and renders `SessionsTabView`. Only ever
- *  mounted while this tab is active. `projectId` is absent on the standalone
- *  `/settings` route: the flag then reads any cached project. */
-export function SessionsTab({ projectId }: { projectId?: string }) {
+ *  mounted while this tab is active. The same on every route: notifications
+ *  are the person's, not a project's. */
+export function SessionsTab() {
   const t = useTranslations('settings.sessions');
   const soundPreferences = useSoundStore((s) => s.preferences);
   const setSoundPack = useSoundStore((s) => s.setPack);
@@ -490,12 +423,7 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
   }, [syncNotificationPermission]);
 
   const { user } = useAuth();
-  const notificationCenter = useNotificationCenter(projectId);
-  const notificationInbox = useNotificationInboxEnabled(projectId);
-  const kindPreferences = useNotificationPreferences({
-    userId: user?.id,
-    enabled: notificationInbox,
-  });
+  const kindPreferences = useNotificationPreferences({ userId: user?.id });
 
   const handleSendTestNotification = () => {
     sendWebNotification(
@@ -519,7 +447,7 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
       onSoundEventToggle={setSoundEventEnabled}
       onSoundPreview={previewSound}
       onEnableCompletionSound={() => {
-        if (soundPreferences.pack === 'off') setSoundPack('opencode');
+        if (soundPreferences.pack === 'off') setSoundPack('classic');
         if (soundPreferences.volume <= 0) setSoundVolume(0.5);
         setSoundEventEnabled('completion', true);
         setNotificationPreference('playSound', true);
@@ -532,8 +460,6 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
       onToggleNotificationsEnabled={() => void toggleNotificationsEnabled()}
       onNotificationPreferenceChange={setNotificationPreference}
       onSendTestNotification={handleSendTestNotification}
-      notificationCenter={notificationCenter}
-      notificationInbox={notificationInbox}
       notificationKinds={kindPreferences.data?.kinds}
       emailAvailable={kindPreferences.data?.email_available ?? true}
       hiddenKinds={kindPreferences.data?.hidden_kinds ?? []}
@@ -567,29 +493,9 @@ function useSessionCopy() {
       desktop: t('enableDescriptionDesktop'),
       browser: t('enableDescriptionBrowser'),
     },
-    permissionGranted: t('permissionGranted'),
     permissionDenied: t('permissionDenied'),
-    permissionDefault: t('permissionDefault'),
     notificationTypes: t('notificationTypes'),
     notificationTypesDescription: t('notificationTypesDescription'),
-    notificationTypesCopy: {
-      onCompletion: {
-        label: t('types.onCompletion.label'),
-        description: t('types.onCompletion.description'),
-      },
-      onError: {
-        label: t('types.onError.label'),
-        description: t('types.onError.description'),
-      },
-      onQuestion: {
-        label: t('types.onQuestion.label'),
-        description: t('types.onQuestion.description'),
-      },
-      onPermission: {
-        label: t('types.onPermission.label'),
-        description: t('types.onPermission.description'),
-      },
-    },
     kinds: Object.fromEntries(
       INBOX_NOTIFICATION_KINDS.map((kind: InboxNotificationKind) => [kind, kindCopy(kind)]),
     ) as Record<InboxNotificationKind, LabelDescription>,
@@ -619,9 +525,9 @@ function useSessionCopy() {
         label: t('soundPacks.off.label'),
         description: t('soundPacks.off.description'),
       },
-      opencode: {
-        label: t('soundPacks.opencode.label'),
-        description: t('soundPacks.opencode.description'),
+      classic: {
+        label: t('soundPacks.classic.label'),
+        description: t('soundPacks.classic.description'),
       },
       kortix: {
         label: t('soundPacks.kortix.label'),

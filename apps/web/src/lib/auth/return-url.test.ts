@@ -140,6 +140,12 @@ describe('resolveNewAccountReturnUrl', () => {
     expect(isSignupSafeReturnUrl('/marketplace?q=1')).toBe(true);
   });
 
+  test('a credit-code link survives sign-up: a new account redeems its own code', () => {
+    expect(resolveNewAccountReturnUrl('/redeem?code=FRONTIER2026')).toBe('/redeem?code=FRONTIER2026');
+    expect(isSignupSafeReturnUrl('/redeem')).toBe(true);
+    expect(isSignupSafeReturnUrl('/redeemer')).toBe(false);
+  });
+
   test('is default-deny: an unknown route is not signup-safe', () => {
     // A route added later must fail into the user's own project, never into
     // whatever the visitor had open before they had an account.

@@ -318,7 +318,7 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
   }
   // `--out <file>`: the full result goes to the file, a summary to stdout
   // (bytes, the shape of `data`, the path). Large results stay out of the
-  // agent's context, where OpenCode would truncate them.
+  // agent's context, where the harness would truncate them.
   // The tool ran and reported a failure (MCP `isError`, GraphQL `errors`):
   // the call did not do its job, so the exit code says so.
   const raw = result as typeof result & { upstream_error?: string; error?: string };

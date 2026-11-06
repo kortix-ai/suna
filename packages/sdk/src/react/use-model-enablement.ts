@@ -7,7 +7,7 @@ import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
 import { getWorkspaceModelPicker } from '../core/rest/projects-client';
 import { setWorkspaceModelEnablement } from '../core/rest/projects-client/model-enablement';
 import { applyEnablementToProviderList } from './provider-selection';
-import type { ProviderListResponse } from './use-opencode-sessions';
+import type { ProviderListResponse } from './use-runtime-sessions';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 

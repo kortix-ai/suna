@@ -45,7 +45,6 @@ import { useDesktopShell } from '../../internal/layout/sidebar-opener';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { useRenameSession } from '../actions/use-rename-session';
 import { SessionDeleteModal } from '../actions/session-delete-modal';
-import { useNotificationCenter } from '../../internal/hooks/use-notification-center';
 import {
   useUiComponents,
   useUiHostConfig,
@@ -211,17 +210,14 @@ export function SessionSiteHeader({
   });
   // Mute: the caller's watch on this session (KRTX-1742). Anyone who can open
   // it may mute it; unmuting a session you never watched makes you a watcher.
-  // Only with the project's `notification_center` flag on: off, the watch
-  // routes answer 403 and the item does not exist.
   const viewerId = useUiViewerId();
-  const notificationCenter = useNotificationCenter(projectId);
   const sessionWatch = useSessionWatch({
     userId: viewerId,
     projectId,
     sessionId: projectSessionId,
-    enabled: isProjectSession && !parent && notificationCenter,
+    enabled: isProjectSession && !parent,
   });
-  const watching = notificationCenter ? sessionWatch.data?.watching : undefined;
+  const watching = sessionWatch.data?.watching;
   const toggleWatch = () => {
     if (watching === undefined) return;
     sessionWatch

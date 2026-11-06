@@ -30,13 +30,6 @@ import {
 const SECRET_RELAY_PATH = /^\/v1\/projects\/[^/]+\/secrets\/[^/]+\/relay(?:\/|$)/;
 
 /**
- * The live socket of an Artifact (KRTX-3669). Authenticated by a single-use
- * `?ticket=` from `POST …/live/ticket`: a browser cannot set `Authorization`
- * on a WebSocket, and a JWT never goes into a URL.
- */
-const ARTIFACT_LIVE_PATH = /^\/v1\/projects\/([^/]+)\/artifacts\/([^/]+)\/live$/;
-
-/**
  * Route one inbound request. Everything here runs inside the audit boundary
  * (`runInboundAudit`, called from `fetch` below): each branch that answers
  * outside Hono names its entrypoint class so its row says what it was.
@@ -111,14 +104,6 @@ export async function dispatchInbound(
     return upgradeChromeWs(req, server);
   }
 
-  // ── Artifact live presence ──────────────────────────────────────────
-  // Presence and change pings for one Artifact. The ticket is the credential;
-  // the view check runs again at the upgrade and every 60 s after it.
-  const artifactLive = isWsUpgrade ? ARTIFACT_LIVE_PATH.exec(asLegacyWorkspaceRoute(url.pathname)) : null;
-  if (artifactLive) {
-    return upgradeArtifactLiveWs(req, url, artifactLive[1]!, artifactLive[2]!, server);
-  }
-
   // ── Preview WebSocket proxy ─────────────────────────────────────────
   // Path-based preview upgrades (`/v1/p/{sandboxId}/{port}/...`) — today the
   // xterm PTY terminal. Authenticate via the `?token=` query param (browsers
@@ -133,7 +118,7 @@ export async function dispatchInbound(
 
 // The per-request stream-timeout guards, moved verbatim.
 function applyStreamTimeouts(req: Request, url: URL, server: any): void {
-  // Sandbox preview traffic includes OpenCode long-poll and SSE routes. Let
+  // Sandbox preview traffic includes the runtime's long-poll and SSE routes. Let
   // the proxy's own upstream timeout decide instead of Bun closing the client
   // socket early with an empty reply.
   if (url.pathname.includes('/v1/p/')) {
@@ -200,45 +185,6 @@ async function upgradeChromeWs(req: Request, server: any): Promise<Response | un
   }
   if (server.upgrade(req, { data: prepared.data })) return undefined;
   return new Response(JSON.stringify({ error: 'Browser WebSocket upgrade failed' }), {
-    status: 500,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-async function upgradeArtifactLiveWs(
-  req: Request,
-  url: URL,
-  projectId: string,
-  artifactId: string,
-  server: any,
-): Promise<Response | undefined> {
-  setInboundAuditEntrypoint('ws_upgrade', 'ws:/v1/projects/:projectId/artifacts/:artifactId/live');
-  if (!schemaReady) {
-    return new Response(JSON.stringify({ error: 'Service starting up, try again shortly' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json', 'Retry-After': '5' },
-    });
-  }
-  annotateAuditEvent({ resourceType: 'artifact', resourceId: isUuid(artifactId) ? artifactId : undefined });
-  const { prepareArtifactLiveUpgrade } = await import('./artifacts/live-hub');
-  const prepared = await prepareArtifactLiveUpgrade({
-    projectId,
-    artifactId,
-    ticket: url.searchParams.get('ticket'),
-    ip: clientIpFromHeaders((name) => req.headers.get(name)),
-  });
-  if (!prepared.ok) {
-    return new Response(JSON.stringify(prepared.body), {
-      status: prepared.status,
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store',
-        ...(prepared.status === 503 ? { 'Retry-After': '5' } : {}),
-      },
-    });
-  }
-  if (server.upgrade(req, { data: prepared.data })) return undefined;
-  return new Response(JSON.stringify({ error: 'Artifact live WebSocket upgrade failed' }), {
     status: 500,
     headers: { 'Content-Type': 'application/json' },
   });

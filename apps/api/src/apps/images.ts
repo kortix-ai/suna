@@ -64,6 +64,7 @@ import { getSandboxProvider } from '../snapshots/providers';
 import { releaseVolumesOf } from './volumes';
 import { SnapshotInUseError } from '../snapshots/providers/errors';
 import { PLATINUM_BUILD_FAILED_RE } from '../snapshots/providers/platinum-templates';
+import { transitionAppRuntimes } from './runtime-status';
 import {
   APP_DEPLOYMENT_PREFIX,
   APP_IMAGE_PREFIX,
@@ -524,17 +525,14 @@ export async function markAppRuntimesDeleted(runtimeIds: string[], now = new Dat
   if (runtimeIds.length === 0) return;
   // The box is gone (its delete committed the mount): its single-writer lock goes with it.
   await releaseVolumesOf(runtimeIds);
-  await db.update(appRuntimes)
-    .set({
-      status: 'deleted',
-      stoppedAt: sql`coalesce(${appRuntimes.stoppedAt}, ${now.toISOString()}::timestamptz)`,
-      activityLeaseUntil: null,
-      idleDeadlineAt: null,
-      wakeLeaseOwner: null,
-      wakeLeaseUntil: null,
-      updatedAt: now,
-    })
-    .where(inArray(appRuntimes.runtimeId, runtimeIds));
+  await transitionAppRuntimes('delete', inArray(appRuntimes.runtimeId, runtimeIds), {
+    stoppedAt: sql`coalesce(${appRuntimes.stoppedAt}, ${now.toISOString()}::timestamptz)`,
+    activityLeaseUntil: null,
+    idleDeadlineAt: null,
+    wakeLeaseOwner: null,
+    wakeLeaseUntil: null,
+    updatedAt: now,
+  });
   for (const runtimeId of runtimeIds) {
     await pauseComputeSession(runtimeId, now).catch((error) => {
       logger.error('[apps] compute meter close failed for a deleted runtime', {

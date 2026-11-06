@@ -73,7 +73,7 @@ export {
 
 // Every declared agent's grant (consumed by the connectors rules matrix).
 export { extractAgents, grantsByAgent, loadProjectAgents } from './agents';
-export { mentionTokens, mentionsMember } from './lib/mentions';
+export { mentionTokens } from './lib/mentions';
 export { resolveAndAuthorizeAgentAs } from './lib/agent-access';
 export { loadVisibleSession } from './lib/session-visibility';
 export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
@@ -251,3 +251,9 @@ export {
   splitProjectIntoNewAccount,
   type SplitCopiedIds,
 } from './lib/workspace-split-copy';
+
+// Session and sandbox status transitions (consumed by the preview proxy's
+// lifecycle writes) and the canonical live session set (consumed by every
+// domain that counts or stops live sessions).
+export { settleLiveSessionsOfAccounts, transitionSandbox, transitionSession } from './session-lifecycle/status-transitions';
+export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './lib/session-status';

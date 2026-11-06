@@ -132,8 +132,8 @@ export interface AgentDraft {
 }
 
 /**
- * A served block with its behavior under `behavior` only. The API answers the
- * pre-W4 `opencode` alias beside it; a draft that kept both would send two
+ * A served block with its behavior under `behavior` only. An older API answers
+ * the pre-W4 `opencode` alias beside it; a draft that kept both would send two
  * copies of every edit.
  */
 export function behaviorBlock(block: AgentConfigBlock): AgentConfigBlock {

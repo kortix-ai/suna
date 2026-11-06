@@ -67,8 +67,8 @@ import { deriveKortixApiBase } from './session-sandbox-env-build';
  * `$KORTIX_API_URL`. A loopback/unspecified host is never reachable from
  * inside a remote sandbox, so a session booted against one is
  * dead-on-arrival: repo materialization can't fetch its git clone credential and
- * the daemon ends up reporting "OpenCode runtime is not ready" with a cryptic
- * "Unable to connect" boot error ~60s later. Detect it up front so session
+ * the runtime never becomes ready, with a cryptic "Unable to connect" boot
+ * error ~60s later. Detect it up front so session
  * creation fails fast with an actionable message instead.
  *
  * Returns a human-readable reason string when unreachable, or null when fine.

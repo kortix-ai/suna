@@ -500,7 +500,7 @@ describe('runtime channel: forwarded verbatim, never renumbered', () => {
     expect(status!.data.seq).toBe(2016);
     expect(status!.data.channel).toBe('runtime');
     expect(status!.data.epoch).toBe('bmtaokkdb0piayh');
-    // `payload` is OpenCode's `properties` verbatim — an existing reducer must
+    // `payload` is the runtime event's `properties` verbatim — an existing reducer must
     // keep working without a translation layer.
     expect(status!.data.payload).toEqual({ sessionID: 'ses_abc', status: { type: 'busy' } });
     // No control cursor leaked onto a runtime frame.
@@ -881,11 +881,9 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
     expect(presenceExpiries).toEqual([]);
   });
 
-  const FLAG_ON = { experimental: { notification_center: true } };
-
   // KRTX-1742: a closed tab's lease held back the phone and Web Push for up to 90 s.
   test('the stream ending expires that tab lease at once; an open stream expires nothing', async () => {
-    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata: FLAG_ON }, actor: { credential: { kind: 'jwt' } } } as never;
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
     sandboxRow = { externalId: 'box-1', status: 'stopped' };
     const response = await openStream(`?tab_id=${TAB}`);
     const reader = response.body!.getReader();
@@ -902,7 +900,7 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
   // KRTX-1742 review: a stream that never wrote the lease expired the one a
   // newer stream of the same tab had just renewed.
   test('a stream that renewed no lease expires nothing when it ends', async () => {
-    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata: FLAG_ON }, actor: { credential: { kind: 'jwt' } } } as never;
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
     sandboxRow = { externalId: 'box-1', status: 'stopped' };
     renewResult = null;
     const response = await openStream(`?tab_id=${TAB}`);
@@ -915,20 +913,18 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
     expect(presenceExpiries).toEqual([]);
   });
 
-  // The notification_center flag off (the default): the lease lives to its
-  // expiry after the stream ends, as before KRTX-1742.
-  test('with the notification_center flag off, the stream ending expires nothing', async () => {
-    for (const metadata of [{}, { experimental: { notification_center: false } }]) {
-      loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata }, actor: { credential: { kind: 'jwt' } } } as never;
-      sandboxRow = { externalId: 'box-1', status: 'stopped' };
-      const response = await openStream(`?tab_id=${TAB}`);
-      const reader = response.body!.getReader();
-      await reader.read();
-      await reader.cancel();
-    }
-    await Bun.sleep(50);
-    expect(presenceRenewals).toHaveLength(2);
-    expect(presenceExpiries).toEqual([]);
+  // The flag graduated on 2026-11-06: a stored override changes nothing.
+  test('with a stored notification_center: false override, the stream ending still expires the tab lease', async () => {
+    const metadata = { experimental: { notification_center: false } };
+    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata }, actor: { credential: { kind: 'jwt' } } } as never;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    const response = await openStream(`?tab_id=${TAB}`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    for (let i = 0; i < 20 && presenceExpiries.length === 0; i++) await Bun.sleep(5);
+    expect(presenceRenewals).toHaveLength(1);
+    expect(presenceExpiries).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB, wroteUntil: LEASE_WRITTEN_UNTIL }]);
   });
 });
 
