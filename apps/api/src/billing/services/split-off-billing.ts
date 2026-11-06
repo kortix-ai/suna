@@ -10,14 +10,14 @@
  *
  * - Source on Free (or paying only through top-ups or a contract): the
  *   split-off goes on Free WITH free-credit eligibility and gets one Free
- *   monthly grant now (wallet key `split_off_grant:<runId>`). This is a one-time
+ *   monthly grant now (wallet key `split_off_grant:<runId>:<newAccountId>`). This is a one-time
  *   exception to "free credits once per person": the person did not choose to
  *   have a second workspace. No `free_credit_claims` row is written.
  * - Source on a paid plan: the split-off gets the keeper's plan comped, with
  *   no Stripe subscription, until min(the keeper's current period end,
  *   now + 31 days), stored in `credit_accounts.comp_plan_until`. It gets the
  *   plan's monthly credits pro-rated to the comp window, expiring at the comp
- *   end (wallet key `split_off_comp:<runId>`). At the comp end the billing
+ *   end (wallet key `split_off_comp:<runId>:<newAccountId>`). At the comp end the billing
  *   rotation (`expireSplitOffComps`) moves it to Free with eligibility.
  *
  * The plan write goes through `applyAdminOverride` (the operator write path)

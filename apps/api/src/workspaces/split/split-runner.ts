@@ -181,7 +181,8 @@ async function planAccount(accountId: string): Promise<{ planned: number; held: 
       planned_at: new Date().toISOString(),
     };
     if (existing) {
-      await db.execute(sql`UPDATE kortix.workspace_split_runs SET plan = ${JSON.stringify(plan)}::jsonb, phase = ${phase}, updated_at = now()
+      // Merge, never replace: a reopened run keeps `reversed_to_account_ids`.
+      await db.execute(sql`UPDATE kortix.workspace_split_runs SET plan = plan || ${JSON.stringify(plan)}::jsonb, phase = ${phase}, updated_at = now()
         WHERE run_id = ${existing.run_id} AND phase IN ('planned', 'held')`);
     } else {
       await db.insert(workspaceSplitRuns).values({ projectId: project.project_id, fromAccountId: accountId, phase, mode: 'dry_run', plan });
@@ -327,21 +328,21 @@ async function afterMoveCommitted(run: MovedRun, deps: ApplyDeps): Promise<void>
   await finishAccountIfLast(run.fromAccountId, deps);
 }
 
-/** The wallet key of a run's billing: the run id; after a reopen, the run id and its new target. */
-async function billingRunKey(runId: string, toAccountId: string): Promise<string> {
-  const [row] = await db.execute<{ reopened: boolean }>(sql`
-    SELECT jsonb_array_length(COALESCE(plan->'reversed_to_account_ids', '[]'::jsonb)) > 0 AS reopened
-      FROM kortix.workspace_split_runs WHERE run_id = ${runId}`);
-  // credit_ledger.stripe_event_id is unique across accounts: a reopened run
-  // splits into a fresh account, which needs its own grant key.
-  return row?.reopened ? `${runId}:${toAccountId}` : runId;
+/**
+ * The wallet key of a run's billing: the run id and its target account. A
+ * reopened run splits into a fresh account, and credit_ledger.stripe_event_id
+ * is unique across accounts, so a key of the run alone would replay the
+ * dormant account's grant and leave the fresh one with nothing.
+ */
+function billingRunKey(runId: string, toAccountId: string): string {
+  return `${runId}:${toAccountId}`;
 }
 
 /** `applySplitOffBilling` for one done run; the result goes to plan.billing. A failure stays for the tick to retry. */
 async function applyRunBilling(run: MovedRun): Promise<boolean> {
   try {
     const billing = await applySplitOffBilling({
-      runId: await billingRunKey(run.runId, run.toAccountId), sourceAccountId: run.fromAccountId, newAccountId: run.toAccountId,
+      runId: billingRunKey(run.runId, run.toAccountId), sourceAccountId: run.fromAccountId, newAccountId: run.toAccountId,
     });
     await db.execute(sql`UPDATE kortix.workspace_split_runs
       SET plan = plan || jsonb_build_object('billing', ${JSON.stringify(billing)}::jsonb), updated_at = now()

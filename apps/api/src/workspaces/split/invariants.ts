@@ -174,6 +174,10 @@ async function i5(runs: DoneRun[]): Promise<InvariantResult> {
     if (money.target_wallet !== 1) violations.push(`target_wallet:${run.run_id}`);
     // One split-off grant per move (C6: split_off_grant / split_off_comp, keyed by run).
     if (money.split_grants > 1) violations.push(`split_grants:${run.run_id}`);
+    // ... and at least one when the billing granted credits: a replayed key
+    // reports the grant without a row on this account.
+    const granted = Number((run.plan.billing as Record<string, unknown> | undefined)?.grantedCredits ?? 0);
+    if (granted > 0 && money.split_grants < 1) violations.push(`split_grant_missing:${run.run_id}`);
     if (money.billing_late) violations.push(`billing_pending:${run.run_id}`);
     // The moved boxes' running meters bill the workspace that holds them now.
     if (money.source_open_compute > 0) violations.push(`source_open_compute:${run.run_id}`);

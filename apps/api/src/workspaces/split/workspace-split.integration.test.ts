@@ -384,7 +384,7 @@ withDb('workspace split', () => {
     // free-credit eligibility as a one-time exception, and gets one grant.
     const [wallet] = await db.execute<{ tier: string; free_credits_eligible: boolean; grants: number; comp: string | null }>(sql`
       SELECT c.tier, c.free_credits_eligible, c.comp_plan_until::text AS comp,
-        (SELECT count(*)::int FROM kortix.credit_ledger l WHERE l.account_id = c.account_id AND l.stripe_event_id = ${`split_off_grant:${run.runId}`}) AS grants
+        (SELECT count(*)::int FROM kortix.credit_ledger l WHERE l.account_id = c.account_id AND l.stripe_event_id = ${`split_off_grant:${run.runId}:${target}`}) AS grants
         FROM kortix.credit_accounts c WHERE c.account_id = ${target}`);
     expect(wallet).toEqual({ tier: 'free', free_credits_eligible: true, grants: 1, comp: null });
     expect(run.plan.billing).toMatchObject({ kind: 'free' });
@@ -495,10 +495,21 @@ withDb('workspace split', () => {
     const reopened = (await runFor(MOVED))!;
     expect([reopened.runId, reopened.phase, reopened.toAccountId, reopened.attempts]).toEqual([first.runId, 'planned', null, 0]);
     expect(reopened.plan.reversed_to_account_ids).toEqual([first.toAccountId]);
+    // The worker plans before it applies: a plan pass keeps the reopen record.
+    resetWorkspaceSplitPlanClock();
+    await planWorkspaceSplits({ accountIds: [LEGACY] });
+    expect((await runFor(MOVED))!.plan.reversed_to_account_ids).toEqual([first.toAccountId]);
 
     expect(await applyWorkspaceSplitRun(first.runId, { siteStorage: storage })).toBe('done');
     const again = (await runFor(MOVED))!;
     expect(again.toAccountId).not.toBe(first.toAccountId);
+    // The fresh split-off gets its own grant: the dormant account's grant is not a replay of it.
+    const [wallet] = await db.execute<{ balance: string; grants: number }>(sql`
+      SELECT c.balance_precise::text AS balance,
+        (SELECT count(*)::int FROM kortix.credit_ledger l WHERE l.account_id = c.account_id AND l.stripe_event_id LIKE 'split\_off\_%') AS grants
+        FROM kortix.credit_accounts c WHERE c.account_id = ${again.toAccountId}`);
+    expect(wallet?.grants).toBe(1);
+    expect(Number(wallet?.balance)).toBeGreaterThan(0);
     expect((await accountOfProject(MOVED))).toEqual({ accountId: again.toAccountId!, splitPending: false });
     const [source] = await db.select({ name: accounts.name }).from(accounts).where(eq(accounts.accountId, LEGACY));
     expect(source?.name).toBe('Keeper');
