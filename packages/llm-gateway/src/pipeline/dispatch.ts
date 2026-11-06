@@ -151,9 +151,9 @@ export function withUpstreamHeadersTimeout(
   };
 }
 
-/** The provider's own error, relayed with its status and a `retry-after` when it sent one. */
-export function rawProviderError(error: UpstreamHttpError): Response {
-  return new Response(providerClientErrorBody(error.status, error.body || JSON.stringify({ error: { message: error.message } })), {
+/** The provider's own error, relayed with its status and a `retry-after` when it sent one. `sentBytes` is the body's size, for `request_too_large`. */
+export function rawProviderError(error: UpstreamHttpError, sentBytes = 0): Response {
+  return new Response(providerClientErrorBody(error.status, error.body || JSON.stringify({ error: { message: error.message } }), sentBytes), {
     status: error.status,
     headers: {
       'content-type': 'application/json',
