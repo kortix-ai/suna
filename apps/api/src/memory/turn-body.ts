@@ -82,11 +82,15 @@ export function withThreadFiles(body: ArrayBuffer | undefined, files: { folder: 
   return encode({ ...parsed, [THREAD_FILES_BODY_KEY]: files });
 }
 
-/** The JSON object body with `noReply: true`: the message joins the conversation and no turn runs. Any other body is returned as it is. */
-export function withNoReply(body: ArrayBuffer | undefined): ArrayBuffer | undefined {
+/**
+ * The JSON object body marked "no reply": the message joins the conversation
+ * and no turn runs. The runtime relay route (`kortix/runtime/...`) spells it
+ * `no_reply`, the session route `noReply`. Any other body is returned as it is.
+ */
+export function withNoReply(body: ArrayBuffer | undefined, path: string): ArrayBuffer | undefined {
   const parsed = jsonObject(body);
   if (!parsed) return body;
-  return encode({ ...parsed, noReply: true });
+  return encode({ ...parsed, [/(^|\/)kortix\/runtime\/sessions\//.test(path) ? 'no_reply' : 'noReply']: true });
 }
 
 /** The JSON object body with the memory `system` set (any `system` in it is replaced); any other body is returned as it is. */

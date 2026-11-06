@@ -23,3 +23,16 @@ describe('a message that @mentions only people is for them, not for the agent', 
     expect(addressesOnlyPeople('@researcher find flights', people, ADA)).toBe(false);
   });
 });
+
+describe('the no-reply mark is spelled the way the route reads it', () => {
+  test('the runtime relay route reads no_reply; the session route reads noReply; a body that is not JSON stays as it is', async () => {
+    const { withNoReply } = await import('../../memory/turn-body');
+    const body = new TextEncoder().encode(JSON.stringify({ parts: [{ type: 'text', text: '@ben hi' }] })).buffer as ArrayBuffer;
+    const read = (b: ArrayBuffer | undefined) => JSON.parse(new TextDecoder().decode(b)) as Record<string, unknown>;
+    expect(read(withNoReply(body, '/kortix/runtime/sessions/ses_1/prompt'))).toMatchObject({ no_reply: true });
+    expect(read(withNoReply(body, '/proxy/8000/kortix/runtime/sessions/ses_1/prompt'))).toMatchObject({ no_reply: true });
+    expect(read(withNoReply(body, '/session/ses_1/message'))).toMatchObject({ noReply: true });
+    const raw = new TextEncoder().encode('not json').buffer as ArrayBuffer;
+    expect(withNoReply(raw, '/kortix/runtime/sessions/ses_1/prompt')).toBe(raw);
+  });
+});

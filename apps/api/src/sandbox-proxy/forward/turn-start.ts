@@ -400,8 +400,6 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   // A person's message in a channel notifies the people it @mentions, off the turn's path.
   if (where?.space?.kind === 'channel' && req.userId && !req.sandboxAuthored) {
     void notifyPersonMentions(req, state.requestBody);
-    // A message that @mentions only people is for them: it joins the thread, and the agent does not answer.
-    if (await personOnlyMessage(req, state.requestBody)) state.requestBody = withNoReply(state.requestBody);
   }
   const put = (parts: readonly (string | null | undefined)[]) => {
     const system = turnSystemText(where?.system ?? null, [thread?.system, ...parts]);
@@ -447,16 +445,37 @@ async function addMemoryTurnLayers(req: ForwardRequest, state: ForwardState): Pr
   }
 }
 
-/** True when a person's message @mentions only other people (`messageAddressesOnlyPeople`); `chat` off: false. Never throws. */
-async function personOnlyMessage(req: ForwardRequest, body: ArrayBuffer | undefined): Promise<boolean> {
+/**
+ * A person's message in a channel thread that @mentions only other people
+ * (`messageAddressesOnlyPeople`) is for them: the body is marked no-reply, so
+ * the message joins the thread and no turn runs. Runs before the turn identity
+ * is read (`extractTurnIdentity`), so the ledger starts no turn for it. `chat`
+ * off, a sandbox's own request, any other route or any failure: the body as it is.
+ */
+export async function markMessageForPeople(input: {
+  record: SandboxRecord;
+  userId: string | null | undefined;
+  sandboxAuthored: boolean;
+  method: string;
+  path: string;
+  body: ArrayBuffer | undefined;
+}): Promise<ArrayBuffer | undefined> {
+  if (input.sandboxAuthored || !input.userId || !isMemoryTurnRoute(input.method, input.path)) return input.body;
   try {
-    if (!(await memoryChannelsOn(req.record.projectId))) return false;
     const { personMessageOf } = await import('../../memory/thread-files');
-    const message = personMessageOf(body);
-    if (!message?.text.includes('@')) return false;
-    return await messageAddressesOnlyPeople({ accountId: req.record.accountId, projectId: req.record.projectId, authorId: req.userId, text: message.text });
-  } catch {
-    return false;
+    const message = personMessageOf(input.body);
+    if (!message?.text.includes('@')) return input.body;
+    if (!(await memoryChannelsOn(input.record.projectId))) return input.body;
+    const where = await sessionWhereTurn(input.record.projectId, input.record.sessionId);
+    if (where?.space?.kind !== 'channel') return input.body;
+    const forPeople = await messageAddressesOnlyPeople({ accountId: input.record.accountId, projectId: input.record.projectId, authorId: input.userId, text: message.text });
+    return forPeople ? withNoReply(input.body, input.path) : input.body;
+  } catch (error) {
+    logger.warn('[space-posts] the message was forwarded as a prompt; its mentions were not read', {
+      session_id: input.record.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return input.body;
   }
 }
 

@@ -26,7 +26,7 @@ import {
 } from './access';
 import { decideClientAbort, decideClientRewind } from './abort-authority';
 import { forwardWithRetry } from './retry';
-import { claimPromptDeliveryOnce, convergeTurnStartRuntime, createTurnLifecycle } from './turn-start';
+import { claimPromptDeliveryOnce, convergeTurnStartRuntime, createTurnLifecycle, markMessageForPeople } from './turn-start';
 import { wakeOrRefuseInactiveSandbox } from './wake';
 
 // === Core HTTP forwarder ======================================================
@@ -311,6 +311,9 @@ export async function forwardToSandbox(
     prefetchedIngress = converged.prefetchedIngress;
     if (converged.refusal) return converged.refusal;
   }
+
+  // A message to people only joins the thread with no turn: marked before the claim and the turn identity read it.
+  requestBody = await markMessageForPeople({ record, userId, sandboxAuthored, method, path: remainingPath, body: requestBody });
 
   const claim = claimPromptDeliveryOnce({
     promptDelivery,
