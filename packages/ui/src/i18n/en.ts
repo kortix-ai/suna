@@ -8410,7 +8410,7 @@ const catalog = {
       "composerKeys": "Enter to send · Shift+Enter for a new line",
       "closeSelection": "Discard selected passage",
       "preparingSelection": "Preparing selected passage…",
-      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a whole-Artifact comment.",
+      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a comment on the whole artifact.",
       "commentSelection": "Comment",
       "selectionTooLong": "This passage is too long to comment on. Select {max} characters or fewer.",
       "selectionUnavailable": "This passage cannot be anchored. Select another passage.",
@@ -8418,8 +8418,8 @@ const catalog = {
       "commentSaveFailed": "Could not save the document. Try again before commenting.",
       "events": {
         "saved": "saved a version",
-        "published": "published the Artifact",
-        "renamed": "renamed the Artifact",
+        "published": "published the artifact",
+        "renamed": "renamed the artifact",
         "visibility_changed": "changed visibility",
         "shared_with_changed": "changed who can view",
         "restored": "restored a version",
@@ -8509,7 +8509,7 @@ const catalog = {
     "showAll": "Show all",
     "live": {
       "here": "Here now",
-      "hereLabel": "On this Artifact now: {names}",
+      "hereLabel": "On this artifact now: {names}",
       "reconnecting": "Reconnecting…",
       "you": "You",
       "agents": "Agents",
@@ -8545,7 +8545,11 @@ const catalog = {
     "viewingOldUndated": "You are viewing an earlier version.",
     "exportWaiting": "Saving your edits, then exporting…",
     "exportBlocked": "Export stopped: your latest edits are not saved.",
-    "clearFilters": "Clear filters"
+    "clearFilters": "Clear filters",
+    "linkCopyFailed": "Could not copy the link. Select it in the field and copy it.",
+    "shareDropsPeople": "{count, plural, one {Saving removes the person you added. Only Private keeps a list of people.} other {Saving removes the # people you added. Only Private keeps a list of people.}}",
+    "askAgentHistoryError": "Could not load earlier chats.",
+    "embedUnavailable": "This link has no preview, so it stays a link."
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",

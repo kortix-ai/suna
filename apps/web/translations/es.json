@@ -25157,7 +25157,11 @@
     "viewingOldUndated": "Estás viendo una versión anterior.",
     "exportWaiting": "Guardando tus cambios y luego exportando…",
     "exportBlocked": "Exportación detenida: tus últimos cambios no están guardados.",
-    "clearFilters": "Quitar filtros"
+    "clearFilters": "Quitar filtros",
+    "linkCopyFailed": "No se pudo copiar el enlace. Selecciónalo en el campo y cópialo.",
+    "shareDropsPeople": "{count, plural, one {Al guardar se quita la persona que añadiste. Solo Privado mantiene una lista de personas.} other {Al guardar se quitan las # personas que añadiste. Solo Privado mantiene una lista de personas.}}",
+    "askAgentHistoryError": "No se pudieron cargar los chats anteriores.",
+    "embedUnavailable": "Este enlace no tiene vista previa, así que sigue siendo un enlace."
   },
   "emailConnect": {
     "homeTitle": "Dónde vive el buzón",

@@ -25157,7 +25157,11 @@
     "viewingOldUndated": "Stai visualizzando una versione precedente.",
     "exportWaiting": "Salvataggio delle modifiche, poi esportazione…",
     "exportBlocked": "Esportazione interrotta: le ultime modifiche non sono salvate.",
-    "clearFilters": "Rimuovi filtri"
+    "clearFilters": "Rimuovi filtri",
+    "linkCopyFailed": "Impossibile copiare il link. Selezionalo nel campo e copialo.",
+    "shareDropsPeople": "{count, plural, one {Salvando si rimuove la persona aggiunta. Solo Privato mantiene un elenco di persone.} other {Salvando si rimuovono le # persone aggiunte. Solo Privato mantiene un elenco di persone.}}",
+    "askAgentHistoryError": "Impossibile caricare le chat precedenti.",
+    "embedUnavailable": "Questo link non ha un’anteprima, quindi resta un link."
   },
   "emailConnect": {
     "homeTitle": "Dove si trova la casella",
