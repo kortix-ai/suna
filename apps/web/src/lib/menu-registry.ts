@@ -613,8 +613,8 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'connectors connections pipedream mcp openapi postman collections connector',
   },
   {
-    // The person's notification inbox, across projects: the sidebar Inbox row
-    // (`project-inbox-nav.tsx`), same icon, same route. On for every project
+    // The person's notification inbox, across projects: the workspace menu's
+    // Inbox row (`workspace-switcher.tsx`), same icon, same route. On for every project
     // since the `notification_center` flag graduated (2026-11-06). Above
     // Channels and Review, whose keywords also hold "inbox": the palette keeps
     // registry order inside a group, so "inbox" lists this row first.
