@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { PROJECT_GLYPH_COLORS, isProjectGlyphName, normalizeProjectGlyphColor } from '@kortix/shared';
 import { loadAuth, loadAuthForHost } from '../api/auth.ts';
@@ -26,6 +25,7 @@ import {
 } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
 import { authGitEnv } from '../git-ops.ts';
+import { runGit } from '../git-run.ts';
 import { configureProjectGitAuth, resolveProjectGitTarget } from '../project-git.ts';
 import {
   clearLink,
@@ -848,20 +848,18 @@ async function projectsClone(
   const args = ['clone', target.repoUrl];
   if (destination) args.push(destination);
 
-  const cloned = spawnSync('git', args, {
-    stdio: 'inherit',
+  const cloned = runGit(undefined, args, {
+    inheritStdio: true,
     // The token travels in the environment, never in argv (see `authGitEnv`).
-    env: target.token
-      ? { ...process.env, ...authGitEnv(target.repoUrl, target.token, target.username) }
-      : undefined,
+    env: target.token ? authGitEnv(target.repoUrl, target.token, target.username) : undefined,
   });
   if (cloned.error) {
     process.stderr.write(`${status.err(`Could not start git: ${cloned.error.message}`)}\n`);
     return 1;
   }
-  if ((cloned.status ?? 1) !== 0) {
-    process.stderr.write(`${status.err(`git clone failed (exit ${cloned.status ?? 1}).`)}\n`);
-    return cloned.status ?? 1;
+  if (!cloned.ok) {
+    process.stderr.write(`${status.err(`git clone failed (exit ${cloned.code}).`)}\n`);
+    return cloned.code;
   }
 
   const defaultDirectory =

@@ -231,3 +231,23 @@ describe('resolveLocalManifestImports origins', () => {
     }
   });
 });
+
+describe('repoPaths', () => {
+  test('lists every file repo-relative in walk order, without .git and node_modules entries of any kind', async () => {
+    const { repoPaths } = await import('../manifest-imports');
+    const dir = mkdtempSync(join(tmpdir(), 'repo-paths-'));
+    try {
+      mkdirSync(join(dir, 'a', 'node_modules'), { recursive: true });
+      mkdirSync(join(dir, '.git'));
+      mkdirSync(join(dir, 'a', 'b'));
+      writeFileSync(join(dir, '.git', 'HEAD'), 'x');
+      writeFileSync(join(dir, 'a', 'node_modules', 'm.js'), 'x');
+      writeFileSync(join(dir, 'a', 'b', 'c.md'), 'x');
+      writeFileSync(join(dir, 'a', '.git'), 'gitdir: elsewhere');
+      writeFileSync(join(dir, 'kortix.yaml'), 'x');
+      expect(repoPaths(dir).sort()).toEqual(['a/b/c.md', 'kortix.yaml']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
