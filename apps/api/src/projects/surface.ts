@@ -80,7 +80,10 @@ export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
 export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
-export { assertProjectCapability, loadProjectForUser } from './lib/access';
+export { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from './lib/access';
+
+// An App delete takes the triggers that name the App (consumed by ../apps routes and app-manifest).
+export { dropRetiredAppTriggers, runtimeTriggersNamingApp, withoutAppTriggers } from './lib/app-trigger-retire';
 
 // Who may decide a gated connector call (consumed by ../setup-links/approval-app,
 // so the approval page refuses exactly whom the resolve route refuses).

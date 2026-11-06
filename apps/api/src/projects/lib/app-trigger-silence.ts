@@ -57,6 +57,8 @@ export async function checkAppTriggerSilence(now = new Date(), force = false): P
      where r.trigger_type = 'app'
        and r.enabled is not false
        and r.alert_failing_since is null
+       -- A trigger whose App was deleted (a session trigger an App delete leaves to its owner) is not a silent App.
+       and exists (select 1 from kortix.apps a where a.project_id = r.project_id and a.slug = r.schedule_spec->>'app' and a.deleted_at is null)
        -- Only a whole number of seconds up to 30 days: a stored value the parser
        -- would refuse (an older server, a hand edit) must not fail the whole pass.
        and (r.schedule_spec->>'expectEventWithinSeconds') ~ '^[0-9]{1,7}$'

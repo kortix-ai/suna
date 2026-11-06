@@ -16661,6 +16661,7 @@
       "textb7d225614f26": "  templates:",
       "textb7d2844482b4": "Ouvrir la page complète d’approbation",
       "textb7ddab3f7df8": "Supprimer {value0} et chaque environnement d'exécution ? Cette action ne peut pas être annulée.",
+      "text9c583fa19f1a": "Ses déclencheurs sont aussi supprimés : {value0}.",
       "textb7de71558bf4": "Les connecteurs sélectionnés résolvent ce secret sur le serveur. Le sandbox ne reçoit aucune valeur.",
       "textb7e29198fc4e": "Clé {value0} supprimée",
       "textb7ef1459725d": "Échec de la suppression immédiate du compte",

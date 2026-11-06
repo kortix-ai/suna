@@ -3498,7 +3498,7 @@ Delete one release, or the whole App:
 
 ```bash
 kortix apps delete my-site --deployment v1 --yes   # one release and its image
-kortix apps delete my-site --yes                   # the App, its machines and images
+kortix apps delete my-site --yes                   # the App, its machines, images and triggers
 ```
 
 - The live release cannot be deleted (`409 deployment_live`). Roll back first.
@@ -3509,6 +3509,14 @@ kortix apps delete my-site --yes                   # the App, its machines and i
 - Deleting an App needs `project.app.write`. An App with volumes also needs
   `project.app.admin`. Each volume keeps a `final` snapshot for 7 days, then
   Kortix purges it. Export data you need first.
+- The project's triggers that name the App go with it: the ones its events
+  start (`on: { event, app }`) and the ones that call it (`run: { app, path }`).
+  They are removed from `kortix.yaml` in the same commit as the App's block,
+  and the answer lists them in `triggers_removed`. A session trigger on the
+  App belongs to its session: it stays until that session's owner removes it,
+  and it never fires or alerts without the App.
+  Removing them needs `project.trigger.delete`; without it the delete answers
+  `403 app_triggers_need_delete` and changes nothing.
 
 ### Template: Convex backend
 

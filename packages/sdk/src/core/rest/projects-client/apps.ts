@@ -516,13 +516,17 @@ export interface AppImageRelease {
   pending: number;
 }
 
-/** Deletes the App, its runtimes, and every deployment image it built. */
+/**
+ * Deletes the App, its runtimes, and every deployment image it built. The
+ * project's triggers that name the App (its work triggers, the schedule that
+ * calls it) go with it: `triggers_removed` lists them.
+ */
 export async function deleteApp(
   projectId: string,
   appId: string,
-): Promise<{ ok: boolean; images?: AppImageRelease }> {
+): Promise<{ ok: boolean; images?: AppImageRelease; triggers_removed?: string[] }> {
   return unwrap(
-    await backendApi.delete<{ ok: boolean; images?: AppImageRelease }>(`/projects/${projectId}/apps/${appId}`),
+    await backendApi.delete<{ ok: boolean; images?: AppImageRelease; triggers_removed?: string[] }>(`/projects/${projectId}/apps/${appId}`),
     'Failed to delete App',
   );
 }
