@@ -19,7 +19,7 @@
 useDefault = true
 
 [[allowlists]]
-description = "dotenvx-ENCRYPTED apps/{api,web} profiles. condition=AND + regexTarget=line means a line is exempt ONLY if it is a dotenvx artifact: an `encrypted:` AES value or the non-secret DOTENV_PUBLIC_KEY. A PLAINTEXT value committed to these same files still fails the scan. (Before 2026-08-29 this allowlist was path-only, so any secret in these six files was exempt unconditionally.)"
+description = "dotenvx-ENCRYPTED apps/{api,web} profiles. condition=AND + regexTarget=line means a line is exempt ONLY if it is a dotenvx artifact: an assignment whose VALUE starts with `encrypted:` or the DOTENV_PUBLIC_KEY assignment itself. A PLAINTEXT value committed to these same files still fails the scan, even on a line that mentions `encrypted:` or DOTENV_PUBLIC_KEY in a comment. (Before 2026-08-29 this allowlist was path-only, so any secret in these six files was exempt unconditionally. Until 2026-11-06 the bare substrings matched anywhere on the line, so a trailing `# encrypted: yes` comment exempted a plaintext secret.)"
 condition = "AND"
 regexTarget = "line"
 paths = [
@@ -33,8 +33,14 @@ paths = [
   '''apps/web/\.env\.prod$''',
 ]
 regexes = [
-  '''encrypted:''',
-  '''DOTENV_PUBLIC_KEY''',
+  # Anchored to an assignment whose VALUE is an encrypted value (optionally
+  # export-prefixed, optionally double-quoted as dotenvx writes the GitHub App
+  # private key), so a comment mentioning the word cannot exempt a plaintext
+  # value.
+  '''^\s*(export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*"?encrypted:''',
+  # The public-key assignment only (one per profile: _DEV/_STAGING/_PROD). Not
+  # any line that happens to name the variable.
+  '''^\s*(export\s+)?DOTENV_PUBLIC_KEY(_[A-Z]+)?\s*=''',
 ]
 
 [[allowlists]]
