@@ -26,8 +26,8 @@ export interface GoalEventInput {
 /** A refusal: the HTTP status and the contract error body (`GoalErrorSchema`). */
 export class GoalError extends Error {
   constructor(
-    readonly status: 403 | 404 | 409 | 422 | 503,
-    readonly code: 'goal_conflict' | 'goal_forbidden' | 'goal_invalid' | 'goal_not_found' | 'goal_flag_off' | 'goal_unavailable',
+    readonly status: 403 | 404 | 409 | 422,
+    readonly code: 'goal_conflict' | 'goal_forbidden' | 'goal_invalid' | 'goal_not_found' | 'goal_flag_off',
     message: string,
     readonly violations?: string[],
     readonly goal?: GoalRow,
@@ -70,12 +70,19 @@ export async function goalByHeartbeat(projectId: string, reminderId: string): Pr
   return row ?? null;
 }
 
-/** The open goal a session is the owner or the verifier of. */
+/** The goal a session works or worked for (owner, verifier, or an earlier one of either), newest first. */
 export async function goalOfSession(sessionId: string): Promise<GoalRow | null> {
   const [row] = await db
     .select()
     .from(projectGoals)
-    .where(or(eq(projectGoals.ownerSessionId, sessionId), eq(projectGoals.verifierSessionId, sessionId)))
+    .where(
+      or(
+        eq(projectGoals.ownerSessionId, sessionId),
+        eq(projectGoals.verifierSessionId, sessionId),
+        // A session the goal used before (a verifier after a stop, an owner after a handover).
+        sql`${projectGoals.sessions} @> ${JSON.stringify([{ id: sessionId }])}::jsonb`,
+      ),
+    )
     .orderBy(desc(projectGoals.updatedAt))
     .limit(1);
   return row ?? null;
@@ -206,6 +213,38 @@ export async function installGoalHeartbeat(goalId: string, expected: string | nu
     .where(and(eq(projectGoals.goalId, goalId), sql`${projectGoals.heartbeatReminderId} is not distinct from ${expected}`))
     .returning({ id: projectGoals.goalId });
   return rows.length === 1;
+}
+
+export interface PendingGoalPrompt {
+  sessionId: string;
+  userId: string | null;
+  text: string;
+  key: string;
+}
+
+/** Remember a prompt that did not queue (`setup.pending_prompts`, one per key); the reconciler queues it later. */
+export async function rememberGoalPrompt(goalId: string, prompt: PendingGoalPrompt): Promise<void> {
+  await db.execute(sql`
+    update kortix.project_goals
+       set setup = jsonb_set(setup, '{pending_prompts}',
+             coalesce((select jsonb_agg(p) from jsonb_array_elements(setup->'pending_prompts') p where p->>'key' <> ${prompt.key}), '[]'::jsonb)
+             || jsonb_build_array(${JSON.stringify(prompt)}::jsonb))
+     where goal_id = ${goalId}`);
+}
+
+/** Drop the remembered prompts with these keys (queued, or moot on a closed goal). */
+export async function forgetGoalPrompts(goalId: string, keys: string[]): Promise<void> {
+  if (!keys.length) return;
+  await db.execute(sql`
+    update kortix.project_goals
+       set setup = jsonb_set(setup, '{pending_prompts}',
+             coalesce((select jsonb_agg(p) from jsonb_array_elements(setup->'pending_prompts') p where not (p->>'key' = any(array[${sql.join(keys.map((k) => sql`${k}`), sql`, `)}]::text[]))), '[]'::jsonb))
+     where goal_id = ${goalId}`);
+}
+
+export function pendingGoalPrompts(goal: Pick<GoalRow, 'setup'>): PendingGoalPrompt[] {
+  const list = (goal.setup as { pending_prompts?: unknown }).pending_prompts;
+  return Array.isArray(list) ? (list as PendingGoalPrompt[]) : [];
 }
 
 export async function dbNow(q: Pick<typeof db, 'execute'> = db): Promise<Date> {

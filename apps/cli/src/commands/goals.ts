@@ -719,16 +719,15 @@ interface WakeRecord {
 const reportSignature = (g: Goal) => JSON.stringify([g.state, g.summary, g.criteria.map((c) => [c.id, c.text, c.reported_met, c.evidence])]);
 
 /** What the owner must do on `g`, given how many wakes in a row reported nothing. */
-export function goalProblems(g: Goal, unchanged: number): string[] {
+export function goalProblems(g: Goal, _unchanged = 0): string[] {
   // Paused, closed or blocked (wake cap, credits, flag off, a lost owner): the API holds it; a nudge would be a turn the admission gate refused.
   if (g.paused_at || g.blocked_reason || !OPEN.has(g.state)) return [];
   if (g.state === 'draft' && g.criteria.length === 0) {
     return [`Draft with no done criteria: write 1 to ${CRITERIA_MAX} under "## Done criteria" in GOAL.md, then kortix goals transition active --reason "…".`];
   }
+  // Only a draft is nudged: it has no heartbeat, so without the nudge nothing wakes it. An active
+  // goal is woken by heartbeat fires the API admits within its wake cap; a nudge would be a turn outside it.
   if (g.state === 'draft') return ['Still a draft: check the done criteria in GOAL.md, then kortix goals transition active --reason "…".'];
-  if (g.state === 'active' && unchanged >= STALL_WAKES) {
-    return [`Nothing reported for ${unchanged} wakes: record what changed with kortix goals progress (--met, --evidence, --summary), ask with transition waiting_on_user, or hand over.`];
-  }
   return [];
 }
 
@@ -753,6 +752,9 @@ async function checkGoals(ctx: Ctx, flags: Flags): Promise<number> {
     const counted = flags.enforce && g.state === 'active' && !g.paused_at;
     const unchanged = counted ? (prev.report === report ? prev.unchanged + 1 : 0) : prev.unchanged;
     if (flags.enforce) wakes[g.goal_id] = { turn, report, unchanged };
+    if (g.state === 'active' && !g.paused_at && !g.blocked_reason && unchanged >= STALL_WAKES) {
+      notes.push(`Nothing reported for ${unchanged} wakes: record what changed with kortix goals progress, ask with transition waiting_on_user, or hand over.`);
+    }
     results.push({ goal_id: g.goal_id, title: g.title, state: g.state, problems: goalProblems(g, unchanged), notes });
   }
   if (flags.enforce) writeJson(wakesPath, wakes);

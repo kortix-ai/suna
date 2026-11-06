@@ -85,7 +85,8 @@ test('check problems: a draft, or an active goal with nothing reported for 3 wak
   expect(goalProblems({ ...base, state: 'draft', criteria: [] }, 0)[0]).toContain('no done criteria');
   expect(goalProblems({ ...base, state: 'draft' }, 0)[0]).toContain('Still a draft');
   expect(goalProblems(base, 2)).toEqual([]);
-  expect(goalProblems(base, 3)[0]).toContain('Nothing reported for 3 wakes');
+  // An active goal is never nudged: its wakes come from the API's admitted heartbeat (wake cap).
+  expect(goalProblems(base, 3)).toEqual([]);
   expect(goalProblems({ ...base, paused_at: '2026-11-06T00:00:00Z' }, 9)).toEqual([]);
   expect(goalProblems({ ...base, state: 'waiting_on_user' }, 9)).toEqual([]);
 });
@@ -462,7 +463,7 @@ test('handover sends the note; new in a session surfaces the API refusal with th
   }
 });
 
-test('check --enforce: one check per turn id, prompts a draft owner, and a stall after 3 wakes', async () => {
+test('check --enforce: one check per turn id, prompts a draft owner, never an active goal (its wakes are the API\'s)', async () => {
   const { root, boxFolder } = box();
   const fake = fakeApi(goalRecord(boxFolder));
   const prompts = () => fake.requests.filter((r) => r.path.endsWith('/prompts'));
@@ -477,9 +478,10 @@ test('check --enforce: one check per turn id, prompts a draft owner, and a stall
     fake.goal = { ...fake.goal, state: 'active', criteria: [crit('c1')] };
     for (const t of ['t2', 't3', 't4']) await cli(fake, root, 'owner', ['check', '--enforce', '--quiet'], { KORTIX_TURN_MESSAGE_ID: t });
     expect(prompts()).toHaveLength(1);
-    await cli(fake, root, 'owner', ['check', '--enforce', '--quiet'], { KORTIX_TURN_MESSAGE_ID: 't5' });
-    expect(prompts()).toHaveLength(2);
-    expect(JSON.stringify(prompts()[1]!.body)).toContain('Nothing reported for 3 wakes');
+    // A stalled active goal is reported, not nudged: a nudge would be a turn outside the wake cap.
+    const stalled = await cli(fake, root, 'owner', ['check', '--enforce'], { KORTIX_TURN_MESSAGE_ID: 't5' });
+    expect(prompts()).toHaveLength(1);
+    expect(stalled.out).toContain('Nothing reported for 3 wakes');
     // check never writes the goal or a reminder: the API reconciler repairs the heartbeat.
     expect(fake.writes()).toHaveLength(0);
 

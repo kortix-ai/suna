@@ -338,13 +338,13 @@ describe('verification', () => {
     const verifying = await goals.requestVerification(ctx(owner), goal.goalId, { revision: goal.revision });
     expect(verifying.state).toBe('verifying');
     expect(prompts.some((p) => p.key === `goal-verify:${goal.goalId}:1`)).toBe(false);
-    expect((await getGoal(PROJECT, goal.goalId))!.setup.verifier_prompt).toBe(1);
+    expect(JSON.stringify((await getGoal(PROJECT, goal.goalId))!.setup.pending_prompts)).toContain(`goal-verify:${goal.goalId}:1`);
     let cursor: string | null = null;
     do {
       cursor = (await runGoalReconcilerTick(cursor)).cursor;
     } while (cursor);
     expect(prompts.filter((p) => p.key === `goal-verify:${goal.goalId}:1` && p.sessionId === verifying.verifierSessionId).length).toBe(1);
-    expect((await getGoal(PROJECT, goal.goalId))!.setup.verifier_prompt).toBeUndefined();
+    expect((await getGoal(PROJECT, goal.goalId))!.setup.pending_prompts).toEqual([]);
   });
 
   test('a verdict must cover exactly the current criteria; the owner lineage and stale criteria are refused; a full pass is done', async () => {
@@ -501,15 +501,33 @@ describe('council round 1 fixes', () => {
     expect(await goalPromptRefusal(goal.ownerSessionId!)).toContain('stopped');
   });
 
-  test('an answer whose prompt did not queue answers 503; the retry with the same answer_id delivers it once', async () => {
+  test('an answer whose prompt did not queue is kept and delivered once by the reconciler; a retry does not duplicate it', async () => {
     const goal = await activeGoal();
     const answerId = crypto.randomUUID();
     failPromptOnce.add(`goal-answer:${goal.goalId}:${answerId}`);
-    const first = await refusal(goals.answerGoal(ctx(ana), goal.goalId, { answer_id: answerId, text: 'EU only' }));
-    expect(first.status).toBe(503);
-    const retry = await goals.answerGoal(ctx(ana), goal.goalId, { answer_id: answerId, text: 'EU only' });
-    expect(retry.deduped).toBe(true);
+    const first = await goals.answerGoal(ctx(ana), goal.goalId, { answer_id: answerId, text: 'EU only' });
+    expect(first.deduped).toBe(false);
+    expect(prompts.some((p) => p.key === `goal-answer:${goal.goalId}:${answerId}`)).toBe(false);
+    let cursor: string | null = null;
+    do {
+      cursor = (await runGoalReconcilerTick(cursor)).cursor;
+    } while (cursor);
+    await goals.answerGoal(ctx(ana), goal.goalId, { answer_id: answerId, text: 'EU only' });
     expect(prompts.filter((p) => p.key === `goal-answer:${goal.goalId}:${answerId}`).length).toBe(1);
+    expect((await getGoal(PROJECT, goal.goalId))!.setup.pending_prompts).toEqual([]);
+  });
+
+  test("a verifier's queued prompt is refused after a stop (the stop cleared the verifier)", async () => {
+    const goal = await activeGoal();
+    const owner = asSession(goal.ownerSessionId!);
+    volume.put(`${goal.folder}/evidence/a.md`, 'a');
+    volume.put(`${goal.folder}/evidence/b.md`, 'b');
+    const reported = await goals.reportProgress(ctx(owner), goal.goalId, { revision: goal.revision, criteria: [{ id: 'c1', reported_met: true, evidence: 'evidence/a.md' }, { id: 'c2', reported_met: true, evidence: 'evidence/b.md' }] });
+    const verifying = await goals.requestVerification(ctx(owner), goal.goalId, { revision: reported.revision });
+    const verifierId = verifying.verifierSessionId!;
+    expect(await goalPromptRefusal(verifierId)).toBeNull();
+    await goals.stopGoal(ctx(ana), goal.goalId, { revision: verifying.revision });
+    expect(await goalPromptRefusal(verifierId)).toContain('stopped');
   });
 
   test('resuming a paused draft wakes its owner (a draft has no heartbeat)', async () => {

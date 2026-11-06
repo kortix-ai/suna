@@ -21,11 +21,11 @@ import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import type { ProjectRow } from '../lib/serializers';
-import { readHeartbeat, sessionHealth } from './effects';
+import { goalEffects, readHeartbeat, sessionHealth } from './effects';
 import { notifyGoal } from './notify';
 import { isOpenState, utcDay } from './rules';
-import { applyHeartbeat, dropHeartbeat, finishGoalSetup, heartbeatWanted, moveHeartbeat, queueVerifierPrompt } from './service';
-import { appendGoalEvent, dbNow, goalsToReconcile, writeGoal, type GoalRow } from './store';
+import { applyHeartbeat, dropHeartbeat, finishGoalSetup, heartbeatWanted, moveHeartbeat } from './service';
+import { appendGoalEvent, dbNow, forgetGoalPrompts, goalsToReconcile, pendingGoalPrompts, writeGoal, type GoalRow } from './store';
 
 export const GOAL_RECONCILE_BATCH = 50;
 const SETUP_GRACE_MS = 30_000;
@@ -73,6 +73,8 @@ export async function reconcileGoal(goal: GoalRow, now: Date, result: GoalReconc
     return;
   }
   if (!isOpenState(goal.state)) {
+    const moot = pendingGoalPrompts(goal).map((p) => p.key);
+    if (moot.length) await forgetGoalPrompts(goal.goalId, moot);
     if (goal.heartbeatReminderId) {
       await dropHeartbeat(goal);
       await appendGoalEvent(goal, { kind: 'repaired', actorKind: 'platform', actorId: null, message: 'Removed the heartbeat of a closed goal.' });
@@ -108,10 +110,17 @@ export async function reconcileGoal(goal: GoalRow, now: Date, result: GoalReconc
       return;
     }
   }
-  // A verifier prompt that did not queue (requestVerification recorded it): ask again, same key.
-  if (goal.state === 'verifying' && goal.setup.verifier_prompt === goal.verification?.attempt) {
+  // Prompts that did not queue (an answer, a resume, a verifier's first prompt): queue them
+  // again under their keys. Held while paused (delivery would refuse them); dropped on a closed goal.
+  const pending = pendingGoalPrompts(goal);
+  if (pending.length && !goal.pausedAt) {
     const project = await loadProject(goal.projectId);
-    if (project && (await queueVerifierPrompt(project, goal))) result.repaired += 1;
+    if (project) {
+      const sent: string[] = [];
+      for (const p of pending) if (await goalEffects().queuePrompt({ project, ...p })) sent.push(p.key);
+      await forgetGoalPrompts(goal.goalId, sent);
+      result.repaired += sent.length;
+    }
   }
   if (goal.state === 'verifying' && goal.verification?.started_at) {
     const age = now.getTime() - Date.parse(goal.verification.started_at);

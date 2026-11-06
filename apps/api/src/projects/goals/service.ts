@@ -37,7 +37,7 @@ import { resolveUserIdentities } from '../lib/user-identity';
 import {
   createHeartbeat,
   deleteHeartbeat,
-  goalEffects,
+  goalEffects, type GoalEffects,
   readHeartbeat,
   rescheduleHeartbeat,
   sessionExists,
@@ -69,6 +69,7 @@ import {
   goalFolderTaken,
   goalOfSession,
   installGoalHeartbeat,
+  rememberGoalPrompt,
   insertGoal,
   setGoalRuntimeFields,
   writeGoal,
@@ -204,7 +205,7 @@ export async function createGoal(
   // A chat session may turn its conversation into a goal for the person it works for ("Make this a goal").
   // A goal's own owner or verifier may not start another goal: no goal spawns goals.
   if (actor.kind === 'platform') forbidden('A person creates a goal.');
-  if (actor.kind === 'session' && isOpenState((await goalOfSession(actor.sessionId))?.state ?? 'done')) forbidden("A goal's own session cannot start another goal.");
+  if (actor.kind === 'session' && (await goalOfSession(actor.sessionId))) forbidden("A goal's own session cannot start another goal.");
   const existing = await getGoal(project.projectId, input.goal_id);
   if (existing) {
     if (existing.createdByUserId !== actor.userId) throw new GoalError(409, 'goal_conflict', 'This goal id is taken.');
@@ -535,16 +536,11 @@ export async function requestVerification(ctx: GoalContext, goalId: string, req:
   return reread(result.row);
 }
 
-/**
- * Queue the verifier's first prompt for the current attempt. A prompt that did
- * not queue is recorded in `setup.verifier_prompt` (the attempt), and the
- * reconciler retries it with the same key until it queues: a verification is
- * never left with a verifier that was never asked.
- */
+/** Queue the verifier's first prompt for the current attempt (remembered and retried when the queue fails). */
 export async function queueVerifierPrompt(project: ProjectRow, goal: GoalRow): Promise<boolean> {
   const attempt = goal.verification?.attempt ?? goal.verificationAttempts;
   if (!goal.verifierSessionId) return false;
-  const queued = await goalEffects().queuePrompt({
+  return sendGoalPrompt(goal.goalId, {
     project,
     sessionId: goal.verifierSessionId,
     userId: goal.createdByUserId,
@@ -554,13 +550,16 @@ export async function queueVerifierPrompt(project: ProjectRow, goal: GoalRow): P
       'then give the verdict with `kortix goals verdict`: exactly one result (pass, fail or inconclusive) per criterion.',
     key: `goal-verify:${goal.goalId}:${attempt}`,
   });
-  const pending = queued ? null : attempt;
-  if ((goal.setup.verifier_prompt ?? null) !== pending) {
-    const setup: Record<string, unknown> = { ...goal.setup };
-    if (pending === null) delete setup.verifier_prompt;
-    else setup.verifier_prompt = pending;
-    await setGoalRuntimeFields(goal.goalId, { setup });
-  }
+}
+
+/**
+ * Queue a goal prompt. One that does not queue is remembered on the goal and
+ * the reconciler queues it under the same key: an answer, a resume or a
+ * verifier's first prompt is never lost to a queue outage.
+ */
+async function sendGoalPrompt(goalId: string, input: Parameters<GoalEffects['queuePrompt']>[0]): Promise<boolean> {
+  const queued = await goalEffects().queuePrompt(input);
+  if (!queued) await rememberGoalPrompt(goalId, { sessionId: input.sessionId, userId: input.userId, text: input.text, key: input.key });
   return queued;
 }
 
@@ -635,7 +634,7 @@ export async function giveVerdict(ctx: GoalContext, goalId: string, req: z.infer
   } else {
     await applyHeartbeat(goal);
     const attempt = goal.verification?.attempt ?? 0;
-    await goalEffects().queuePrompt({
+    await sendGoalPrompt(goal.goalId, {
       project: ctx.project,
       sessionId: goal.ownerSessionId!,
       userId: goal.createdByUserId,
@@ -670,7 +669,7 @@ export async function handoverGoal(ctx: GoalContext, goalId: string, req: z.infe
     };
   }, { now: ctx.now });
   await moveHeartbeat(result.row, newOwner, heartbeatWanted(result.row));
-  await goalEffects().queuePrompt({
+  await sendGoalPrompt(goal.goalId, {
     project: ctx.project,
     sessionId: newOwner,
     userId: goal.createdByUserId,
@@ -713,18 +712,16 @@ export async function answerGoal(ctx: GoalContext, goalId: string, req: AnswerGo
     };
   }, { now: ctx.now });
   const goal = result.row;
-  // The prompt is queued after the answer is recorded, under the answer's key, also on a
-  // deduped retry: a queue that failed the first time is tried again, and one that worked
-  // is deduped by the key. Not queued: 503, and the person's retry finishes it.
+  // Queued under the answer's key, also on a deduped retry; one that does not queue is
+  // remembered and the reconciler delivers it: a recorded answer always reaches the agent.
   const question = result.deduped ? null : result.before.waitingOn;
-  const queued = await goalEffects().queuePrompt({
+  await sendGoalPrompt(goal.goalId, {
     project: ctx.project,
     sessionId: goal.ownerSessionId!,
     userId: actor.userId,
     text: `${goalWakePrompt(goal.boxFolder, goal.goalId)} ${name} (user ${actor.userId}) answered${question ? ` your question "${question}"` : ''}:\n\n${req.text}`,
     key: `goal-answer:${goal.goalId}:${req.answer_id}`,
   });
-  if (!queued) throw new GoalError(503, 'goal_unavailable', 'The answer is saved but did not reach the agent yet. Send it again.');
   if (result.deduped) return { goal, deduped: true };
   if (result.before.state === 'waiting_on_user') await applyHeartbeat(goal);
   return { goal: await reread(goal), deduped: false };
@@ -762,7 +759,7 @@ export async function resumeGoal(ctx: GoalContext, goalId: string, req: GoalCont
   // A draft wakes too: its owner finishes the criteria and activates (a paused draft has no heartbeat to wake it).
   if (goal.state === 'active' || goal.state === 'verifying' || goal.state === 'draft') {
     const sessionId = goal.state === 'verifying' && goal.verifierSessionId ? goal.verifierSessionId : goal.ownerSessionId!;
-    await goalEffects().queuePrompt({
+    await sendGoalPrompt(goal.goalId, {
       project: ctx.project,
       sessionId,
       userId: goal.createdByUserId,
@@ -835,7 +832,7 @@ export async function restartGoal(ctx: GoalContext, goalId: string, req: GoalCon
   }, { now: ctx.now });
   const goal = result.row;
   await moveHeartbeat(goal, goal.ownerSessionId!, heartbeatWanted(goal));
-  await goalEffects().queuePrompt({
+  await sendGoalPrompt(goal.goalId, {
     project: ctx.project,
     sessionId: goal.ownerSessionId!,
     userId: goal.createdByUserId,
