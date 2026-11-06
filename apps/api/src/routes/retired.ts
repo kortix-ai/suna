@@ -70,6 +70,30 @@ export const RETIRED_ROUTES: ReadonlyArray<readonly [method: string, path: strin
   // the API now always sends false. A send then takes the ordinary create.
   ['POST', '/v1/projects/:projectId/sessions/warm'],
   ['POST', '/v1/projects/:projectId/sessions/warm/claim'],
+  // Artifact comments, live presence, doc co-editing and the activity feed
+  // (removed 2026-11-06). The `artifact_comments` flag was off for every
+  // project but 5. Older web, SDK, TUI and mobile builds call these only
+  // while `experimental.artifact_comments` reads true, and the API now
+  // always sends false. A CLI in an older sandbox image still lists the
+  // comment commands: they answer 410.
+  ['GET', '/v1/projects/:projectId/artifacts/:artifactId/comments'],
+  ['POST', '/v1/projects/:projectId/artifacts/:artifactId/comments'],
+  ['GET', '/v1/projects/:projectId/artifacts/:artifactId/comments/context'],
+  ['POST', '/v1/projects/:projectId/artifacts/:artifactId/comments/send'],
+  ['GET', '/v1/projects/:projectId/artifacts/:artifactId/comments/:commentId/screenshot'],
+  ['POST', '/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/replies'],
+  ['PATCH', '/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId'],
+  ['PATCH', '/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId'],
+  ['DELETE', '/v1/projects/:projectId/artifacts/:artifactId/comments/:threadId/:commentId'],
+  ['GET', '/v1/projects/:projectId/artifact-comment-threads/:threadId'],
+  ['GET', '/v1/projects/:projectId/artifacts/:artifactId/activity'],
+  ['GET', '/v1/projects/:projectId/artifacts/:artifactId/live'],
+  ['POST', '/v1/projects/:projectId/artifacts/:artifactId/live/ticket'],
+  ['POST', '/v1/projects/:projectId/artifacts/:artifactId/live/agent'],
+  ['GET', '/v1/projects/:projectId/artifacts/:artifactId/doc'],
+  ...['seed', 'updates', 'lease', 'flushed', 'reset'].map(
+    (step) => ['POST', `/v1/projects/:projectId/artifacts/:artifactId/doc/${step}`] as const,
+  ),
 ];
 
 function gone(c: Context) {

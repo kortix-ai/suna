@@ -46,8 +46,8 @@ describe('effectiveNotificationPreferences', () => {
       expect(DEFAULT_NOTIFICATION_PREFERENCES[kind]).toEqual({ push: true, email: false });
     }
     // Mailed before the center was on by default (health and auto-pause alerts,
-    // a capture computer that went down, artifact comments): still mailed.
-    for (const kind of ['automation_failed', 'capture_device_down', 'artifact_comment'] as const) {
+    // a capture computer that went down): still mailed.
+    for (const kind of ['automation_failed', 'capture_device_down'] as const) {
       expect(DEFAULT_NOTIFICATION_PREFERENCES[kind]).toEqual({ push: true, email: true });
     }
   });

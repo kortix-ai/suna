@@ -164,14 +164,13 @@ export const PROJECT_ACTIONS = {
   PROJECT_REVIEW_SUBMIT: 'project.review.submit',
   PROJECT_REVIEW_ACT: 'project.review.act',
 
-  // Artifacts (`artifacts` flag): Files folders shared as docs and pages.
+  // Artifacts: Files folders shared as docs and pages.
   // `read` = the gallery, open an artifact, its versions and files. `write` =
   // publish, share a folder, save, restore, and rename / share / unshare your
   // own. `manage` = change how anyone's artifact is shared. `public` = give an
   // artifact a public link: the one outward step, so a custom role or an
   // agent's `kortix_permissions` can withhold it on its own.
   PROJECT_ARTIFACT_READ: 'project.artifact.read',
-  PROJECT_ARTIFACT_COMMENT: 'project.artifact.comment',
   PROJECT_ARTIFACT_WRITE: 'project.artifact.write',
   PROJECT_ARTIFACT_MANAGE: 'project.artifact.manage',
   PROJECT_ARTIFACT_PUBLIC: 'project.artifact.public',

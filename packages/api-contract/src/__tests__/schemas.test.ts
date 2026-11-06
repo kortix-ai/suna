@@ -869,8 +869,6 @@ describe('envelopes', () => {
       'shared_drives',
       'goals',
       'workspace_volume',
-      'artifacts',
-      'artifact_comments',
       'email_channel',
       'session_groups',
       'chrome',

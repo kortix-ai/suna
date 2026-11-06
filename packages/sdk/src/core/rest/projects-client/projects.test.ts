@@ -1038,8 +1038,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'chat',
     'shared_drives',
     'goals',
-    'artifacts',
-    'artifact_comments',
     'email_channel',
     'session_groups',
     'chrome',

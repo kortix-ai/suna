@@ -1,29 +1,21 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { notFound, useParams } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { useTranslations } from '@/i18n/use-translations';
-import { FeatureGateScreen } from '@kortix/ui/customize/shared/feature-gate-screen';
 import { useFeatureFlag } from '@kortix/sdk/react';
 
 /**
- * /projects/[id]/artifacts* — the project's artifacts. They exist only with
- * the project's `artifacts` flag on: off, a deep link shows only that the flag
- * is off, and no artifact data loads.
+ * /projects/[id]/artifacts* — the project's artifacts. Artifacts are paths in
+ * Files, so they exist wherever the platform stores Files (Platinum): the API
+ * serves that as the `artifacts` key. Elsewhere a deep link is not found and no
+ * artifact data loads, as for the Drive page.
  */
 export default function ProjectArtifactsLayout({ children }: { children: ReactNode }) {
   const { id } = useParams<{ id: string }>();
-  const t = useTranslations('artifacts');
   const artifacts = useFeatureFlag(id, 'artifacts');
 
   if (artifacts.isLoading) return null;
-  if (!artifacts.enabled) {
-    return (
-      <div className="mx-auto w-full max-w-3xl p-4">
-        <FeatureGateScreen featureKey="artifacts" featureName={t('title')} description={t('gateDescription')} />
-      </div>
-    );
-  }
+  if (!artifacts.enabled) notFound();
   return <>{children}</>;
 }

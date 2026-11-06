@@ -26,13 +26,6 @@ describe('notification copy', () => {
   for (const file of catalogs) {
     const catalog = JSON.parse(read(`translations/${file}`));
 
-    test(`${file}: Artifact comments have a kind label, description, and Artifact open action`, () => {
-      for (const text of [catalog.notifications.kind.artifact_comment, catalog.notifications.kindDescription.artifact_comment, catalog.notifications.arrival.openArtifact]) {
-        expect(typeof text).toBe('string');
-        expect(text.length).toBeGreaterThan(0);
-      }
-    });
-
     test(`${file}: the Push switches description names the kinds a phone also switches`, () => {
       const description: string = catalog.settings.sessions.notificationTypesDescription;
       for (const kind of SESSION_KINDS) expect(description).toContain(catalog.notifications.kind[kind]);

@@ -358,6 +358,10 @@ export function serializeProject(
     // `volumes` and `drives` graduated on 2026-11-02: every project has a Drive
     // where the platform stores one. Both keys stay, equal to that availability,
     // because older web, SDK, TUI and CLI builds show the Drive only while they read true.
+    // `artifacts` graduated on 2026-11-06 the same way (an Artifact is a path in the
+    // Drive) and stays, equal to that availability. `artifact_comments` was removed on
+    // 2026-11-06 and stays `false`: older web, SDK, TUI and mobile builds show
+    // comments, presence and co-editing only while they read true.
     // `project_channels` merged into `chat` (2026-11) and stays, equal to `chat`:
     // released TUI, mobile and CLI builds show Channels only while they read true.
     // `notification_center` graduated on 2026-11-06 and stays `true`: older web, SDK
@@ -377,6 +381,8 @@ export function serializeProject(
       warm_sessions: false,
       volumes: isPlatinumConfigured(),
       drives: isPlatinumConfigured(),
+      artifacts: isPlatinumConfigured(),
+      artifact_comments: false,
       project_channels: resolveFeatureFlag(row.metadata, 'chat'),
     },
     experimental_features: buildFeatureFlagCatalog(row.metadata),

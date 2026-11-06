@@ -38,7 +38,6 @@ import type { InboxNotification, InboxNotificationKind } from '@kortix/sdk';
 import { useNotificationInbox } from '@kortix/sdk/react';
 import {
   BellIcon,
-  ChatCircleIcon,
   ChecksIcon,
   GearSixIcon,
   QuestionIcon,
@@ -75,7 +74,6 @@ const KIND_MARK: Record<LiveKind, { icon: KindIcon; className: string }> = {
   automation_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
   capture_device_down: { icon: solid(WarningIcon), className: 'text-kortix-red' },
   capture_device_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
-  artifact_comment: { icon: solid(ChatCircleIcon), className: 'text-muted-foreground' },
 };
 
 /** Where "Notification settings" goes: a page (outside a project) or the Settings overlay (inside one). */

@@ -1,8 +1,6 @@
 ---
 name: kortix-artifacts
 description: "Share work from the project's Drive as artifacts with the `kortix artifacts` CLI: a `doc` (a Markdown file people read and edit in place, exportable as PDF) or an `html` page (a slide deck, dashboard, mockup, tool or app). The files stay plain files in Drive; every save is a version from the Drive history; people open artifacts in the Kortix app under Artifacts and share them with the project, chosen people, or anyone with a link. Load when the user asks for a doc, report, write-up, plan, proposal, spec, decision record, comparison, deck, slides, presentation, dashboard, tracker, mockup, tool, page, or anything meant to be read, kept or shared; when a reply would run past a screen of structured content; or when the user names an artifact or an artifact link."
-metadata:
-  kortix-feature-flag: artifacts
 ---
 
 <skill name="kortix-artifacts">
@@ -183,49 +181,6 @@ user asked: `--with <email>` for named people, `--visibility project` only for
 an explicit "everyone in the project".
 </update>
 
-<comments>
-After a hand-off, run `kortix artifacts comments <id>`. Read the open threads,
-fix each issue, reply with the change in one sentence, then resolve the thread:
-
-    kortix artifacts reply <thread_id> "Changed the forecast to the confirmed figure."
-    kortix artifacts resolve <thread_id>
-
-Never resolve a thread you did not address. Reply with a question instead.
-When a fact needs a person's confirmation, comment to `@name`. Never comment
-only to report status. Stop when a thread shows "Waiting for a person".
-
-People viewing the artifact see where you work. Tell them as you go:
-
-    kortix artifacts focus <id> --thread <thread_id>                    # before you answer a thread
-    kortix artifacts focus <id> --quote "Revenue rose."                 # before you change that passage
-    kortix artifacts focus <id> --thread <thread_id> --status writing   # while you draft the reply
-    kortix artifacts focus <id> --status idle                           # when you are done
-
-`--status` defaults to `editing`. Focus is a signal, not a comment: skip it
-when it fails and continue the work.
-
-People may be typing in a doc while you edit it. Publish to the doc as
-usual: your change merges into their editors, and nothing they typed is
-lost. Change only the passages you mean to change, and keep the rest of the
-file byte for byte: read the current file right before you edit, never an
-older copy. When a person changed the same words, both versions of that
-paragraph stay, yours under theirs, so the person can pick.
-
-When asked to review, open one thread per issue, anchored to an exact quote:
-
-    kortix artifacts comment <id> "Confirm the source for this figure, @name." --quote "Revenue rose."
-
-Quotes contain at most 500 characters. A missing quote exits nonzero and creates
-no thread. The CLI reads a pinned Files history version before it posts.
-Omit the anchor flag for a comment on the whole artifact. For an HTML element,
-use `--selector "#chart"`; the CLI records its center (0.5, 0.5), viewport width
-1280, scroll (0, 0), and an empty snippet. These are defaults, not measured geometry.
-
-`comments --all` includes resolved threads; `--resolved` shows only resolved
-threads. `reopen <thread_id>` opens one again. `activity <id> --limit 20 --json`
-lists events and saves. Add `--json` to any comment command for structured output.
-</comments>
-
 <quality>
 - Say the answer first: the doc's opening paragraph, the deck's title slide,
   the dashboard's header.
@@ -247,11 +202,6 @@ lists events and saves. Add `--json` to any comment command for structured outpu
 | `kortix artifacts info <id>` / `open <id>` | details, path, links |
 | `kortix artifacts cat <id> [path] [--version v]` / `pull <id> <dir>` | read |
 | `kortix artifacts share <id> --visibility … [--with …]` | share |
-| `kortix artifacts comments <id> [--all\|--resolved]` | read threads |
-| `kortix artifacts comment <id> "text" [--quote "text"\|--selector "css"]` | open one thread |
-| `kortix artifacts reply <thread_id> "text"` / `resolve <thread_id>` / `reopen <thread_id>` | address threads |
-| `kortix artifacts activity <id> [--limit N]` | events and saves |
-| `kortix artifacts focus <id> [--thread <thread_id>\|--quote "text"] [--status reading\|editing\|writing\|idle]` | show viewers where you work |
 | `kortix artifacts versions` / `restore` / `rename` / `pin` / `unpin` / `rm` | manage |
 
 Add `--json` for machine-readable output. Permissions (a role's, and for an
@@ -260,7 +210,6 @@ agent its `kortix_permissions` in kortix.yaml):
 | Permission | Lets you |
 |---|---|
 | `project.artifact.read` | list, open, read versions and files |
-| `project.artifact.comment` | read artifacts and activity; open threads, reply, edit your comments, resolve your threads |
 | `project.artifact.write` | publish, add, save, restore; rename and share your own |
 | `project.artifact.manage` | rename, share or stop sharing anyone's |
 | `project.artifact.public` | give an artifact a public link |

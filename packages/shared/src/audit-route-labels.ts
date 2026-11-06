@@ -1105,6 +1105,5 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'ENTRY preview_origin:websocket': { action: 'sandbox.preview.websocket.connect', title: 'Opened sandbox preview WebSocket' },
   'ENTRY ws:/v1/p/:sandboxId/:port/*': { action: 'sandbox.port.websocket.connect', title: 'Opened sandbox port WebSocket' },
   'ENTRY ws:/v1/chrome/ws': { action: 'chrome.extension.connect', title: 'Connected a browser extension' },
-  'ENTRY ws:/v1/projects/:projectId/artifacts/:artifactId/live': { action: 'project.artifact.live.connect', title: 'Opened artifact live presence' },
   'ENTRY ws:/v1/tunnel/ws': { action: 'tunnel.agent.connect', title: 'Connected computer tunnel agent' },
 };

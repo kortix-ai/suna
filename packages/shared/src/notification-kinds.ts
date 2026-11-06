@@ -16,7 +16,6 @@ export const NOTIFICATION_KINDS = [
   'automation_recovered',
   'capture_device_down',
   'capture_device_recovered',
-  'artifact_comment',
 ] as const;
 
 export type NotificationKindName = (typeof NOTIFICATION_KINDS)[number];
@@ -35,10 +34,10 @@ export type NotificationKindPreferences = Record<NotificationKindName, Notificat
  * Email is opt-in for every kind that only the notification center ever
  * mailed: the center became every project's default, and a default-on email
  * would have mailed every member of every project at once (the 2026-10-09
- * incident). The three kinds left on were mailed before the center was on by
+ * incident). The two kinds left on were mailed before the center was on by
  * default: a trigger health or auto-pause alert (a delivery that is not one
- * lowers the default itself, `DeliverInput.emailDefault`), a capture computer
- * that went down, and an artifact comment.
+ * lowers the default itself, `DeliverInput.emailDefault`) and a capture
+ * computer that went down.
  */
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationKindPreferences = {
   turn_done: { push: true, email: false },
@@ -50,7 +49,6 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationKindPreferences = {
   automation_recovered: { push: true, email: false },
   capture_device_down: { push: true, email: true },
   capture_device_recovered: { push: true, email: false },
-  artifact_comment: { push: true, email: true },
 };
 
 /** Kinds emailed as soon as they happen. Every other kind with email on joins the digest. */

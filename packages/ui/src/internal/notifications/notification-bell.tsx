@@ -1,8 +1,8 @@
 /**
  * `BellMark`: a glyph with a count disc off its bottom-right corner, in the
- * toast's badge-glow style. The account pages' Inbox button (KRTX-1742), the
- * project home's access-requests control and the Artifact comments button
- * draw their counts with it. The inbox itself is a page:
+ * toast's badge-glow style. The account pages' Inbox button (KRTX-1742) and the
+ * project home's access-requests control draw their counts with it. The inbox
+ * itself is a page:
  * `notification-inbox.tsx`.
  */
 
