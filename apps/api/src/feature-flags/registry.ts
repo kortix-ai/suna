@@ -415,9 +415,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'session create/list ignore space_id. On: the person\'s DM with My Kortix is their chat; each My Kortix thread in it gets the board of the other threads at turn start ' +
       '(projects/lib/chat-threads.ts). Turning it on creates #general and files every session without a space into it (feature-flags/toggle-effects.ts). ' +
       'THREAD FILES (memory/thread-files.ts): every session of a space thread (workers too) mounts the space\'s Files folder read-write ' +
-      '(drives/service.ts sessionSpaceFolder; a private channel\'s as before); a person\'s prompt to a top-level thread is written to ' +
-      '<space folder>/threads/<slug>-<id>/messages/NNNN-<author>.md and the agent\'s answer at turn end to NNNN-<agent>.md, best effort; ' +
-      'each turn\'s system text names the thread folder and context.md. ' +
+      '(drives/service.ts sessionSpaceFolder; a private channel\'s as before). The conversation is never copied into files: ' +
+      'each turn\'s system text names the thread\'s root session (read with `kortix sessions log <id>`), the thread folder ' +
+      '(<space folder>/threads/<slug>-<id>/ with work/ and results/) and context.md. ' +
       'STORED OVERRIDE: experimental.chat, else the legacy experimental.project_channels, else experimental.infinichat (explicitOverride). ' +
       'BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-channel-memory skill; a change reaches the next new box. ' +
       'WEB: a Chat row (/projects/:id/chat) and the spaces list replace New session and the session list; /projects/:id/chat renders FeatureGateScreen while off. ' +
@@ -570,7 +570,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
       '`space_agents`; a spawn outside it is 400 AGENT_NOT_IN_SPACE), else the project\'s agents from `/detail`. A worker writes ' +
       'its full result to the thread\'s results/<name>-<n>.md and reports the path; the front links it. KORTIX_PI_CLOUD_SUBAGENTS_MAX_DEPTH is 3 so a worker keeps its own ' +
       'subagents (projects/lib/feature-flag-env.ts). Each worker prompt ends with a "Context files" block (the thread ' +
-      'folder, the newest message file, context.md, the worker\'s work/<name>/ folder) from the prompt body\'s ' +
+      'folder, the thread\'s session id to read with `kortix sessions log`, context.md, the worker\'s work/<name>/ folder) from the prompt body\'s ' +
       '`thread_files`, which only the API sets (memory/thread-files.ts, with `chat`). WEB: a front thread\'s "Open full ' +
       'session" opens its worker.',
   },

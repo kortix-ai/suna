@@ -2360,7 +2360,7 @@ describe('pi subagents extension', () => {
     expect(systems.every((system) => system.startsWith("You are Kortix, the watcher of one space"))).toBe(true)
   })
 
-  test("a router's prompt body thread_files end every worker prompt with the Context files block, kept across a notice turn", async () => {
+  test("a router's prompt body thread_files end every worker prompt with the Context files block, a notice turn's too", async () => {
     const creates: Array<Record<string, any>> = []
     const server = Bun.serve({
       port: 0,
@@ -2390,7 +2390,7 @@ describe('pi subagents extension', () => {
         },
       })
       const root = r.service.runtime()!.rootId
-      const files = { folder: '/drives/general/threads/a-poem-1a2b3c4d', context: '/drives/general/context.md', message: '/drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md' }
+      const files = { folder: '/drives/general/threads/a-poem-1a2b3c4d', context: '/drives/general/context.md', session: '1a2b3c4d-5e6f-4a1b-9c2d-0e1f2a3b4c5d' }
       // The route the API forwards a prompt to: thread_files rides beside system.
       const sent = await r.user(`/kortix/runtime/sessions/${root}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ parts: [{ type: 'text', text: 'a poem about rain' }], thread_files: files }) })
       expect(sent.status).toBe(202)
@@ -2398,16 +2398,15 @@ describe('pi subagents extension', () => {
       expect(creates).toHaveLength(1)
       const prompt = creates[0]!.initial_prompt as string
       expect(prompt.startsWith('Write the poem the person asked for.\n\n## Context files\n')).toBe(true)
-      expect(prompt).toContain("- The person's latest message: /drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md")
+      expect(prompt).toContain('- The conversation: `kortix sessions log 1a2b3c4d-5e6f-4a1b-9c2d-0e1f2a3b4c5d -n 50`')
       expect(prompt).toContain('- Your work folder: /drives/general/threads/a-poem-1a2b3c4d/work/poem/ (keep your scratch files here)')
       expect(prompt).toContain('- Your result file: /drives/general/threads/a-poem-1a2b3c4d/results/poem-<n>.md')
-      // A notice turn carries the folder but no message: the newest message file stays.
-      const notice = { folder: files.folder, context: files.context }
-      const again = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'worker done', synthetic: true }], thread_files: notice }) })
+      // A notice turn carries the same thread_files: the conversation is the session log, not a message file.
+      const again = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'worker done', synthetic: true }], thread_files: files }) })
       expect(again.status).toBe(204)
       await waitFor(() => !r.service.runtime()!.busy())
       expect(creates).toHaveLength(2)
-      expect(creates[1]!.initial_prompt).toContain("- The person's latest message: /drives/general/threads/a-poem-1a2b3c4d/messages/0001-ana.md")
+      expect(creates[1]!.initial_prompt).toContain('- The conversation: `kortix sessions log 1a2b3c4d-5e6f-4a1b-9c2d-0e1f2a3b4c5d -n 50`')
       expect(creates[1]!.initial_prompt).toContain('/results/poem-short-<n>.md')
     } finally {
       server.stop(true)
@@ -4318,16 +4317,12 @@ describe('pi per-prompt agent (R7.2)', () => {
   })
 })
 
-/** The session's record file (`<state>/records/<pi session id>.log`) and its text. */
-const recordOf = (r: Rig) => {
-  const dir = join(r.workspace, '.state', 'records')
-  const file = readdirSync(dir).find((name) => name.endsWith('.log'))!
-  return { path: join(dir, file), text: readFileSync(join(dir, file), 'utf8') }
-}
 const RESET_LINE = 'You are continuing this conversation in a fresh context. Nothing was summarized.'
+/** The reset points at the stored session log of the rig's session (`KORTIX_SESSION_ID`). */
+const LOG_LINE = '`kortix sessions log sess-pi-test -n 50 --json`'
 
-describe('pi context record: retrieval instead of compaction', () => {
-  test('/summarize resets onto the record with no model call: the next request holds the reset text, not the history', async () => {
+describe('pi context record: retrieval instead of compaction, on the session log', () => {
+  test('/summarize resets onto the session log with no model call and no file: the next request holds the reset text, not the history', async () => {
     const r = await boot({ script: [{ text: 'first answer ERR-ALPHA-7731' }, { text: 'second answer' }, { text: 'third answer' }], prepare: compactEverything })
     const root = r.service.runtime()!.rootId
     expect(r.service.runtime()!.extensionStatus().loaded).toContain('kortix-context-record')
@@ -4341,39 +4336,31 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(gateway.sent.length).toBe(calls)
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const [turn] = compactionTurns(page)
-    const headerCount = recordOf(r).text.split('\n').filter((line) => line.startsWith('{"n":')).length
-    // The marker says it is a reset onto the record, with its size, for the client's divider.
-    expect(turn!.part).toMatchObject({ type: 'compaction', auto: false, mode: 'record', tokens_before: expect.any(Number), entries: headerCount })
+    // The marker says it is a reset onto the log, with the message count, for the client's divider.
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: false, mode: 'record', tokens_before: expect.any(Number), entries: 4 })
     expect(turn!.summary.info.error).toBeUndefined()
     // The session log carries the same, so a restored or API-served transcript shows the reset too.
     const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
     const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'compaction')
-    expect(block).toMatchObject({ type: 'compaction', trigger: 'manual', mode: 'record', entries: headerCount })
-    const { path, text } = recordOf(r)
+    expect(block).toMatchObject({ type: 'compaction', trigger: 'manual', mode: 'record', entries: 4 })
     expect(turn!.summary.parts[0]!.text).toContain(RESET_LINE)
-    expect(turn!.summary.parts[0]!.text).toContain(path)
+    expect(turn!.summary.parts[0]!.text).toContain(LOG_LINE)
     // The latest message comes along word for word; a manual reset is not mid-turn.
     expect(turn!.summary.parts[0]!.text).toContain('<message>\nBETA question\n</message>')
     expect(turn!.summary.parts[0]!.text).not.toContain('You were working on it')
-    // The record keeps every entry word for word, with a JSON header line each.
-    expect(text).toContain('ALPHA question')
-    expect(text).toContain('first answer ERR-ALPHA-7731')
-    const headers = text.split('\n').filter((line) => line.startsWith('{"n":')).map((line) => JSON.parse(line) as { n: number; kind: string })
-    expect(headers.map((h) => h.n)).toEqual(headers.map((_, i) => i + 1))
-    expect({ kinds: headers.map((h) => h.kind) }).toEqual({ kinds: ['user', 'assistant', 'user', 'assistant'] })
-    // The record never shows as a change in a checkout that holds the state dir.
-    expect(readFileSync(join(r.workspace, '.state', 'records', '.gitignore'), 'utf8')).toBe('*\n')
+    // No copy of the conversation is written.
+    expect(existsSync(join(r.workspace, '.state', 'records'))).toBe(false)
 
     await promptAndSettle(r, 'GAMMA question')
     const next = sentText(gateway.sent.at(-1)!)
     expect(next).toContain(RESET_LINE)
     expect(next).toContain('GAMMA question')
-    // Nothing before the reset is in the context: it is kept in the record only.
+    // Nothing before the reset is in the context: the session log holds it.
     expect(next).not.toContain('ERR-ALPHA-7731')
     expect(next).not.toContain('second answer')
   })
 
-  test("a short session resets on /summarize with pi's default settings: the record keeps nothing, so pi's 20,000-token tail rule does not refuse it", async () => {
+  test("a short session resets on /summarize with pi's default settings: the reset keeps nothing, so pi's 20,000-token tail rule does not refuse it", async () => {
     const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }] })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
@@ -4420,7 +4407,7 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(page.messages.at(-1)!.parts.map((p) => p.text).join('')).toContain('answer after the reset')
   })
 
-  test('a reply cut by the length limit resets onto the record and retries once: the turn completes with the retried answer', async () => {
+  test('a reply cut by the length limit resets onto the session log and retries once: the turn completes with the retried answer', async () => {
     const r = await boot({ script: [{ text: 'partial answ', finish: 'length' }, { text: 'the whole answer' }] })
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0c8ABCDEFGHIJKLMN'
@@ -4432,40 +4419,6 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(compactionTurns(page)[0]!.part).toMatchObject({ mode: 'record' })
     expect(page.messages.at(-1)!.parts.map((p) => p.text).join('')).toContain('the whole answer')
     expect(sentText(gateway.sent.at(-1)!)).toContain('You were working on it when the context filled.')
-  })
-
-  test('tool calls and results go into the record whole, an image as one line', async () => {
-    const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
-    const imageCatalog = testModel({ attachment: true })
-    const big = 'x'.repeat(60_000)
-    const r = await boot({
-      script: [{ tool: 'bash', args: { command: `printf '%s' ${big} > big.txt && cat big.txt` } }, { text: 'read it' }],
-      catalog: imageCatalog,
-    })
-    const root = r.service.runtime()!.rootId
-    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'what is this' }, { type: 'file', mime: 'image/png', url: PNG, filename: 'shot.png' }] })).status).toBe(204)
-    await waitFor(() => r.service.runtime()!.idle())
-    const { text } = recordOf(r)
-    const lines = text.split('\n')
-    const headers = lines.filter((line) => line.startsWith('{"n":')).map((line) => JSON.parse(line) as Record<string, unknown>)
-    expect(headers.map((h) => h.kind)).toEqual(['user', 'call', 'result', 'assistant'])
-    expect(headers[1]).toMatchObject({ name: 'bash', id: expect.any(String) })
-    expect(headers[2]).toMatchObject({ name: 'bash', for: headers[1]!.id, exit: 'ok' })
-    expect(text).toMatch(/\[image: image\/png, \d+ bytes, not in the record\]/)
-    expect(text).toContain('printf')
-    // The 60,000-character command is in the record whole.
-    expect(text).toContain(big)
-  })
-
-  test('a restarted daemon rebuilds the record from the restored conversation', async () => {
-    const r = await boot({ script: [{ text: 'first answer ERR-BETA-0042' }] })
-    await promptAndSettle(r, 'ALPHA question')
-    await r.service.lifecycle.stop()
-    rmSync(join(r.workspace, '.state', 'records'), { recursive: true, force: true })
-    const restarted = await boot({ script: [], workspace: r.workspace })
-    rigs.splice(rigs.indexOf(r), 1)
-    await waitFor(() => existsSync(join(r.workspace, '.state', 'records')))
-    expect(recordOf(restarted).text).toContain('first answer ERR-BETA-0042')
   })
 
   test('health lists session.context_record, so a client words its reset controls for the record; an agent on summary does not list it', async () => {
