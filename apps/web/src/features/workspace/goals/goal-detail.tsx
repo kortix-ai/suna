@@ -768,19 +768,19 @@ function GoalControls({ projectId, goal, onChanged, onShare }: { projectId: stri
       {/* Pause or Resume and the ⋯ menu: one secondary button group. */}
       <ButtonGroup>
         {writable && !paused && !restartable ? (
-          <Button size="sm" variant="secondary" className="gap-1.5" disabled={pause.isPending} aria-busy={pause.isPending} onClick={() => pause.mutate()} data-testid="goal-pause">
+          <Button size="xs" variant="secondary" className="gap-1.5" disabled={pause.isPending} aria-busy={pause.isPending} onClick={() => pause.mutate()} data-testid="goal-pause">
             <PauseIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />
             {t('pause')}
           </Button>
         ) : null}
         {restartable ? (
-          <Button size="sm" variant="secondary" className="gap-1.5" disabled={restart.isPending} aria-busy={restart.isPending} onClick={() => restart.mutate()} data-testid="goal-restart">
+          <Button size="xs" variant="secondary" className="gap-1.5" disabled={restart.isPending} aria-busy={restart.isPending} onClick={() => restart.mutate()} data-testid="goal-restart">
             <PlayIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />
             {t('restart')}
           </Button>
         ) : null}
         {writable && paused ? (
-          <Button size="sm" variant="secondary" className="gap-1.5" disabled={resume.isPending} aria-busy={resume.isPending} onClick={() => resume.mutate()} data-testid="goal-resume">
+          <Button size="xs" variant="secondary" className="gap-1.5" disabled={resume.isPending} aria-busy={resume.isPending} onClick={() => resume.mutate()} data-testid="goal-resume">
             <PlayIcon weight="fill" className="size-3.5 shrink-0" aria-hidden />
             {t('resume')}
           </Button>
