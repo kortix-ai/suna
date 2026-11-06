@@ -12,7 +12,7 @@
  */
 import { flow } from '../core/flow';
 import type { FlowContext, Principal } from '../core/types';
-import { createDatabaseSession } from '../fixtures/database-project';
+import { createDatabaseSession, fundDatabaseAccount } from '../fixtures/database-project';
 
 /** Volatile fields two otherwise equal answers may differ in. */
 const VOLATILE = /"(request_id|timestamp|server_time|generated_at|last_seen_at|last_opened_at|updated_at|expires_at)":\s*("[^"]*"|\d+|null)/g;
@@ -535,7 +535,9 @@ flow(
   'WS-ROUTE-10',
   {
     domain: 'workspaces',
+    requires: ['database'],
     routes: [
+      'GET /v1/billing/account-state',
       'POST /v1/accounts/tokens',
       'POST /v1/workspaces/:workspaceId/tokens',
       'GET /v1/me/tokens',
@@ -582,6 +584,21 @@ flow(
       if (list.find((t) => t.token_id === personalId)?.status !== 'revoked') throw new Error('the key is not revoked');
       (await owner.del(`/v1/me/tokens/${personalId}`)).status(404);
       (await owner.del('/v1/me/tokens/not-a-uuid')).status(400);
+    });
+
+    await ctx.step('GET /billing/account-state?workspace_id= answers for that workspace, like ?account_id=; never the default one', async () => {
+      const funded = await ctx.fixtures.team();
+      const fundedWorkspace = await funded.project();
+      await fundDatabaseAccount(ctx.env, funded.id);
+      const read = async (query: Record<string, string>) =>
+        stable((await owner.get('/v1/billing/account-state', { query })).status(200).text());
+      const [byWorkspace, byAccount, other] = await Promise.all([
+        read({ workspace_id: fundedWorkspace.id }),
+        read({ account_id: funded.id }),
+        read({ workspace_id: w.id }),
+      ]);
+      if (byWorkspace !== byAccount) throw new Error('?workspace_id= and ?account_id= answer different states');
+      if (byWorkspace === other) throw new Error('?workspace_id= answered another workspace');
     });
   },
 );

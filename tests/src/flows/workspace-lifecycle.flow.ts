@@ -108,6 +108,8 @@ flow(
       'GET /v1/workspaces/:workspaceId',
       'GET /v1/workspaces',
       'GET /v1/accounts',
+      'GET /v1/accounts/:workspaceId',
+      'GET /v1/billing/account-state',
     ],
   },
   async (ctx) => {
@@ -139,6 +141,14 @@ flow(
     });
     await ctx.step('the admin member loses the workspace at once → 404, and cannot restore it → 404 workspace_not_found', async () => {
       (await ctx.client.as(admin).get('/v1/workspaces/:workspaceId', { params })).status(404);
+      // The legacy account names answer the same: no former member reads the closed account.
+      for (const path of [`/v1/accounts/${team.id}`, `/v1/accounts/${team.id}/members`, `/v1/accounts/${team.id}/invites`]) {
+        const r = await ctx.client.as(admin).get(path);
+        if (r.statusCode !== 404 && r.statusCode !== 403) throw new Error(`${path} answered the admin ${r.statusCode}`);
+      }
+      (await ctx.client.as(admin).get('/v1/billing/account-state', { query: { account_id: team.id } })).status(403);
+      // The owner still reads its billing while it can restore it.
+      (await asOwner.get('/v1/billing/account-state', { query: { account_id: team.id } })).status(200);
       (await ctx.client.as(admin).post('/v1/workspaces/:workspaceId/restore', {}, { params }))
         .status(404)
         .body()

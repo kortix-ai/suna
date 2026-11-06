@@ -10,7 +10,8 @@
  *   2. the session gate enforces that account's session policy (max lifetime,
  *      idle timeout, force-logout); a route with no account in the path is
  *      gated by the caller's active account;
- *   3. the SSO gate judges the same account.
+ *   3. the SSO gate judges the same account;
+ *   4. a closing workspace answers its owners only (404 workspace_not_found).
  *
  * The resolver runs first. Before it did, the session gate on a canonical
  * route read the raw workspace id (a `project_id`), found no account row and
@@ -19,7 +20,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import type { AppEnv } from '../types';
 import { accountSessionGate } from '../iam/session-gate';
-import { accountSsoGate } from '../middleware/sso-gate';
+import { accountClosingGate, accountSsoGate } from '../middleware/sso-gate';
 import { resolveWorkspaceAccount, workspacePathSegment } from '../middleware/workspace-account';
 import { isNoWorkspaceError } from '../shared/no-workspace';
 import { resolveAccountId } from '../shared/resolve-account';
@@ -50,5 +51,5 @@ const sessionPolicyGate: MiddlewareHandler<AppEnv> = async (c, next) => {
 
 /** The ordered middleware chain; mount each with `router.use('/*', …)`. */
 export function accountRequestGates(): MiddlewareHandler<AppEnv>[] {
-  return [resolveWorkspaceAccount(workspacePathSegment), sessionPolicyGate, accountSsoGate()];
+  return [resolveWorkspaceAccount(workspacePathSegment), sessionPolicyGate, accountSsoGate(), accountClosingGate()];
 }

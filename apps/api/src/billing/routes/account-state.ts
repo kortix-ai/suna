@@ -69,7 +69,10 @@ async function viewFor(c: Context<AppEnv>, accountId: string, state: AccountStat
 // Opaque account-state payload (credits, tier, subscription, …). Permissive on
 // purpose — the real shape is large and varies by mode (live / minimal / local mock).
 const AccountStateSchema = z.record(z.string(), z.any());
-const AccountStateQuerySchema = z.object({ account_id: z.string().optional() });
+const AccountStateQuerySchema = z.object({
+  account_id: z.string().optional(),
+  workspace_id: z.string().optional().openapi({ description: 'The workspace to read (the canonical name of account_id; either id works).' }),
+});
 
 accountStateRouter.openapi(
   createRoute({

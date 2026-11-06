@@ -10,7 +10,8 @@ import { scopedAccountIdFor } from '../shared/resolve-account';
  * membership, which makes /accounts/<other>?tab=billing nonsensical.
  *
  * Resolution order:
- *   1. `?account_id=` (query) or `body.account_id` if provided → verify the
+ *   1. `?account_id=` / `?workspace_id=` (query) or `body.account_id` /
+ *      `body.workspace_id` if provided (either id) → verify the
  *      caller is a member of that account, then return it. 403 on miss.
  *   2. The account the credential is bound to (`c.get('accountId')`: a PAT,
  *      an API key, a service account), when set.
@@ -28,7 +29,8 @@ export async function resolveScopedAccountId(
 
   let requested: string | undefined;
   if (source === 'query') {
-    requested = c.req.query('account_id');
+    // `workspace_id` is the canonical name; `account_id` keeps working (both take either id).
+    requested = c.req.query('account_id') ?? c.req.query('workspace_id');
   } else {
     try {
       // Use Hono's cached body parse (c.req.json()), NOT c.req.raw.clone().json():
@@ -37,7 +39,7 @@ export async function resolveScopedAccountId(
       // then → account_id would be missed → a non-member would resolve to their
       // own account instead of being 403'd. c.req.json() returns the cached parse.
       const body = await c.req.json();
-      const candidate = body?.account_id;
+      const candidate = body?.account_id ?? body?.workspace_id;
       if (typeof candidate === 'string' && candidate) requested = candidate;
     } catch {
       // No JSON body or malformed — that's fine, fall through.

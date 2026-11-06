@@ -1,5 +1,5 @@
 import { accountMembers } from "@kortix/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { db } from "./db";
 import {
@@ -25,6 +25,17 @@ import { accountsView, projectsView } from "../workspaces/rows";
  *      they left) must not read or bill it. 409 `no_workspace` when the user
  *      belongs to no account.
  */
+/**
+ * A membership that still serves the account: every member of a live
+ * workspace, and only the owners of a closing one (its deletion request is
+ * open, K2). A former admin or member reads nothing of it, billing included.
+ */
+function servedMember() {
+  return sql`(${accountMembers.accountRole} = 'owner' OR NOT EXISTS (
+    SELECT 1 FROM kortix.account_deletion_requests r
+     WHERE r.account_id = ${accountMembers.accountId} AND r.status IN ('pending', 'processing')))`;
+}
+
 export async function scopedAccountIdFor(
   userId: string,
   requested: string | undefined,
@@ -77,6 +88,7 @@ export async function scopedAccountIdFor(
       and(
         eq(accountMembers.userId, userId),
         eq(accountMembers.accountId, requested),
+        servedMember(),
       ),
     )
     .limit(1);
@@ -91,7 +103,7 @@ export async function scopedAccountIdFor(
     const [viaWorkspace] = await db
       .select({ accountId: accountMembers.accountId })
       .from(accountMembers)
-      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountKey)))
+      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountKey), servedMember()))
       .limit(1);
     if (viaWorkspace) return accountKey;
   }
