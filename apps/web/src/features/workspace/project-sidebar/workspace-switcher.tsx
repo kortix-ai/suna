@@ -148,18 +148,14 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
     return () => window.removeEventListener(COMPUTER_SETUP_EVENT, openSetup);
   }, []);
   const { data: adminRole } = useAdminRole();
-  // "Create workspace" makes an account and its project, or fills an empty
-  // account the caller owns. Self-host can restrict account creation to
-  // platform admins (`KORTIX_RESTRICT_ACCOUNT_CREATION`); the backend 403
+  // "Create workspace" makes an account and its project. Self-host can
+  // restrict account creation to platform admins
+  // (`KORTIX_RESTRICT_ACCOUNT_CREATION`); the backend 403
   // (`account_creation_restricted`) stays the authoritative gate, this only
   // avoids offering a row the person cannot use.
   const restricted = isAccountCreationRestricted();
   const isPlatformAdmin = Boolean(adminRole?.isAdmin);
-  const canCreate = canCreateWorkspace({
-    restricted,
-    isPlatformAdmin,
-    reusableAccount: directory.reusableAccount,
-  });
+  const canCreate = canCreateWorkspace({ restricted, isPlatformAdmin });
 
   // For the rows that OPEN something in place — the settings panel, the log-out
   // confirmation. Navigating rows do not use it: they are anchors now, and an

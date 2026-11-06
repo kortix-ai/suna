@@ -105,7 +105,6 @@ import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import {
   canCreateWorkspace,
-  reusableEmptyAccount,
 } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import type { InterfaceThemeId } from '@/lib/interface-themes';
 import {
@@ -979,19 +978,10 @@ export function CommandPalette() {
     workspaceQueries.length === 0 || workspaceQueries.some((q) => q.isLoading);
   const { data: adminRole } = useAdminRole({ enabled: open });
   // The sidebar switcher's rule (`canCreateWorkspace`): a restricted self-host
-  // offers Create workspace only to a platform admin or the owner of an
-  // empty account.
+  // offers Create workspace only to a platform admin.
   const canCreateNewWorkspace = canCreateWorkspace({
     restricted: isAccountCreationRestricted(),
     isPlatformAdmin: Boolean(adminRole?.isAdmin),
-    reusableAccount: reusableEmptyAccount({
-      accounts: accountsList ?? [],
-      lists: (accountsList ?? []).map((account, index) => ({
-        accountId: account.account_id,
-        data: workspaceQueries[index]?.data,
-        isError: workspaceQueries[index]?.isError ?? false,
-      })),
-    }),
   });
   const { data: paletteSessions, isPending: projectSessionsPending } = useQuery({
     queryKey: qk.project.sessions(projectId ?? ''),

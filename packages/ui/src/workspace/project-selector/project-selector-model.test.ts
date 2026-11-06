@@ -5,6 +5,7 @@ import { accountInviteLanding, type KortixAccount, type KortixProject } from '@k
 import {
   buildWorkspaceRows,
   canCreateWorkspace,
+  githubSourceAccount,
   decideDoor,
   failedAccountIds,
   filterWorkspaceRows,
@@ -129,17 +130,38 @@ describe('reusableEmptyAccount — what Create workspace fills', () => {
   });
 });
 
-describe('canCreateWorkspace', () => {
+describe('canCreateWorkspace — the server rule: every create makes a new account', () => {
   test('open everywhere unless the instance restricts account creation', () => {
-    expect(canCreateWorkspace({ restricted: false, isPlatformAdmin: false, reusableAccount: null })).toBe(true);
-    expect(canCreateWorkspace({ restricted: true, isPlatformAdmin: false, reusableAccount: null })).toBe(false);
+    expect(canCreateWorkspace({ restricted: false, isPlatformAdmin: false })).toBe(true);
+    expect(canCreateWorkspace({ restricted: true, isPlatformAdmin: false })).toBe(false);
   });
 
-  test('a restricted instance still lets a platform admin, or the owner of an empty account, create', () => {
-    expect(canCreateWorkspace({ restricted: true, isPlatformAdmin: true, reusableAccount: null })).toBe(true);
+  test('a restricted instance lets only a platform admin create; an empty account of theirs changes nothing', () => {
+    expect(canCreateWorkspace({ restricted: true, isPlatformAdmin: true })).toBe(true);
     expect(canCreateWorkspace({ restricted: true, isPlatformAdmin: false, reusableAccount: account('a', 'owner') })).toBe(
-      true,
+      false,
     );
+  });
+});
+
+describe('githubSourceAccount — whose GitHub connection a GitHub-source create uses', () => {
+  const rows = buildWorkspaceRows({
+    accounts: [account('m', 'member'), account('o', 'owner'), account('d', 'admin'), account('x', 'owner')],
+    lists: [list('m', [project('pm', 'm')]), list('o', [project('po', 'o')]), list('d', [project('pd', 'd')]), list('x', [])],
+  });
+  const accounts = [account('m', 'member'), account('o', 'owner'), account('d', 'admin'), account('x', 'owner')];
+
+  test('the first open workspace in list order where the caller is an owner or admin', () => {
+    const byId = (id: string) => rows.find((row) => row.workspaceId === id)!;
+    expect(githubSourceAccount({ accounts, rows: [byId('pm'), byId('pd'), byId('po')] })?.account_id).toBe('d');
+    expect(githubSourceAccount({ accounts, rows: [byId('po'), byId('pd')] })?.account_id).toBe('o');
+  });
+
+  test('never a member-only workspace, a workspace that is not open, or an account with no workspace', () => {
+    const byId = (id: string) => rows.find((row) => row.workspaceId === id)!;
+    expect(githubSourceAccount({ accounts, rows: [byId('pm')] })).toBeNull();
+    expect(githubSourceAccount({ accounts, rows: [{ ...byId('po'), state: 'deleting' }] })).toBeNull();
+    expect(githubSourceAccount({ accounts, rows: undefined })).toBeNull();
   });
 });
 

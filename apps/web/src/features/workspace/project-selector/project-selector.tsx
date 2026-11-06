@@ -494,12 +494,11 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
   const createHref = canCreateWorkspace({
     restricted: isAccountCreationRestricted(),
     isPlatformAdmin: Boolean(adminRole?.isAdmin),
-    reusableAccount: data.reusableAccount,
   })
     ? '/workspaces/new'
     : null;
 
-  const inlineCreate = useInlineCreate(data.reusableAccount?.account_id ?? null, Boolean(createHref));
+  const inlineCreate = useInlineCreate(Boolean(createHref));
   const stateActions = useWorkspaceStateActions((workspaceId) => router.push(`/workspaces/${workspaceId}`));
   const stateActionId = stateActions.setup.isPending
     ? (stateActions.setup.variables ?? null)
@@ -569,7 +568,7 @@ export function ProjectSelector({ connectComputer }: { connectComputer?: boolean
  * `/workspaces/new`, and its `useCreateWorkspace` orchestration, which opens
  * the created workspace.
  */
-function useInlineCreate(reusableAccountId: string | null, allowed: boolean): InlineCreateProps {
+function useInlineCreate(allowed: boolean): InlineCreateProps {
   const tNew = useTranslations('newWorkspace');
   const [name, setName] = useState('');
   const [touched, setTouched] = useState(false);
@@ -577,7 +576,8 @@ function useInlineCreate(reusableAccountId: string | null, allowed: boolean): In
     setName((current) => current || suggestWorkspaceName());
   }, []);
   const { create, status, error, retry, canRetry, phase } = useCreateWorkspace();
-  const state = { ...INITIAL_FORM_STATE, name, accountId: reusableAccountId };
+  // The managed source: the server makes the account (`new_workspace: true`).
+  const state = { ...INITIAL_FORM_STATE, name };
   const submitting = status === 'creating';
 
   const result = validateWorkspaceName(name);

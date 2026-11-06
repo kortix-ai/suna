@@ -72,20 +72,21 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
 }
 
 /**
- * The account a GitHub-source create acts in.
+ * The `account_id` a GitHub-source create names: the account whose GitHub
+ * connection it uses (`githubSourceAccount`, a workspace the caller owns or
+ * administers).
  *
- * The managed source sends `new_workspace: true` and no `account_id`: the
- * server reuses the caller's newest owned empty account or creates one
- * (Workspaces D3). The GitHub sources cannot: their installation lives in an
- * account, so the form binds them to the owned empty account the create
- * fills (`reusableEmptyAccount`). Fail closed: an `accountId` that is not
- * that account never reaches the network.
+ * The managed source sends `new_workspace: true` and no `account_id`. The
+ * GitHub sources name the source account because their installation lives
+ * there; the server then creates the new workspace (a new account, with a
+ * grant for the one repository) and never fills the source. Fail closed: an
+ * `accountId` that is not the source account never reaches the network.
  */
 export function resolveTargetAccountId(
   state: NewWorkspaceFormState,
-  reusableAccountId: string | null,
+  sourceAccountId: string | null,
 ): string {
-  if (!state.accountId || state.accountId !== reusableAccountId) {
+  if (!state.accountId || state.accountId !== sourceAccountId) {
     throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
   }
   return state.accountId;
@@ -109,20 +110,20 @@ export function buildCreatePayload(
   };
 }
 
-/** The `POST /projects/create-repo` body, in the account the create fills. */
+/** The `POST /projects/create-repo` body, naming the source account. */
 export function buildGitHubCreatePayload(
   state: NewWorkspaceFormState,
-  reusableAccountId: string | null,
+  sourceAccountId: string | null,
 ): CreateProjectRepoInput {
-  return buildCreateRepoPayload(state, resolveTargetAccountId(state, reusableAccountId));
+  return buildCreateRepoPayload(state, resolveTargetAccountId(state, sourceAccountId));
 }
 
 /** The `POST /projects/link-repository` body. Same account resolution. */
 export function buildGitHubImportPayload(
   state: NewWorkspaceFormState,
-  reusableAccountId: string | null,
+  sourceAccountId: string | null,
 ): LinkRepositoryInput {
-  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, reusableAccountId));
+  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, sourceAccountId));
 }
 
 /**
@@ -132,9 +133,9 @@ export function buildGitHubImportPayload(
  */
 export function buildManagedImportRequest(
   state: NewWorkspaceFormState,
-  reusableAccountId: string | null,
+  sourceAccountId: string | null,
 ): LinkRepositoryInput {
-  return buildManagedImportPayload(state, resolveTargetAccountId(state, reusableAccountId));
+  return buildManagedImportPayload(state, resolveTargetAccountId(state, sourceAccountId));
 }
 
 /**
@@ -631,22 +632,22 @@ export type CreateResult = { ok: true; project: KortixProject } | { ok: false; e
  */
 async function runSourceAttempt(
   state: NewWorkspaceFormState,
-  reusableAccountId: string | null,
+  sourceAccountId: string | null,
   idempotencyKey: string | null,
   client: CreateOrchestrationClient,
 ): Promise<KortixProject> {
   if (state.source === 'github-create') {
-    return client.createGitHubRepoProject(buildGitHubCreatePayload(state, reusableAccountId));
+    return client.createGitHubRepoProject(buildGitHubCreatePayload(state, sourceAccountId));
   }
   if (state.source === 'github-import') {
-    return client.importGitHubRepoProject(buildGitHubImportPayload(state, reusableAccountId));
+    return client.importGitHubRepoProject(buildGitHubImportPayload(state, sourceAccountId));
   }
   // `managed` + a chosen repository is an IMPORT of a repository the managed
   // owner already holds, not a provision of a new one. `/projects/provision`
   // cannot adopt an existing repository, so it would create a second, empty
   // one and ignore the choice.
   if (isManagedImport(state)) {
-    return client.importGitHubRepoProject(buildManagedImportRequest(state, reusableAccountId));
+    return client.importGitHubRepoProject(buildManagedImportRequest(state, sourceAccountId));
   }
   if (!idempotencyKey) {
     throw new Error('runCreate: the managed source requires an idempotency key');
@@ -704,7 +705,7 @@ async function runSourceAttempt(
  */
 export async function runCreate(
   state: NewWorkspaceFormState,
-  reusableAccountId: string | null,
+  sourceAccountId: string | null,
   userId: string | null | undefined,
   client: CreateOrchestrationClient,
 ): Promise<CreateResult> {
@@ -720,7 +721,7 @@ export async function runCreate(
     : null;
 
   try {
-    const project = await runSourceAttempt(state, reusableAccountId, idempotencyKey, client);
+    const project = await runSourceAttempt(state, sourceAccountId, idempotencyKey, client);
     if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
     // Read BEFORE priming: `primeProjectCache` prepends the new project, so a
     // read after it can never see the account's pre-create state.
@@ -791,7 +792,7 @@ export function useCreateWorkspace(options?: { enterProject?: (projectId: string
   // GitHub sources — whose routes stream nothing — show for the whole wait.
   const [phase, setPhase] = useState<ProvisionPhase | null>(null);
 
-  const reusableAccountId = useWorkspaceDirectory().reusableAccount?.account_id ?? null;
+  const sourceAccountId = useWorkspaceDirectory().githubSourceAccount?.account_id ?? null;
 
   const create = useCallback(
     async (state: NewWorkspaceFormState) => {
@@ -802,7 +803,7 @@ export function useCreateWorkspace(options?: { enterProject?: (projectId: string
       // attempt's last phase, and every source starts on the base screen.
       setPhase(null);
 
-      const result = await runCreate(state, reusableAccountId, viewerId, {
+      const result = await runCreate(state, sourceAccountId, viewerId, {
         attemptKeyFor,
         clearAttemptKey,
         // The phase sink is this hook's own state setter: every streamed
@@ -881,7 +882,7 @@ export function useCreateWorkspace(options?: { enterProject?: (projectId: string
         setLastError(result.error);
       }
     },
-    [reusableAccountId, queryClient, router, viewerId, options?.enterProject],
+    [sourceAccountId, queryClient, router, viewerId, options?.enterProject],
   );
 
   const retry = useCallback(() => {

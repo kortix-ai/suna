@@ -23,7 +23,6 @@ import {
   type NewWorkspaceFormState,
 } from '@kortix/ui/workspace/new/new-workspace-form';
 import { useCreateWorkspace } from '@kortix/ui/workspace/new/use-create-workspace';
-import { useProjectQuota } from '@kortix/ui/workspace/new/use-project-quota';
 import { WorkspaceHandoff } from '@kortix/ui/workspace/new/workspace-handoff';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
@@ -83,21 +82,22 @@ const ICON_WIDTH = '2.8rem';
  *
  * ONE form: the name, the icon, and Advanced (the repository source). No
  * account picker: a workspace is one account and its project (Workspaces
- * D3), so Create makes the whole workspace. The managed source sends
- * `new_workspace: true` and the server reuses the caller's newest owned empty
- * account (a plan or credits already there stay) or creates one. The GitHub
- * sources act in that same empty account, because their installations are
- * account-scoped; with no such account Advanced offers the managed source
- * only, and GitHub connects later in Workspace settings › Git repo.
+ * D3), so Create makes the whole workspace, and the server always makes its
+ * new account. The managed source sends `new_workspace: true`. The GitHub
+ * sources name the account whose GitHub connection they use
+ * (`githubSourceAccount`: a workspace the caller owns or administers), because
+ * installations are account-scoped; the server creates the new workspace with
+ * a grant for the one repository. With no such workspace Advanced offers the
+ * managed source only, and GitHub connects later in Workspace settings › Git.
  *
  * This page issues no MUTATING request on mount. The only write is the one
  * the submit button drives, through `useCreateWorkspace`, with a stable
  * `idempotency_key`. It reads the workspace directory (the same queries the
- * chooser and the switcher read) for that empty account.
+ * chooser and the switcher read) for the source account.
  *
  * Self-host with account creation restricted (`KORTIX_RESTRICT_ACCOUNT_CREATION`)
- * lets a non-admin create only when an empty account of theirs exists; else
- * the form says to ask an admin for an invite.
+ * lets only a platform admin create; the form says to ask an admin for an
+ * invite.
  *
  * Layout: one centered column, no card. A user must never be trapped here:
  * the web row links back to `/workspaces`, the desktop shell shows its close
@@ -126,8 +126,8 @@ export function NewWorkspacePage() {
   const initialSource = readSourceParam(new URLSearchParams(searchParams?.toString() ?? ''));
 
   // `?account=` survives the round trip to `/github/setup` (`readAccountParam`).
-  // It only ever names the empty account this create fills; any other id is
-  // ignored below (`effectiveAccountId`).
+  // It only ever names the GitHub source account; any other id is ignored
+  // below (`effectiveAccountId`).
   const returnedAccountId = readAccountParam(new URLSearchParams(searchParams?.toString() ?? ''));
 
   const [state, setState] = useState<NewWorkspaceFormState>(() => ({
@@ -183,37 +183,27 @@ export function NewWorkspacePage() {
     return t('validation.nameCharacters');
   }, [state.name, t, touched]);
 
-  const userId = user?.id ?? null;
-  // The owned empty account the create fills, if any. The managed source lets
-  // the server pick it; the GitHub sources act in it (`AdvancedFields`).
+  // The account whose GitHub connection the GitHub sources use, if any
+  // (`AdvancedFields`). The managed source names no account.
   const directory = useWorkspaceDirectory();
-  const reusableAccountId = directory.reusableAccount?.account_id ?? null;
+  const sourceAccountId = directory.githubSourceAccount?.account_id ?? null;
   const effectiveAccountId =
-    returnedAccountId && returnedAccountId !== reusableAccountId ? null : reusableAccountId;
+    returnedAccountId && returnedAccountId !== sourceAccountId ? null : sourceAccountId;
   const effectiveState: NewWorkspaceFormState = { ...state, accountId: effectiveAccountId };
 
   const { data: adminRole } = useAdminRole();
   const restrictedOut = !canCreateWorkspace({
     restricted: isAccountCreationRestricted(),
     isPlatformAdmin: Boolean(adminRole?.isAdmin),
-    reusableAccount: directory.reusableAccount,
   });
-
-  // The plan cap of the account the create fills, read once on load
-  // (KRTX-2495). A fresh account starts on the free plan with no workspace,
-  // so there is nothing to pre-check without one.
-  const quotaQuery = useProjectQuota(effectiveAccountId, {
-    enabled: !directory.loading && Boolean(userId) && Boolean(effectiveAccountId),
-  });
-  const capState = quotaQuery.data?.capped ? quotaQuery.data : null;
 
   // What blocks submit is a missing input (`isSubmittable`), the directory
-  // still loading, an in-flight create, the plan cap, or a restricted instance.
+  // still loading, an in-flight create, or a restricted instance. There is no
+  // plan cap to pre-check: every create makes a new workspace.
   const canSubmit =
     isSubmittable(effectiveState) &&
     !directory.loading &&
     !submitting &&
-    !capState &&
     !restrictedOut;
 
   return (
@@ -416,9 +406,9 @@ export function NewWorkspacePage() {
                   </p>
                 ) : null}
 
-                {/* `effectiveAccountId`: the empty account the create fills.
-                    Null hides the GitHub sources (their installations are
-                    account-scoped); managed needs no account. */}
+                {/* `effectiveAccountId`: the GitHub source account. Null hides
+                    the GitHub sources (their installations are account-scoped);
+                    managed needs no account. */}
                 <AdvancedFields
                   connectComputer={connectComputer}
                   state={state}
@@ -430,18 +420,6 @@ export function NewWorkspacePage() {
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
                 {tWorkspaces('submit')}
               </Button>
-              {/* The one-workspace rule, known BEFORE any submit (KRTX-2495):
-                  the quota pre-check answered `capped` (the account already
-                  holds its project), so the form says so here instead of
-                  teaching it through a failed create. No Upgrade action: the
-                  rule is the same on every plan. Shown only while
-                  `status === 'idle'`: once a submit runs, the handoff or the
-                  post-submit block owns this slot. */}
-              {capState && status === 'idle' ? (
-                <div role="alert" className="flex flex-col items-center gap-1.5">
-                  <p className="text-destructive text-center text-xs">{capState.message}</p>
-                </div>
-              ) : null}
               {/* Form-level, not a field error: every failure `messageFor`
                     (`use-create-workspace.ts`) maps — 403 wrong-account, 400
                     bad name, a managed-git-unavailable 503, a retryable 502, or

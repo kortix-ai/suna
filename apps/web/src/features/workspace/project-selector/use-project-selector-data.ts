@@ -23,8 +23,6 @@ export function useProjectSelectorData() {
     workspaces: list.rows,
     /** The workspaces that open now (`state: 'active'`). */
     openable: list.rows.filter(isOpenableRow),
-    /** The owned empty account a GitHub-source create fills, or null. */
-    reusableAccount: list.reusableAccount,
     /** Kept for the view's partial-failure line: one list, so never partial. */
     failedAccountIds: [] as string[],
     /** The list is known. Invites load separately. */

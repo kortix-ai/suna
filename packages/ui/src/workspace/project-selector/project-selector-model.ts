@@ -151,17 +151,13 @@ export function failedAccountIds(lists: ProjectListResult[]): string[] {
 }
 
 /**
- * The account "Create workspace" reuses: the newest account the caller OWNS
- * whose project list loaded and holds no active project. A plan or credits the
- * caller already holds there stay with the new workspace. `null`: the server
- * creates a fresh account (`createWorkspace`, `new_workspace: true`).
+ * The newest account the caller OWNS whose project list loaded and holds no
+ * active project.
  *
- * Ownership is the account role, never `account_id === user_id`: an account a
- * user created explicitly has its own id, and the identity rule locked those
- * users out of creating anything.
- *
- * The server makes the same choice for the managed source. The client needs it
- * only for the GitHub sources, whose installations are account-scoped.
+ * @deprecated No create fills an empty account any more: the server makes a
+ * new account for every create (`new_workspace: true`, design.md §3.1 items 1
+ * and 9), and a GitHub-source create names {@link githubSourceAccount}. Kept
+ * for importers of this module.
  */
 export function reusableEmptyAccount(input: {
   accounts: KortixAccount[];
@@ -183,6 +179,8 @@ export function reusableEmptyAccount(input: {
 /**
  * {@link reusableEmptyAccount} for a list read from `GET /v1/workspaces`: an
  * owned account none of the served workspaces belongs to.
+ *
+ * @deprecated See {@link reusableEmptyAccount}.
  */
 export function reusableEmptyAccountFromRows(input: {
   accounts: KortixAccount[];
@@ -196,19 +194,40 @@ export function reusableEmptyAccountFromRows(input: {
 }
 
 /**
- * Whether the caller may create a workspace at all.
- *
- * Self-host with `KORTIX_RESTRICT_ACCOUNT_CREATION` refuses a new account to
- * anyone but a platform admin (`account_creation_restricted`, 403). A caller
- * who already owns an empty account can still fill it, because that create
- * makes no account.
+ * The account whose GitHub connection a GitHub-source create uses: the
+ * account of the first open workspace in `rows` (the API's order, most
+ * recently opened first) where the caller is an owner or admin. Those are the
+ * roles that manage a workspace's GitHub connection, and the server lets them
+ * carry its installation to the new workspace as a grant for one repository
+ * (`apps/api/src/projects/routes/byo-new-workspace.ts`). The create names this
+ * account as `account_id`; the server decides where the workspace lands (a new
+ * account). `null`: no such workspace, so the form offers the managed source
+ * only.
+ */
+export function githubSourceAccount(input: {
+  accounts: KortixAccount[];
+  rows: WorkspaceRow[] | undefined;
+}): KortixAccount | null {
+  const row = (input.rows ?? []).find(
+    (candidate) => isOpenableRow(candidate) && (candidate.role === 'owner' || candidate.role === 'admin'),
+  );
+  if (!row) return null;
+  return input.accounts.find((account) => account.account_id === row.accountId) ?? null;
+}
+
+/**
+ * Whether the caller may create a workspace at all: the server's rule. Every
+ * create makes a new account, and self-host with
+ * `KORTIX_RESTRICT_ACCOUNT_CREATION` refuses a new account to anyone but a
+ * platform admin (`403 account_creation_restricted`).
  */
 export function canCreateWorkspace(input: {
   restricted: boolean;
   isPlatformAdmin: boolean;
-  reusableAccount: KortixAccount | null;
+  /** @deprecated Ignored: no create fills an empty account. */
+  reusableAccount?: KortixAccount | null;
 }): boolean {
-  return !input.restricted || input.isPlatformAdmin || input.reusableAccount !== null;
+  return !input.restricted || input.isPlatformAdmin;
 }
 
 /**

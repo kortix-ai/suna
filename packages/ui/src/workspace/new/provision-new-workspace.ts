@@ -5,9 +5,9 @@ export type NewWorkspaceInput = CreateWorkspaceInput;
 
 /**
  * Create a whole workspace in one request: `POST /v1/projects/provision` with
- * `new_workspace: true`. The server reuses the caller's newest owned account
- * with no project (a plan or credits already there stay), else creates one,
- * then provisions its project (Workspaces D3). A restricted self-host answers
+ * `new_workspace: true`. The server creates a new account the caller owns,
+ * then provisions its project (Workspaces D3; a retry with the same
+ * idempotency key returns the same workspace). A restricted self-host answers
  * `403 account_creation_restricted` when a new account would be needed.
  *
  * For the hosts that create a workspace outside `/workspaces/new` (a marketplace item, a

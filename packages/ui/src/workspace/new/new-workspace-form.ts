@@ -11,12 +11,11 @@ export interface NewWorkspaceFormState {
   defaultBranch: string;
   templateId: string | null;
   /**
-   * The account the GitHub sources act in: the owned, empty account the
-   * create fills (`reusableEmptyAccount`). Their installations are
-   * account-scoped, so they need an account before the workspace exists.
-   * Null for the managed source, which sends `new_workspace: true` and lets
-   * the server reuse or create the account (Workspaces D3). There is no
-   * account picker: a workspace is one account and its project.
+   * The account whose GitHub connection the GitHub sources use
+   * (`githubSourceAccount`): their installations are account-scoped. The
+   * server still makes a new workspace for the create. Null for the managed
+   * source, which sends `new_workspace: true`. There is no account picker: a
+   * workspace is one account and its project.
    */
   accountId: string | null;
   /**
@@ -53,8 +52,8 @@ export function isSubmittable(state: NewWorkspaceFormState): boolean {
   // both, and a repository for `github-import`. Gated HERE, so what blocks
   // submit is a MISSING input, the same as an empty name — never the choice.
   if (!githubSourceReady(state)) return false;
-  // A GitHub source acts in an account (its installation lives there). The
-  // managed source needs none: the server reuses or creates the account.
+  // A GitHub source names the account its installation lives in. The managed
+  // source needs none: the server creates the account.
   if (state.source !== 'managed' && !state.accountId) return false;
   return true;
 }

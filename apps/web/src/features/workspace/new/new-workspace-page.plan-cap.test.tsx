@@ -8,21 +8,14 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 /**
- * `/workspaces/new` plan-cap state, BEFORE the first failed create.
+ * `/workspaces/new`: the create and its landing.
  *
- * A free account at its 1-project cap used to open `/workspaces/new` with the form
- * looking fully available: Create enabled, no cap indication anywhere — the
- * cap reason only appeared after a failed submit (KRTX-2495). The page now
- * reads the account's project quota on load (`useProjectQuota` →
- * `GET /projects/quota`, the same computation `POST /provision`'s 403 gate
- * runs) and shows the cap state up front: the cap reason, the Upgrade
- * affordance, and Create disabled — before any submit.
- *
- * The quota hook is a mocked boundary here (its fetch and caching are the
- * SDK's concern, not the page's); everything between the quota payload and
- * the DOM — the disabled submit, the cap message, the Upgrade dialog wiring —
- * is the real page. Creation runs the real hook, orchestration and SDK transport;
- * only the configured HTTP fetch returns synthetic provision responses.
+ * The page used to pre-check the target account's one-project cap
+ * (KRTX-2495). Every create now makes a new workspace (Workspaces D3), so
+ * the cap never applies to it: the form shows no cap line and Create stays
+ * enabled. The quota hook stays mocked so a read of it is visible.
+ * Creation runs the real hook, orchestration and SDK transport; only the
+ * configured HTTP fetch returns synthetic provision responses.
  */
 
 let creates = 0;
@@ -82,14 +75,15 @@ mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
     isLoading: false,
   }),
 }));
-// The owned empty account the create fills (`reusableEmptyAccount`).
+// The caller owns one workspace: the GitHub source account (`githubSourceAccount`).
 mock.module('@kortix/ui/workspace/sidebar/use-workspace-directory', () => ({
   useWorkspaceDirectory: () => ({
     accounts: [{ account_id: 'user-1', name: 'Personal', account_role: 'owner' }],
     workspaces: [],
     loading: false,
     failedAccountIds: [],
-    reusableAccount: { account_id: 'user-1', name: 'Personal', account_role: 'owner' },
+    reusableAccount: null,
+    githubSourceAccount: { account_id: 'user-1', name: 'Personal', account_role: 'owner' },
     retryFailed: () => {},
   }),
 }));
@@ -157,9 +151,7 @@ mock.module('motion/react', () => ({
 }));
 
 const { NewWorkspacePage } = await import('./new-workspace-page');
-const { useUpgradeDialogStore } = await import('@kortix/ui/internal/stores/upgrade-dialog-store');
 
-const CAP_MESSAGE = 'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.';
 
 function setBilling(enabled: boolean): void {
   process.env.NEXT_PUBLIC_BILLING_ENABLED = enabled ? 'true' : 'false';
@@ -240,66 +232,23 @@ async function unmount(renderer: ReactTestRenderer): Promise<void> {
   });
 }
 
-const cappedQuota = { capped: true, message: CAP_MESSAGE };
-
-test('a capped account sees the cap reason on load, before any submit', async () => {
+test('an occupied workspace never blocks the form: Create submits a new workspace and reads no quota', async () => {
+  // Every create makes a new account (Workspaces D3), so the old one-project
+  // pre-check (KRTX-2495) has nothing to say: no cap line, Create enabled.
   setBilling(true);
-  quotaData = cappedQuota;
-  const renderer = await renderPage();
-  expect(capText(renderer)).toBe(CAP_MESSAGE);
-  await unmount(renderer);
-});
-
-test('a capped account cannot submit: Create project is disabled and fires no request', async () => {
-  setBilling(true);
-  quotaData = cappedQuota;
-  const renderer = await renderPage();
-  await type(renderer, 'Valid Name');
-  expect(findSubmit(renderer).props.disabled).toBe(true);
-  await act(async () => {
-    findForm(renderer).props.onSubmit({ preventDefault: () => {} });
-  });
-  expect(creates).toBe(0);
-  await unmount(renderer);
-});
-
-test('a capped account gets no Upgrade affordance: the one-workspace rule is the same on every plan', async () => {
-  setBilling(true);
-  quotaData = cappedQuota;
-  const renderer = await renderPage();
-  expect(capText(renderer)).toBe(CAP_MESSAGE);
-  expect(findButtonWithText(renderer, 'Upgrade plan')).toBeNull();
-  expect(useUpgradeDialogStore.getState().isOpen).toBe(false);
-  await unmount(renderer);
-});
-
-test('a capped account without billing shows the cap reason but no upgrade affordance', async () => {
-  setBilling(false);
-  quotaData = cappedQuota;
-  const renderer = await renderPage();
-  // The quota still reports the cap, and Create still cannot submit.
-  expect(capText(renderer)).toBe(CAP_MESSAGE);
-  expect(findSubmit(renderer).props.disabled).toBe(true);
-  // Without billing there is no upgrade path to offer — no affordance.
-  expect(findButtonWithText(renderer, 'Upgrade plan')).toBeNull();
-  await unmount(renderer);
-});
-
-test('an account under the cap shows no cap state and Create project stays enabled', async () => {
-  setBilling(true);
-  quotaData = { capped: false, message: null };
+  creates = 0;
+  payloads.length = 0;
+  quotaCalls.length = 0;
   const renderer = await renderPage();
   await type(renderer, 'Valid Name');
   expect(capText(renderer)).toBeNull();
   expect(findSubmit(renderer).props.disabled).toBe(false);
-  await unmount(renderer);
-});
-
-test('the quota is read for the account the create would target', async () => {
-  setBilling(true);
-  quotaData = cappedQuota;
-  const renderer = await renderPage();
-  expect(quotaCalls[0]).toBe('user-1');
+  await act(async () => {
+    findForm(renderer).props.onSubmit({ preventDefault: () => {} });
+  });
+  expect(creates).toBe(1);
+  expect(JSON.parse(payloads[0]!)).not.toHaveProperty('account_id');
+  expect(quotaCalls).toEqual([]);
   await unmount(renderer);
 });
 

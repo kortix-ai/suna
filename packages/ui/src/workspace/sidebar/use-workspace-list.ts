@@ -8,6 +8,7 @@ import { useMemo } from 'react';
 import { useAccountsList } from '../../internal/hooks/account/use-accounts-list';
 import { useUiViewerId } from '../../providers/ui-provider';
 import {
+  githubSourceAccount,
   reusableEmptyAccountFromRows,
   workspaceRowsFromSummaries,
   type WorkspaceRow,
@@ -34,8 +35,10 @@ export interface WorkspaceList {
   loading: boolean;
   failed: boolean;
   retry: () => void;
-  /** The owned account with no workspace a GitHub-source create fills, or null. */
+  /** @deprecated No create fills an empty account; read `githubSourceAccount`. */
   reusableAccount: ReturnType<typeof reusableEmptyAccountFromRows>;
+  /** The account whose GitHub connection a GitHub-source create uses (`githubSourceAccount`), or null. */
+  githubSourceAccount: ReturnType<typeof githubSourceAccount>;
   accountsQuery: ReturnType<typeof useAccountsList>;
 }
 
@@ -57,6 +60,10 @@ export function useWorkspaceList(options: { retry?: number } = {}): WorkspaceLis
     () => reusableEmptyAccountFromRows({ accounts, rows: listQuery.data ? rows : undefined }),
     [accounts, rows, listQuery.data],
   );
+  const githubSource = useMemo(
+    () => githubSourceAccount({ accounts, rows: listQuery.data ? rows : undefined }),
+    [accounts, rows, listQuery.data],
+  );
   return {
     rows,
     loading: listQuery.isLoading,
@@ -66,6 +73,7 @@ export function useWorkspaceList(options: { retry?: number } = {}): WorkspaceLis
       if (accountsQuery.isError) void accountsQuery.refetch();
     },
     reusableAccount,
+    githubSourceAccount: githubSource,
     accountsQuery,
   };
 }

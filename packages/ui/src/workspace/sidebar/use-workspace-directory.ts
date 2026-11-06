@@ -16,8 +16,10 @@ export interface WorkspaceDirectory {
   loading: boolean;
   /** Non-empty when the list failed: its workspaces are unknown, not absent. */
   failedAccountIds: string[];
-  /** The owned empty account a GitHub-source create fills, or null. */
+  /** @deprecated No create fills an empty account; read `githubSourceAccount`. */
   reusableAccount: KortixAccount | null;
+  /** The account whose GitHub connection a GitHub-source create uses, or null (managed source only). */
+  githubSourceAccount: KortixAccount | null;
   retryFailed: () => void;
 }
 
@@ -37,6 +39,7 @@ export function useWorkspaceDirectory(): WorkspaceDirectory {
     loading: list.loading || list.accountsQuery.isLoading,
     failedAccountIds: list.failed ? ['workspaces'] : [],
     reusableAccount: list.reusableAccount,
+    githubSourceAccount: list.githubSourceAccount,
     retryFailed: list.retry,
   };
 }
