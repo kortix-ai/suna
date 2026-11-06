@@ -1347,7 +1347,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
           </div>
         ) : null}
         {embedded ? (
-          <div className="flex shrink-0 items-center">
+          <ButtonGroup className="shrink-0 items-center">
             {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
             <Hint label={t('openFullPage')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
@@ -1361,7 +1361,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 <XIcon className="size-3.5" />
               </Button>
             </Hint>
-          </div>
+          </ButtonGroup>
         ) : null}
       </header>
 
