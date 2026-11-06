@@ -2,6 +2,7 @@
 
 import { backendApi } from '../../http/api-client';
 import type { ApiError } from '../../http/api/errors';
+import type { WorkspaceRole } from './workspaces';
 import {
   type AccountRole,
   type ProjectRole,
@@ -105,6 +106,9 @@ export type AccountMemberWorkspace = AccountMemberProject;
 export interface AccountMember {
   user_id: string;
   email: string | null;
+  /** The workspace ladder role (`owner`, `admin`, `manager`, `member`). An older API omits it: read `account_role`. */
+  role?: WorkspaceRole;
+  /** The stored account-scope role. Prefer `role`. */
   account_role: AccountRole;
   is_super_admin?: boolean;
   explicit_project_count?: number;

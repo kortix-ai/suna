@@ -216,6 +216,8 @@ export interface PersonDeletionPlan {
   leave_workspaces: string[];
   /** Transfer ownership or remove the members of these first. */
   blockers: PersonDeletionBlocker[];
+  /** The name of every workspace listed above, keyed by workspace id. An older API omits it. */
+  workspace_names?: Record<string, string>;
 }
 
 /** What {@link setupWorkspace} sends: the repository fields of a new workspace. */

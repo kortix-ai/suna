@@ -18,10 +18,12 @@ import {
   inviteWorkspaceMember,
   isWorkspaceHasProjectError,
   listPersonalTokens,
+  listWorkspaceMembers,
   restoreWorkspace,
   revokePersonalToken,
   setupWorkspace,
   updateWorkspaceMemberRole,
+  type WorkspaceRole,
 } from './workspaces';
 
 const WS = '11111111-1111-4111-8111-111111111111';
@@ -115,6 +117,25 @@ describe('personal keys and the deletion plan', () => {
     const plan = await getPersonDeletionPlan();
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(['GET /account/deletion-plan']);
     expect(plan.blockers[0]).toEqual({ workspace_id: WS, name: 'Acme', member_count: 3 });
+  });
+
+  test('getPersonDeletionPlan: the plan names every listed workspace (workspace_names)', async () => {
+    answer = () =>
+      Response.json({ delete_workspaces: [WS], leave_workspaces: [], blockers: [], workspace_names: { [WS]: 'Acme' } });
+    const plan = await getPersonDeletionPlan();
+    const names: Record<string, string> | undefined = plan.workspace_names;
+    expect(names).toEqual({ [WS]: 'Acme' });
+  });
+});
+
+describe('a member row carries its ladder role', () => {
+  test('listWorkspaceMembers: role is the served workspace role', async () => {
+    answer = () =>
+      Response.json([{ user_id: 'u1', email: null, role: 'manager', account_role: 'member', joined_at: '2026-01-01T00:00:00Z' }]);
+    const [member] = await listWorkspaceMembers(WS);
+    const role: WorkspaceRole | undefined = member!.role;
+    expect(role).toBe('manager');
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([`GET /workspaces/${WS}/members`]);
   });
 });
 
