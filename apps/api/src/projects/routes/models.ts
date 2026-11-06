@@ -138,7 +138,7 @@ export function registerModelsRoutes(): void {
           )
           .limit(1);
         if (!sandbox) {
-          return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+          return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
         }
         const [project] = await db
           .select({ projectId: projectsView.projectId })
@@ -261,7 +261,7 @@ export function registerModelsRoutes(): void {
     const defaultModel = await modelAccessDefault(loaded.userId, loaded.row.accountId, projectId, await requestPersonalOwner(c, loaded));
     const result = await changeProjectModelAccess({ projectId, updatedBy: c.get('userId'), defaultModel, change });
     if (result.conflict) return c.json({
-      error: 'Change the project default to another enabled provider or model first.',
+      error: 'Change the workspace default to another enabled provider or model first.',
       code: 'cannot_disable_default', defaultModel,
     }, 409);
     invalidateAccountModelDefaults(loaded.row.accountId);
@@ -317,7 +317,7 @@ export function registerModelsRoutes(): void {
       if (effectiveDefault && modelOverrides[toWireModel(effectiveDefault)] === false) {
         return c.json(
           {
-            error: 'Cannot disable the project default model — change the default first.',
+            error: 'Cannot disable the workspace default model — change the default first.',
             code: 'cannot_disable_default',
           },
           409,

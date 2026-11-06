@@ -359,7 +359,7 @@ export function registerApprovalsRoutes(): void {
                   error: 'Sign in with a Kortix account to resolve this approval',
                   code: 'APPROVAL_REQUIRES_HUMAN',
                 }
-              : { error: 'Only a project manager or the session launcher can resolve this' },
+              : { error: 'Only a workspace manager or the session launcher can resolve this' },
           403,
         );
       }

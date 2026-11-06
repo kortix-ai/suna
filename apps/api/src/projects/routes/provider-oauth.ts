@@ -470,7 +470,7 @@ export function registerProviderOauthRoutes(): void {
 
     if (state.rc && state.rid) {
       if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
-        return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
+        return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this workspace' });
       }
       const reconnected = await reconnectProviderAccount({
         secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,
@@ -490,7 +490,7 @@ export function registerProviderOauthRoutes(): void {
     // device flow gets a new resource; it never overwrites another user's login.
     if (state.l && state.rid) {
       if (!resolveFeatureFlag(loaded.row.metadata, 'pooled_provider_secrets')) {
-        return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this project' });
+        return c.json({ status: 'failed', error: 'Pooled OAuth connections are disabled for this workspace' });
       }
       const secretId = await writeProviderAccount({
         secretId: state.rid, accountId: loaded.row.accountId, userId: loaded.userId,

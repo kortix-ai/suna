@@ -81,7 +81,7 @@ test('review and reminders links follow the host customize route', () => {
 });
 
 test('the Inbox is its own page by default; a host with its own router serves it only when it routes it', () => {
-  expect(uiRoutes().inbox?.('p')).toBe('/projects/p/inbox');
+  expect(uiRoutes().inbox?.('p')).toBe('/workspaces/p/inbox');
   // A host that maps other routes predates the Inbox page: no row links to a page it does not serve.
   setUiRoutes({ drive: () => null });
   expect(uiRoutes().inbox?.('p') ?? null).toBeNull();

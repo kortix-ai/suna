@@ -94,7 +94,7 @@ describe('SessionCostDetailContent', () => {
     const html = renderCostDetail(
       <SessionCostDetailContent detail={{ ...detail, billed_elsewhere_cost: 1.75 }} isLoading={false} error={null} />,
     );
-    expect(html).toContain('175 credits of this cost were billed to the workspace this project moved from.');
+    expect(html).toContain('175 credits of this cost were billed to the workspace it moved from.');
     const plain = renderCostDetail(<SessionCostDetailContent detail={detail} isLoading={false} error={null} />);
     expect(plain).not.toContain('billed-elsewhere');
   });

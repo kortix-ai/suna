@@ -87,7 +87,8 @@ beforeAll(() => {
       if (url.pathname === `${BASE}/secrets` && req.method === 'POST') {
         return json({ identifier: body.name, name: body.name });
       }
-      if (url.pathname.startsWith(`/v1/workspaces/${ACCOUNT_ID}/secret-resources`)) {
+      // `/workspaces/:id/secret-resources`: the account key or a workspace id (`--project`).
+      if (/^\/v1\/workspaces\/[^/]+\/secret-resources/.test(url.pathname)) {
         resourceRequests.push({ method: req.method, url });
         if (req.method === 'POST') return json({ ...COOLING, cooldown_until: null });
         // Like the API: without project_id only account-wide (null-project) rows.
@@ -278,9 +279,10 @@ describe('kortix providers retry', () => {
     expect(r.stdout).toContain('ChatGPT (codex) is usable again');
   });
 
-  test('--project names the project to read', async () => {
+  test('--project names the workspace to read, ahead of the hidden --account alias', async () => {
     const r = await runRetry(['--project', 'proj-other']);
     expect(r.code).toBe(0);
+    expect(resourceRequests[0]?.url.pathname).toBe('/v1/workspaces/proj-other/secret-resources');
     expect(resourceRequests[0]?.url.searchParams.get('project_id')).toBe('proj-other');
   });
 });

@@ -634,7 +634,7 @@ export function registerProjectSettingsRoutes(): void {
       if (isProjectSessionPrincipal(c)) {
         return c.json(
           {
-            error: 'Agent sessions cannot change the project sandbox provider — ask a person to change it in Customize → Settings → Sandbox',
+            error: 'Agent sessions cannot change the workspace sandbox provider — ask a person to change it in Customize → Settings → Sandbox',
             code: 'agent_session_forbidden',
           },
           403,
@@ -745,7 +745,7 @@ export function registerProjectSettingsRoutes(): void {
       if (isProjectSessionPrincipal(c)) {
         return c.json(
           {
-            error: 'Agent sessions cannot change the project default reasoning effort — ask a person to change it in Settings',
+            error: 'Agent sessions cannot change the workspace default reasoning effort — ask a person to change it in Settings',
             code: 'agent_session_forbidden',
           },
           403,

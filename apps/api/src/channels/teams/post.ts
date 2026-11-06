@@ -96,7 +96,7 @@ export async function resolveTeamsProjectConversation(
 
   const serviceUrl = await loadTeamsServiceUrlForProject(projectId);
   if (!serviceUrl) {
-    return { ok: false, error: 'No Teams service URL is known yet for this project', status: 409 };
+    return { ok: false, error: 'No Teams service URL is known yet for this workspace', status: 409 };
   }
 
   return {

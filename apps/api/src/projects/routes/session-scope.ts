@@ -391,7 +391,7 @@ export function registerSessionScopeRoutes(): void {
       // sharing and stop routes above.
       if (!mayChangeSessionModel(visible)) {
         return c.json(
-          { error: 'Only the session owner or a project manager can change this session model' },
+          { error: 'Only the session owner or a workspace manager can change this session model' },
           403,
         );
       }

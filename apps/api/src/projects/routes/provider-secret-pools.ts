@@ -162,7 +162,7 @@ export function registerProviderSecretPoolsRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!mayChangeSessionModel(visible)) return c.json({ error: 'Only the session owner or a project manager can select provider secrets' }, 403);
+    if (!mayChangeSessionModel(visible)) return c.json({ error: 'Only the session owner or a workspace manager can select provider secrets' }, 403);
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
     if (gate) return gate;
     const parsed = Input.safeParse(await c.req.json().catch(() => null));
@@ -194,7 +194,7 @@ export function registerProviderSecretPoolsRoutes(): void {
       // the refusal names that cause, and mayUseProviderKeys checks only keys.
       if (!(await memberMayReadProject(loaded.row.accountId, projectId, ownerId))) {
         return c.json({
-          error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
+          error: 'The session owner can no longer read this workspace, so the session cannot use provider secrets',
           code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
         }, 403);
       }

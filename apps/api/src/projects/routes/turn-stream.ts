@@ -97,7 +97,7 @@ export function registerTurnStreamRoutes(): void {
           )
           .limit(1);
         if (!sandbox) {
-          return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+          return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
         }
         authenticatedSandboxId = sandbox.sandboxId;
       } else {

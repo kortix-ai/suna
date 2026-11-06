@@ -81,7 +81,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/account/cancel-deletion': { action: 'account.deletion.cancel', title: 'Canceled account deletion' },
   'DELETE /v1/account/delete-immediately': { action: 'account.deletion.execute', title: 'Deleted account immediately' },
   'GET /v1/account/deletion-status': { action: 'account.deletion.read', title: 'Viewed account deletion status' },
-  'GET /v1/account/deletion-plan': { action: 'account.deletion.read', title: 'Viewed account deletion plan' },
+  'GET /v1/account/deletion-plan': { action: 'account.deletion.plan.read', title: 'Viewed account deletion plan' },
   'POST /v1/account/request-deletion': { action: 'account.deletion.request', title: 'Requested account deletion' },
   'GET /v1/accounts': { action: 'account.list', title: 'Listed accounts' },
   'POST /v1/accounts': { action: 'account.create', title: 'Created account' },

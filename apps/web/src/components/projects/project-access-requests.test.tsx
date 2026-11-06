@@ -59,7 +59,7 @@ test.each([403, 404])('denied project (%s) makes only the access request, includ
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   expect(container.textContent).not.toContain('Project contents');
   expect(container.querySelector('a')?.getAttribute('href')).toBe('/workspaces');
-  expect(urls).toEqual(['http://test.local/projects/synthetic-project']);
+  expect(urls).toEqual(['http://test.local/workspaces/synthetic-project']);
 });
 
 test('authorized project waits for access, then warms shell and session reads', async () => {
@@ -69,7 +69,7 @@ test('authorized project waits for access, then warms shell and session reads', 
   globalThis.fetch = Object.assign(async (input: string | URL | Request) => {
     const url = String(input);
     urls.push(url);
-    if (url === 'http://test.local/projects/synthetic-project') {
+    if (url === 'http://test.local/workspaces/synthetic-project') {
       await access;
       return Response.json({ project_id: 'synthetic-project', account_id: 'synthetic-account' });
     }
@@ -81,10 +81,10 @@ test('authorized project waits for access, then warms shell and session reads', 
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => root?.render(<QueryClientProvider client={queryClient}><ProjectAccessBoundary projectId="synthetic-project"><p>Project contents</p></ProjectAccessBoundary></QueryClientProvider>));
-  expect(urls).toEqual(['http://test.local/projects/synthetic-project']);
+  expect(urls).toEqual(['http://test.local/workspaces/synthetic-project']);
   expect(container.textContent).not.toContain('Project contents');
   await act(async () => { grant?.(); await new Promise(resolve => setTimeout(resolve, 10)); });
   expect(container.textContent).toContain('Project contents');
-  expect(urls).toContain('http://test.local/projects/synthetic-project/detail');
-  expect(urls).toContain('http://test.local/projects/synthetic-project/sessions/synthetic-session/snapshot?transcript=0');
+  expect(urls).toContain('http://test.local/workspaces/synthetic-project/detail');
+  expect(urls).toContain('http://test.local/workspaces/synthetic-project/sessions/synthetic-session/snapshot?transcript=0');
 });

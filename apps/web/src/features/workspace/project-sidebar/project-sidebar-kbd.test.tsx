@@ -260,7 +260,7 @@ test('with chat off, the sidebar keeps New session, the session list and Cmd+J',
   expect(newSessionCalls).toBe(1);
 });
 
-const INBOX_HREF = 'href="/projects/synthetic-project/inbox"';
+const INBOX_HREF = 'href="/workspaces/synthetic-project/inbox"';
 
 test('the Inbox row sits under New session, links to the Inbox page and carries the unread count (KRTX-1742)', async () => {
   await mountSidebar(1280);
@@ -282,7 +282,7 @@ test('with chat on, the Inbox row stays at the top, above Review and the spaces'
   const html = container!.innerHTML;
   const inbox = html.indexOf(INBOX_HREF);
   expect(inbox).toBeGreaterThan(-1);
-  expect(inbox).toBeLessThan(html.indexOf('href="/projects/synthetic-project/review"'));
+  expect(inbox).toBeLessThan(html.indexOf('href="/workspaces/synthetic-project/review"'));
 });
 
 test('the mobile sheet shows the Inbox row, and opening it closes the sheet', async () => {

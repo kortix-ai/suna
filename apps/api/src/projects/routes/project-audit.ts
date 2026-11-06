@@ -605,7 +605,7 @@ export function registerProjectAuditRoutes(): void {
       }
       const scope = await loadIngestSessionScope({ sandboxId, accountId, projectId });
       if (!scope || (scope.sessionId ?? sandboxId) !== sessionId) {
-        return c.json({ error: 'sandbox token is not scoped to this project and session' }, 403);
+        return c.json({ error: 'sandbox token is not scoped to this workspace and session' }, 403);
       }
 
       let body: unknown;

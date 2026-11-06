@@ -1306,7 +1306,7 @@ async function authorizeGitProxyUncached(
       // Thread the acting token so the agent-grant fold fires (userRole ∩ grant)
       // — a bare authorize() would silently skip it.
       if (!(await grantedByProjectRole(result.userId, result.tokenId, sessionPrincipal !== null))) {
-        return { ok: false, status: 403, message: 'token is not authorized for this project' };
+        return { ok: false, status: 403, message: 'token is not authorized for this workspace' };
       }
     }
     return {
@@ -1376,7 +1376,7 @@ async function authorizeGitProxyUncached(
         ))
         .limit(1);
       if (!sandbox) {
-        return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
+        return { ok: false, status: 403, message: 'sandbox token is not scoped to this workspace' };
       }
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
         return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
@@ -1426,7 +1426,7 @@ async function authorizeGitProxyUncached(
     // carries no user identity, so there is no principal to evaluate project
     // grants against — account ownership stays the only rule.
     if (result.accountId !== project.accountId) {
-      return { ok: false, status: 403, message: 'token does not own this project' };
+      return { ok: false, status: 403, message: 'token does not own this workspace' };
     }
     return { ok: true, project, principal: { kind: 'user', userId: null }, agentGrant: null };
   }

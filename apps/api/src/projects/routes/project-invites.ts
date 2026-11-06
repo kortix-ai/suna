@@ -445,7 +445,7 @@ export function registerProjectInvitesRoutes(): void {
       (g) => 'project_id' in g && g.project_id === projectId,
     );
     if (!grant || !('project_id' in grant)) {
-      return c.json({ error: 'Invitation does not target this project' }, 404);
+      return c.json({ error: 'Invitation does not target this workspace' }, 404);
     }
 
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);

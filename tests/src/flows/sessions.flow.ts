@@ -1158,7 +1158,7 @@ flow(
       (await ctx.client.as(member).del(sessionRoute, { params }))
         .status(403)
         .body()
-        .has('$.error', 'Only the session owner or a project manager can stop this session');
+        .has('$.error', 'Only the session owner or a workspace manager can stop this session');
       if (!(await listed())) throw new Error('a refused delete hid the session');
     });
 
@@ -1229,7 +1229,7 @@ flow(
       (await ctx.client.as(member).post(restoreRoute, {}, { params }))
         .status(403)
         .body()
-        .has('$.error', 'Only the session owner or a project manager can restore this session');
+        .has('$.error', 'Only the session owner or a workspace manager can restore this session');
       if (await listed()) throw new Error('a refused restore listed the session');
     });
 

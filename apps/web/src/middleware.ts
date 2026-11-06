@@ -267,7 +267,7 @@ const DESKTOP_ALLOWED_ROUTES = [
   // desktop shell bounces it to the landing door — including the post-sign-in
   // redirect to `/settings/billing`.
   '/settings',
-  // The account-level Inbox; `/projects/[id]/inbox` rides `/projects`.
+  // The account-level Inbox; `/workspaces/[id]/inbox` rides `/workspaces`.
   '/inbox',
   '/invites',
   '/admin',

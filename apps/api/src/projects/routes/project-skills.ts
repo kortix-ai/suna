@@ -232,7 +232,7 @@ export function registerProjectSkillsRoutes(): void {
       if (!isRepoFileNotFoundError(err)) {
         return c.json(
           {
-            error: `Failed to read the project repo: ${(err as Error).message || String(err)}`,
+            error: `Failed to read the workspace repo: ${(err as Error).message || String(err)}`,
             code: 'repo_read',
           },
           502,

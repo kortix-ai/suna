@@ -211,7 +211,7 @@ export function registerConnectionActionsRoutes(): void {
         ) {
           return c.json(
             {
-              error: 'This computer belongs to another account. Pair it again from this project.',
+              error: 'This computer belongs to another account. Pair it again from this workspace.',
               code: 'COMPUTER_ACCOUNT_MISMATCH',
             },
             409,
@@ -220,7 +220,7 @@ export function registerConnectionActionsRoutes(): void {
       }
       if (!mutable.mayManageSystemConnections) {
         return c.json(
-          { error: "Sharing an account needs permission to manage the project's connections" },
+          { error: "Sharing an account needs permission to manage the workspace's connections" },
           403,
         );
       }

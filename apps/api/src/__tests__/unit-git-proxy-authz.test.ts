@@ -367,7 +367,7 @@ describe('authorizeGitProxy — sandbox token', () => {
     expect(res).toMatchObject({
       ok: false,
       status: 403,
-      message: 'sandbox token is not scoped to this project',
+      message: 'sandbox token is not scoped to this workspace',
     });
   });
 });

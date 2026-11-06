@@ -375,7 +375,7 @@ export async function setConnectorCredentialShared(
   if (connector.authSecret) {
     return {
       ok: false,
-      error: 'Clear the project secret binding before storing a connector credential',
+      error: 'Clear the workspace secret binding before storing a connector credential',
       status: 409,
     };
   }

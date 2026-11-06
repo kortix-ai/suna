@@ -426,7 +426,7 @@ export function registerChannelSlackRoutes(): void {
           )
           .limit(1);
         if (!sandbox) {
-          return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+          return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
         }
         callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;
       } else {
@@ -490,7 +490,7 @@ export function registerChannelSlackRoutes(): void {
       const workspaceId = body.workspace_id?.trim() || null;
       if (workspaceId && !(await provenSlackWorkspaces(projectId)).includes(workspaceId)) {
         return c.json(
-          { error: 'workspace_id is not a Slack workspace this project is connected to', code: 'SLACK_WORKSPACE_NOT_CONNECTED' },
+          { error: 'workspace_id is not a Slack workspace this workspace is connected to', code: 'SLACK_WORKSPACE_NOT_CONNECTED' },
           400,
         );
       }
@@ -513,7 +513,7 @@ export function registerChannelSlackRoutes(): void {
       if (binding.bound) return c.json({ ok: true, channel, ...binding });
       if (binding.reason === 'workspace_unknown') {
         return c.json(
-          { error: 'could not resolve the Slack workspace: this project has no Slack install', code: 'SLACK_WORKSPACE_UNKNOWN', ...binding },
+          { error: 'could not resolve the Slack workspace: this workspace has no Slack install', code: 'SLACK_WORKSPACE_UNKNOWN', ...binding },
           400,
         );
       }

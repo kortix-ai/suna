@@ -80,7 +80,7 @@ export async function authorizeScopeRescope({
     return {
       ok: false,
       status: 403,
-      body: { error: 'Only the session owner or a project manager can re-scope this session' },
+      body: { error: 'Only the session owner or a workspace manager can re-scope this session' },
     };
   }
   return { ok: true, loaded, visible };

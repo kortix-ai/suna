@@ -62,7 +62,7 @@ describe('artifactWebUrl', () => {
       'https://w.test/projects/p/artifacts/a',
     );
     expect(artifactWebUrl('', 'https://w.test', 'p', 'a')).toBe(
-      'https://w.test/projects/p/artifacts/a',
+      'https://w.test/workspaces/p/artifacts/a',
     );
   });
 });

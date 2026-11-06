@@ -274,7 +274,7 @@ export function registerChangeRequestsRoutes(): void {
           .limit(1);
         if (!sessionRow) {
           if (actorIsSession) {
-            return c.json({ error: 'Authenticated session not found in this project', code: 'CR_SESSION_NOT_FOUND' }, 403);
+            return c.json({ error: 'Authenticated session not found in this workspace', code: 'CR_SESSION_NOT_FOUND' }, 403);
           }
           originSessionId = null;
         } else {

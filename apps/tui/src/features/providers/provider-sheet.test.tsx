@@ -212,8 +212,8 @@ describe('<ProviderSheet/> project key (`key` sheet)', () => {
 
     const writes = requests.filter((request) => request.method !== 'GET');
     expect(writes.map((request) => [request.method, request.path])).toEqual([
-      ['POST', '/v1/projects/p-1/secrets'],
-      ['POST', '/v1/projects/p-1/secrets'],
+      ['POST', '/v1/workspaces/p-1/secrets'],
+      ['POST', '/v1/workspaces/p-1/secrets'],
     ]);
     expect(writes.map((request) => [JSON.parse(request.body).name, JSON.parse(request.body).value])).toEqual([
       ['ZETA_A', 'aa'],
@@ -247,8 +247,8 @@ describe('<ProviderSheet/> project key (`key` sheet)', () => {
     expect(
       requests.filter((request) => request.method !== 'GET').map((request) => [request.method, request.path]),
     ).toEqual([
-      ['DELETE', '/v1/projects/p-1/secrets/ZETA_A'],
-      ['DELETE', '/v1/projects/p-1/secrets/ZETA_B'],
+      ['DELETE', '/v1/workspaces/p-1/secrets/ZETA_A'],
+      ['DELETE', '/v1/workspaces/p-1/secrets/ZETA_B'],
     ]);
     expect(view.log.refreshed).toEqual([undefined]);
     expect(view.log.toasts).toEqual([['Zeta disconnected', undefined]]);

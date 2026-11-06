@@ -42,7 +42,7 @@ async function processActivity(
   let inbound: TeamsInbound = MANAGED_TEAMS_INBOUND;
   if (byo) {
     const scoped = await scopeProjectTeamsActivity(byo.projectId, activity);
-    if (!scoped) return c.json({ error: 'This Teams tenant is not connected to this project' }, 403);
+    if (!scoped) return c.json({ error: 'This Teams tenant is not connected to this workspace' }, 403);
     inbound = scoped;
   }
   bindIntegrationPrincipal('microsoft_teams', byo ? { projectId: byo.projectId } : undefined);

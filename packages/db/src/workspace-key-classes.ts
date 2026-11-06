@@ -91,6 +91,10 @@ export const WORKSPACE_KEY_CLASSES = {
     // Not in the design.md §6.2 lists (2026-11-06). A workspace-owned credential
     // like oauth_access_tokens: classify before Release 2.
     'oauth_refresh_tokens',
+    // Credit codes (dev, 2026-11-06): one redemption per code and account, a
+    // money record that outlives the workspace. Release 2 decides whether the
+    // limit is per workspace or per person.
+    'credit_code_redemptions',
   ],
   workspace_owned: [
     'app_artifacts',

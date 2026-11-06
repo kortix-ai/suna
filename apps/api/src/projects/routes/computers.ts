@@ -84,7 +84,7 @@ export function registerComputersRoutes(): void {
       ) {
         return c.json(
           {
-            error: 'Sharing a computer with the project requires permission to manage its connections',
+            error: 'Sharing a computer with the workspace requires permission to manage its connections',
             code: 'FORBIDDEN',
           },
           403,
@@ -120,7 +120,7 @@ export function registerComputersRoutes(): void {
       if (machine.accountId !== accountId && !personal && (share === 'project' || machine.ownerUserId !== userId)) {
         return c.json(
           {
-            error: 'This computer belongs to another account. Pair it again from this project.',
+            error: 'This computer belongs to another account. Pair it again from this workspace.',
             code: 'COMPUTER_ACCOUNT_MISMATCH',
           },
           409,

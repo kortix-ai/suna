@@ -86,7 +86,7 @@ export function registerTurnPermissionsRoutes(): void {
         )
         .limit(1);
       if (!sandbox) {
-        return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+        return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
       }
       // The session this credential is BOUND to.
       const callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;

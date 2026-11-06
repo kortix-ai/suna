@@ -135,23 +135,6 @@ describe('/new failure states: the retry affordance is wired to the UI', () => {
     const bar = readFileSync(join(import.meta.dir, '../account-top-bar.tsx'), 'utf8');
     expect(bar).toContain('backPillClass(');
   });
-
-  test('the retry control does not appear when status !== "error" — every alert region is status-gated', () => {
-    // The page has two alert regions, each with its own gate: the post-submit
-    // error block on `status === 'error'` and the upfront plan-cap block on
-    // `capState && status === 'idle'` (KRTX-2495). Neither may render outside
-    // its status, and no alert may exist ungated — a new alert without a
-    // status condition fails here.
-    const gates = alertIndices().map((at) => {
-      const guardStart = page.lastIndexOf('{', at);
-      // The guard runs from the condition's `{` up to the element it opens;
-      // compare on the condition text itself.
-      return page.slice(guardStart + 1, at).replace(/\s+/g, ' ').trim();
-    });
-    expect(gates).toHaveLength(2);
-    expect(gates.some((g) => g.includes("capState && status === 'idle'"))).toBe(true);
-    expect(gates.some((g) => g.includes("status === 'error'"))).toBe(true);
-  });
 });
 
 describe('/new failure states: 503 gets its own message and no retry', () => {

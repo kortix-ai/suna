@@ -433,7 +433,7 @@ function registerDeviceAuthApproveRoute(router: OpenAPIHono<AppEnv>): void {
       const share = parseConnectorConnectOwner(body.share);
       if (!share) return c.json({ error: "share must be 'me' or 'project'" }, 400);
       if (share === 'project' && !projectId) {
-        return c.json({ error: 'project_id is required to share a computer with a project' }, 400);
+        return c.json({ error: 'project_id is required to share a computer with a workspace' }, 400);
       }
       if (projectId !== null && !isUuid(projectId)) {
         return c.json({ error: 'project_id must be a UUID' }, 400);
@@ -483,7 +483,7 @@ function registerDeviceAuthApproveRoute(router: OpenAPIHono<AppEnv>): void {
       ) {
         return c.json(
           {
-            error: 'Sharing a computer with the project requires permission to manage its connections',
+            error: 'Sharing a computer with the workspace requires permission to manage its connections',
             code: 'FORBIDDEN',
           },
           403,

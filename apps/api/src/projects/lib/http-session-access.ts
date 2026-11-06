@@ -66,7 +66,7 @@ export async function guardSession(
     return {
       ok: false,
       status: 403,
-      error: 'Only the session owner or a project manager can manage this session',
+      error: 'Only the session owner or a workspace manager can manage this session',
     };
   }
   return { ok: true, session };

@@ -105,7 +105,7 @@ export function registerConnectorMoveRoutes(): void {
           PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
         ))
       ) {
-        return c.json({ error: "Only a connections manager can move the project's account" }, 403);
+        return c.json({ error: "Only a connections manager can move the workspace's account" }, 403);
       }
       const result = await moveConnector({
         projectId,

@@ -205,7 +205,7 @@ export async function syncDeclaredApps(projectId: string, appsNode: unknown): Pr
         if (!same) links = found;
       } catch (error) {
         if (!(error instanceof UnknownLinkedAppError)) throw error;
-        result.errors.push({ slug, error: `apps.${slug}.uses names no App of this project its creator can open: ${error.slugs.join(', ')}` });
+        result.errors.push({ slug, error: `apps.${slug}.uses names no App of this workspace its creator can open: ${error.slugs.join(', ')}` });
       }
     }
     if (Object.keys(update).length === 0 && !links) continue;

@@ -152,7 +152,7 @@ async function sandboxSession(
     )
     .limit(1);
   if (!row || (row.sessionId ?? sandboxId) !== (sessionId ?? sandboxId)) {
-    return { ok: false, status: 403, error: 'sandbox token is not scoped to this project and session' };
+    return { ok: false, status: 403, error: 'sandbox token is not scoped to this workspace and session' };
   }
   if (row.projectStatus === 'archived') return { ok: false, status: 404, error: 'Not found' };
   return {

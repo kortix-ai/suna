@@ -1094,7 +1094,7 @@ export function registerProjectSessionsRoutes(): void {
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageLifecycle) {
         return c.json(
-          { error: 'Only the session owner or a project manager can stop this session' },
+          { error: 'Only the session owner or a workspace manager can stop this session' },
           403,
         );
     }
@@ -1148,7 +1148,7 @@ export function registerProjectSessionsRoutes(): void {
     if (!visible) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageLifecycle) {
         return c.json(
-          { error: 'Only the session owner or a project manager can restore this session' },
+          { error: 'Only the session owner or a workspace manager can restore this session' },
           403,
         );
     }

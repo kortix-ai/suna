@@ -110,7 +110,7 @@ export function registerSpaceProactiveRoutes(): void {
       if (found instanceof Response) return found;
       const { loaded, space, canEdit } = found;
       if (!canEdit) {
-        return c.json({ error: 'Only the space’s creator, a project manager or the DM’s owner can change Proactive.', code: 'forbidden' }, 403);
+        return c.json({ error: 'Only the space’s creator, a workspace manager or the DM’s owner can change Proactive.', code: 'forbidden' }, 403);
       }
       const input = c.req.valid('json');
       if (input.brief_timezone !== undefined && !isTimeZone(input.brief_timezone)) {

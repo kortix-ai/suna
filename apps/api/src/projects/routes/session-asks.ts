@@ -141,7 +141,7 @@ export function registerSessionAsksRoutes(): void {
           return c.json({ error: 'Not found' }, 404);
         }
         if (!mayDecide(caller, sessions, { session_id: ask.sessionId, surface_session_id: ask.surfaceSessionId ?? ask.sessionId })) {
-          return c.json({ error: 'Only a project manager or the session launcher can decide this' }, 403);
+          return c.json({ error: 'Only a workspace manager or the session launcher can decide this' }, 403);
         }
         const result = await decidePermission({ ask, reply, userId: loaded.userId });
         return c.json(result.code ? { error: 'This ask was already decided', ...result } : result, result.code ? 409 : 200);
@@ -154,7 +154,7 @@ export function registerSessionAsksRoutes(): void {
         return c.json({ error: 'Not found' }, 404);
       }
       if (!mayDecide(caller, sessions, { session_id: question.sessionId, surface_session_id: question.surfaceSessionId ?? question.sessionId })) {
-        return c.json({ error: 'Only a project manager or the session launcher can answer this' }, 403);
+        return c.json({ error: 'Only a workspace manager or the session launcher can answer this' }, 403);
       }
       if (body.dismiss === true) {
         const dismissed = await dismissPendingQuestion(question.sessionId, question.requestId);

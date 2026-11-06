@@ -259,7 +259,7 @@ export function registerProjectCredentialsRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
     if (await hasServerManagedGitAuth(loaded.row)) {
-      return c.json({ error: 'Git auth is already managed by Kortix for this project' }, 409);
+      return c.json({ error: 'Git auth is already managed by Kortix for this workspace' }, 409);
     }
 
     const token =

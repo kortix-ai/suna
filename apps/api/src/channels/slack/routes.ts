@@ -39,7 +39,7 @@ import { workspaceIdParam } from '../../shared/route-params';
 // request may reach (see `SlackInbound`). Each route does its own signature
 // check, then hands the verified raw body and its inbound scope to these.
 
-const WORKSPACE_MISMATCH = { error: 'This Slack workspace is not connected to this project' };
+const WORKSPACE_MISMATCH = { error: 'This Slack workspace is not connected to this workspace' };
 
 /**
  * Verify a per-project (BYO) request: the project's own signing secret, then

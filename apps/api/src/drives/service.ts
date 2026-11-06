@@ -1084,7 +1084,7 @@ export async function readSkippedSessionDrives(
     return { skipped, message: `These folders are not mounted yet: ${named('unavailable')}. File storage could not mount them when the session started. The session runs without them, and they mount as soon as storage can.` };
   }
   if (skipped.some((d) => d.reason === 'region')) {
-    return { skipped, message: 'This session runs in another region than the project’s files, so its folders are not mounted. A new session mounts them.' };
+    return { skipped, message: 'This session runs in another region than the workspace’s files, so its folders are not mounted. A new session mounts them.' };
   }
   if (skipped.some((d) => d.reason === 'moving')) {
     return { skipped, message: 'The project’s files were moving to another region when this session started, so its folders are not mounted. A new session mounts them.' };

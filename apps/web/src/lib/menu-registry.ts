@@ -630,7 +630,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/inbox',
+    href: '/workspaces/{projectId}/inbox',
     requiresProject: true,
     keywords: 'inbox notifications alerts unread mentions bell needs you done mark read',
   },

@@ -258,7 +258,7 @@ function registerSpaceRoutes(): void {
       const loaded = await loadSpacesProject(c);
       if (loaded instanceof Response) return loaded;
       const viewer = await spaceViewer(c, loaded);
-      if (!viewer.manager) return c.json({ error: 'Only a project manager can list private channels.', code: 'forbidden' }, 403);
+      if (!viewer.manager) return c.json({ error: 'Only a workspace manager can list private channels.', code: 'forbidden' }, 403);
       return c.json({ channels: await listHiddenPrivateChannels(loaded.row, viewer.access) }, 200);
     },
   );
@@ -435,7 +435,7 @@ function registerSpaceRoutes(): void {
       if (!canSeeSpace(space, viewer.access)) return c.json(SPACE_NOT_FOUND, 404);
       if (!(await mayEditSpaceTabs(space, viewer, person))) {
         return c.json(
-          { error: 'Only the space’s creator, a project manager, the DM’s owner or an agent working in the space can change its tabs.', code: 'forbidden' },
+          { error: 'Only the space’s creator, a workspace manager, the DM’s owner or an agent working in the space can change its tabs.', code: 'forbidden' },
           403,
         );
       }
@@ -584,7 +584,7 @@ function registerSpaceLinkRoutes(): void {
       const result = isUuid(linkId) ? await deleteSpaceLink(space.spaceId, linkId, viewer) : 'not_found';
       if (result === 'not_found') return c.json({ error: 'Link not found', code: 'link_not_found' }, 404);
       if (result === 'forbidden') {
-        return c.json({ error: 'Only the person who added the link or a project manager can remove it.', code: 'forbidden' }, 403);
+        return c.json({ error: 'Only the person who added the link or a workspace manager can remove it.', code: 'forbidden' }, 403);
       }
       void refreshRunningThreadNotes(loaded.row.projectId, space.spaceId);
       return c.json({ ok: true as const }, 200);

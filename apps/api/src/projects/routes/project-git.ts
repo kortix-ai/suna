@@ -93,7 +93,7 @@ export function registerProjectGitRoutes(): void {
     const upstream = await resolveProjectUpstream(loaded.row, 'write');
     const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
     if (!credential) {
-      return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
+      return c.json({ error: 'Managed git is not configured / unavailable for this workspace' }, 503);
     }
 
     return c.json({

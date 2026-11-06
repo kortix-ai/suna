@@ -213,7 +213,7 @@ async function commitGitCliRepoFile(
   if (!gitProject.ok) return gitProject;
   const localRepository = process.env.KORTIX_LOCAL_DEV === '1' && isAbsolute(gitProject.value.repoUrl);
   if (!gitProject.value.gitAuthToken && !localRepository) {
-    return { error: 'No git credentials available to write to the project repo', status: 502 };
+    return { error: 'No git credentials available to write to the workspace repo', status: 502 };
   }
 
   try {

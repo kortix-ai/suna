@@ -46,8 +46,8 @@ const projectParams = z.object({ workspaceId: z.string() });
 const groupParams = projectParams.extend({ groupId: z.string() });
 const sessionParams = projectParams.extend({ sessionId: z.string().min(1).max(128) });
 
-const GROUP_NOT_FOUND = { error: 'No such session group in this project.', code: 'group_not_found' } as const;
-const NAME_TAKEN = { error: 'Another group in this project already has that name.', code: 'group_name_taken' } as const;
+const GROUP_NOT_FOUND = { error: 'No such session group in this workspace.', code: 'group_not_found' } as const;
+const NAME_TAKEN = { error: 'Another group in this workspace already has that name.', code: 'group_name_taken' } as const;
 
 function serializeGroup(row: SessionGroupRow): SessionGroup {
   return {

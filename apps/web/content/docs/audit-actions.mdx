@@ -37,8 +37,8 @@ One table per domain. The route column shows the method and route template. `any
 | `account.create` | Created account | `POST /v1/accounts` |
 | `account.deletion.cancel` | Canceled account deletion | `POST /v1/account/cancel-deletion` (also `POST /v1/billing/account/cancel-deletion`) |
 | `account.deletion.execute` | Deleted account immediately | `DELETE /v1/account/delete-immediately` (also `DELETE /v1/billing/account/delete-immediately`) |
+| `account.deletion.plan.read` | Viewed account deletion plan | `GET /v1/account/deletion-plan` |
 | `account.deletion.read` | Viewed account deletion status | `GET /v1/account/deletion-status` (also `GET /v1/billing/account/deletion-status`) |
-| `account.deletion.read` | Viewed account deletion plan | `GET /v1/account/deletion-plan` |
 | `account.deletion.request` | Requested account deletion | `POST /v1/account/request-deletion` (also `POST /v1/billing/account/request-deletion`) |
 | `account.list` | Listed accounts | `GET /v1/accounts` |
 | `account.read` | Viewed account | `GET /v1/accounts/:workspaceId` |

@@ -284,7 +284,7 @@ export function registerSessionConfigRoutes(): void {
       // permission to restart the runtime underneath someone else's work.
       if (!mayChangeSessionModel(visible)) {
         return c.json(
-          { error: 'Only the session owner or a project manager can reload this session' },
+          { error: 'Only the session owner or a workspace manager can reload this session' },
           403,
         );
       }
@@ -367,7 +367,7 @@ export function registerSessionConfigRoutes(): void {
       if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       if (!mayChangeSessionModel(visible)) {
         return c.json(
-          { error: 'Only the session owner or a project manager can reload this session' },
+          { error: 'Only the session owner or a workspace manager can reload this session' },
           403,
         );
       }
