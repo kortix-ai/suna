@@ -66,7 +66,6 @@ const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> 
     capture_device_recovered: { label: 'Рачунар поново снима', description: 'Рачунар снима.' },
     // The retired `message` kind (Rooms) is still a key of the SDK type; no row renders it.
     message: { label: 'Порука', description: 'Неко вам пише у разговору.' },
-    artifact_comment: { label: 'Коментари артефаката', description: 'Повратне информације и одговори о артефактима.' },
   },
   push: 'Push',
   email: 'Имејл',
@@ -106,15 +105,6 @@ const SERBIAN_COPY: NonNullable<ComponentProps<typeof SessionsTabView>['copy']> 
  * These are the pre-KRTX-1742 tests, unchanged.
  */
 describe('SessionsTabView', () => {
-  test('Artifact inbox preferences retain the four local browser controls while notification_center is off', () => {
-    const out = renderToStaticMarkup(
-      <SessionsTabView notificationCenter={false} notificationInbox notificationPreferences={ENABLED_PREFERENCES} copy={SERBIAN_COPY} />,
-    );
-    for (const label of ['Завршетак задатка', 'Грешке', 'Питања', 'Захтеви за дозволу']) expect(out).toContain(`>${label}<`);
-    expect(switchState(out, 'Коментари артефаката: Push')).toBe('true');
-    expect(switchState(out, 'Коментари артефаката: Имејл')).toBe('true');
-  });
-
   test('all sound pack and event choices retain their injected copy and order', () => {
     const out = renderToStaticMarkup(<SessionsTabView copy={SERBIAN_COPY} soundPack="kortix" />);
     const labels = [
@@ -257,7 +247,7 @@ describe('SessionsTabView with the notification center', () => {
 
   test('notification types: one Push switch per kind, and Email for every kind but permission', () => {
     const out = center();
-    expect(switchCount(out)).toBe(1 + 10 + 9);
+    expect(switchCount(out)).toBe(1 + 9 + 8);
     expect(out).toContain('>Push<');
     expect(out).toContain('>Email<');
     expect(switchState(out, 'Turn finished: Push')).toBe('true');
@@ -283,7 +273,7 @@ describe('SessionsTabView with the notification center', () => {
     const out = center({ emailAvailable: false });
     expect(out).not.toContain('>Email<');
     expect(out).not.toContain(': Email"');
-    expect(switchCount(out)).toBe(1 + 10);
+    expect(switchCount(out)).toBe(1 + 9);
   });
 
   test('while the record loads the rows show, without switches', () => {

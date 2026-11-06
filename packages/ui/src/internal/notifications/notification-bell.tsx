@@ -4,7 +4,7 @@
  * The bell (KRTX-1742): the person's notification inbox, across projects.
  *
  * It sits in the project sidebar header and in `AccountTopBar`, only while the
- * inbox gate is on (`useNotificationInboxEnabled`). The badge is
+ * `notification_center` flag is on (`useNotificationCenter`). The badge is
  * the server's unread count, clamped at 99+. A row opens its session (or the
  * Triggers page for an alert) and marks itself read. When this browser shows
  * no notifications yet, the panel's footer offers to turn them on.
@@ -34,7 +34,6 @@ import type { InboxNotification, InboxNotificationKind } from '@kortix/sdk';
 import { useNotificationInbox } from '@kortix/sdk/react';
 import {
   BellIcon,
-  ChatCircleIcon,
   QuestionIcon,
   ShareIcon,
   ShieldWarningIcon,
@@ -51,7 +50,7 @@ import {
   withoutNotificationParam,
   type NotificationTab,
 } from './notification-rows';
-import { useNotificationInboxEnabled } from '../hooks/use-notification-center';
+import { useNotificationCenter } from '../hooks/use-notification-center';
 import { webPushSupported } from './web-push';
 
 type KindIcon = (props: { className?: string; 'aria-hidden'?: boolean }) => ReactNode;
@@ -63,7 +62,7 @@ const solid = (Icon: PhosphorIcon): KindIcon =>
   };
 
 /** The glyph names the kind by shape; the hue reports the state (color.md, D5). */
-// `message` (Rooms) is retired: the API hides its stored rows.
+// `message` (Rooms) and `artifact_comment` (Artifact comments) are retired: the API hides their stored rows.
 type LiveKind = Exclude<InboxNotificationKind, 'message'>;
 
 const KIND_MARK: Record<LiveKind, { icon: KindIcon; className: string }> = {
@@ -76,7 +75,6 @@ const KIND_MARK: Record<LiveKind, { icon: KindIcon; className: string }> = {
   automation_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
   capture_device_down: { icon: solid(WarningIcon), className: 'text-kortix-red' },
   capture_device_recovered: { icon: SolidCheckIcon, className: 'text-kortix-green' },
-  artifact_comment: { icon: solid(ChatCircleIcon), className: 'text-muted-foreground' },
 };
 
 export interface NotificationPanelProps {
@@ -316,7 +314,7 @@ export function NotificationBell({
   const t = useTranslations('notifications');
   const viewerId = useUiViewerId();
   const [open, setOpen] = useState(false);
-  const notificationCenter = useNotificationInboxEnabled(projectId);
+  const notificationCenter = useNotificationCenter(projectId);
   const inbox = useNotificationInbox({ userId: viewerId, enabled: notificationCenter });
   const notificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);

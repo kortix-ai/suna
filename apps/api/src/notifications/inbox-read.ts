@@ -6,11 +6,10 @@
 // project role, a removed member, a deleted session or an MFA step-up the
 // sign-in has not passed hides the row; it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
-import { accountMembers, notifications, projects } from '@kortix/db';
+import { notifications, projects } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
-import { loadArtifactAccessRows, loadSessionAccessRows, mayReadProjectArtifacts, mayReadProjectTriggers, maySeeArtifacts, maySeeSessions, type SessionAccessRow } from './access';
-import { resolveFeatureFlag } from '../feature-flags/registry';
+import { loadSessionAccessRows, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
 import { notificationsEnabled } from './enabled';
 import { mfaWithheldAccounts } from './mfa-gate';
 import { inboxStore } from './inbox-store';
@@ -29,8 +28,6 @@ export interface InboxRowForFilter {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
-  artifactId?: string | null;
-  artifactThreadId?: string | null;
   kind: string;
 }
 
@@ -43,8 +40,11 @@ export interface InboxReadContext {
   skipMfaGate?: boolean;
 }
 
-/** Kinds no code emits any more; their stored rows stay hidden until the 90-day sweep. `message`: Rooms, removed 2026-11. */
-const RETIRED_KINDS: ReadonlySet<string> = new Set(['message']);
+/**
+ * Kinds no code emits any more; their stored rows stay hidden until the 90-day sweep.
+ * `message`: Rooms, removed 2026-11. `artifact_comment`: artifact comments, removed 2026-11-06.
+ */
+const RETIRED_KINDS: ReadonlySet<string> = new Set(['message', 'artifact_comment']);
 
 /** Capture fleet-health rows belong to the account, not to a project: no project flag or trigger read applies. */
 const isAccountNotification = (kind: string) => kind.startsWith('capture_device_');
@@ -59,8 +59,6 @@ export interface InboxNotification {
   project_name: string | null;
   session_id: string | null;
   trigger_slug: string | null;
-  artifact_id: string | null;
-  artifact_thread_id: string | null;
   actor_user_id: string | null;
   url: string;
   read: boolean;
@@ -83,8 +81,6 @@ const ROW = {
   projectId: notifications.projectId,
   sessionId: notifications.sessionId,
   triggerSlug: notifications.triggerSlug,
-  artifactId: notifications.artifactId,
-  artifactThreadId: notifications.artifactThreadId,
   kind: notifications.kind,
   title: notifications.title,
   body: notifications.body,
@@ -104,14 +100,13 @@ async function mfaBlockedAccounts(userId: string, accountIds: string[], ctx: Inb
  * The names of the projects with the `notification_center` flag on. Off, a
  * project has no inbox: its rows (from before a switch off) stay hidden.
  */
-async function notificationProjectGates(projectIds: string[]): Promise<Map<string, { name: string; center: boolean; artifactComments: boolean }>> {
+async function notificationProjectGates(projectIds: string[]): Promise<Map<string, { name: string; center: boolean }>> {
   if (projectIds.length === 0) return new Map();
   const rows = await db
     .select({ projectId: projects.projectId, name: projects.name, metadata: projects.metadata })
     .from(projects)
     .where(inArray(projects.projectId, projectIds));
-  return new Map(rows.map((row) => [row.projectId, { name: row.name, center: notificationsEnabled(row.metadata),
-    artifactComments: resolveFeatureFlag(row.metadata, 'artifacts') && resolveFeatureFlag(row.metadata, 'artifact_comments') }]));
+  return new Map(rows.map((row) => [row.projectId, { name: row.name, center: notificationsEnabled(row.metadata) }]));
 }
 
 /**
@@ -131,14 +126,11 @@ async function visible<T extends InboxRowForFilter>(
     mfaBlockedAccounts(userId, [...new Set(rows.map((row) => row.accountId))], ctx),
     notificationProjectGates([...new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])))]),
   ]);
-  const projectNames = new Map([...gates].filter(([, gate]) => gate.center || gate.artifactComments).map(([id, gate]) => [id, gate.name]));
+  const projectNames = new Map([...gates].filter(([, gate]) => gate.center).map(([id, gate]) => [id, gate.name]));
   const open = rows.filter(
-    (row) => !RETIRED_KINDS.has(row.kind) && !blocked.has(row.accountId) && (isAccountNotification(row.kind) || (row.projectId !== null &&
-      (row.kind === 'artifact_comment' ? gates.get(row.projectId)?.artifactComments : gates.get(row.projectId)?.center))),
+    (row) => !RETIRED_KINDS.has(row.kind) && !blocked.has(row.accountId) && (isAccountNotification(row.kind) ||
+      (row.projectId !== null && gates.get(row.projectId)?.center)),
   );
-
-  const artifacts = await loadArtifactAccessRows(open.flatMap((row) => row.kind === 'artifact_comment' && row.artifactId ? [row.artifactId] : []));
-  const seenArtifacts = await maySeeArtifacts(userId, [...artifacts.values()]);
 
   const loaded = await loadSessionAccessRows(open.flatMap((row) => (row.sessionId ? [row.sessionId] : [])));
   const seen = await maySeeSessions(userId, [...loaded.values()]);
@@ -146,7 +138,7 @@ async function visible<T extends InboxRowForFilter>(
 
   const triggerProjects = new Map<string, Set<string>>();
   for (const row of open) {
-    if (row.kind === 'artifact_comment' || row.sessionId || !row.projectId) continue;
+    if (row.sessionId || !row.projectId) continue;
     const ids = triggerProjects.get(row.accountId) ?? new Set<string>();
     ids.add(row.projectId);
     triggerProjects.set(row.accountId, ids);
@@ -158,29 +150,9 @@ async function visible<T extends InboxRowForFilter>(
 
   const kept = open.filter((row) =>
     isAccountNotification(row.kind) ||
-    (row.kind === 'artifact_comment'
-      ? !!row.artifactId && !!row.artifactThreadId && seenArtifacts.has(row.artifactId)
-        && artifacts.get(row.artifactId)?.accountId === row.accountId && artifacts.get(row.artifactId)?.projectId === row.projectId
-      : row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
+    (row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`)),
   );
   return { rows: kept, sessions, projectNames };
-}
-
-/**
- * The kinds that cannot reach `userId` now, so a settings screen hides their
- * rows: `artifact_comment` unless the person may read the artifacts of a
- * project with Artifacts and Artifact comments on.
- */
-export async function hiddenNotificationKinds(userId: string): Promise<NotificationKindName[]> {
-  const hidden: NotificationKindName[] = [];
-  const candidates = await db.select({ id: projects.projectId, accountId: projects.accountId, metadata: projects.metadata })
-    .from(projects).innerJoin(accountMembers, eq(accountMembers.accountId, projects.accountId)).where(eq(accountMembers.userId, userId));
-  const enabled = candidates.filter((row) => resolveFeatureFlag(row.metadata, 'artifacts') && resolveFeatureFlag(row.metadata, 'artifact_comments'));
-  const groups = new Map<string, string[]>();
-  for (const row of enabled) groups.set(row.accountId, [...(groups.get(row.accountId) ?? []), row.id]);
-  const accessible = await Promise.all([...groups].map(([accountId, ids]) => mayReadProjectArtifacts(userId, accountId, ids)));
-  if (!accessible.some((ids) => ids.size > 0)) hidden.push('artifact_comment');
-  return hidden;
 }
 
 /**
@@ -280,16 +252,12 @@ export async function listInbox(
       project_name: row.projectId ? names.get(row.projectId) ?? null : null,
       session_id: row.sessionId,
       trigger_slug: row.triggerSlug,
-      artifact_id: row.artifactId,
-      artifact_thread_id: row.artifactThreadId,
       actor_user_id: row.actorUserId,
       url: notificationUrl({
         notificationId: row.notificationId,
         projectId: row.projectId,
         sessionId: row.sessionId,
         triggerSlug: row.triggerSlug,
-        artifactId: row.artifactId,
-        artifactThreadId: row.artifactThreadId,
         kind: row.kind,
         accountId: row.accountId,
       }),

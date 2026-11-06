@@ -55,8 +55,10 @@
  *     for a typo. `kortix system-skills` follows the same rule for a skill.
  *   • IAM — `iamActions` on the entry: the account permission catalog leaves
  *     them out until a project of the account has the flag on.
- *   • Notification kind — the preferences API lists it in `hidden_kinds` while
- *     it cannot reach the person, and the settings screens drop its row.
+ *   • Notification kind — the settings screens drop a row the preferences
+ *     API lists in `hidden_kinds` (empty today: no kind is behind a flag).
+ *     Fill it from the flag in notifications/routes.ts while the kind cannot
+ *     reach the person.
  *   • Web — `useFeatureFlag` hides every entry point (sidebar row, More menu,
  *     palette via `requiresFlag`, permission group via `featureFlag` in
  *     agent-editor-catalog.ts); a page a deep link still reaches renders
@@ -344,34 +346,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'no goal (projects/lib/goal-wake.ts). BOX: off, a session box has no kortix-goals skill and its CLI hides ' +
       '`kortix goals` (KORTIX_FEATURE_FLAGS → kortixd). The project_goals rows and the Goals folders in Files stay.',
   },
-  {
-    key: 'artifacts',
-    name: 'Artifacts',
-    description:
-      'Share docs (Markdown) and HTML pages from Files: a gallery per project, a doc editor, versions from the Files history, PDF export for docs, and share links that are private, for the project, for chosen people, or public.',
-    stability: 'beta',
-    // Artifacts are paths in Files, a Platinum volume. Default-on wherever
-    // Platinum is configured (Marko, 2026-10-24) — matches the `available` gate.
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => Boolean(config.PLATINUM_API_KEY),
-    enforcement: 'routes',
-    iamActions: ['project.artifact.read', 'project.artifact.write', 'project.artifact.manage', 'project.artifact.public'],
-    enforcementNote:
-      'ROUTES: every /v1/projects/:id/artifacts* route answers 403 `feature_disabled` when off, and ' +
-      '/v1/artifacts/* (the content server) answers 404 for an artifact of a flag-off project. BOX: off, ' +
-      'a session box has no kortix-artifacts skill and its CLI hides and refuses `kortix artifacts`. ' +
-      'IAM: project.artifact.* leave the account permission catalog until a project of the account has it on.',
-  },
-  {
-    key: 'artifact_comments',
-    name: 'Artifact comments',
-    description: 'Discuss docs and pages in threads with people and agents. Requires Artifacts.',
-    stability: 'experimental',
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
-    enforcement: 'routes',
-    iamActions: ['project.artifact.comment'],
-  },
+  // `artifacts` graduated (2026-11-06): every project has Artifacts wherever
+  // the platform stores a Drive (an Artifact is a path in it). The routes
+  // answer 403 `feature_disabled` only on a Kortix without a Drive
+  // (projects/lib/artifact-access.ts). A stored `experimental.artifacts`
+  // override is inert; the serializer sends the Drive availability for older
+  // SDKs, hosts and CLIs.
+  // `artifact_comments` removed (2026-11-06): comments, live presence, doc
+  // co-editing and the activity feed left the product; their routes answer
+  // 410 (routes/retired.ts). A stored `experimental.artifact_comments` override
+  // is inert; the serializer sends `false` to older clients.
   {
     key: 'email_channel',
     name: 'Email channel',
@@ -636,7 +620,6 @@ function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | und
 export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): boolean {
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
-  if (key === 'artifact_comments' && !resolveFeatureFlag(metadata, 'artifacts')) return false;
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 

@@ -307,7 +307,7 @@ export function useHasNotificationInboxProject(): boolean {
   return useHasNotificationProject(notificationInboxEnabled);
 }
 
-function useHasNotificationProject(enabled: (project: { experimental?: { notification_center?: unknown; artifacts?: unknown; artifact_comments?: unknown } }) => boolean): boolean {
+function useHasNotificationProject(enabled: (project: { experimental?: { notification_center?: unknown } }) => boolean): boolean {
   const accounts = useAccounts();
   const lists = useQueries({
     queries: (accounts.data ?? []).map((account) => ({

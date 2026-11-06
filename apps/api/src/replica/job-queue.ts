@@ -26,10 +26,6 @@ async function tick(): Promise<void> {
   ticking = true;
   timer = null;
   let delay = IDLE_MS;
-  if (config.KORTIX_WORKERS_ENABLED && config.KORTIX_JOB_WORKER_ENABLED) {
-    void import('../artifacts/comment-screenshot-objects').then(module => module.kickArtifactCommentScreenshotCleanup(true))
-      .catch(() => logger.warn('[artifact-screenshots] cleanup initialization deferred'));
-  }
   try {
     await runWorkerTick('job-queue', () => runJobBatch(4, { wait: false, onSlotFree: wake }));
   } catch (error) {

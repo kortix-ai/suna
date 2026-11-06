@@ -151,7 +151,7 @@ is left out of the sidebar.
 | `/drive` | Drive: My files, Shared with me, Team folders, All files (managers), This session. New folder, move, delete, upload, conflicts. | flag `drives` |
 | `/repo` | The project repository: branches, folders, a file viewer, commit history. | a project |
 | `/artifacts` | Docs and pages the agents published: read, rename, pin, stop sharing. | flag `artifacts` |
-| `/inbox` | Notifications, newest first: open, mark read, mark all read. | `notification_center`, or `artifacts` + `artifact_comments` |
+| `/inbox` | Notifications, newest first: open, mark read, mark all read. | `notification_center` |
 | `/approvals` | Approvals, outputs and decisions waiting on a person: approve, reject, ask for changes, answer. | a project |
 | `/goals` | Goals and their progress: start one, answer its question, stop it. | flag `goals` |
 | `/memory` | Company memory pages: read and search. | flag `chat` |

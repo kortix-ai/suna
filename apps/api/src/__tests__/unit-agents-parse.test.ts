@@ -32,10 +32,11 @@ describe('agents — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('54 grantable project actions (all of PROJECT_ACTIONS)', () => {
+  test('53 grantable project actions (all of PROJECT_ACTIONS)', () => {
     // 56 → 54: Rooms (project.room.read / .write) left with Spaces (#11712).
-    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(54);
-    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.artifact.comment')).toBe(true);
+    // 54 → 53: artifact comments (project.artifact.comment) were removed (2026-11-06).
+    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(53);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.artifact.comment')).toBe(false);
   });
 
   // The git ref leaves are grantable on purpose: a project that WANTS an agent

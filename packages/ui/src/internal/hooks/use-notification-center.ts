@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * The strict `notification_center` gate controls session mute/watch actions.
- * Inbox surfaces also work when artifacts and artifact_comments are both on.
+ * The `notification_center` gate controls the inbox and the session
+ * mute/watch actions.
  *
  * - With a project id: `useFeatureFlag`, fail-closed, on the shared bare
  *   project row (`qk.project.summary(id)`) that the project shell reads.
@@ -29,10 +29,6 @@ export function notificationCenterOn(project: FlagHolder): boolean {
   return project?.experimental?.[NOTIFICATION_CENTER_FLAG] === true;
 }
 
-export function notificationInboxOn(project: FlagHolder): boolean {
-  return notificationCenterOn(project) || (project?.experimental?.artifacts === true && project.experimental.artifact_comments === true);
-}
-
 /**
  * The flag for one project from the query cache: its row, else its detail,
  * else a cached project list that holds it. Undefined when none holds it.
@@ -57,10 +53,6 @@ function cachedFlagAnswer(client: QueryClient | null, projectId: string | null |
     if (project) return enabled(project);
   }
   return undefined;
-}
-
-export function cachedNotificationInboxAnswer(client: QueryClient | null, projectId: string | null | undefined): boolean | undefined {
-  return cachedFlagAnswer(client, projectId, notificationInboxOn);
 }
 
 /** The flag for one project from the query cache. False when nothing cached holds it. */
@@ -91,10 +83,6 @@ function holdsFlagOn(query: Query, enabled: (project: FlagHolder) => boolean): b
 /** True when any project in the query cache has the flag on. */
 export function anyCachedNotificationCenter(client: QueryClient): boolean {
   return client.getQueryCache().getAll().some((query) => holdsFlagOn(query, notificationCenterOn));
-}
-
-export function anyCachedNotificationInbox(client: QueryClient): boolean {
-  return client.getQueryCache().getAll().some((query) => holdsFlagOn(query, notificationInboxOn));
 }
 
 /**
@@ -131,23 +119,12 @@ function useAnyCachedNotificationCenter(client: QueryClient, scan: boolean): boo
   );
 }
 
-function useAnyCachedNotificationInbox(client: QueryClient, scan: boolean): boolean {
-  return useSyncExternalStore(useCacheSubscription(client, scan), () => scan && anyCachedNotificationInbox(client), () => false);
-}
 
 /** Is the notification center on for `projectId`, or, without one, for any cached project. */
 export function useNotificationCenter(projectId?: string | null): boolean {
   const project = useFeatureFlag(projectId, NOTIFICATION_CENTER_FLAG).enabled;
   const anyProject = useAnyCachedNotificationCenter(useQueryClient(), !projectId);
   return projectId ? project : anyProject;
-}
-
-export function useNotificationInboxEnabled(projectId?: string | null): boolean {
-  const center = useFeatureFlag(projectId, NOTIFICATION_CENTER_FLAG).enabled;
-  const artifacts = useFeatureFlag(projectId, 'artifacts').enabled;
-  const comments = useFeatureFlag(projectId, 'artifact_comments').enabled;
-  const anyProject = useAnyCachedNotificationInbox(useQueryClient(), !projectId);
-  return projectId ? center || (artifacts && comments) : anyProject;
 }
 
 /**
@@ -181,14 +158,14 @@ export function useNotificationHostGate(projectId?: string | null): boolean {
   const detailLoaded = !!detail && detail.status !== 'pending';
   const flag = {
     isLoading: !rowLoaded && !detailLoaded,
-    enabled: notificationInboxOn(rowLoaded ? row?.data : detail?.data?.project),
+    enabled: notificationCenterOn(rowLoaded ? row?.data : detail?.data?.project),
   };
-  const anyProject = useAnyCachedNotificationInbox(client, !projectId);
+  const anyProject = useAnyCachedNotificationCenter(client, !projectId);
   const [previous, setPrevious] = useState(false);
   let answer = anyProject;
   if (projectId) {
     answer = flag.isLoading
-      ? (cachedNotificationInboxAnswer(client, projectId) ?? previous)
+      ? (cachedNotificationCenterAnswer(client, projectId) ?? previous)
       : flag.enabled;
   }
   // The answer from an earlier render: React's derived-state pattern.

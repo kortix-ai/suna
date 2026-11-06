@@ -36,8 +36,6 @@ export interface DeliverInput {
   projectId?: string | null;
   sessionId?: string | null;
   triggerSlug?: string | null;
-  artifactId?: string | null;
-  artifactThreadId?: string | null;
   /** Subject: the session title or the trigger name. */
   title: string;
   /** Detail: question text, error, share line. May be empty. */
@@ -111,8 +109,6 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
-        artifactId: input.artifactId ?? null,
-        artifactThreadId: input.artifactThreadId ?? null,
         kind: input.kind,
         title: input.title,
         body: input.body ?? '',
@@ -139,8 +135,6 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         projectId: input.projectId ?? null,
         sessionId: input.sessionId ?? null,
         triggerSlug: input.triggerSlug ?? null,
-        artifactId: input.artifactId ?? null,
-        artifactThreadId: input.artifactThreadId ?? null,
         accountId: input.accountId,
       });
 

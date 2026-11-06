@@ -22,19 +22,17 @@ export function inboxUserId(): string {
 }
 
 /**
- * The web's inbox gate (`useNotificationInboxEnabled`): `notification_center`,
- * or `artifacts` and `artifact_comments` together. Each flag reads the shared
- * project-detail entry, so three calls cost one request. Fail-closed.
+ * The inbox gate, as on the web (`useNotificationCenter`): the project's
+ * `notification_center` flag. It reads the shared project-detail entry.
+ * Fail-closed.
  */
 export function useInboxEnabled(projectId: string | null | undefined): {
   enabled: boolean;
   isLoading: boolean;
 } {
   const center = useFeatureFlag(projectId, 'notification_center');
-  const artifacts = useFeatureFlag(projectId, 'artifacts');
-  const comments = useFeatureFlag(projectId, 'artifact_comments');
   return {
-    enabled: center.enabled || (artifacts.enabled && comments.enabled),
+    enabled: center.enabled,
     isLoading: center.isLoading,
   };
 }

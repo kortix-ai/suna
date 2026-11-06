@@ -44,7 +44,6 @@ describe('KIND_LABEL', () => {
       capture_device_down: 'Capture computer stopped',
       capture_device_recovered: 'Capture computer recording again',
       message: 'Message',
-      artifact_comment: 'Artifact comments',
     });
   });
 
@@ -123,18 +122,7 @@ describe('inboxOpenTarget', () => {
   });
 });
 
-test('Artifact inbox rows open only a validated Artifact path for their own project', () => {
-  const projectId = '11111111-1111-4111-8111-111111111111';
-  const artifactId = '22222222-2222-4222-8222-222222222222';
-  const path = `/projects/${projectId}/artifacts/${artifactId}`;
-  expect(inboxOpenTarget(row({ kind: 'artifact_comment', project_id: projectId, session_id: null, url: path }))).toEqual({ projectId, sessionId: null, artifactPath: path });
-  for (const url of ['https://evil.example.test/path', '/projects/other/artifacts/a1', `/projects/${projectId}/sessions/a1`]) expect(inboxOpenTarget(row({ kind: 'artifact_comment', project_id: projectId, url }))).toBeNull();
-});
-
-test('Artifact inbox gating requires both flags without changing the strict session feature flag', () => {
-  const project = { experimental: { notification_center: false, artifacts: true, artifact_comments: true } };
-  expect(notificationInboxEnabled(project)).toBe(true);
-  expect(project.experimental.notification_center).toBe(false);
-  for (const experimental of [{}, { artifacts: true }, { artifact_comments: true }, { artifacts: true, artifact_comments: 'true' }, { artifacts: false, artifact_comments: true }]) expect(notificationInboxEnabled({ experimental })).toBe(false);
+test('the inbox gate is the notification_center flag alone', () => {
+  for (const experimental of [{}, { notification_center: false }, { notification_center: 'true' }, { artifacts: true, artifact_comments: true }]) expect(notificationInboxEnabled({ experimental })).toBe(false);
   expect(notificationInboxEnabled({ experimental: { notification_center: true } })).toBe(true);
 });

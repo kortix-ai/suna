@@ -6,8 +6,8 @@
  * cache optimistically and rolls back on a rejected write. It renders
  * `<InboxView/>`, which knows nothing about the SDK.
  *
- * The inbox is gated by the project's `notification_center` flag (or
- * `artifacts` + `artifact_comments`), exactly as the web bell is.
+ * The inbox is gated by the project's `notification_center` flag, exactly as
+ * the web bell is.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';

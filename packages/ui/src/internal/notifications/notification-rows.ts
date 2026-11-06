@@ -99,11 +99,9 @@ export function notificationTag(row: InboxNotification): string {
 
 /**
  * Where a row's open action goes, named by the page its `url` opens: its
- * Artifact, its session, the Reminders page (a reminder
- * alert), or the Triggers page.
+ * session, the Reminders page (a reminder alert), or the Triggers page.
  */
-export function rowDestination(row: InboxNotification): 'artifact' | 'session' | 'reminders' | 'triggers' {
-  if (row.artifact_id) return 'artifact';
+export function rowDestination(row: InboxNotification): 'session' | 'reminders' | 'triggers' {
   if (row.session_id) return 'session';
   const path = new URL(row.url, 'http://kortix.invalid').pathname;
   // `/admin/loops` since 2026-10-28; a row stored before carries `/reminders`.

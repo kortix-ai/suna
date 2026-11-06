@@ -31,9 +31,8 @@ describe('parseArtifactUrl', () => {
   });
 });
 
-test('annotated frames have a separate pool key for the same immutable version', () => {
+test('a frame key names the version, else the last save', () => {
   const artifact = { artifact_id: A, updated_at: 'now' };
   expect(artifactFrameKey(artifact, 'commit')).toBe(`artifact:${A}:commit`);
-  expect(artifactFrameKey(artifact, 'commit', true)).toBe(`artifact:${A}:commit:annotate`);
-  expect(artifactFrameKey(artifact, null, true)).not.toBe(artifactFrameKey(artifact));
+  expect(artifactFrameKey(artifact)).toBe(`artifact:${A}:now`);
 });

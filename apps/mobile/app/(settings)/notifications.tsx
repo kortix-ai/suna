@@ -52,7 +52,6 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   capture_device_recovered: ArrowCounterClockwiseIcon,
   // Retired with Rooms (2026-11); the SDK type still carries the kind.
   message: ChatCircleIcon,
-  artifact_comment: ChatCircleIcon,
 };
 
 /**

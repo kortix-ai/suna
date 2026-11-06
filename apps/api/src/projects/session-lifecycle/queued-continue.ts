@@ -24,7 +24,7 @@ import { DELIVERY_FAILURE_COPY } from './types';
 import {
   remintWireMessageId,
 } from './inbox-placement';
-import { deliverQueuedContinue, deliverSteer, refreshArtifactCommentQueuedPrompt } from './queued-continue-delivery';
+import { deliverQueuedContinue, deliverSteer } from './queued-continue-delivery';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { drainSessionLifecycleQueue } from './drain';
 
@@ -140,19 +140,6 @@ export async function executeQueuedContinue(
       attempts: row.attempts,
     });
     return 'failed';
-  }
-  if (row.source === 'system:artifact-comment') {
-    try {
-      text = (await refreshArtifactCommentQueuedPrompt(row)).text;
-      payload.text = text;
-      payload.parts = undefined;
-    } catch (error) {
-      const retryable = !(error instanceof PromptDeliveryRefused);
-      await markCommandFailed(row, error instanceof Error ? error.message : 'Artifact comment delivery validation failed', {
-        retryable, attempts: row.attempts, sessionId: row.sessionId,
-      });
-      return retryable ? 'queued' : 'failed';
-    }
   }
   const tl = new ProvisionTimeline(row.commandId, 'deliver');
   const admitted = await admitQueuedContinue(row, tl);
