@@ -14,6 +14,7 @@ import {
   inArray,
   isNull,
   lt,
+  or,
   sql,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -389,23 +390,46 @@ const computeAggregateFields = {
  * workspace (a split or a transfer) keeps its history, while the ledgers stay
  * with the account that paid (PROJECT_TRANSFER_LEAVE_TABLES). An account view
  * (no project) reads what the account paid for. Design.md §3.1 finding 31.
+ *
+ * A project scope takes a row billed to another account only through one of
+ * the project's own sessions (`projectRowsLlm`): the moved history. A
+ * sessionless row the old account paid stays in the old account's views, and
+ * another workspace's request that named this project never reaches it.
  */
 export interface CostScope {
   accountId: string;
   projectId?: string;
 }
 
+/** The project's own sessions; they move with it. */
+function projectSessionIds(projectId: string) {
+  return db.select({ sessionId: projectSessions.sessionId }).from(projectSessions).where(eq(projectSessions.projectId, projectId));
+}
+
+/** LLM rows of a project scope: billed to the reader, or one of the project's sessions. */
+function projectRowsLlm(accountId: string, projectId: string): SQL {
+  return and(
+    eq(gatewayRequestLogs.projectId, projectId),
+    or(eq(gatewayRequestLogs.accountId, accountId), inArray(gatewayRequestLogs.sessionId, projectSessionIds(projectId))),
+  )!;
+}
+
+/** Compute rows of a project scope through its sandboxes: the same rule. */
+function projectRowsCompute(accountId: string, projectId: string): SQL {
+  return and(
+    eq(sessionSandboxes.projectId, projectId),
+    or(eq(sandboxComputeSessions.accountId, accountId), inArray(sandboxComputeSessions.sessionId, projectSessionIds(projectId))),
+  )!;
+}
+
 function llmScope(scope: CostScope): SQL {
-  return scope.projectId ? eq(gatewayRequestLogs.projectId, scope.projectId) : eq(gatewayRequestLogs.accountId, scope.accountId);
+  return scope.projectId ? projectRowsLlm(scope.accountId, scope.projectId) : eq(gatewayRequestLogs.accountId, scope.accountId);
 }
 
 /** Compute rows carry no project: a project scope reads the rows of its sessions. */
 function computeScope(scope: CostScope): SQL {
   return scope.projectId
-    ? inArray(
-        sandboxComputeSessions.sessionId,
-        db.select({ sessionId: projectSessions.sessionId }).from(projectSessions).where(eq(projectSessions.projectId, scope.projectId)),
-      )
+    ? inArray(sandboxComputeSessions.sessionId, projectSessionIds(scope.projectId))
     : eq(sandboxComputeSessions.accountId, scope.accountId);
 }
 
@@ -527,7 +551,7 @@ async function loadReconciliation(
   ];
 
   const computeConditions: SQL[] = [
-    projectId ? eq(sessionSandboxes.projectId, projectId) : eq(sandboxComputeSessions.accountId, accountId),
+    projectId ? projectRowsCompute(accountId, projectId) : eq(sandboxComputeSessions.accountId, accountId),
     isNull(projectSessions.sessionId),
     gte(sandboxComputeSessions.startedAt, window.from.toISOString()),
     lt(sandboxComputeSessions.startedAt, window.to.toISOString()),
@@ -958,7 +982,7 @@ export async function listProjectGatewaySessionSpend(input: {
         and(
           // By project, wherever it was billed (CostScope): a project that
           // moved keeps its spend history.
-          eq(gatewayRequestLogs.projectId, input.projectId),
+          projectRowsLlm(input.accountId, input.projectId),
           sql`${gatewayRequestLogs.sessionId} is not null`,
           sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${input.days})`,
           input.sessionsVisibleTo?.(gatewayRequestLogs.sessionId),
@@ -976,7 +1000,7 @@ export async function listProjectGatewaySessionSpend(input: {
       .innerJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, sandboxComputeSessions.sessionId))
       .where(
         and(
-          eq(sessionSandboxes.projectId, input.projectId),
+          projectRowsCompute(input.accountId, input.projectId),
           sql`${sandboxComputeSessions.sessionId} is not null`,
           sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${input.days})`,
           input.sessionsVisibleTo?.(sandboxComputeSessions.sessionId),
@@ -1080,7 +1104,7 @@ export async function listProjectGatewaySourceSpend(input: {
     .where(
       and(
         // By project, wherever it was billed (CostScope).
-        eq(gatewayRequestLogs.projectId, input.projectId),
+        projectRowsLlm(input.accountId, input.projectId),
         sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(hours => ${hours})`,
       ),
     )
