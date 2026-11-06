@@ -6,6 +6,7 @@ import * as realRequestContext from '../lib/request-context';
 import * as realAuthAudit from './auth-audit';
 import * as realSentry from '../lib/sentry';
 import * as realSsoSync from '../iam/sso-sync';
+import * as realActor from '../iam/actor';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 // Two projects under the same account, each with its own sandbox — this is
@@ -175,6 +176,10 @@ mock.module('./auth-audit', () => ({
 mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
 mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
+// No test here reads the IAM actor. Built for real it reads `account_tokens`
+// from the unreachable test database (127.0.0.1:1); each read waits on the
+// refused connect, so a request through it ran past the 5 s test timeout.
+mock.module('../iam/actor', () => ({ ...realActor, buildActor: async () => null }));
 
 const { combinedAuth, supabaseAuth, deadCredential401 } = await import('./auth');
 
