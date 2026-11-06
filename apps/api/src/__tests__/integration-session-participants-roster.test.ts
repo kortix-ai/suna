@@ -151,7 +151,10 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'participants-roster',
     repoUrl: 'https://example.test/participants-roster.git',
+    splitPending: true,
   });
+  // A second active project makes the account a split_pending legacy account: there a member reaches a project only through a grant, which is what this suite tests (on a 1:1 workspace membership is access, design.md C3).
+  await db.insert(projects).values({ projectId: crypto.randomUUID(), accountId: ACCOUNT, name: 'participants-roster-second', repoUrl: 'https://example.test/second.git', splitPending: true });
   await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: BOB, projectRole: 'member' },
   ]);
