@@ -485,7 +485,7 @@ def _print_records(records: list[dict], spec: RecordSpec) -> None:
             value = record.get(key)
             if optional and not value:
                 continue
-            print(f"  {label}: {', '.join(value) if isinstance(value, list) else value}")
+            print(f"  {label}: {', '.join(value) if key == 'source_urls' else value}")
         print()
 
 
