@@ -235,7 +235,7 @@ export function registerIamAssignmentsRoutes(): void {
       }
       const rawScopeId = body.scope_id ?? body.scopeId ?? null;
       if (rawScopeId != null && typeof rawScopeId !== 'string') {
-        return c.json({ error: 'scope_id must be a project id string or null' }, 400);
+        return c.json({ error: 'scope_id must be a workspace id string or null' }, 400);
       }
       const scopeId: string | null = rawScopeId;
 
@@ -251,7 +251,7 @@ export function registerIamAssignmentsRoutes(): void {
         return c.json({ error: 'principal_id must be a UUID' }, 400);
       }
       if (scopeId !== null && !isUuid(scopeId)) {
-        return c.json({ error: 'scope_id must be a project UUID or null' }, 400);
+        return c.json({ error: 'scope_id must be a workspace UUID or null' }, 400);
       }
       if (typeof roleId === 'string' && !isUuid(roleId)) {
         return c.json({ error: 'role_id must be a UUID — use role_key for a built-in role' }, 400);

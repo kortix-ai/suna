@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} si è registrata da sola su Kortix. Kortix non ha verificato chi la gestisce. Consentila solo se la stai collegando tu in questo momento.",
     "redirectsTo": "Ti rimanda a",
     "workspaceLabel": "Workspace",
-    "workspaceHint": "{client} accede solo a questo workspace."
+    "workspaceHint": "{client} accede solo a questo workspace.",
+    "scopes": {
+      "profile": "Vedere il tuo profilo",
+      "email": "Vedere il tuo indirizzo email",
+      "kortix": "Agire per tuo conto nei tuoi workspace Kortix: sessioni, file e tutto ciò che il tuo ruolo consente",
+      "machinesRead": "Vedere le sandbox delle tue sessioni"
+    }
   },
   "reminders": {
     "title": "Cicli",

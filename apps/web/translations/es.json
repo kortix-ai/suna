@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} se registró sola en Kortix. Kortix no ha verificado quién la gestiona. Permítela solo si la estás conectando tú mismo ahora.",
     "redirectsTo": "Te devuelve a",
     "workspaceLabel": "Espacio de trabajo",
-    "workspaceHint": "{client} solo accede a este espacio de trabajo."
+    "workspaceHint": "{client} solo accede a este espacio de trabajo.",
+    "scopes": {
+      "profile": "Ver tu perfil",
+      "email": "Ver tu dirección de correo electrónico",
+      "kortix": "Actuar en tu nombre en tus espacios de trabajo de Kortix: sesiones, archivos y todo lo que tu rol permite",
+      "machinesRead": "Ver los sandboxes de tus sesiones"
+    }
   },
   "reminders": {
     "title": "Bucles",

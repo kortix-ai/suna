@@ -121,7 +121,7 @@ export function registerMemberInviteRoute(): void {
       if (role === 'admin') await assertAuthorized(actor, ACCOUNT_ACTIONS.MEMBER_UPDATE);
       if (role === 'manager' && !facts.soleProjectId) {
         return c.json(
-          { error: 'manager needs the workspace project; on a legacy account with several projects, grant manager per project' },
+          { error: 'Manager needs a workspace that is set up. On a legacy account with several projects, grant Manager per project.' },
           400,
         );
       }

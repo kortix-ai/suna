@@ -513,7 +513,7 @@ accountsRouter.openapi(
     const fullIdentity = actsAsFullIdentity(c.get('authType') as string | undefined, actor);
     const loaded = await loadProjectForUser(c, projectId, fullIdentity ? 'read' : 'credentials');
     if (!loaded?.row || loaded.row.accountId !== accountId) {
-      return c.json({ error: 'Project not found in account' }, 403);
+      return c.json({ error: 'Workspace not found' }, 403);
     }
   }
 

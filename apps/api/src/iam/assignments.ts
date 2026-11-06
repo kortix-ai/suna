@@ -227,15 +227,15 @@ export async function assignRole(writer: Writer, accountId: string, input: Assig
   const scopeId = scopeType === 'project' ? (input.scope.id ?? null) : null;
 
   if (scopeType === 'project' && !scopeId) {
-    throw new HTTPException(400, { message: 'a project-scoped assignment must name a project' });
+    throw new HTTPException(400, { message: 'an assignment with scope type `project` must name its workspace in scope.id' });
   }
   if (scopeType === 'account' && input.scope.id) {
     throw new HTTPException(400, {
-      message: 'an account-scoped assignment covers every project and must not name one',
+      message: 'an assignment with scope type `account` covers the whole workspace and must not set scope.id',
     });
   }
   if (input.object && scopeType !== 'project') {
-    throw new HTTPException(400, { message: 'an object assignment must be project-scoped' });
+    throw new HTTPException(400, { message: 'an object assignment must have scope type `project`' });
   }
   if (role.scopeType !== scopeType && !input.object) {
     throw new HTTPException(400, {
@@ -419,7 +419,7 @@ export async function updateAssignment(
   const scopeType = input.scope.type;
   const scopeId = scopeType === 'project' ? (input.scope.id ?? null) : null;
   if (scopeType === 'project' && !scopeId) {
-    throw new HTTPException(400, { message: 'a project-scoped assignment must name a project' });
+    throw new HTTPException(400, { message: 'an assignment with scope type `project` must name its workspace in scope.id' });
   }
   if (scopeId) await assertProjectInAccount(accountId, scopeId);
   assertAccountRoleHolder(writer, role, scopeType, {
@@ -757,7 +757,7 @@ async function assertObjectAssignable(
       limit 1`);
     const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
     if ((rows as Array<{ found: number }>).length === 0) {
-      throw new HTTPException(404, { message: 'object_id is not a shared secret in this project' });
+      throw new HTTPException(404, { message: 'object_id is not a shared secret in this workspace' });
     }
     return;
   }
@@ -777,7 +777,7 @@ async function assertObjectAssignable(
   const rows = (result as unknown as { rows?: Array<{ found: number }> }).rows ?? result;
   if ((rows as Array<{ found: number }>).length === 0) {
     throw new HTTPException(404, {
-      message: 'object_id is not a shared connection in this project',
+      message: 'object_id is not a shared connection in this workspace',
     });
   }
 }
@@ -861,7 +861,7 @@ function assertAccountRoleHolder(
   if (!role.isSystem || scopeType !== 'account') return;
   if (principal.type === 'user' || principal.type === 'pending') return;
   throw new HTTPException(400, {
-    message: `an account role ("${role.key}") is held by a person, not a ${principal.type}; give the group a project role or a custom role instead`,
+    message: `an account role ("${role.key}") is held by a person, not a ${principal.type}; give the group a role with scope type "project" or a custom role instead`,
   });
 }
 
@@ -908,7 +908,7 @@ async function assertProjectInAccount(accountId: string, projectId: string): Pro
     .from(projectsView)
     .where(and(eq(projectsView.projectId, projectId), eq(projectsView.accountId, accountId)))
     .limit(1);
-  if (!row) throw new HTTPException(404, { message: 'project not found in this account' });
+  if (!row) throw new HTTPException(404, { message: 'Workspace not found' });
 }
 
 function isAccountOwnerRow(row: Pick<AssignmentRow, 'roleIsSystem' | 'roleKey' | 'scopeType' | 'principalType'>): boolean {

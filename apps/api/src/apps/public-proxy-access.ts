@@ -675,7 +675,7 @@ export async function authorizeServiceRequest(
   const userId = resolveAppViewerUserId(request, url, app);
   if (userId && await isAppAdmin(app, userId)) return null;
   return Response.json(
-    { error: 'Only project admins may open this service.', code: 'app_service_admins_only' },
+    { error: 'Only workspace admins may open this service.', code: 'app_service_admins_only' },
     { status: 403, headers: { 'cache-control': 'no-store' } },
   );
 }

@@ -24,12 +24,12 @@ import { createClient } from '@/lib/supabase/client';
 import { getOAuthConsentRequest, listWorkspaces, submitOAuthConsent, type WorkspaceSummary } from '@kortix/sdk';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
 
-const SCOPE_DESCRIPTIONS: Record<string, string> = {
-  profile: 'View your account information',
-  email: 'View your email address',
-  kortix:
-    'Act on your behalf in Kortix — sessions, files and everything your role allows',
-  'machines:read': 'View your session sandboxes',
+/** Scope → its `oauthConsent.scopes.<key>` description. An unknown scope shows as itself. */
+const SCOPE_MESSAGE_KEYS: Record<string, 'profile' | 'email' | 'kortix' | 'machinesRead'> = {
+  profile: 'profile',
+  email: 'email',
+  kortix: 'kortix',
+  'machines:read': 'machinesRead',
 };
 
 export default function OAuthConsentPage() {
@@ -302,7 +302,7 @@ function OAuthConsent() {
                 {scopes.map((s) => (
                   <li key={s} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm">
                     <Check className="text-muted-foreground size-4 shrink-0" />
-                    <span className="min-w-0">{SCOPE_DESCRIPTIONS[s] || s}</span>
+                    <span className="min-w-0">{SCOPE_MESSAGE_KEYS[s] ? t(`scopes.${SCOPE_MESSAGE_KEYS[s]}`) : s}</span>
                   </li>
                 ))}
               </ul>

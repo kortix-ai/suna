@@ -478,11 +478,11 @@ async function parsePolicyInput(
   // agent-grant fold does NOT narrow (the fold only gates project scope) — a
   // standing-identity escalation surface. Keep token principals project-scoped.
   if (principalType === 'token' && scopeType === 'account') {
-    return { ok: false, status: 400, error: 'service-account (agent) policies must be project-scoped' };
+    return { ok: false, status: 400, error: 'service-account (agent) policies must have scopeType project' };
   }
   const scopeId = typeof body.scopeId === 'string' && body.scopeId ? body.scopeId : null;
   if (scopeType === 'project' && !scopeId) {
-    return { ok: false, status: 400, error: 'scopeId (project id) is required for project scope' };
+    return { ok: false, status: 400, error: 'scopeId (the workspace id) is required for scopeType project' };
   }
   // A project-scoped policy must target a project that actually belongs to this
   // account — otherwise a typo'd or cross-account scopeId creates a dangling
@@ -494,7 +494,7 @@ async function parsePolicyInput(
       .from(projectsView)
       .where(and(eq(projectsView.projectId, scopeId), eq(projectsView.accountId, accountId)))
       .limit(1);
-    if (!proj) return { ok: false, status: 404, error: 'scopeId does not match a project in this account' };
+    if (!proj) return { ok: false, status: 404, error: 'scopeId does not match this workspace' };
   }
 
   if (body.effect !== undefined && body.effect !== 'allow') {
@@ -504,7 +504,7 @@ async function parsePolicyInput(
   const roleId = typeof body.roleId === 'string' ? body.roleId : '';
   if (!roleId) return { ok: false, status: 400, error: 'roleId is required' };
   if (await isSystemRoleId(roleId)) {
-    return { ok: false, status: 400, error: 'built-in roles are assigned via project members/groups, not policies' };
+    return { ok: false, status: 400, error: 'built-in roles are assigned via workspace members and groups, not policies' };
   }
   const role = await loadCustomRole(accountId, roleId);
   if (!role) return { ok: false, status: 404, error: 'role not found in this account' };

@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} 自行在 Kortix 注册。Kortix 尚未验证其运营方。仅当你正在亲自连接它时才允许。",
     "redirectsTo": "完成后返回至",
     "workspaceLabel": "工作区",
-    "workspaceHint": "{client} 只能访问此工作区。"
+    "workspaceHint": "{client} 只能访问此工作区。",
+    "scopes": {
+      "profile": "查看你的个人资料",
+      "email": "查看你的电子邮件地址",
+      "kortix": "在你的 Kortix 工作区中代表你操作：会话、文件以及你的角色允许的一切",
+      "machinesRead": "查看你的会话沙盒"
+    }
   },
   "reminders": {
     "title": "循环",

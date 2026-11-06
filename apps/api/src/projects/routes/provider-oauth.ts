@@ -338,7 +338,7 @@ export function registerProviderOauthRoutes(): void {
       if (resourceLabel !== null) {
         if (sharing.mode === 'private' && sharing.ownerId !== loaded.userId) return c.json({ error: 'Invalid connection owner' }, 400);
         if (sharing.mode === 'members') {
-          if (sharing.groupIds?.length || (sharing.memberIds?.length ?? 0) > 200) return c.json({ error: 'Select up to 200 project members' }, 400);
+          if (sharing.groupIds?.length || (sharing.memberIds?.length ?? 0) > 200) return c.json({ error: 'Select up to 200 workspace members' }, 400);
           for (const userId of sharing.memberIds ?? []) {
             if (!z.string().uuid().safeParse(userId).success || !(await memberMayReadProject(loaded.row.accountId, projectId, userId))) {
               return c.json({ error: 'Member has no project access' }, 400);

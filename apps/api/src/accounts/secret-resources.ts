@@ -205,22 +205,22 @@ export function registerSecretResourceRoutes() {
         project.accountId !== accountId ||
         !(await memberMayReadProject(accountId, body.project_id, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))
       ) {
-        return c.json({ error: 'Project unavailable' }, 403);
+        return c.json({ error: 'Workspace unavailable' }, 403);
       }
       if (!resolveFeatureFlag(project.metadata, 'pooled_provider_secrets')) return c.json({ error: 'Pooled provider secrets are disabled' }, 403);
       if (body.access_mode !== 'members' || (body.user_ids ?? []).some((id) => id !== userId)) {
         const verdict = await authorize(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_SECRET_WRITE, { type: 'project', id: body.project_id });
-        if (!verdict.allowed) return c.json({ error: 'Project secret write access required' }, 403);
+        if (!verdict.allowed) return c.json({ error: 'Workspace secret write access required' }, 403);
       }
       if (body.access_mode === 'members') {
         for (const memberId of body.user_ids ?? []) {
           if (!(await getMembership(memberId, accountId)) || !(await memberMayReadProject(accountId, body.project_id, memberId))) {
-            return c.json({ error: 'Member has no project access' }, 400);
+            return c.json({ error: 'Member has no workspace access' }, 400);
           }
         }
       }
     } else if (body.access_mode || body.user_ids) {
-      return c.json({ error: 'Project required for access mode' }, 400);
+      return c.json({ error: 'Workspace required for access mode' }, 400);
     }
     const resource = await db.transaction(async (tx) => {
       const [row] = await tx.insert(accountSecretResources).values({
@@ -262,11 +262,11 @@ export function registerSecretResourceRoutes() {
     const userIds = [...new Set([...parsed.data.user_ids, ...(creatorStillEligible ? [row.createdBy] : [])])];
     if (parsed.data.mode === 'project' || userIds.some((id) => id !== row.createdBy)) {
       const verdict = await authorize(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_SECRET_WRITE, { type: 'project', id: row.projectId });
-      if (!verdict.allowed) return c.json({ error: 'Project secret write access required' }, 403);
+      if (!verdict.allowed) return c.json({ error: 'Workspace secret write access required' }, 403);
     }
     for (const userId of userIds) {
       if (!(await getMembership(userId, accountId)) || !(await memberMayReadProject(accountId, row.projectId, userId))) {
-        return c.json({ error: 'Member has no project access' }, 400);
+        return c.json({ error: 'Member has no workspace access' }, 400);
       }
     }
     const updated = await db.transaction(async (tx) => {
@@ -392,10 +392,10 @@ export function registerSecretResourceRoutes() {
       }
       if (userId !== row.createdBy) {
         const verdict = await authorize(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_SECRET_WRITE, { type: 'project', id: row.projectId });
-        if (!verdict.allowed) return c.json({ error: 'Project secret write access required' }, 403);
+        if (!verdict.allowed) return c.json({ error: 'Workspace secret write access required' }, 403);
       }
       if (!(await memberMayReadProject(accountId, row.projectId, userId))) {
-        return c.json({ error: 'Member has no project access' }, 400);
+        return c.json({ error: 'Member has no workspace access' }, 400);
       }
     }
     await db.insert(accountSecretGrants).values({ accountId, secretId: row.secretId, userId, grantedBy: actorId }).onConflictDoNothing();

@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} は自分で Kortix に登録しました。Kortix は運営者を確認していません。今あなた自身が接続している場合のみ許可してください。",
     "redirectsTo": "戻り先",
     "workspaceLabel": "ワークスペース",
-    "workspaceHint": "{client} がアクセスできるのはこのワークスペースだけです。"
+    "workspaceHint": "{client} がアクセスできるのはこのワークスペースだけです。",
+    "scopes": {
+      "profile": "プロフィールを表示",
+      "email": "メールアドレスを表示",
+      "kortix": "あなたの Kortix ワークスペースであなたの代わりに操作: セッション、ファイル、ロールが許可するすべて",
+      "machinesRead": "セッションのサンドボックスを表示"
+    }
   },
   "reminders": {
     "title": "ループ",

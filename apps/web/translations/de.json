@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} hat sich selbst bei Kortix registriert. Kortix hat nicht geprüft, wer sie betreibt. Erlaube den Zugriff nur, wenn du sie gerade selbst verbindest.",
     "redirectsTo": "Leitet dich zurück zu",
     "workspaceLabel": "Workspace",
-    "workspaceHint": "{client} erreicht nur diesen Workspace."
+    "workspaceHint": "{client} erreicht nur diesen Workspace.",
+    "scopes": {
+      "profile": "Dein Profil ansehen",
+      "email": "Deine E-Mail-Adresse ansehen",
+      "kortix": "In deinen Kortix-Workspaces in deinem Namen handeln: Sessions, Dateien und alles, was deine Rolle erlaubt",
+      "machinesRead": "Die Sandboxes deiner Sessions ansehen"
+    }
   },
   "reminders": {
     "title": "Schleifen",

@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} se registrou sozinho no Kortix. O Kortix não verificou quem o opera. Permita apenas se você mesmo estiver conectando agora.",
     "redirectsTo": "Leva você de volta para",
     "workspaceLabel": "Espaço de trabalho",
-    "workspaceHint": "{client} acessa somente este espaço de trabalho."
+    "workspaceHint": "{client} acessa somente este espaço de trabalho.",
+    "scopes": {
+      "profile": "Ver seu perfil",
+      "email": "Ver seu endereço de e-mail",
+      "kortix": "Agir em seu nome nos seus espaços de trabalho do Kortix: sessões, arquivos e tudo o que sua função permite",
+      "machinesRead": "Ver as sandboxes das suas sessões"
+    }
   },
   "reminders": {
     "title": "Ciclos",

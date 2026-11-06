@@ -45,7 +45,7 @@ export const SANDBOX_PROVIDER_FAILURE_MESSAGE =
 
 export const SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE =
   'The sandbox provider is out of storage, so no new session can start on it. ' +
-  'Try again later, or ask a project admin to switch the sandbox provider in Customize → Settings → Sandbox.';
+  'Try again later, or ask a workspace admin to switch the sandbox provider in Customize → Settings → Sandbox.';
 
 export const INVALID_SECRET_BOUNDARY_POLICY_MESSAGE =
   "A network-boundary secret in this project has an invalid outbound policy, so no session can start. " +

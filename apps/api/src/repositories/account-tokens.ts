@@ -409,7 +409,7 @@ export async function checkTokenMintExpiry(
     return {
       status: 403,
       code: 'token_mint_exceeds_parent',
-      error: 'A project-scoped token must set expires_at, no later than its own expiry.',
+      error: 'A workspace-bound token must set expires_at, no later than its own expiry.',
     };
   }
   return null;

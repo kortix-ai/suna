@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} registered itself with Kortix. Kortix has not verified who runs it. Allow it only if you are connecting it yourself right now.",
     "redirectsTo": "Sends you back to",
     "workspaceLabel": "Workspace",
-    "workspaceHint": "{client} reaches this workspace only."
+    "workspaceHint": "{client} reaches this workspace only.",
+    "scopes": {
+      "profile": "View your profile",
+      "email": "View your email address",
+      "kortix": "Act on your behalf in your Kortix workspaces: sessions, files and everything your role allows",
+      "machinesRead": "View your session sandboxes"
+    }
   },
   "reminders": {
     "title": "Loops",

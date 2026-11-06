@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} se sama registrovala u Kortix-u. Kortix nije proverio ko je pokreće. Dozvoli je samo ako je upravo ti povezuješ.",
     "redirectsTo": "Vraća te na",
     "workspaceLabel": "Радни простор",
-    "workspaceHint": "{client} приступа само овом радном простору."
+    "workspaceHint": "{client} приступа само овом радном простору.",
+    "scopes": {
+      "profile": "Преглед твог профила",
+      "email": "Преглед твоје адресе е-поште",
+      "kortix": "Делује у твоје име у твојим Kortix радним просторима: сесије, фајлови и све што твоја улога дозвољава",
+      "machinesRead": "Преглед sandbox окружења твојих сесија"
+    }
   },
   "reminders": {
     "title": "Петље",

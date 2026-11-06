@@ -22242,7 +22242,13 @@
     "unverifiedBody": "{client} s’est enregistrée elle-même auprès de Kortix. Kortix n’a pas vérifié qui l’exploite. Autorisez-la uniquement si vous la connectez vous-même en ce moment.",
     "redirectsTo": "Vous renvoie vers",
     "workspaceLabel": "Espace de travail",
-    "workspaceHint": "{client} accède uniquement à cet espace de travail."
+    "workspaceHint": "{client} accède uniquement à cet espace de travail.",
+    "scopes": {
+      "profile": "Voir votre profil",
+      "email": "Voir votre adresse e-mail",
+      "kortix": "Agir en votre nom dans vos espaces de travail Kortix : sessions, fichiers et tout ce que votre rôle autorise",
+      "machinesRead": "Voir les sandboxes de vos sessions"
+    }
   },
   "reminders": {
     "title": "Boucles",
