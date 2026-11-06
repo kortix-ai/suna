@@ -13,6 +13,7 @@ import {
   getOrCreateProjectDm,
   getProjectSpaceGeneralNotice,
   getPrivateChannelsAvailable,
+  getProjectSpaceProactive,
   markChannelsOnboarding,
   listProjectSpaceApps,
   listProjectSpaceLinks,
@@ -20,10 +21,12 @@ import {
   listProjectSpaces,
   listPrivateChannelsNotIn,
   removeProjectSpaceLink,
+  setProjectSpaceProactive,
   setProjectSpaceTabs,
   updateProjectSpace,
   type AddProjectSpaceLinkInput,
   type ChannelsOnboardingMark,
+  type ProjectSpaceProactiveInput,
   type ProjectSpaceTab,
   type UpdateProjectSpaceInput,
 } from '../core/rest/projects-client/spaces';
@@ -125,6 +128,29 @@ export function useSetProjectSpaceTabs(projectId: string) {
   return useMutation({
     mutationFn: (args: { spaceId: string; tabs: ProjectSpaceTab[] }) => setProjectSpaceTabs(projectId, args.spaceId, args.tabs),
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * A space's Proactive settings (flag `spaces_proactive`): whether its watcher
+ * is on, and its daily brief. Pass `enabled: false` while the flag is off:
+ * the route answers 403 then. `inventory` tier.
+ */
+export function useProjectSpaceProactive(projectId: string | null | undefined, spaceId: string | null | undefined, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: qk.project.spaceProactive(projectId ?? '', spaceId ?? ''),
+    queryFn: () => getProjectSpaceProactive(projectId as string, spaceId as string),
+    enabled: !!projectId && !!spaceId && (options?.enabled ?? true),
+    ...contract('inventory'),
+  });
+}
+
+/** Change a space's Proactive settings (see `setProjectSpaceProactive`); resolves after the settings refetched. */
+export function useSetProjectSpaceProactive(projectId: string, spaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ProjectSpaceProactiveInput) => setProjectSpaceProactive(projectId, spaceId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.spaceProactive(projectId, spaceId) }),
   });
 }
 

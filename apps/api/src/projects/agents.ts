@@ -31,7 +31,7 @@
 export { GRANTABLE_KORTIX_PERMISSIONS, extractAgents, loadProjectAgents, agentNotDeclaredError } from './agents/parse';
 export {
   DEFAULT_AGENT_SENTINEL,
-  OPENCODE_BUILTIN_AGENT_NAMES,
+  RUNTIME_BUILTIN_AGENT_NAMES,
   grantFromLoadedAgents,
   grantsByAgent,
   grantsOfManifestText,

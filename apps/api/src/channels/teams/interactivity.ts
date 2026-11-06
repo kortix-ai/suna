@@ -455,7 +455,9 @@ async function handleReview(
   // whichever button was pressed.
   const raw = data[REVIEW_FEEDBACK_INPUT];
   const feedback = typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 2000) : null;
-  await applyVerdict(reviewItemId, projectId, { verdict, feedback, actingUserId: actor.userId });
+  const decided = await applyVerdict(reviewItemId, projectId, { verdict, feedback, actingUserId: actor.userId });
+  // Someone decided it first (another press, the web inbox): change nothing.
+  if (decided === null) return cardResponse(buildNoticeCard(`"${item.title}" was already decided.`));
 
   const base =
     verdict === 'approve'

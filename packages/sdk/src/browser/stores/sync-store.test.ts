@@ -2685,7 +2685,7 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 
 describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 	// This memo used to exist TWICE — once in use-session-sync.ts, once in
-	// use-opencode-sessions/messages.ts — and neither copy was dropped when a
+	// use-runtime-sessions/messages.ts — and neither copy was dropped when a
 	// session's data was. Every session the user opened stayed reachable
 	// through whichever memo still held its rows, up to 20 transcripts per
 	// copy, so freeing the store alone freed nothing. One memo, owned by the

@@ -305,7 +305,7 @@ const PROJECT_DETAIL = new RegExp(`^projects/${PROJECT}/detail$`);
  * in the shared manifest) or the project repository. A member reads only
  * their firm's agent.
  */
-const SHARED_CONFIG_KEYS = new Set(['manifest', 'manifest_raw', 'open_code_raw', 'env', 'skills']);
+const SHARED_CONFIG_KEYS = new Set(['manifest', 'manifest_raw', 'env', 'skills']);
 
 function scopeDetail(body: unknown, firmAgent: string): unknown {
   if (!isObject(body) || !isObject(body.config)) return body;
@@ -313,7 +313,7 @@ function scopeDetail(body: unknown, firmAgent: string): unknown {
   const agents = Array.isArray(body.config.agents) ? body.config.agents.filter((a) => isObject(a) && a.name === firmAgent) : [];
   return {
     ...body,
-    config: { ...config, agents, default_agent: firmAgent, open_code_default_agent: firmAgent },
+    config: { ...config, agents, default_agent: firmAgent },
     files: [],
     file_count: 0,
   };
@@ -376,9 +376,6 @@ export function scrubHealth(body: unknown): unknown {
   if (isObject(body.harness)) {
     const h = body.harness;
     out.harness = { id: 'agent', version: null, state: h.state, ready: h.ready, error: h.error ?? null, session: h.session, turn: h.turn ?? null, details: {} };
-  } else if ('opencode' in body) {
-    // A daemon before the harness block: the runtime state is the field's only use.
-    out.harness = { id: 'agent', version: null, state: body.opencode === true ? 'ok' : String(body.opencode), ready: body.opencode === true || body.opencode === 'ok', error: null, session: { id: null, required: false }, turn: null, details: {} };
   }
   return out;
 }

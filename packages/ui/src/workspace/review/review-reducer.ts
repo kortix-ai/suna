@@ -170,3 +170,18 @@ export function bulkSetStatus(
   const set = ids instanceof Set ? ids : new Set(ids);
   return items.map((i) => (set.has(i.id) ? ({ ...i, status } as ReviewItem) : i));
 }
+
+/**
+ * What a host's `onAct` resolves with when it already told the user the
+ * verdict landed (its own, more specific toast). The inbox then shows none,
+ * so one verdict is one success toast.
+ */
+export const REVIEW_VERDICT_ANNOUNCED = 'review-verdict-announced' as const;
+
+export function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  );
+}

@@ -106,6 +106,15 @@ Promote then:
 changes nothing. `-f ref=staging` skips the dev leg: the hotfix path for a
 commit already on `staging`.
 
+**A failed promote resumes.** When the run fails after the staging merge
+(build, deploy or the `/health` proof), fix the cause and re-run the run (or
+dispatch again with the same `ref`). The plan step finds the merged
+`promote/dev-<sha10>` PR; while its merge is still the staging tip it skips the
+merge, skips the build when the three staging manifests already passed, and
+always repeats the 8-read `/health` proof. When staging moved on after that
+merge, use `-f ref=staging`. A re-promote cancels the gate run of the release
+PR's older head itself.
+
 ### Step 4 — the release suite is the gate; fix forward
 
 Merge only when `full suite + quality gates` is green on the release PR's head
@@ -273,7 +282,11 @@ Connect (runbook: `apps/mobile/BUILD_GUIDE.md`).
 
 `:stable` moves **only** on the user's explicit, per-release consent — never
 implied by "we released" or "prod is healthy." Run `promote-self-host-stable.yml`
-by hand when that consent is given.
+by hand when that consent is given. It refuses a version with no published GitHub
+Release `vX.Y.Z`: deploy-prod creates the Release only after prod served that
+version, so `:stable` never names a version whose prod roll failed. `:latest`
+and `:prod` move in deploy-prod's `promote-prod-channel` job, after
+`verify-live-version`; `:X.Y.Z` exists from the retag on, because ECS rolls it.
 
 ### Step 11 — rollback
 
@@ -295,7 +308,12 @@ written, evidence-backed justification, never silently.
 ## 4. Gotchas (hard-won)
 
 - **deploy-prod concurrency = `cancel-in-progress: false`.** A slow desktop build or a
-  zombie queued run blocks the next deploy — cancel it first.
+  zombie queued run blocks the next deploy — cancel it first. `rollback-prod.yml` uses
+  the same group, so a rollback waits for a running deploy, and a waiting run of
+  either one replaces the other's waiting run.
+- **Any deploy-prod run undoes a rollback.** It re-rolls every ECS service to
+  `prod:VERSION`. Do not dispatch it (for example with `rebuild_desktop`) while prod is
+  rolled back, unless you mean to roll forward.
 - **A release rebuilds the desktop app only when the desktop changed.** `desktop-plan`
   compares the desktop fingerprint with the latest release's `DESKTOP-FINGERPRINT`; when
   it is equal, `attach-desktop` copies that release's installers and `latest*.yml`, and

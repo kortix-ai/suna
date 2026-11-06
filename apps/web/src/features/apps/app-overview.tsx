@@ -26,6 +26,7 @@ export function AppOverview({
   latest,
   onVersions,
   canDeploy = false,
+  focusEventId = null,
 }: {
   projectId: string;
   app: App;
@@ -36,6 +37,8 @@ export function AppOverview({
   latest?: AppDeployment;
   /** Absent: the viewer may not see versions. */
   onVersions?: () => void;
+  /** Open the Events section on this event id. */
+  focusEventId?: string | null;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
@@ -129,7 +132,7 @@ export function AppOverview({
 
         {/* What the App posted and what came of it: the operations view only. */}
         {canDeploy && !isStatic && !app.external_url ? (
-          <AppEventsSection projectId={projectId} app={app} triggers={triggers} />
+          <AppEventsSection projectId={projectId} app={app} triggers={triggers} focusEventId={focusEventId} />
         ) : null}
 
         {status.deployed && (latest || onVersions) ? (

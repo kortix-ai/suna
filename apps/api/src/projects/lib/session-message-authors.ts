@@ -1,6 +1,6 @@
 /**
  * Who wrote each message of a session. The live runtime does not know: an
- * OpenCode user message has no author. The prompt ledger does — every row a
+ * runtime user message has no author. The prompt ledger does — every row a
  * person or an agent sent through `POST .../prompts` (or a create's first
  * prompt) carries the authenticated sender. Never inferred from the owner.
  */

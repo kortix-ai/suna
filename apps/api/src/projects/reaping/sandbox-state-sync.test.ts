@@ -341,7 +341,7 @@ describe('applyStoppedState — unattended recovery after runtime_gone', () => {
             'tok-1': {
               token: 'tok-1',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_1',
               startedAtMs: NOW.getTime() - 5_000,
             },
@@ -484,7 +484,7 @@ describe('reconcileSandboxStoppedByExternalId', () => {
           'turn-1': {
             token: 'turn-1',
             state: 'active',
-            opencodeSessionId: 'ses_root',
+            runtimeSessionId: 'ses_root',
             messageId: 'msg_1',
           },
         },
@@ -602,7 +602,7 @@ describe('decideStoppedObservation — one stopped read is not proof mid-turn', 
       'turn-1': {
         token: 'turn-1',
         state: 'active',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_1',
       },
     },

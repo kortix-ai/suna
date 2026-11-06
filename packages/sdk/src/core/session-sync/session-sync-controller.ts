@@ -7,7 +7,7 @@ import { ApiError } from '../http/api/errors';
  * Messages per bounded read — the newest-first window a session opens with,
  * and the step size when the transcript pulls older history.
  *
- * OpenCode carries tool output as *parts* of the assistant message, so a page
+ * The runtime carries tool output as *parts* of the assistant message, so a page
  * is roughly half as many turns as it is messages: 50 covers ~25 turns, which
  * is a whole ordinary session. That is the point — most sessions now open
  * fully loaded and never pull at all, while a long one still opens bounded
@@ -868,7 +868,7 @@ export class SessionSyncController {
     // never correct.
     //
     // The wait stays bounded: a read proxied to the sandbox can park
-    // indefinitely (a wedged opencode never answers and never errors), and the
+    // indefinitely (a wedged runtime never answers and never errors), and the
     // poll must keep its cadence rather than stall on one request.
     await this.raceDeadline(this.reconcile('poll'), this.livenessIntervalMs);
     this.lastActivityAt = this.scheduler.now();

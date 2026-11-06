@@ -276,7 +276,7 @@ export async function extendUnconfirmedTurnDeadline(
  * extend anything, so it does not matter that the sandbox is the one saying it.
  *
  * Only ever called for a TERMINAL turn end — see `isTerminalTurnEnd`. A
- * retryable `session.error` is opencode backing off mid-turn, not a turn end,
+ * retryable `session.error` is the runtime backing off mid-turn, not a turn end,
  * and pulling the deadline in there killed boxes during rate-limit backoffs.
  */
 export async function shortenSandboxDeadline(

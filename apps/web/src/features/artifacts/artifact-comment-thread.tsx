@@ -144,7 +144,12 @@ function CommentTime({ at, locale }: { at: string; locale: string }) {
         new Date(at),
       )}
     >
-      <time className="text-muted-foreground shrink-0 text-xs tabular-nums" dateTime={at}>
+      <time
+        // Focusable so the full date is reachable by keyboard, as in Activity.
+        tabIndex={0}
+        className="text-muted-foreground focus-visible:ring-ring shrink-0 rounded-sm text-xs tabular-nums outline-none focus-visible:ring-2"
+        dateTime={at}
+      >
         {relativeTime(at, locale)}
       </time>
     </Hint>
@@ -192,7 +197,8 @@ function ClampedBody({
         <button
           type="button"
           aria-expanded={expanded}
-          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring mt-1 rounded-sm text-xs font-medium outline-none focus-visible:ring-2"
+          // A text-xs line is 16 px tall: the hit area reaches 28 px without moving the layout.
+          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring relative mt-1 rounded-sm text-xs font-medium outline-none after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus-visible:ring-2"
           onClick={() => setExpanded((value) => !value)}
         >
           {t(expanded ? 'showLess' : 'showMore')}
@@ -224,6 +230,7 @@ export function ArtifactCommentThreadView({
   onEditChange,
   onSaveEdit,
   onCancelEdit,
+  onLeaveEdit,
   onDelete,
   retryAgentLabel,
   onRetryDelivery,
@@ -249,7 +256,10 @@ export function ArtifactCommentThreadView({
   onEdit: (comment: ArtifactComment) => void;
   onEditChange: (value: string) => void;
   onSaveEdit: (comment: ArtifactComment) => void;
+  /** Cancel: the edit and its draft go away. */
   onCancelEdit: () => void;
+  /** Escape: the editor closes and keeps its draft for the next Edit, as every composer does. */
+  onLeaveEdit: () => void;
   onDelete: (comment: ArtifactComment) => void;
   /** The name of the agent `onRetryDelivery` sends to: the button says where the thread goes. */
   retryAgentLabel?: string;
@@ -418,7 +428,7 @@ export function ArtifactCommentThreadView({
                 onChange={onEditChange}
                 onSubmit={() => onSaveEdit(comment)}
                 onCancel={onCancelEdit}
-                onEscape={onCancelEdit}
+                onEscape={onLeaveEdit}
                 mentions={mentions}
                 agentsUnavailable={agentsUnavailable}
                 label={t('commentLabel')}
@@ -486,10 +496,11 @@ export function ArtifactCommentThreadView({
                 <button
                   type="button"
                   className="border-kortix-yellow text-muted-foreground hover:text-foreground focus-visible:ring-ring min-w-0 border-l-2 pl-2 text-left text-xs outline-none focus-visible:ring-2"
-                  aria-label={t('focusThread')}
                   onClick={onFocus}
                 >
+                  {/* The passage is the name a screen reader hears, then what the button does. */}
                   <span className="line-clamp-2 break-words">{quote}</span>
+                  <span className="sr-only">{`, ${t('focusThread')}`}</span>
                 </button>
               </Hint>
             ) : (
@@ -551,7 +562,7 @@ export function ArtifactCommentThreadView({
             <span aria-hidden className="size-6 shrink-0" />
             <button
               type="button"
-              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring rounded-sm text-xs font-medium outline-none focus-visible:ring-2"
+              className="text-muted-foreground hover:text-foreground focus-visible:ring-ring relative rounded-sm text-xs font-medium tabular-nums outline-none after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus-visible:ring-2"
               onClick={() => setAllComments(true)}
             >
               {t('moreReplies', { count: hidden })}
@@ -647,7 +658,12 @@ export function ArtifactCommentThreadView({
                   onReplyChange('');
                   collapseReply(true);
                 }}
-                onEscape={() => collapseReply(true)}
+                // Escape leaves the box and keeps the draft: a draft stays in its open box, so
+                // focus goes to the thread; an empty box closes back to the reply line.
+                onEscape={() => {
+                  if (!reply.value.trim()) return collapseReply(true);
+                  requestAnimationFrame(() => articleRef.current?.focus({ preventScroll: true }));
+                }}
                 mentions={mentions}
                 agentsUnavailable={agentsUnavailable}
                 label={t('replyLabel')}
@@ -669,7 +685,7 @@ export function ArtifactCommentThreadView({
               type="button"
               aria-label={t('replyLabel')}
               // A quiet line, not a field: the composer opens on click.
-              className="focus-visible:ring-ring text-muted-foreground hover:text-foreground flex min-w-0 items-center rounded-sm text-left text-sm outline-none focus-visible:ring-2"
+              className="focus-visible:ring-ring text-muted-foreground hover:text-foreground relative flex min-w-0 items-center rounded-sm text-left text-sm outline-none after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] focus-visible:ring-2"
               onClick={expandReply}
             >
               <span className="truncate">{t('replyPlaceholder')}</span>

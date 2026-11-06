@@ -1,82 +1,69 @@
 /**
  * Wake a goal (project flag `goals`) on an event.
  *
- * A goal has no server object: it is a folder in Files (`Goals/<slug>/GOAL.md`,
- * written by `kortix goals` in its owner session) plus a heartbeat loop on that
- * owner session whose prompt names the folder (`Goal wake: <folder>. …`). So
- * "wake the goal" = fire its heartbeat loop now with the reason appended. The
- * loop path already resolves the current owner, starts a successor when the
- * owner's session failed, and applies the run caps.
+ * The goal is the `project_goals` row of the session the event came from: the
+ * session is the goal's owner or verifier (`projects/goals/store.ts`
+ * `goalOfSession`). Never a folder string: two people's personal goals share
+ * the sandbox alias `/drives/me/Goals/<slug>` (G08).
+ *
+ * "Wake" = the goal admission gate (flag, state, pause, the per-day wake cap,
+ * billing: `projects/goals/admission.ts`), then one prompt into the goal's
+ * owner session carrying the event's own reason text (G09), keyed
+ * `goal-event:<goal_id>:<source>:<source_id>` so a repeated event queues once.
  *
  * SEAM (Triggers): `wakeGoal` is the one entry point for every event that
  * targets a goal. Today one source calls it: a merged change request whose
- * origin session carries the session metadata `goal: <folder>`
- * (`wakeGoalForMergedChangeRequest`, from the CR merge route). When
- * Triggers land as source + target, the "change request merged" source and
- * any trigger with a goal target call `wakeGoal` here instead.
+ * origin session works on a goal (`wakeGoalForMergedChangeRequest`, from the
+ * CR merge route).
  */
-import { projectSessions } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { logger } from '../../lib/logger';
-import { db } from '../../shared/db';
-import type { GitTriggerSpec } from '../triggers';
+import { admitGoalWake } from '../goals/admission';
+import { goalEffects } from '../goals/effects';
+import { goalWakePrompt } from '../goals/rules';
+import { goalOfSession, type GoalRow } from '../goals/store';
 import type { ProjectRow } from './serializers';
-import { listProjectReminders, reminderPromptText } from './session-reminders';
-import { fireGitTrigger } from './trigger-fire';
 
-type ReminderRow = Awaited<ReturnType<typeof listProjectReminders>>[number];
+export type GoalWakeResult = 'woken' | 'refused' | 'failed';
 
-/** The goal's live heartbeat: an enabled loop whose prompt names exactly this goal folder. */
-export function findGoalHeartbeat<T extends Pick<ReminderRow, 'enabled' | 'nextFireAt' | 'scheduleSpec'>>(
-  rows: readonly T[],
-  goalFolder: string,
-): T | null {
-  const marker = `Goal wake: ${goalFolder}.`;
-  return (
-    rows.find((row) => {
-      const prompt = (row.scheduleSpec as unknown as GitTriggerSpec | null)?.promptTemplate ?? '';
-      return row.enabled && row.nextFireAt !== null && prompt.includes(marker);
-    }) ?? null
-  );
-}
-
-export type GoalWakeResult = 'woken' | 'no_heartbeat' | 'flag_off' | 'failed';
-
-export async function wakeGoal(input: { project: ProjectRow; goalFolder: string; reason: string }): Promise<GoalWakeResult> {
-  if (!resolveFeatureFlag(input.project.metadata, 'goals')) return 'flag_off';
-  const heartbeat = findGoalHeartbeat(await listProjectReminders(input.project.projectId), input.goalFolder);
-  if (!heartbeat) return 'no_heartbeat';
-  const spec = heartbeat.scheduleSpec as unknown as GitTriggerSpec;
-  const result = await fireGitTrigger({
-    spec,
-    project: input.project,
-    payload: {},
-    renderedPrompt: reminderPromptText({ ...spec, promptTemplate: `${spec.promptTemplate} ${input.reason}` }),
-    source: 'event',
+export async function wakeGoal(input: {
+  project: ProjectRow;
+  goal: GoalRow;
+  source: string;
+  sourceId: string;
+  reason: string;
+}): Promise<{ result: GoalWakeResult; refusal?: string }> {
+  const { project, goal } = input;
+  const key = `goal-event:${goal.goalId}:${input.source}:${input.sourceId}`;
+  const verdict = await admitGoalWake({ project, goal, idempotencyKey: key, source: input.source });
+  if (!verdict.admitted) return { result: 'refused', refusal: verdict.reason };
+  const owner = verdict.goal.ownerSessionId;
+  if (!owner) return { result: 'failed' };
+  const queued = await goalEffects().queuePrompt({
+    project,
+    sessionId: owner,
+    userId: verdict.goal.createdByUserId,
+    text: `${goalWakePrompt(verdict.goal.boxFolder, verdict.goal.goalId)} ${input.reason}`,
+    key,
   });
-  return result.status === 'fired' || result.status === 'queued' ? 'woken' : 'failed';
+  return { result: queued ? 'woken' : 'failed' };
 }
 
-/** A merged change request wakes the goal its origin session works on (session metadata `goal`). */
+/** A merged change request wakes the goal its origin session works on. */
 export async function wakeGoalForMergedChangeRequest(input: {
   project: ProjectRow;
   changeRequest: { number: number; title: string; originSessionId: string | null };
 }): Promise<GoalWakeResult | 'no_goal'> {
   const sessionId = input.changeRequest.originSessionId;
   if (!sessionId) return 'no_goal';
-  const [session] = await db
-    .select({ metadata: projectSessions.metadata })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
-  const goalFolder = (session?.metadata as Record<string, unknown> | null)?.goal;
-  if (typeof goalFolder !== 'string' || !goalFolder) return 'no_goal';
-  const result = await wakeGoal({
+  const goal = await goalOfSession(sessionId);
+  if (!goal || goal.projectId !== input.project.projectId) return 'no_goal';
+  const { result, refusal } = await wakeGoal({
     project: input.project,
-    goalFolder,
+    goal,
+    source: 'change_request',
+    sourceId: String(input.changeRequest.number),
     reason: `Change request #${input.changeRequest.number} "${input.changeRequest.title}" merged.`,
   });
-  if (result === 'failed') logger.warn('[goal-wake] change request merge did not wake the goal', { sessionId, goalFolder });
+  if (result !== 'woken') logger.info('[goal-wake] change request merge did not wake the goal', { goal_id: goal.goalId, result, refusal });
   return result;
 }

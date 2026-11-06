@@ -7,7 +7,7 @@ import { skillBody } from './web-skill';
 // the trigger (Skill + the skill name), whether the subtitle opens SKILL.md,
 // and what the expanded body holds (document card + file list).
 
-const DIR = '/workspace/.opencode/skill/webapp';
+const DIR = '/workspace/skills/webapp';
 
 /** What the runtime actually sends: the base directory lives in the OUTPUT. */
 const OUTPUT = [

@@ -12,7 +12,8 @@ const HELP = help`Usage: kortix uninstall [options]
 
 Remove the Kortix CLI binary, the /usr/local/bin shim, the stored auth
 token, and (optionally) the ~/.kortix install directory — which also holds
-the managed binaries (~/.kortix/opencode/, ~/.kortix/tui/).
+the managed TUI binary (~/.kortix/tui/) and what older CLI versions
+downloaded there.
 
 Options:
   -y, --yes        Skip the confirmation prompt.

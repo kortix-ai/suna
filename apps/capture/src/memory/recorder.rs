@@ -226,9 +226,9 @@ pub fn run(paths: MemoryPaths, stop: Arc<AtomicBool>) -> Result<()> {
             std::thread::Builder::new()
                 .name(name.into())
                 .spawn(move || {
-                    if let Err(err) = f(p, s) {
-                        tracing::error!("{name} stopped: {err:#}");
-                    }
+                    supervise(name, &s, worker_restart_delay, sleep_for, || {
+                        f(p.clone(), s.clone())
+                    })
                 })?,
         );
     }
@@ -891,6 +891,53 @@ fn wait_for_change(
         *baseline = latest;
     }
     None
+}
+
+/// The wait before restart `n` (1-based) of a worker thread that failed:
+/// 1 s doubling to 5 min. A worker that fails at once on every start costs
+/// one log line per 5 min, not a busy loop.
+fn worker_restart_delay(n: u32) -> Duration {
+    Duration::from_secs(1u64 << n.saturating_sub(1).min(9)).min(Duration::from_secs(300))
+}
+
+fn sleep_for(d: Duration, stop: &AtomicBool) {
+    sleep_until(Instant::now() + d, stop);
+}
+
+/// Run one recorder worker (sync, OCR, audio, finalize) until `stop`.
+///
+/// States: running → failed (an `Err` or a panic) → waiting `delay(n)` →
+/// running again, until `stop` is set. A worker that returns `Ok` while
+/// `stop` is clear also restarts. Before this, a worker that failed once was
+/// logged and gone for the life of the recorder process: a dead sync thread
+/// meant nothing uploaded while the status still said `recording`.
+/// The wait resets once a run lasts longer than 10 min.
+fn supervise(
+    name: &str,
+    stop: &AtomicBool,
+    delay: impl Fn(u32) -> Duration,
+    sleep: impl Fn(Duration, &AtomicBool),
+    mut run: impl FnMut() -> Result<()>,
+) {
+    let mut failures = 0u32;
+    while !stop.load(Ordering::SeqCst) {
+        let started = Instant::now();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut run));
+        if stop.load(Ordering::SeqCst) {
+            return;
+        }
+        if started.elapsed() > Duration::from_secs(600) {
+            failures = 0;
+        }
+        failures += 1;
+        let wait = delay(failures);
+        match outcome {
+            Ok(Ok(())) => tracing::warn!("{name} returned; restart {failures} in {wait:?}"),
+            Ok(Err(err)) => tracing::error!("{name} stopped: {err:#}; restart {failures} in {wait:?}"),
+            Err(_) => tracing::error!("{name} panicked; restart {failures} in {wait:?}"),
+        }
+        sleep(wait, stop);
+    }
 }
 
 fn sleep_until(deadline: Instant, stop: &AtomicBool) {
@@ -2100,6 +2147,55 @@ fn encode_group(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_worker_restarts_with_growing_waits_until_stop() {
+        let stop = AtomicBool::new(false);
+        let runs = std::cell::Cell::new(0u32);
+        let waits = std::cell::RefCell::new(Vec::new());
+        supervise(
+            "memory-sync",
+            &stop,
+            worker_restart_delay,
+            |d, _| waits.borrow_mut().push(d),
+            || {
+                runs.set(runs.get() + 1);
+                match runs.get() {
+                    1 => anyhow::bail!("store locked"),
+                    2 => panic!("worker panicked"),
+                    3 => Ok(()), // returned without stop: also restarted
+                    _ => {
+                        stop.store(true, Ordering::SeqCst);
+                        Ok(())
+                    }
+                }
+            },
+        );
+        assert_eq!(runs.get(), 4, "the worker ran again after each failure");
+        assert_eq!(
+            *waits.borrow(),
+            [1, 2, 4].map(Duration::from_secs),
+            "no wait after the stop"
+        );
+    }
+
+    #[test]
+    fn a_stopped_recorder_does_not_restart_its_workers() {
+        let stop = AtomicBool::new(true);
+        let runs = std::cell::Cell::new(0u32);
+        supervise("memory-ocr", &stop, worker_restart_delay, |_, _| {}, || {
+            runs.set(runs.get() + 1);
+            Ok(())
+        });
+        assert_eq!(runs.get(), 0);
+    }
+
+    #[test]
+    fn worker_restart_wait_caps_at_five_minutes() {
+        assert_eq!(worker_restart_delay(1), Duration::from_secs(1));
+        assert_eq!(worker_restart_delay(4), Duration::from_secs(8));
+        assert_eq!(worker_restart_delay(40), Duration::from_secs(300));
+    }
 
     #[test]
     fn private_reading_order_retains_label_context_across_font_sizes() {

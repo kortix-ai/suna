@@ -128,10 +128,10 @@ export async function sendAndWait(
   const log = opts?.quiet ? () => {} : console.log;
 
   log("readying session (cold boot provisions a sandbox — can take a while)…");
-  const { opencodeSessionId } = await retryUntilReady(() =>
+  const { runtimeSessionId } = await retryUntilReady(() =>
     session.ensureReady(),
   );
-  log(`✓ ready — opencode session ${opencodeSessionId}`);
+  log(`✓ ready — runtime session ${runtimeSessionId}`);
 
   let resolveIdle: () => void;
   const idle = new Promise<void>((resolve) => {
@@ -150,7 +150,7 @@ export async function sendAndWait(
       }
       if (
         narrowed.type === "session.idle" &&
-        narrowed.sessionID === opencodeSessionId
+        narrowed.sessionID === runtimeSessionId
       ) {
         resolveIdle();
       }
@@ -187,7 +187,7 @@ export async function sendAndWait(
   handle.close();
 
   const result = await session.runtime.session.messages({
-    sessionID: opencodeSessionId,
+    sessionID: runtimeSessionId,
   });
   const messages = (result.data ?? []) as MessageWithParts[];
   const transcript: string[] = [];

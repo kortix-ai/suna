@@ -539,6 +539,12 @@ export async function updateChannel(
       return next;
     });
     const space = updated ?? row;
+    // A watched channel's feed (`spaces_proactive`): the agents added. Off the request's path.
+    if (patch.agents) {
+      void import('./space-watch/act')
+        .then(({ recordAgentsJoined }) => recordAgentsJoined(spaceId, row.agents ?? [], patch.agents ?? []))
+        .catch(() => undefined);
+    }
     if (converting) {
       bustSpaceAccess(projectId);
       // The conversion is committed: a failed audit write is logged, never a 500.

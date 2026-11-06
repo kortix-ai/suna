@@ -85,6 +85,7 @@ import { toV1, type SessionLog, type SessionLogPage } from '@kortix/api-contract
 import { logger } from '@/lib/log/logger'
 import type { SpawnSessionInput, SpawnSessionResult, SubagentSession } from './extensions/subagents'
 import { FRONT_CONTEXT_KEY, FRONT_THREAD_CONTEXT_KEY } from './front'
+import { WATCHER_CONTEXT_KEY } from './watcher'
 
 /** Why a separate call ran in this session instead. The tool result carries it to the model. */
 export const NO_CONTROL_PLANE_NOTICE =
@@ -174,6 +175,8 @@ export interface SubagentContext {
   front?: boolean
   /** A worker of a router (`kortix.front.thread`): its answer reaches the thread as its run's report. */
   frontThread?: boolean
+  /** A space's watcher (`kortix.watcher`, watcher.ts): no tools, one JSON decision per turn. */
+  watcher?: boolean
 }
 
 /** Parse `KORTIX_SESSION_CONTEXT` (the API's JSON envelope of `runtime_context`). Malformed = a root session. */
@@ -198,6 +201,7 @@ export function subagentContextFrom(raw: string | undefined): SubagentContext {
     // Only the boolean true marks a front or its worker: the API sets these keys, never a person.
     ...(record[FRONT_CONTEXT_KEY] === true ? { front: true } : {}),
     ...(record[FRONT_THREAD_CONTEXT_KEY] === true ? { frontThread: true } : {}),
+    ...(record[WATCHER_CONTEXT_KEY] === true ? { watcher: true } : {}),
   }
   const rawTools = record[SUBAGENT_TOOLS_KEY]
   if (typeof rawTools !== 'string') return named

@@ -23,7 +23,7 @@
  *   the whole text. A text over 256 kB is a preview in the row (F3, `session-log-blobs.ts`):
  *   this read puts the whole text back from its object, after the transaction.
  * Paging: a `fromV1` thread serves the mirror order (`created`, then id), which is its seq order
- * (the OpenCode adapter issues seqs in `fromV1`'s order). A cursor that names a message anchors on
+ * (the OpenCode adapter issued seqs in `fromV1`'s order). A cursor that names a message anchors on
  * the `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the
  * column then holds the ingest time). The two agree for every row with a creation time. A native
  * thread serves seq order, pi's append order: two of its messages can share a millisecond with ids
@@ -184,7 +184,7 @@ type WindowInput = {
   limit: number;
   before?: string | null;
   /** A runtime session inside this session (a sub-agent); omitted: the root. */
-  opencodeSessionId?: string | null;
+  runtimeSessionId?: string | null;
 };
 
 /** The mirror order: `created` (missing first), then id. */
@@ -218,7 +218,7 @@ export async function readStoredTranscriptWindow(input: WindowInput): Promise<Mi
   const root = rootOf(threads);
   const stated = v1Ext(log.record)?.data;
   const rootId = stated && 'root_id' in stated ? ((stated.root_id as string | null) ?? null) : root ? nativeOf(root) : null;
-  const target = input.opencodeSessionId || rootId;
+  const target = input.runtimeSessionId || rootId;
   // A runtime session that is no thread of its own is an old root, merged into the root thread.
   const thread = threads.find((t) => nativeOf(t) === target) ?? root;
   if (!target || !thread) return null;

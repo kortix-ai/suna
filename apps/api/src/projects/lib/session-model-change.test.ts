@@ -48,8 +48,9 @@ describe('modelChangeNeedsLivePush', () => {
   });
 
   test('a no-op PUT must NOT restart opencode', () => {
-    // Restarting costs the user their in-flight turn; re-sending the same model
-    // is a legitimate idempotent call and must be free.
+    // On an old OpenCode box the push restarts the runtime and costs the user
+    // their in-flight turn; re-sending the same model is a legitimate
+    // idempotent call and must be free.
     expect(modelChangeNeedsLivePush({ current: 'a/b', next: 'a/b', status: 'running' })).toBe(false);
   });
 
@@ -71,8 +72,8 @@ describe('mayChangeSessionModel — visibility is not mutability', () => {
 
   test('a project member who can merely SEE a shared session may not', () => {
     // visibility === 'project' makes a session readable by every member, but
-    // changing its model restarts opencode and kills the owner's in-flight
-    // turn. It is a LIFECYCLE action, not a sharing one: a project manager keeps
+    // changing its model re-points the owner's live session. It is a
+    // LIFECYCLE action, not a sharing one: a project manager keeps
     // it on a session they did not create, while `canManageSharing` does not.
     expect(mayChangeSessionModel({ canManageLifecycle: false })).toBe(false);
   });

@@ -2,8 +2,8 @@
  * One canonical spelling of a proxied request path.
  *
  * The API gates a request (turn ledger, agent-switch authz, dedupe, the
- * `/kortix/env` block) by matching the path text. The daemon and OpenCode are
- * Hono servers: `getPath` runs `decodeURI` on the path (hono 4.x
+ * `/kortix/env` block) by matching the path text. The daemon (like OpenCode on
+ * old boxes) is a Hono server: `getPath` runs `decodeURI` on the path (hono 4.x
  * `dist/utils/url.js`), so `prompt%5Fasync` routes as `prompt_async`. A gate
  * that reads the raw text and a daemon that reads the decoded text disagree,
  * and the encoded spelling skips every gate.

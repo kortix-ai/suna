@@ -1,6 +1,6 @@
 ---
 name: kortix-rollback
-description: "How to roll Kortix PRODUCTION back to an older already-released version — the inverse of a release. Covers the one-dispatch rollback-prod.yml engine, the per-surface mechanics (API + gateway = ECS Fargate image-tag swap; frontend = Vercel promote), the all-important Vercel frontend behavior (why a backend-only push can 'clobber' a FE rollback, and the 'don't rebuild the FE for backend-only pushes' skip that fixes it), the DB/migration-drift safety check that is the real blocker, and how a later promote returns prod to latest. Load WHENEVER the user wants to roll back / revert / downgrade / 'go back a version' on prod, asks how the rollback or the frontend clobber/skip behavior works, or needs to run rollback-prod.yml. Pairs with kortix-release (the forward direction)."
+description: "How to roll Kortix PRODUCTION back to an older already-released version — the inverse of a release. Covers the one-dispatch rollback-prod.yml engine (--ref prod, shares the deploy-prod concurrency group), the per-surface mechanics (api with KORTIX_PROCESS_ROLE=all and the worker scaled to 0, gateway and ECS frontend = immutable :X.Y.Z image; Vercel frontend = promote), what undoes a rollback (any deploy-prod run, any push to prod), the DB/migration-drift check that is the real blocker, and how a later promote returns prod to latest. Load WHENEVER the user wants to roll back / revert / downgrade / 'go back a version' on prod, asks how the rollback or the frontend rebuild-skip behavior works, or needs to run rollback-prod.yml. Pairs with kortix-release (the forward direction)."
 ---
 
 # Kortix Rollback
@@ -11,10 +11,10 @@ release's prebuilt artifacts (zero rebuild). Use it when a shipped version is
 breaking and the move is "go back now, fix forward later." The next forward
 release still comes from `staging`, not directly from `dev`.
 
-> A rollback is **temporary, never sticky.** It only flips image tags + re-promotes
-> an old frontend build; it never touches `VERSION` or the trunk. The next promote
-> supersedes it and returns prod to latest (see §6). So rolling back never "wedges"
-> the release pipeline.
+> A rollback is **temporary, never sticky.** It rolls ECS services and promotes
+> an old Vercel build. It never pushes to `prod`, never touches `VERSION` or a
+> branch, and never moves an image tag. The next `deploy-prod` run supersedes it
+> and returns prod to the version in `prod:VERSION` (see §6).
 
 ## 1. The one command
 
@@ -23,55 +23,64 @@ gh workflow run rollback-prod.yml --repo kortix-ai/CompanyOS --ref prod \
   -f version=vX.Y.Z -f reason="<incident summary>" -f confirm="ROLLBACK PROD"
 ```
 
-It rolls **frontend AND backend** and handles each surface independently:
-- **Frontend** → promoted back to vX.Y.Z immediately (Vercel API, no rebuild).
-- **Backend** (api, gateway) → re-tags the old `:vX.Y.Z` images as `:latest` and
-  triggers an ECS Fargate rolling deploy via `ecs-deploy.sh`.
+`--ref prod` is required: the job runs in `environment: prod`, which admits the
+`prod` branch only. The run shares the `deploy-prod` concurrency group with
+`deploy-prod.yml`, so a rollback dispatched during a release roll starts when
+that roll ends. GitHub keeps one pending run per group: a rollback dispatched
+while a `deploy-prod` run waits replaces the waiting run.
+
+It plans each surface from the images that exist for `X.Y.Z` (a surface with no
+`:X.Y.Z` image is skipped), then rolls in this order, one step after the other:
+
+1. **api (ECS)**: `ecs-deploy.sh prod kortix/kortix-api:X.Y.Z --process-role all`.
+   The api tasks run the scheduled jobs. After that rollout is stable the script
+   scales `kortix-prod-worker` to 0. The worker is never rolled here.
+2. **gateway (ECS)**: `kortix/kortix-gateway:X.Y.Z`.
+3. **frontend (ECS)**: `kortix/kortix-frontend:X.Y.Z`, verified on
+   `prod-fe-ecs.kortix.com/api/health`.
+4. **frontend (Vercel)**: promotes the production deployment whose commit message
+   names `release vX.Y.Z`. Skipped without `VERCEL_TOKEN`.
+
+A failed step stops the run: the surfaces before it are on `X.Y.Z`, the ones
+after it are on the current version. Read the step log, not the summary table:
+the summary prints the plan, not the result. Re-run with `-f surfaces=<the rest>`.
+
+What it does **not** do:
+- It moves no image tag. `:latest`, `:prod` and `:stable` stay on the current
+  version, so self-hosted boxes keep what they run.
+- It opens no pull request and merges nothing into `prod` (the job has
+  `contents: read`).
+- It does not roll the database back (§4).
 
 ## 2. Per-surface mechanics
 
-**Backend (API + gateway) runs Docker images on ECS Fargate.** Rollback = re-tag
-the old, immutable, prebuilt `:vX.Y.Z` image as `:latest` and trigger an ECS
-rolling update. The ECS deploy script (`infra/scripts/ecs-deploy.sh`) registers a
-new task-def revision pointing at the old image and waits for `services-stable`.
-Clean and exact — the image is frozen.
+**Backend (API, worker, gateway) and the ECS frontend run immutable images on
+ECS Fargate.** `infra/scripts/ecs-deploy.sh` registers a new task-definition
+revision that points at the `:X.Y.Z` image and waits until the service is
+stable. The image is frozen, so the roll is exact.
 
-**Frontend is built by Vercel from the `prod` branch SOURCE.** Vercel is
-git-connected: **every push to `prod` rebuilds the frontend from whatever
-`apps/web` source is on the branch at that moment** and makes it live at
-kortix.com. There is no "image tag" to point at. A FE rollback is instead a
-**promote**: "take that old v0.9.68 build and make it the live one again." It does
-NOT change the branch source — the branch still holds the newer FE code.
+**The Vercel frontend is built by Vercel from the `prod` branch source.** There
+is no image tag. A Vercel rollback is a **promote** of the old production
+deployment. The branch still holds the newer frontend code.
 
-## 3. The frontend "clobber" — and the skip that prevents it
+## 3. What undoes a rollback
 
-Because *any* push to `prod` makes Vercel rebuild the FE from branch source, the
-**backend** rollback merge (which only changes `infra/` YAML) would still drag the
-frontend forward again:
+Nothing records that prod is rolled back: the state lives only in ECS and
+Vercel. Each of these returns prod to the version in `prod:VERSION`:
 
-```
-1. FE promoted to old build       → kortix.com = vX.Y.Z FE   ✅
-2. merge the backend rollback PR   → push to prod
-3. Vercel rebuilds FE from branch source (still the NEW code) → kortix.com = new FE ❌ CLOBBERED
-```
+- **Any `deploy-prod.yml` run.** A push to `prod` (a release merge) or a manual
+  dispatch (`rebuild_desktop`, a re-run) rolls worker, api, gateway and web to
+  `prod:VERSION` and switches the api back to `KORTIX_PROCESS_ROLE=web`. Do not
+  dispatch `deploy-prod.yml` while prod is rolled back, unless you mean to roll
+  forward.
+- **A push to `prod` rebuilds the Vercel frontend** from branch source.
+  `apps/web/scripts/vercel-ignore.sh` (`ignoreCommand` in `apps/web/vercel.json`)
+  skips that build when the push changes only files under `infra/`, and builds
+  on any doubt.
 
-**The fix (shipped):** a Vercel **Ignored Build Step** —
-`apps/web/scripts/vercel-ignore.sh`, wired via `apps/web/vercel.json`
-`ignoreCommand`. On every prod push it asks one question:
-
-> Did this push change anything **outside `infra/`**?
-> - **No** (only `infra/` → it's a backend rollback) → **skip the FE rebuild.**
-> - **Yes** (`apps/web`, `packages`, lockfile… → a real release/promote) → **build.**
-
-In one line: **don't rebuild the FE for backend-only pushes.** It defaults to
-BUILD on any uncertainty (no parent commit, empty diff, error) so it can never
-silently drop a real FE deploy. Verified at real commits: an infra-only rollback
-merge → SKIP; a promote merge (touches `apps/web`) → BUILD.
-
-> Transitional note: `vercel.json` only takes effect on **prod** once a push
-> carries it there. The next promote does that automatically. Until then, a
-> rollback's FE may still get clobbered by the backend merge — re-run the workflow
-> with `-f surfaces=frontend` to re-promote the FE (the workflow prints this).
+Until one of these runs, the worker stays at 0 and the api runs the scheduled
+jobs (`KORTIX_PROCESS_ROLE=all`). Nothing expires that state: plan the roll
+forward.
 
 ## 4. Safety check BEFORE you roll — DB / state drift is the real blocker
 
@@ -86,7 +95,9 @@ safe: the live schema is a strict **superset** of what the old version needs.
 
 The danger is a **destructive** migration between the target and current — a `DROP
 COLUMN`, `RENAME`, `ALTER … TYPE`, or a new `NOT NULL`. Old code hitting that
-breaks. The workflow CANNOT detect this; a human must eyeball it. One command:
+breaks. The plan step prints how many migrations prod has that `vX.Y.Z` lacks,
+and a `::warning::` names the files that contain one of those statements. It
+does not refuse: a person decides. Check it before you dispatch:
 
 ```bash
 git diff vX.Y.Z..origin/prod -- packages/db/migrations
@@ -152,22 +163,18 @@ at ~v0.9.72 (image exists from 0.9.69), so there is no `kortix-gateway:0.9.68`.
 The workflow checks each image (Docker Hub tags API) and **skips any surface with
 no `:vX.Y.Z` image** rather than wedging ECS on `ImagePullBackOff`.
 
-## 6. Resuming — a later promote returns prod to LATEST automatically
+## 6. Resuming — a later release returns prod to LATEST
 
-You do NOT manually undo a rollback. To resume, get the fix onto `staging`, wait
-for staging deploy + QA, then **Promote to Production** (see kortix-release).
-The release PR carries the staging candidate into prod, Vercel builds the latest
-FE, and ECS rolls the latest API/gateway images. The rollback evaporates. No
-manual Vercel step to resume.
+You do NOT manually undo a rollback. To resume, get the fix onto `staging` and
+**Promote to Production** (see kortix-release). Its merge into `prod` runs
+`deploy-prod.yml`, which rolls ECS to the new version, scales the worker back
+up, and Vercel builds the latest frontend.
 
 ## 7. Gotchas
 
-- **The deploy-prod run on the backend merge goes partly red** (its version-watch
-  waits for the current `VERSION` while pods report the rolled version; release-
-  create re-hits the existing release). Cosmetic — ECS does the real roll
-  independently. Judge success by `api.kortix.com/v1/health`.
-- **Pushing `vercel.json` itself to prod rebuilds the FE** (it's under `apps/web`,
-  so the skip says "build") — which clobbers a FE rollback. Let it ride to prod on
-  a normal promote instead of a standalone push.
-- **Verify after:** `api.kortix.com/v1/health` (version), ECS service health, and
-  the live Vercel production deployment (`/v9/projects/{id}` → `targets.production`).
+- **Never roll an ECS service from a laptop while a deploy workflow can run**
+  (learnings ledger, 2026-11-01): the workflow's concurrency group does not see
+  a local roll. Use this workflow.
+- **Verify after:** `api.kortix.com/v1/health` (version), ECS service health,
+  `prod-fe-ecs.kortix.com/api/health`, and the live Vercel production deployment
+  (`/v9/projects/{id}` → `targets.production`).

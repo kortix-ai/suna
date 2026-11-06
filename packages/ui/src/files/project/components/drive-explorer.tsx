@@ -101,7 +101,7 @@ import { FileSearch } from './file-search';
 import { isPartialListing, LoadMoreRow } from './load-more-row';
 
 /** System directories always pinned at the top of the listing. */
-const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
+const ELEVATED_DIRS = new Set(['.kortix']);
 
 /**
  * Google Drive-style file explorer — the ONE explorer implementation, shared

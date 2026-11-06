@@ -438,7 +438,7 @@ export async function computeTemplateIdentity(
    * NON-agent runtime layer (contentHash with the non-agent runtime fingerprint
    * in place of the full one). The builder swaps the agent ONLY when this matches
    * the predecessor's STORED swapKey (→ the agent binary is the sole delta);
-   * otherwise it does a full rebuild. Never ships stale opencode/CLI/entrypoint.
+   * otherwise it does a full rebuild. Never ships a stale CLI/entrypoint.
    */
   swapKey: string;
 }> {
@@ -458,7 +458,7 @@ export async function computeTemplateIdentity(
   };
   const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
   // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
-  // the spec, and the NON-agent runtime layer (opencode/entrypoint/CLI/slack-cli/
+  // the spec, and the NON-agent runtime layer (entrypoint/CLI/slack-cli/
   // SDK/manifest-schema/layer+browser versions). It is computed by hashing
   // the same inputs with the non-agent runtime fingerprint in place of the full one.
   // Two identities with the SAME swapKey differ ONLY by the agent binary → the swap

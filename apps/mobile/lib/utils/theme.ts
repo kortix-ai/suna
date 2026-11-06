@@ -1,5 +1,7 @@
 import { DarkTheme, DefaultTheme, type Theme } from 'expo-router/react-navigation';
 
+import { parseHsl } from './hsl';
+
 /**
  * Adds an alpha channel to a THEME `hsl(H S% L%)` string, producing the
  * legacy comma form `hsla(H, S%, L%, alpha)`.
@@ -17,16 +19,8 @@ import { DarkTheme, DefaultTheme, type Theme } from 'expo-router/react-navigatio
  * color import it from here instead of reimplementing it locally.
  * `lib/theme-colors.ts` re-exports it for its existing internal callers.
  */
-const HSL_PARTS = /^hsl\(\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*\)$/;
-
 export function withAlpha(hslColor: string, alpha: number): string {
-  const parts = HSL_PARTS.exec(hslColor.trim());
-  if (!parts) {
-    throw new Error(
-      `withAlpha expects a THEME 'hsl(H S% L%)' string, received: ${hslColor}`
-    );
-  }
-  const [, h, s, l] = parts;
+  const { h, s, l } = parseHsl(hslColor, 'withAlpha');
   return `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
 }
 
@@ -41,16 +35,13 @@ export function withAlpha(hslColor: string, alpha: number): string {
  * stays the source; this only changes its notation.
  */
 export function toHexColor(hslColor: string, alpha?: number): string {
-  const parts = HSL_PARTS.exec(hslColor.trim());
-  if (!parts) {
-    throw new Error(`toHexColor expects a THEME 'hsl(H S% L%)' string, received: ${hslColor}`);
-  }
+  const parts = parseHsl(hslColor, 'toHexColor');
   if (alpha !== undefined && !(alpha >= 0 && alpha <= 1)) {
     throw new Error(`toHexColor expects alpha between 0 and 1, received: ${alpha}`);
   }
-  const h = Number(parts[1]) / 360;
-  const s = Number(parts[2]) / 100;
-  const l = Number(parts[3]) / 100;
+  const h = Number(parts.h) / 360;
+  const s = Number(parts.s) / 100;
+  const l = Number(parts.l) / 100;
 
   const hueToChannel = (p: number, q: number, tIn: number) => {
     let t = tIn;

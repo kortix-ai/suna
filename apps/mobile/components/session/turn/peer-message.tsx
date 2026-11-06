@@ -8,7 +8,7 @@
 
 import { peerHandleLabel, type PeerMessagePromptInfo } from '@kortix/shared';
 import { View } from 'react-native';
-import { peerMessagePreview } from '@/lib/session/multi-agent';
+import { peerMessagePreview } from '@kortix/sdk';
 import { AgentRow } from '@/components/session/tool/shared/message-row';
 
 const KIND_WORD: Record<PeerMessagePromptInfo['kind'], string> = {

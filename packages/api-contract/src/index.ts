@@ -18,8 +18,11 @@
 import { z } from 'zod';
 import { SessionLogPageSchema } from './session-log/wire';
 import { SessionAttentionSchema, SessionBoardStateSchema, SessionInboundSchema } from './multi-agent';
+import { SESSION_PROMPT_REASONS } from './wire-values';
 
 export * from './memory';
+export * from './goals';
+export * from './wire-values';
 
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -73,6 +76,7 @@ export const FeatureFlagMapSchema = z.object({
   voice_call: z.boolean(),
   chat_input: z.boolean(),
   chat_front: z.boolean(),
+  spaces_proactive: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -444,7 +448,7 @@ export const SessionScopeSchema = z
     connector_bindings_inherit_unbound: z.boolean(),
     /**
      * True when the new secrets scope was pushed to the live sandbox and
-     * OpenCode was restarted to pick it up — the change is in effect NOW.
+     * the runtime reloaded it — the change is in effect NOW.
      * False when there was no active sandbox to push to (the change is stored
      * and applies at the next boot), or when `secrets` was not part of this
      * request. Mirrors the model route's `applied_live`.
@@ -960,7 +964,7 @@ export const PendingSessionPromptSchema = z
     variant: z.string().min(1).nullable().optional(),
     attachment_names: z.array(z.string().min(1).max(512)).max(50).optional(),
     /**
-     * Full prompt parts, in OpenCode's own wire shape. Lets the first prompt
+     * Full prompt parts, in the runtime's prompt-part wire shape. Lets the first prompt
      * carry attachments as `data:` URLs — the session's sandbox does not exist
      * yet, so there is nowhere to upload into. The API converts the whole
      * pending prompt into a durable inbox row at create; the inbox's own
@@ -1124,8 +1128,8 @@ export const SessionUpdateInputSchema = z.object({
 export type SessionUpdateInput = z.input<typeof SessionUpdateInputSchema>;
 
 /** A project session as serialized by `serializeSession`. */
-/** One conversation of a session's runtime, as the snapshot writer stores it
- *  (`apps/api/src/projects/opencode-session-snapshot.ts`). Times are epoch ms. */
+/** One conversation of a session's runtime, as the snapshot stores it
+ *  (`apps/api/src/projects/lib/runtime-session-snapshot.ts`). Times are epoch ms. */
 export const RuntimeSessionSnapshotSchema = z.object({
   id: z.string(),
   fork_source_id: z.string().optional(),
@@ -1186,7 +1190,7 @@ export const ProjectSessionSchema = z.object({
   sandbox_provider: SandboxProviderSchema,
   sandbox_id: z.string().nullable(),
   sandbox_url: z.string().nullable(),
-  /** The session's root conversation in its runtime (OpenCode or pi). */
+  /** The session's root conversation in its runtime. */
   runtime_session_id: z.string().nullable(),
   /** Resolved display name: the user-set override, else the auto title. */
   name: z.string().nullable(),
@@ -1888,10 +1892,10 @@ export const SessionStartResultSchema = z.object({
   runtime_session_id: z.string().nullable(),
   /** Stable terminal failure. Raw provider text remains in sandbox metadata. */
   failure: SessionStartFailureSchema.nullable().optional(),
-  /** Server-selected OpenCode REST transport. */
+  /** Server-selected runtime REST transport. */
   runtime_transport: z.literal('rest').optional(),
   /**
-   * Relative proxy path for this session's OpenCode runtime (port 8000),
+   * Relative proxy path for this session's runtime (the daemon, port 8000),
    * composed by the client against its configured backend URL. The server owns
    * the proxy scheme; absent until the box has an external_id.
    */
@@ -1985,6 +1989,8 @@ export const TriggerSchema = z.object({
   last_event_at: z.string().nullable().optional(),
   /** Set while the App has been silent past `expect_event_within`: when the silence alert started. */
   silent_since: z.string().nullable().optional(),
+  /** Set while the always-on App it names is down past its restart budget: when that alert started. */
+  crashed_since: z.string().nullable().optional(),
   /** For type=app only — the slug of the App whose emitted events fire the trigger. */
   app: z.string().nullable().optional(),
   /** A fire calls this App (method path) instead of running an agent. Null: an agent run. */
@@ -2348,8 +2354,8 @@ export const SessionPromptSchema = z.object({
   wire_message_id: z.string(),
   client_sent_at_ms: z.number().nullable(),
   state: SessionPromptStateSchema,
-  /** Why admission waits: `turn_active`, `older_prompt_pending` or `held`. */
-  reason: z.string().nullable(),
+  /** Why the row is in its state (`SESSION_PROMPT_REASONS`). `held` is not live work. */
+  reason: z.enum(SESSION_PROMPT_REASONS).nullable(),
   text: z.string(),
   attempts: z.number(),
   /** Automatic re-attempts a runtime-unreachable park has spent. */

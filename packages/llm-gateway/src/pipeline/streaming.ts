@@ -274,6 +274,13 @@ export function relayStream(options: StreamRelayOptions): ReadableStream<Uint8Ar
     controller: ReadableStreamDefaultController<Uint8Array>,
     reason: SseErrorFrame,
   ): Promise<'retried' | 'terminated'> {
+    // The client is gone: a cancel resolves the pending read as `done`, and
+    // closing the cancelled controller throws into the catch that lands here.
+    // Nobody reads a retry or a terminal frame; settle as the client stop.
+    if (clientClosed || clientStop) {
+      await settle(clientStop);
+      return 'terminated';
+    }
     if (bytesForwarded === 0 && options.redispatch && redispatchAttempts < maxRedispatchAttempts) {
       redispatchAttempts += 1;
       const delayMs =

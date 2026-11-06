@@ -1,9 +1,7 @@
 import { ledgerExists } from '../src/ledger-exists';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type pg from 'pg';
 import { withClient } from '../src/with-client';
+import { verifyMigrationChecksum, withLedgerLock } from './ledger-repair';
 
 const CONNECTOR_POLICY_MIGRATION = {
   // Historical migration identity. The cutover migration runs later and must
@@ -106,15 +104,8 @@ export function planMigrationLedgerRepair(
 }
 
 function verifyRepairArtifacts(migrationsDir: string): void {
-  const artifacts = [CONNECTOR_POLICY_MIGRATION, ...MIGRATION_RENAMES];
-  for (const artifact of artifacts) {
-    const path = join(migrationsDir, artifact.filename);
-    const actual = createHash('sha256').update(readFileSync(path)).digest('hex');
-    if (actual !== artifact.sha256) {
-      throw new Error(
-        `Migration ledger repair checksum mismatch for ${artifact.filename}: ${actual}.`,
-      );
-    }
+  for (const artifact of [CONNECTOR_POLICY_MIGRATION, ...MIGRATION_RENAMES]) {
+    verifyMigrationChecksum(migrationsDir, artifact);
   }
 }
 
@@ -138,15 +129,9 @@ async function inspectRepairPlan(databaseUrl: string): Promise<MigrationLedgerRe
 }
 
 async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
-  return withClient(databaseUrl, async (client) => {
-  try {
-    await client.query('begin');
-    await client.query('lock table kortix_migrations.pgmigrations in exclusive mode');
+  return withLedgerLock(databaseUrl, false, async (client) => {
     const plan = planMigrationLedgerRepair(await readRepairRows(client));
-    if (!plan) {
-      await client.query('commit');
-      return false;
-    }
+    if (!plan) return false;
     if (plan.connectorMigrationIsMissing) {
       throw new Error(
         `Migration ledger repair requires ${CONNECTOR_POLICY_MIGRATION.name} to be applied first.`,
@@ -184,12 +169,7 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
       }
     }
 
-    await client.query('commit');
     return true;
-  } catch (error) {
-    await client.query('rollback');
-    throw error;
-  }
   });
 }
 

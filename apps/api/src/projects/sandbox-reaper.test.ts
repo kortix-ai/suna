@@ -88,7 +88,7 @@ let ledgerSettleStatements: string[] = [];
 let huskFinalizeCalls: Array<{
   sandboxId: string;
   externalId: string;
-  opencodeSessionId: string;
+  runtimeSessionId: string;
   messageId: string | null;
 }> = [];
 let huskOutcomeBySandbox: Record<
@@ -463,11 +463,11 @@ const reapAndReconcileSandboxes = (
     finalizeHuskTurn: async (target: {
       sandboxId: string;
       externalId: string;
-      opencodeSessionId: string;
+      runtimeSessionId: string;
       messageId: string | null;
     }) => {
       huskFinalizeCalls.push(target);
-      lifecycleCallOrder.push(`husk:${target.opencodeSessionId}`);
+      lifecycleCallOrder.push(`husk:${target.runtimeSessionId}`);
       return huskOutcomeBySandbox[target.sandboxId] ?? 'not_husk';
     },
     extendUnconfirmedTurnDeadline: async (sandboxId: string) => {
@@ -906,7 +906,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'turn-token': {
               token: 'turn-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -936,7 +936,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'turn-token': {
               token: 'turn-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -973,7 +973,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -995,7 +995,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   test('never ACTS on a terminal read before the delivery grace deadline', async () => {
-    // A delivering record can precede OpenCode persistence by a few seconds, so
+    // A delivering record can precede runtime persistence by a few seconds, so
     // inside its grace `turn_in_flight === false` proves nothing — the prompt
     // may simply not have landed yet. The record IS still probed (that answer is
     // the only evidence the drip below can be counted from); what the grace
@@ -1008,7 +1008,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1030,7 +1030,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
   test('promotes a delivering record the daemon confirms in flight inside its grace', async () => {
     // The repair is safe in the other direction: `turn_in_flight === true` is
-    // positive proof the prompt reached OpenCode, so the record earns its
+    // positive proof the prompt reached the runtime, so the record earns its
     // acceptance immediately instead of waiting out a grace it no longer needs.
     candidates = [
       candidate({
@@ -1040,7 +1040,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1076,7 +1076,6 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
               token: 'turn-token',
               state: 'active',
               runtimeSessionId: 'ses_root',
-              opencodeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               startedAtMs: NOW.getTime() - startedMinutesAgo * MIN,
             },
@@ -1205,7 +1204,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'wedged-token': {
               token: 'wedged-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               startedAtMs: NOW.getTime() - 20 * 24 * HOUR,
             },
@@ -1232,7 +1231,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // 2026-09-29 incident: an env-driven OpenCode respawn SIGTERMed the process
-  // 200ms after the API accepted a turn — before `relayTurnBeginToApi` ever
+  // 200ms after the API accepted a turn — before the daemon's turn-begin relay ever
   // ran, so the record's `messageId` stayed null forever. `GET .../turn`
   // showed `state: "active"` for HOURS; only `kortix sessions stop` cleared
   // it. `observeSandboxTurn` cannot see this as terminal: with no `messageId`
@@ -1249,7 +1248,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'orphaned-token': {
               token: 'orphaned-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: null,
               startedAtMs: NOW.getTime() - 31 * 60_000, // 31 min — past the 30 min default
             },
@@ -1289,7 +1288,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'orphaned-token': {
               token: 'orphaned-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: null,
               startedAtMs: NOW.getTime() - 31 * 60_000,
             },
@@ -1322,7 +1321,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'young-orphan-token': {
               token: 'young-orphan-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: null,
               startedAtMs: NOW.getTime() - 5_000, // 5s — a turn_begin relay is still due
             },
@@ -1352,7 +1351,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivering-token': {
               token: 'delivering-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: null,
               startedAtMs: NOW.getTime() - 31 * 60_000,
             },
@@ -1379,7 +1378,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'young-token': {
               token: 'young-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               // 23h — under the 24h ceiling, and far past the 4h grant, so this
               // is exactly the long turn the grant exists to keep alive.
@@ -1390,7 +1389,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'ageless-token': {
               token: 'ageless-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_2',
             },
           },
@@ -1431,7 +1430,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               startedAtMs: NOW.getTime() - 20 * 60_000,
             },
@@ -1459,7 +1458,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
   test('a delivering record INSIDE its own grace is still left alone', async () => {
     // The other half of the rule above: the grace has to keep suppressing a
-    // terminal read for a delivery OpenCode may simply not have persisted yet,
+    // terminal read for a delivery the runtime may simply not have persisted yet,
     // even when the box's own deadline has already passed.
     candidates = [
       candidate({
@@ -1469,7 +1468,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               startedAtMs: NOW.getTime() - 5_000,
             },
@@ -1495,7 +1494,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1523,7 +1522,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1561,7 +1560,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1591,7 +1590,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1616,7 +1615,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1634,9 +1633,9 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
   test('an ACTIVE record the daemon reports ORPHANED gives its prompt back', async () => {
     // THE INCIDENT THIS WHOLE STEP EXISTS FOR. A record is `delivering` for one
-    // upstream round trip only: OpenCode 200s the `prompt_async` and
+    // upstream round trip only: the runtime 200s the `prompt_async` and
     // `acceptTurnLifecycle` promotes it to `active` within milliseconds. If
-    // OpenCode is then killed before the first assistant token and respawns —
+    // the runtime is then killed before the first assistant token and respawns —
     // keeping the persisted user message, losing the in-memory queue — the
     // record is `active`, so the `delivering` branches never see it.
     //
@@ -1652,7 +1651,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               // Past ORPHANED_PROMPT_MIN_AGE_MS — see the sibling test below for
               // why a record this young is not orphaned yet.
@@ -1681,7 +1680,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
   test('a JUST-ACCEPTED record is not orphaned yet — and its clear DEFERS, never swallows', async () => {
     // "User message on record, no assistant message, root idle" is also what
-    // the moments between OpenCode ACKing a prompt and starting it look like.
+    // the moments between the runtime ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
     //
     // EXPECTATION CHANGED 2026-08-20 (live incident, a SampleCo
@@ -1700,7 +1699,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               startedAtMs: NOW.getTime() - 2_000,
             },
@@ -1731,7 +1730,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1758,7 +1757,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: null,
             },
           },
@@ -1782,7 +1781,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1813,7 +1812,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'long-turn': {
               token: 'long-turn',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_long',
             },
           },
@@ -1841,7 +1840,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1866,14 +1865,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'first-token': {
               token: 'first-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_first',
               startedAtMs: NOW.getTime() - 2_000,
             },
             'second-token': {
               token: 'second-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_second',
               startedAtMs: NOW.getTime() - 1_000,
             },
@@ -1894,7 +1893,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(stops).toEqual([]);
     expect(result.stopped).toBe(0);
     expect(result.lifecycleRenewed).toBe(1);
-    // Both records share ONE OpenCode root, and the abort the finalizer can
+    // Both records share ONE runtime root, and the abort the finalizer can
     // issue is root-scoped. The finalizer is therefore handed the terminal
     // turn's OWN message identity — never the live sibling's — which is the
     // only thing that lets it refuse to abort while `msg_second` is streaming
@@ -1903,14 +1902,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       {
         sandboxId: 'sb-1',
         externalId: 'ext-1',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_first',
       },
     ]);
   });
 
   // ── the husk: "no turn in flight" is NOT "the assistant message is closed" ──
-  // The daemon answers `turn_in_flight: false` the moment OpenCode's root goes
+  // The daemon answers `turn_in_flight: false` the moment the runtime's root goes
   // idle, even when the last assistant message was never completed. Deleting the
   // turn record on that evidence alone leaves every client streaming the root
   // spinning forever, with no record left that anything ran.
@@ -1923,7 +1922,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1940,7 +1939,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       {
         sandboxId: 'sb-1',
         externalId: 'ext-1',
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         messageId: 'msg_turn_1',
       },
     ]);
@@ -1963,7 +1962,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -1990,7 +1989,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -2007,7 +2006,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(r.stopped).toBe(1);
   });
 
-  test('a turn with no opencodeSessionId is never handed to the finalizer', async () => {
+  test('a turn with no runtimeSessionId is never handed to the finalizer', async () => {
     candidates = [
       candidate({
         deadlineAt: new Date(NOW.getTime() - 1),
@@ -2016,7 +2015,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: null,
+              runtimeSessionId: null,
               messageId: 'msg_turn_1',
             },
           },
@@ -2042,7 +2041,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -2073,7 +2072,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
           'active-token': {
             token: 'active-token',
             state: 'active',
-            opencodeSessionId: 'ses_root',
+            runtimeSessionId: 'ses_root',
             messageId: 'msg_turn_1',
           },
         },
@@ -2125,7 +2124,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   test('a terminal answer no observer can explain is recorded unknown', async () => {
-    // An agent build from before turn_end, or an OpenCode state its messages
+    // An agent build from before turn_end, or a runtime state its messages
     // cannot classify. The turn is over; nothing here says how. Naming it
     // 'completed' would make end_reason unable to answer its one question.
     candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
@@ -2149,7 +2148,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivering-token': {
               token: 'delivering-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -2181,7 +2180,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -2214,7 +2213,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
           'mute-token': {
             token: 'mute-token',
             state: 'active',
-            opencodeSessionId: 'ses_root',
+            runtimeSessionId: 'ses_root',
             messageId: 'msg_turn_1',
             ...(startedAtMs === null ? {} : { startedAtMs }),
           },
@@ -2292,7 +2291,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE BILLED DEAD TIME THIS CLOSES ═══
-  // A daemon that answers NOTHING — an unreachable box, a wedged opencode, a
+  // A daemon that answers NOTHING — an unreachable box, a wedged runtime, a
   // sandbox whose daemon never bound its port — is not evidence of live work.
   // Dripping it replaces the bound its record actually carries with a horizon
   // per pass for as long as the record stays fresh, which on a boot record is
@@ -2319,14 +2318,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'mute-token': {
               token: 'mute-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_mute',
               startedAtMs: NOW.getTime() - 60_000,
             },
             'timeout-token': {
               token: 'timeout-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_timeout',
               startedAtMs: NOW.getTime() - 30_000,
             },
@@ -2391,14 +2390,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'mute-token': {
               token: 'mute-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_mute',
               startedAtMs: NOW.getTime() - 60_000,
             },
             'live-token': {
               token: 'live-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_live',
               startedAtMs: NOW.getTime() - 30_000,
             },
@@ -2437,7 +2436,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
           'boot-token': {
             token: 'boot-token',
             state: 'delivering',
-            opencodeSessionId: null,
+            runtimeSessionId: null,
             messageId: 'msg_boot',
             startedAtMs,
           },
@@ -2459,7 +2458,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE DELIVERY GRACE THIS PROTECTS ═══
-  // `delivering` means NOTHING has confirmed the prompt reached OpenCode, and
+  // `delivering` means NOTHING has confirmed the prompt reached the runtime, and
   // sandbox-deadline-policy.ts is explicit about what such a record is worth:
   // "a failed delivery expires on this short grace instead of retaining a
   // four-hour active-turn window". Measuring a delivering record against the
@@ -2478,7 +2477,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
   test('an ACCEPTED record keeps the full four-hour bound', async () => {
     // The asymmetry is the point: acceptance is proof the prompt reached
-    // OpenCode, so the record is measured against the turn grant. A delivering
+    // the runtime, so the record is measured against the turn grant. A delivering
     // record has no such proof and is measured against its own delivery grace.
     candidates = [unknownTurnCandidate(NOW.getTime() - 3 * HOUR)];
     statusByExternal['ext-1'] = 'running';
@@ -2501,14 +2500,14 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'mute-token': {
               token: 'mute-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_mute',
               startedAtMs: NOW.getTime() - 60_000,
             },
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               startedAtMs: NOW.getTime() - 1_000,
             },
@@ -2537,7 +2536,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'delivery-token': {
               token: 'delivery-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -2601,7 +2600,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'delivering',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -2661,7 +2660,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'active-token': {
               token: 'active-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
             },
           },
@@ -2688,7 +2687,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
             'newer-token': {
               token: 'newer-token',
               state: 'active',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_newer',
             },
           },
@@ -2984,7 +2983,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
           'active-token': {
             token: 'active-token',
             state: 'active',
-            opencodeSessionId: 'ses_root',
+            runtimeSessionId: 'ses_root',
             messageId: 'msg_turn_1',
             startedAtMs: NOW.getTime() - 60_000,
           },
@@ -3355,7 +3354,7 @@ describe('the batch cap rotates and cannot starve a row', () => {
               [`turn-${id}`]: {
                 token: `turn-${id}`,
                 state: 'active',
-                opencodeSessionId: `ses-${id}`,
+                runtimeSessionId: `ses-${id}`,
                 messageId: `msg-${id}`,
               },
             },

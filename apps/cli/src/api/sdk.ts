@@ -66,7 +66,7 @@ interface StartSandboxPortProxyOpts {
   runtimeUrl: string;
   token: string;
   /** Read for every request and WebSocket upgrade; falls back to `token`. A
-   *  proxy lives as long as `opencode attach`, longer than one credential. */
+   *  proxy lives as long as a `sessions forward`, longer than one credential. */
   getToken?: () => string | null | undefined | Promise<string | null | undefined>;
   port?: number;
 }
@@ -80,10 +80,9 @@ interface ProxyWsData {
 
 /**
  * Expose one SDK-resolved sandbox port (any `/p/{externalId}/{port}` proxy
- * route — OpenCode on 8000 for `opencode attach`, or an arbitrary dev-server
- * port for `sessions forward` / the TUI Ports panel) on localhost, injecting
- * the Kortix bearer token. This adapter owns the only raw HTTP/WebSocket
- * transport allowed in the CLI. `startSandboxPortProxy` below is this same
+ * route — a dev-server port for `sessions forward` / the TUI Ports panel) on
+ * localhost, injecting the Kortix bearer token. This adapter owns the only raw
+ * HTTP/WebSocket transport allowed in the CLI. `startSandboxPortProxy` below is this same
  * function under its established name at the one call site that predates the
  * generalization.
  */
@@ -241,6 +240,14 @@ export async function sandboxDaemonRequest(
   return { status: res.status, text: await res.text() };
 }
 
+/** A non-2xx answer from /cli/device/*: the status decides retry (5xx, 429) or stop (other 4xx). */
+export class DeviceRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Device login failed (HTTP ${status}). Retry or use kortix login --token <key>.`);
+    this.name = 'DeviceRequestError';
+  }
+}
+
 /** Public device bootstrap cannot use the authenticated SDK transport: there
  * is deliberately no credential until approval. Keep it in the transport seam. */
 export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll', body: unknown, signal: AbortSignal): Promise<T> {
@@ -248,6 +255,6 @@ export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kortix-Client-Version': 'cli/dev' },
     body: JSON.stringify(body), signal,
   });
-  if (!response.ok) throw new Error(`Device login failed (HTTP ${response.status}). Retry or use kortix login --token <key>.`);
+  if (!response.ok) throw new DeviceRequestError(response.status);
   return await response.json() as T;
 }

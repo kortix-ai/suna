@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import type { Agent } from '../core/runtime/runtime-types';
-import { useRuntimeAgents } from './use-opencode-sessions';
+import { useRuntimeAgents } from './use-runtime-sessions';
 import { isSelectableAgent } from '../core/rest/projects-client/project-agents';
 
 /**

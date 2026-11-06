@@ -25,7 +25,7 @@ export const RUNTIME_BOOT_STALL_MS = START_INCONCLUSIVE_GIVE_UP_MS;
  * `useRuntimePhase() === 'unreachable'`.
  *
  * That distinction matters: a sandbox proxy that answers every probe with a
- * 503 (OpenCode wedged mid-boot) is classified `'booting'` on every tick,
+ * 503 (a runtime wedged mid-boot) is classified `'booting'` on every tick,
  * which resets the failure counter each time (see `classifyProbeResult` /
  * `resetSandboxFail` in `use-runtime-reconnect`). `failCount` can never cross
  * `FAIL_THRESHOLD_*` through that path, so `status` never becomes

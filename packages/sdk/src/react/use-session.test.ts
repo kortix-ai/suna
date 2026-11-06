@@ -1,5 +1,5 @@
 import { wireIdClock, wireIdClockAt, wireIdClockDelta } from '../core/session/wire-message-id';
-import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
+import { mintSessionWireMessageId } from './use-runtime-sessions/messages';
 import { beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
 // Mock the lowest network boundaries the reply/send paths go through — the
@@ -47,14 +47,14 @@ import {
   getSessionSyncController,
   resetSessionSyncControllers,
 } from '../browser/session-sync/session-sync-registry';
-import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { BillingError } from '../core/http/api/errors';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError, type SessionStartResult } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import type { ModelKey } from './use-model-store';
-import { promptRuntimeMessage } from './use-opencode-sessions/messages';
+import { promptRuntimeMessage } from './use-runtime-sessions/messages';
 import {
   SESSION_START_FRESH_MS,
   SESSION_START_POLL_MS,

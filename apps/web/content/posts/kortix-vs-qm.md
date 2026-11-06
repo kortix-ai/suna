@@ -5,7 +5,7 @@ date: "2026-08-02"
 canonical: "https://kortix.com/blog/kortix-vs-qm"
 author: "marko"
 tags: ["Comparisons", "Architecture", "Open Source"]
-updated: "2026-10-21"
+updated: "2026-11-06"
 slug: "/kortix-vs-qm"
 coverLogos: [{"domain": "github.com", "name": "QM"}]
 cover: "/banner.png"
@@ -88,7 +88,7 @@ rows:
     lean: both
   - dimension: Agent runtime
     them: Pi or Claude Code
-    kortix: OpenCode
+    kortix: pi, an open-source agent harness
     lean: them
   - dimension: Durable write path
     them: Scope store and resident computer

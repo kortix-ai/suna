@@ -12,14 +12,14 @@ import {
 /**
  * WHY the daemon injects SSE keepalives (prod, 2026-08-26).
  *
- * No layer between opencode and the browser emits a byte on a quiet stream —
- * not opencode, not this proxy, not the api proxy. The SDK's 60s heartbeat is
+ * No layer between the agent runtime and the browser emits a byte on a quiet
+ * stream — not the runtime, not this proxy, not the api proxy. The SDK's 60s heartbeat is
  * therefore the ONLY detector of a dead stream, and the path can die silently
  * in ways nothing logs: a stale cached ingress that answers 200 and never
  * writes, an edge hop that stalls, an ALB idle timeout (300s) on a quiet
  * session. Sessions froze mid-turn with the transcript minutes behind.
  *
- * This proxy runs INSIDE the sandbox, one localhost hop from opencode — so a
+ * This proxy runs INSIDE the sandbox, in the daemon that runs pi — so a
  * keepalive it emits proves the entire daemon→edge→api→browser path end to
  * end. The frame is a REAL typed event, not a `:` comment, because SSE
  * parsers swallow comments without yielding anything — a comment would warm

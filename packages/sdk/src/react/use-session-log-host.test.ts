@@ -7,7 +7,7 @@ import { setRuntimeCapabilities } from '../browser/stores/sandbox-connection-sto
 import { configureKortix } from '../core/http/config';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import { sessionStartKey, type SessionStartResult } from '../core/rest/projects-client';
-import { useSession } from './opencode';
+import { useSession } from './runtime-hooks';
 import { useSessionLogThread } from './use-session-log';
 import { qk } from './query-keys';
 import { resetSessionOpenBundles } from '../core/session/open-bundle';

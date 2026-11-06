@@ -41,7 +41,7 @@ export type TeamsStopOutcome =
 /**
  * End the run behind a live card.
  *
- * Closing the card is not ending the run: OpenCode can hold its assistant
+ * Closing the card is not ending the run: the runtime can hold its assistant
  * message open, and while it does every later prompt in the conversation is
  * accepted and never runs (dev 2026-09-19, two messages lost over two days).
  * So the abort goes to the runtime first and the card is settled afterwards,
@@ -63,7 +63,7 @@ export async function stopTeamsTurn(input: {
   const verdict = await mayStopTeamsTurn(handle, input.teamsUserId);
   if (!verdict.allowed) return { stopped: false, notice: CHAT_TURN_STOP_REFUSED };
 
-  // Claim the finalize BEFORE touching the runtime. The abort makes OpenCode
+  // Claim the finalize BEFORE touching the runtime. The abort makes the runtime
   // end the turn, which relays back as `relayTurnEnd(status: 'error')` — and
   // that path claims the same row and repaints the card "Run failed". Winning
   // the claim first makes the relay a no-op, so a deliberate stop cannot be

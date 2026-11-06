@@ -381,8 +381,16 @@ on a `kortix.yaml` trigger) tells the person once when the watcher stops posting
     on: { event: status.changed, app: status-watch }
     run: { agent: ops, prompt: "Status is now {{ event.data.status }}." }
   ```
-- Done watching: `kortix triggers rm` the session trigger and `status-watch-check`,
-  then `kortix apps delete status-watch --yes` if nothing else uses it.
+- To repair a watcher without a person, a `kortix.yaml` trigger on
+  `kortix.app.silent` (its window passed), `kortix.app.crashed` or
+  `kortix.app.recovered` starts an agent: `on: { event: kortix.app.silent,
+  app: status-watch }`. Only that exact name reaches it, never `"*"`. Test it
+  with `kortix apps events emit status-watch kortix.app.silent --wait`.
+- Done watching: `kortix triggers rm` your session trigger, then
+  `kortix apps delete status-watch --yes`. The project's triggers that name
+  the App go with it (`status-watch-check`, a work trigger) and it prints
+  their names. Other work still uses the App (`kortix triggers ls`): remove
+  only your session trigger.
 
 ### A watcher, specified; a relay App
 

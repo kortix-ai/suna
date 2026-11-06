@@ -33,7 +33,7 @@ const repo = process.env.VOICE_WORKSPACE ?? process.env.KORTIX_WORKSPACE
 // Code files only, not tests, benches or notes: their names ("named-evidence-proof", "personas") took prompt slots real words need.
 const files = repo ? Bun.spawnSync(['git', '-C', repo, 'ls-files']).stdout.toString().split('\n').filter((f) => /\.(?:tsx?|jsx?|mjs|py|go|rs|rb|java|kt|swift|cs|php|vue|svelte)$/.test(f) && !/(?:^|\/)(?:bench|tests?|__tests__|fixtures|runs|spec)\//.test(f) && !/\.(?:test|spec)\.[^/]+$/.test(f)) : []
 const names = files.sort((a, b) => a.split('/').length - b.split('/').length).map((f) => f.split('/').pop()!.replace(/\.\w+$/, ''))
-const terms = [...(process.env.VOCAB ?? `${NAME},Kortix,OpenCode,Bun,TypeScript`).split(',').map((t) => t.trim()), ...names.filter((n) => /^\w[\w-]{2,23}$/.test(n))]
+const terms = [...(process.env.VOCAB ?? `${NAME},Kortix,Bun,TypeScript`).split(',').map((t) => t.trim()), ...names.filter((n) => /^\w[\w-]{2,23}$/.test(n))]
 const VOCAB = terms.filter((t, i) => terms.findIndex((u) => u.toLowerCase() === t.toLowerCase()) === i).slice(0, 40)
 /** The names Whisper is biased toward (the product's and the project's), for reading a turn as it was said. */
 export const vocab = () => VOCAB
@@ -229,7 +229,7 @@ async function transcribe(pcm: Uint8Array, strict = true, keep?: (t: string) => 
   const sure = segments.every((s) => (s.no_speech_prob < 0.3 && s.avg_logprob > -0.8) || s.avg_logprob > -0.4)
   if (strict && text.split(/\s+/).length <= 2 && !sure && !COMMAND.test(text) && !keep?.(text)) text = ''
   if (process.env.DEBUG && !text) console.error('whisper dropped', JSON.stringify(segments.map((s) => [s.text, s.no_speech_prob.toFixed(2), s.avg_logprob.toFixed(2), s.compression_ratio.toFixed(1)])))
-  // On unclear audio Whisper can read back its own prompt ("OpenCode, Bun, TypeScript").
+  // On unclear audio Whisper can read back its own prompt ("Kortix, Bun, TypeScript").
   const said = text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []
   // Whisper's stock phrases on noise ("Thank you.") are also what callers say last: kept when Whisper is certain.
   const certain = segments.every((s) => s.no_speech_prob < 0.1 && s.avg_logprob > -0.7)

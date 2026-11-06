@@ -16,6 +16,16 @@ const FILE_SCHEME = /^(?:sandbox|file|computer):(?:\/\/[^/]*)?/i;
 const ANY_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
 /**
+ * A path the file preview can open: under a sandbox root, or under a session's
+ * drive mounts (`/drives/<mount>/…`), which the file client reads through the
+ * drive API (`internal/files/session-drive-files.ts`). A router links a worker's
+ * result file in the thread folder this way.
+ */
+function isFilePreviewPath(path: string): boolean {
+  return isUnderSandboxRoot(path) || (path.startsWith('/drives/') && !path.split('/').some((part) => part === '..' || part === '.'));
+}
+
+/**
  * Resolves a document-relative href against the directory of the document
  * that contains the link, lexically (`.` and `..` only — no filesystem
  * access). The caller validates the normalized result against sandbox roots.
@@ -46,7 +56,7 @@ export function workspaceFileLinkPath(url: string | undefined, baseDir?: string)
     path = path.replace(FILE_SCHEME, '');
   } else if (ANY_SCHEME.test(path) || /^(?:[#?]|\/\/)/.test(path)) {
     return null;
-  } else if (path.startsWith('/') && !isUnderSandboxRoot(path)) {
+  } else if (path.startsWith('/') && !isFilePreviewPath(path)) {
     // A root-relative path outside the sandbox roots is an app route.
     return null;
   }
@@ -60,7 +70,7 @@ export function workspaceFileLinkPath(url: string | undefined, baseDir?: string)
     const resolved = path.startsWith('/')
       ? resolveDocumentRelative('', path)
       : resolveDocumentRelative(baseDir, path);
-    return resolved && isUnderSandboxRoot(resolved) ? resolved : null;
+    return resolved && isFilePreviewPath(resolved) ? resolved : null;
   }
   return path || null;
 }
@@ -71,7 +81,7 @@ export function parseFileLinkHref(href: string | undefined, document = false): s
     const path = decodeURIComponent(href.slice(FILE_LINK_HREF.length));
     if (!document) return path || null;
     const resolved = resolveDocumentRelative('', path);
-    return path.startsWith('/') && resolved && isUnderSandboxRoot(resolved) ? resolved : null;
+    return path.startsWith('/') && resolved && isFilePreviewPath(resolved) ? resolved : null;
   } catch {
     return null;
   }

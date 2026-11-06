@@ -22,6 +22,8 @@ import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from
 import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
 import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
 import { captureAccountProductEvent } from '../../iam/account-analytics';
+import { admitReminderFire, goalForSession, goalSuccessorAllowed, goalSuccessorMetadata } from '../goals/admission';
+import { GOAL_SESSION_SOURCE } from '../goals/effects';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -546,6 +548,11 @@ async function fireSessionReminder(
 ): ReturnType<typeof fireGitTrigger> {
   const { spec, project } = input;
   const sessionId = spec.pinnedSessionId;
+  // A goal's heartbeat runs a turn only when the goal admits the wake
+  // (projects/goals/admission.ts): flag, state, pause, the daily wake cap,
+  // billing. Any other reminder passes untouched.
+  const gate = await admitReminderFire({ project, reminderId: spec.slug, idempotencyKey: input.idempotencyKey ?? null, source: input.source });
+  if (gate.goal && !gate.admitted) return { status: 'skipped', reason: `goal wake refused: ${gate.reason}` };
   const author = spec.reminder?.promptAuthorUserId;
   // A person's reminder runs as that person. Once they leave the account it
   // has no one to run as: it pauses instead of firing as someone who no longer
@@ -596,8 +603,33 @@ async function fireReminderSuccessor(
   failedSessionId: string,
 ): ReturnType<typeof fireGitTrigger> {
   const { spec, project } = input;
+  // A goal's owner failed: the successor becomes the goal's owner (adopted in
+  // its post-create step), within the goal's session cap.
+  const goal = await goalSuccessorAllowed(project.projectId, spec.slug);
+  if (!goal.allowed) {
+    await disableSessionReminder(project.projectId, spec.slug, new Date());
+    return {
+      status: 'failed',
+      error: "The goal's owner session failed and the goal has used all its sessions, so its heartbeat is paused",
+      errorCode: 'goal_session_cap',
+      retryable: false,
+    };
+  }
+  // A person's pause or stop that landed after this fire was admitted wins: the successor's
+  // first turn is its initial prompt, which no delivery guard sees, so check right before it.
+  if (goal.goal) {
+    const now = await goalForSession(failedSessionId);
+    if (!now || now.pausedAt || now.state === 'done' || now.state === 'stopped') {
+      await disableSessionReminder(project.projectId, spec.slug, new Date());
+      return { status: 'failed', error: 'The goal was paused or stopped, so no successor starts', errorCode: 'goal_not_running', retryable: false };
+    }
+  }
+  const goalMetadata = goal.goal ? goalSuccessorMetadata(goal.goal) : {};
   const result = await createSession({
-    source: 'trigger:reminder',
+    // A goal's successor works in its creator's own folder, so it is that person's
+    // own private session (origin user), as the first owner is: a trigger origin
+    // mounts no Files (drives/service.ts isPersonalSession). `actor` is the goal's creator.
+    source: goal.goal ? GOAL_SESSION_SOURCE : 'trigger:reminder',
     project,
     userId: actor,
     requestingPrincipalType: 'human',
@@ -613,7 +645,7 @@ async function fireReminderSuccessor(
         'read what it kept in Files (/drives) before you act.',
       metadata: { reminder_successor_of: failedSessionId },
     },
-    metadata: { reminder_successor_of: failedSessionId, trigger_slug: spec.slug },
+    metadata: { reminder_successor_of: failedSessionId, trigger_slug: spec.slug, ...goalMetadata },
     postCreate: [{ type: 'repin_reminder', reminderId: spec.slug }, { type: 'adopt_chat_threads', fromSessionId: failedSessionId }],
   });
   const successorId = result.sessionId ?? result.row?.sessionId;
@@ -667,7 +699,7 @@ async function queueExistingTriggerSession(
 
   // Session reuse — when a trigger opts into `session_mode = "reuse"`, re-prompt
   // the canonical session this trigger already created (resuming its sandbox +
-  // opencode root) so ONE long-lived session accumulates context across fires,
+  // runtime root) so ONE long-lived session accumulates context across fires,
   // instead of minting a brand-new session every time. If no reusable session
   // exists yet, or the last one is gone/failed, we fall through to createSession
   // below and that fresh session becomes the canonical one for next time. Also

@@ -17,6 +17,7 @@ import {
   POLL_FAILING,
   POLL_UNREACHABLE,
   POLL_RECHECK,
+  shouldApplyProbeResult,
   shouldHoldHealthy,
   type ProbeResultLike,
 } from './use-runtime-reconnect';
@@ -595,5 +596,19 @@ describe('a poller remount for the same runtime keeps what it knows (KRTX-606)',
     setRuntimeHealth(true);
     resetForServerSwitch();
     expect(useSandboxConnectionStore.getState()).toMatchObject({ status: 'connecting', healthy: null });
+  });
+});
+
+describe('shouldApplyProbeResult — a probe answers for the runtime it asked', () => {
+  const box = 'http://api.test/v1/p/box-a/8000';
+  test('applies an answer for the runtime the view still shows', () => {
+    expect(shouldApplyProbeResult({ probedUrl: box, activeUrl: box, streamDriven: false })).toBe(true);
+  });
+  test('drops an answer that lands after a switch to another session: it describes the old box', () => {
+    expect(shouldApplyProbeResult({ probedUrl: box, activeUrl: 'http://api.test/v1/p/box-b/8000', streamDriven: false })).toBe(false);
+    expect(shouldApplyProbeResult({ probedUrl: box, activeUrl: null, streamDriven: false })).toBe(false);
+  });
+  test('drops an answer that lands after a session stream took the store over', () => {
+    expect(shouldApplyProbeResult({ probedUrl: box, activeUrl: box, streamDriven: true })).toBe(false);
   });
 });

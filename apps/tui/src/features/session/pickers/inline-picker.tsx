@@ -12,8 +12,8 @@
  *
  * So this is the in-flow equivalent, built from the same parts the modal picker
  * uses — `ui/List` for navigation and windowing, `filterItems` for the query —
- * and it reads like opencode's own slash menu: a bordered block that grows
- * upward out of the input.
+ * and it reads as a slash menu: a bordered block that grows upward out of the
+ * input.
  *
  * `headerIds` marks rows that are section titles (the model picker's provider
  * groups). They render dim, `j`/`k` skip over them, and Enter on one does

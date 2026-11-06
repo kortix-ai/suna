@@ -16,20 +16,18 @@
  */
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { flag } from './argv';
 import { readDatabase } from './catalog';
+import { isMigrationFile } from './migration-files';
 
-/** Pure: migration files (`<name>.sql` or `<name>.ts`) whose name is absent from `ledger`. */
+/** Pure: migration files (`<name>.sql` or `<name>.concurrent.ts`) whose name is absent from `ledger`. */
 export function unappliedMigrationFiles(files: readonly string[], ledger: readonly string[]): string[] {
   if (ledger.length === 0) return [];
   const applied = new Set(ledger);
-  return files.filter((f) => /\.(sql|ts)$/.test(f) && !applied.has(f.replace(/\.(sql|ts)$/, '')));
+  return files.filter((f) => isMigrationFile(f) && !applied.has(f.replace(/\.(sql|ts)$/, '')));
 }
 
 if (import.meta.main) {
-  const flag = (name: string) => {
-    const i = process.argv.indexOf(name);
-    return i >= 0 ? process.argv[i + 1] : undefined;
-  };
   const live = flag('--live') ?? process.env.LIVE_DB_URL;
   const dir = flag('--dir') ?? join(import.meta.dir, '..', 'migrations');
   if (!live) {

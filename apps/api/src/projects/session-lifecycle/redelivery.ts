@@ -35,8 +35,8 @@ export const MAX_PROMPT_REDELIVERIES = 3;
  * it errored terminally. A `delivering` record can survive both of those: the
  * acceptance write is a separate statement, and when it loses (the documented
  * `[turn-lifecycle] acceptance persistence failed … reaper will reconcile
- * delivery` path) the record still says `delivering` while OpenCode answers the
- * prompt to the end. Requeueing on those reasons re-runs the user's message and
+ * delivery` path) the record still says `delivering` while the runtime answers
+ * the prompt to the end. Requeueing on those reasons re-runs the user's message and
  * spends a second real LLM turn on it, which is the exact loss redelivery
  * exists to prevent — so the reason is a gate, not a label.
  */
@@ -149,7 +149,7 @@ const liveDeps: RedeliveryDeps = {
       .set({
         status: 'dead_lettered',
         // AND IT IS NO LONGER ON THE WIRE. Every reader of "is this row at
-        // OpenCode" keys on `result.status`, so a dead-lettered row that kept
+        // the runtime" keys on `result.status`, so a dead-lettered row that kept
         // `forwarded` read `delivering` for ever: filtered out of the composer's
         // queue strip, counted as live work by `countLiveInboxPrompts`, and
         // outside `reconcileForwardedPrompts`' scan — no retry, no remove, and
@@ -224,7 +224,7 @@ export async function requeueAbandonedPrompt(
   const lastError = `redelivered after ${input.endReason}`;
 
   // A STOP-PAUSED row is the prompt the user pressed Stop to get ahead of.
-  // Stop aborts the running turn, OpenCode drops the in-memory queue with it,
+  // Stop aborts the running turn, the runtime drops the in-memory queue with it,
   // and the reaper then sees a persisted message nothing will ever answer —
   // which is a genuine abandonment, so this function is right to act. What it
   // must not do is deliver it: coming back DUE would put the stopped prompt

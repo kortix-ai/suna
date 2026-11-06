@@ -120,7 +120,10 @@ Rules, in order:
    back (the one it kept, else `previous` from the manifest). No previous installer:
    the new version stays installed and the result is `failed`. A release that ran and
    failed is marked bad (`update.json` `bad`, with the time in `bad_at`). An installer
-   that could not run (`install_failed`) is retried at the next check.
+   that could not run (`install_failed`) is retried at the next check. Three
+   `install_failed` in a row for one version (`INSTALL_FAILS_BEFORE_BAD`, counted in
+   `install_failures`) mark it bad too, so a broken installer is not re-downloaded
+   every hour.
 10. A bad version is skipped for 7 days (`BAD_RETRY_AFTER`), then tried once more; a
    failure again restarts the wait. A newer release is always tried. A bad version not
    newer than the installed one is dropped. So no computer is stuck on a version.

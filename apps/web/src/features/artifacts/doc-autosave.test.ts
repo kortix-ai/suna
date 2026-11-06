@@ -225,6 +225,31 @@ describe('doc autosave', () => {
     expect(statuses.at(-1)).toBe('saved');
   });
 
+  test('⌘S during a failed save backoff retries at once instead of waiting it out', async () => {
+    const { clock, file, type, saver, statuses } = setup();
+    const write = file.write;
+    let down = 1;
+    file.write = async (text, base) => {
+      if (down-- > 0) throw new Error('Failed to fetch');
+      return write(text, base);
+    };
+    type('offline');
+    await clock.advance(AUTOSAVE_MS);
+    expect(statuses.at(-1)).toBe('error');
+    // The backoff is 5 s; the person presses ⌘S after 1 s and the network is back. The retry runs
+    // as soon as the gap between saves allows (SAVE_GAP_MS after the failed one), not after 5 s.
+    await clock.advance(1_000);
+    saver.flush();
+    await clock.advance(SAVE_GAP_MS - 1_000);
+    expect(file.text).toBe('offline');
+    expect(statuses.at(-1)).toBe('saved');
+    // The failed attempt never reached the file; the retry is its one write.
+    expect(file.writes).toHaveLength(1);
+    // The backoff timer that was waiting does not write a second time.
+    await clock.advance(10_000);
+    expect(file.writes).toHaveLength(1);
+  });
+
   test('closing mid-save hands the outcome to the next editor of the doc; a closed editor never writes on its own', async () => {
     const { clock, file, type, saver, artifactId } = setup();
     file.latency = 1_000;

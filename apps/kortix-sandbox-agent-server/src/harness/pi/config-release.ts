@@ -523,8 +523,9 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
         recordKeptFailure(releaseId, problem)
         return respond('declined', problem)
       }
-      if (!runtime.idle()) return busy()
       const loaded = await loadedStartOnlyFiles()
+      // Asked after the last await: no prompt can be admitted between this check and the swap.
+      if (!runtime.idle()) return busy()
       const refused = await swap(
         runtime,
         {
@@ -586,10 +587,10 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       recordKeptFailure(releaseId, problem)
       return respond('declined', problem)
     }
-    // The download took time; a prompt may have arrived. Ask again right before the swap.
-    if (!runtime.idle()) return busy()
-
     const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest, dir, packageDirs)
+    // The download took time; a prompt may have arrived. Asked after the last await, right
+    // before the swap starts (synchronously), so no prompt is admitted in between.
+    if (!runtime.idle()) return busy()
     writeNotice(manifest, dir)
     const refused = await swap(
       runtime,

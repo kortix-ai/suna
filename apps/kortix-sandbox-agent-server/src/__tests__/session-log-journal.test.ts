@@ -763,7 +763,7 @@ describe('session-log journal', () => {
     expect(last.session).toEqual({ title: 'A synthetic title' })
   })
 
-  test('pi and the OpenCode orphan path: a slow acknowledgement holds relayTurnEnd at most 3 s; the batch is retried afterwards', async () => {
+  test('a slow acknowledgement holds relayTurnEnd at most 3 s; the batch is retried afterwards', async () => {
     const api = fakeApi(async (body, n, request) => {
       if (n === 1) {
         await Promise.race([Bun.sleep(6_000), aborted(request)])

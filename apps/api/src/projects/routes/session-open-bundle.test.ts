@@ -185,7 +185,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
         agentName: 'kortix',
         baseRef: null,
         metadata: {},
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
       },
       grants: [],
       canManageProject: true,

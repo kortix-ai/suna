@@ -214,7 +214,7 @@ export function ProjectHome({
     () => (projectConfig ? threadAgents(projectConfig) : undefined),
     [projectConfig],
   );
-  const defaultAgent = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
+  const defaultAgent = projectConfig?.default_agent ?? null;
   // `/`: home has no session runtime, so the list is the project config's
   // skills and commands, the same list web's home composer shows.
   const homeCommands = React.useMemo<Command[]>(() => {

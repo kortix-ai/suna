@@ -7,7 +7,7 @@ export function agentStatus(
   return {
     mode,
     showMode: !!mode && mode !== 'primary',
-    isDefault: (config?.default_agent ?? config?.open_code_default_agent) === agent.name,
+    isDefault: config?.default_agent === agent.name,
     disabled: agent.enabled === false,
   };
 }

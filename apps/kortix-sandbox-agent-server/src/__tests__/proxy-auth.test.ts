@@ -14,7 +14,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'bun:test'
-import { HarnessHealthSchema, healthRuntimePort } from '@kortix/api-contract/runtime-relay'
+import { HarnessHealthSchema } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import type { HarnessService } from '@/harness/harness'
 import type { PiBootState } from '@/harness/pi/boot-state'
@@ -97,9 +97,7 @@ describe('daemon proxy auth gate', () => {
     const body = (await (await app.request('/kortix/health')).json()) as Record<string, any>
     expect(body.harness).toMatchObject({ id: 'test', session: { id: null, required: false }, turn: null })
     expect(body.harness.details).toMatchObject({ pid: null, port: 4096 })
-    // apps/api reads the runtime port for its PTY proxy with this function.
     expect(HarnessHealthSchema.parse(body.harness).details.port).toBe(4096)
-    expect(healthRuntimePort(body)).toBe(4096)
     expect(body.runtime_truth).toBeDefined()
     const host = await readHostHealth({ cfg, bootTime: Date.now(), bootState: { repoMaterializationError: null, timeline: [] }, staticWebPort: null, resources: () => null })
     expect(Object.keys(body)).toEqual(expect.arrayContaining(Object.keys(host)))

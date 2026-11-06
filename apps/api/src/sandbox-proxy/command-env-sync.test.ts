@@ -1,4 +1,4 @@
-// `POST /session/:id/command` is opencode's BLOCKING slash-command endpoint: it
+// `POST /session/:id/command` is the box's BLOCKING slash-command endpoint: it
 // creates a user message and runs a full agent turn, exactly like a prompt does.
 // It therefore needs the same PRE-PROMPT project-env sync a prompt gets, and for
 // the same reasons — the grant that scopes which secrets the box may read is
@@ -54,9 +54,9 @@ function encode(value: unknown): ArrayBuffer {
   return new TextEncoder().encode(JSON.stringify(value)).buffer as ArrayBuffer;
 }
 
-// The real shape of an opencode slash-command body: `{command, arguments, agent,
-// model, variant}` — NOT `{parts}`. See SessionCommandData in
-// @opencode-ai/sdk/dist/v2/gen/types.gen.d.ts.
+// The real shape of a slash-command body: `{command, arguments, agent,
+// model, variant}` — NOT `{parts}` (OpenCode's `SessionCommandData`; pi
+// serves the same shape).
 const COMMAND_BODY = encode({
   command: 'webapp',
   arguments: 'build a landing page',
@@ -285,8 +285,8 @@ describe('runPrePromptEnvSync — refusals and retries', () => {
 // one are proven at the HTTP route in __tests__/e2e-preview-proxy.test.ts.
 
 describe('requestedPromptManagedModelId', () => {
-  // /session/:id/message + /prompt_async — verified against @opencode-ai/sdk's
-  // generated `SessionPromptData`: a NESTED `model: {providerID, modelID}`.
+  // /session/:id/message + /prompt_async — OpenCode's `SessionPromptData`
+  // shape, which pi serves too: a NESTED `model: {providerID, modelID}`.
   // This is the shape the server-side prompt queue relay
   // (`session-lifecycle/runtime-client.ts`) sends, and what the overwhelming
   // majority of real turn-start bodies use.

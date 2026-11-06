@@ -249,6 +249,11 @@ const envSchema = z.object({
   KORTIX_MODEL_CATALOG_LIVE_ENABLED: optStr,
   // /health/live answers 503 above this event-loop lag.
   HEALTH_MAX_EVENT_LOOP_LAG_MS: optInt(5000),
+  // The space watcher (flag `spaces_proactive`, projects/lib/space-watch/):
+  // how long an ask stays open before it wakes the watcher, and the least time
+  // between two wakes of one space. Local verification shortens them.
+  KORTIX_SPACE_WATCH_ASK_OVERDUE_MS: optInt(2 * 60 * 60_000),
+  KORTIX_SPACE_WATCH_DEBOUNCE_MS: optInt(10 * 60_000),
   // True runs the durable job queue even when KORTIX_WORKERS_ENABLED is false.
   // The deterministic test stack sets it: held connector calls and Capture
   // ingest run only as queued jobs.
@@ -486,10 +491,6 @@ const envSchema = z.object({
   // behavior (absence of `[[agents]]` → unrestricted) untouched.
   KORTIX_REQUIRE_DECLARED_AGENTS: optBoolFalse,
 
-  // Supabase Storage bucket holding the durable per-sandbox backup bundle
-  // (workspace files + OpenCode chat-history store). Source for rehydrate.
-  LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
-
   // ── Channels — Slack adapter (optional) ──────────────────────────────────
   SLACK_SIGNING_SECRET: optStr,
   SLACK_CLIENT_ID: optStr,
@@ -668,9 +669,8 @@ const envSchema = z.object({
   // its new Files and sessions in KORTIX_PLATINUM_US_REGION. Off by default;
   // dev sets it (deploy-dev.yml). Inert while KORTIX_PLATINUM_US_REGION is unset.
   KORTIX_PLATINUM_US_REGION_DEFAULT: optBoolFalse,
-  // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
-  // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
-  // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
+  // The fresh-session Git fast path: KORTIX_SESSION_FRESH and the base-tip +
+  // scaffold-delta hint (inline or remote bundle). Default ON;
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
   // ── Project snapshot archives (S3 config provider) ─────────────────────
@@ -1426,6 +1426,8 @@ export const config = {
   KORTIX_MODEL_CATALOG_LIVE_ENABLED: env.KORTIX_MODEL_CATALOG_LIVE_ENABLED,
   HEALTH_MAX_EVENT_LOOP_LAG_MS: env.HEALTH_MAX_EVENT_LOOP_LAG_MS,
   KORTIX_JOB_WORKER_ENABLED: env.KORTIX_JOB_WORKER_ENABLED,
+  KORTIX_SPACE_WATCH_ASK_OVERDUE_MS: Math.max(60_000, env.KORTIX_SPACE_WATCH_ASK_OVERDUE_MS),
+  KORTIX_SPACE_WATCH_DEBOUNCE_MS: Math.max(60_000, env.KORTIX_SPACE_WATCH_DEBOUNCE_MS),
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   RETENTION_ERASURE_MODE: env.RETENTION_ERASURE_MODE,
   RETENTION_ERASURE_AFTER_DAYS: env.RETENTION_ERASURE_AFTER_DAYS,
@@ -1507,9 +1509,6 @@ export const config = {
   CODE_STORAGE_API_BASE: env.CODE_STORAGE_API_BASE,
   CODE_STORAGE_GIT_HOST: env.CODE_STORAGE_GIT_HOST,
   KORTIX_REQUIRE_DECLARED_AGENTS: env.KORTIX_REQUIRE_DECLARED_AGENTS,
-
-  // ─── Legacy migration ─────────────────────────────────────────────────────
-  LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
 
   // ─── Channels (Slack) ─────────────────────────────────────────────────────
   SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,

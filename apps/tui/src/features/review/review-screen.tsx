@@ -58,7 +58,7 @@ export interface ReviewActions {
 }
 
 export interface ReviewScreenProps {
-  projectId: string;
+  projectId: string | null;
   focused: boolean;
   width: number;
   height: number;
@@ -82,7 +82,14 @@ export function compareRows(a: ChangeRow, b: ChangeRow): number {
   return b.createdAtMs - a.createdAtMs;
 }
 
-export function ReviewScreen({
+export function ReviewScreen(props: ReviewScreenProps) {
+  if (!props.projectId) {
+    return <text fg={theme.faint}>No project selected. Type /projects to pick one.</text>;
+  }
+  return <ReviewScreenBody {...props} projectId={props.projectId} />;
+}
+
+function ReviewScreenBody({
   projectId,
   focused,
   width,
@@ -90,7 +97,7 @@ export function ReviewScreen({
   onBack,
   onOpenSession,
   onToast,
-}: ReviewScreenProps) {
+}: ReviewScreenProps & { projectId: string }) {
   // 'all', not the hook's default 'open': the list prints a status column, and
   // a change request merged an hour ago is exactly what a reviewer looks for
   // right after acting on it.

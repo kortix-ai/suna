@@ -29,11 +29,10 @@ export interface SandboxTurnIdentity {
 }
 
 /**
- * A stored turn record names its runtime session under `runtimeSessionId` and,
- * for an API instance built before W4 that still serves during a rolling
- * deploy, under `opencodeSessionId` too. Writers set both; readers take the
- * neutral key first.
- * ponytail: drop the `opencodeSessionId` write once no pre-W4 API instance runs.
+ * A stored turn record names its runtime session under `runtimeSessionId`.
+ * Records an API built before W4 wrote name it only `opencodeSessionId`: prod
+ * still holds such records, last written 2026-10-01, all on dead boxes. Readers
+ * take the neutral key first; drop the fallback once those boxes are gone.
  */
 function storedTurnRuntimeSessionId(turn: Record<string, unknown>): unknown {
   return turn.runtimeSessionId ?? turn.opencodeSessionId;
@@ -145,7 +144,6 @@ export function initialSandboxTurnMetadata(
     token: turn.token,
     state: 'delivering',
     runtimeSessionId: null,
-    opencodeSessionId: null,
     messageId: turn.messageId,
     startedAtMs: turn.startedAtMs,
   };
@@ -240,9 +238,9 @@ export type RuntimeTurnAdoption =
   | 'no_box';
 /**
  * Apply terminal evidence. A retryable error is not terminal. When both sides
- * know the OpenCode user message ID, a delayed event may clear only that turn.
+ * know the runtime's user message ID, a delayed event may clear only that turn.
  * Older daemons and command turns have no message ID; they remain scoped to the
- * root OpenCode session for rolling-deploy compatibility.
+ * root runtime session for rolling-deploy compatibility.
  */
 export type SandboxTurnCompletionOutcome =
   | 'closed'
@@ -285,14 +283,14 @@ export function turnEndWorkDue(
  *                  turn's own completed assistant message.
  * - `failed`       a terminal, non-retryable model error, or a turn the control
  *                  plane had to force-close because nothing was writing it.
- * - `abandoned`    delivery never reached OpenCode (upstream 4xx/5xx, an
+ * - `abandoned`    delivery never reached the runtime (upstream 4xx/5xx, an
  *                  unreachable sandbox, the daemon's `turn_abandoned`, or a
  *                  daemon that cannot find the client-minted message at all).
  * - `runtime_gone` the box parked or the daemon stopped answering while the
  *                  turn was still open. Control-plane-only: a sandbox is never
  *                  allowed to name this one about itself.
  * - `unknown`      the turn is provably over and no observer could say how — an
- *                  agent build that predates `turn_end`, or an OpenCode state
+ *                  agent build that predates `turn_end`, or a runtime state
  *                  its messages do not classify. It exists so the four values
  *                  above stay true; a guess would make every one of them
  *                  unreliable.
@@ -402,15 +400,15 @@ export const ABORT_END_ERROR_NAMES = ['MessageAbortedError', 'AbortError'];
 
 // A STOP SOMEBODY ASKED FOR IS NOT A FAILURE, and the end frame cannot say so:
 // a requested stop and an abort nobody asked for both reach the ledger as the
-// same OpenCode "Aborted" frame. So the request is stamped on the OPEN turn,
-// BEFORE the abort can reach OpenCode, at every place a request passes through
+// same "aborted" end frame. So the request is stamped on the OPEN turn,
+// BEFORE the abort can reach the runtime, at every place a request passes through
 // the control plane:
 //
 //   UserStop        - `POST .../prompts/hold {held:true}`, the first request of
 //                     a web, SDK or mobile Stop. Its settle
 //                     (`inbox-hold-settle.ts`) can abort the box before the
 //                     client's own abort arrives.
-//                   - every client abort (web, mobile, SDK, CLI): an OpenCode
+//                   - every client abort (web, mobile, SDK, CLI): a
 //                     `POST /session/:id/abort` through the sandbox proxy.
 //                   - `abortRuntimeTurn(…, { requestedStop: true })`: the hold
 //                     settle's re-abort, and Slack/Teams Stop.
@@ -452,12 +450,12 @@ function protectedEndErrorPredicate(column: SQL): SQL {
 
 /** Which open turns a request applies to. Omitted fields match every turn. */
 export interface RequestedStopScope {
-  opencodeSessionId?: string | null;
+  runtimeSessionId?: string | null;
   messageId?: string | null;
 }
 
 /**
- * Stamp a requested stop on the session's open turns. A row whose OpenCode
+ * Stamp a requested stop on the session's open turns. A row whose runtime
  * session is not recorded yet still matches: it cannot be proved to be another
  * session's turn, and an unmarked stop reads as a failure.
  *
@@ -482,9 +480,9 @@ export async function markTurnStopRequested(
                updated_at = now()
          WHERE session_id = ${sessionId}
            AND state <> 'ended'
-           AND (${scope.opencodeSessionId ?? null}::text IS NULL
+           AND (${scope.runtimeSessionId ?? null}::text IS NULL
              OR runtime_session_id IS NULL
-             OR runtime_session_id = ${scope.opencodeSessionId ?? null})
+             OR runtime_session_id = ${scope.runtimeSessionId ?? null})
            AND (${scope.messageId ?? null}::text IS NULL
              OR message_id = ${scope.messageId ?? null})`,
     `mark ${name} ${sessionId}`,
@@ -512,7 +510,7 @@ export async function clearTurnStopRequest(
  * arrived. The message is shown to the user as the reason, so it is copy.
  */
 export const REAPER_TURN_CAUSES = {
-  /** The daemon said no turn is running, yet OpenCode held the reply open. */
+  /** The daemon said no turn is running, yet the runtime held the reply open. */
   huskFinalized: {
     name: 'TurnHuskFinalized',
     message: 'The agent stopped responding in the middle of this turn, so Kortix closed it.',
@@ -631,7 +629,7 @@ export type UnidentifiedTurnCauseOutcome = 'refined_ended' | 'marked_open' | 'no
  *
  * The guard aborts first and reports second, so the abort usually closes the
  * turn before the cause arrives. In order:
- *  1. The newest turn of this OpenCode session that ended with a bare abort
+ *  1. The newest turn of this runtime session that ended with a bare abort
  *     in the last `windowMs` gets the cause. This beats an open turn: the
  *     next prompt can start before the cause lands.
  *  2. Otherwise the open turn holds the cause. The abort that follows keeps
@@ -642,14 +640,14 @@ export type UnidentifiedTurnCauseOutcome = 'refined_ended' | 'marked_open' | 'no
  */
 export async function recordUnidentifiedTurnCause(
   sessionId: string,
-  opencodeSessionId: string | null | undefined,
+  runtimeSessionId: string | null | undefined,
   cause: SessionTurnEndErrorRecord,
   windowMs = UNIDENTIFIED_CAUSE_WINDOW_MS,
 ): Promise<UnidentifiedTurnCauseOutcome> {
   const causeJson = JSON.stringify(cause);
-  const sameRoot = sql`(${opencodeSessionId ?? null}::text IS NULL
+  const sameRoot = sql`(${runtimeSessionId ?? null}::text IS NULL
                          OR t.runtime_session_id IS NULL
-                         OR t.runtime_session_id = ${opencodeSessionId ?? null})`;
+                         OR t.runtime_session_id = ${runtimeSessionId ?? null})`;
   const refined = normalizeRows(
     await execute(sql`
       UPDATE kortix.session_turns
@@ -922,7 +920,7 @@ export function refineEndedTurnError(
 
 /**
  * A later genuine completion for a message the ledger already closed as
- * `abandoned` proves the abandon was premature: delivery DID reach OpenCode
+ * `abandoned` proves the abandon was premature: delivery DID reach the runtime
  * and the turn ran, but whatever declared it abandoned (the daemon's own
  * boot-time delivery check, or a reaper reconciliation) observed that too
  * early and reported a false negative. `abandonSandboxTurn` DELETES the
@@ -935,7 +933,7 @@ export function refineEndedTurnError(
  *
  * Exact identity match only, like `refineEndedTurnError` — never a fallback
  * — so unrelated evidence can never repaint a genuinely abandoned turn (one
- * that really never reached OpenCode) as completed. Scoped to
+ * that really never reached the runtime) as completed. Scoped to
  * `end_reason = 'abandoned'` rows only: a `failed`/`completed`/`runtime_gone`
  * row already carries a real verdict from evidence that observed the turn in
  * progress, which this must never overwrite.

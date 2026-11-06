@@ -267,11 +267,18 @@ export function createDocSaver(start: Known, deps: DocSaverDeps) {
         void save(deps.text());
       }, AUTOSAVE_MS);
     },
-    /** Save now (⌘S, leaving), when an edit waits. */
+    /**
+     * Save now (⌘S, leaving), when an edit waits. A failed save waiting out its backoff (up to
+     * 30 s) is tried as soon as the gap between saves allows instead.
+     */
     flush() {
-      if (debounce === null) return;
-      debounce = stop(debounce);
-      void save(deps.text());
+      if (debounce !== null) {
+        debounce = stop(debounce);
+        void save(deps.text());
+        return;
+      }
+      if (next !== null && queued !== null && !saving && !conflict)
+        later(Math.max(0, ended + SAVE_GAP_MS - clock.now()));
     },
     async snapshot(): Promise<Known> {
       if (conflict) throw new Error('The document has a save conflict');

@@ -15,7 +15,7 @@ export const WORKSPACE = '/workspace';
 /** A session whose signed runtime endpoint is resolved. */
 export interface ResolvedSessionRuntime {
   endpoint: { url: string; headers: Record<string, string> };
-  opencodeSessionId: string;
+  runtimeSessionId: string;
   externalId?: string;
 }
 

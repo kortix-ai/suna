@@ -26,7 +26,7 @@ const AGENT_PORT = 8000;
  * Does this proxied request START a turn? Used by the proxy to observe a run
  * beginning without trusting anything the sandbox says about itself. The
  * routes are `classifyRuntimeRequest`'s: the daemon's Kortix prompt route and
- * OpenCode's four turn routes, with any `/proxy/<port>` prefix dropped.
+ * the box's four OpenCode-shaped turn routes, with any `/proxy/<port>` prefix dropped.
  *
  * Either half of the opencode pair counts. A verified reload swaps which one is
  * live, and letting the other through here would let the box's own agent

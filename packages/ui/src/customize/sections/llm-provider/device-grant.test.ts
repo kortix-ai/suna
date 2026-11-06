@@ -48,3 +48,42 @@ for (const outcome of ['success', 'failed', 'expired', 'timeout', 'cancelled', '
     expect(challenge.mock.calls).toEqual(outcome === 'start-error' ? [[null]] : succeeded || outcome === 'cancelled' ? [[{ url: 'https://example.test', code: 'CODE' }]] : [[{ url: 'https://example.test', code: 'CODE' }], [null]]);
   });
 }
+
+test('device grant: Cancel then Connect — the old run never touches the new code', async () => {
+  const { createRunGeneration } = await import('./device-grant');
+  const generation = createRunGeneration();
+  const challenges: Array<ChatGptChallenge | null> = [];
+  const errors: string[] = [];
+  let wakeOld: () => void = () => {};
+  const oldSleeping = new Promise<void>((resolve) => {
+    wakeOld = resolve;
+  });
+
+  // Run 1 starts, then sleeps in its poll interval.
+  const firstRun = runDeviceGrant({
+    startOAuth: async () => ({ flow_id: 'old', verification_url: 'https://example.test', user_code: 'OLD', interval_ms: 1, expires_at: 10_000 }),
+    pollOAuth: async () => ({ status: 'expired' }),
+    sleep: () => oldSleeping,
+    now: () => 0,
+    isCancelled: generation.begin(),
+    setChallenge: (c) => challenges.push(c),
+    setPhase: () => {},
+    setError: (e) => errors.push(e),
+    onSuccess: () => {},
+    failedMessage: 'Fallback',
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  // Cancel, then Connect again.
+  generation.cancel();
+  const isNewCancelled = generation.begin();
+  expect(isNewCancelled()).toBe(false);
+
+  // The old run wakes up: its generation is gone, so it stops without a poll.
+  wakeOld();
+  await firstRun;
+  expect(challenges).toEqual([{ url: 'https://example.test', code: 'OLD' }]);
+  expect(errors).toEqual([]);
+  expect(isNewCancelled()).toBe(false);
+});
