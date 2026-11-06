@@ -47,6 +47,10 @@ function startServer(): string {
       }
       if (url.pathname === '/v1/workspaces') return Response.json([]);
       const match = url.pathname.match(/^\/v1\/workspaces\/([^/]+)$/);
+      if (match && req.method === 'DELETE') {
+        // K2: a delete closes the workspace; owners can restore it for 14 days.
+        return Response.json({ ok: true, deleted: true, archived: true, repo_deleted: false, deletion_scheduled_for: '2026-11-20T08:00:00.000Z' });
+      }
       if (match) return Response.json(project(match[1]));
       return Response.json({ error: `unexpected ${url.pathname}` }, { status: 404 });
     },
@@ -132,6 +136,16 @@ describe('a person with no workspace', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(`workspace ${NO_WORKSPACE}`);
     expect(r.stdout).not.toContain('none selected');
+  });
+});
+
+describe('workspaces rm', () => {
+  test('a delete that closes the workspace prints until when an owner can restore it', async () => {
+    const r = await runCli(['workspaces', 'rm', 'ws_close', '--yes'], writeConfig(startServer(), 'account_1'));
+    expect(`exit=${r.code} ${r.stderr}`).toBe(`exit=0 ${r.stderr}`);
+    expect(r.stdout).toContain('Deleted');
+    expect(r.stdout).toContain('an owner can restore it until 2026-11-20T08:00:00.000Z (POST /v1/workspaces/ws_close/restore)');
+    expect(r.stdout).not.toContain('no managed repo to delete');
   });
 });
 

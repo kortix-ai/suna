@@ -1591,6 +1591,8 @@ interface RmResult {
   ok: boolean;
   archived: boolean;
   repo_deleted: boolean;
+  /** Set when the delete closed the workspace (K2): owners can restore it until then. */
+  deletion_scheduled_for?: string | null;
 }
 
 async function projectsRm(args: string[]): Promise<number> {
@@ -1620,7 +1622,7 @@ async function projectsRm(args: string[]): Promise<number> {
   const { client, project } = located.located;
 
   if (!yes) {
-    const msg = `Delete ${C.bold}${project.name}${C.reset} and its Kortix-managed git repo for every member? ${C.red}This cannot be undone.${C.reset}`;
+    const msg = `Delete ${C.bold}${project.name}${C.reset} for every member? Its owners can restore it for 14 days; after that its Kortix-managed git repo, sessions and credits are erased.`;
     const ok = await confirm(msg, false);
     if (!ok) {
       process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
@@ -1640,9 +1642,11 @@ async function projectsRm(args: string[]): Promise<number> {
 
   process.stdout.write(
     `${status.ok(`Deleted ${C.bold}${project.name}${C.reset}`)}\n` +
-      (result.repo_deleted
-        ? `  ${C.dim}managed git repo deleted${C.reset}\n`
-        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`),
+      (result.deletion_scheduled_for
+        ? `  ${C.dim}an owner can restore it until ${result.deletion_scheduled_for} (POST /v1/workspaces/${id}/restore)${C.reset}\n`
+        : result.repo_deleted
+          ? `  ${C.dim}managed git repo deleted${C.reset}\n`
+          : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`),
   );
   return 0;
 }
