@@ -1,7 +1,7 @@
 // Migration: workspaces_account_id_indexes  (NON-TRANSACTIONAL -- CONCURRENTLY escape hatch)
 //
 // Workspaces M4 support (design: .agents/skills/learnings/work/workspaces/design.md §3.3, §6.2).
-// kortix.workspaces_reconcile_account (20261106060100000_workspaces_table.sql)
+// kortix.workspaces_reconcile_account (20261106140600000_workspaces_table.sql)
 // runs kortix.workspace_fill_account when an account's live workspace id moves
 // (a new workspace's first project, a split move, a transfer). The fill runs
 //   UPDATE kortix.<t> SET workspace_id = $1 WHERE account_id = $2

@@ -552,7 +552,7 @@ export const projects = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     // Workspaces: true on the active projects of a legacy account that holds
-    // 2+ active projects (marked by 20261105203911000_workspaces_mark_and_name).
+    // 2+ active projects (marked by 20261106140200000_workspaces_mark_and_name).
     // Such an account is not one workspace yet; the split worker moves each
     // extra project into its own account and clears the flag. A marked row is
     // exempt from `uq_projects_workspace_account`. New rows are never marked.
@@ -561,7 +561,7 @@ export const projects = kortixSchema.table(
   (table) => [
     // Workspaces 1:1: an account holds at most ONE active project that is not
     // split-pending. Permanent. Built CONCURRENTLY by
-    // 20261105203912000_workspaces_one_per_account.concurrent.ts. A second
+    // 20261106140300000_workspaces_one_per_account.concurrent.ts. A second
     // active project answers 409 `workspace_has_project` in the API before it
     // reaches this index (apps/api/src/workspaces/one-project.ts).
     uniqueIndex('uq_projects_workspace_account')
@@ -592,8 +592,8 @@ export const projects = kortixSchema.table(
  * `kortix.workspaces_reconcile_account(account_id)`, which writes the rows of
  * `kortix.workspaces_expected(account_id)` (the one implementation of the
  * live-row rule) and deletes the account's other rows. Built by
- * 20261106060100000_workspaces_table.sql and filled by
- * 20261106060500000_workspaces_reconcile.concurrent.ts. Release 2 makes it
+ * 20261106140600000_workspaces_table.sql and filled by
+ * 20261106141000000_workspaces_reconcile.concurrent.ts. Release 2 makes it
  * the source of truth.
  *
  * Rows: one per project row (any status), plus one project-less row
@@ -705,13 +705,13 @@ export const personDeletionRequests = kortixSchema
 
 /**
  * The account name each 1:1 workspace had before the name backfill
- * (20261105203911000_workspaces_mark_and_name.concurrent.ts) set it to the
+ * (20261106140200000_workspaces_mark_and_name.concurrent.ts) set it to the
  * project name. One row per renamed account; the first backfill wins
  * (`ON CONFLICT DO NOTHING`), so `old_name` is always the original. No foreign
  * key: the record outlives a deleted account.
  *
  * Roll back the names: follow the header of
- * 20261105203911000_workspaces_mark_and_name.concurrent.ts. It disables the
+ * 20261106140200000_workspaces_mark_and_name.concurrent.ts. It disables the
  * `accounts_name_sync` trigger first; a bare UPDATE of accounts.name would
  * rename every 1:1 project to its old account name (review finding 28).
  */

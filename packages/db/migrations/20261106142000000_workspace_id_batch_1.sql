@@ -12,7 +12,7 @@
 --   kortix.account_invitations
 --   kortix.account_scim_users
 -- At most 7 small tables per file, so the file waits for small locks only.
--- Existing rows stay NULL here; 20261106062000000_workspace_id_fill.concurrent.ts
+-- Existing rows stay NULL here; 20261106142600000_workspace_id_fill.concurrent.ts
 -- fills them in batches. No index on workspace_id in Release 1: nothing reads it
 -- until Release 2.
 --

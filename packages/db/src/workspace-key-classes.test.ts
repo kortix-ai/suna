@@ -66,7 +66,7 @@ describe('workspace key classes', () => {
 
   test('the expand class is the list kortix.workspace_expand_tables() returns (M4) and M7 alters', () => {
     const migrations = resolve(import.meta.dir, '..', 'migrations');
-    const m4 = readFileSync(resolve(migrations, '20261106060100000_workspaces_table.sql'), 'utf8');
+    const m4 = readFileSync(resolve(migrations, '20261106140600000_workspaces_table.sql'), 'utf8');
     const start = m4.indexOf('FUNCTION kortix.workspace_expand_tables()');
     const body = m4.slice(start, m4.indexOf(']::text[]', start));
     const listed = [...body.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();

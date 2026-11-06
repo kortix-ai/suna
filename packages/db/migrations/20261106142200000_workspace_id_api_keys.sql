@@ -1,12 +1,13 @@
--- Migration: workspace_id_credit_accounts
+-- Migration: workspace_id_api_keys
 --
 -- Workspaces M7 (design: .agents/skills/learnings/work/workspaces/design.md §3.3, §6.2).
 -- Release 1 EXPAND for Release 2: this hot table gains a nullable workspace_id and a
 -- BEFORE INSERT OR UPDATE OF account_id trigger that sets it from account_id
 -- (kortix.workspace_id_stamp -> kortix.workspace_id_of_account):
---   kortix.credit_accounts
--- One hot table per file, so the file waits for one lock only.
--- Existing rows stay NULL here; 20261106062000000_workspace_id_fill.concurrent.ts
+--   kortix.api_keys
+-- One hot table per file, so the file waits for one lock only: validateSecretKey
+-- reads api_keys on every API-key request, with no cache.
+-- Existing rows stay NULL here; 20261106142600000_workspace_id_fill.concurrent.ts
 -- fills them in batches. No index on workspace_id in Release 1: nothing reads it
 -- until Release 2.
 --
@@ -28,8 +29,8 @@
 set lock_timeout = '3s';
 set statement_timeout = '30s';
 
-ALTER TABLE "kortix"."credit_accounts" ADD COLUMN IF NOT EXISTS "workspace_id" uuid;
+ALTER TABLE "kortix"."api_keys" ADD COLUMN IF NOT EXISTS "workspace_id" uuid;
 
-CREATE OR REPLACE TRIGGER credit_accounts_workspace_id_stamp
-  BEFORE INSERT OR UPDATE OF account_id ON "kortix"."credit_accounts"
+CREATE OR REPLACE TRIGGER api_keys_workspace_id_stamp
+  BEFORE INSERT OR UPDATE OF account_id ON "kortix"."api_keys"
   FOR EACH ROW EXECUTE FUNCTION kortix.workspace_id_stamp();

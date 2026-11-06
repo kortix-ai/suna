@@ -535,8 +535,8 @@ timeout (the `20261011111553399_session_log_tables.sql` convention). No shared e
 
 | # | File | Content | Locks |
 |---|---|---|---|
-| M0 | `20261105203700000_free_credits_once_per_person.sql` (exists) | unchanged | — |
-| M1 | `20261105203716882_workspaces_expand.sql` (edit) | `projects.split_pending`, the two ledger tables, the projects name-sync trigger. Remove the view and the accounts trigger. Fix the header (manual rerun). | `projects` only, 3 s |
+| M0 | `20261106140000000_free_credits_once_per_person.sql` (exists) | unchanged | — |
+| M1 | `20261106140100000_workspaces_expand.sql` (edit) | `projects.split_pending`, the two ledger tables, the projects name-sync trigger. Remove the view and the accounts trigger. Fix the header (manual rerun). | `projects` only, 3 s |
 | M1b | new `.sql` | `kortix.workspace_account_name_sync()` + `CREATE OR REPLACE TRIGGER accounts_name_sync` (idempotent on DBs that ran the old M1) | `accounts` only, 3 s |
 | M2, M3 | exist | unchanged | — |
 | M4 | new `.sql` | `DROP VIEW IF EXISTS kortix.workspaces`; `CREATE TABLE IF NOT EXISTS kortix.workspaces` (C1) + indexes + RLS + grants; `kortix.person_deletion_requests (user_id PK, requested_at, scheduled_for, status, completed_at)` + RLS; the five C1 functions | new objects only |
@@ -547,15 +547,15 @@ timeout (the `20261011111553399_session_log_tables.sql` convention). No shared e
 | M9 | new `.sql` (billing, wave 2) | `credit_accounts.comp_plan_until timestamptz` | `credit_accounts`, 3 s |
 
 **Built (identity, sub-branch `ws-r1-identity`, 2026-11-06).** The files, in
-order: M1 `20261105203716882_workspaces_expand.sql` (edited); M1b
-`20261106060000000_workspaces_account_name_sync.sql` (sorts after M2/M3: M2's
+order: M1 `20261106140100000_workspaces_expand.sql` (edited); M1b
+`20261106140400000_workspaces_account_name_sync.sql` (sorts after M2/M3: M2's
 rename finds the names equal, so the order does not matter); M4
-`20261106060100000_workspaces_table.sql` (plus `kortix.workspace_expand_tables()`,
+`20261106140600000_workspaces_table.sql` (plus `kortix.workspace_expand_tables()`,
 the one list of the 44, and `kortix.workspace_id_stamp()`, the M7 trigger
-function); M5a–c `20261106060200000`–`20261106060400000`; M6
-`20261106060500000_workspaces_reconcile.concurrent.ts`; M7
-`20261106060600000`–`20261106061900000` (9 hot tables one per file, then 5
-files of ≤ 7); M8 `20261106062000000_workspace_id_fill.concurrent.ts`.
+function); M5a–c `20261106140700000`–`20261106140900000`; M6
+`20261106141000000_workspaces_reconcile.concurrent.ts`; M7
+`20261106141100000`–`20261106142500000` (9 hot tables one per file, then 5
+files of ≤ 7); M8 `20261106142600000_workspace_id_fill.concurrent.ts`.
 Decisions taken while building, each within C1:
 
 - The reconcile takes the account row `FOR NO KEY UPDATE` before the advisory

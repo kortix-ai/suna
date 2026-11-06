@@ -268,7 +268,7 @@ withDb('workspaces identity', () => {
     expect((await getWorkspace(ONE_PROJECT))?.name).toBe('Synthetic renamed account');
   });
 
-  // The M2 rollback (header of 20261105203911000_workspaces_mark_and_name):
+  // The M2 rollback (header of 20261106140200000_workspaces_mark_and_name):
   // a bare UPDATE fires accounts_name_sync and renames the 1:1 project to the
   // old account name; the documented statement disables that trigger.
   test('the documented M2 name rollback restores account names and keeps project names', async () => {

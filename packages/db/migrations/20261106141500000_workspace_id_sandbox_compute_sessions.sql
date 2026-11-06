@@ -1,12 +1,12 @@
--- Migration: workspace_id_credit_purchases
+-- Migration: workspace_id_sandbox_compute_sessions
 --
 -- Workspaces M7 (design: .agents/skills/learnings/work/workspaces/design.md §3.3, §6.2).
 -- Release 1 EXPAND for Release 2: this hot table gains a nullable workspace_id and a
 -- BEFORE INSERT OR UPDATE OF account_id trigger that sets it from account_id
 -- (kortix.workspace_id_stamp -> kortix.workspace_id_of_account):
---   kortix.credit_purchases
+--   kortix.sandbox_compute_sessions
 -- One hot table per file, so the file waits for one lock only.
--- Existing rows stay NULL here; 20261106062000000_workspace_id_fill.concurrent.ts
+-- Existing rows stay NULL here; 20261106142600000_workspace_id_fill.concurrent.ts
 -- fills them in batches. No index on workspace_id in Release 1: nothing reads it
 -- until Release 2.
 --
@@ -28,8 +28,8 @@
 set lock_timeout = '3s';
 set statement_timeout = '30s';
 
-ALTER TABLE "kortix"."credit_purchases" ADD COLUMN IF NOT EXISTS "workspace_id" uuid;
+ALTER TABLE "kortix"."sandbox_compute_sessions" ADD COLUMN IF NOT EXISTS "workspace_id" uuid;
 
-CREATE OR REPLACE TRIGGER credit_purchases_workspace_id_stamp
-  BEFORE INSERT OR UPDATE OF account_id ON "kortix"."credit_purchases"
+CREATE OR REPLACE TRIGGER sandbox_compute_sessions_workspace_id_stamp
+  BEFORE INSERT OR UPDATE OF account_id ON "kortix"."sandbox_compute_sessions"
   FOR EACH ROW EXECUTE FUNCTION kortix.workspace_id_stamp();
