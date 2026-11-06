@@ -10323,7 +10323,8 @@
       "tooLarge": "此文件超过 50 MiB。",
       "expired": "此上传已过期。请移除后重新添加文件。",
       "checkConnection": "请检查网络连接，然后重试。",
-      "driveFileUnavailable": "无法从云盘附加 {name}。它可能已被移动，或者你已无法打开它。"
+      "driveFileUnavailable": "无法从云盘附加 {name}。它可能已被移动，或者你已无法打开它。",
+      "driveFilePending": "请等待云盘文件附加完成后再发送。"
     },
     "i18nComplete": {
       "authEmailRateLimit": "无法发送邮件。请在大约一小时后重试。",

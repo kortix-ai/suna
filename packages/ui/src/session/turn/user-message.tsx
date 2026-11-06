@@ -1819,7 +1819,6 @@ export function UserMessage({
 
   const sessionTitles = useMemo(() => sessionRefs.map((s) => s.title), [sessionRefs]);
   const driveNames = useMemo(() => driveMentionRefs.map((d) => d.name), [driveMentionRefs]);
-  const drivePathOf = (name: string) => driveMentionRefs.find((d) => d.name === name)?.path;
 
   // Build highlighted text segments — see `../thread/mention-segments.ts`. The walk
   // used to live inline here and in `optimistic-turn.tsx`, and the two copies
@@ -1935,8 +1934,8 @@ export function UserMessage({
         // no press affordance it cannot honour.
         <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
       ) : seg.type === 'drive' ? (
-        // Static: the file itself is in the attachment strip; the chip names its Drive path.
-        <MentionChip key={seg.key} kind="drive" label={seg.text.replace(/^@/, '')} title={drivePathOf(seg.text.replace(/^@/, ''))} />
+        // Static: the file itself is in the attachment strip.
+        <MentionChip key={seg.key} kind="drive" label={seg.text.replace(/^@/, '')} />
       ) : (
         <span key={seg.key}>{seg.text}</span>
       ),

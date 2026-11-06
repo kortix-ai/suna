@@ -181,7 +181,7 @@ describe('parseUserMessageText', () => {
 
   test('strips the drive_ref block a web Drive mention appends', () => {
     const raw =
-      "see @a b.png\n\nReferenced Drive files (files the user picked from the project's Drive, attached to this message as uploads):\n<drive_ref path=\"/Company/a b.png\" name=\"a b.png\" />";
+      "see @a b.png\n\nReferenced Drive files (the user picked these from the project's Drive; each one is the attached upload named in its file attribute):\n<drive_ref path=\"/Company/a b.png\" name=\"a b.png\" file=\"a b.png\" />";
     expect(parseUserMessageText(raw).text).toBe('see @a b.png');
   });
 });

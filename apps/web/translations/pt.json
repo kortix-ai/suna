@@ -10323,7 +10323,8 @@
       "tooLarge": "Este arquivo tem mais de 50 MiB.",
       "expired": "Este envio expirou. Remova-o e anexe o arquivo novamente.",
       "checkConnection": "Verifique sua conexão e tente novamente.",
-      "driveFileUnavailable": "Não foi possível anexar {name} do Drive. Ele pode ter sido movido ou você não pode mais abri-lo."
+      "driveFileUnavailable": "Não foi possível anexar {name} do Drive. Ele pode ter sido movido ou você não pode mais abri-lo.",
+      "driveFilePending": "Aguarde o arquivo do Drive terminar de anexar e depois envie."
     },
     "i18nComplete": {
       "authEmailRateLimit": "Não foi possível enviar o e-mail. Tente novamente em cerca de uma hora.",

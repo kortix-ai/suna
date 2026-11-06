@@ -2661,7 +2661,8 @@ const catalog = {
       "tooLarge": "This file is larger than 50 MiB.",
       "expired": "This upload expired. Remove it and attach the file again.",
       "checkConnection": "Check your connection, then retry.",
-      "driveFileUnavailable": "{name} could not be attached from Drive. It may have moved, or you can no longer open it."
+      "driveFileUnavailable": "{name} could not be attached from Drive. It may have moved, or you can no longer open it.",
+      "driveFilePending": "Wait for the Drive file to finish attaching, then send."
     },
     "i18nComplete": {
       "text03217276a5f1": "Balance {value0} credits",

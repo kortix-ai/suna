@@ -42,7 +42,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { extractClipboardFiles } from './clipboard-files';
-import { drivePathsIn, orphanedDriveUploads, withoutDriveChips } from './drive-mentions';
+import { driveUploadName, drivePathsIn, withoutDriveChips } from './drive-mentions';
 import type { DriveMentionSource } from './menus/mention-menu';
 import { mergeFailedSubmissionFiles } from './composer-draft-recovery';
 import { resolveComposerResetOnSend, type ComposerSendReset } from './composer-reset';
@@ -1042,19 +1042,21 @@ function ComposerImpl(props: SessionChatInputProps) {
   // ── Drive `@` mentions ────────────────────────────────────────────────
   // A picked Drive file is fetched with the viewer's own access (the server
   // answers 404 for a file they may not read) and staged as an ordinary
-  // attachment, so it reaches the agent like any upload: no session mount
-  // changes, no second file transport.
+  // attachment marked with its Drive path, so it reaches the agent like any
+  // upload: no session mount changes, no second file transport.
   const drivesOn = useFeatureFlag(projectId ?? null, 'drives').enabled;
   const viewerId = useUiViewerId();
   const queryClient = useQueryClient();
-  /** Drive path → the upload its pick staged. A second chip reuses it; removing the last chip drops it. */
-  const driveUploadsRef = useRef(new Map<string, string>());
+  /** Drive paths still downloading: a second pick of one attaches nothing, and Send waits. */
+  const pendingDrivePathsRef = useRef(new Set<string>());
+  /** The Drive paths the document named after its last change: a path that leaves it is a deleted chip. */
+  const docDrivePathsRef = useRef(new Set<string>());
   // Declared before the question-lock effect below, so it holds the new value when that effect empties the editor.
   const lockForQuestionRef = useLatestRef(lockForQuestion);
   const pickDriveFile = useCallback(
     async ({ path, name, size }: { path: string; name: string; size?: number }) => {
-      const staged = driveUploadsRef.current.get(path);
-      if (staged && attachedFilesRef.current.some((file) => attachedFileUploadId(file) === staged)) return;
+      const attached = () => attachedFilesRef.current.some((file) => file.kind !== 'remote' && file.drivePath === path);
+      if (pendingDrivePathsRef.current.has(path) || attached()) return;
       const dropChips = () => {
         const doc = editorRef.current?.getDocument();
         if (doc) setDocumentWithoutStealingFocus(editorRef.current, withoutDriveChips(doc, path));
@@ -1065,52 +1067,57 @@ function ComposerImpl(props: SessionChatInputProps) {
         dropChips();
         return;
       }
+      pendingDrivePathsRef.current.add(path);
       let file: File;
       try {
         const drive = await queryClient.fetchQuery(projectDriveQueryOptions(projectId ?? undefined, viewerId));
         const blob = await downloadDriveFile(drive.driveId, path);
+        const taken = attachedFilesRef.current.map((held) => (held.kind === 'local' ? held.file.name : held.filename));
         // Drive serves every file as `application/octet-stream`: the name says what it is (an image reaches the model as one).
-        file = new File([blob], name, { type: attachmentMime(blob.type === 'application/octet-stream' ? '' : blob.type, name) });
+        file = new File([blob], driveUploadName(name, path, taken), {
+          type: attachmentMime(blob.type === 'application/octet-stream' ? '' : blob.type, name),
+        });
       } catch {
         // Deleted, moved, or no longer shared with the viewer: say so, and take the chip back.
         errorToast(tComposerAttachments('driveFileUnavailable', { name }));
         dropChips();
         return;
+      } finally {
+        pendingDrivePathsRef.current.delete(path);
       }
       // The chip went away while the file downloaded: nothing to attach.
       if (!drivePathsIn(editorRef.current?.getDocument()).has(path)) return;
       const before = new Set(attachedFilesRef.current);
       appendAttachedFiles([file]);
-      const added = attachedFilesRef.current.find((attached) => !before.has(attached));
-      const uploadId = added ? attachedFileUploadId(added) : undefined;
-      if (uploadId) driveUploadsRef.current.set(path, uploadId);
+      const added = attachedFilesRef.current.find((held) => !before.has(held));
       // Refused by the message limits: `appendAttachedFiles` already said why.
-      else dropChips();
+      if (!added || added.kind === 'remote') return dropChips();
+      const next = attachedFilesRef.current.map((held) => (held === added ? { ...added, drivePath: path } : held));
+      attachedFilesRef.current = next;
+      setAttachedFiles(next);
     },
     [appendAttachedFiles, projectId, queryClient, tComposerAttachments, viewerId],
   );
-  /**
-   * The uploads whose chip the person deleted leave the tray. Run after the
-   * change settles: a send or a command empties the editor and then hands its
-   * tray off in the same handler, so those uploads are gone from the tray by
-   * then. A question lock empties the editor and keeps the tray, so it is skipped.
-   */
-  const dropOrphanedDriveUploads = useCallback(() => {
-    if (lockForQuestionRef.current) return;
-    for (const path of orphanedDriveUploads(driveUploadsRef.current, editorRef.current?.getDocument())) {
-      const uploadId = driveUploadsRef.current.get(path);
-      driveUploadsRef.current.delete(path);
-      const index = attachedFilesRef.current.findIndex((file) => attachedFileUploadId(file) === uploadId);
-      if (index !== -1) removeAttachedFile(index);
-    }
-  }, [lockForQuestionRef, removeAttachedFile]);
   const handleDocChangeWithDrive = useCallback(
     (doc: JSONContent, isEmpty: boolean) => {
       handleEditorDocChange(doc, isEmpty);
-      // A recalled prompt replaces the draft for a moment; its Drive files stay.
-      if (!applyingHistoryRef.current && driveUploadsRef.current.size > 0) queueMicrotask(dropOrphanedDriveUploads);
+      const named = drivePathsIn(doc);
+      const removed = [...docDrivePathsRef.current].filter((path) => !named.has(path));
+      docDrivePathsRef.current = named;
+      // A recalled prompt replaces the draft for a moment; the tray keeps its files, as it does every attachment.
+      if (removed.length === 0 || applyingHistoryRef.current) return;
+      // The person deleted the last chip of a path: its file leaves the tray. Run after the change
+      // settles: a send or a command empties the editor and hands its tray off in the same handler,
+      // so those files are gone from the tray by then. A question lock keeps the tray.
+      queueMicrotask(() => {
+        if (lockForQuestionRef.current) return;
+        for (const path of removed) {
+          const index = attachedFilesRef.current.findIndex((held) => held.kind !== 'remote' && held.drivePath === path);
+          if (index !== -1) removeAttachedFile(index);
+        }
+      });
     },
-    [handleEditorDocChange, dropOrphanedDriveUploads],
+    [handleEditorDocChange, lockForQuestionRef, removeAttachedFile],
   );
   const driveMentions = useMemo<DriveMentionSource | null>(
     // A host that keeps files in its own store (`takeFiles`) gets no Drive rows.
@@ -1889,6 +1896,11 @@ function ComposerImpl(props: SessionChatInputProps) {
       const content = draft ?? { text: '', mentions: [] };
       const trimmed = plan.text;
       if ((!trimmed && filesNow.length === 0) || submitDisabled) return;
+      // A Drive file still downloading would leave without its bytes.
+      if (pendingDrivePathsRef.current.size > 0) {
+        errorToast(tComposerAttachments('driveFilePending'));
+        return;
+      }
 
       // Send never waits for an upload: the selection is handed to this send
       // now. Only a failed upload refuses, and the Send control says why.
@@ -2006,6 +2018,7 @@ function ComposerImpl(props: SessionChatInputProps) {
       onQuestionAction,
       onSend,
       promptAttachments,
+      tComposerAttachments,
     ],
   );
 

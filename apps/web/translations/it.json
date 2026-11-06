@@ -10323,7 +10323,8 @@
       "tooLarge": "Questo file supera i 50 MiB.",
       "expired": "Questo caricamento è scaduto. Rimuovilo e allega di nuovo il file.",
       "checkConnection": "Controlla la connessione, poi riprova.",
-      "driveFileUnavailable": "Impossibile allegare {name} da Drive. Potrebbe essere stato spostato o non puoi più aprirlo."
+      "driveFileUnavailable": "Impossibile allegare {name} da Drive. Potrebbe essere stato spostato o non puoi più aprirlo.",
+      "driveFilePending": "Attendi che il file di Drive sia allegato, poi invia."
     },
     "i18nComplete": {
       "authEmailRateLimit": "Impossibile inviare l’email. Riprova tra circa un’ora.",

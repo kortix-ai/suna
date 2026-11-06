@@ -17,6 +17,8 @@ export type AttachedFile =
       file: File;
       localUrl: string;
       isImage: boolean;
+      /** Staged from the project's Drive by an `@` pick: the file's Drive path. */
+      drivePath?: string;
     }
   | {
       kind: 'remote';
@@ -38,6 +40,8 @@ export type AttachedFile =
       /** Bytes on the server: the tray counts them toward the message limits. */
       size: number;
       isImage: boolean;
+      /** Staged from the project's Drive by an `@` pick: the file's Drive path. */
+      drivePath?: string;
     };
 
 /**

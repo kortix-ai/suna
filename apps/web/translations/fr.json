@@ -10323,7 +10323,8 @@
       "tooLarge": "Ce fichier dépasse 50 Mio.",
       "expired": "Ce téléversement a expiré. Supprimez-le, puis joignez de nouveau le fichier.",
       "checkConnection": "Vérifiez votre connexion, puis réessayez.",
-      "driveFileUnavailable": "Impossible de joindre {name} depuis Drive. Le fichier a peut-être été déplacé, ou vous ne pouvez plus l’ouvrir."
+      "driveFileUnavailable": "Impossible de joindre {name} depuis Drive. Le fichier a peut-être été déplacé, ou vous ne pouvez plus l’ouvrir.",
+      "driveFilePending": "Attendez que le fichier Drive soit joint, puis envoyez."
     },
     "i18nComplete": {
       "authEmailRateLimit": "Impossible d’envoyer l’e-mail. Réessaie dans environ une heure.",

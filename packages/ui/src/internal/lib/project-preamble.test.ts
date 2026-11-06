@@ -121,32 +121,46 @@ describe('appendMentionRefs', () => {
 });
 
 describe('Drive file refs', () => {
-  test('a Drive mention becomes a drive_ref after the file refs; one ref per path, in mention order', () => {
-    const text = appendMentionRefs('compare @a b.png with @logo.png and @logo.png', [
-      { kind: 'drive', label: 'a b.png', value: '/Company/a b.png' },
-      { kind: 'drive', label: 'logo.png', value: '/Users/ana/logo.png' },
-      { kind: 'drive', label: 'logo.png', value: '/Users/ana/logo.png' },
-      { kind: 'agent', label: 'reviewer' },
-    ]);
+  const HEADER =
+    "Referenced Drive files (the user picked these from the project's Drive; each one is the attached upload named in its file attribute):";
+
+  test('a Drive mention whose upload rides along becomes a drive_ref naming that upload; one per path, in mention order', () => {
+    const text = appendMentionRefs(
+      'compare @a b.png with @logo.png and @logo.png',
+      [
+        { kind: 'drive', label: 'a b.png', value: '/Company/a b.png' },
+        { kind: 'drive', label: 'logo.png', value: '/Users/ana/logo.png' },
+        { kind: 'drive', label: 'logo.png', value: '/Users/ana/logo.png' },
+        { kind: 'agent', label: 'reviewer' },
+      ],
+      [
+        { name: 'logo (ana).png', drivePath: '/Users/ana/logo.png' },
+        { name: 'a b.png', drivePath: '/Company/a b.png' },
+        { name: 'notes.txt' },
+      ],
+    );
     expect(text).toBe(
       [
         'compare @a b.png with @logo.png and @logo.png',
-        "Referenced Drive files (files the user picked from the project's Drive, attached to this message as uploads):\n" +
-          '<drive_ref path="/Company/a b.png" name="a b.png" />\n<drive_ref path="/Users/ana/logo.png" name="logo.png" />',
+        `${HEADER}\n<drive_ref path="/Company/a b.png" name="a b.png" file="a b.png" />\n<drive_ref path="/Users/ana/logo.png" name="logo.png" file="logo (ana).png" />`,
         'Referenced agents (the user has @-mentioned these agents — delegate or hand off as appropriate):\n<agent_ref name="reviewer" />',
       ].join('\n\n'),
     );
   });
 
-  test('a Drive mention without a path adds no block', () => {
-    expect(appendMentionRefs('hi', [{ kind: 'drive', label: 'a.png' }])).toBe('hi');
+  test('a Drive mention whose file is not attached (still downloading, refused, removed) gets no ref', () => {
+    expect(appendMentionRefs('hi @a.png', [{ kind: 'drive', label: 'a.png', value: '/Company/a.png' }])).toBe('hi @a.png');
+    expect(
+      appendMentionRefs('hi @a.png', [{ kind: 'drive', label: 'a.png', value: '/Company/a.png' }], [{ name: 'a.png', drivePath: '/Company/other/a.png' }]),
+    ).toBe('hi @a.png');
+    expect(appendMentionRefs('hi', [{ kind: 'drive', label: 'a.png' }], [{ name: 'a.png', drivePath: '/a.png' }])).toBe('hi');
   });
 
   test('the parser strips the block and gives back every path and name, whatever their characters', () => {
-    const files = TITLES.map((title, i) => ({ path: `/Company/${i}/${title}`, name: title }));
+    const files = TITLES.map((title, i) => ({ path: `/Company/${i}/${title}`, name: title, file: `${title}.png` }));
     const parsed = parseFileMentionReferences(`look @x\n\n${buildDriveRefsBlock(files)}`);
     expect(parsed.cleanText).toBe('look @x');
-    expect(parsed.drives).toEqual(files);
+    expect(parsed.drives).toEqual(files.map(({ path, name }) => ({ path, name })));
     expect(parsed.files).toEqual([]);
   });
 });

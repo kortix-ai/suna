@@ -202,6 +202,7 @@ import {
   driveRefsOf,
 } from '../../internal/lib/project-preamble';
 import { playSound } from '../../internal/lib/sounds';
+import { driveUploadsOf } from '../composer/drive-mentions';
 import { track } from '../../lib/telemetry';
 import { cn } from '../../lib/utils';
 import { useChatSendStore } from '../../internal/stores/chat-send-store';
@@ -2793,7 +2794,7 @@ export function SessionChat({
         if (m.kind === 'file') fileMentionRefs.push({ path: m.label, name: m.label });
         else if (m.kind === 'agent') agentMentionRefs.push({ name: m.label });
       }
-      const driveMentionRefs = driveRefsOf(mentions);
+      const driveMentionRefs = driveRefsOf(mentions, driveUploadsOf(files));
 
       // Play send sound
       playSound('send');

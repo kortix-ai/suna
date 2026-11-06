@@ -381,12 +381,7 @@ export function HighlightMentions({
         ) : seg.type === 'agent' ? (
           <MentionChip key={seg.key} kind="agent" label={seg.text.replace(/^@/, '')} />
         ) : seg.type === 'drive' ? (
-          <MentionChip
-            key={seg.key}
-            kind="drive"
-            label={seg.text.replace(/^@/, '')}
-            title={drives.find((d) => `@${d.name}` === seg.text)?.path}
-          />
+          <MentionChip key={seg.key} kind="drive" label={seg.text.replace(/^@/, '')} />
         ) : (
           <span key={seg.key}>{seg.text}</span>
         ),

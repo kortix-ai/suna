@@ -50,6 +50,29 @@ describe('finishedDraftUploads', () => {
   });
 });
 
+describe('a Drive file in a draft', () => {
+  test('its Drive path is stored with the upload and comes back on the restored tile', () => {
+    const tray: AttachedFile[] = [
+      { kind: 'local', uploadId: 'u-1', file, localUrl: 'blob:1', isImage: true, drivePath: '/Company/shot.png' },
+    ];
+    const [finished] = finishedDraftUploads(tray, [item('u-1', 'ready', attachment)]);
+    expect(finished?.upload).toEqual({ ...attachment, isImage: true, drivePath: '/Company/shot.png' });
+    const restored: { attachment: PromptAttachment; file?: File }[] = [];
+    const back = restoreDraftUploads([finished!.upload], {
+      restore: (uploads) => {
+        restored.push(...uploads);
+        return ['u-9'];
+      },
+      createObjectURL: () => 'blob:restored',
+    });
+    // The controller gets the attachment alone; the tile gets the path back.
+    expect(restored[0]?.attachment).toEqual(attachment);
+    expect(back).toEqual([
+      { kind: 'uploaded', uploadId: 'u-9', filename: attachment.filename, mime: attachment.mime, size: attachment.size, isImage: false, drivePath: '/Company/shot.png' },
+    ]);
+  });
+});
+
 describe('restoreDraftUploads', () => {
   test('a File this tab kept brings the picture back; without one the tile has the name only', () => {
     const restored: { attachment: PromptAttachment; file?: File }[] = [];

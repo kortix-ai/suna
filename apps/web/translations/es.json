@@ -10323,7 +10323,8 @@
       "tooLarge": "Este archivo supera los 50 MiB.",
       "expired": "Esta carga caducó. Elimínala y vuelve a adjuntar el archivo.",
       "checkConnection": "Comprueba tu conexión y vuelve a intentarlo.",
-      "driveFileUnavailable": "No se pudo adjuntar {name} desde Drive. Puede que se haya movido o que ya no puedas abrirlo."
+      "driveFileUnavailable": "No se pudo adjuntar {name} desde Drive. Puede que se haya movido o que ya no puedas abrirlo.",
+      "driveFilePending": "Espera a que se adjunte el archivo de Drive y luego envía."
     },
     "i18nComplete": {
       "authEmailRateLimit": "No se pudo enviar el correo. Vuelve a intentarlo en aproximadamente una hora.",

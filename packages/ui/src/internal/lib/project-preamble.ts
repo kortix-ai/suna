@@ -74,14 +74,18 @@ export function buildAgentRef(a: AgentRefLike): string {
   return `<agent_ref name="${escapeXmlAttr(a.name)}" />`;
 }
 
-/** A file in the project's Drive: `path` is its Drive path (`/Company/a.png`), not a sandbox path. */
+/**
+ * A file in the project's Drive: `path` is its Drive path (`/Company/a.png`),
+ * not a sandbox path; `file` is the name of the upload that carries its bytes.
+ */
 export interface DriveRefLike {
   path: string;
   name: string;
+  file: string;
 }
 
 export function buildDriveRef(d: DriveRefLike): string {
-  return `<drive_ref path="${escapeXmlAttr(d.path)}" name="${escapeXmlAttr(d.name)}" />`;
+  return `<drive_ref path="${escapeXmlAttr(d.path)}" name="${escapeXmlAttr(d.name)}" file="${escapeXmlAttr(d.file)}" />`;
 }
 
 export function buildSessionRef(s: SessionRefLike): string {
@@ -111,22 +115,33 @@ export function buildSessionRefsBlock(sessions: ReadonlyArray<SessionRefLike>): 
   return `Referenced sessions (${SESSION_REFS_HINT}):\n${refs}`;
 }
 
-/** The parenthesised hint `parseFileMentionReferences` strips with the header. */
-export const DRIVE_REFS_HINT = "files the user picked from the project's Drive, attached to this message as uploads";
-
 export function buildDriveRefsBlock(files: ReadonlyArray<DriveRefLike>): string {
   if (!files.length) return '';
   const refs = files.map(buildDriveRef).join('\n');
-  return `Referenced Drive files (${DRIVE_REFS_HINT}):\n${refs}`;
+  return `Referenced Drive files (the user picked these from the project's Drive; each one is the attached upload named in its file attribute):\n${refs}`;
 }
 
-/** One Drive ref per path, in mention order: a file mentioned twice is one file. */
-export function driveRefsOf(mentions: ReadonlyArray<MentionRefLike> | undefined): DriveRefLike[] {
+/** An attached file as `driveRefsOf` reads it: its upload name, and the Drive path it was staged from. */
+export interface DriveUploadLike {
+  name: string;
+  drivePath?: string;
+}
+
+/**
+ * One Drive ref per path, in mention order, for the paths whose upload rides
+ * with this message. A chip whose file is not attached (still downloading,
+ * refused, removed from the tray) gets no ref: the agent is never told of a
+ * file it does not have.
+ */
+export function driveRefsOf(
+  mentions: ReadonlyArray<MentionRefLike> | undefined,
+  files: ReadonlyArray<DriveUploadLike>,
+): DriveRefLike[] {
   const refs = new Map<string, DriveRefLike>();
   for (const mention of mentions ?? []) {
-    if (mention.kind === 'drive' && mention.value && mention.label && !refs.has(mention.value)) {
-      refs.set(mention.value, { path: mention.value, name: mention.label });
-    }
+    if (mention.kind !== 'drive' || !mention.value || !mention.label || refs.has(mention.value)) continue;
+    const upload = files.find((file) => file.drivePath === mention.value);
+    if (upload) refs.set(mention.value, { path: mention.value, name: mention.label, file: upload.name });
   }
   return [...refs.values()];
 }
@@ -176,16 +191,18 @@ export interface MentionRefLike {
 export function appendMentionRefs(
   text: string,
   mentions: ReadonlyArray<MentionRefLike> | undefined,
+  /** The files the message carries: a Drive mention gets a ref only when its upload is among them. */
+  files: ReadonlyArray<DriveUploadLike> = [],
 ): string {
   const labelled = (mentions ?? []).filter((mention) => mention.label);
   const sessions = labelled
     .filter((mention) => mention.kind === 'session' && mention.value)
     .map((mention) => ({ id: mention.value!, title: mention.label }));
-  const files = labelled
+  const workspaceFiles = labelled
     .filter((mention) => mention.kind === 'file')
     .map((mention) => ({ path: mention.label, name: mention.label }));
   const agents = labelled
     .filter((mention) => mention.kind === 'agent')
     .map((mention) => ({ name: mention.label }));
-  return appendAgentRefs(appendDriveRefs(appendFileRefs(appendSessionRefs(text, sessions), files), driveRefsOf(labelled)), agents);
+  return appendAgentRefs(appendDriveRefs(appendFileRefs(appendSessionRefs(text, sessions), workspaceFiles), driveRefsOf(labelled, files)), agents);
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { JSONContent } from '@tiptap/core';
 
-import { drivePathsIn, orphanedDriveUploads, withoutDriveChips } from './drive-mentions';
+import { driveUploadName, driveUploadsOf, drivePathsIn, withoutDriveChips } from './drive-mentions';
 
 const chip = (kind: string, label: string, value: string): JSONContent => ({ type: 'mention', attrs: { kind, label, value } });
 const doc = (...inline: JSONContent[]): JSONContent => ({ type: 'doc', content: [{ type: 'paragraph', content: inline }] });
@@ -31,13 +31,25 @@ describe('Drive chips in the composer document', () => {
     );
   });
 
-  test('orphanedDriveUploads: an upload whose last chip is gone; a chip that is still there keeps its upload', () => {
-    const staged = new Map([
-      ['/Company/a.png', 'upl_1'],
-      ['/Users/ana/a.png', 'upl_2'],
-      ['/Company/gone.png', 'upl_3'],
+  test('driveUploadName keeps the name unless the tray holds it; then the folder tells the two apart', () => {
+    expect(driveUploadName('logo.png', '/Company/brand/logo.png', ['a.txt'])).toBe('logo.png');
+    expect(driveUploadName('logo.png', '/Company/brand/logo.png', ['logo.png'])).toBe('logo (brand).png');
+    expect(driveUploadName('logo.png', '/Company/brand/logo.png', ['logo.png', 'logo (brand).png'])).toBe('logo (brand 2).png');
+    expect(driveUploadName('README', '/README', ['README'])).toBe('README (Drive)');
+  });
+
+  test('driveUploadsOf lists only the tray files staged from Drive, with their upload names', () => {
+    const file = new File(['x'], 'logo (brand).png');
+    expect(
+      driveUploadsOf([
+        { kind: 'local', file, localUrl: 'blob:1', isImage: true, drivePath: '/Company/brand/logo.png' },
+        { kind: 'local', file: new File(['y'], 'mine.txt'), localUrl: 'blob:2', isImage: false },
+        { kind: 'uploaded', uploadId: 'u1', filename: 'a b.png', mime: 'image/png', size: 3, isImage: false, drivePath: '/a b.png' },
+        { kind: 'remote', url: 'https://x', filename: 'r.png', mime: 'image/png', isImage: true },
+      ]),
+    ).toEqual([
+      { name: 'logo (brand).png', drivePath: '/Company/brand/logo.png' },
+      { name: 'a b.png', drivePath: '/a b.png' },
     ]);
-    expect(orphanedDriveUploads(staged, draft)).toEqual(['/Company/gone.png']);
-    expect(orphanedDriveUploads(staged, doc())).toEqual(['/Company/a.png', '/Users/ana/a.png', '/Company/gone.png']);
   });
 });
