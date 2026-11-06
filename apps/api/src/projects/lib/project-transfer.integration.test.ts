@@ -49,7 +49,7 @@ import {
 import { and, eq, getTableName, getTableColumns, is, isNull, sql } from 'drizzle-orm';
 import { PgTable } from 'drizzle-orm/pg-core';
 import { db } from '../../shared/db';
-import { archiveProjectAndRevokeTokens } from './project-deletion';
+import { archiveProjectRow } from '../../workspaces/lifecycle';
 import { decryptAccountSecret, encryptAccountSecret } from '../../secrets/account-resource';
 import { authorize } from '../../iam/authorize';
 import { getAccountModelDefaults } from '../../repositories/model-preferences';
@@ -193,7 +193,7 @@ withDb('project transfer', () => {
 
   test('a transfer winning external deletion cleanup refuses the stale archive', async () => {
     await transferProjectOwnership({ projectId: PROJECT_ID, fromAccountId: SOURCE_ACCOUNT, toAccountId: TARGET_ACCOUNT });
-    expect(await archiveProjectAndRevokeTokens(PROJECT_ID, SOURCE_ACCOUNT)).toBeUndefined();
+    expect(await archiveProjectRow(PROJECT_ID, SOURCE_ACCOUNT)).toBeUndefined();
     const [project] = await db.select().from(projects).where(eq(projects.projectId, PROJECT_ID));
     const [token] = await db.select().from(accountTokens).where(eq(accountTokens.tokenId, TOKEN_ID));
     expect(project?.status).toBe('active');
@@ -203,7 +203,7 @@ withDb('project transfer', () => {
   });
 
   test('archive revokes owned credentials and prevents a subsequent transfer', async () => {
-    const archived = await archiveProjectAndRevokeTokens(PROJECT_ID, SOURCE_ACCOUNT);
+    const archived = await archiveProjectRow(PROJECT_ID, SOURCE_ACCOUNT);
     expect(archived?.status).toBe('archived');
     expect(archived?.accountId).toBe(SOURCE_ACCOUNT);
     const [token] = await db.select().from(accountTokens).where(eq(accountTokens.tokenId, TOKEN_ID));

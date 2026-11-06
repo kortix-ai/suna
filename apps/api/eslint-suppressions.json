@@ -2832,7 +2832,7 @@
   },
   "src/shared/account-limits.ts": {
     "kortix-api/layers": {
-      "count": 3
+      "count": 2
     }
   },
   "src/shared/actor-context.ts": {

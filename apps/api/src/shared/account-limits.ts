@@ -1,19 +1,7 @@
 import { config } from '../config';
 import { invalidateAccountBilling, resolveAccountBilling } from '../billing/services/billing-cache';
 import { getPlanRecord } from '../billing/services/plan-catalog';
-import { isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
-
-// Managed cloud is paid-only: new accounts resolve to tier 'none' and must
-// subscribe before creating projects. This cap governs any legacy/backwards-compat
-// free account; any paid plan lifts it to MAX_PROJECTS_PER_ACCOUNT, and Enterprise
-// is uncapped (see maxProjectsForAccount).
-//
-// One project per free account. Sign-up auto-provisions exactly one, so a free
-// account's single slot is filled the moment it exists and "create another
-// project" is a paid action. Archived projects do not consume the slot (see
-// enforceProjectQuota), so deleting the one project frees it again.
-export const FREE_TIER_PROJECT_LIMIT = 1;
 
 type AccountLimitInfo = {
   tier: string | null;
@@ -35,20 +23,18 @@ function positiveInt(value: unknown, fallback: number) {
  * now one cache and one invalidation point.
  *
  * The effective plan = active trial overlay > stored tier. The trial overlay
- * lets an admin-issued trial lift project/rate limits for exactly the trial
- * window.
+ * lets an admin-issued trial lift rate limits for exactly the trial window.
+ * A workspace holds one project on every plan (`workspaces/one-project.ts`),
+ * so no plan sets a project count.
  */
-async function resolveAccountLimitInfo(
-  accountId: string,
-  options: { useCache?: boolean } = {},
-): Promise<AccountLimitInfo> {
+async function resolveAccountLimitInfo(accountId: string): Promise<AccountLimitInfo> {
   try {
-    const resolved = await resolveAccountBilling(accountId, { fresh: options.useCache === false });
+    const resolved = await resolveAccountBilling(accountId);
     return {
       // No credit row at all reads as 'free' HERE (not 'none'): the limit layer
       // has always treated an unprovisioned account as free rather than
-      // fail-closing it out of its one project. Entitlement gates fail closed
-      // to 'none' instead — a different question, deliberately.
+      // failing it closed. Entitlement gates fail closed to 'none' instead —
+      // a different question, deliberately.
       tier: resolved.source === 'no_account' ? 'free' : resolved.features.key,
     };
   } catch {
@@ -78,33 +64,6 @@ export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLi
     limit: multiplier > 0 ? paidLimit * multiplier : freeLimit,
     windowMs: 60_000,
   };
-}
-
-/**
- * Maximum number of projects an account may own, by plan:
- *   Free        → FREE_TIER_PROJECT_LIMIT (1)
- *   Team/legacy → MAX_PROJECTS_PER_ACCOUNT (200)
- *   Enterprise  → uncapped (negotiated)
- * When billing isn't active (local / self-hosted) the cap is lifted entirely,
- * so a missing subscription can't kneecap project creation.
- */
-export async function maxProjectsForAccount(accountId: string): Promise<number> {
-  if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
-    return Number.MAX_SAFE_INTEGER;
-  }
-  // Project creation can land on a different API task than the checkout that
-  // upgraded the account. A per-process cached free-tier answer must not reject
-  // a just-funded account on that other task, so quota enforcement reads the
-  // shared billing source fresh.
-  const tier = (await resolveAccountLimitInfo(accountId, { useCache: false })).tier ?? 'free';
-  // Exact plan-KEY equality, matching what this code did before the resolver
-  // landed. `PLAN_CATALOG.enterprise` is the only key in the `enterprise`
-  // family today, so key- and family-equality agree; widening this to
-  // `record.family === 'enterprise'` (or to an uncapped-projects entitlement)
-  // is a product decision for when a second enterprise-family plan exists, not
-  // a side effect of this refactor.
-  if (tier === 'enterprise') return Number.MAX_SAFE_INTEGER;
-  return isPaidTier(tier) ? MAX_PROJECTS_PER_ACCOUNT : FREE_TIER_PROJECT_LIMIT;
 }
 
 /**

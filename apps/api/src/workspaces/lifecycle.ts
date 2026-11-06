@@ -206,17 +206,28 @@ export async function closeWorkspace(input: { workspaceId: WorkspaceId; actorUse
   return { mode: 'closed', deletionScheduledFor: scheduledFor };
 }
 
-/** Archive one project row and revoke its project-bound tokens. */
-async function archiveProjectRow(projectId: string, accountId: string): Promise<void> {
-  const now = new Date();
-  await db
-    .update(projects)
-    .set({ status: 'archived', updatedAt: now })
-    .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId), eq(projects.status, 'active')));
-  await db
-    .update(accountTokens)
-    .set({ status: 'revoked', revokedAt: now })
-    .where(and(eq(accountTokens.projectId, projectId), eq(accountTokens.accountId, accountId), eq(accountTokens.status, 'active')));
+/**
+ * Archive one active project row of `accountId` and revoke its project-bound
+ * tokens, in one transaction (a savepoint inside the caller's). The account
+ * predicate is the ownership CAS: a project a transfer moved out of
+ * `accountId` is left intact. Returns the archived row, or `undefined` when
+ * no active row of `accountId` matched.
+ */
+export async function archiveProjectRow(projectId: string, accountId: string): Promise<typeof projects.$inferSelect | undefined> {
+  return withDbTransaction(async () => {
+    const now = new Date();
+    const [archived] = await db
+      .update(projects)
+      .set({ status: 'archived', updatedAt: now })
+      .where(and(eq(projects.projectId, projectId), eq(projects.accountId, accountId), eq(projects.status, 'active')))
+      .returning();
+    if (!archived) return undefined;
+    await db
+      .update(accountTokens)
+      .set({ status: 'revoked', revokedAt: now })
+      .where(and(eq(accountTokens.projectId, projectId), eq(accountTokens.accountId, accountId), eq(accountTokens.status, 'active')));
+    return archived;
+  });
 }
 
 /** Restore a `closing` workspace during the grace. Authorization (owners) is the caller's. */

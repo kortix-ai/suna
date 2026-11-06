@@ -150,13 +150,6 @@ export function actingTokenId(actor: Actor): string | undefined {
   return undefined;
 }
 
-/** The project a token is confined to, or null when it is unconfined. */
-export function credentialProjectId(actor: Actor): string | null {
-  const c = actor.credential;
-  if (c.kind === 'pat' || c.kind === 'agent_session') return c.projectId;
-  return null;
-}
-
 /**
  * True when this request authorizes under the agent-principal model: an agent
  * session whose grant is governed.

@@ -102,8 +102,6 @@ export function topUpBonusUsd(amountUsd: number): number {
   return step ? Math.round(amountUsd * step.percent) / 100 : 0;
 }
 
-export const MAX_PROJECTS_PER_ACCOUNT = 200;
-
 const GIB = 1024 ** 3;
 
 /**

@@ -4,7 +4,7 @@
  * A project has one end state, `status = 'archived'`, and one way to reach it:
  * `DELETE /v1/projects/:id` (projects/routes/project-settings.ts). No route
  * restores it (KRTX-3384). Two starting points:
- * - `tombstone`: only the status changed (`archiveProjectAndRevokeTokens`); the
+ * - `tombstone`: only the status changed (`archiveProjectRow`); the
  *   install, its secrets and the bot's webhook stay. Every project deleted
  *   before the delete released its bot looks like this.
  * - `deleted`: the project went through the real DELETE route.
@@ -29,7 +29,7 @@ import { and, eq, inArray, like } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { insertIntoView } from '../../__tests__/helpers/compat-views';
 import { config } from '../../config';
-import { archiveProjectAndRevokeTokens } from '../../projects/lib/project-deletion';
+import { archiveProjectRow } from '../../workspaces/lifecycle';
 import { registerProjectSettingsRoutes } from '../../projects/routes/project-settings';
 import { projectsApp } from '../../projects/surface';
 import { db } from '../../shared/db';
@@ -114,7 +114,7 @@ async function seed(f: Fixture) {
 async function deleteProject(f: Fixture) {
   const before = botCalls(f).length;
   if (f.state === 'tombstone') {
-    expect(await archiveProjectAndRevokeTokens(f.project, ACCOUNT)).toBeTruthy();
+    expect(await archiveProjectRow(f.project, ACCOUNT)).toBeTruthy();
   } else {
     const res = await asOwner('DELETE', `/v1/projects/${f.project}`);
     expect(res.status).toBe(200);

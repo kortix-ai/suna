@@ -213,10 +213,9 @@ describe('messageFor', () => {
 
   // ── Final-review FIX 2 ───────────────────────────────────────────────────
   //
-  // `messageFor`'s 403 branch used to fire for ANY 403, including
-  // `enforceProjectQuota`'s `project_limit_reached` (`apps/api/src/projects/
-  // lib/access.ts`) — telling a free-tier user (FREE_TIER_PROJECT_LIMIT = 1)
-  // who already has a project that they lack permissions they actually have.
+  // `messageFor`'s 403 branch used to fire for ANY 403, including an older
+  // API's `project_limit_reached` plan cap — telling a user who already had a
+  // project that they lacked permissions they actually had.
 
   test("FIX 2: maps a 403 project_limit_reached to the server's own quota message, not the owner/admin explanation", () => {
     const err = new ApiError(

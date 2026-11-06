@@ -196,16 +196,12 @@ const LOST_PROVISION_REASON_RE = /^(?:Provision failed: )?HTTP \d{3}(?::|$)/;
  * inline alert on `/workspaces/new` is the one surface built to carry a full sentence.
  *
  * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
- * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
- * (`apps/api/src/projects/lib/access.ts`) returns 403 too, and
- * `FREE_TIER_PROJECT_LIMIT = 1` (`apps/api/src/shared/account-limits.ts`)
- * means every free-tier user who already has one project and clicks
- * "Create a workspace…" hits this — not an edge case. The generic 403 message ("You need owner or admin
- * access…") is actively false for them: they have the role, they are simply
- * out of quota. The server's own message is reused verbatim rather than
- * inventing new copy — it already states the exact limit and the upgrade
- * path, matching what the deleted create modal's `isProjectLimitError`
- * handling reused for the same code (`provision-errors.ts`).
+ * 403 branch, and deliberately, not folded into it: an API from before the
+ * one-project workspace (Workspaces 1:1) answered the plan's project cap with
+ * that 403. Current APIs answer 409 `workspace_has_project` and no plan caps
+ * workspaces. The generic 403 message ("You need owner or admin access…")
+ * would be false for such a caller: they have the role. The server's own
+ * message is reused verbatim rather than inventing new copy.
  *
  * `provision_in_flight` (409, final-review FIX 1) also gets its own branch,
  * never the raw server text: `PROVISION_IN_FLIGHT_CODE`'s own doc comment

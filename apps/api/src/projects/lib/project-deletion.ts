@@ -4,11 +4,10 @@ import {
   getProjectGitConnection,
   getProjectGitRemote,
 } from './git';
-import { accountTokens, connectors, projectSessionConnectorBindings } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { connectors, projectSessionConnectorBindings } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ProjectGitConnectionRow, ProjectRow } from './serializers';
-import { projectsView, updateProjectRowsReturning } from '../../workspaces/rows';
 
 export interface ProjectDeletionDeps {
   getConnection(projectId: string): Promise<ProjectGitConnectionRow | null>;
@@ -60,22 +59,5 @@ export async function purgeProjectConnectors(projectId: string): Promise<void> {
       .delete(projectSessionConnectorBindings)
       .where(eq(projectSessionConnectorBindings.projectId, projectId));
     await tx.delete(connectors).where(eq(connectors.projectId, projectId));
-  });
-}
-
-/** Archive and revoke atomically; a transfer during external cleanup must win intact. */
-export async function archiveProjectAndRevokeTokens(projectId: string, accountId: string) {
-  return db.transaction(async (tx) => {
-    // The ownership CAS also locks against transfers and concurrent token mints.
-    const [archived] = await updateProjectRowsReturning(and(eq(projectsView.projectId, projectId), eq(projectsView.accountId, accountId)), { status: 'archived', updatedAt: new Date() }, tx);
-    if (!archived) return undefined;
-    await tx.update(accountTokens)
-      .set({ status: 'revoked', revokedAt: new Date() })
-      .where(and(
-        eq(accountTokens.projectId, projectId),
-        eq(accountTokens.accountId, archived.accountId),
-        eq(accountTokens.status, 'active'),
-      ));
-    return archived;
   });
 }

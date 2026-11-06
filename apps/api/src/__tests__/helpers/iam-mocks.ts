@@ -132,7 +132,6 @@ export function mockIamEngineAllowAll(
     pendingPrincipalId: (email: string) => email,
     actingPrincipal: (a: { userId: string }) => ({ type: 'user', id: a.userId }),
     actingTokenId: () => undefined,
-    credentialProjectId: () => null,
     credentialAgentGrant: () => null,
     isAgentPrincipalActor: () => false,
     credentialOnBehalfOf: () => null,

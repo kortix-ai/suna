@@ -2,7 +2,7 @@
  * Real-Postgres contract: Slack and Teams route no message to a deleted project.
  *
  * Two starting points, as in telegram/telegram-archived.integration.test.ts:
- * - `tombstone`: only the status changed (`archiveProjectAndRevokeTokens`); the
+ * - `tombstone`: only the status changed (`archiveProjectRow`); the
  *   installs, channel bindings and threads stay. Every project deleted before
  *   the delete released its channels looks like this. The routers skip it.
  * - `deleted`: the project went through the real DELETE route, which releases
@@ -14,7 +14,7 @@ import { accountMembers, accounts, chatChannelBindings, chatInstalls, chatThread
 import { and, eq, inArray, like, or } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { insertIntoView } from '../__tests__/helpers/compat-views';
-import { archiveProjectAndRevokeTokens } from '../projects/lib/project-deletion';
+import { archiveProjectRow } from '../workspaces/lifecycle';
 import { registerProjectSettingsRoutes } from '../projects/routes/project-settings';
 import { projectsApp } from '../projects/surface';
 import { db } from '../shared/db';
@@ -82,7 +82,7 @@ beforeAll(async () => {
   await install('teams', ws('tenant-only-'), TOMBSTONE);
   await install('teams', ws('tenant-many-'), TOMBSTONE, LIVE);
   await bind('teams', ws('tenant-many-'), 'conv-bound', TOMBSTONE);
-  expect(await archiveProjectAndRevokeTokens(TOMBSTONE, ACCOUNT)).toBeTruthy();
+  expect(await archiveProjectRow(TOMBSTONE, ACCOUNT)).toBeTruthy();
 });
 
 afterAll(async () => {
