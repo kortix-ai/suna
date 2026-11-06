@@ -106,7 +106,6 @@ describe('daemon-delivered initial turn authority', () => {
       token: turn.token,
       state: 'delivering',
       runtimeSessionId: null,
-      opencodeSessionId: null,
       messageId: turn.messageId,
       startedAtMs: 1234,
     });
@@ -119,7 +118,7 @@ describe('daemon-delivered initial turn authority', () => {
           'turn-token': {
             token: 'turn-token',
             state: 'delivering',
-            opencodeSessionId: 'ses_root',
+            runtimeSessionId: 'ses_root',
             messageId: 'msg_turn_1',
           },
         },
@@ -149,7 +148,7 @@ describe('daemon-delivered initial turn authority', () => {
           'token-active': {
             token: 'token-active',
             state: 'active',
-            opencodeSessionId: 'ses_a',
+            runtimeSessionId: 'ses_a',
             messageId: 'msg_a',
             startedAtMs: 1700,
           },
@@ -188,12 +187,12 @@ describe('daemon-delivered initial turn authority', () => {
           expected: {
             token: 'different',
             state: 'active',
-            opencodeSessionId: 'ses_root',
+            runtimeSessionId: 'ses_root',
           },
-          missingToken: { state: 'active', opencodeSessionId: 'ses_root' },
+          missingToken: { state: 'active', runtimeSessionId: 'ses_root' },
         },
         // The retired single-record arm is inert: only `activeTurns` is read.
-        activeTurn: { token: 'legacy-token', state: 'active', opencodeSessionId: 'ses_root' },
+        activeTurn: { token: 'legacy-token', state: 'active', runtimeSessionId: 'ses_root' },
       }),
     ).toEqual([]);
   });
@@ -302,7 +301,7 @@ describe('terminal turn handling', () => {
           ended_turns: [
             {
               token: 'turn-token',
-              opencodeSessionId: 'ses_root',
+              runtimeSessionId: 'ses_root',
               messageId: 'msg_turn_1',
               startedAtMs: 1_700_000_000_000,
             },
@@ -809,7 +808,7 @@ describe('session_turns ledger dual-write', () => {
           turn: {
             token: 'turn-token',
             state: 'delivering',
-            opencodeSessionId: 'ses_root',
+            runtimeSessionId: 'ses_root',
             messageId: 'msg_turn_1',
             startedAtMs: 1_700_000_000_000,
           },
@@ -866,7 +865,7 @@ describe('session_turns ledger dual-write', () => {
     executeResults = [[{ ...OWNER, cleared: true }]];
 
     // This function only ever sees `delivering` turns — turns nothing has
-    // confirmed reached OpenCode. `terminal` is turn_in_flight === false, which
+    // confirmed reached the runtime. `terminal` is turn_in_flight === false, which
     // the daemon answers for a prompt it never received exactly as for one that
     // finished, so 'completed' here would be a guess about the very case the
     // column exists to name.

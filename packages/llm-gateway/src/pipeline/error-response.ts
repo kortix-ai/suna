@@ -23,7 +23,7 @@ import type { GatewayAttemptFailure } from '../domain';
 // of prefill per attempt at the context sizes this gateway sees).
 //
 // Fix: any body served with a status below 500 omits every gateway-authored
-// numeric HTTP status. Bodies served with >= 500 keep them — OpenCode already
+// numeric HTTP status. Bodies served with >= 500 keep them — the runtime already
 // retries those on the status alone, so hiding the diagnostics there buys
 // nothing. The full, unredacted chain is always recorded on the trace
 // (`TraceFields.attemptFailures` → Langfuse), which is where it is actually
@@ -32,6 +32,11 @@ import type { GatewayAttemptFailure } from '../domain';
 // The gate is on `< 500`, not on the six trigger values, deliberately: the
 // trigger list is OpenCode's and can grow (1.18.14 already added 524), so
 // keying on it would rot on the next bump.
+//
+// pi has the same class of classifier: kortixd retries a step when pi-ai's
+// `isRetryableAssistantError` matches (`harness/pi/transient-retry.ts`), and
+// that matches a standalone 429|500|502|503|504|520|524 and words such as
+// `server error` anywhere in the error text.
 // ---------------------------------------------------------------------------
 
 /**
@@ -179,7 +184,7 @@ export function gatewayErrorBody(context: GatewayErrorContext): Record<string, u
   // failure — the one that produced the outer status — so on every path today
   // they equal `responseStatus` and add no digits the status line did not
   // already carry. Keep those (a 429 body that says `upstream_code: 429` tells
-  // the client nothing new, and OpenCode retries a 429 on `isRetryable`
+  // the client nothing new, and the runtime retries a 429 on its status
   // regardless). Drop only a value that DISAGREES with the outer status: that
   // is a foreign status, exactly the leak this gate exists to stop.
   const disagrees = (value: number | undefined): boolean =>

@@ -58,7 +58,7 @@ mock.module('../git', () => ({
 
 const {
   CompileAgentConfigError,
-  OpencodeAgentConfigSchema,
+  AgentBehaviorConfigSchema,
   compileAgentConfig,
   compileSelectedAgentConfig,
   manifestPiCodemode,
@@ -85,9 +85,9 @@ function parseYaml(raw: string): Record<string, unknown> {
   return parseManifestText(raw);
 }
 
-describe('OpencodeAgentConfigSchema (the agent editor\'s behavior half)', () => {
+describe('AgentBehaviorConfigSchema (the agent editor\'s behavior half)', () => {
   test('every field but `prompt` is an agent block key, so a save never writes a key the manifest refuses', () => {
-    const schemaKeys = Object.keys(OpencodeAgentConfigSchema.shape);
+    const schemaKeys = Object.keys(AgentBehaviorConfigSchema.shape);
     expect(schemaKeys).toContain('prompt');
     expect(schemaKeys.filter((key) => key !== 'prompt' && !(AGENT_BLOCK_KEYS_V3 as readonly string[]).includes(key))).toEqual([]);
   });
@@ -478,7 +478,8 @@ agents:
     expect(set.project_tools).toEqual({ lookup_order: 'tools/lookup_order.ts' });
     expect(set.kortix_tools).toBeUndefined();
     expect(set.extensions).toEqual({
-      audit: { opencode: 'extensions/audit.opencode.ts', pi: 'extensions/audit.pi.ts' },
+      // The deprecated `opencode` module is not compiled: no session loads it.
+      audit: { pi: 'extensions/audit.pi.ts' },
       web: { pi: 'npm:pi-web-access@0.30.0' },
       adapter: { pi: { source: 'extensions/adapter', extensions: ['*.ts'] } },
     });
@@ -600,7 +601,7 @@ describe('allowlist rules put * first: OpenCode applies the last matching rule',
  * (key, pattern) rule in key order, the LAST match wins. `toEqual` ignores key
  * order, so only an evaluation like this one sees the order bug.
  */
-function openCodeAction(permission: unknown, name: string, subject: string): string | undefined {
+function permissionAction(permission: unknown, name: string, subject: string): string | undefined {
   const glob = (value: string, pattern: string) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/ \.\*$/, '( .*)?')}$`, 's').test(value);
   const block = typeof permission === 'string' ? { '*': permission } : (permission as Record<string, unknown>);
   const rules = Object.entries(block).flatMap(([key, rule]) =>
@@ -615,16 +616,16 @@ describe('compileAgentConfig — the most specific rule wins on OpenCode, whatev
   test('a skills list allows each listed skill and denies the rest (the prod failure shape)', () => {
     const set = wire(compileAgentConfig({ default_agent: 'a', skills: { 'aie-os': 'skills/aie-os', probe: 'skills/probe' }, agents: { a: { prompt: 'x', skills: ['aie-os', 'probe'] } } }));
     const permission = set.agent.a!.permission;
-    expect(openCodeAction(permission, 'skill', 'aie-os')).toBe('allow');
-    expect(openCodeAction(permission, 'skill', 'probe')).toBe('allow');
-    expect(openCodeAction(permission, 'skill', 'other')).toBe('deny');
+    expect(permissionAction(permission, 'skill', 'aie-os')).toBe('allow');
+    expect(permissionAction(permission, 'skill', 'probe')).toBe('allow');
+    expect(permissionAction(permission, 'skill', 'other')).toBe('deny');
   });
 
   test('a bash map with `*` last keeps its specific rule', () => {
     const set = wire(compileAgentConfig({ default_agent: 'a', agents: { a: { prompt: 'x', permission: { bash: { 'git push *': 'ask', '*': 'allow' } } } } }));
     const permission = set.agent.a!.permission;
-    expect(openCodeAction(permission, 'bash', 'git push origin main')).toBe('ask');
-    expect(openCodeAction(permission, 'bash', 'ls')).toBe('allow');
+    expect(permissionAction(permission, 'bash', 'git push origin main')).toBe('ask');
+    expect(permissionAction(permission, 'bash', 'ls')).toBe('allow');
   });
 
   test('a tool key outranks a `*` written after it', () => {
@@ -632,8 +633,8 @@ describe('compileAgentConfig — the most specific rule wins on OpenCode, whatev
       compileAgentConfig(parseYaml('default_agent: a\nagents:\n  a:\n    prompt: Hi.\n    permission:\n      bash: ask\n      edit:\n        "*.env": deny\n        "*": allow\n      "*": allow\n')),
     );
     const permission = set.agent.a!.permission;
-    expect(openCodeAction(permission, 'bash', 'ls')).toBe('ask');
-    expect(openCodeAction(permission, 'edit', 'apps/api/.env')).toBe('deny');
-    expect(openCodeAction(permission, 'read', 'x')).toBe('allow');
+    expect(permissionAction(permission, 'bash', 'ls')).toBe('ask');
+    expect(permissionAction(permission, 'edit', 'apps/api/.env')).toBe('deny');
+    expect(permissionAction(permission, 'read', 'x')).toBe('allow');
   });
 });

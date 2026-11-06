@@ -521,7 +521,7 @@ _62 commands._
 | `h / ←` | Collapse the directory, or jump to its parent. |
 | `l / →` | Expand the directory. |
 | `/` | Filter the loaded rows by name. Esc clears it. |
-| `.` | Show or hide dot-prefixed entries (.kortix and .opencode always show). |
+| `.` | Show or hide dot-prefixed entries (.kortix always shows). |
 | `r` | Re-read every open directory from the sandbox. |
 | `y` | Copy the selected row's path to the clipboard. |
 | `J / PgDn` | Scroll the viewer down. |

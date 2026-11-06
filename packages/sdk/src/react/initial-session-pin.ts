@@ -56,11 +56,11 @@ export function readPersistedSessionPin(projectId: string, sessionId: string): s
 export function writePersistedSessionPin(
   projectId: string,
   sessionId: string,
-  opencodeSessionId: string | null | undefined,
+  runtimeSessionId: string | null | undefined,
 ): void {
-  if (!projectId || !sessionId || !opencodeSessionId) return;
+  if (!projectId || !sessionId || !runtimeSessionId) return;
   try {
-    localStorage.setItem(sessionPinStorageKey(projectId, sessionId), opencodeSessionId);
+    localStorage.setItem(sessionPinStorageKey(projectId, sessionId), runtimeSessionId);
   } catch {
     // Best-effort. Worst case the next mount re-waits on the network, exactly
     // as it did before this cache existed.

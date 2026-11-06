@@ -229,7 +229,7 @@ function sandboxTokenPathAllowed(path: string) {
   return (
     path.endsWith('/turn-stream') ||
     path.endsWith('/turn-question') ||
-    // The daemon relays OpenCode `permission.asked` so apps/api can push the
+    // The daemon relays the runtime's `permission.asked` so apps/api can push the
     // session creator. The handler re-checks sandbox, project, and session.
     /^\/v1\/projects\/[^/]+\/turn-permission$/.test(path) ||
     // The seed daemon fetches the org model catalog at PARK with its sandbox
@@ -242,11 +242,11 @@ function sandboxTokenPathAllowed(path: string) {
     // telemetry about the caller's OWN boot, and the handler re-checks that the
     // token's sandboxId matches the session it claims to be reporting for.
     path.endsWith('/boot-timeline') ||
-    // The runtime relay sends redacted OpenCode lifecycle events for its own
+    // The runtime relay sends redacted runtime lifecycle events for its own
     // session. The handler re-checks sandbox, account, project, and session.
     path.endsWith('/audit/events') ||
     // The daemon pushes its OWN session's runtime projection (the
-    // `/kortix/opencode/state` document) so the control plane can serve it
+    // `/kortix/runtime/state` document) so the control plane can serve it
     // without a sandbox hop. Write-only, about the caller's own session, and
     // the handler re-checks the token's sandbox against `session_sandboxes`
     // (sandbox id -> session -> account) before it stores anything.

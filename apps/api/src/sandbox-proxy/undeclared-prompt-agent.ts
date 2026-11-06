@@ -10,7 +10,7 @@
  *
  * The name is checked against the session's OWN project manifest before any of
  * that runs. An undeclared name is removed from the body, so the turn runs as
- * the session's own agent (OpenCode's `default_agent`) — the same thing a body
+ * the session's own agent (the manifest's `default_agent`) — the same thing a body
  * with no agent does — and the event is logged with everything needed to find
  * the sender. Removal, not refusal: the user's message is still delivered.
  *

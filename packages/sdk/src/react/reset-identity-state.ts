@@ -1,5 +1,5 @@
 import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';
-import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { resetSessionCacheOwnership } from '../browser/session-sync/session-cache-ownership';

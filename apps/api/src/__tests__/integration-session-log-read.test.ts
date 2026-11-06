@@ -3,7 +3,7 @@
  * reads over the session log (P4.2, P8.2).
  *
  * One synthetic OpenCode session is stored as the journal ingest of `fromV1` of its v1 rows
- * under producer `opencode`, as the daemon's adapter journals them. Every v1 read
+ * under producer `opencode`, as the deleted OpenCode adapter journaled them. Every v1 read
  * (`transcript?shape=sync` paged to the end, the child read, `shape=compact`, the open bundle)
  * answers from the log, `captured_at` is the log's last write, and a native (pi) thread is
  * served through `toV1`. A session with no log answers nothing saved.
@@ -19,7 +19,7 @@ import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
-import { syntheticOpencodeSession } from './helpers/synthetic-opencode-session';
+import { syntheticRuntimeSession } from './helpers/synthetic-runtime-session';
 
 const bucket = fakeSessionStorage();
 const realSupabase = await import('../shared/supabase');
@@ -47,7 +47,7 @@ const get = (path: string, token: string | null = ownerToken) =>
 const base = (sessionId = session) => `/v1/projects/${project.project_id}/sessions/${sessionId}`;
 /** One synthetic session's root and child, with one bash output over 256 kB. */
 function history(turns: number) {
-  const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns });
+  const { root, child } = syntheticRuntimeSession({ root: ROOT, child: CHILD, turns });
   const bash = root.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'bash' && (p.state as { status: string }).status === 'completed')!;
   (bash.state as { output: string }).output = WIDE_OUTPUT;
   return { root, child };

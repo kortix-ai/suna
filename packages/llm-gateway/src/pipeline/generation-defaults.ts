@@ -12,7 +12,7 @@ import { reasoningEffort as explicitReasoningEffort } from '../transports/route-
  * copy-on-write.
  *
  * This is the ONE function that merges these defaults into the wire body —
- * every client (opencode sessions, the SDK, direct /v1/chat/completions and,
+ * every client (session runtimes, the SDK, direct /v1/chat/completions and,
  * via the Anthropic-messages ingress's shared pipeline, /v1/messages) gets
  * them this same way. But it is called MORE THAN ONCE per turn: the handler
  * does NOT bake defaults into the body up front — `dispatch` (dispatch.ts)

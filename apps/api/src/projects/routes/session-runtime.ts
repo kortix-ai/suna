@@ -32,7 +32,7 @@ import { capturePersonEvent } from './product-events';
 export function registerSessionRuntimeRoutes(): void {
   // POST /v1/projects/:projectId/sessions/:sessionId/start
   // THE unified session-open endpoint. One idempotent call that provisions a
-  // missing sandbox, resumes a hibernated/idle one, and resolves the OpenCode pin
+  // missing sandbox, resumes a hibernated/idle one, and resolves the runtime session pin
   // once reachable — returning a single readiness payload { stage, sandbox,
   // runtime_session_id, retriable } the client polls until stage='ready'.
 
@@ -164,7 +164,7 @@ export function registerSessionRuntimeRoutes(): void {
 
   // POST /v1/projects/:projectId/sessions/:sessionId/restart
   // Reboot the existing sandbox in place via the provider SDK (stop+start) — the
-  // box and its disk (repo clone, deps, opencode) are kept, never removed. Only
+  // box and its disk (repo clone, deps, the runtime) are kept, never removed. Only
   // when the session has no sandbox (deleted / never provisioned) do we provision
   // a fresh one to recover it from the preserved git branch.
 

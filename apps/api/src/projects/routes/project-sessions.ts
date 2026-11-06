@@ -1012,7 +1012,7 @@ export function registerProjectSessionsRoutes(): void {
 
     // A user-set name is the AUTHORITATIVE display name. It lives in
     // metadata.custom_name — a separate key from metadata.name (the server-side
-    // auto title mirrored from OpenCode during session reads) so a rename is never
+    // auto title mirrored from the runtime during session reads) so a rename is never
     // clobbered by a later sync. Passing name: "" (or null) clears the override
     // and reverts the session to its auto title.
     const hasNameField = hasOwn(body, 'name');

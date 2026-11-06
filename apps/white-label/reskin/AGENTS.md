@@ -16,7 +16,6 @@ is the UI, and the brand is a set of CSS variable overrides.
 
 Do not add:
 
-- `@opencode-ai/sdk` imports.
 - Provider REST paths.
 - Runtime proxy URL construction.
 - Browser calls to `session.previewUrl()` or `session.proxyUrl()`.

@@ -5,7 +5,7 @@ import { lineNumber, sourceFiles } from '../../../../scripts/lib/sdk-boundary-sc
 import { scanSource as scanWhiteLabelSource } from '../../lumen/scripts/sdk-boundary.mjs';
 
 /**
- * The internal app's boundary: the white-label rules (no OpenCode SDK, no
+ * The internal app's boundary: the white-label rules (no
  * runtime internals, no hand-built runtime URLs, controls from @kortix/ui, no
  * second UI kit, curated @kortix/ui entries only, no raw transport, ...) plus
  * one stricter rule: this app has no backend, so it has no fetch at all.

@@ -16,7 +16,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { getProvider, type ProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { sandboxRuntimeEndpoint } from '../runtime-session-mapping';
 import { sessionHoldsTurnAuthority } from '../session-lifecycle/inbox-admission';
 import { sessionRuntimeFetch } from '../session-lifecycle/runtime-fetch';
 import {
@@ -183,7 +183,7 @@ function holdingAnswer(args: OpenSessionArgs, row: OpenSessionRow, externalId: s
 /** `/kortix/health?turn=1`, read fresh: the box's daemon changes during the hold. */
 async function readHealth(externalId: string, userId: string): Promise<Record<string, unknown> | null> {
   try {
-    const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+    const endpoint = await sandboxRuntimeEndpoint(externalId, userId);
     if (!endpoint) return null;
     const res = await sessionRuntimeFetch(endpoint, 'GET', '/kortix/health?turn=1', {}, HEALTH_TIMEOUT_MS);
     if (!res.ok) {

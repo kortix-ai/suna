@@ -76,7 +76,7 @@ for (const pack of ['off', 'kortix'] as const) {
     expect(button).toBeDefined();
     await act(async () => button?.click());
     expect(useSoundStore.getState().preferences).toEqual({
-      pack: pack === 'off' ? 'opencode' : 'kortix',
+      pack: pack === 'off' ? 'classic' : 'kortix',
       volume: pack === 'off' ? 0.5 : 0.7,
       events: { completion: true, send: false },
     });
@@ -86,6 +86,6 @@ for (const pack of ['off', 'kortix'] as const) {
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });
     sendWebNotification({ type: 'completion', title: 'Finished', body: 'Task finished' });
     expect(played).toHaveLength(2);
-    expect(played[1]).toBe(`/sounds/${pack === 'off' ? 'opencode' : pack}/completion.mp3`);
+    expect(played[1]).toBe(`/sounds/${pack === 'off' ? 'classic' : pack}/completion.mp3`);
   });
 }

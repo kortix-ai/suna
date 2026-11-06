@@ -43,8 +43,8 @@ export function registerTurnQuestionsRoutes(): void {
   // agent calls the `question` tool, the sandbox relays its RuntimeQuestion[]
   // (`@kortix/api-contract/transcript`) here.
   // We post a Block Kit form, block on Submit, return `answers: string[][]`,
-  // and the sandbox POSTs the same payload to opencode's
-  // /question/{requestID}/reply so the tool resumes.
+  // and the sandbox POSTs the same payload to the box's
+  // `/question/{requestID}/reply` route so the tool resumes.
 
   projectsApp.openapi(
     createRoute({
@@ -198,7 +198,7 @@ export function registerTurnQuestionsRoutes(): void {
       // extension: the reaper renews nothing for it and ends it after the wait
       // bound (`turnWaitingMaxMs`, box-reaper.ts `holdWaitingTurn`), and its box
       // is parked. The bounded-lifetime invariant depends on it. What parking
-      // used to destroy is the question itself: opencode restarts cold, so the
+      // used to destroy is the question itself: the runtime restarts cold, so the
       // user returned to a session that had forgotten what it asked. Storing it
       // out here lets the box die on time and the conversation survive it. See
       // lib/pending-questions.ts.
@@ -220,7 +220,7 @@ export function registerTurnQuestionsRoutes(): void {
           projectId,
           sessionId,
           requestId: pendingRequestId,
-          opencodeSessionId: body.runtime_session_id ?? null,
+          runtimeSessionId: body.runtime_session_id ?? null,
           questions,
           parkable,
           surfaceSessionId: await surfaceSessionIdOf(sessionId, turnQuestionSession),

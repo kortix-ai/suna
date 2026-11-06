@@ -35,6 +35,8 @@ async function createCliFixture(): Promise<{
   const sharedRoot = join(root, 'packages', 'shared');
   await mkdir(join(sharedRoot, 'src', 'host-config'), { recursive: true });
   await writeFile(join(sharedRoot, 'src', 'host-config', 'config.ts'), 'config:v1\n');
+  await mkdir(join(sharedRoot, 'src', 'utils'), { recursive: true });
+  await writeFile(join(sharedRoot, 'src', 'utils', 'string.ts'), 'string:v1\n');
   await writeFile(join(sharedRoot, 'package.json'), '{"name":"@kortix/shared"}\n');
   const binaryPath = join(cliRoot, 'dist', 'kortix');
   const attestationPath = join(cliRoot, 'dist', 'kortix-connectors-runtime.attestation.json');

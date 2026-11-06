@@ -6,7 +6,9 @@
  * 2026-08-22 carried 40 base64 screenshots (28 MB, 334k tokens) in 224
  * messages. Providers cap both dimensions, and a model reasons from the last
  * few screens, not the fortieth-last:
- *   - count: Bedrock Converse rejects >20 images per request; Anthropic caps at 100.
+ *   - count: Bedrock accepts 600 images and documents per request (probed 2026-11-06 on
+ *     Opus 5.5: 601 → "too many images and documents: 601 + 0 > 600"). 20 is a choice:
+ *     every kept image is resent, billed and held in memory on every step.
  *   - bytes: Bedrock rejects a request body over ~32 MB with "Input is too long
  *     for requested model." — the context-overflow text, at ~22k tokens
  *     (probed 2026-11-06: 31,262,126 bytes → 200, 32,029,742 bytes → 400).
@@ -120,7 +122,7 @@ export function applyImageWindow(
   let windowBytes = 0;
   for (let i = 0; i < total; i += 1) {
     count += 1;
-    windowBytes += slots[i].bytes;
+    windowBytes += slots[i]!.bytes;
     const overCount = maxCount > 0 && count > maxCount;
     const overBytes = maxBytes > 0 && windowBytes > maxBytes;
     if (!overCount && !overBytes) continue;
@@ -132,13 +134,13 @@ export function applyImageWindow(
       ((overCount && count > countAfterPrune) || (maxBytes > 0 && windowBytes > (overBytes ? keepBytes : maxBytes)))
     ) {
       count -= 1;
-      windowBytes -= slots[start].bytes;
+      windowBytes -= slots[start]!.bytes;
       start += 1;
     }
   }
 
   for (let i = 0; i < start; i += 1) {
-    const slot = slots[i];
+    const slot = slots[i]!;
     slot.content[slot.index] = { type: 'text', text: IMAGE_WINDOW_NOTICE };
   }
   return { total, dropped: start, bytes, keptBytes: windowBytes };

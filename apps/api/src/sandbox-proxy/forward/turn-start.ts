@@ -80,7 +80,7 @@ export interface TurnLifecycle {
 }
 
 // `deadline_at` is the idle-stop clock. This separate record is the durable
-// fact that a specific OpenCode turn is active. It is created immediately
+// fact that a specific runtime turn is active. It is created immediately
 // before the first upstream delivery attempt, promoted only after a confirmed
 // or ambiguous acceptance, and removed by matching terminal evidence.
 export function createTurnLifecycle(
@@ -113,10 +113,10 @@ export function createTurnLifecycle(
     try {
       turnLifecycleAccepted = await acceptSandboxTurn({ externalId: sandboxId }, turnToken);
     } catch (error) {
-      // OpenCode already accepted this non-idempotent request. Do not convert a
+      // The runtime already accepted this non-idempotent request. Do not convert a
       // post-delivery database outage into a failed send or delete the durable
       // `delivering` record. The provider-neutral reaper probes that exact
-      // token-bound record and promotes it when OpenCode reports the turn live.
+      // token-bound record and promotes it when the daemon reports the turn live.
       console.error(
         `[turn-lifecycle] acceptance persistence failed for ${sandboxId}; reaper will reconcile delivery`,
         error,
@@ -154,7 +154,7 @@ export function claimPromptDeliveryOnce(input: {
   origin: string;
 }): { promptDedupeKey: string | null } | { response: Response } {
   const { promptDelivery, incomingHeaders, sandboxId, record, requestBody, origin } = input;
-  // Dedupe OpenCode prompt delivery up-front. Claim a stable key before the retry
+  // Dedupe prompt delivery up-front. Claim a stable key before the retry
   // loop so a duplicate inbound prompt cannot enqueue the user message twice.
   //
   // The key is held in an OUTER binding so the give-up path below can release it
@@ -239,8 +239,8 @@ export async function convergeTurnStartRuntime(input: {
     prefetchedIngress.catch(() => undefined);
   }
   const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
-  // The BINARIES must not block either: the daemon, the CLI, the overlay and
-  // OpenCode are ~96 MB / ~104 MB / ~373 KB / ~167 MB. This returns
+  // The BINARIES must not block either: the daemon, the CLI and the overlay
+  // are ~96 MB / ~104 MB / ~373 KB. This returns
   // synchronously, never throws, and adds no network call to a box the API last
   // saw current — it reads two in-process maps; a cold memo fires a detached
   // health read. Do not await it.
@@ -265,8 +265,8 @@ export async function convergeTurnStartRuntime(input: {
   // The repair was attempted and DEFINITIVELY did not land for the process
   // about to answer this turn — `declined` (a turn was live, or the
   // verified swap did not boot) or `no-gateway` (the box could not even
-  // fetch the live lineup). Forwarding anyway is a guaranteed OpenCode
-  // `500 UnknownError` with no cause named (2026-09-26: reproduced three
+  // fetch the live lineup). Forwarding anyway fails the turn with no cause
+  // named (2026-09-26, on OpenCode: a `500 UnknownError` reproduced three
   // times, different opaque refs, no signal a client or an operator could
   // act on). Refuse HERE instead, with the one fact that actually explains
   // it — the model, and why the repair could not confirm it — so the
@@ -308,7 +308,7 @@ export async function syncEnvBeforeTurnStart(
   const { record, sandboxId, port, userId, origin, serviceKey, access, incomingHeaders, promptDedupeKey } = req;
   const requestedAgent = requestedPromptAgent(state.requestBody, incomingHeaders);
   // Authorization runs before the dedupe claim. Drop only the legacy
-  // 'default' sentinel so OpenCode resolves its own `default_agent` (the
+  // 'default' sentinel so the runtime resolves the manifest's `default_agent` (the
   // real default the session booted with). A *concrete* requested agent
   // stays on the authorized switch path: the caller's grant decides, and
   // the pre-prompt env sync re-scopes box and token to that agent.
@@ -339,7 +339,7 @@ export async function syncEnvBeforeTurnStart(
     // `200 {"deduplicated":true}` and the message would be silently lost.
     //
     // Safe by construction: `runPrePromptEnvSync` talks to the DAEMON's
-    // /kortix/env, never to opencode's session endpoints, and it runs
+    // /kortix/env, never to the box's `/session/...` endpoints, and it runs
     // strictly before the upstream fetch — so nothing was delivered and a
     // re-delivery cannot double-enqueue. `promptDeliveryMayHaveReachedUpstream`
     // keeps that honest for the one path that could contradict it: a retry
@@ -549,7 +549,7 @@ export async function placePromptWireId(
     sandboxAuthored ||
     state.effectiveMessageId !== null ||
     !isPromptWireIdRepairPath(remainingPath) ||
-    // No client id, nothing to place — OpenCode mints, and the read is
+    // No client id, nothing to place — the runtime mints, and the read is
     // skipped entirely so a plain body pays nothing.
     clientWireId === null
   ) return;

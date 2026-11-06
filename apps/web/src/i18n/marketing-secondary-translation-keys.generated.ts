@@ -4,8 +4,6 @@ export const MARKETING_SECONDARY_TRANSLATION_KEYS: Readonly<Record<string, strin
     'textd814d7970df3',
   '3,000+ apps in a click, plus MCP, OpenAPI, Postman, GraphQL and raw HTTP': 'text381195b0a9b3',
   '@markokraemer': 'text8ee44827f076',
-  'A model on its own answers. The harness gives it planning, tool use and multi-step runs it actually finishes — powered by OpenCode, configured by a file in the repo.':
-    'textb4d40882ef59',
   'About Kortix': 'text56d4e6956bc3',
   'Agent computer': 'texta62359767c2b',
   'Agentic harness': 'text1d8297cfb60c',
@@ -14,7 +12,6 @@ export const MARKETING_SECONDARY_TRANSLATION_KEYS: Readonly<Record<string, strin
     'textf06013f333c5',
   'Agents, skills, memory, connector config and triggers are all text in one repo. Not settings in someone else’s database — files you own.':
     'text8abce8d69fe4',
-  'An OpenCode agent: markdown, plus the tools and plugins beside it': 'text4132201cc99c',
   Apply: 'text31e392d1c037',
   'Apply to Kortix': 'textc8fece67fd58',
   'Ask for help, ask questions, redo things. Never quietly assume someone else will catch the part you skipped.':
@@ -51,8 +48,6 @@ export const MARKETING_SECONDARY_TRANSLATION_KEYS: Readonly<Record<string, strin
   'Excellent product taste, and UX and UI taste specifically.': 'texte4724df1b369',
   'From "we have a problem" to "nobody has to think about this again". If someone still has to track it, you did not own it.':
     'text33a8218145f3',
-  'Has built agents, and lives on coding agents — opencode, Codex, Claude Code, Pi, whichever you reach for.':
-    'text743f60d09cb7',
   'Has run their own product or company. The stretch matters more than the outcome.':
     'text9ddb8fcc7e8b',
   'High-quality video and motion.': 'text6c2f9c83d177',

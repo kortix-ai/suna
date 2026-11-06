@@ -188,7 +188,7 @@ export interface RuntimeComponents {
    * `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts
    * apps/kortix-sandbox-agent-server/src/harness` returns doc comments and
    * nothing else: `reconcileRuntimeAssets` handles cli, skills, agent and the
-   * harness `opencode` component, and no box has ever fetched this.
+   * selected harness's own components, and no box has ever fetched this.
    *
    * WHY IT IS NOT IMPLEMENTED, rather than merely not done yet. The supervisor
    * IS the entrypoint: it is the running shell. Replacing the file under it does
@@ -208,13 +208,13 @@ export interface RuntimeComponents {
   entrypoint?: RuntimeBinaryComponent;
   /**
    * Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane.
-   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
    */
   opencode: { version: string; source: 'npm' };
   'managed-skills': { hash: string; count: number };
   /**
    * The THIRD convergeable asset, alongside binaries and the skill overlay —
-   * added for the incident this closes: a box's `kortix` provider map is
+   * added for the incident this closes: a box's `kortix` provider map was
    * learned once, at OpenCode process start, and nothing before this made
    * "the managed lineup moved" a fact the control plane could read per box.
    * `ids` is the managed lineup's current id list — what Platinum Inference
@@ -692,7 +692,8 @@ export type RunningAssetsVerdict =
  * and neither waits on a deploy. `RUNTIME_ASSETS_BUILD` moves `build`.
  * `RUNTIME_AGENT_SELF_UPDATE` is subtler: `runningAssetsVerdict` reads it live
  * and SKIPS the agent comparison entirely while it is off, so `current` taken
- * with the switch off is a claim about the CLI, the overlay and OpenCode only.
+ * with the switch off is a claim about the CLI, the overlay and the `opencode`
+ * component only.
  * Reading the switch live is therefore necessary but not sufficient — a live
  * read cannot revisit a verdict already in the memo. Without the switch in the
  * key, turning self-update back ON leaves those narrower verdicts valid for the

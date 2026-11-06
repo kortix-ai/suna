@@ -658,14 +658,13 @@ async function main(): Promise<void> {
       out(await manifest({ url: flags.url, projectId: flags['project-id'], name: flags.name }));
       break;
     case 'ask':
-      // `slack ask` was replaced by opencode's native `question` tool. Calling
-      // opencode's `question` from any agent turn triggered from Slack
-      // surfaces the form in the same thread automatically via the
-      // sandbox-side event subscriber. The CLI keeps this case so older
-      // workflows fail loud instead of pretending to work.
+      // `slack ask` was replaced by the runtime's built-in `question` tool.
+      // The daemon reports every question to apps/api, which posts the form
+      // in the Slack thread of a Slack session. The CLI keeps this case so
+      // older workflows fail loud instead of pretending to work.
       throw new CliError(
-        "`slack ask` was removed — use opencode's built-in `question` tool. " +
-          "The Slack form is rendered automatically by the sandbox's opencode-events subscriber.",
+        "`slack ask` was removed — use the built-in `question` tool. " +
+          "In a Slack session the form is posted to the thread automatically.",
       );
     default:
       console.log(`

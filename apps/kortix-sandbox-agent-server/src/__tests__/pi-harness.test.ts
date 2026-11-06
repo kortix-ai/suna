@@ -5,7 +5,7 @@
  * openai-completions client, pointed through `KORTIX_LLM_BASE_URL` +
  * `KORTIX_TOKEN` at a local OpenAI-compatible fake that streams scripted SSE
  * chunks (text deltas, tool calls, finish reasons). Everything else is real:
- * the agent loop, the bash tool against a temp workspace, the OpenCode wire the
+ * the agent loop, the bash tool against a temp workspace, the v1 wire the
  * SDK parses, the sequenced event stream and the control-plane probes the API
  * polls.
  */
@@ -444,7 +444,7 @@ describe('pi harness', () => {
     expect(health.boot_error).toBe('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
   })
 
-  test('a prompt runs the agent with a real bash tool and lands on the OpenCode wire', async () => {
+  test('a prompt runs the agent with a real bash tool and lands on the v1 wire', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'printf hello-from-pi > note.txt && cat note.txt' } }, { text: 'Wrote the note.' }],
     })
@@ -487,7 +487,7 @@ describe('pi harness', () => {
     expect(reply.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'Wrote the note.' })
     expect((reply.info.time as { completed?: number }).completed).toBeGreaterThan(0)
 
-    // The raw OpenCode list and single-message read the API uses to prove a landing.
+    // The raw message list and single-message read the API uses to prove a landing.
     const raw = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
     expect(raw.map((m) => m.info.id)).toEqual(page.messages.map((m) => String(m.info.id)))
     expect((await r.user(`/session/${root}/message/${messageID}`)).status).toBe(200)
@@ -533,7 +533,7 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
   })
 
-  // OpenCode `noReply` (the first message of a conversation with people, a
+  // A `noReply` prompt (the first message of a conversation with people, a
   // released Stop batch): the message joins the conversation and no turn runs.
   // Dev 2026-10-01: pi ignored it, answered an ask meant for a person, and the
   // turn was then aborted.
@@ -1239,7 +1239,7 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     const tool = frames.find((frame) => frame.type === 'message.part.updated' && (frame.properties.part as { type?: string })?.type === 'tool')
     expect(tool).toBeDefined()
-    // The shared sanitizer (the same one OpenCode's events go through) turns it into a ledger row.
+    // The shared sanitizer (`harness/shared/audit-relay.ts`) turns it into a ledger row.
     const event = sanitizeRuntimeEvent(tool!)
     expect(event).toMatchObject({ runtime_session_id: root, type: 'message.part.updated' })
     expect(event!.tool_call_id).toBeTruthy()
@@ -1432,7 +1432,7 @@ describe('pi harness', () => {
     // The retried request re-sends the conversation without the cut reply.
     expect(JSON.stringify(gateway.sent.at(-1))).not.toContain('half an ans')
 
-    // The stream shows OpenCode's retry status between attempts and never a session.error.
+    // The stream shows the v1 retry status between attempts and never a session.error.
     const text = await readSse(events, (t) => t.includes('Full answer.') && t.includes('event: session.idle'))
     expect(text).not.toContain('event: session.error')
     const statuses = text

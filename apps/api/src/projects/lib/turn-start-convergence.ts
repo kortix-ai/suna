@@ -496,8 +496,9 @@ export async function convergeConfigIfBehind(
 // ── The runtime-asset lane ──────────────────────────────────────────────────
 //
 // NEITHER CONFIG NOR BINARIES BLOCK A TURN. Config converges after a turn
-// (`convergeConfigIfBehind` above). The daemon, the CLI, the managed-skill
-// overlay and OpenCode are ~96 MB, ~104 MB, ~373 KB and ~167 MB; a box one turn
+// (`convergeConfigIfBehind` above). The daemon, the CLI and the managed-skill
+// overlay are ~96 MB, ~104 MB and ~373 KB (an old OpenCode box also carries
+// OpenCode, ~167 MB); a box one turn
 // behind on them is the state that already exists today, and a box that makes
 // the user wait for those bytes is a regression. So everything below DETECTS
 // and SCHEDULES. It never applies, and it is never awaited on the send path.

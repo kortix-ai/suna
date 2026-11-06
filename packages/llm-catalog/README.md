@@ -16,7 +16,7 @@ Kortix managed models are a provider like any other, Platinum Inference, paid fr
 
 Retired ids that stored sessions may still carry (`LEGACY_MANAGED_IDS`, `RETIRED_MANAGED_MODEL_IDS`) stay in the API, so an old session moves to its successor.
 
-The gateway answers every overflow as HTTP 400 `context_length_exceeded`, including an error as the first `data:` frame of a stream (`packages/llm-gateway/src/http/call-upstream.ts`). OpenCode reads that code as a context overflow and compacts.
+The gateway answers every overflow as HTTP 400 `context_length_exceeded`, including an error as the first `data:` frame of a stream (`packages/llm-gateway/src/http/call-upstream.ts`). pi reads the error as a context overflow (`isContextOverflow`), compacts and retries the attempt once (kortixd `harness/pi/runtime.ts`).
 
 ## Catalog
 

@@ -31,7 +31,7 @@ import {
   type ExtensionV3,
   KORTIX_SKILL_NAMES,
   type ManifestV3,
-  OPENCODE_BUILTIN_AGENTS_V3,
+  RUNTIME_BUILTIN_AGENTS,
   excludedNamesV3,
   grantedNamesV3,
   isEveryGrant,
@@ -88,7 +88,7 @@ const BEHAVIOR_KEYS = ['description', 'mode', 'model', 'variant', 'temperature',
 /** The agent-config editor's wire schema for the `behavior` half of a PUT
  *  body: the behavior keys of an `agents.<name>` block, typed for their real
  *  shapes, plus `prompt` (the prompt text). */
-export const OpencodeAgentConfigSchema = z
+export const AgentBehaviorConfigSchema = z
   .object({
     description: z.string().max(2000).optional(),
     mode: z.enum(['primary', 'subagent', 'all']).optional(),
@@ -318,7 +318,7 @@ function compileManifest(
     throw new CompileAgentConfigError(`Agent "${selected}" is off. ${manifestIssueSummary(issues.filter((i) => i.severity === 'error' && !i.unknownKey && i.path.startsWith(`agents.${selected}.`)))}`, selected);
   }
   // Only declared agents run: OpenCode's own build/plan/general/explore are off.
-  for (const builtin of OPENCODE_BUILTIN_AGENTS_V3) {
+  for (const builtin of RUNTIME_BUILTIN_AGENTS) {
     if (!blocks[builtin]) agent[builtin] = { disable: true };
   }
 
@@ -336,7 +336,13 @@ function compileManifest(
   }
 
   const used = new Set(names.flatMap((name) => agent[name]!.extensions ?? []));
-  const compiledExtensions = Object.fromEntries(Object.entries(extensions).filter(([name]) => used.has(name)));
+  // Only pi's implementation compiles: kortix.yaml still accepts an extension's
+  // `opencode` module with a deprecation warning, and no session loads it.
+  const compiledExtensions = Object.fromEntries(
+    Object.entries(extensions)
+      .filter(([name]) => used.has(name))
+      .map(([name, entry]) => [name, entry.pi === undefined ? {} : { pi: entry.pi }]),
+  );
   const tools = projectTools(m.tools);
 
   const primary = selected ?? (typeof m.default_agent === 'string' ? m.default_agent : undefined);

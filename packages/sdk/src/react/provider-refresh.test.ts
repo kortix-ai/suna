@@ -70,7 +70,7 @@ describe('refreshProjectProviderState — key wiring', () => {
 // models do not come from `['project-providers', id, 'gateway']`'s own fetcher
 // — that fetcher is a PROJECTION. The bytes come from `/model-picker`, cached
 // one key away under `qk.project.modelPicker(id)` and read through
-// `queryClient.fetchQuery` (see use-opencode-sessions/providers.ts, which
+// `queryClient.fetchQuery` (see use-runtime-sessions/providers.ts, which
 // routes through the shared entry so a session open makes ONE request instead
 // of two). `fetchQuery` honours staleTime, and `modelPicker` is the `config`
 // tier — 60s. So re-running the projection inside that window re-read the
@@ -82,7 +82,7 @@ describe('refreshProjectProviderState — the gateway catalog behind the picker'
   const PROJECT_ID = 'proj_1';
 
   /**
-   * The real shape from `use-opencode-sessions/providers.ts`: the gateway
+   * The real shape from `use-runtime-sessions/providers.ts`: the gateway
    * provider entry is `staleTime: Infinity`, and its queryFn reads the catalog
    * through the SHARED `qk.project.modelPicker` entry at the `config` tier.
    */

@@ -98,7 +98,7 @@ function fakeDaemon(opts: {
     },
     pushGovernance: async (input) => {
       pushes.push(input);
-      return (opts.push ?? { applied: true, opencodeReload: 'restarted', opencodeTurnEnded: false }) as never;
+      return (opts.push ?? { applied: true, runtimeReload: 'restarted', runtimeTurnEnded: false }) as never;
     },
     latestEtag: async () => 'ffff',
     sleep: async () => {},

@@ -55,7 +55,7 @@ export function useSpaceMentionSource(projectId: string, space: ProjectSpace | u
     const describe = (name: string) => configAgents.find((agent) => agent.name === name)?.description ?? null;
     const own = space.kind === 'dm' ? (space.dm_agent_name ? [space.dm_agent_name] : []) : (space.agents ?? []);
     // No agent list: the project's default answers here, so it reads as in the space.
-    const projectDefault = config?.default_agent ?? config?.open_code_default_agent ?? null;
+    const projectDefault = config?.default_agent ?? null;
     const inSpace = own.length > 0 ? own : projectDefault ? [projectDefault] : [];
     const agents = [
       ...inSpace.map((name) => ({ name, label: agentLabel(name), description: describe(name), inSpace: true })),

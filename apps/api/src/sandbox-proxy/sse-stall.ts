@@ -9,11 +9,11 @@
  * same dead address for the rest of the TTL. Nothing logs it either: the api
  * suppresses long-lived 200 `/global/event` requests as healthy noise.
  *
- * A zero-byte SSE stream is that failure's exact signature. opencode writes
+ * A zero-byte SSE stream is that failure's exact signature. The runtime writes
  * an event immediately on a real connection (`server.connected`), and the
  * sandbox daemon additionally injects a keepalive event within 20s of silence
  * (`apps/kortix-sandbox-agent-server/src/routes/proxy/sse-keepalive.ts`) — so a stream
- * that closed without EVER delivering a byte did not reach a live opencode.
+ * that closed without EVER delivering a byte did not reach a live runtime.
  * This module records that outcome per `sandboxId:port`, and the proxy's next
  * `/global/event` connect for that sandbox consumes the mark to bypass the
  * ingress cache and re-resolve. One provider call per silent stream, none on

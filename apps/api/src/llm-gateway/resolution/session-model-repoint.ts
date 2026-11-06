@@ -14,10 +14,10 @@
  * THE DECISION. Re-point, at the SAME boot chokepoint config-releases uses
  * ("once per boot/converge"): `buildSessionSandboxEnvVars` is the one
  * function every provisioning path (create, restart, resume, open/ensure)
- * already funnels through to build `KORTIX_OPENCODE_MODEL` — so this is
+ * already funnels through to build `KORTIX_MODEL` — so this is
  * called from there, not from each of its three call sites separately, and
- * not again at turn start (a session that changes model mid-run restarts
- * opencode anyway; re-pointing there too would duplicate this exact write).
+ * not again at turn start (re-pointing there too would duplicate this exact
+ * write).
  * Idempotent: once the stored id is servable again, `isRetiredManagedModelId`
  * is false and this is a no-op.
  *
@@ -50,7 +50,7 @@ export interface RepointModelSubject {
 }
 
 /**
- * Returns the opencode model ref to boot with: `sessionModelRef` unchanged,
+ * Returns the session model ref to boot with: `sessionModelRef` unchanged,
  * or a durably re-pointed replacement. Never throws — a resolution hiccup
  * just keeps the session on its current (possibly still-dead) pin, and the
  * turn's own `model_retired` error remains the fallback explanation.
