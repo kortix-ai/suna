@@ -174,6 +174,45 @@ withDb('workspaces identity', () => {
     expect(await projectName(ARCHIVED_PROJECT)).toBe('Synthetic archived');
   });
 
+  // The M2 rollback (header of 20261105203911000_workspaces_mark_and_name):
+  // a bare UPDATE fires accounts_name_sync and renames the 1:1 project to the
+  // old account name; the documented statement disables that trigger.
+  test('the documented M2 name rollback restores account names and keeps project names', async () => {
+    const backup = sql`INSERT INTO kortix.workspace_name_backups (account_id, old_name, new_name)
+      VALUES (${ONE_ACCOUNT}::uuid, 'Synthetic old account name', 'Synthetic one')
+      ON CONFLICT (account_id) DO UPDATE SET old_name = EXCLUDED.old_name, new_name = EXCLUDED.new_name`;
+    const bare = sql`UPDATE kortix.accounts a SET name = b.old_name
+      FROM kortix.workspace_name_backups b WHERE a.account_id = b.account_id AND a.account_id = ${ONE_ACCOUNT}::uuid`;
+    try {
+      // The bare statement damages the project name.
+      await db.execute(backup);
+      await db.transaction(async (tx) => {
+        await tx.execute(bare);
+        expect(await tx.execute(sql`SELECT name FROM kortix.projects WHERE project_id = ${ONE_PROJECT}::uuid`))
+          .toMatchObject([{ name: 'Synthetic old account name' }]);
+        tx.rollback();
+      }).catch((err) => {
+        if (!(err instanceof Error) || !/rollback/i.test(err.message)) throw err;
+      });
+      expect(await projectName(ONE_PROJECT)).toBe('Synthetic one');
+
+      // The documented statement restores the account name only.
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+        await tx.execute(sql`ALTER TABLE kortix.accounts DISABLE TRIGGER accounts_name_sync`);
+        await tx.execute(bare);
+        await tx.execute(sql`ALTER TABLE kortix.accounts ENABLE TRIGGER accounts_name_sync`);
+      });
+      expect(await accountName(ONE_ACCOUNT)).toBe('Synthetic old account name');
+      expect(await projectName(ONE_PROJECT)).toBe('Synthetic one');
+      // The trigger is on again: a later account rename still syncs.
+      await db.update(accounts).set({ name: 'Synthetic after rollback' }).where(eq(accounts.accountId, ONE_ACCOUNT));
+      expect(await projectName(ONE_PROJECT)).toBe('Synthetic after rollback');
+    } finally {
+      await db.execute(sql`DELETE FROM kortix.workspace_name_backups WHERE account_id = ${ONE_ACCOUNT}::uuid`);
+    }
+  });
+
   test('a legacy account and its projects keep independent names', async () => {
     await db.update(projects).set({ name: 'Synthetic legacy renamed' }).where(eq(projects.projectId, LEGACY_P1));
     expect(await accountName(LEGACY_ACCOUNT)).toBe('Synthetic legacy');

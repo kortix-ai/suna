@@ -25,9 +25,20 @@
 // Re-runnable: (a) only touches unmarked rows; (b) keeps the FIRST backup row
 // per account (ON CONFLICT DO NOTHING), so old_name is always the original.
 //
-// ROLL BACK the names (no down migration, repo policy):
+// ROLL BACK the names (no down migration, repo policy). The M1 trigger
+// accounts_name_sync copies accounts.name onto the account's only active
+// project, so a bare UPDATE would rename ~8k projects to the old account
+// names, with no backup of the project names. Disable that one trigger for
+// the transaction (ALTER TABLE ... DISABLE TRIGGER takes SHARE ROW EXCLUSIVE:
+// writes to kortix.accounts wait, reads do not):
+//   BEGIN;
+//   SET LOCAL lock_timeout = '5s';
+//   ALTER TABLE kortix.accounts DISABLE TRIGGER accounts_name_sync;
 //   UPDATE kortix.accounts a SET name = b.old_name
 //     FROM kortix.workspace_name_backups b WHERE a.account_id = b.account_id;
+//   ALTER TABLE kortix.accounts ENABLE TRIGGER accounts_name_sync;
+//   COMMIT;
+// Check before COMMIT: projects.name of those accounts is unchanged.
 
 export const shorthands = undefined;
 
