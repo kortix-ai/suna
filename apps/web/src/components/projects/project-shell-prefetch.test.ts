@@ -95,7 +95,7 @@ describe('prefetchProjectShellReads', () => {
   });
 
   /**
-   * KRTX-2436: the prefetch runs on EVERY navigation to `/projects/<id>`, and
+   * KRTX-2436: the prefetch runs on EVERY navigation to `/workspaces/<id>`, and
    * its prefetch refetches an entry that already settled as error without
    * data — so returning to the gone screen re-asked its final 404 even after
    * the mounted hooks stood down. The contract owns retry policy: the prefetch

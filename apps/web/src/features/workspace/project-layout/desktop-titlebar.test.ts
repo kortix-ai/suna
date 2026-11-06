@@ -359,7 +359,7 @@ describe('nothing re-hard-codes the band', () => {
   });
 
   test('pages without a titlebar owner get a full-height root drag band', () => {
-    // Auth, `/projects`, and `/new` have no row in the band. The 6px strip was
+    // Auth, `/workspaces`, and `/workspaces/new` have no row in the band. The 6px strip was
     // their only drag area.
     expect(css).toMatch(
       /body:not\(:has\(\[data-kx-titlebar-owner\]\)\) \.kx-desktop-chrome \{\s*height: max\(6px, var\(--kx-titlebar-inset\)\);/,
@@ -375,7 +375,7 @@ describe('nothing re-hard-codes the band', () => {
     // The strip is fixed at z-index 9999 and Back at z-50. A click in Back's
     // no-drag rect reaches the page, and the page hit test picks the topmost
     // box. The grown strip and its child must be transparent to that test, or
-    // Back is dead on auth, `/projects`, `/new`, and onboarding.
+    // Back is dead on auth, `/workspaces`, `/workspaces/new`, and onboarding.
     const grown = css.match(
       /html\[data-desktop-platform='macos'\]\s+body:not\(:has\(\[data-kx-titlebar-owner\]\)\)\s+\.kx-desktop-chrome,\s*html\[data-desktop-platform='macos'\]\s+body:not\(:has\(\[data-kx-titlebar-owner\]\)\)\s+\.kx-desktop-chrome\s+>\s+\* \{([^}]*)\}/,
     );

@@ -5,7 +5,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 /**
- * `/new` name field: the too-long message must be reachable for TYPED input.
+ * `/workspaces/new` name field: the too-long message must be reachable for TYPED input.
  *
  * The field used to carry `maxLength={120}`, so the browser silently truncated
  * typed and pasted names at 120 characters — the documented "Name must be 120
@@ -20,7 +20,7 @@ mock.module('next/navigation', () => ({
   useRouter: () => ({ push: () => {}, replace: () => {}, back: () => {}, prefetch: () => {} }),
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
-  usePathname: () => '/new',
+  usePathname: () => '/workspaces/new',
 }));
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({

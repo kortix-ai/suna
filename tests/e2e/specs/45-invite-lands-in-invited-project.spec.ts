@@ -68,11 +68,11 @@ test('45 — accepting a project invite lands in the invited project, not the re
     });
     projectIds.push(scratch.id);
 
-    await installBrowserSessionDirect(page, inviteeAuth, `/projects/${scratch.id}`, authOptions);
+    await installBrowserSessionDirect(page, inviteeAuth, `/workspaces/${scratch.id}`, authOptions);
     await selectAccountForUi(page, inviteeAccount);
-    await page.goto(`/projects/${scratch.id}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`/workspaces/${scratch.id}`, { waitUntil: 'domcontentloaded' });
     await dismissOnboarding(page);
-    await expect(page).toHaveURL(new RegExp(`/projects/${scratch.id}`));
+    await expect(page).toHaveURL(new RegExp(`/workspaces/${scratch.id}`));
 
     await page.goto(`/invites/${invited.invite_id}`, { waitUntil: 'domcontentloaded' });
     // The page names the project and the role, not "a team" (KRTX-1731).
@@ -85,7 +85,7 @@ test('45 — accepting a project invite lands in the invited project, not the re
     await page.getByRole('button', { name: 'Accept' }).click();
     expect((await accepted).status()).toBe(200);
 
-    await expect(page).toHaveURL(new RegExp(`/projects/${website.id}(\\?|$)`), { timeout: 30_000 });
+    await expect(page).toHaveURL(new RegExp(`/workspaces/${website.id}(\\?|$)`), { timeout: 30_000 });
   } finally {
     for (const id of projectIds) await deleteDatabaseProject(env, id).catch(() => undefined);
     if (invitee) await deleteAuthUser(invitee.id, authOptions).catch(() => undefined);

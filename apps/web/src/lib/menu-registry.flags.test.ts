@@ -39,7 +39,7 @@ describe('menu registry feature-flag gating', () => {
   test('Review Center is reachable with no flag and removed features stay absent', () => {
     // Review graduated out of the flag system on 2026-09-02. Since 2026-10-17
     // (#10124) it was a Customize tab; since 2026-11-04 it is its own page,
-    // `/projects/<id>/review`, with no flag. Voice and Marketplace
+    // `/workspaces/<id>/review`, with no flag. Voice and Marketplace
     // have no flag any more: both were removed from the product.
     const keys = CAPABILITY_TABS.map((tab) => tab.key);
     expect(keys).toContain('review');
@@ -49,7 +49,7 @@ describe('menu registry feature-flag gating', () => {
     const reviewRow = menuRegistry.find((item) => item.id === 'proj-review-inbox');
     expect(reviewRow).toBeDefined();
     expect(reviewRow?.requiresFlag).toBeUndefined();
-    expect(reviewRow?.href).toBe('/projects/{projectId}/review');
+    expect(reviewRow?.href).toBe('/workspaces/{projectId}/review');
 
     // None of them is a settings tab any more, so the derived palette list
     // must not offer one — that would open the overlay on nothing.

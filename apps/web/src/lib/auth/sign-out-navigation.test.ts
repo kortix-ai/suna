@@ -92,13 +92,13 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
     to: 'const handleSetTheme = useCallback(',
   },
   {
-    name: "/projects/start's stuck-state escape hatch",
+    name: "/workspaces/start's stuck-state escape hatch",
     file: 'app/[locale]/(app)/workspaces/start/page.tsx',
     from: 'function StartSignOutButton()',
     to: 'function ProjectStartError(',
   },
   {
-    name: "/new's Log out",
+    name: "/workspaces/new's Log out",
     file: 'features/workspace/new/new-workspace-page.tsx',
     // The control moved into `AccountTopBar` (#8286); the page owns only the
     // `onLogOut` handler it passes in, so the slice is that handler.
@@ -430,7 +430,7 @@ describe('the three bare logout controls now say something is happening', () => 
       holdsDialog: true,
     },
     {
-      name: "/new's Log out",
+      name: "/workspaces/new's Log out",
       file: 'features/workspace/account-top-bar.tsx',
       handler: ['disabled={signingOut}', 'onSelect={onLogOut}'],
       control: ['disabled={signingOut}', '</button>'],

@@ -569,7 +569,7 @@ describe('runCreate: the full create() orchestration', () => {
    * The create's handoff contract (KRTX-1419): a successful create must land
    * the user on the project they just created — it stamps the project
    * onboarded (the same PATCH the onboarding chat's kickoff uses) and then
-   * navigates to `/projects/<id>`, which opens on the usual home.
+   * navigates to `/workspaces/<id>`, which opens on the usual home.
    */
   test('on success, stamps the project onboarded, then hands off to the project page', async () => {
     const stamps: string[] = [];
@@ -1527,7 +1527,7 @@ describe('create-repo under a personal GitHub account', () => {
  * The API's edge middleware sends every 502 as a 503 with the body kept
  * (`apps/api/src/index.ts`, EDGE_REWRITTEN_STATUSES). Prod: create-repo
  * answered `503 {"error":"GitHub /user/repos failed (403): Resource not
- * accessible by integration"}` and `/new` said managed git is not set up.
+ * accessible by integration"}` and `/workspaces/new` said managed git is not set up.
  */
 describe('an edge-rewritten 502 (503 with an upstream error body)', () => {
   const err = () =>

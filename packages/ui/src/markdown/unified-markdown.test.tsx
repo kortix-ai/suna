@@ -692,12 +692,12 @@ describe('UnifiedMarkdown — a link to a workspace file', () => {
       withIntl(
         <UnifiedMarkdown
           trust="agent"
-          content="[home](/projects/p1) and [site](https://kortix.com/a.pdf)"
+          content="[home](/workspaces/p1) and [site](https://kortix.com/a.pdf)"
         />,
       ),
     );
 
-    expect(html).toContain('href="/projects/p1"');
+    expect(html).toContain('href="/workspaces/p1"');
     expect(html).toContain('href="https://kortix.com/a.pdf"');
     expect(html).not.toContain('<button');
   });

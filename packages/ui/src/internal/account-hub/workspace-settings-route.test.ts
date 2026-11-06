@@ -11,25 +11,25 @@ function project(id: string, accountId: string, overrides: Partial<KortixProject
 
 describe('workspaceSettingsHref — an old hub link opens a workspace section', () => {
   test('members lands on People › Members', () => {
-    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'members' }))).toBe('/projects/p1/admin/members');
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'members' }))).toBe('/workspaces/p1/admin/members');
   });
 
   test('every renamed tab lands on its workspace section, drill-downs kept', () => {
-    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'settings' }))).toBe('/projects/p1/admin/general');
-    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'tokens' }))).toBe('/projects/p1/admin/api-keys');
-    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'billing' }))).toBe('/projects/p1/admin/plan');
-    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'usage' }))).toBe('/projects/p1/admin/usage');
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'settings' }))).toBe('/workspaces/p1/admin/general');
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'tokens' }))).toBe('/workspaces/p1/admin/api-keys');
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'billing' }))).toBe('/workspaces/p1/admin/plan');
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'usage' }))).toBe('/workspaces/p1/admin/usage');
     expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'access-projects', project: 'p1' }))).toBe(
-      '/projects/p1/admin/access?accountProject=p1',
+      '/workspaces/p1/admin/access?accountProject=p1',
     );
     expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'members', member: 'u9' }))).toBe(
-      '/projects/p1/admin/members?accountMember=u9',
+      '/workspaces/p1/admin/members?accountMember=u9',
     );
   });
 
   test('no tab, or a tab that no longer exists, opens the settings root', () => {
-    expect(workspaceSettingsHref('p1', hubTarget('a1'))).toBe('/projects/p1/admin');
-    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'gone' }))).toBe('/projects/p1/admin');
+    expect(workspaceSettingsHref('p1', hubTarget('a1'))).toBe('/workspaces/p1/admin');
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'gone' }))).toBe('/workspaces/p1/admin');
   });
 });
 
@@ -58,9 +58,9 @@ describe('pickWorkspaceForAccount — which workspace an account link means', ()
 
 describe('routeProjectIdOf', () => {
   test('reads the workspace id of a project route, with or without a locale', () => {
-    expect(routeProjectIdOf('/projects/p1/sessions/s1')).toBe('p1');
-    expect(routeProjectIdOf('/de/projects/p1')).toBe('p1');
-    expect(routeProjectIdOf('/projects/start')).toBeNull();
+    expect(routeProjectIdOf('/workspaces/p1/sessions/s1')).toBe('p1');
+    expect(routeProjectIdOf('/de/workspaces/p1')).toBe('p1');
+    expect(routeProjectIdOf('/workspaces/start')).toBeNull();
     expect(routeProjectIdOf('/settings')).toBeNull();
   });
 });

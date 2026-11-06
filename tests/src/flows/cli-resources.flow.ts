@@ -91,7 +91,7 @@ flow(
       await ctx.step('kortix projects open prints the dashboard URL without changing state', async () => {
         const result = await sandbox.run(['projects', 'open', project.id]);
         requireExit(result, 0, 'kortix projects open');
-        if (!result.stdout.includes(`/projects/${project.id}`)) {
+        if (!result.stdout.includes(`/workspaces/${project.id}`)) {
           throw new Error(`projects open printed the wrong URL: ${result.stdout}`);
         }
       });

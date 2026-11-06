@@ -823,7 +823,7 @@ function pointerPage(configure?: (window: Window) => void) {
 }
 
 test("live pointer: reported only while the parent tracks it, as an element number and fractions", async () => {
-  const page = pointerPage(loadedBy(`${HOST}/projects/p/sessions/s`));
+  const page = pointerPage(loadedBy(`${HOST}/workspaces/p/sessions/s`));
   await page.flush();
   page.move(110, 55);
   await page.flush();
@@ -860,7 +860,7 @@ test("live pointer: reported only while the parent tracks it, as an element numb
 });
 
 test("live pointer: `track` from any origin but the referrer's is ignored", async () => {
-  const page = pointerPage(loadedBy(`${HOST}/projects/p/sessions/s`));
+  const page = pointerPage(loadedBy(`${HOST}/workspaces/p/sessions/s`));
   await page.flush();
   // Another site that frames this page is `window.parent` too: only its origin differs.
   page.send({ type: "track", pointer: true }, undefined, "https://other.example.test");

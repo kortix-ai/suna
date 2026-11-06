@@ -23,7 +23,7 @@ describe('WorkspaceSwitcher account menu', () => {
   /**
    * KRTX-1810: inside a project the shell had no signed-in user
    * control at all — the "Logged in as" identity existed only on the account
-   * top bar of /projects and /new, and the switcher menu opened straight on
+   * top bar of /workspaces and /new, and the switcher menu opened straight on
    * the workspace sub-menu. The switcher is the shell's one "you" surface, so
    * its menu opens on the identity read from the auth session, reusing the
    * same copy the account pages show.

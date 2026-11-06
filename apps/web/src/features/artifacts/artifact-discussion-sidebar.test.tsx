@@ -333,7 +333,7 @@ test('Send names the default agent, retries one batch id, and offers the session
   });
   expect(toasts.map((toast) => toast.message)).toEqual(['Comments sent to writer']);
   toasts[0]!.actions!.find((action) => action.label === 'Open session')!.onClick();
-  expect(pushed).toEqual(['/projects/project/sessions/session']);
+  expect(pushed).toEqual(['/workspaces/project/sessions/session']);
 });
 
 test('the chosen agent goes to the send call', async () => {

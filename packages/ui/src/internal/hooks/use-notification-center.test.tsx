@@ -288,7 +288,7 @@ describe('useNotificationHostGate', () => {
 });
 
 /**
- * On `/projects` the host gate scans the query cache. Its child, the
+ * On `/workspaces` the host gate scans the query cache. Its child, the
  * notification center, builds its inbox query during render, and the cache
  * reports that at once. When the scanned answer changed meanwhile, the gate
  * must not re-render its component in the middle of the child's render

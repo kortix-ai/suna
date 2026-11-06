@@ -67,7 +67,7 @@ function apply(next: string) {
 beforeEach(() => {
   calls.length = 0;
   useAccountPanelStore.setState({ pushedEntry: false });
-  at('/projects/p_1');
+  at('/workspaces/p_1');
 });
 
 afterEach(() => {
@@ -101,58 +101,58 @@ describe('accountPanelUrl — a param on the page you are on', () => {
   const target = hubTarget('acc_1', { tab: 'members' });
 
   test('the path never moves, and the hub keys are prefixed', () => {
-    expect(accountPanelUrl('/projects/p_1/sessions/s_1', target)).toBe(
-      '/projects/p_1/sessions/s_1?accountId=acc_1&accountTab=members',
+    expect(accountPanelUrl('/workspaces/p_1/sessions/s_1', target)).toBe(
+      '/workspaces/p_1/sessions/s_1?accountId=acc_1&accountTab=members',
     );
   });
 
   test("the page's own query survives", () => {
-    expect(accountPanelUrl('/projects/p_1?view=grid', target)).toBe(
-      '/projects/p_1?view=grid&accountId=acc_1&accountTab=members',
+    expect(accountPanelUrl('/workspaces/p_1?view=grid', target)).toBe(
+      '/workspaces/p_1?view=grid&accountId=acc_1&accountTab=members',
     );
   });
 
   // The reason for the prefix: the modal writes onto whatever page you are on,
   // so a bare `tab`/`project` would take a name any page might want.
   test("a page's own tab and project params are left completely alone", () => {
-    const url = accountPanelUrl('/projects/p_1?tab=logs&project=x', target);
+    const url = accountPanelUrl('/workspaces/p_1?tab=logs&project=x', target);
     expect(url).toContain('tab=logs');
     expect(url).toContain('project=x');
     expect(url).toContain('accountTab=members');
-    expect(accountPanelClosedUrl(url)).toBe('/projects/p_1?tab=logs&project=x');
+    expect(accountPanelClosedUrl(url)).toBe('/workspaces/p_1?tab=logs&project=x');
   });
 
   // Opening Members, then Billing, must not leave `accountMember=` behind
   // pointing at someone you are no longer looking at.
   test('a stale drill-down from a previous open is dropped, not merged', () => {
-    const from = '/projects/p_1?accountId=acc_1&accountTab=members&accountMember=u_1';
+    const from = '/workspaces/p_1?accountId=acc_1&accountTab=members&accountMember=u_1';
     expect(accountPanelUrl(from, hubTarget('acc_1', { tab: 'billing' }))).toBe(
-      '/projects/p_1?accountId=acc_1&accountTab=billing',
+      '/workspaces/p_1?accountId=acc_1&accountTab=billing',
     );
   });
 
   test('the account list is the param with no value', () => {
-    expect(accountPanelUrl('/projects/p_1', hubTarget(null))).toBe('/projects/p_1?accountId=');
-    expect(readAccountPanelUrl('/projects/p_1?accountId=')).toEqual({ accountId: '' });
+    expect(accountPanelUrl('/workspaces/p_1', hubTarget(null))).toBe('/workspaces/p_1?accountId=');
+    expect(readAccountPanelUrl('/workspaces/p_1?accountId=')).toEqual({ accountId: '' });
   });
 
   test('closing restores the page exactly, keeping its own query', () => {
-    expect(accountPanelClosedUrl('/projects/p_1?view=grid&accountId=acc_1&accountTab=git')).toBe(
-      '/projects/p_1?view=grid',
+    expect(accountPanelClosedUrl('/workspaces/p_1?view=grid&accountId=acc_1&accountTab=git')).toBe(
+      '/workspaces/p_1?view=grid',
     );
-    expect(accountPanelClosedUrl('/projects/p_1?accountId=acc_1')).toBe('/projects/p_1');
+    expect(accountPanelClosedUrl('/workspaces/p_1?accountId=acc_1')).toBe('/workspaces/p_1');
   });
 
   test('readAccountPanelUrl is what "open" means', () => {
-    expect(readAccountPanelUrl('/projects/p_1')).toBe(null);
-    expect(readAccountPanelUrl('/projects/p_1?accountId=acc_1')).toEqual({ accountId: 'acc_1' });
+    expect(readAccountPanelUrl('/workspaces/p_1')).toBe(null);
+    expect(readAccountPanelUrl('/workspaces/p_1?accountId=acc_1')).toEqual({ accountId: 'acc_1' });
   });
 
   // The prefix exists on the wire and nowhere else: every pane inside the hub
   // reads `tab`/`member`/`group`/`project`/`from`/`setup`/`provider`.
   test('hubParamsFromUrl translates back into the hub’s own vocabulary', () => {
     const url = accountPanelUrl(
-      '/projects/p_1',
+      '/workspaces/p_1',
       hubTarget('acc_1', { tab: 'identity', setup: 'scim', provider: 'okta' }),
     );
     const hub = hubParamsFromUrl(new URL(url, 'https://x.invalid').searchParams);
@@ -177,9 +177,9 @@ describe('openAccountPanel — exactly one history entry', () => {
     openAccountPanel(hubTarget('acc_2'));
 
     expect(calls).toEqual([
-      { op: 'push', url: '/projects/p_1?accountId=acc_1&accountTab=members' },
-      { op: 'replace', url: '/projects/p_1?accountId=acc_1&accountTab=billing' },
-      { op: 'replace', url: '/projects/p_1?accountId=acc_2' },
+      { op: 'push', url: '/workspaces/p_1?accountId=acc_1&accountTab=members' },
+      { op: 'replace', url: '/workspaces/p_1?accountId=acc_1&accountTab=billing' },
+      { op: 'replace', url: '/workspaces/p_1?accountId=acc_2' },
     ]);
   });
 
@@ -197,9 +197,9 @@ describe('openAccountPanel — exactly one history entry', () => {
   // A reload, or a pasted link. Nothing of ours is on the stack, so popping
   // would throw the user off a page they arrived on directly.
   test('a modal it did not push closes by rewriting the entry, not by popping', () => {
-    at('/projects/p_1?accountId=acc_1&accountTab=members');
+    at('/workspaces/p_1?accountId=acc_1&accountTab=members');
     closeAccountPanel();
-    expect(calls).toEqual([{ op: 'replace', url: '/projects/p_1' }]);
+    expect(calls).toEqual([{ op: 'replace', url: '/workspaces/p_1' }]);
   });
 
   test('closing an already-closed modal is a no-op', () => {
@@ -214,6 +214,6 @@ describe('openAccountPanel — exactly one history entry', () => {
     calls.length = 0;
     forgetPushedEntry();
     closeAccountPanel();
-    expect(calls).toEqual([{ op: 'replace', url: '/projects/p_1' }]);
+    expect(calls).toEqual([{ op: 'replace', url: '/workspaces/p_1' }]);
   });
 });

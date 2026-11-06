@@ -34,11 +34,11 @@ describe('Project admin /admin/<section> scheme', () => {
   test('the default section is General, the first row of the Workspace group', () => {
     expect(DEFAULT_PROJECT_ADMIN_SECTION).toBe('general');
     expect(WORKSPACE_SETTINGS_GROUPS[0]!.sections[0]).toBe('general');
-    expect(projectAdminHref(PID)).toBe(`/projects/${PID}/admin/general`);
-    expect(projectAdminHref(PID, 'git')).toBe(`/projects/${PID}/admin/git`);
-    expect(projectAdminHref(PID, 'repo')).toBe(`/projects/${PID}/admin/repo`);
+    expect(projectAdminHref(PID)).toBe(`/workspaces/${PID}/admin/general`);
+    expect(projectAdminHref(PID, 'git')).toBe(`/workspaces/${PID}/admin/git`);
+    expect(projectAdminHref(PID, 'repo')).toBe(`/workspaces/${PID}/admin/repo`);
     expect(projectAdminHref(PID, 'connectors', { scope: 'channels' })).toBe(
-      `/projects/${PID}/admin/connectors?scope=channels`,
+      `/workspaces/${PID}/admin/connectors?scope=channels`,
     );
   });
 
@@ -109,9 +109,9 @@ describe('buildProjectAdminNav', () => {
     nav.navigate('llm-providers');
     nav.navigate('experimental');
     expect(pushed).toEqual([
-      `/projects/${PID}/admin/connectors?scope=channels`,
-      `/projects/${PID}/admin/models`,
-      `/projects/${PID}/admin/feature-flags`,
+      `/workspaces/${PID}/admin/connectors?scope=channels`,
+      `/workspaces/${PID}/admin/models`,
+      `/workspaces/${PID}/admin/feature-flags`,
     ]);
   });
 

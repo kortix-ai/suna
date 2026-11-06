@@ -33,7 +33,7 @@ mock.module('../../providers/ui-provider', () => ({
   ...provider,
   useUiSearchParams: () => new URLSearchParams(param ? { space: param } : {}),
   useUiRouter: () => ({ push: () => {}, replace: () => {} }),
-  useUiPathname: () => '/projects/p1/goals',
+  useUiPathname: () => '/workspaces/p1/goals',
 }));
 
 const { SpaceFilterTabs } = await import('./space-filter-tabs');

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(import.meta.dirname, '../..');
 
 /**
- * `pnpm dev` warms the heavy /projects/* routes in the background. Its
+ * `pnpm dev` warms the heavy /workspaces/* routes in the background. Its
  * authed-vs-unauthed fallback is behavior: with SUPABASE_SERVICE_ROLE_KEY the
  * warmup mints a real Supabase session cookie and warms WITH it; without one
  * it must still complete and warm compile-only. That fallback is exactly what
@@ -81,10 +81,10 @@ function runWarmup(functions: string[], env: NodeJS.ProcessEnv, bashBin = 'bash'
 }
 
 const WARMED_PATHS = [
-  '/projects',
-  '/projects/warmup-id',
-  '/projects/warmup-id/sessions/warmup-id',
-  '/projects/warmup-id/files',
+  '/workspaces',
+  '/workspaces/warmup-id',
+  '/workspaces/warmup-id/sessions/warmup-id',
+  '/workspaces/warmup-id/files',
 ];
 
 describe('dev-local route warmup', () => {
@@ -97,7 +97,7 @@ describe('dev-local route warmup', () => {
       expect(run.status).toBe(0);
       expect(run.stderr).toBe('');
       expect(run.stdout).toContain('pre-compiled (unauthed');
-      const warmups = run.calls.filter((call) => call.includes('http://localhost:3111/projects'));
+      const warmups = run.calls.filter((call) => call.includes('http://localhost:3111/workspaces'));
       expect(warmups).toHaveLength(4);
       expect(warmups.map((call) => call.split('http://localhost:3111')[1])).toEqual(WARMED_PATHS);
       expect(warmups.every((call) => !call.includes(' -H '))).toBe(true);
@@ -119,7 +119,7 @@ describe('dev-local route warmup', () => {
       expect(run.status).toBe(0);
       expect(run.stderr).toBe('');
       expect(run.stdout).toContain('pre-rendered AUTHED');
-      const warmups = run.calls.filter((call) => call.includes('http://localhost:3111/projects'));
+      const warmups = run.calls.filter((call) => call.includes('http://localhost:3111/workspaces'));
       expect(warmups).toHaveLength(4);
       expect(
         warmups.every(
@@ -163,7 +163,7 @@ describe('dev-local route warmup', () => {
         expect(run.stderr).toBe('');
         expect(run.stdout).toMatch(/pre-rendered AUTHED|pre-compiled \(unauthed/);
         expect(
-          run.calls.filter((call) => call.includes('http://localhost:3111/projects')),
+          run.calls.filter((call) => call.includes('http://localhost:3111/workspaces')),
         ).toHaveLength(4);
       } finally {
         run.cleanup();

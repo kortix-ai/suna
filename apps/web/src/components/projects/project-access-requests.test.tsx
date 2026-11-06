@@ -14,9 +14,9 @@ const descriptors = new Map(Object.keys(globals).map(key => [key, Object.getOwnP
 for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
 mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: { id: 'synthetic-member' }, isLoading: false }) }));
 mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect: () => {} }));
-mock.module('next/navigation', () => ({ useParams: () => ({ sessionId: 'synthetic-session' }), useRouter: () => ({ replace: () => {} }), usePathname: () => '/projects/synthetic-project' }));
+mock.module('next/navigation', () => ({ useParams: () => ({ sessionId: 'synthetic-session' }), useRouter: () => ({ replace: () => {} }), usePathname: () => '/workspaces/synthetic-project' }));
 mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: { isAdmin: false } }) }));
-mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
+mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/workspaces' }));
 mock.module('@kortix/ui/internal/auth/auth-card-shell', () => ({ AuthFrame: ({ children }: { children: React.ReactNode }) => children }));
 mock.module('@kortix/ui/internal/auth/auth-primitives', () => ({
   Rise: ({ children }: { children: React.ReactNode }) => children,
@@ -58,7 +58,7 @@ test.each([403, 404])('denied project (%s) makes only the access request, includ
   await act(async () => root?.render(<QueryClientProvider client={queryClient}><ProjectAccessBoundary projectId="synthetic-project"><p>Project contents</p></ProjectAccessBoundary></QueryClientProvider>));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   expect(container.textContent).not.toContain('Project contents');
-  expect(container.querySelector('a')?.getAttribute('href')).toBe('/projects');
+  expect(container.querySelector('a')?.getAttribute('href')).toBe('/workspaces');
   expect(urls).toEqual(['http://test.local/projects/synthetic-project']);
 });
 

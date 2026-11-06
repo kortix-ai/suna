@@ -400,7 +400,7 @@ describe('queries return the rows they name', () => {
     expect(hits('skills')).not.toContain('nav:restart-config');
     expect(hits('skills')).toContain('nav:proj-skills');
     // The Marketplace installs both and used to keep the words. It is a
-    // section of `/projects/<id>/config` now, and that row deliberately drops
+    // section of `/workspaces/<id>/config` now, and that row deliberately drops
     // 'agents'/'skills': it would shadow the two rows above, which ARE those
     // pages, and `filteredNavItems` preserves declaration order rather than
     // ranking by relevance.
@@ -421,7 +421,7 @@ describe('queries return the rows they name', () => {
   test('"log" no longer drags Snapshots into an audit search', () => {
     expect(hits('log')).toContain('nav:account-audit');
     // Snapshots merged into the Sandbox templates section of
-    // `/projects/<id>/config`. That row carries the word "snapshots" but
+    // `/workspaces/<id>/config`. That row carries the word "snapshots" but
     // deliberately NOT "logs" — nor "catalog", which is why the Models row
     // does not carry that word either — so an audit search still does not drag
     // either of them in.
@@ -459,7 +459,7 @@ describe('genuine synonyms still answer', () => {
     ['signout', 'nav:logout'],
     // Was `settings:secrets`, then `nav:proj-customize` while Secrets' words
     // sat in that row's thirteen-page keyword bag. Secrets is its own
-    // capability page (`/projects/<id>/secrets`) and has had its own row since
+    // capability page (`/workspaces/<id>/secrets`) and has had its own row since
     // this change.
     ['env', 'nav:proj-secrets'],
     // Was `settings:schedules` / `settings:webhooks`. Both merged into one
@@ -541,7 +541,7 @@ describe('subscription usage destinations', () => {
   });
   test('subscription results select the Usage tab and matching provider', () => {
     const items = getItemsForSurface('commandPalette');
-    expect(items.find(item => item.id === 'proj-chatgpt-usage')?.href).toBe('/projects/{projectId}/admin/models?tab=usage&provider=codex');
-    expect(items.find(item => item.id === 'proj-claude-usage')?.href).toBe('/projects/{projectId}/admin/models?tab=usage&provider=claude-agent');
+    expect(items.find(item => item.id === 'proj-chatgpt-usage')?.href).toBe('/workspaces/{projectId}/admin/models?tab=usage&provider=codex');
+    expect(items.find(item => item.id === 'proj-claude-usage')?.href).toBe('/workspaces/{projectId}/admin/models?tab=usage&provider=claude-agent');
   });
 });

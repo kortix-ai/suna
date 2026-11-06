@@ -8,7 +8,7 @@ import { join } from 'node:path';
  *
  * Before it, 13 components each hand-typed `useQuery({ queryKey: ['accounts'],
  * queryFn: listAccounts, staleTime: 60_000 })`. That literal carries no user,
- * so one document that saw two users held ONE cache entry for both. `/new`
+ * so one document that saw two users held ONE cache entry for both. `/workspaces/new`
  * resolves its create target out of that list, so a leftover single-account
  * list belonging to the PREVIOUS user made `POST /projects/provision` go out
  * with a foreign `account_id` under the new user's JWT — a 403.
@@ -118,7 +118,7 @@ describe('useAccountsList — the object handed to useQuery', () => {
     expect(captured.queryFn).toBe(listAccounts);
   });
 
-  // `/projects/start` is the one reader that retried; keeping its retry budget
+  // `/workspaces/start` is the one reader that retried; keeping its retry budget
   // is what makes this migration a key change and not a behaviour change (G1).
   test('passes a caller retry budget through, and sets none otherwise', async () => {
     expect((await callHook({ id: 'user_a' }, { retry: 3 })).captured.retry).toBe(3);

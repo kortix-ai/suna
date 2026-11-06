@@ -61,5 +61,5 @@ test('copy feedback expires two seconds after the latest successful copy', async
   await act(async () => { jest.advanceTimersByTime(1000); });
   expect(JSON.stringify(page.toJSON())).not.toContain('text-kortix-green');
   expect(writes).toHaveLength(2);
-  expect(writes[0]).toContain('/projects/synthetic-project/sessions/synthetic-session');
+  expect(writes[0]).toContain('/workspaces/synthetic-project/sessions/synthetic-session');
 });

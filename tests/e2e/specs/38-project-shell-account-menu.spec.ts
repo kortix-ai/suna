@@ -53,12 +53,12 @@ test.describe('38 — The project shell knows who you are', () => {
       });
       projectId = project.id;
 
-      await installBrowserSessionDirect(page, session, `/projects/${project.id}`, authOptions);
+      await installBrowserSessionDirect(page, session, `/workspaces/${project.id}`, authOptions);
       await selectAccountForUi(page, account);
-      await page.goto(`/projects/${project.id}`, { waitUntil: 'domcontentloaded' });
+      await page.goto(`/workspaces/${project.id}`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
       await dismissWelcomeCard(page);
-      await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`));
+      await expect(page).toHaveURL(new RegExp(`/workspaces/${project.id}`));
 
       await test.step('the mobile drawer has a reachable close control', async () => {
         await page.setViewportSize({ width: 390, height: 844 });

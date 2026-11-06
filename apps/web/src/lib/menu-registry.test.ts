@@ -91,7 +91,7 @@ describe('project sessions command palette item', () => {
     const sessionsItem = paletteItems.find((item) => item.id === 'proj-sessions');
 
     expect(sessionsItem).toBeDefined();
-    expect(sessionsItem!.href).toBe('/projects/{projectId}/sessions');
+    expect(sessionsItem!.href).toBe('/workspaces/{projectId}/sessions');
   });
 });
 
@@ -114,7 +114,7 @@ describe('project commands palette entry is gone with the Instructions tab', () 
   test('no entry points at the removed Instructions tab', () => {
     expect(paletteItems.find((item) => item.id === 'proj-commands')).toBeUndefined();
     expect(paletteItems.some((item) => item.href?.includes('/settings/instructions'))).toBe(false);
-    expect(resolveSettingsOverlayHref('/projects/p1/settings/instructions')).toEqual({
+    expect(resolveSettingsOverlayHref('/workspaces/p1/settings/instructions')).toEqual({
       opensOverlay: false,
     });
   });
@@ -173,7 +173,7 @@ describe('graduated capability entries are not shadowed by Customize', () => {
   });
 
   test('typing "agents" surfaces the real Agents entry; Customize no longer matches', () => {
-    // Agents graduated to /projects/<id>/agent and carries its own palette
+    // Agents graduated to /workspaces/<id>/agent and carries its own palette
     // entry, so Customize dropped the word — exactly like skills and
     // connectors above. Leaving it would list Customize AHEAD of the page the
     // user is typing the name of.
@@ -184,15 +184,15 @@ describe('graduated capability entries are not shadowed by Customize', () => {
   });
 
   test('Connectors and Skills navigate to standalone pages', () => {
-    expect(skillsItem!.href).toBe('/projects/{projectId}/admin/skills');
-    expect(connectorsItem!.href).toBe('/projects/{projectId}/admin/connectors');
+    expect(skillsItem!.href).toBe('/workspaces/{projectId}/admin/skills');
+    expect(connectorsItem!.href).toBe('/workspaces/{projectId}/admin/connectors');
   });
 
   // The Connectors page hosts `PoliciesPanel` behind `?rules=1`, so this entry
   // opens the Global rules sheet instead of merely landing near it.
   test('proj-connectors-policies deep-links into Global rules', () => {
     expect(policiesItem).toBeDefined();
-    expect(policiesItem!.href).toBe('/projects/{projectId}/admin/connectors?rules=1');
+    expect(policiesItem!.href).toBe('/workspaces/{projectId}/admin/connectors?rules=1');
     expect(policiesItem!.label).not.toContain('Customize');
   });
 });

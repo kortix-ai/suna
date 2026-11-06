@@ -87,9 +87,9 @@ describe('panel channel: messages from the extension', () => {
 
 describe('panel channel: routes', () => {
   test('finds the session a path shows', () => {
-    expect(sessionIdFromPath('/projects/p1/sessions/s1')).toBe('s1');
-    expect(sessionIdFromPath('/de/projects/p1/sessions/s1/files')).toBe('s1');
-    expect(sessionIdFromPath('/projects/p1')).toBeUndefined();
+    expect(sessionIdFromPath('/workspaces/p1/sessions/s1')).toBe('s1');
+    expect(sessionIdFromPath('/de/workspaces/p1/sessions/s1/files')).toBe('s1');
+    expect(sessionIdFromPath('/workspaces/p1')).toBeUndefined();
     expect(sessionIdFromPath('/panel')).toBeUndefined();
   });
 });

@@ -23,14 +23,14 @@ test('56 — a deleted remembered project shows the gone page on every visit @lo
     const account = { account_id: await ensureOwnedAccount(api, session.access_token) };
     const project = await createDatabaseProject(env, { accountId: account.account_id, userId: user.id, name: 'Delete journey' });
     projectId = project.id;
-    await installBrowserSessionDirect(page, session, `/projects/${project.id}`, authOptions);
+    await installBrowserSessionDirect(page, session, `/workspaces/${project.id}`, authOptions);
     await selectAccountForUi(page, account.account_id);
-    await page.goto(`/projects/${project.id}`);
+    await page.goto(`/workspaces/${project.id}`);
     await dismissOnboarding(page);
     await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === 'kortix_last_project')?.value)
       .toBe(encodeURIComponent(`${user.id}:${project.id}`));
     // Leaving flushes the device cache, just as a CLI delete outside the page does.
-    await page.goto('/projects');
+    await page.goto('/workspaces');
     await api(session.access_token, 'DELETE', `/projects/${project.id}`);
     await api(session.access_token, 'GET', `/projects/${project.id}`, undefined, 404);
     // Reproduce the race: the shell detail returns before the access boundary's
@@ -41,9 +41,9 @@ test('56 — a deleted remembered project shows the gone page on every visit @lo
       await route.fulfill({ response });
     });
     for (let visit = 0; visit < 2; visit++) {
-      await page.goto(`/projects/${project.id}`);
+      await page.goto(`/workspaces/${project.id}`);
       await expect(page.getByRole('heading', { name: 'This workspace is gone.' })).toBeVisible();
-      await expect(page).toHaveURL(new RegExp(`/projects/${project.id}$`));
+      await expect(page).toHaveURL(new RegExp(`/workspaces/${project.id}$`));
       await expect(page.getByRole('link', { name: 'Back to workspaces' })).toBeVisible();
       await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === 'kortix_last_project')?.value)
         .not.toBe(encodeURIComponent(`${user.id}:${project.id}`));

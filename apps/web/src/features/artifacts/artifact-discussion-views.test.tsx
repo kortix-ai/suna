@@ -136,7 +136,7 @@ test('resolved, sent, waiting and failed threads say who and what', () => {
     />,
   );
   expect(sent).toContain('Sent to agent');
-  expect(sent).toContain('href="/projects/project/sessions/session-7"');
+  expect(sent).toContain('href="/workspaces/project/sessions/session-7"');
   expect(
     renderToStaticMarkup(
       <ArtifactCommentThreadView {...props(thread({ agent_state: 'pending' }))} />,
@@ -265,7 +265,7 @@ test('agent authors link to their session; body text is escaped and fallback UUI
       )}
     />,
   );
-  expect(html).toContain('href="/projects/project/sessions/session"');
+  expect(html).toContain('href="/workspaces/project/sessions/session"');
   expect(html).toContain('&lt;script&gt;bad()&lt;/script&gt;');
   expect(html).toContain('user mention: Person');
   expect(html).not.toContain(`@${userId}`);

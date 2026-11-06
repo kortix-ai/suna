@@ -13,7 +13,7 @@ mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect:
 mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
 mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/' }));
 mock.module('next/navigation', () => ({
-  usePathname: () => '/projects/deleted-project',
+  usePathname: () => '/workspaces/deleted-project',
   useParams: () => ({ sessionId: 'synthetic-session' }),
   useRouter: () => ({ push: () => {} }),
   useSearchParams: () => new URLSearchParams(),

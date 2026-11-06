@@ -24,7 +24,7 @@ const CODE_PATTERNS: readonly RegExp[] = [
   /\bprojects?\.[a-z][\w.]*/g, // a permission, e.g. project.gitops.merge
   /\bprojects?:[a-z][\w.:]*/g, // a permission, e.g. projects:access.manage
   /\b\w+_projects?\b|\bprojects?_\w+/gi, // a snake_case identifier
-  /~?\/projects?\b[\w/:.-]*/gi, // a path, e.g. /projects or ~/Projects/site
+  /~?\/projects?\b[\w/:.-]*/gi, // a path, e.g. /workspaces or ~/Projects/site
   /\bmy-project\b/g, // a directory name in a CLI example
 ];
 

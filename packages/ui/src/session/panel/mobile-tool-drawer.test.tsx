@@ -21,7 +21,7 @@ let client: InstanceType<typeof import('@tanstack/react-query').QueryClient> | u
 const projectId = '00000000-0000-4000-8000-000000000001';
 const artifactA = '00000000-0000-4000-8000-000000000002';
 const artifactB = '00000000-0000-4000-8000-000000000003';
-const artifactUrl = (id: string) => `https://example.test/projects/${projectId}/artifacts/${id}`;
+const artifactUrl = (id: string) => `https://example.test/workspaces/${projectId}/artifacts/${id}`;
 
 beforeAll(async () => {
   const win = new Window({ url: 'https://example.test/', width: 720, height: 480 });

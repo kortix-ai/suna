@@ -184,17 +184,17 @@ describe('decideDoor — skip the chooser only for one obvious answer', () => {
 
 describe('inviteLandingPath — the route of an accepted invite', () => {
   test('a project landing opens that project', () => {
-    expect(inviteLandingPath({ kind: 'project', projectId: 'pw', accountId: 'b' })).toBe('/projects/pw');
+    expect(inviteLandingPath({ kind: 'project', projectId: 'pw', accountId: 'b' })).toBe('/workspaces/pw');
   });
 
   test('an account landing goes to the door for the joined account', () => {
-    expect(inviteLandingPath({ kind: 'account', accountId: 'b' })).toBe('/projects/start?account=b');
+    expect(inviteLandingPath({ kind: 'account', accountId: 'b' })).toBe('/workspaces/start?account=b');
   });
 
   // The web hosts' three inputs, through the SDK rule.
   test('an accept that granted a project, a re-opened project invite, a workspace invite', () => {
     expect(inviteLandingPath(accountInviteLanding({ account_id: 'b', bootstrap_grants_applied: [{ project_id: 'pw' }] }))).toBe(
-      '/projects/pw',
+      '/workspaces/pw',
     );
     const described = {
       account_id: 'b',
@@ -203,9 +203,9 @@ describe('inviteLandingPath — the route of an accepted invite', () => {
         { project_id: 'px', name: 'Docs', role: 'manager' },
       ],
     };
-    expect(inviteLandingPath(accountInviteLanding({ account_id: described.account_id }, described))).toBe('/projects/pw');
+    expect(inviteLandingPath(accountInviteLanding({ account_id: described.account_id }, described))).toBe('/workspaces/pw');
     expect(inviteLandingPath(accountInviteLanding({ account_id: 'b', bootstrap_grants_applied: [] }, { projects: [] }))).toBe(
-      '/projects/start?account=b',
+      '/workspaces/start?account=b',
     );
   });
 });

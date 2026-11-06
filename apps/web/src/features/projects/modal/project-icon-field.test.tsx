@@ -367,7 +367,7 @@ describe('ProjectIconField popover geometry', () => {
   });
 
   test('the popover defaults to hanging off the trigger’s leading edge', () => {
-    // Default is `start` — `/new` and the create modal put the trigger on the
+    // Default is `start` — `/workspaces/new` and the create modal put the trigger on the
     // leading edge of its row, so `center`/`end` would push a ~278px popover
     // past the edge. Hosts that need the other side (Settings' trailing Icon
     // row) pass `align` through; the prop is forwarded, not hardcoded.

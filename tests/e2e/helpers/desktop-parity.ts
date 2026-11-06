@@ -57,7 +57,7 @@ async function launchDesktop(baseURL: string, profile: string) {
     env: {
       ...process.env,
       KORTIX_DESKTOP_USER_DATA: profile,
-      KORTIX_DESKTOP_URL: `${baseURL}/projects`,
+      KORTIX_DESKTOP_URL: `${baseURL}/workspaces`,
     },
   });
   await expect
@@ -291,7 +291,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         await installBrowserSessionDirect(
           page,
           session,
-          `${baseURL}/projects/${project.id}`,
+          `${baseURL}/workspaces/${project.id}`,
           authOptions,
         );
         await selectAccountForUi(page, accounts[0].account_id);
@@ -325,11 +325,11 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         await settingsBack.click();
 
         await page.goto(
-          `${baseURL}/projects/${project.id}?accountId=${accounts[0].account_id}`,
+          `${baseURL}/workspaces/${project.id}?accountId=${accounts[0].account_id}`,
         );
         // Workspaces: the account hub is no longer a modal. An old
         // `?accountId=` link opens the workspace's settings page in the shell.
-        await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/admin`), {
+        await expect(page).toHaveURL(new RegExp(`/workspaces/${project.id}/admin`), {
           timeout: 30_000,
         });
         await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -386,11 +386,11 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         await installBrowserSessionDirect(
           page,
           session,
-          `${baseURL}/projects/${project.id}`,
+          `${baseURL}/workspaces/${project.id}`,
           authOptions,
         );
         await selectAccountForUi(page, accountId);
-        await page.goto(`${baseURL}/projects/${project.id}`);
+        await page.goto(`${baseURL}/workspaces/${project.id}`);
         await dismissOnboarding(page);
         if (desktop)
           await expect(page.locator("html")).toHaveAttribute(
@@ -782,7 +782,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           // frontend. SPA routing alone does not exercise Electron's gate.
           await page.evaluate(
             (url) => window.location.assign(url),
-            `${baseURL}/projects/${project.id}/customize/connectors`,
+            `${baseURL}/workspaces/${project.id}/customize/connectors`,
           );
           await expect(page).toHaveURL(/\/customize\/connectors/);
           await expect(
@@ -819,7 +819,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           expect(denied).toContain("Unauthorized IPC sender");
 
           await resize(720, 480);
-          await page.goto(`${baseURL}/projects/${project.id}/settings/repositories`);
+          await page.goto(`${baseURL}/workspaces/${project.id}/settings/repositories`);
           const changeRepository = page.getByRole('button', { name: 'Change', exact: true });
           await expect(changeRepository).toBeVisible();
           await changeRepository.click();
@@ -852,7 +852,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         );
         pooledResource = { accountId, secretId: key.secret_id };
         await resize(720, 480);
-        await page.goto(`${baseURL}/projects/${project.id}/customize/models`);
+        await page.goto(`${baseURL}/workspaces/${project.id}/customize/models`);
         // Since #9801 a provider's keys open in its sheet; below 48rem it covers the list.
         await page.locator('[data-provider-row="anthropic"]').click();
         const providerKeys = page.getByRole('region', { name: 'Anthropic API keys' });
@@ -864,7 +864,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         await providerKeys.getByRole('button', { name: 'Actions for Desktop pooled key' }).click();
         await expect(page.getByRole('menuitem', { name: 'Manage access' })).toBeVisible();
         await page.keyboard.press('Escape');
-        await page.goto(`${baseURL}/projects/${project.id}`);
+        await page.goto(`${baseURL}/workspaces/${project.id}`);
         await page.getByRole('button', { name: 'Session overrides' }).click();
         await page.getByRole('button', { name: /Provider keys/ }).click();
         await expect(page.getByRole('checkbox', { name: 'Desktop pooled key' })).toBeVisible();
@@ -1030,7 +1030,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         await installBrowserSessionDirect(
           page,
           auth,
-          `${baseURL}/projects/${project.id}${sessionId ? `/sessions/${sessionId}` : ""}`,
+          `${baseURL}/workspaces/${project.id}${sessionId ? `/sessions/${sessionId}` : ""}`,
           authOptions,
         );
         await dismissOnboarding(page);
@@ -1338,7 +1338,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
             202,
           );
           await page.goto(
-            `${baseURL}/projects/${project.id}/sessions/${bootSessionId}`,
+            `${baseURL}/workspaces/${project.id}/sessions/${bootSessionId}`,
           );
           await expect(input).toBeVisible({ timeout: 30_000 });
           await expect(
@@ -1375,11 +1375,11 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
               }, id);
             await clickNativeMenu("kx-file-new-session");
             await expect(page).toHaveURL(
-              new RegExp(`/projects/${project.id}(?:\\?|$)`),
+              new RegExp(`/workspaces/${project.id}(?:\\?|$)`),
               { timeout: 60_000 },
             );
             await page.goto(
-              `${baseURL}/projects/${project.id}/customize/connectors`,
+              `${baseURL}/workspaces/${project.id}/customize/connectors`,
             );
             await expect(
               page.getByRole("tab", { name: "Connected", exact: true }),
@@ -1389,7 +1389,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
               .toMatchObject({ enabled: true });
             await clickNativeMenu("kx-file-close-tab");
             await expect(page).toHaveURL(
-              new RegExp(`/projects/${project.id}(?:\\?|$)`),
+              new RegExp(`/workspaces/${project.id}(?:\\?|$)`),
               { timeout: 60_000 },
             );
 
@@ -1557,7 +1557,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           .toBe(2);
         // Opening a session marks it seen: the count drops by one.
         await page.evaluate(
-          (id) => history.pushState(null, "", `/projects/badge/sessions/${id}`),
+          (id) => history.pushState(null, "", `/workspaces/badge/sessions/${id}`),
           first,
         );
         await expect.poll(badge).toBe(1);
@@ -1735,7 +1735,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           await installBrowserSessionDirect(
             page,
             session,
-            `${baseURL}/projects/${projectId}`,
+            `${baseURL}/workspaces/${projectId}`,
             authOptions,
           );
           await dismissOnboarding(page);
@@ -1797,7 +1797,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           if (isDeployedTarget()) {
             expect(response.ok()).toBe(true);
             await expect(page).toHaveURL(
-              new RegExp(`/projects/${projectId}/sessions/[^/?#]+`),
+              new RegExp(`/workspaces/${projectId}/sessions/[^/?#]+`),
               { timeout: 60_000 },
             );
             await expect(page.getByText(prompt).first()).toBeVisible();
@@ -1876,7 +1876,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           await installBrowserSessionDirect(
             page,
             session,
-            `${baseURL}/projects/${projectId}`,
+            `${baseURL}/workspaces/${projectId}`,
             authOptions,
           );
           await dismissOnboarding(page);
@@ -1945,7 +1945,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           // The picked session's page opens; its composer sends once the chat
           // resolves (a deployed target runs it; the local profile has no box).
           await expect(page).toHaveURL(
-            new RegExp(`/projects/${projectId}/sessions/${pickedId}`),
+            new RegExp(`/workspaces/${projectId}/sessions/${pickedId}`),
             { timeout: 60_000 },
           );
           // The next open keeps the pick while the session is live (running,
@@ -2156,7 +2156,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           name: "Desktop back",
           databaseUrl,
         });
-        const projectUrl = `${baseURL}/projects/${project.id}`;
+        const projectUrl = `${baseURL}/workspaces/${project.id}`;
         await installBrowserSessionDirect(
           page,
           session,
@@ -2176,7 +2176,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           .getByRole("menuitem", { name: "Switch workspace", exact: true })
           .click();
         await page.getByRole("menuitem", { name: "Create workspace" }).click();
-        await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+        await expect(page).toHaveURL(/\/workspaces\/new(\?|$)/, { timeout: 60_000 });
         await expect(
           page.getByRole("heading", { name: "Create a workspace" }),
         ).toBeVisible({ timeout: 60_000 });
@@ -2239,7 +2239,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
         ).toBe(true);
 
         await back.click();
-        await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {
+        await expect(page).toHaveURL(new RegExp(`/workspaces/${project.id}`), {
           timeout: 60_000,
         });
 
@@ -2264,7 +2264,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
                   exact: true,
                 }),
               ).toBeVisible({ timeout: 60_000 });
-              await other.goto(`${baseURL}/new`);
+              await other.goto(`${baseURL}/workspaces/new`);
               await expect(
                 other.getByRole("heading", { name: "Create a workspace" }),
               ).toBeVisible({ timeout: 60_000 });
@@ -2297,7 +2297,7 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
               ).toBe("0px");
               await otherBack.click();
               await expect(other).toHaveURL(
-                new RegExp(`/projects/${project.id}`),
+                new RegExp(`/workspaces/${project.id}`),
                 {
                   timeout: 60_000,
                 },
@@ -2324,9 +2324,9 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           }
         };
         await sideButton("forward");
-        await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+        await expect(page).toHaveURL(/\/workspaces\/new(\?|$)/, { timeout: 60_000 });
         await sideButton("back");
-        await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {
+        await expect(page).toHaveURL(new RegExp(`/workspaces/${project.id}`), {
           timeout: 60_000,
         });
         await cdp.detach();
@@ -2347,16 +2347,16 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           .poll(() => menuItem("kx-go-forward"))
           .toEqual({ enabled: true });
         await clickMenu("kx-go-forward");
-        await expect(page).toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+        await expect(page).toHaveURL(/\/workspaces\/new(\?|$)/, { timeout: 60_000 });
         await expect
           .poll(() => menuItem("kx-go-back"))
           .toEqual({ enabled: true });
         await clickMenu("kx-go-back");
-        await expect(page).toHaveURL(new RegExp(`/projects/${project.id}`), {
+        await expect(page).toHaveURL(new RegExp(`/workspaces/${project.id}`), {
           timeout: 60_000,
         });
         await clickMenu("kx-go-home");
-        await expect(page).not.toHaveURL(/\/new(\?|$)/, { timeout: 60_000 });
+        await expect(page).not.toHaveURL(/\/workspaces\/new(\?|$)/, { timeout: 60_000 });
       } finally {
         await project?.dispose();
         await deleteAuthUser(user.id, authOptions);
@@ -2401,7 +2401,7 @@ nativeBrowserTest?.(
       await installBrowserSessionDirect(
         main,
         session,
-        `${baseURL}/projects/${project.id}/customize/agents`,
+        `${baseURL}/workspaces/${project.id}/customize/agents`,
         authOptions,
       );
       await selectAccountForUi(main, accounts[0].account_id);
@@ -2481,7 +2481,7 @@ nativeBrowserTest?.(
       // Electron answers the native unload prompt. Prevent Playwright from
       // dismissing a Chromium dialog that Electron already consumed.
       main.on("dialog", () => {});
-      const agentUrl = `${baseURL}/projects/${project.id}/customize/agents/kortix`;
+      const agentUrl = `${baseURL}/workspaces/${project.id}/customize/agents/kortix`;
       await installBrowserSessionDirect(main, session, agentUrl, authOptions);
       await selectAccountForUi(main, accounts[0].account_id);
       await dismissOnboarding(main);
@@ -2584,7 +2584,7 @@ nativeBrowserTest?.(
       await expect.poll(async () => (await calls()).length).toBe(4);
       await expect
         .poll(() => new URL(main.url()).pathname, { timeout: 60_000 })
-        .toMatch(/^\/projects(?:\/[a-z0-9-]+)?$/);
+        .toMatch(/^\/workspaces(?:\/[a-z0-9-]+)?$/);
 
       await main.goto(agentUrl);
       await expect(description).toBeVisible({ timeout: 60_000 });
@@ -2708,7 +2708,7 @@ nativeBrowserTest?.(
       await installBrowserSessionDirect(
         main,
         session,
-        `${baseURL}/projects/${project.id}`,
+        `${baseURL}/workspaces/${project.id}`,
         authOptions,
       );
       await selectAccountForUi(main, accounts[0].account_id);
@@ -2750,7 +2750,7 @@ nativeBrowserTest?.(
       await main.getByRole("button", { name: "Collapse sidebar" }).click();
 
       for (const route of ["apps", "files", "reminders"] as const) {
-        await main.goto(`${baseURL}/projects/${project.id}/${route}`);
+        await main.goto(`${baseURL}/workspaces/${project.id}/${route}`);
         const row = main
           .locator(".kx-titlebar-row[data-sidebar-collapsed='true']")
           .first();
@@ -2813,7 +2813,7 @@ nativeBrowserTest?.(
       await api(session.access_token, "POST", `/projects/${project.id}/apps`, {
         slug: `desktop-preview-${Date.now()}`, name: "Desktop Preview",
       }, 201);
-      await main.goto(`${baseURL}/projects/${project.id}/apps`);
+      await main.goto(`${baseURL}/workspaces/${project.id}/apps`);
       const previewCard = main.getByRole("button", { name: "Open Desktop Preview" });
       await previewCard.click();
       const preview = main.getByRole("dialog", { name: "Desktop Preview App" });
@@ -2863,7 +2863,7 @@ nativeBrowserTest?.(
       );
 
       await main.goto(
-        `${baseURL}/projects/${project.id}?accountId=${accounts[0].account_id}`,
+        `${baseURL}/workspaces/${project.id}?accountId=${accounts[0].account_id}`,
       );
       const hub = main.getByRole("dialog");
       await expect(hub).toBeVisible({ timeout: 60_000 });
@@ -3139,7 +3139,7 @@ nativeBrowserTest?.(
       await installBrowserSessionDirect(
         main,
         session,
-        `${baseURL}/projects/${project.id}`,
+        `${baseURL}/workspaces/${project.id}`,
         authOptions,
       );
 

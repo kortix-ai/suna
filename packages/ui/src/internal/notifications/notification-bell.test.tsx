@@ -18,7 +18,7 @@ const unread: InboxNotification = {
   session_id: 'ses-b',
   trigger_slug: null,
   actor_user_id: null,
-  url: '/projects/p1/sessions/ses-b?notification=0192f0c4-0000-7000-8000-000000000001',
+  url: '/workspaces/p1/sessions/ses-b?notification=0192f0c4-0000-7000-8000-000000000001',
   read: false,
   created_at: new Date(Date.now() - 5 * 60_000).toISOString(),
 };
@@ -29,7 +29,7 @@ const read: InboxNotification = {
   title: 'Nightly report',
   session_id: null,
   trigger_slug: 'nightly-report',
-  url: '/projects/p1/admin/triggers?notification=0192f0c4-0000-7000-8000-000000000002',
+  url: '/workspaces/p1/admin/triggers?notification=0192f0c4-0000-7000-8000-000000000002',
   read: true,
 };
 
@@ -62,8 +62,8 @@ describe('NotificationPanel', () => {
 
   test('a row links to its subject without the read marker: the click marks it read', () => {
     const out = render();
-    expect(out).toContain('href="/projects/p1/sessions/ses-b"');
-    expect(out).toContain('href="/projects/p1/admin/triggers"');
+    expect(out).toContain('href="/workspaces/p1/sessions/ses-b"');
+    expect(out).toContain('href="/workspaces/p1/admin/triggers"');
     expect(out).not.toContain('notification=');
   });
 

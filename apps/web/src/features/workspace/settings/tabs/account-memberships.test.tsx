@@ -133,7 +133,7 @@ describe('AccountMembershipsSection — a workspace row', () => {
         accounts={[{ account_id: 'acc_1', name: 'Acme', account_role: 'owner', workspace_id: 'p_1' }]}
       />,
     );
-    expect(out).toContain('href="/projects/p_1/admin"');
+    expect(out).toContain('href="/workspaces/p_1/admin"');
     expect(out).not.toContain('accountId=');
   });
 });

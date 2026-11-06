@@ -64,7 +64,7 @@ beforeEach(() => {
   created = [];
   everCreated = [];
   dismissed = [];
-  at('/projects/p1/files');
+  at('/workspaces/p1/files');
 });
 
 afterEach(() => {
@@ -108,7 +108,7 @@ describe('a new session toast never carries a stale item', () => {
 
   test("project A's item does not reach a toast on project B", () => {
     turn('ses-a', 'p1');
-    at('/projects/p2/files');
+    at('/workspaces/p2/files');
     turn('ses-b', 'p2');
     expect(lastCreated().options.id).toBe(single('ses-b'));
     expect(dismissed).toContain(single('ses-a'));
@@ -116,7 +116,7 @@ describe('a new session toast never carries a stale item', () => {
 
   test("X's item does not reach a toast on X's page", () => {
     turn('ses-x');
-    at('/projects/p1/sessions/ses-x');
+    at('/workspaces/p1/sessions/ses-x');
     turn('ses-y');
     expect(lastCreated().options.id).toBe(single('ses-y'));
     expect(dismissed).toContain(single('ses-x'));
@@ -125,7 +125,7 @@ describe('a new session toast never carries a stale item', () => {
   test('a stack of three keeps the items that qualify', () => {
     turn('ses-x');
     turn('ses-y');
-    at('/projects/p1/sessions/ses-x');
+    at('/workspaces/p1/sessions/ses-x');
     turn('ses-z');
     expect(lastCreated().options.id).toBe(STACK);
     expect(stackItems()).toEqual(['ses-y', 'ses-z']);
@@ -135,7 +135,7 @@ describe('a new session toast never carries a stale item', () => {
     turn('ses-x');
     turn('ses-y');
     dismissed = [];
-    at('/projects/p2/files');
+    at('/workspaces/p2/files');
     turn('ses-z', 'p2');
     expect(lastCreated().options.id).toBe(single('ses-z'));
     expect(dismissed).toContain(STACK);
@@ -143,7 +143,7 @@ describe('a new session toast never carries a stale item', () => {
 
   test('one stale item of a pair: the new item and the other one stack', () => {
     turn('ses-x');
-    at('/projects/p1/sessions/ses-x');
+    at('/workspaces/p1/sessions/ses-x');
     turn('ses-y');
     expect(lastCreated().options.id).toBe(single('ses-y'));
     turn('ses-z');
@@ -155,27 +155,27 @@ describe('a new session toast never carries a stale item', () => {
 describe('dismissStaleNotificationToasts: a toast leaves when the screen moves', () => {
   test('a question about the session now on screen', () => {
     ask('ses-x');
-    at('/projects/p1/sessions/ses-x');
+    at('/workspaces/p1/sessions/ses-x');
     dismissStaleNotificationToasts();
     expect(dismissed).toEqual(['web-notification-question:ses-x']);
   });
 
   test('a toast of a project no longer on screen', () => {
     ask(undefined, 'p1');
-    at('/projects/p2/files');
+    at('/workspaces/p2/files');
     dismissStaleNotificationToasts();
     expect(dismissed).toEqual(['web-notification-question:p1']);
   });
 
   test('a single session card of the session now on screen, or of another project', () => {
     turn('ses-x', 'p1', 'error');
-    at('/projects/p1/sessions/ses-x');
+    at('/workspaces/p1/sessions/ses-x');
     dismissStaleNotificationToasts();
     expect(dismissed).toEqual([single('ses-x')]);
 
     dismissed = [];
     turn('ses-y', 'p1');
-    at('/projects/p2/files');
+    at('/workspaces/p2/files');
     dismissStaleNotificationToasts();
     expect(dismissed).toEqual([single('ses-y')]);
   });
@@ -183,7 +183,7 @@ describe('dismissStaleNotificationToasts: a toast leaves when the screen moves',
   test('a same-project toast about another session stays', () => {
     ask('ses-x');
     turn('ses-y');
-    at('/projects/p1/sessions/ses-z');
+    at('/workspaces/p1/sessions/ses-z');
     dismissStaleNotificationToasts();
     expect(dismissed).toEqual([]);
   });
@@ -192,7 +192,7 @@ describe('dismissStaleNotificationToasts: a toast leaves when the screen moves',
     turn('ses-x');
     turn('ses-y');
     turn('ses-z');
-    at('/projects/p1/sessions/ses-x');
+    at('/workspaces/p1/sessions/ses-x');
     created = [];
     dismissStaleNotificationToasts();
     expect(lastCreated().options.id).toBe(STACK);
@@ -202,7 +202,7 @@ describe('dismissStaleNotificationToasts: a toast leaves when the screen moves',
   test('a stack of one remaining item becomes the single toast', () => {
     turn('ses-x');
     turn('ses-y');
-    at('/projects/p1/sessions/ses-x');
+    at('/workspaces/p1/sessions/ses-x');
     dismissed = [];
     created = [];
     dismissStaleNotificationToasts();
@@ -213,7 +213,7 @@ describe('dismissStaleNotificationToasts: a toast leaves when the screen moves',
   test('a stack with no item left is dismissed', () => {
     turn('ses-x');
     turn('ses-y');
-    at('/projects/p2/files');
+    at('/workspaces/p2/files');
     dismissed = [];
     created = [];
     dismissStaleNotificationToasts();
@@ -224,7 +224,7 @@ describe('dismissStaleNotificationToasts: a toast leaves when the screen moves',
   test('a toast that closed is forgotten: nothing is dismissed for it', () => {
     ask('ses-x');
     lastCreated().options.onAutoClose?.();
-    at('/projects/p1/sessions/ses-x');
+    at('/workspaces/p1/sessions/ses-x');
     dismissStaleNotificationToasts();
     expect(dismissed).toEqual([]);
   });

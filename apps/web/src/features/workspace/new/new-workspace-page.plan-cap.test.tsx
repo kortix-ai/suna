@@ -8,9 +8,9 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 /**
- * `/new` plan-cap state, BEFORE the first failed create.
+ * `/workspaces/new` plan-cap state, BEFORE the first failed create.
  *
- * A free account at its 1-project cap used to open `/new` with the form
+ * A free account at its 1-project cap used to open `/workspaces/new` with the form
  * looking fully available: Create enabled, no cap indication anywhere — the
  * cap reason only appeared after a failed submit (KRTX-2495). The page now
  * reads the account's project quota on load (`useProjectQuota` →
@@ -63,7 +63,7 @@ mock.module('next/navigation', () => ({
   useRouter: () => ({ push: () => {}, replace: (path: string) => { destinations.push(path); }, back: () => {}, prefetch: () => {} }),
   useSearchParams: () => new URLSearchParams(query),
   useParams: () => ({}),
-  usePathname: () => '/new',
+  usePathname: () => '/workspaces/new',
 }));
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({
@@ -317,7 +317,7 @@ test('the first project created from the pairing entry lands on My computer', as
     findForm(renderer).props.onSubmit({ preventDefault: () => {} });
   });
   expect(provisioned).toBe(true);
-  expect(destinations.at(-1)).toBe('/projects/created-project/settings/computer');
+  expect(destinations.at(-1)).toBe('/workspaces/created-project/settings/computer');
   await unmount(renderer);
   query = '';
 });
@@ -327,7 +327,7 @@ test('ordinary creation and hostile destinations keep the default project landin
     query = value;
     const renderer = await renderPage();
     await act(async () => { findForm(renderer).props.onSubmit({ preventDefault: () => {} }); });
-    expect(destinations.at(-1)).toBe('/projects/created-project');
+    expect(destinations.at(-1)).toBe('/workspaces/created-project');
     await unmount(renderer);
   }
   query = '';
@@ -348,7 +348,7 @@ test('retry resends the failed attempt and retains the computer destination', as
   expect(JSON.parse(payloads.at(-1) ?? '{}').new_workspace).toBe(true);
   expect(JSON.parse(payloads.at(-1) ?? '{}').account_id).toBeUndefined();
   expect(JSON.parse(payloads.at(-1) ?? '{}').idempotency_key).toBe(JSON.parse(payloads.at(-2) ?? '{}').idempotency_key);
-  expect(destinations.at(-1)).toBe('/projects/created-project/settings/computer');
+  expect(destinations.at(-1)).toBe('/workspaces/created-project/settings/computer');
   await unmount(renderer);
   query = '';
 });
@@ -356,8 +356,8 @@ test('retry resends the failed attempt and retains the computer destination', as
 test('a same-origin returnUrl gets the person back after the create; a foreign one does not', async () => {
   for (const [value, expected] of [
     [`returnUrl=${encodeURIComponent('/cli/authorize?user_code=ABCD-EFGH')}`, '/cli/authorize?user_code=ABCD-EFGH'],
-    [`returnUrl=${encodeURIComponent('//example.test/steal')}`, '/projects/created-project'],
-    [`returnUrl=${encodeURIComponent('https://example.test/')}`, '/projects/created-project'],
+    [`returnUrl=${encodeURIComponent('//example.test/steal')}`, '/workspaces/created-project'],
+    [`returnUrl=${encodeURIComponent('https://example.test/')}`, '/workspaces/created-project'],
   ] as const) {
     query = value;
     const renderer = await renderPage();
