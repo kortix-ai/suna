@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { isIP } from 'node:net';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
+import { stripTrailingSlashes } from '../utils/string';
 import { sandboxEnvValue } from './sandbox-env';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -719,15 +720,8 @@ function importSingleHostAuth(
  * appends endpoint paths verbatim — so the version mount must be present
  * exactly once.
  */
-/** Strip trailing `/` without a backtracking regex (CodeQL js/polynomial-redos). */
-function trimTrailingSlashes(value: string): string {
-  let end = value.length;
-  while (end > 0 && value[end - 1] === '/') end -= 1;
-  return value.slice(0, end);
-}
-
 export function sdkBackendUrl(apiBase: string): string {
-  let base = trimTrailingSlashes(secureRemoteBase(apiBase));
+  let base = stripTrailingSlashes(secureRemoteBase(apiBase));
   if (base.endsWith('/v1')) base = base.slice(0, -3);
-  return `${trimTrailingSlashes(base)}/v1`;
+  return `${stripTrailingSlashes(base)}/v1`;
 }

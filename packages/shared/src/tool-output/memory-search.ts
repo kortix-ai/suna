@@ -3,6 +3,7 @@ import {
   isLineTerminator,
   isWhitespace,
   lineEnd,
+  nextOf,
   startsWithIgnoreCase,
   whitespaceEnd,
 } from './scan';
@@ -320,18 +321,8 @@ export function compactHits(body: string): Array<[string, string, string]> {
   };
   // The first `[` and `]` at or after a position, remembered while the
   // queries move forward.
-  const next = (character: string) => {
-    let from = Number.POSITIVE_INFINITY;
-    let found = -1;
-    return (at: number): number => {
-      if (at >= from && (found === -1 || at <= found)) return found;
-      from = at;
-      found = body.indexOf(character, at);
-      return found;
-    };
-  };
-  const nextOpen = next('[');
-  const nextClose = next(']');
+  const nextOpen = nextOf(body, [BRACKET_OPEN]);
+  const nextClose = nextOf(body, [BRACKET_CLOSE]);
 
   let innerFor = -1;
   let innerOpen = -1;
