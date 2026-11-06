@@ -25,10 +25,11 @@ export function crashMessage(appSlug: string, restarts: number): string {
 
 /**
  * Open a crash streak on each trigger that names the App and write
- * `kortix.app.crashed` once per episode (`episode`: the runtime and the time
- * of the first restart in the hour). A trigger that listens to a
- * `kortix.app.*` event is the repair, not the work: it gets the event, not an
- * alert. Returns the alerts raised.
+ * `kortix.app.crashed` once per episode. The episode is the open crash
+ * alert's start, which is durable, so a new scheduler leader writes no second
+ * event for the same crash; `episode` is the fallback for an App with no work
+ * trigger. A trigger that listens to a `kortix.app.*` event is the repair,
+ * not the work: it gets the event, not an alert. Returns the alerts raised.
  */
 export async function raiseAppCrashAlerts(input: {
   projectId: string;
@@ -48,8 +49,19 @@ export async function raiseAppCrashAlerts(input: {
     if (row.enabled === false || (typeof event === 'string' && isAppPlatformEvent(event))) continue;
     if (await raiseTriggerHealthAlert({ projectId: input.projectId, slug: row.slug, error, source: 'crash' })) raised += 1;
   }
+  const [open] = await db
+    .select({ since: sql<Date | string | null>`min(${projectTriggerRuntime.alertFailingSince})` })
+    .from(projectTriggerRuntime)
+    .where(and(
+      eq(projectTriggerRuntime.projectId, input.projectId),
+      eq(projectTriggerRuntime.triggerType, 'app'),
+      eq(projectTriggerRuntime.alertSource, 'crash'),
+      namesApp(input.appSlug),
+    ));
+  const since = open?.since ? new Date(open.since).getTime() : null;
+  const episode = since !== null ? `${input.appSlug}:${since}` : input.episode;
   await emitAppPlatformEvent({
-    projectId: input.projectId, appSlug: input.appSlug, name: 'kortix.app.crashed', id: `crashed:${input.episode}`,
+    projectId: input.projectId, appSlug: input.appSlug, name: 'kortix.app.crashed', id: `crashed:${episode}`,
     data: { restarts: input.restarts, within_seconds: 3600 }, now: input.now,
   });
   return raised;

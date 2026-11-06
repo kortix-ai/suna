@@ -679,7 +679,7 @@ export function ArtifactDiscussionSidebar({
                 {t('activity')}
               </TabsTriggerCompact>
             </TabsListCompact>
-            <div className="ml-auto flex shrink-0 items-center gap-0.5">
+            <ButtonGroup className="ml-auto shrink-0 items-center">
               {canComment ? (
                 <Hint label={t('newComment')} side="bottom" sideOffset={4}>
                   <Button
@@ -707,7 +707,7 @@ export function ArtifactDiscussionSidebar({
                   </Button>
                 </Hint>
               ) : null}
-            </div>
+            </ButtonGroup>
           </div>
         </div>
         <TabsContent value={filter} className="m-0 min-h-0 flex-1 overflow-y-auto py-1">

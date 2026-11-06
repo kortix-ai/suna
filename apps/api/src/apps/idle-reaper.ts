@@ -139,24 +139,20 @@ export interface AppKeepAliveResult {
 /** Supervisor restarts per runtime in any hour; past it the App stays down until a person or a deploy acts. */
 export const APPD_REVIVES_PER_HOUR = 3;
 const HOUR_MS = 60 * 60_000;
-// replica-local: only the scheduler leader runs keep-alive. A leader change
-// forgets the count, which allows at most one extra hour of restarts.
-const appdRevives = new Map<string, number[]>();
 
-/** Forget every revive (a DB suite that reuses runtime ids between tests). */
-export function resetAppdRevivesForTest(): void {
-  appdRevives.clear();
-}
-
-/** Record a revive of `runtimeId` at `now` unless the hour's budget is spent. Pure on the map. */
-export function takeAppdRevive(runtimeId: string, now: number, revives: Map<string, number[]> = appdRevives): boolean {
-  const recent = (revives.get(runtimeId) ?? []).filter((at) => now - at < HOUR_MS);
-  if (recent.length >= APPD_REVIVES_PER_HOUR) {
-    revives.set(runtimeId, recent);
-    return false;
-  }
-  revives.set(runtimeId, [...recent, now]);
-  return true;
+/**
+ * Supervisor restarts of `runtimeId` in the hour before `now`: its
+ * `supervisor_restarted` events. Durable: a count in the leader's memory
+ * started from 0 on every leader change (each API deploy on dev), so a crash
+ * loop got 3 more restarts per deploy and its crash alert waited.
+ */
+export async function appdRevivesInLastHour(runtimeId: string, now: Date): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(appDeploymentEvents).where(and(
+    eq(appDeploymentEvents.runtimeId, runtimeId),
+    eq(appDeploymentEvents.type, 'supervisor_restarted'),
+    gt(appDeploymentEvents.createdAt, new Date(now.getTime() - HOUR_MS)),
+  ));
+  return Number(row?.n ?? 0);
 }
 
 // replica-local: the crash episode each always-on App is in (App id → when it
@@ -325,7 +321,7 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
         // The VM runs; does its App? A crash-looping App ends its supervisor.
         const appd = await hosting.status(provider, runtime.externalId, runtime.runtimeId).catch(() => null);
         if (supervisorNeedsStart(appd)) {
-          if (!takeAppdRevive(runtime.runtimeId, now.getTime())) {
+          if ((await appdRevivesInLastHour(runtime.runtimeId, now)) >= APPD_REVIVES_PER_HOUR) {
             logger.warn('[apps] always-on App supervisor is down and its restart budget is spent', { appId: app.appId, runtimeId: runtime.runtimeId });
             return 'spent';
           }
@@ -334,6 +330,7 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
           await hosting.startSupervisor(provider, runtime.externalId).then(
             async () => {
               revived += 1;
+              // The record is the budget (appdRevivesInLastHour).
               await db.insert(appDeploymentEvents).values({
                 deploymentId: runtime.deploymentId, runtimeId: runtime.runtimeId, level: 'warn', type: 'supervisor_restarted',
                 message: `The App's process had stopped; Kortix started it again (at most ${APPD_REVIVES_PER_HOUR} times an hour).`,
