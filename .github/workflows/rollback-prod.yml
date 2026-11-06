@@ -4,7 +4,7 @@ name: Rollback Production
 # backend — reusing that release's prebuilt artifacts (zero rebuild). The inverse
 # of promote.yml. Dispatch once with the target version.
 #
-#   gh workflow run rollback-prod.yml --repo kortix-ai/CompanyOS --ref dev \
+#   gh workflow run rollback-prod.yml --repo kortix-ai/CompanyOS --ref prod \
 #     -f version=vX.Y.Z -f reason="<incident>" -f confirm="ROLLBACK PROD"
 #
 # WHAT IT ROLLS (each surface independently — a surface with no :vX.Y.Z artifact
@@ -66,8 +66,13 @@ on:
         default: ""
         type: string
 
+# The same group as deploy-prod.yml: a rollback and a release roll the same
+# ECS services and Vercel production, so one waits for the other. A rollback
+# dispatched during a release roll starts after it ends. GitHub keeps one
+# pending run per group: a rollback dispatched while a deploy-prod run waits
+# replaces that waiting deploy (the rollback is the newer intent).
 concurrency:
-  group: rollback-prod
+  group: deploy-prod
   cancel-in-progress: false
 
 permissions:
@@ -83,6 +88,12 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 40
     steps:
+      - name: Require the prod ref
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/prod ]; then
+            echo "::error::Dispatch with --ref prod (got $GITHUB_REF). environment: prod admits only the prod branch."
+            exit 1
+          fi
       - name: Checkout prod (full history + tags)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -163,6 +174,19 @@ jobs:
             echo "roll_fe_vercel=$ROLL_FE_VERCEL"
           } >> "$GITHUB_OUTPUT"
           echo "Plan → target=$TARGET current=$CUR | api=$ROLL_API gateway=$ROLL_GW frontend=$ROLL_FE"
+
+          # The DB is not rolled back. List every migration the target does
+          # not have, and flag the destructive statements the older code may
+          # not survive (the kortix-rollback skill, section 4). Read the list
+          # before you trust the rollback.
+          newer="$(git diff --name-only --diff-filter=A "v$TARGET" HEAD -- packages/db/migrations | grep -E '\.(sql|concurrent\.ts)$' || true)"
+          if [ -n "$newer" ]; then
+            echo "Migrations applied on prod that v$TARGET does not have: $(printf '%s\n' "$newer" | wc -l)"
+            risky="$(printf '%s\n' "$newer" | xargs grep -l -i -E 'drop (column|table|type)|rename (column|to)|alter column [^;]* type|set not null' 2>/dev/null || true)"
+            if [ -n "$risky" ]; then
+              echo "::warning::Destructive migrations newer than v$TARGET (old code may break on them): $(printf '%s ' $risky)"
+            fi
+          fi
 
       - name: Configure AWS credentials for ECS rollback
         if: steps.plan.outputs.roll_api == 'yes' || steps.plan.outputs.roll_gw == 'yes' || steps.plan.outputs.roll_fe == 'yes'

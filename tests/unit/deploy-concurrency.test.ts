@@ -34,3 +34,26 @@ describe('deploy workflows queue instead of cancelling', () => {
     });
   }
 });
+
+/**
+ * A rollback and a release roll the same prod ECS services and Vercel
+ * production. Before 2026-11-06 they had separate groups, so a rollback
+ * dispatched during a release roll raced it. One group serializes them.
+ */
+describe('rollback-prod and deploy-prod share one concurrency group', () => {
+  const group = (name: string) =>
+    /^concurrency:\n(?: {2}#.*\n)* {2}group: (\S+)\n {2}cancel-in-progress: false$/m.exec(
+      readFileSync(resolve(workflows, name), 'utf8'),
+    )?.[1];
+
+  it('uses the deploy-prod group in both files', () => {
+    expect(group('deploy-prod.yml')).toBe('deploy-prod');
+    expect(group('rollback-prod.yml')).toBe('deploy-prod');
+  });
+
+  it('documents the ref the prod environment admits', () => {
+    const source = readFileSync(resolve(workflows, 'rollback-prod.yml'), 'utf8');
+    expect(source).toContain('rollback-prod.yml --repo kortix-ai/CompanyOS --ref prod');
+    expect(source).not.toContain('--ref dev');
+  });
+});

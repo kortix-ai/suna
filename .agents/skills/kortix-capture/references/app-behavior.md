@@ -168,7 +168,7 @@ agents ──> kortix-capture list|usage|query|now|link|grab-screen (read-only S
 | `audio/` | Audio memory segments, `<start_ms>.m4a`; `audio/staging/` holds the raw PCM of the open segment. Created only once audio is turned on |
 | `audio.json` | Audio heartbeat: state, each source's state and device, the open segment. Written only once audio is turned on |
 | `settings.json` | User settings, hot-reloaded by the recorder |
-| `recorder.json` | Recorder heartbeat: state, `inactive_reason`, reason, last frame, OCR backlog, permissions |
+| `recorder.json` | Recorder heartbeat: state, `inactive_reason`, reason, last frame, OCR backlog, permissions. The tray reads it: in `low_disk`, `sync_backlog`, `permission_missing`, `error` and `privacy_model_unavailable` it does not say "Recording". The recorder's worker threads (OCR, finalize, sync, audio) restart after an error or a panic, 1 s doubling to 5 min |
 | `.kortix-storage-reserve` | Pre-allocated disk reserve, `storage.reserve_mb` (default 500). See "Disk reserve" |
 | `actions/` | Action segments, `<start_ms>-x<id>.actions.jsonl.zst`, and their screenshots in `actions/assets/sha256-<hex>.<ext>` (see "Action recording") |
 | `actions.json` | Action recorder heartbeat: recording or not, and why the policy blocks it |
@@ -377,7 +377,7 @@ every field):
 | `clock_skew` | The local clock is far off and the server gave no usable time | Same as `auth`. A 401/403 whose `Date` header is more than 5 min off is retried once with the server clock |
 | `transient` | 5xx, 408, 429, timeouts, connection loss | Backs off per chunk: jittered, 5 s doubling to 10 min |
 | `integrity` | Checksum or size mismatch | Same as `transient` |
-| `local` | The local file cannot be read | Same as `transient` |
+| `local` | The local file cannot be read | Same as `transient`. A chunk whose file is gone is marked deleted (`status = 2`): it leaves the queue and the pending bytes of the `sync_backlog` gate |
 
 - With sync on, the storage cap never removes a chunk that has not been
   uploaded unless it is older than 7 days; an uploaded chunk freed by the cap
@@ -945,7 +945,10 @@ a conversation is recorded. The settings window shows this next to the toggle.
 
 Audio follows the screen recorder: it stops while recording is off or paused
 (tray "Pause", `kortix-capture pause`), while the screen is locked, below
-`storage.min_free_gb`, and during a sync backlog. It keeps recording while there
+`storage.min_free_gb`, and during a sync backlog. The gate fails closed: a
+last known `locked`, `low_disk` or `sync_backlog` stops audio at any age, no
+`recorder.json` yet is `starting`, and a recorder heartbeat silent for 90 s
+(`RECORDER_SILENT_GATE_MS`, longer than a 60 s private capture) is `paused`. It keeps recording while there
 is no keyboard or mouse input (a call you only listen to) and while an excluded
 app is in front (on macOS that app's audio is left out; see below). Sleep stops
 the sources with the process; on wake the next block starts a new segment, so a
