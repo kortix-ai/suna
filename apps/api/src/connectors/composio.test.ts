@@ -1,4 +1,5 @@
 import { expect, setSystemTime, test } from 'bun:test';
+import { BadRequestError } from '@composio/client';
 import type { HTTPException } from 'hono/http-exception';
 import type { ComposioCatalogClient } from './composio-catalog-search';
 import {
@@ -792,6 +793,43 @@ test('composioCatalogPage uses a discovery-only identity and session.toolkits pa
       options: { cursor: 'cursor-1', limit: 20 },
     },
   ]);
+});
+
+test('composioCatalogPage restarts at the first page when the provider cannot decode the cursor', async () => {
+  const cursors: Array<string | undefined> = [];
+  const created = session();
+  created.toolkits = async (options) => {
+    cursors.push(options?.cursor);
+    if (options?.cursor) {
+      throw BadRequestError.generate(
+        400,
+        { error: { message: 'Pagination Error: Failed to decode cursor', code: 10400, status: 400 } },
+        undefined,
+        new Headers(),
+      );
+    }
+    return { items: [{ slug: 'first', name: 'First', isNoAuth: true }], cursor: 'next', totalPages: 2 };
+  };
+
+  const result = await composioCatalogPage({
+    projectId: 'project-1',
+    cursor: 'not-base64!',
+    runtime: fakeRuntime({ created }),
+  });
+
+  expect(cursors).toEqual(['not-base64!', undefined]);
+  expect(result).toMatchObject({ items: [{ slug: 'first' }], cursor: 'next' });
+});
+
+test('composioCatalogPage still throws a provider 400 that is not a cursor error', async () => {
+  const created = session();
+  created.toolkits = async () => {
+    throw BadRequestError.generate(400, { error: { code: 10401 } }, undefined, new Headers());
+  };
+
+  await expect(
+    composioCatalogPage({ projectId: 'project-1', cursor: 'c', runtime: fakeRuntime({ created }) }),
+  ).rejects.toBeInstanceOf(BadRequestError);
 });
 
 // Every search answers from the full catalogue snapshot, whatever its length,
