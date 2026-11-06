@@ -201,7 +201,7 @@ export async function resolveAccountForUser(
     const accountKey = await accountKeyForWorkspaceId(override);
     const [viaWorkspace] = accountKey ? await userAccountMembershipRow(userId, accountKey) : [];
     if (!viaWorkspace) {
-      throw new Error('not a member of the requested account');
+      throw new Error('not a member of the requested workspace');
     }
     return viaWorkspace.accountId;
   }

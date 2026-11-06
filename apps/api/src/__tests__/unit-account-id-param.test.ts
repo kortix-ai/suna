@@ -241,7 +241,7 @@ describe('accounts route uuid params (KRTX-211)', () => {
     const res = await createApp().request('/v1/accounts/tokens?account_id=directory');
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.error).toBe('not a member of the requested account');
+    expect(body.error).toBe('not a member of the requested workspace');
     expect(dbReads).toEqual([]);
   });
 

@@ -146,11 +146,11 @@ export async function resolveRequestedProjectAccount(userId: string, requested: 
   // before any lookup (see shared/validate.ts for the shape contract).
   if (requested && !isUuid(requested)) {
     throw new HTTPException(400, {
-      message: 'account_id must be a valid id',
+      message: 'account_id must be a valid workspace id',
       res: new Response(
         JSON.stringify({
           error: true,
-          message: 'account_id must be a valid id',
+          message: 'account_id must be a valid workspace id',
           status: 400,
           code: 'invalid_account_id',
         }),
@@ -172,10 +172,10 @@ export async function resolveRequestedProjectAccount(userId: string, requested: 
     (await accountKeyForWorkspaceId(requested)) !== impersonated
   ) {
     throw new HTTPException(403, {
-      message: 'Impersonated requests cannot target another account',
+      message: 'Impersonated requests cannot target another workspace',
       res: new Response(
         JSON.stringify({
-          error: 'Impersonated requests cannot target another account',
+          error: 'Impersonated requests cannot target another workspace',
           code: IMPERSONATION_INVALID_CODE,
         }),
         { status: 403, headers: { 'content-type': 'application/json' } },

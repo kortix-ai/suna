@@ -53,10 +53,10 @@ export async function scopedAccountIdFor(
       (await accountKeyForWorkspaceId(requested)) !== impersonated
     ) {
       throw new HTTPException(403, {
-        message: "Impersonated requests cannot target another account",
+        message: "Impersonated requests cannot target another workspace",
         res: new Response(
           JSON.stringify({
-            error: "Impersonated requests cannot target another account",
+            error: "Impersonated requests cannot target another workspace",
             code: IMPERSONATION_INVALID_CODE,
           }),
           { status: 403, headers: { "content-type": "application/json" } },
@@ -77,7 +77,7 @@ export async function scopedAccountIdFor(
   // membership miss — 403, no DB read, no hint whether the id exists.
   if (!isUuid(requested)) {
     throw new HTTPException(403, {
-      message: "Not a member of the requested account",
+      message: "Not a member of the requested workspace",
     });
   }
 
@@ -109,7 +109,7 @@ export async function scopedAccountIdFor(
   }
 
   throw new HTTPException(403, {
-    message: "Not a member of the requested account",
+    message: "Not a member of the requested workspace",
   });
 }
 

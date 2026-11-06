@@ -74,7 +74,7 @@ export async function getTunnelReadContext(c: any) {
 
   if (!accountId) {
     throw new HTTPException(401, {
-      message: 'Unable to resolve an account for tunnel access',
+      message: 'Unable to resolve a workspace for tunnel access',
     });
   }
 
@@ -84,7 +84,7 @@ export async function getTunnelReadContext(c: any) {
   // on the impersonated account show only its owner-less team machines.
   if (isImpersonationBlockedAccount(userId, accountId)) {
     throw new HTTPException(403, {
-      message: 'Impersonated requests cannot target another account',
+      message: 'Impersonated requests cannot target another workspace',
     });
   }
   const teamMachines = and(eq(tunnelConnections.accountId, accountId), isNull(tunnelConnections.ownerUserId));

@@ -350,7 +350,7 @@ describe('resolveScopedAccountId with a malformed account_id (KRTX-211)', () => 
       message = (error as Error).message;
     }
     expect(status).toBe(403);
-    expect(message).toBe('Not a member of the requested account');
+    expect(message).toBe('Not a member of the requested workspace');
     expect(membershipReads).toBe(0);
   });
 
