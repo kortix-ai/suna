@@ -21340,7 +21340,10 @@
       "textfab4077701b7": "Put your own logo, icon, favicon, and product name on the app for everyone in this workspace: Kortix becomes your tool.",
       "textfd8fee75dbb5": "IdP groups map to roles in this workspace",
       "textadca5dfd1e42": "Bundle members into groups and give the whole group a role: one grant instead of dozens, revoked just as easily.",
-      "text16ba47efb9f2": "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when."
+      "text16ba47efb9f2": "A complete, filterable trail of every admin and agent action in this workspace: who did what, where, and when.",
+      "text4b892277843c": "Create workspace",
+      "text41018e566b60": "new workspace create add team",
+      "texta99ac8f9050b": "Workspace · Access"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

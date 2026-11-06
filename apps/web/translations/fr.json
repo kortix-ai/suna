@@ -995,7 +995,7 @@
         "sessions": "Après 14 jours, ses sessions, ses fichiers et son dépôt géré par Kortix sont effacés",
         "automation": "Les déclencheurs et les exécutions planifiées s'arrêtent",
         "integrations": "Ses clés API et ses applications connectées cessent de fonctionner",
-        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
+        "plan": "Un forfait payant est programmé pour être résilié à la fin de sa période de facturation ; restaurer l’espace de travail le conserve",
         "access": "Tous les membres perdent l'accès à cet espace de travail"
       },
       "reassurance": "Les dépôts Git que vous avez connectés vous-même ne sont pas supprimés.",
@@ -21295,7 +21295,10 @@
       "textfab4077701b7": "Mettez votre logo, icône, favicon et nom de produit dans l'application pour tout cet espace de travail : Kortix devient votre outil.",
       "textfd8fee75dbb5": "Les groupes de l'IdP correspondent à des rôles dans cet espace de travail",
       "textadca5dfd1e42": "Regroupez les membres et donnez un rôle au groupe entier : une attribution au lieu de dizaines, révoquée tout aussi facilement.",
-      "text16ba47efb9f2": "Une trace complète et filtrable de chaque action d'administrateur et d'agent dans cet espace de travail : qui a fait quoi, où et quand."
+      "text16ba47efb9f2": "Une trace complète et filtrable de chaque action d'administrateur et d'agent dans cet espace de travail : qui a fait quoi, où et quand.",
+      "text4b892277843c": "Créer un espace de travail",
+      "text41018e566b60": "nouvel espace de travail créer ajouter équipe",
+      "texta99ac8f9050b": "Espace de travail · Accès"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -26821,7 +26824,7 @@
       "title": "Inviter des personnes dans {name}",
       "description": "Chaque personne reçoit un e-mail avec un lien pour rejoindre.",
       "emailsLabel": "Adresses e-mail",
-      "emailsPlaceholder": "nom@entreprise.com",
+      "emailsPlaceholder": "name@company.com",
       "emailsHint": "Séparez les adresses par une virgule ou un espace.",
       "invalidEmail": "Ce n'est pas une adresse e-mail.",
       "removeEmail": "Retirer {email}",

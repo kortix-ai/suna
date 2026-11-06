@@ -1087,7 +1087,10 @@ function scanFile(file) {
           ['dark', 'light'].includes(catalogRoot)) ||
         // Attribute value kinds ('string?', 'number?') of the doc editor's schema check: code, never shown.
         (file === path.join(uiSrcDir, 'markdown/doc-editor/doc-attrs.ts') &&
-          ['NODE_ATTRS', 'MARK_ATTRS'].includes(catalogRoot));
+          ['NODE_ATTRS', 'MARK_ATTRS'].includes(catalogRoot)) ||
+        // Section id ↔ old account-hub tab id maps (`help: 'help'`): route ids, never shown.
+        (file === path.join(uiSrcDir, 'customize/project-settings/project-admin-sections.ts') &&
+          ['ACCOUNT_TAB_FOR_SECTION', 'SECTION_FOR_ACCOUNT_TAB'].includes(catalogRoot));
       const coveredPresentationCatalog =
         (file === path.join(srcDir, 'app/[locale]/presentations/decks/security.tsx') &&
           catalogRoot === 'ANSWERS') ||

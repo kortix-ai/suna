@@ -995,7 +995,7 @@
         "sessions": "Dopo 14 giorni, le sue sessioni, i file e il repository gestito da Kortix vengono cancellati",
         "automation": "I trigger e le esecuzioni pianificate smettono di partire",
         "integrations": "Le sue chiavi API e le app collegate smettono di funzionare",
-        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
+        "plan": "Un piano a pagamento viene impostato per l’annullamento alla fine del periodo di fatturazione; ripristinando il workspace, il piano resta attivo",
         "access": "Tutti i membri perdono l'accesso a questo workspace"
       },
       "reassurance": "I repository Git che hai collegato tu non vengono eliminati.",
@@ -21295,7 +21295,10 @@
       "textfab4077701b7": "Metti logo, icona, favicon e nome del prodotto nell'app per tutti in questo workspace: Kortix diventa il tuo strumento.",
       "textfd8fee75dbb5": "I gruppi dell'IdP corrispondono a ruoli in questo workspace",
       "textadca5dfd1e42": "Raggruppa i membri e assegna un ruolo all'intero gruppo: una concessione invece di decine, revocata altrettanto facilmente.",
-      "text16ba47efb9f2": "Una traccia completa e filtrabile di ogni azione di amministratori e agenti in questo workspace: chi ha fatto cosa, dove e quando."
+      "text16ba47efb9f2": "Una traccia completa e filtrabile di ogni azione di amministratori e agenti in questo workspace: chi ha fatto cosa, dove e quando.",
+      "text4b892277843c": "Crea workspace",
+      "text41018e566b60": "nuovo workspace crea aggiungi team",
+      "texta99ac8f9050b": "Workspace · Accesso"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
@@ -26821,7 +26824,7 @@
       "title": "Invita persone in {name}",
       "description": "Ogni persona riceve un'email con un link per unirsi.",
       "emailsLabel": "Indirizzi email",
-      "emailsPlaceholder": "nome@azienda.com",
+      "emailsPlaceholder": "name@company.com",
       "emailsHint": "Separa gli indirizzi con una virgola o uno spazio.",
       "invalidEmail": "Non è un indirizzo email.",
       "removeEmail": "Rimuovi {email}",

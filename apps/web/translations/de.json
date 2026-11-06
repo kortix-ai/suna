@@ -995,7 +995,7 @@
         "sessions": "Nach 14 Tagen werden seine Sitzungen, Dateien und das von Kortix verwaltete Repository gelöscht",
         "automation": "Trigger und geplante Läufe werden nicht mehr ausgelöst",
         "integrations": "Seine API-Schlüssel und verbundenen Apps funktionieren nicht mehr",
-        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
+        "plan": "Ein kostenpflichtiger Plan wird zum Ende seines Abrechnungszeitraums gekündigt; wird der Workspace wiederhergestellt, bleibt er bestehen",
         "access": "Alle Mitglieder verlieren den Zugriff auf diesen Workspace"
       },
       "reassurance": "Git-Repositories, die du selbst verbunden hast, werden nicht gelöscht.",
@@ -21295,7 +21295,10 @@
       "textfab4077701b7": "Setze dein Logo, Icon, Favicon und deinen Produktnamen für alle in diesem Workspace in die App: Kortix wird dein Werkzeug.",
       "textfd8fee75dbb5": "IdP-Gruppen werden Rollen in diesem Workspace zugeordnet",
       "textadca5dfd1e42": "Fasse Mitglieder in Gruppen zusammen und gib der ganzen Gruppe eine Rolle: eine Freigabe statt Dutzender, genauso leicht widerrufen.",
-      "text16ba47efb9f2": "Eine vollständige, filterbare Spur jeder Admin- und Agentenaktion in diesem Workspace: wer was wo und wann getan hat."
+      "text16ba47efb9f2": "Eine vollständige, filterbare Spur jeder Admin- und Agentenaktion in diesem Workspace: wer was wo und wann getan hat.",
+      "text4b892277843c": "Workspace erstellen",
+      "text41018e566b60": "neuer workspace erstellen hinzufügen team",
+      "texta99ac8f9050b": "Workspace · Zugriff"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -26821,7 +26824,7 @@
       "title": "Personen zu {name} einladen",
       "description": "Jede Person erhält eine E-Mail mit einem Link zum Beitreten.",
       "emailsLabel": "E-Mail-Adressen",
-      "emailsPlaceholder": "name@firma.de",
+      "emailsPlaceholder": "name@company.com",
       "emailsHint": "Trenne Adressen mit einem Komma oder Leerzeichen.",
       "invalidEmail": "Das ist keine E-Mail-Adresse.",
       "removeEmail": "{email} entfernen",

@@ -995,7 +995,7 @@
         "sessions": "После 14 дана, његове сесије, датотеке и репозиторијум којим управља Kortix се бришу",
         "automation": "Окидачи и заказана покретања престају да се покрећу",
         "integrations": "Његови API кључеви и повезане апликације престају да раде",
-        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
+        "plan": "Плаћени план се отказује на крају обрачунског периода; враћањем радног простора план остаје",
         "access": "Сви чланови губе приступ овом радном простору"
       },
       "reassurance": "Git репозиторијуми које сте сами повезали се не бришу.",
@@ -21295,7 +21295,10 @@
       "textfab4077701b7": "Ставите свој лого, иконицу, фавикон и назив производа у апликацију за све у овом радном простору: Kortix постаје ваш алат.",
       "textfd8fee75dbb5": "IdP групе се мапирају на улоге у овом радном простору",
       "textadca5dfd1e42": "Груписите чланове и дајте целој групи улогу: једна додела уместо десетина, једнако лако опозвана.",
-      "text16ba47efb9f2": "Потпун траг сваке радње администратора и агената у овом радном простору, са филтерима: ко је шта урадио, где и када."
+      "text16ba47efb9f2": "Потпун траг сваке радње администратора и агената у овом радном простору, са филтерима: ко је шта урадио, где и када.",
+      "text4b892277843c": "Направи радни простор",
+      "text41018e566b60": "нови радни простор направи додај тим",
+      "texta99ac8f9050b": "Радни простор · Приступ"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -26821,7 +26824,7 @@
       "title": "Pozovi ljude u {name}",
       "description": "Svaka osoba dobija imejl sa linkom za pridruživanje.",
       "emailsLabel": "Imejl adrese",
-      "emailsPlaceholder": "ime@kompanija.com",
+      "emailsPlaceholder": "name@company.com",
       "emailsHint": "Odvojite adrese zarezom ili razmakom.",
       "invalidEmail": "To nije imejl adresa.",
       "removeEmail": "Ukloni {email}",

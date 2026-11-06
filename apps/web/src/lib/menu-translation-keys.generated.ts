@@ -151,4 +151,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Claude subscription usage': 'text856bf8853b69',
   Goals: 'text116cd3982a9b',
   'goals goal objectives outcomes': 'textb0571ad96905',
+  'Create workspace': 'text4b892277843c',
+  'new workspace create add team': 'text41018e566b60',
+  'Workspace · Access': 'texta99ac8f9050b',
 };

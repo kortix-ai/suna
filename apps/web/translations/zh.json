@@ -995,7 +995,7 @@
         "sessions": "14 天后,其会话、文件和 Kortix 托管的仓库将被清除",
         "automation": "触发器和计划运行停止触发",
         "integrations": "其 API 密钥和已连接的应用停止工作",
-        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
+        "plan": "付费套餐将在当前计费周期结束时取消；恢复工作区即可保留该套餐",
         "access": "所有成员都将失去对此工作区的访问权限"
       },
       "reassurance": "你自己连接的 Git 仓库不会被删除。",
@@ -1461,7 +1461,7 @@
       "expiredAt": "已过期：{time}",
       "expiresAt": "过期时间：{time}",
       "actionsFor": "{name} 的操作",
-      "serviceAccountTokens": "在寻找自动化凭据？请在帐户设置</link>帐户设置</link>中管理服务帐户令牌。",
+      "serviceAccountTokens": "在寻找自动化凭据？请在<link>工作区设置</link>中管理服务帐户令牌。",
       "revokeTitle": "撤销此 API 密钥？",
       "revokeDescription": "{name} 将立即停止工作。此操作无法撤销。",
       "revoke": "撤销",
@@ -21295,7 +21295,10 @@
       "textfab4077701b7": "为此工作区的所有人在应用中使用你自己的徽标、图标、网站图标和产品名称:Kortix 成为你的工具。",
       "textfd8fee75dbb5": "IdP 群组映射到此工作区中的角色",
       "textadca5dfd1e42": "将成员归入群组并为整个群组分配一个角色:一次授权代替几十次,撤销同样容易。",
-      "text16ba47efb9f2": "此工作区中每个管理员和智能体操作的完整、可筛选记录:谁在何时何地做了什么。"
+      "text16ba47efb9f2": "此工作区中每个管理员和智能体操作的完整、可筛选记录:谁在何时何地做了什么。",
+      "text4b892277843c": "创建工作区",
+      "text41018e566b60": "新建 工作区 创建 添加 团队",
+      "texta99ac8f9050b": "工作区 · 访问权限"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

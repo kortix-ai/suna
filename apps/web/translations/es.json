@@ -995,7 +995,7 @@
         "sessions": "Después de 14 días, se borran sus sesiones, archivos y el repositorio gestionado por Kortix",
         "automation": "Los activadores y las ejecuciones programadas dejan de dispararse",
         "integrations": "Sus claves de API y aplicaciones conectadas dejan de funcionar",
-        "plan": "A paid plan is set to cancel at the end of its billing period; restoring the workspace keeps it",
+        "plan": "Un plan de pago se cancela al final de su periodo de facturación; restaurar el espacio de trabajo lo conserva",
         "access": "Todos los miembros pierden el acceso a este espacio de trabajo"
       },
       "reassurance": "Los repositorios Git que conectaste tú no se eliminan.",
@@ -21295,7 +21295,10 @@
       "textfab4077701b7": "Pon tu logotipo, icono, favicon y nombre de producto en la app para todo este espacio de trabajo: Kortix se convierte en tu herramienta.",
       "textfd8fee75dbb5": "Los grupos del IdP se asignan a roles en este espacio de trabajo",
       "textadca5dfd1e42": "Agrupa a los miembros y da un rol al grupo entero: una concesión en lugar de docenas, revocada con la misma facilidad.",
-      "text16ba47efb9f2": "Un registro completo y filtrable de cada acción de administradores y agentes en este espacio de trabajo: quién hizo qué, dónde y cuándo."
+      "text16ba47efb9f2": "Un registro completo y filtrable de cada acción de administradores y agentes en este espacio de trabajo: quién hizo qué, dónde y cuándo.",
+      "text4b892277843c": "Crear espacio de trabajo",
+      "text41018e566b60": "nuevo espacio de trabajo crear añadir equipo",
+      "texta99ac8f9050b": "Espacio de trabajo · Acceso"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -26821,7 +26824,7 @@
       "title": "Invitar personas a {name}",
       "description": "Cada persona recibe un correo con un enlace para unirse.",
       "emailsLabel": "Direcciones de correo",
-      "emailsPlaceholder": "nombre@empresa.com",
+      "emailsPlaceholder": "name@company.com",
       "emailsHint": "Separa las direcciones con una coma o un espacio.",
       "invalidEmail": "Eso no es una dirección de correo.",
       "removeEmail": "Quitar {email}",
