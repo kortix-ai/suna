@@ -49,7 +49,7 @@ const last = () => calls[calls.length - 1];
 test('listProjectSecrets hits GET /projects/:id/secrets and returns the parsed body', async () => {
   nextResponse = { status: 200, body: { items: [], required: [], optional: [] } };
   const result = await listProjectSecrets('P1');
-  expect(last().url).toContain('/projects/P1/secrets');
+  expect(last().url).toContain('/workspaces/P1/secrets');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ items: [], required: [], optional: [] });
 });
@@ -76,7 +76,7 @@ test('listProjectSecrets is a silent background read — a 403 never hits the gl
 test('upsertProjectSecret POSTs name/value as the raw body', async () => {
   nextResponse = { status: 200, body: { name: 'FOO' } };
   await upsertProjectSecret('P1', { name: 'FOO', value: 'bar' });
-  expect(last().url).toContain('/projects/P1/secrets');
+  expect(last().url).toContain('/workspaces/P1/secrets');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ name: 'FOO', value: 'bar' });
 });
@@ -212,7 +212,7 @@ test('setProjectSecretStrategy PUTs the strategy to the encoded identifier route
 
   const result = await setProjectSecretStrategy('P1', 'API/key', 'denied');
 
-  expect(last().url).toContain('/projects/P1/secrets/API%2Fkey/strategy');
+  expect(last().url).toContain('/workspaces/P1/secrets/API%2Fkey/strategy');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ strategy: 'denied' });
   expect(result.strategy).toBe('denied');
@@ -258,7 +258,7 @@ test('brokerProjectSecretRequest POSTs a policy-bound HTTPS request', async () =
 
   expect(last()).toMatchObject({
     method: 'POST',
-    url: expect.stringContaining('/projects/P1/secrets/primary%2Fkey/broker'),
+    url: expect.stringContaining('/workspaces/P1/secrets/primary%2Fkey/broker'),
     body: {
       url: 'https://api.example.com/v1/messages',
       method: 'POST',
@@ -275,7 +275,7 @@ test('listProjectProviderOAuth returns the connected provider logins', async () 
   ];
   nextResponse = { status: 200, body: { items } };
   const result = await listProjectProviderOAuth('P1');
-  expect(last().url).toContain('/projects/P1/oauth');
+  expect(last().url).toContain('/workspaces/P1/oauth');
   expect(last().url.endsWith('/oauth')).toBe(true);
   expect(last().method).toBe('GET');
   expect(result).toEqual(items);
@@ -293,7 +293,7 @@ test('startProjectProviderOAuth posts to the provider start endpoint with the sh
     },
   };
   const result = await startProjectProviderOAuth('P1', 'chatgpt', { sharing: { mode: 'project' } });
-  expect(last().url).toContain('/projects/P1/oauth/chatgpt/start');
+  expect(last().url).toContain('/workspaces/P1/oauth/chatgpt/start');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ sharing: { mode: 'project' } });
   expect(result.flow_id).toBe('f1');
@@ -337,7 +337,7 @@ test('startProjectProviderOAuth reconnects an existing account resource by id al
   await startProjectProviderOAuth('P1', 'openai', {
     resourceId: '77777777-7777-4777-8777-777777777777',
   });
-  expect(last().url).toContain('/projects/P1/oauth/openai/start');
+  expect(last().url).toContain('/workspaces/P1/oauth/openai/start');
   // Reconnect keeps the label and access: nothing but the id is sent.
   expect(last().body).toEqual({
     sharing: undefined,
@@ -348,7 +348,7 @@ test('startProjectProviderOAuth reconnects an existing account resource by id al
 test('pollProjectProviderOAuth posts the flow_id and returns the poll result', async () => {
   nextResponse = { status: 200, body: { status: 'pending', next_poll_ms: 2000 } };
   const result = await pollProjectProviderOAuth('P1', 'chatgpt', 'flow-123');
-  expect(last().url).toContain('/projects/P1/oauth/chatgpt/poll');
+  expect(last().url).toContain('/workspaces/P1/oauth/chatgpt/poll');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ flow_id: 'flow-123' });
   expect(result).toEqual({ status: 'pending', next_poll_ms: 2000 });
@@ -360,7 +360,7 @@ test('upsertProjectGitCredential PUTs the token to /git-credential', async () =>
     body: { configured: true, provider: 'github', git_connection: {} },
   };
   const result = await upsertProjectGitCredential('P1', { token: 'ghp_abc' });
-  expect(last().url).toContain('/projects/P1/git-credential');
+  expect(last().url).toContain('/workspaces/P1/git-credential');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ token: 'ghp_abc' });
   expect(result.configured).toBe(true);
@@ -369,14 +369,14 @@ test('upsertProjectGitCredential PUTs the token to /git-credential', async () =>
 test('deleteProjectSecret DELETEs the encoded secret name', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteProjectSecret('P1', 'MY KEY');
-  expect(last().url).toContain('/projects/P1/secrets/MY%20KEY');
+  expect(last().url).toContain('/workspaces/P1/secrets/MY%20KEY');
   expect(last().method).toBe('DELETE');
 });
 
 test('deleteProjectProviderOAuth DELETEs the encoded provider', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteProjectProviderOAuth('P1', 'openai/codex');
-  expect(last().url).toContain('/projects/P1/oauth/openai%2Fcodex');
+  expect(last().url).toContain('/workspaces/P1/oauth/openai%2Fcodex');
   expect(last().method).toBe('DELETE');
 });
 
@@ -386,7 +386,7 @@ test('setPersonalProjectSecret PUTs to the /personal sub-route', async () => {
     body: { name: 'FOO', mine: { active: true, updated_at: '2026-01-01' } },
   };
   await setPersonalProjectSecret('P1', 'FOO', { value: 'mine-value', active: true });
-  expect(last().url).toContain('/projects/P1/secrets/FOO/personal');
+  expect(last().url).toContain('/workspaces/P1/secrets/FOO/personal');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ value: 'mine-value', active: true });
 });
@@ -394,14 +394,14 @@ test('setPersonalProjectSecret PUTs to the /personal sub-route', async () => {
 test('deletePersonalProjectSecret DELETEs the /personal sub-route', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deletePersonalProjectSecret('P1', 'FOO');
-  expect(last().url).toContain('/projects/P1/secrets/FOO/personal');
+  expect(last().url).toContain('/workspaces/P1/secrets/FOO/personal');
   expect(last().method).toBe('DELETE');
 });
 
 test('deletePersonalProjectSecret encodes special characters in the secret name', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deletePersonalProjectSecret('P1', 'FOO/BAR');
-  expect(last().url).toContain('/projects/P1/secrets/FOO%2FBAR/personal');
+  expect(last().url).toContain('/workspaces/P1/secrets/FOO%2FBAR/personal');
 });
 
 // The server answers "can this secret actually be delivered?" on two separate
@@ -499,7 +499,7 @@ test('setProjectSecretStrategy sends a host-list-only egress policy (no inject s
   });
 
   expect(last().method).toBe('PUT');
-  expect(last().url).toContain('/projects/P1/secrets/STRIPE_KEY/strategy');
+  expect(last().url).toContain('/workspaces/P1/secrets/STRIPE_KEY/strategy');
   expect(last().body).toEqual({
     strategy: 'egress',
     consumer: 'network',
@@ -596,8 +596,8 @@ function fakeClock() {
   };
 }
 
-const startRoute = 'http://test.local/projects/P1/oauth/openai/start';
-const pollRoute = 'http://test.local/projects/P1/oauth/openai/poll';
+const startRoute = 'http://test.local/workspaces/P1/oauth/openai/start';
+const pollRoute = 'http://test.local/workspaces/P1/oauth/openai/poll';
 const patch = (method: string, url: string) =>
   calls.filter((call) => call.method === method && call.url === url).length;
 

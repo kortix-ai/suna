@@ -135,7 +135,7 @@ describe('grantSecretToAgent', () => {
     };
     const response = await grantSecretToAgent('project-1', 'BOUNDARY_TEST', 'support');
     expect(calls[0]?.url).toBe(
-      'http://test.local/projects/project-1/secrets/BOUNDARY_TEST/grant',
+      'http://test.local/workspaces/project-1/secrets/BOUNDARY_TEST/grant',
     );
     expect(calls[0]?.body).toEqual({ agent: 'support' });
     expect(response.already_granted).toBe(false);
@@ -151,7 +151,7 @@ describe('grantSecretToAgent', () => {
     };
     await grantSecretToAgent('project-1', 'GMAPS/primary key', 'support');
     expect(calls[0]?.url).toBe(
-      'http://test.local/projects/project-1/secrets/GMAPS%2Fprimary%20key/grant',
+      'http://test.local/workspaces/project-1/secrets/GMAPS%2Fprimary%20key/grant',
     );
   });
 });

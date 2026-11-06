@@ -14,7 +14,7 @@ export interface ArtifactLiveTicket {
 }
 
 const live = (projectId: string, artifactId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/live`;
+  `/workspaces/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/live`;
 
 /**
  * Mint a ticket for `GET …/live?ticket=` (the WebSocket). It works once, within

@@ -33,7 +33,7 @@ test('replaces one project repository with a credential and an expected old URL'
     github_token: 'repo-scoped-token',
   });
 
-  expect(url).toEndWith('/projects/proj-1/git/repository');
+  expect(url).toEndWith('/workspaces/proj-1/git/repository');
   expect(method).toBe('PUT');
   expect(body).toEqual({
     repo_url: 'https://github.com/acme/new.git',
@@ -251,7 +251,7 @@ test('lists repository branches through the typed account-scoped GitHub surface'
   const result = await listGitHubRepositoryBranches('account 1', '84', 'acme/portal');
 
   expect(calls).toEqual([
-    'http://test.local/v1/projects/github/repository-branches?' +
+    'http://test.local/v1/workspaces/github/repository-branches?' +
       'account_id=account+1&installation_id=84&repo_full_name=acme%2Fportal',
   ]);
   expect(result.default_branch).toBe('trunk');
@@ -278,7 +278,7 @@ test('passes bounded repository search options through the typed GitHub surface'
   });
 
   expect(calls).toEqual([
-    'http://test.local/v1/projects/github/repositories?' +
+    'http://test.local/v1/workspaces/github/repositories?' +
       'account_id=account+1&installation_id=84&search=customer+portal&limit=25',
   ]);
 });
@@ -331,7 +331,7 @@ test('stores a GitHub user token for one account, and returns only the login', a
     expires_in: 28800,
   });
 
-  expect(url).toEndWith('/projects/github/user-token');
+  expect(url).toEndWith('/workspaces/github/user-token');
   expect(method).toBe('POST');
   expect(body).toEqual({
     account_id: 'acc-1',

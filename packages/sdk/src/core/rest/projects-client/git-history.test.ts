@@ -26,13 +26,13 @@ const last = () => calls[calls.length - 1]!;
 
 test('no options: no query string (server applies its own default limit)', async () => {
   await listProjectBranches('P1');
-  expect(last().url).toBe('http://test.local/projects/P1/branches');
+  expect(last().url).toBe('http://test.local/workspaces/P1/branches');
 });
 
 test('forwards q, limit, and includeSessionBranches as query params', async () => {
   await listProjectBranches('P1', { q: 'feature', limit: 100, includeSessionBranches: true });
   const url = new URL(last().url);
-  expect(url.pathname).toBe('/projects/P1/branches');
+  expect(url.pathname).toBe('/workspaces/P1/branches');
   expect(url.searchParams.get('q')).toBe('feature');
   expect(url.searchParams.get('limit')).toBe('100');
   expect(url.searchParams.get('include_session_branches')).toBe('true');

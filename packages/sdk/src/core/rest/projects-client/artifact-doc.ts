@@ -87,7 +87,7 @@ interface WirePage {
 }
 
 const doc = (projectId: string, artifactId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/doc`;
+  `/workspaces/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactId)}/doc`;
 
 /** A `bigint` column may arrive as a JSON number or a decimal string. */
 function toSeq(value: unknown, field: string): number {

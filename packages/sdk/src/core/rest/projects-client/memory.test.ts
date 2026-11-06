@@ -39,7 +39,7 @@ beforeEach(() => {
 const SPACE = '00000000-0000-4000-8000-000000000001';
 const PAGE = '00000000-0000-4000-8000-0000000000a1';
 const VERSION = '00000000-0000-4000-8000-0000000000b1';
-const base = 'http://test.local/v1/projects/P1/memory';
+const base = 'http://test.local/v1/workspaces/P1/memory';
 
 const layer: ProjectMemoryLayer = {
   layer_id: '00000000-0000-4000-8000-0000000000c1',
@@ -173,7 +173,7 @@ test('getSessionMemoryUsage GETs the thread memory-usage route', async () => {
   };
   nextResponse = { status: 200, body: usage };
   expect(await getSessionMemoryUsage('P1', 'T1')).toEqual(usage);
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/sessions/T1/memory-usage', method: 'GET', body: undefined }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/sessions/T1/memory-usage', method: 'GET', body: undefined }]);
 });
 
 test.each([

@@ -30,7 +30,7 @@ export async function createProjectSkill(
   // `showErrors: false`: the create modal renders this failure inline, with
   // its own wording, instead of the global handler toasting it too.
   return unwrap(
-    await backendApi.post<CreatedProjectSkill>(`/projects/${projectId}/skills`, input, {
+    await backendApi.post<CreatedProjectSkill>(`/workspaces/${projectId}/skills`, input, {
       showErrors: false,
       ...options,
     }),
@@ -45,7 +45,7 @@ export async function removeProjectSkill(
 ): Promise<{ ok: true; commitSha: string; removed: string[] }> {
   return unwrap(
     await backendApi.post<{ ok: true; commitSha: string; removed: string[] }>(
-      `/projects/${projectId}/skills/remove`,
+      `/workspaces/${projectId}/skills/remove`,
       input,
       { showErrors: false, ...options },
     ),

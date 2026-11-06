@@ -398,7 +398,7 @@ export interface UpdateProjectTriggerInput {
 export async function listProjectTriggers(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers`,
+      `/workspaces/${projectId}/triggers`,
     ),
   );
 }
@@ -409,7 +409,7 @@ export async function createProjectTrigger(
 ) {
   return unwrap(
     await backendApi.post<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers`,
+      `/workspaces/${projectId}/triggers`,
       input,
     ),
   );
@@ -422,7 +422,7 @@ export async function updateProjectTrigger(
 ) {
   return unwrap(
     await backendApi.patch<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers/${slug}`,
+      `/workspaces/${projectId}/triggers/${slug}`,
       input,
     ),
   );
@@ -431,7 +431,7 @@ export async function updateProjectTrigger(
 export async function deleteProjectTrigger(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/triggers/${slug}`,
+      `/workspaces/${projectId}/triggers/${slug}`,
     ),
   );
 }
@@ -451,13 +451,13 @@ export interface AccountAutomationsStatus {
 }
 
 export async function getAccountAutomations(accountId: string) {
-  return unwrap(await backendApi.get<AccountAutomationsStatus>(`/accounts/${accountId}/automations`));
+  return unwrap(await backendApi.get<AccountAutomationsStatus>(`/workspaces/${accountId}/automations`));
 }
 
 /** Pause or resume every trigger of the account. Needs account.write (owners and admins by default). */
 export async function setAccountAutomationsPaused(accountId: string, paused: boolean) {
   return unwrap(
-    await backendApi.patch<AccountAutomationsStatus>(`/accounts/${accountId}/automations`, { paused }, { showErrors: false }),
+    await backendApi.patch<AccountAutomationsStatus>(`/workspaces/${accountId}/automations`, { paused }, { showErrors: false }),
   );
 }
 
@@ -472,7 +472,7 @@ export async function setProjectTriggersActivation(
 ) {
   return unwrap(
     await backendApi.patch<ProjectTriggerListing>(
-      `/projects/${projectId}/triggers/activation`,
+      `/workspaces/${projectId}/triggers/activation`,
       { paused },
     ),
   );
@@ -610,7 +610,7 @@ export async function fireProjectTrigger(projectId: string, slug: string, option
   if (options?.dryRun !== undefined) body.dry_run = options.dryRun;
   return unwrap(
     await backendApi.post<FireProjectTriggerResponse | ProjectTriggerDryRunResult>(
-      `/projects/${projectId}/triggers/${slug}/fire`,
+      `/workspaces/${projectId}/triggers/${slug}/fire`,
       body,
     ),
   );
@@ -620,7 +620,7 @@ export async function fireProjectTrigger(projectId: string, slug: string, option
 export async function listTriggerRuns(projectId: string, slug: string, options?: ListTriggerRunsOptions) {
   return unwrap(
     await backendApi.get<ProjectTriggerRunList>(
-      `/projects/${projectId}/triggers/${slug}/runs${runsQuery(options)}`,
+      `/workspaces/${projectId}/triggers/${slug}/runs${runsQuery(options)}`,
     ),
   );
 }
@@ -628,7 +628,7 @@ export async function listTriggerRuns(projectId: string, slug: string, options?:
 /** Every trigger run of the project the caller may see, newest first. `failed` includes dead-lettered runs. */
 export async function listProjectTriggerRuns(projectId: string, options?: ListProjectTriggerRunsOptions) {
   return unwrap(
-    await backendApi.get<ProjectTriggerRunList>(`/projects/${projectId}/trigger-runs${runsQuery(options)}`),
+    await backendApi.get<ProjectTriggerRunList>(`/workspaces/${projectId}/trigger-runs${runsQuery(options)}`),
   );
 }
 
@@ -652,7 +652,7 @@ export async function replayTriggerRun(
 ) {
   return unwrap(
     await backendApi.post<FireProjectTriggerResponse>(
-      `/projects/${projectId}/triggers/${slug}/runs/${runId}/replay`,
+      `/workspaces/${projectId}/triggers/${slug}/runs/${runId}/replay`,
       options?.confirmUnverified ? { confirm_unverified: true } : {},
     ),
   );
@@ -697,7 +697,7 @@ export async function listProjectTriggerEventTypes(
       ? `connector=${encodeURIComponent(params.connector)}`
       : `app=${encodeURIComponent(params.app)}${params.source ? `&source=${encodeURIComponent(params.source)}` : ''}`;
   return unwrap(
-    await backendApi.get<ProjectTriggerEventTypes>(`/projects/${projectId}/triggers/event-types?${query}`),
+    await backendApi.get<ProjectTriggerEventTypes>(`/workspaces/${projectId}/triggers/event-types?${query}`),
   );
 }
 
@@ -749,5 +749,5 @@ export interface ProjectTriggerEventApps {
 
 /** Apps with at least one event type, with connector and connection state for this project. */
 export async function listProjectTriggerEventApps(projectId: string) {
-  return unwrap(await backendApi.get<ProjectTriggerEventApps>(`/projects/${projectId}/triggers/event-apps`));
+  return unwrap(await backendApi.get<ProjectTriggerEventApps>(`/workspaces/${projectId}/triggers/event-apps`));
 }

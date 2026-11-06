@@ -46,20 +46,20 @@ const storeB: ProjectSessionGroup = { ...storeA, group_id: '00000000-0000-4000-8
 test('listProjectSessionGroups GETs the project groups and returns the array in order', async () => {
   nextResponse = { status: 200, body: { groups: [storeA, storeB] } };
   expect(await listProjectSessionGroups('P1')).toEqual([storeA, storeB]);
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/session-groups', method: 'GET', body: undefined }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/session-groups', method: 'GET', body: undefined }]);
 });
 
 test('createProjectSessionGroup POSTs { name } and returns the group', async () => {
   nextResponse = { status: 201, body: storeA };
   expect(await createProjectSessionGroup('P1', { name: 'Store A' })).toEqual(storeA);
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/session-groups', method: 'POST', body: { name: 'Store A' } }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/session-groups', method: 'POST', body: { name: 'Store A' } }]);
 });
 
 test('renameProjectSessionGroup PATCHes { name } on the group', async () => {
   nextResponse = { status: 200, body: { ...storeA, name: 'Store A (EU)' } };
   expect((await renameProjectSessionGroup('P1', storeA.group_id, 'Store A (EU)')).name).toBe('Store A (EU)');
   expect(calls).toEqual([
-    { url: `http://test.local/v1/projects/P1/session-groups/${storeA.group_id}`, method: 'PATCH', body: { name: 'Store A (EU)' } },
+    { url: `http://test.local/v1/workspaces/P1/session-groups/${storeA.group_id}`, method: 'PATCH', body: { name: 'Store A (EU)' } },
   ]);
 });
 
@@ -67,7 +67,7 @@ test('deleteProjectSessionGroup DELETEs the group', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   expect(await deleteProjectSessionGroup('P1', storeA.group_id)).toBeUndefined();
   expect(calls).toEqual([
-    { url: `http://test.local/v1/projects/P1/session-groups/${storeA.group_id}`, method: 'DELETE', body: undefined },
+    { url: `http://test.local/v1/workspaces/P1/session-groups/${storeA.group_id}`, method: 'DELETE', body: undefined },
   ]);
 });
 
@@ -77,7 +77,7 @@ test('reorderProjectSessionGroups PUTs every id in the new order and returns the
   expect(await reorderProjectSessionGroups('P1', [storeB.group_id, storeA.group_id])).toEqual(reordered);
   expect(calls).toEqual([
     {
-      url: 'http://test.local/v1/projects/P1/session-groups/order',
+      url: 'http://test.local/v1/workspaces/P1/session-groups/order',
       method: 'PUT',
       body: { group_ids: [storeB.group_id, storeA.group_id] },
     },
@@ -90,8 +90,8 @@ test('setProjectSessionGroup PUTs { group_id } on the session, and null takes it
   nextResponse = { status: 200, body: { session_id: 'S1', group_id: null } };
   expect(await setProjectSessionGroup('P1', 'S1', null)).toEqual({ session_id: 'S1', group_id: null });
   expect(calls).toEqual([
-    { url: 'http://test.local/v1/projects/P1/sessions/S1/group', method: 'PUT', body: { group_id: storeA.group_id } },
-    { url: 'http://test.local/v1/projects/P1/sessions/S1/group', method: 'PUT', body: { group_id: null } },
+    { url: 'http://test.local/v1/workspaces/P1/sessions/S1/group', method: 'PUT', body: { group_id: storeA.group_id } },
+    { url: 'http://test.local/v1/workspaces/P1/sessions/S1/group', method: 'PUT', body: { group_id: null } },
   ]);
 });
 

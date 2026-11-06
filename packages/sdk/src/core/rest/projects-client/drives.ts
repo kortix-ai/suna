@@ -730,7 +730,7 @@ export async function restoreDriveVersion(driveId: string, versionId: string): P
 }
 
 const sessionDrivesPath = (projectId: string, sessionId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/drives`;
+  `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/drives`;
 
 /** What the project's Files hold, their limits, and each folder sessions mount against the folder-mount cap. */
 export async function getDriveUsage(driveId: string): Promise<DriveUsage> {

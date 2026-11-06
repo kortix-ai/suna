@@ -145,14 +145,14 @@ test('listSignedInDevices() reads the caller’s own browser sign-ins', async ()
   };
   nextResponse = { status: 200, body: { devices: [device] } };
   expect(await listSignedInDevices()).toEqual([device]);
-  expect(last().url).toBe('http://test.local/accounts/me/devices');
+  expect(last().url).toBe('http://test.local/me/devices');
   expect(last().method).toBe('GET');
 });
 
 test('signOutDevice(id) ends that one sign-in', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await signOutDevice('00000000-0000-4000-8000-000000000002');
-  expect(last().url).toBe('http://test.local/accounts/me/devices/00000000-0000-4000-8000-000000000002');
+  expect(last().url).toBe('http://test.local/me/devices/00000000-0000-4000-8000-000000000002');
   expect(last().method).toBe('DELETE');
 });
 

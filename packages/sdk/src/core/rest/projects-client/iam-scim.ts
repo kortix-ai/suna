@@ -23,7 +23,7 @@ export interface CreatedScimToken
 }
 
 export async function listScimTokens(accountId: string) {
-  return unwrap(await iamGet<{ tokens: ScimToken[] }>(`/accounts/${accountId}/iam/scim/tokens`))
+  return unwrap(await iamGet<{ tokens: ScimToken[] }>(`/workspaces/${accountId}/iam/scim/tokens`))
     .tokens;
 }
 
@@ -32,7 +32,7 @@ export async function createScimToken(
   input: { name: string; expires_at?: string },
 ) {
   return unwrap(
-    await backendApi.post<CreatedScimToken>(`/accounts/${accountId}/iam/scim/tokens`, input, {
+    await backendApi.post<CreatedScimToken>(`/workspaces/${accountId}/iam/scim/tokens`, input, {
       showErrors: false,
     }),
   );
@@ -41,7 +41,7 @@ export async function createScimToken(
 export async function revokeScimToken(accountId: string, tokenId: string) {
   return unwrap(
     await backendApi.delete<{ revoked: boolean }>(
-      `/accounts/${accountId}/iam/scim/tokens/${tokenId}`,
+      `/workspaces/${accountId}/iam/scim/tokens/${tokenId}`,
     ),
   );
 }

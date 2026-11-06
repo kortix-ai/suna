@@ -483,7 +483,7 @@ export async function listProjectSessionsPage(
   options?: ListProjectSessionsOptions,
 ): Promise<ProjectSessionPage> {
   const response = await backendApi.get<ProjectSession[]>(
-    `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+    `/workspaces/${projectId}/sessions${projectSessionListQuery(options)}`,
     // A background read (shell prefetch, 5s sidebar poll): its query state
     // reports a failure. The host toast would announce a 403 over the access
     // gate that already explains it.
@@ -508,7 +508,7 @@ export async function listProjectSessionsPage(
 export async function listProjectSessions(projectId: string, options?: ListProjectSessionsOptions) {
   return unwrap(
     await backendApi.get<ProjectSession[]>(
-      `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+      `/workspaces/${projectId}/sessions${projectSessionListQuery(options)}`,
     ),
   );
 }
@@ -524,7 +524,7 @@ export async function setProjectSessionSharing(
 ) {
   return unwrap(
     await backendApi.put<ProjectSession>(
-      `/projects/${projectId}/sessions/${sessionId}/sharing`,
+      `/workspaces/${projectId}/sessions/${sessionId}/sharing`,
       intent,
     ),
   );
@@ -556,7 +556,7 @@ export interface SessionParticipants {
 export async function getSessionParticipants(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<SessionParticipants>(
-      `/projects/${projectId}/sessions/${sessionId}/participants`,
+      `/workspaces/${projectId}/sessions/${sessionId}/participants`,
       { showErrors: false },
     ),
   );
@@ -569,7 +569,7 @@ export async function getSessionParticipants(projectId: string, sessionId: strin
  */
 export async function getSessionWatch(projectId: string, sessionId: string) {
   return unwrap(
-    await backendApi.get<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+    await backendApi.get<{ watching: boolean }>(`/workspaces/${projectId}/sessions/${sessionId}/watch`, {
       showErrors: false,
     }),
   );
@@ -582,7 +582,7 @@ export async function getSessionWatch(projectId: string, sessionId: string) {
  */
 export async function setSessionWatch(projectId: string, sessionId: string, watching: boolean) {
   return unwrap(
-    await backendApi.put<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+    await backendApi.put<{ watching: boolean }>(`/workspaces/${projectId}/sessions/${sessionId}/watch`, {
       watching,
     }),
   );
@@ -601,7 +601,7 @@ export interface SessionListState {
  */
 export async function setSessionPinned(projectId: string, sessionId: string, pinned: boolean) {
   return unwrap(
-    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/pin`, { pinned }),
+    await backendApi.put<SessionListState>(`/workspaces/${projectId}/sessions/${sessionId}/pin`, { pinned }),
   );
 }
 
@@ -612,7 +612,7 @@ export async function setSessionPinned(projectId: string, sessionId: string, pin
  */
 export async function setSessionArchived(projectId: string, sessionId: string, archived: boolean) {
   return unwrap(
-    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/archive`, { archived }),
+    await backendApi.put<SessionListState>(`/workspaces/${projectId}/sessions/${sessionId}/archive`, { archived }),
   );
 }
 
@@ -736,7 +736,7 @@ export function findActiveTranscriptShare(
 export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<{ candidates: SessionPreviewCandidate[] }>(
-      `/projects/${projectId}/sessions/${sessionId}/previews`,
+      `/workspaces/${projectId}/sessions/${sessionId}/previews`,
     ),
   );
 }
@@ -744,7 +744,7 @@ export async function getSessionPreviewCandidates(projectId: string, sessionId: 
 export async function listSessionPublicShares(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<{ shares: SessionPublicShare[] }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      `/workspaces/${projectId}/sessions/${sessionId}/public-shares`,
       { showErrors: false },
     ),
   );
@@ -762,7 +762,7 @@ export async function createSessionPublicShare(
 ) {
   return unwrap(
     await backendApi.post<{ share: SessionPublicShare }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      `/workspaces/${projectId}/sessions/${sessionId}/public-shares`,
       input,
     ),
   );
@@ -775,7 +775,7 @@ export async function revokeSessionPublicShare(
 ) {
   return unwrap(
     await backendApi.delete<{ share: SessionPublicShare }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares/${shareId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/public-shares/${shareId}`,
     ),
   );
 }
@@ -800,7 +800,7 @@ export interface TurnShare {
 }
 
 function turnSharePath(projectId: string, sessionId: string, turnId: string): string {
-  return `/projects/${projectId}/sessions/${sessionId}/turns/${encodeURIComponent(turnId)}/share`;
+  return `/workspaces/${projectId}/sessions/${sessionId}/turns/${encodeURIComponent(turnId)}/share`;
 }
 
 /** The live share of one turn, or `{ share: null }`. */
@@ -849,7 +849,7 @@ export async function unshareTurn(projectId: string, sessionId: string, turnId: 
  */
 export async function createProjectSession(projectId: string, input?: CreateProjectSessionInput) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),
+    await backendApi.post<ProjectSession>(`/workspaces/${projectId}/sessions`, input ?? {}),
   );
   // Mark freshly-created EMPTY sessions so the session page shows the instant
   // typeable shell instead of the resume loader. THE chokepoint for every empty
@@ -900,7 +900,7 @@ export async function getProjectSession(
   options?: { showErrors?: boolean },
 ) {
   return unwrap(
-    await backendApi.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, {
+    await backendApi.get<ProjectSession>(`/workspaces/${projectId}/sessions/${sessionId}`, {
       showErrors: options?.showErrors,
     }),
   );
@@ -984,7 +984,7 @@ export async function getSessionAudit(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionAudit>(
-      `/projects/${projectId}/sessions/${sessionId}/audit${qs ? `?${qs}` : ''}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/audit${qs ? `?${qs}` : ''}`,
       {
         showErrors: options?.showErrors,
       },
@@ -1101,7 +1101,7 @@ export async function getSessionTranscript(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionTranscript>(
-      `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
     ),
   );
 }
@@ -1148,7 +1148,7 @@ export async function getSessionTranscriptSync(
   if (options?.child) search.set('child', options.child);
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
-      `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
       { showErrors: false, signal: options?.signal },
     ),
   );
@@ -1260,7 +1260,7 @@ export async function getSessionTurn(
 ): Promise<SessionTurnStatus> {
   return unwrap(
     await backendApi.get<SessionTurnStatus>(
-      `/projects/${projectId}/sessions/${sessionId}/turn`,
+      `/workspaces/${projectId}/sessions/${sessionId}/turn`,
       options?.showErrors === false ? { showErrors: false } : undefined,
     ),
   );
@@ -1415,7 +1415,7 @@ export async function getSessionOpenBundle(
       // client kept requesting `/open-bundle`, so every session open 404'd the
       // bundle and silently fell back to 6-8 serial reads. (The API keeps an
       // `/open-bundle` alias for SDKs published before the rename.)
-      `/projects/${projectId}/sessions/${sessionId}/snapshot${qs ? `?${qs}` : ''}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/snapshot${qs ? `?${qs}` : ''}`,
       // A 404 here is an EXPECTED race: the session exists but the control
       // plane has not marked it visible yet. `openSessionBundle` already
       // resolves `null` and every consumer falls back to its direct read
@@ -1617,7 +1617,7 @@ export async function createSessionPrompt(
   const placement = input.placement ?? placementForDelivery(input.delivery);
   return unwrap(
     await backendApi.post<CreateSessionPromptResult>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts`,
       {
         client_message_id: input.clientMessageId,
         message_id: input.messageId,
@@ -1661,7 +1661,7 @@ export async function listSessionPrompts(
 ): Promise<{ prompts: SessionPrompt[]; sent?: SessionSentPrompt[]; observed_at?: string }> {
   return unwrap(
     await backendApi.get<{ prompts: SessionPrompt[]; sent?: SessionSentPrompt[]; observed_at?: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts`,
       // A background poll: a failed tick must not toast every second.
       { showErrors: false },
     ),
@@ -1702,7 +1702,7 @@ export async function deleteSessionPrompt(
 ): Promise<RemovedSessionPrompt> {
   const body = unwrap(
     await backendApi.delete<{ removed: RemovedSessionPrompt }>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
     ),
@@ -1726,7 +1726,7 @@ export async function editSessionPrompt(
 ): Promise<SessionPrompt> {
   return unwrap(
     await backendApi.patch<SessionPrompt>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
       { text },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
@@ -1746,7 +1746,7 @@ export async function interruptSessionPrompt(
 ): Promise<SessionPrompt> {
   return unwrap(
     await backendApi.patch<SessionPrompt>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
       { delivery: 'interrupt' },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
@@ -1770,7 +1770,7 @@ export async function retrySessionPrompt(
 ): Promise<SessionPrompt> {
   return unwrap(
     await backendApi.post<SessionPrompt>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
       {},
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
@@ -1798,7 +1798,7 @@ export async function holdSessionPrompts(
 ): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
   return unwrap(
     await backendApi.post<{ prompts: SessionPrompt[]; observed_at?: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/hold`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/hold`,
       { held },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
@@ -1828,7 +1828,7 @@ export async function updateProjectSession(
   input: UpdateProjectSessionInput,
 ) {
   return unwrap(
-    await backendApi.patch<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, input),
+    await backendApi.patch<ProjectSession>(`/workspaces/${projectId}/sessions/${sessionId}`, input),
   );
 }
 
@@ -1841,7 +1841,7 @@ export async function updateProjectSession(
 export async function deleteProjectSession(projectId: string, sessionId: string) {
   const result = unwrap(
     await backendApi.delete<{ ok: boolean; restore_until?: string }>(
-      `/projects/${projectId}/sessions/${sessionId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}`,
     ),
   );
   // The device's saved copy of a deleted session would only take space.
@@ -1863,7 +1863,7 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
 export async function recoverProjectSession(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ ok: true }>(
-      `/projects/${projectId}/sessions/${sessionId}/recover`,
+      `/workspaces/${projectId}/sessions/${sessionId}/recover`,
       {},
       // The caller shows the refusal in place (the lost-session banner).
       { showErrors: false },
@@ -1882,7 +1882,7 @@ export async function recoverProjectSession(projectId: string, sessionId: string
 export async function restoreProjectSession(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean }>(
-      `/projects/${projectId}/sessions/${sessionId}/restore`,
+      `/workspaces/${projectId}/sessions/${sessionId}/restore`,
       {},
       // The caller reports the outcome itself (an Undo toast, a CLI line).
       { showErrors: false },
@@ -1906,7 +1906,7 @@ export async function restartProjectSession(
       state_carried?: boolean | null;
       /** @deprecated Never sent: persistent machines left the product. Removed in the next major. */
       warning?: string;
-    }>(`/projects/${projectId}/sessions/${sessionId}/restart`, {}),
+    }>(`/workspaces/${projectId}/sessions/${sessionId}/restart`, {}),
   );
 }
 
@@ -1914,7 +1914,7 @@ export async function restartProjectSession(
 export async function stopProjectSession(projectId: string, sessionId: string) {
   const stopped = unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/stop`,
+      `/workspaces/${projectId}/sessions/${sessionId}/stop`,
       {},
     ),
   );
@@ -2035,7 +2035,7 @@ export async function getProjectSessionConfigState(
 ): Promise<SessionConfigState> {
   return unwrap(
     await backendApi.get<SessionConfigState>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/config`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/config`,
       { showErrors: false },
     ),
   );
@@ -2159,7 +2159,7 @@ export async function reloadProjectSessionConfig(
 ): Promise<SessionReloadResult> {
   return unwrap(
     await backendApi.post<SessionReloadResult>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload`,
       input,
       { showErrors: false },
     ),
@@ -2186,7 +2186,7 @@ export async function reloadProjectSessionConfigStream(
   options: ApiClientOptions = {},
 ): Promise<SessionReloadResult> {
   const response = await backendApi.postStream(
-    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload-stream`,
+    `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload-stream`,
     input,
     options,
   );
@@ -2336,7 +2336,7 @@ export async function getProjectSessionScope(
 ): Promise<SessionScope> {
   return unwrap(
     await backendApi.get<SessionScope>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
     ),
   );
 }
@@ -2352,7 +2352,7 @@ export async function setProjectSessionScope(
 ): Promise<SessionScope> {
   return unwrap(
     await backendApi.put<SessionScope>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
       scope,
     ),
   );
@@ -2396,7 +2396,7 @@ export async function switchProjectSessionModel(
   input: SessionModelSwitchInput,
 ): Promise<SessionModelSwitchResult> {
   return unwrap(await backendApi.put<SessionModelSwitchResult>(
-    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`, input,
+    `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`, input,
   ));
 }
 
@@ -2415,7 +2415,7 @@ export async function setProjectSessionModel(
 ): Promise<SessionModelChangeResult> {
   return unwrap(
     await backendApi.put<SessionModelChangeResult>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
       { model },
     ),
   );
@@ -2465,7 +2465,7 @@ export async function getSessionMessageAuthors(
 ): Promise<SessionMessageAuthors> {
   return unwrap(
     await backendApi.get<SessionMessageAuthors>(
-      `/projects/${projectId}/sessions/${sessionId}/message-authors`,
+      `/workspaces/${projectId}/sessions/${sessionId}/message-authors`,
       { showErrors: false },
     ),
   );
@@ -2515,7 +2515,7 @@ export async function getSessionModelUsage(
 ): Promise<SessionModelUsage> {
   return unwrap(
     await backendApi.get<SessionModelUsage>(
-      `/projects/${projectId}/sessions/${sessionId}/model-usage`,
+      `/workspaces/${projectId}/sessions/${sessionId}/model-usage`,
       { showErrors: false },
     ),
   );
@@ -2568,6 +2568,6 @@ export interface SessionUsage {
  *  itself, so its cost is in the session's own entry. */
 export async function getSessionUsage(projectId: string, sessionId: string): Promise<SessionUsage> {
   return unwrap(
-    await backendApi.get<SessionUsage>(`/projects/${projectId}/sessions/${sessionId}/usage`, { showErrors: false }),
+    await backendApi.get<SessionUsage>(`/workspaces/${projectId}/sessions/${sessionId}/usage`, { showErrors: false }),
   );
 }

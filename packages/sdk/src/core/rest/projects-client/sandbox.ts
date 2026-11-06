@@ -203,7 +203,7 @@ export interface RebuildSnapshotResponse {
 export async function listProjectSandboxTemplates(projectId: string) {
   return unwrap(
     await backendApi.get<SandboxTemplatesResponse>(
-      `/projects/${projectId}/sandboxes`,
+      `/workspaces/${projectId}/sandboxes`,
     ),
   );
 }
@@ -211,7 +211,7 @@ export async function listProjectSandboxTemplates(projectId: string) {
 export async function listProjectSnapshots(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSnapshotsResponse>(
-      `/projects/${projectId}/snapshots`,
+      `/workspaces/${projectId}/snapshots`,
     ),
   );
 }
@@ -219,7 +219,7 @@ export async function listProjectSnapshots(projectId: string) {
 export async function getProjectSandboxHealth(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSandboxHealth>(
-      `/projects/${projectId}/sandbox-health`,
+      `/workspaces/${projectId}/sandbox-health`,
       {
         // Background poll used by alerts/settings. React Query owns retry/error
         // state; the global error handler would otherwise spam console.error
@@ -234,7 +234,7 @@ export async function getProjectSandboxHealth(projectId: string) {
 export async function rebuildProjectSnapshot(projectId: string, slug?: string) {
   return unwrap(
     await backendApi.post<RebuildSnapshotResponse>(
-      `/projects/${projectId}/snapshots/rebuild`,
+      `/workspaces/${projectId}/snapshots/rebuild`,
       slug ? { slug } : {},
     ),
   );
@@ -243,7 +243,7 @@ export async function rebuildProjectSnapshot(projectId: string, slug?: string) {
 export async function fixSandboxWithAgent(projectId: string) {
   return unwrap(
     await backendApi.post<{ session_id: string }>(
-      `/projects/${projectId}/snapshots/fix-with-agent`,
+      `/workspaces/${projectId}/snapshots/fix-with-agent`,
       {},
     ),
   );
@@ -282,7 +282,7 @@ export async function createSandboxTemplate(
 ) {
   return unwrap(
     await backendApi.post<{ template_id: string; slug: string }>(
-      `/projects/${projectId}/sandbox-templates`,
+      `/workspaces/${projectId}/sandbox-templates`,
       input,
     ),
   );
@@ -295,7 +295,7 @@ export async function updateSandboxTemplate(
 ) {
   return unwrap(
     await backendApi.patch<{ template_id: string; slug: string }>(
-      `/projects/${projectId}/sandbox-templates/${templateId}`,
+      `/workspaces/${projectId}/sandbox-templates/${templateId}`,
       input,
     ),
   );
@@ -304,7 +304,7 @@ export async function updateSandboxTemplate(
 export async function deleteSandboxTemplate(projectId: string, templateId: string) {
   return unwrap(
     await backendApi.delete<null>(
-      `/projects/${projectId}/sandbox-templates/${templateId}`,
+      `/workspaces/${projectId}/sandbox-templates/${templateId}`,
     ),
   );
 }
@@ -317,7 +317,7 @@ export async function buildSandboxTemplate(projectId: string, templateId: string
       slug: string;
       providers?: Array<'platinum' | 'daytona'>;
     }>(
-      `/projects/${projectId}/sandbox-templates/${templateId}/build`,
+      `/workspaces/${projectId}/sandbox-templates/${templateId}/build`,
       {},
     ),
   );
@@ -325,6 +325,6 @@ export async function buildSandboxTemplate(projectId: string, templateId: string
 
 export async function listProjectSandboxes(projectId: string) {
   return unwrap(
-    await backendApi.get<SandboxTemplatesResponse>(`/projects/${projectId}/sandboxes`),
+    await backendApi.get<SandboxTemplatesResponse>(`/workspaces/${projectId}/sandboxes`),
   );
 }

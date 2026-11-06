@@ -889,7 +889,7 @@ export interface TopUpRequestResult {
  */
 export async function requestTopUp(accountId: string): Promise<TopUpRequestResult> {
   return unwrap(
-    await backendApi.post<TopUpRequestResult>(`/accounts/${encodeURIComponent(accountId)}/top-up-requests`, {}),
+    await backendApi.post<TopUpRequestResult>(`/workspaces/${encodeURIComponent(accountId)}/top-up-requests`, {}),
     'Failed to ask the owners for credits',
   );
 }

@@ -28,7 +28,7 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
       options?: { keepalive?: boolean },
     ) =>
       backendApi.put<{ ok: boolean; awake_until?: string | null; awake_cap_at?: string | null }>(
-        `/projects/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
+        `/workspaces/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
         input,
         { showErrors: false, keepalive: options?.keepalive ?? !input.active },
       ),

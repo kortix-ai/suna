@@ -31,13 +31,13 @@ const hit: ProjectSearchHit = {
 test('searchProject GETs /projects/:id/search with q and returns hits and next_cursor', async () => {
   nextResponse = { status: 200, body: { hits: [hit], next_cursor: 'abc' } };
   expect(await searchProject('P1', { q: 'launch plan' })).toEqual({ hits: [hit], next_cursor: 'abc' });
-  expect(calls).toEqual([{ url: 'http://test.local/v1/projects/P1/search?q=launch+plan', method: 'GET' }]);
+  expect(calls).toEqual([{ url: 'http://test.local/v1/workspaces/P1/search?q=launch+plan', method: 'GET' }]);
 });
 
 test('searchProject passes path, limit and cursor, and encodes them', async () => {
   nextResponse = { status: 200, body: { hits: [], next_cursor: null } };
   await searchProject('P1', { q: 'a&b', path: '/Company/plans & notes', limit: 5, cursor: 'c1' });
-  expect(calls[0]!.url).toBe('http://test.local/v1/projects/P1/search?q=a%26b&path=%2FCompany%2Fplans+%26+notes&limit=5&cursor=c1');
+  expect(calls[0]!.url).toBe('http://test.local/v1/workspaces/P1/search?q=a%26b&path=%2FCompany%2Fplans+%26+notes&limit=5&cursor=c1');
 });
 
 test('a refusal rejects with the ApiError and raises no app-wide error', async () => {

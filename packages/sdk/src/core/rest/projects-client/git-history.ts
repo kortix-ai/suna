@@ -117,7 +117,7 @@ export async function listProjectBranches(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectBranchesResponse>(
-      `/projects/${projectId}/branches${query}`,
+      `/workspaces/${projectId}/branches${query}`,
     ),
   );
 }
@@ -134,7 +134,7 @@ export async function listProjectCommits(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectCommitsResponse>(
-      `/projects/${projectId}/commits${query}`,
+      `/workspaces/${projectId}/commits${query}`,
     ),
   );
 }
@@ -142,7 +142,7 @@ export async function listProjectCommits(
 export async function getProjectCommit(projectId: string, sha: string) {
   return unwrap(
     await backendApi.get<ProjectCommitDetail>(
-      `/projects/${projectId}/commits/${encodeURIComponent(sha)}`,
+      `/workspaces/${projectId}/commits/${encodeURIComponent(sha)}`,
     ),
   );
 }
@@ -157,7 +157,7 @@ export async function getProjectCommitDiff(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<ProjectCommitDiffResponse>(
-      `/projects/${projectId}/commits/${encodeURIComponent(sha)}/diff${query}`,
+      `/workspaces/${projectId}/commits/${encodeURIComponent(sha)}/diff${query}`,
     ),
   );
 }
@@ -173,7 +173,7 @@ export async function getProjectFileHistory(
   if (options?.skip != null) params.set('skip', String(options.skip));
   return unwrap(
     await backendApi.get<ProjectFileHistoryResponse>(
-      `/projects/${projectId}/files/history?${params.toString()}`,
+      `/workspaces/${projectId}/files/history?${params.toString()}`,
     ),
   );
 }

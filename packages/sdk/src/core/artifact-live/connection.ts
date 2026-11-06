@@ -217,7 +217,7 @@ export function createArtifactLiveConnection(options: ArtifactLiveConnectionOpti
     const backendUrl = options.backendUrl ?? platformConfig().backendUrl;
     const origin = typeof window !== 'undefined' ? window.location?.href : undefined;
     const url = new URL(
-      `${stripTrailingSlashes(backendUrl)}/projects/${encodeURIComponent(options.projectId)}/artifacts/${encodeURIComponent(options.artifactId)}/live`,
+      `${stripTrailingSlashes(backendUrl)}/workspaces/${encodeURIComponent(options.projectId)}/artifacts/${encodeURIComponent(options.artifactId)}/live`,
       origin,
     );
     if (url.protocol === 'https:') url.protocol = 'wss:';

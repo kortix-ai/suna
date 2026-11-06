@@ -50,8 +50,8 @@ test('session oversight: GET reads the account policy and PATCH sends the explic
   expect(await setSessionOversight('acc-1', true)).toEqual({ enabled: true });
 
   expect(calls.map((c) => [c.method, new URL(c.url).pathname, c.body])).toEqual([
-    ['GET', '/accounts/acc-1/iam/session-oversight', undefined],
-    ['PATCH', '/accounts/acc-1/iam/session-oversight', { enabled: true }],
+    ['GET', '/workspaces/acc-1/iam/session-oversight', undefined],
+    ['PATCH', '/workspaces/acc-1/iam/session-oversight', { enabled: true }],
   ]);
 });
 
@@ -95,7 +95,7 @@ test('SSO domain verification: POST verify-domain returns the provider with its 
   const verified = await verifySsoDomain('acc-1');
 
   expect(calls.map((c) => [c.method, new URL(c.url).pathname])).toEqual([
-    ['POST', '/accounts/acc-1/iam/sso/provider/verify-domain'],
+    ['POST', '/workspaces/acc-1/iam/sso/provider/verify-domain'],
   ]);
   expect(verified.domain_verified).toBe(true);
   expect(verified.domain_verification?.record_name).toBe('_kortix-verification.example.test');
@@ -125,10 +125,10 @@ test('IAM write and list contracts preserve paths, payloads, and results', async
   await iam.bulkDeletePolicies('a', ['p']);
   await iam.bulkImportPolicies('a', []);
   expect(calls.map(([method, path]) => [method, path])).toEqual([
-    ['GET', '/accounts/a/iam/groups'], ['DELETE', '/accounts/a/iam/groups/g'],
-    ['GET', '/accounts/a/iam/scim/tokens'], ['GET', '/accounts/a/iam/service-accounts'],
-    ['GET', '/accounts/a/audit/webhooks'], ['GET', '/accounts/a/audit?actor=u&limit=2'],
-    ['GET', '/accounts/a/iam/pat-policy'], ['POST', '/accounts/a/iam/policies:bulk-delete'],
-    ['POST', '/accounts/a/iam/policies:bulk-import'],
+    ['GET', '/workspaces/a/iam/groups'], ['DELETE', '/workspaces/a/iam/groups/g'],
+    ['GET', '/workspaces/a/iam/scim/tokens'], ['GET', '/workspaces/a/iam/service-accounts'],
+    ['GET', '/workspaces/a/audit/webhooks'], ['GET', '/workspaces/a/audit?actor=u&limit=2'],
+    ['GET', '/workspaces/a/iam/pat-policy'], ['POST', '/workspaces/a/iam/policies:bulk-delete'],
+    ['POST', '/workspaces/a/iam/policies:bulk-import'],
   ]);
 });

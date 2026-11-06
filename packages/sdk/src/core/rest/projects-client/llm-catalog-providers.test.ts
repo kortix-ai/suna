@@ -47,7 +47,7 @@ test('loads the live provider-level catalog', async () => {
   expect(result.providers[0]?.id).toBe('amazon-bedrock');
   expect(result.providers[0]?.env).toContain('AWS_BEARER_TOKEN_BEDROCK');
   expect(calls.at(-1)).toEqual({
-    url: 'http://test.local/projects/P1/llm-catalog/providers',
+    url: 'http://test.local/workspaces/P1/llm-catalog/providers',
     method: 'GET',
   });
 });

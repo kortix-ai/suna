@@ -34,7 +34,7 @@ export interface ProjectSessionGroupAssignment {
 /** The project's groups, in order. A background read: a failure reaches the caller's query state, not the host error handler. */
 export async function listProjectSessionGroups(projectId: string): Promise<ProjectSessionGroup[]> {
   const body = unwrap(
-    await backendApi.get<{ groups: ProjectSessionGroup[] }>(`/projects/${projectId}/session-groups`, { showErrors: false }),
+    await backendApi.get<{ groups: ProjectSessionGroup[] }>(`/workspaces/${projectId}/session-groups`, { showErrors: false }),
   );
   return body.groups;
 }
@@ -47,20 +47,20 @@ export async function listProjectSessionGroups(projectId: string): Promise<Proje
  */
 export async function createProjectSessionGroup(projectId: string, input: CreateProjectSessionGroupInput) {
   return unwrap(
-    await backendApi.post<ProjectSessionGroup>(`/projects/${projectId}/session-groups`, input, { showErrors: false }),
+    await backendApi.post<ProjectSessionGroup>(`/workspaces/${projectId}/session-groups`, input, { showErrors: false }),
   );
 }
 
 /** Rename a group. A taken name rejects with 409 `group_name_taken`; an unknown group with 404 `group_not_found`. */
 export async function renameProjectSessionGroup(projectId: string, groupId: string, name: string) {
   return unwrap(
-    await backendApi.patch<ProjectSessionGroup>(`/projects/${projectId}/session-groups/${groupId}`, { name }, { showErrors: false }),
+    await backendApi.patch<ProjectSessionGroup>(`/workspaces/${projectId}/session-groups/${groupId}`, { name }, { showErrors: false }),
   );
 }
 
 /** Delete a group. Its sessions stay, in no group; the groups after it move up one place. */
 export async function deleteProjectSessionGroup(projectId: string, groupId: string): Promise<void> {
-  unwrap(await backendApi.delete<{ ok: true }>(`/projects/${projectId}/session-groups/${groupId}`, { showErrors: false }));
+  unwrap(await backendApi.delete<{ ok: true }>(`/workspaces/${projectId}/session-groups/${groupId}`, { showErrors: false }));
 }
 
 /**
@@ -72,7 +72,7 @@ export async function deleteProjectSessionGroup(projectId: string, groupId: stri
 export async function reorderProjectSessionGroups(projectId: string, groupIds: readonly string[]): Promise<ProjectSessionGroup[]> {
   const body = unwrap(
     await backendApi.put<{ groups: ProjectSessionGroup[] }>(
-      `/projects/${projectId}/session-groups/order`,
+      `/workspaces/${projectId}/session-groups/order`,
       { group_ids: groupIds },
       { showErrors: false },
     ),
@@ -89,7 +89,7 @@ export async function reorderProjectSessionGroups(projectId: string, groupIds: r
 export async function setProjectSessionGroup(projectId: string, sessionId: string, groupId: string | null) {
   return unwrap(
     await backendApi.put<ProjectSessionGroupAssignment>(
-      `/projects/${projectId}/sessions/${sessionId}/group`,
+      `/workspaces/${projectId}/sessions/${sessionId}/group`,
       { group_id: groupId },
       { showErrors: false },
     ),

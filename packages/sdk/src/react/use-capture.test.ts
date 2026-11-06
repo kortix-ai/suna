@@ -86,7 +86,7 @@ function harness() {
   globalThis.fetch = mock(async (url: unknown, options: RequestInit = {}) => {
     const call = `${options.method ?? 'GET'} ${String(url)}`;
     calls.push(call);
-    const path = String(url).replace('http://test.local/accounts/a1/capture', '').split('?')[0]!;
+    const path = String(url).replace('http://test.local/workspaces/a1/capture', '').split('?')[0]!;
     return Response.json(bodies[`${options.method ?? 'GET'} ${path}`] ?? {});
   }) as unknown as typeof fetch;
   const mount = async (Probe: () => null) => {
@@ -118,10 +118,10 @@ test('the timeline page reads days, the timeline, items and a search for one mem
   expect(timeline!.data?.runs[0]?.app).toBe('Mail');
   expect(h.calls).toEqual(
     expect.arrayContaining([
-      'GET http://test.local/accounts/a1/capture/days?tz=UTC&user_id=u2&device_id=d1',
-      'GET http://test.local/accounts/a1/capture/timeline?from=2026-10-03T00%3A00%3A00.000Z&to=2026-10-04T00%3A00%3A00.000Z&user_id=u2',
-      'GET http://test.local/accounts/a1/capture/timeline/items?from=2026-10-03T09%3A00%3A00.000Z&to=2026-10-03T10%3A00%3A00.000Z',
-      'GET http://test.local/accounts/a1/capture/search?q=invoice&kinds=screen',
+      'GET http://test.local/workspaces/a1/capture/days?tz=UTC&user_id=u2&device_id=d1',
+      'GET http://test.local/workspaces/a1/capture/timeline?from=2026-10-03T00%3A00%3A00.000Z&to=2026-10-04T00%3A00%3A00.000Z&user_id=u2',
+      'GET http://test.local/workspaces/a1/capture/timeline/items?from=2026-10-03T09%3A00%3A00.000Z&to=2026-10-03T10%3A00%3A00.000Z',
+      'GET http://test.local/workspaces/a1/capture/search?q=invoice&kinds=screen',
     ]),
   );
 });
@@ -170,11 +170,11 @@ test('devices: the account list (capture.read_all); a revoke refreshes it', asyn
   }
   await h.mount(Probe);
   expect(devices!.data?.devices[0]?.live.state).toBe('recording');
-  const lists = () => h.calls.filter((c) => c === 'GET http://test.local/accounts/a1/capture/devices?scope=account').length;
+  const lists = () => h.calls.filter((c) => c === 'GET http://test.local/workspaces/a1/capture/devices?scope=account').length;
   const before = lists();
   await act(async () => { await revoke!.mutateAsync('d1'); });
   await h.settle();
-  expect(h.calls).toContain('DELETE http://test.local/accounts/a1/capture/devices/d1');
+  expect(h.calls).toContain('DELETE http://test.local/workspaces/a1/capture/devices/d1');
   expect(lists()).toBe(before + 1);
 });
 
@@ -195,7 +195,7 @@ test('policy: read, then a write replaces the cached record without a refetch', 
   await act(async () => { await write!.mutateAsync({ ...policy, notice: 'Changed' }); });
   await h.settle();
   expect(read!.data?.policy.notice).toBe('Changed');
-  expect(h.calls.filter((c) => c === 'GET http://test.local/accounts/a1/capture/policy').length).toBe(1);
+  expect(h.calls.filter((c) => c === 'GET http://test.local/workspaces/a1/capture/policy').length).toBe(1);
 });
 
 test('storage: read the destination, then a write replaces the cached view without a refetch', async () => {
@@ -220,7 +220,7 @@ test('storage: read the destination, then a write replaces the cached view witho
   await h.settle();
   expect(read!.data?.mode).toBe('s3');
   expect(read!.data).toMatchObject({ bucket: 'my-bucket', has_secret: true, per_device_scoped: false });
-  expect(h.calls.filter((c) => c === 'GET http://test.local/accounts/a1/capture/storage').length).toBe(1);
+  expect(h.calls.filter((c) => c === 'GET http://test.local/workspaces/a1/capture/storage').length).toBe(1);
 });
 
 test('chunk media: one signed URL read per chunk, for a member too; a null chunk sends nothing', async () => {
@@ -234,7 +234,7 @@ test('chunk media: one signed URL read per chunk, for a member too; a null chunk
   }
   await h.mount(Probe);
   expect(media!.data?.video?.url).toBe('https://s3.test/v');
-  expect(h.calls).toEqual(['GET http://test.local/accounts/a1/capture/chunks/c1/media?user_id=u2']);
+  expect(h.calls).toEqual(['GET http://test.local/workspaces/a1/capture/chunks/c1/media?user_id=u2']);
 });
 
 test('workspace: turning Capture on writes the switch and refreshes the account', async () => {
@@ -255,7 +255,7 @@ test('workspace: turning Capture on writes the switch and refreshes the account'
   h.bodies['GET '] = h.bodies['PATCH '];
   await act(async () => { await setEnabled!.mutateAsync(true); });
   await h.settle();
-  expect(h.calls).toContain('PATCH http://test.local/accounts/a1/capture');
+  expect(h.calls).toContain('PATCH http://test.local/workspaces/a1/capture');
   expect(workspace!.data?.enabled).toBe(true);
 });
 
@@ -278,7 +278,7 @@ test('the Devices page: tokens and waiting computers refresh after create, revok
   let enrollments: unknown[] = [{ enrollment_id: 'e1', status: 'pending' }];
   globalThis.fetch = mock(async (url: unknown, options: RequestInit = {}) => {
     const method = options.method ?? 'GET';
-    const path = String(url).replace('http://test.local/accounts/a1/capture', '');
+    const path = String(url).replace('http://test.local/workspaces/a1/capture', '');
     calls.push(`${method} ${path}`);
     if (method === 'POST' && path === '/enrollment-tokens') {
       tokens = [{ token_id: 't1', state: 'active' }];
@@ -345,7 +345,7 @@ test('linking a device refreshes the device lists', async () => {
   const calls: string[] = [];
   globalThis.fetch = mock(async (url: unknown, options: RequestInit = {}) => {
     const method = options.method ?? 'GET';
-    const path = String(url).replace('http://test.local/accounts/a1/capture', '');
+    const path = String(url).replace('http://test.local/workspaces/a1/capture', '');
     calls.push(`${method} ${path}`);
     if (method === 'PUT') linkedTo = JSON.parse(String(options.body)).user_id;
     if (path.startsWith('/devices')) return Response.json({ devices: [{ device_id: 'd1', user_id: linkedTo }] });

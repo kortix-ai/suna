@@ -92,7 +92,7 @@ test('requestProjectAccess POSTs a trimmed message to access-requests', async ()
     },
   };
   await requestProjectAccess('P1', '  please add me  ');
-  expect(last().url).toContain('/projects/P1/access-requests');
+  expect(last().url).toContain('/workspaces/P1/access-requests');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ message: 'please add me' });
 });
@@ -106,7 +106,7 @@ test('requestProjectAccess omits message entirely when only whitespace is given'
 test('listProjectAccessRequests GETs the access-requests list', async () => {
   nextResponse = { status: 200, body: { requests: [] } };
   const result = await listProjectAccessRequests('P1');
-  expect(last().url).toContain('/projects/P1/access-requests');
+  expect(last().url).toContain('/workspaces/P1/access-requests');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ requests: [] });
 });
@@ -119,7 +119,7 @@ test('listProjectAccess throws on a failed response', async () => {
 test('approveProjectAccessRequest defaults role to "member" and POSTs to /approve', async () => {
   nextResponse = { status: 200, body: { request: { request_id: 'r1' }, member: { user_id: 'u1' } } };
   await approveProjectAccessRequest('P1', 'r1');
-  expect(last().url).toContain('/projects/P1/access-requests/r1/approve');
+  expect(last().url).toContain('/workspaces/P1/access-requests/r1/approve');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ role: 'member' });
 });
@@ -133,7 +133,7 @@ test('approveProjectAccessRequest forwards an explicit role', async () => {
 test('rejectProjectAccessRequest POSTs an empty body to /reject', async () => {
   nextResponse = { status: 200, body: { request: { request_id: 'r1' } } };
   await rejectProjectAccessRequest('P1', 'r1');
-  expect(last().url).toContain('/projects/P1/access-requests/r1/reject');
+  expect(last().url).toContain('/workspaces/P1/access-requests/r1/reject');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({});
 });
@@ -146,7 +146,7 @@ test('listProjectAccess GETs the project access roster', async () => {
     body: { project_id: 'P1', account_id: 'A1', can_manage: true, viewer_user_id: 'u1', members: [] },
   };
   const result = await listProjectAccess('P1');
-  expect(last().url).toContain('/projects/P1/access');
+  expect(last().url).toContain('/workspaces/P1/access');
   expect(last().method).toBe('GET');
   expect(result.can_manage).toBe(true);
 });
@@ -154,7 +154,7 @@ test('listProjectAccess GETs the project access roster', async () => {
 test('updateProjectAccess PUTs { role } to /access/:userId', async () => {
   nextResponse = { status: 200, body: { user_id: 'u1', project_role: 'manager' } };
   await updateProjectAccess('P1', 'u1', 'manager');
-  expect(last().url).toContain('/projects/P1/access/u1');
+  expect(last().url).toContain('/workspaces/P1/access/u1');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ role: 'manager' });
 });
@@ -162,7 +162,7 @@ test('updateProjectAccess PUTs { role } to /access/:userId', async () => {
 test('revokeProjectAccess DELETEs /access/:userId', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await revokeProjectAccess('P1', 'u1');
-  expect(last().url).toContain('/projects/P1/access/u1');
+  expect(last().url).toContain('/workspaces/P1/access/u1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -181,7 +181,7 @@ test('inviteProjectMember POSTs { email, role } to /access/invite', async () => 
     },
   };
   const result = await inviteProjectMember('P1', 'new@user.com', 'member');
-  expect(last().url).toContain('/projects/P1/access/invite');
+  expect(last().url).toContain('/workspaces/P1/access/invite');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ email: 'new@user.com', role: 'member' });
   expect(isInviteSent(result)).toBe(true);
@@ -192,7 +192,7 @@ test('inviteProjectMember POSTs { email, role } to /access/invite', async () => 
 test('listPendingProjectInvites GETs the pending-invites list', async () => {
   nextResponse = { status: 200, body: { pending: [] } };
   const result = await listPendingProjectInvites('P1');
-  expect(last().url).toContain('/projects/P1/access/pending-invites');
+  expect(last().url).toContain('/workspaces/P1/access/pending-invites');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ pending: [] });
 });
@@ -200,7 +200,7 @@ test('listPendingProjectInvites GETs the pending-invites list', async () => {
 test('revokePendingProjectInvite DELETEs a pending invite by id', async () => {
   nextResponse = { status: 200, body: { ok: true, invitation_cancelled: true } };
   const result = await revokePendingProjectInvite('P1', 'inv-1');
-  expect(last().url).toContain('/projects/P1/access/pending-invites/inv-1');
+  expect(last().url).toContain('/workspaces/P1/access/pending-invites/inv-1');
   expect(last().method).toBe('DELETE');
   expect(result.invitation_cancelled).toBe(true);
 });
@@ -211,7 +211,7 @@ test('resendPendingProjectInvite POSTs to the resend endpoint', async () => {
     body: { ok: true, expires_at: '2026-02-01', invite_url: 'https://x', email_sent: true, email_skip_reason: null },
   };
   const result = await resendPendingProjectInvite('P1', 'inv-1');
-  expect(last().url).toContain('/projects/P1/access/pending-invites/inv-1/resend');
+  expect(last().url).toContain('/workspaces/P1/access/pending-invites/inv-1/resend');
   expect(last().method).toBe('POST');
   expect(result.ok).toBe(true);
 });
@@ -221,7 +221,7 @@ test('resendPendingProjectInvite POSTs to the resend endpoint', async () => {
 test('listProjectGroupGrants GETs the group-grants list', async () => {
   nextResponse = { status: 200, body: { grants: [] } };
   const result = await listProjectGroupGrants('P1');
-  expect(last().url).toContain('/projects/P1/group-grants');
+  expect(last().url).toContain('/workspaces/P1/group-grants');
   expect(last().method).toBe('GET');
   expect(result).toEqual({ grants: [] });
 });
@@ -229,7 +229,7 @@ test('listProjectGroupGrants GETs the group-grants list', async () => {
 test('attachGroupToProject omits expires_at entirely when expiresAt is undefined', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'member' } };
   await attachGroupToProject('P1', 'g1', 'member');
-  expect(last().url).toContain('/projects/P1/group-grants');
+  expect(last().url).toContain('/workspaces/P1/group-grants');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ group_id: 'g1', role: 'member' });
 });
@@ -249,7 +249,7 @@ test('attachGroupToProject sends a real expires_at string when given', async () 
 test('updateProjectGroupGrant PATCHes with { role } only when expiresAt is undefined', async () => {
   nextResponse = { status: 200, body: { project_id: 'P1', group_id: 'g1', role: 'manager' } };
   await updateProjectGroupGrant('P1', 'g1', 'manager');
-  expect(last().url).toContain('/projects/P1/group-grants/g1');
+  expect(last().url).toContain('/workspaces/P1/group-grants/g1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ role: 'manager' });
 });
@@ -269,7 +269,7 @@ test('updateProjectGroupGrant PATCHes with a real expires_at string when given',
 test('detachGroupFromProject DELETEs /group-grants/:groupId', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await detachGroupFromProject('P1', 'g1');
-  expect(last().url).toContain('/projects/P1/group-grants/g1');
+  expect(last().url).toContain('/workspaces/P1/group-grants/g1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -281,7 +281,7 @@ test('listProjectResourceGrants GETs the resource-grants list', async () => {
     body: { resources: { agents: [], skills: [], secrets: [] }, grants: [] },
   };
   const result = await listProjectResourceGrants('P1');
-  expect(last().url).toContain('/projects/P1/resource-grants');
+  expect(last().url).toContain('/workspaces/P1/resource-grants');
   expect(last().method).toBe('GET');
   expect(result.grants).toEqual([]);
 });
@@ -314,7 +314,7 @@ test('createProjectResourceGrant POSTs snake_case fields, omitting expires_at wh
     principalType: 'member',
     principalId: 'u1',
   });
-  expect(last().url).toContain('/projects/P1/resource-grants');
+  expect(last().url).toContain('/workspaces/P1/resource-grants');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({
     resource_type: 'agent',
@@ -360,7 +360,7 @@ test('createProjectResourceGrant includes expires_at when explicitly given (incl
 test('deleteProjectResourceGrant DELETEs /resource-grants/:grantId', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await deleteProjectResourceGrant('P1', 'gr1');
-  expect(last().url).toContain('/projects/P1/resource-grants/gr1');
+  expect(last().url).toContain('/workspaces/P1/resource-grants/gr1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -369,7 +369,7 @@ test('deleteProjectResourceGrant DELETEs /resource-grants/:grantId', async () =>
 test('listPendingApprovals GETs the approvals inbox', async () => {
   nextResponse = { status: 200, body: { count: 1, approvals: [] } };
   const result = await listPendingApprovals('P1');
-  expect(last().url).toContain('/projects/P1/approvals');
+  expect(last().url).toContain('/workspaces/P1/approvals');
   expect(last().method).toBe('GET');
   expect(result.count).toBe(1);
 });
@@ -377,7 +377,7 @@ test('listPendingApprovals GETs the approvals inbox', async () => {
 test('listSessionsNeedingInput GETs the needs-input summary', async () => {
   nextResponse = { status: 200, body: { total: 2, sessions: { 's1': 2 } } };
   const result = await listSessionsNeedingInput('P1');
-  expect(last().url).toContain('/projects/P1/approvals/needs-input');
+  expect(last().url).toContain('/workspaces/P1/approvals/needs-input');
   expect(last().method).toBe('GET');
   expect(result.total).toBe(2);
 });
@@ -385,7 +385,7 @@ test('listSessionsNeedingInput GETs the needs-input summary', async () => {
 test('resolveApproval POSTs only the decision', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await resolveApproval('P1', 'ex1', 'approve');
-  expect(last().url).toContain('/projects/P1/approvals/ex1');
+  expect(last().url).toContain('/workspaces/P1/approvals/ex1');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ decision: 'approve' });
 });

@@ -41,7 +41,7 @@ export interface ProjectPoliciesResponse {
 
 export async function listProjectPolicies(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectPoliciesResponse>(`/connectors/projects/${projectId}/policies`),
+    await backendApi.get<ProjectPoliciesResponse>(`/connectors/workspaces/${projectId}/policies`),
   );
 }
 
@@ -52,7 +52,7 @@ export async function setProjectPolicies(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/policies`,
+      `/connectors/workspaces/${projectId}/policies`,
       { policies, defaultMode },
     ),
   );

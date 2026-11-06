@@ -193,7 +193,7 @@ test('provisionProject applies the caller timeout to slow managed-git provisioni
     ),
   ).rejects.toMatchObject({
     code: 'TIMEOUT',
-    endpoint: '/projects/provision',
+    endpoint: '/workspaces/provision',
     timeout: 5,
   });
 });
@@ -409,7 +409,7 @@ test('updateProject PATCHes the project route', async () => {
   const sent = await captureUpdate({ name: 'Iconic' });
 
   expect(sent.method).toBe('PATCH');
-  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1');
+  expect(sent.url).toBe('http://backend.test/v1/workspaces/proj-1');
 });
 
 test('updateProject puts an explicit null icon on the wire, not an absent key', async () => {
@@ -1187,7 +1187,7 @@ test('updateFeatureFlag PATCHes the canonical /features route', async () => {
   const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'reminders', true));
 
   expect(sent.method).toBe('PATCH');
-  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/features');
+  expect(sent.url).toBe('http://backend.test/v1/workspaces/proj-1/features');
   expect(sent.parsed).toEqual({ feature: 'reminders', enabled: true });
 });
 
@@ -1206,7 +1206,7 @@ test('updateExperimentalFeature keeps its legacy /experimental wire path', async
   // the canonical route would break every consumer pinned to an old server.
   const sent = await captureFeatureCall(() => updateExperimentalFeature('proj-1', 'reminders', false));
 
-  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/experimental');
+  expect(sent.url).toBe('http://backend.test/v1/workspaces/proj-1/experimental');
   expect(sent.parsed).toEqual({ feature: 'reminders', enabled: false });
 });
 
@@ -1263,7 +1263,7 @@ test('transferProject POSTs the target account id to the transfer route', async 
   const sent = await captureTransfer('proj-1', 'acc-2');
 
   expect(sent.method).toBe('POST');
-  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/transfer');
+  expect(sent.url).toBe('http://backend.test/v1/workspaces/proj-1/transfer');
   expect(sent.parsed).toEqual({ account_id: 'acc-2' });
 });
 
@@ -1290,7 +1290,7 @@ test('getProjectQuota reads the cap state for an explicit account', async () => 
 
   const quota = await getProjectQuota({ accountId: 'acc-1' });
 
-  expect(sentUrl).toBe('http://backend.test/v1/projects/quota?account_id=acc-1');
+  expect(sentUrl).toBe('http://backend.test/v1/workspaces/quota?account_id=acc-1');
   expect(quota.capped).toBe(true);
   expect(quota.limit).toBe(1);
   expect(quota.count).toBe(1);
@@ -1311,7 +1311,7 @@ test('getProjectQuota omits account_id to let the server resolve the default', a
 
   const quota = await getProjectQuota();
 
-  expect(sentUrl).toBe('http://backend.test/v1/projects/quota');
+  expect(sentUrl).toBe('http://backend.test/v1/workspaces/quota');
   expect(quota.capped).toBe(false);
   expect(quota.message).toBeNull();
 });

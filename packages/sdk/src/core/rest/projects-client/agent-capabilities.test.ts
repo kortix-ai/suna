@@ -33,7 +33,7 @@ configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token'
 describe('getAgentCapabilities', () => {
   test('reads the agent capability catalog route and returns its body', async () => {
     const catalog = await getAgentCapabilities('p1', 'support team');
-    expect(urls).toEqual(['http://test.local/projects/p1/agents/support%20team/capabilities']);
+    expect(urls).toEqual(['http://test.local/workspaces/p1/agents/support%20team/capabilities']);
     expect(catalog).toEqual(CATALOG);
   });
 });
@@ -42,7 +42,7 @@ describe('getProjectCapabilities', () => {
   test("reads the project's catalog route: every tool, skill and extension any agent can get", async () => {
     urls = [];
     await getProjectCapabilities('p1');
-    expect(urls).toEqual(['http://test.local/projects/p1/capabilities']);
+    expect(urls).toEqual(['http://test.local/workspaces/p1/capabilities']);
   });
 });
 

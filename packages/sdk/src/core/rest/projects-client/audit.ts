@@ -145,7 +145,7 @@ function auditFilter(
 export async function listAccountAudit(accountId: string, options?: ListAccountAuditOptions) {
   const qs = auditFilterQuery(auditFilter(options)).toString();
   return unwrap(
-    await backendApi.get<AuditEventList>(`/accounts/${accountId}/audit${qs ? `?${qs}` : ''}`),
+    await backendApi.get<AuditEventList>(`/workspaces/${accountId}/audit${qs ? `?${qs}` : ''}`),
   );
 }
 
@@ -206,13 +206,15 @@ export async function getAccountAuditActivity(accountId: string, options: GetAcc
   for (const [key, value] of Object.entries(wire)) if (value) params.set(key, value);
   const qs = params.toString();
   return unwrap(
-    await backendApi.get<AuditActivity>(`/accounts/${accountId}/audit/activity${qs ? `?${qs}` : ''}`),
+    await backendApi.get<AuditActivity>(`/workspaces/${accountId}/audit/activity${qs ? `?${qs}` : ''}`),
   );
 }
 
 /** Canonical project-scoped audit timeline. The API binds project scope server-side. */
 export async function listProjectAudit(projectId: string, options?: ListAccountAuditOptions) {
   // The path carries the project; a caller-passed projectId stays off the wire.
+  // Legacy name on purpose: `/workspaces/:id/audit` is the workspace audit log,
+  // not this project slice (`@kortix/shared/workspace-routes`).
   const qs = auditFilterQuery(auditFilter({ ...options, projectId: undefined })).toString();
   return unwrap(
     await backendApi.get<AuditEventList>(`/projects/${projectId}/audit${qs ? `?${qs}` : ''}`),
@@ -242,7 +244,7 @@ export async function exportAccountAudit(
 ): Promise<string | Blob> {
   const qs = auditFilterQuery(auditFilter(options)).toString();
   return unwrap(
-    await backendApi.get<string | Blob>(`/accounts/${accountId}/audit/export${qs ? `?${qs}` : ''}`),
+    await backendApi.get<string | Blob>(`/workspaces/${accountId}/audit/export${qs ? `?${qs}` : ''}`),
   );
 }
 
@@ -276,7 +278,7 @@ export interface AuditWebhookListResponse {
 
 export async function listAccountAuditWebhooks(accountId: string) {
   return unwrap(
-    await backendApi.get<AuditWebhookListResponse>(`/accounts/${accountId}/audit/webhooks`),
+    await backendApi.get<AuditWebhookListResponse>(`/workspaces/${accountId}/audit/webhooks`),
   );
 }
 
@@ -288,7 +290,7 @@ export interface CreateAuditWebhookInput {
 
 export async function createAccountAuditWebhook(accountId: string, input: CreateAuditWebhookInput) {
   return unwrap(
-    await backendApi.post<AuditWebhook>(`/accounts/${accountId}/audit/webhooks`, input),
+    await backendApi.post<AuditWebhook>(`/workspaces/${accountId}/audit/webhooks`, input),
   );
 }
 
@@ -305,7 +307,7 @@ export async function updateAccountAuditWebhook(
 ) {
   return unwrap(
     await backendApi.patch<AuditWebhook>(
-      `/accounts/${accountId}/audit/webhooks/${webhookId}`,
+      `/workspaces/${accountId}/audit/webhooks/${webhookId}`,
       input,
     ),
   );
@@ -314,7 +316,7 @@ export async function updateAccountAuditWebhook(
 export async function removeAccountAuditWebhook(accountId: string, webhookId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
-      `/accounts/${accountId}/audit/webhooks/${webhookId}`,
+      `/workspaces/${accountId}/audit/webhooks/${webhookId}`,
     ),
   );
 }

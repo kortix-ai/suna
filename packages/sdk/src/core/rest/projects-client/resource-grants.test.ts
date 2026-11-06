@@ -32,7 +32,7 @@ const last = () => calls[calls.length - 1];
 
 test('listProjectResourceGrants hits the resource-grants collection', async () => {
   const result = await listProjectResourceGrants('P1');
-  expect(last().url).toContain('/projects/P1/resource-grants');
+  expect(last().url).toContain('/workspaces/P1/resource-grants');
   expect(last().method).toBe('GET');
   expect(result.resources.secrets).toEqual([]);
 });
@@ -44,7 +44,7 @@ test('createProjectResourceGrant posts a snake_case grant body', async () => {
     principalType: 'member',
     principalId: 'user-1',
   });
-  expect(last().url).toContain('/projects/P1/resource-grants');
+  expect(last().url).toContain('/workspaces/P1/resource-grants');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({
     resource_type: 'secret',
@@ -73,6 +73,6 @@ test('createProjectResourceGrant forwards an explicit expiry (including null)', 
 
 test('deleteProjectResourceGrant deletes by grant id', async () => {
   await deleteProjectResourceGrant('P1', 'G9');
-  expect(last().url).toContain('/projects/P1/resource-grants/G9');
+  expect(last().url).toContain('/workspaces/P1/resource-grants/G9');
   expect(last().method).toBe('DELETE');
 });

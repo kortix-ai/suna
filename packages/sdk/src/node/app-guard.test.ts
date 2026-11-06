@@ -80,7 +80,7 @@ describe('the OAuth path', () => {
     expect(viewer?.source).toBe('kortix-sign-in');
     // The whole point: identical shape to the gate path.
     expect(viewer?.groupIds).toEqual(['g-finance', 'g-ops']);
-    expect(calls[0]).toContain('/accounts/acc-1/iam/members/u1/groups');
+    expect(calls[0]).toContain('/workspaces/acc-1/iam/members/u1/groups');
   });
 
   test('caches per viewer, so a page with ten guards makes one call', async () => {
@@ -142,7 +142,7 @@ describe('the OAuth path', () => {
     // Behaviour first: only TRAILING slashes go, and this url ends in 'x', so
     // nothing is stripped and the run is preserved verbatim.
     expect(viewer?.groupIds).toEqual(['g-ops']);
-    expect(calls[0]).toContain(`${'/'.repeat(200_000)}x/accounts/acc-1/`);
+    expect(calls[0]).toContain(`${'/'.repeat(200_000)}x/workspaces/acc-1/`);
 
     // Then the property the regex broke. 200k chars finished in ~1s even when
     // quadratic, so the bound is tight enough that a quadratic implementation
@@ -206,7 +206,7 @@ describe('the whole member, on both paths', () => {
     });
     const viewer = await guard.viewer(new Request('https://app.example/'));
     expect(viewer).toMatchObject({ accountId: 'acc-app', groupIds: ['g-fin'], groups: ['Finance'] });
-    expect(urls).toEqual(['https://api.example/v1/accounts/acc-app/iam/members/u1/groups']);
+    expect(urls).toEqual(['https://api.example/v1/workspaces/acc-app/iam/members/u1/groups']);
     expect((await guard.requireGroup(new Request('https://app.example/'), ['Finance'])).viewer?.userId).toBe('u1');
   });
 });

@@ -25,7 +25,7 @@ test('PATCHes the onboarding route with a profile envelope', async () => {
 
   expect(calls).toHaveLength(1);
   expect(calls[0]?.method).toBe('PATCH');
-  expect(calls[0]?.url).toContain('/projects/p1/onboarding');
+  expect(calls[0]?.url).toContain('/workspaces/p1/onboarding');
   expect(calls[0]?.body).toEqual({ profile: { use_case: 'sales', company_size: '51-200' } });
 });
 

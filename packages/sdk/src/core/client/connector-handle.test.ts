@@ -48,7 +48,7 @@ test('project(id).connector(slug).run posts to the project route and returns out
   expect(handle.slug).toBe('ke2e-handle');
   expect(requests[0]).toMatchObject({
     method: 'POST',
-    url: 'http://test.local/v1/connectors/projects/PID1/call',
+    url: 'http://test.local/v1/connectors/workspaces/PID1/call',
     body: { connector: 'ke2e-handle', action: 'list_rows', args: { table: 'orders' }, account: 'project' },
   });
   const firstId: string | undefined = page.rows[0]?.id;
@@ -109,7 +109,7 @@ test('describe() reads the connector with input and output schemas; describe(act
 
   const entry = await handle.describe();
   expect(requests[0]!.url).toBe(
-    'http://test.local/v1/connectors/projects/PID1/catalog?slug=crm&include_schemas=true&include_output_schemas=true',
+    'http://test.local/v1/connectors/workspaces/PID1/catalog?slug=crm&include_schemas=true&include_output_schemas=true',
   );
   expect(entry?.actions[0]?.outputSchema).toEqual({ type: 'array' });
 
@@ -123,7 +123,7 @@ test('describe() reads the connector with input and output schemas; describe(act
 test('accounts() lists the accounts of this connector', async () => {
   replies = [{ connector: 'crm', accounts: [{ connection_id: 'c1', label: 'work', owner_type: 'user', is_default: true }] }];
   const accounts = await kortix.project('PID1').connector('crm').accounts();
-  expect(requests[0]!.url).toBe('http://test.local/v1/connectors/projects/PID1/connectors/crm/accounts');
+  expect(requests[0]!.url).toBe('http://test.local/v1/connectors/workspaces/PID1/connectors/crm/accounts');
   expect(accounts.map((a) => a.label)).toEqual(['work']);
 });
 

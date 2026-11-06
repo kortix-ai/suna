@@ -86,8 +86,8 @@ beforeEach(() => {
     // The turn record of a session that never ran a turn.
     if (turnPending && path.endsWith('/turn')) return new Promise<Response>(() => {});
     if (emptyLog && path.endsWith('/turn')) return Response.json({ turns: [], last_ended: null });
-    if (path === `/projects/${PROJECT_ID}/detail` && detailPending) return new Promise<Response>(() => {});
-    if (path === `/projects/${PROJECT_ID}/detail`) return Response.json({ project: { project_id: PROJECT_ID, experimental: { session_log: true } }, config: {} });
+    if (path === `/workspaces/${PROJECT_ID}/detail` && detailPending) return new Promise<Response>(() => {});
+    if (path === `/workspaces/${PROJECT_ID}/detail`) return Response.json({ project: { project_id: PROJECT_ID, experimental: { session_log: true } }, config: {} });
     return Response.json({}, { status: 404 });
   }) as unknown as typeof fetch;
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -114,7 +114,7 @@ describe('useSession negotiates the session log without its chat engine', () => 
     // The runtime's health answer lists the log (a box switch clears the list first).
     act(() => setRuntimeCapabilities(['session.log.v2']));
     await flush();
-    expect(urls.some((u) => u.startsWith(`/projects/${PROJECT_ID}/sessions/${SESSION_ID}/log`))).toBe(true);
+    expect(urls.some((u) => u.startsWith(`/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/log`))).toBe(true);
   });
 
   test.each([true, false])('chatEngine false, flag %p known at the open: the snapshot asks no transcript window', async (flag) => {
@@ -194,7 +194,7 @@ describe('useSession with its chat engine: the session log owns the history once
     pagedLog = true;
     const seen = mountHost(true);
     await flush();
-    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    const base = `/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`;
     expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
     expect(urls).toContain(`${base}/log?limit=40`);
     expect(seen.result!.savedTranscript).toBe('shown');
@@ -209,7 +209,7 @@ describe('useSession with its chat engine: the session log owns the history once
     const root = log.threads[0]!;
     await act(async () => { await seen.result!.loadOlder(); });
     await flush();
-    expect(urls).toContain(`/projects/${PROJECT_ID}/sessions/${SESSION_ID}/log?thread=${root.thread_id}&before_seq=${root.messages[4]!.seq}&limit=100`);
+    expect(urls).toContain(`/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}/log?thread=${root.thread_id}&before_seq=${root.messages[4]!.seq}&limit=100`);
     expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
     expect(seen.result!.hasOlder).toBe(false);
   });
@@ -284,7 +284,7 @@ describe('useSession with its chat engine: the session log owns the history once
       renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
     });
     await flush();
-    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    const base = `/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`;
     expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
     expect(urls).toContain(`${base}/log?limit=40`);
     // The snapshot asks no v1 window either.
@@ -296,7 +296,7 @@ describe('useSession with its chat engine: the session log owns the history once
     missingLog = true;
     const seen = mountHost(true);
     await flush();
-    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    const base = `/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`;
     expect(urls).toContain(`${base}/log?limit=40`);
     expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
     expect(seen.result!.savedTranscript).toBe('none');
@@ -306,7 +306,7 @@ describe('useSession with its chat engine: the session log owns the history once
     failedLog = failure;
     const seen = mountHost(true);
     await flush();
-    const base = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}`;
+    const base = `/workspaces/${PROJECT_ID}/sessions/${SESSION_ID}`;
     expect(urls).toContain(`${base}/log?limit=40`);
     expect(urls.filter((u) => u.includes('/transcript'))).toEqual([]);
     expect(seen.result!.savedTranscript).toBe('none');

@@ -134,7 +134,7 @@ test('useAddComputerToProject POSTs the machine to the project and refreshes con
   const vars = { projectId: 'project-1', tunnelId: 'tunnel-1', share: 'me' as const };
   await config.mutationFn!(vars);
   expect(requests).toEqual([
-    { method: 'POST', path: '/projects/project-1/computers', body: { tunnel_id: 'tunnel-1', share: 'me' } },
+    { method: 'POST', path: '/workspaces/project-1/computers', body: { tunnel_id: 'tunnel-1', share: 'me' } },
   ]);
   config.onSuccess!({}, vars);
   expect(invalidated).toContainEqual(['connections', 'project-1']);

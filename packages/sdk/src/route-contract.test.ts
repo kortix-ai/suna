@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';
+import { canonicalWorkspaceRoute } from '../../shared/src/workspace-routes';
 
 /**
  * Route contract: every Kortix API path the SDK sends a request to must exist
@@ -569,6 +570,19 @@ describe('route contract: SDK → routes.generated.json', () => {
       .filter((r) => !allowlistReason(r.path) && !isServed(r, manifest))
       .map((r) => `${r.method} /v1${r.path}  (${r.file}:${r.line})`);
     expect(missing).toEqual([]);
+  });
+
+  test('every workspace path the SDK calls uses its canonical name', () => {
+    // `/v1/workspaces`, `/v1/me`, `/v1/invites`, `/v1/connectors/workspaces`
+    // (`@kortix/shared/workspace-routes`). `GET /v1/projects/:id/audit` (the
+    // project slice of the audit log) has no canonical twin:
+    // `/v1/workspaces/:id/audit` is the workspace audit log. It stays.
+    const merged = new Set(['GET /v1/projects/:param/audit']);
+    const legacy = routes
+      .filter((r) => canonicalWorkspaceRoute(`/v1${r.path}`) !== null)
+      .filter((r) => !merged.has(`${r.method === 'ANY' ? 'GET' : r.method} /v1${r.path}`))
+      .map((r) => `${r.method} /v1${r.path} → ${canonicalWorkspaceRoute(`/v1${r.path}`)}  (${r.file}:${r.line})`);
+    expect(legacy).toEqual([]);
   });
 
   test('every allowlist entry is still needed', () => {

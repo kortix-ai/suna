@@ -22,5 +22,5 @@ test('authenticatedRequest refuses a URL outside the backend origin, so the toke
 
 test('authenticatedRequest rejects when the host has no token', async () => {
   configureKortix({ backendUrl: 'https://api.test/v1', getToken: async () => null });
-  await expect(authenticatedRequest('https://api.test/v1/projects')).rejects.toBeTruthy();
+  await expect(authenticatedRequest('https://api.test/v1/workspaces')).rejects.toBeTruthy();
 });

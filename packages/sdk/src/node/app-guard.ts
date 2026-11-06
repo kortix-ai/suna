@@ -29,6 +29,7 @@
 import { stripTrailingSlashes } from '../platform/strings';
 import { readAppViewer } from './app-viewer';
 import type { KortixAuth } from './auth';
+import { withWorkspaceRouteFallback } from '../core/http/workspace-routes';
 
 /** The viewer, identical in shape no matter which route proved them. */
 export interface KortixGuardedViewer {
@@ -115,8 +116,9 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
   const resolveSecret = () => options.secret ?? env('KORTIX_APP_VIEWER_SECRET');
   const ttl = options.groupCacheTtlMs ?? 60_000;
   const now = options.now ?? (() => Date.now());
-  const fetchImpl =
-    options.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init));
+  const fetchImpl = withWorkspaceRouteFallback(
+    options.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => fetch(input, init)),
+  );
   const cache = new Map<string, CacheEntry>();
 
   /**
@@ -141,7 +143,7 @@ export function createKortixAppGuard(options: KortixAppGuardOptions = {}): Korti
     try {
       const base = stripTrailingSlashes(options.backendUrl);
       const res = await fetchImpl(
-        `${base}/accounts/${encodeURIComponent(accountId)}/iam/members/${encodeURIComponent(userId)}/groups`,
+        `${base}/workspaces/${encodeURIComponent(accountId)}/iam/members/${encodeURIComponent(userId)}/groups`,
         { headers: { accept: 'application/json', authorization: `Bearer ${token}` } },
       );
       if (!res.ok) return none;

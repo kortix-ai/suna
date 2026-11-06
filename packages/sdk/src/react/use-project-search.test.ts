@@ -30,7 +30,7 @@ test('useProjectSearch reads one query under the project scope, q trimmed, previ
   expect(search.enabled).toBe(true);
   expect(search.placeholderData).toBe(keepPreviousData);
   expect(await search.queryFn()).toEqual({ hits: [], next_cursor: null });
-  expect(calls).toEqual(['http://test.local/projects/P1/search?q=q3+plan&path=%2FCompany&limit=5']);
+  expect(calls).toEqual(['http://test.local/workspaces/P1/search?q=q3+plan&path=%2FCompany&limit=5']);
 });
 
 test('useProjectSearch stays off for an empty or over-long q, no project, or enabled: false', () => {

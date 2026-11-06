@@ -14,7 +14,7 @@ import {
 
 const originalFetch = globalThis.fetch;
 const backendUrl = 'https://artifact-doc.example/v1';
-const doc = `${backendUrl}/projects/project-a/artifacts/artifact-a/doc`;
+const doc = `${backendUrl}/workspaces/project-a/artifacts/artifact-a/doc`;
 const LEASE_EXPIRY = '2026-11-04T00:00:15.000Z';
 let calls: { url: string; method: string; body: unknown; authorization: string | null; keepalive: boolean }[] = [];
 let reply: () => Response;

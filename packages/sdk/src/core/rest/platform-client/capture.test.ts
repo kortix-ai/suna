@@ -49,7 +49,7 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1]!;
 // Capture's tenant is the Kortix account: every route is under /accounts/:accountId/capture.
-const P = 'http://test.local/accounts/a1/capture';
+const P = 'http://test.local/workspaces/a1/capture';
 
 const POLICY: CapturePolicy = {
   layers: { screen: true, actions: true, audio: false },

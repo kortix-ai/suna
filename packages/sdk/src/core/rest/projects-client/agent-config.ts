@@ -140,7 +140,7 @@ export interface AgentConfigResponse {
 export async function getAgentConfig(projectId: string, agentName: string) {
   const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
-      `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
+      `/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
       { showErrors: false },
     ),
   );
@@ -162,7 +162,7 @@ export async function updateAgentConfig(
       agent: string;
       schema_version: number;
       block: AgentConfigBlock | null;
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
+    }>(`/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
   );
   return {
     ...response,
@@ -213,7 +213,7 @@ export async function grantSecretToAgent(
 ) {
   return unwrap(
     await backendApi.post<GrantSecretToAgentResponse>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
       { agent: agentName },
     ),
   );
@@ -228,7 +228,7 @@ export interface UpdateProjectDefaultAgentResponse {
 export async function updateProjectDefaultAgent(projectId: string, agentName: string) {
   return unwrap(
     await backendApi.put<UpdateProjectDefaultAgentResponse>(
-      `/projects/${projectId}/default-agent`,
+      `/workspaces/${projectId}/default-agent`,
       { agent: agentName },
     ),
   );

@@ -376,7 +376,7 @@ export interface UpdateArtifactInput extends ArtifactBindingInput {
   shared_with_user_ids?: string[];
 }
 
-const base = (projectId: string) => `/projects/${projectId}/artifacts`;
+const base = (projectId: string) => `/workspaces/${projectId}/artifacts`;
 
 export async function listArtifactComments(projectId: string, artifactId: string, options: { status?: ArtifactCommentStatus | 'all'; version?: string } = {}) {
   return unwrap(await backendApi.get<{ threads: ArtifactCommentThread[] }>(`${base(projectId)}/${artifactId}/comments${query(options)}`)).threads;
@@ -397,7 +397,7 @@ export async function readArtifactCommentSnapshot(projectId: string, artifactId:
 
 /** Resolve a thread id without scanning a project's Artifacts. Visibility still applies. */
 export async function getArtifactCommentThread(projectId: string, threadId: string) {
-  return unwrap(await backendApi.get<{ thread: ArtifactCommentThread }>(`/projects/${projectId}/artifact-comment-threads/${threadId}`)).thread;
+  return unwrap(await backendApi.get<{ thread: ArtifactCommentThread }>(`/workspaces/${projectId}/artifact-comment-threads/${threadId}`)).thread;
 }
 
 export async function createArtifactComment(projectId: string, artifactId: string, input: CreateArtifactCommentInput) {
@@ -466,7 +466,7 @@ export interface LinkPreview {
  * be read answers nulls.
  */
 export async function getLinkPreview(projectId: string, url: string) {
-  return unwrap(await backendApi.get<LinkPreview>(`/projects/${projectId}/link-preview?url=${encodeURIComponent(url)}`));
+  return unwrap(await backendApi.get<LinkPreview>(`/workspaces/${projectId}/link-preview?url=${encodeURIComponent(url)}`));
 }
 
 export async function getArtifact(projectId: string, artifactId: string, options: { version?: string } = {}) {
@@ -553,12 +553,13 @@ export async function readArtifactCommentScreenshot(
 }
 
 const ARTIFACT_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-const ARTIFACT_IN_PROJECT = new RegExp(`/projects/(${ARTIFACT_UUID})/artifacts/(${ARTIFACT_UUID})/?$`, 'i');
+const ARTIFACT_IN_PROJECT = new RegExp(`/(?:workspaces|projects)/(${ARTIFACT_UUID})/artifacts/(${ARTIFACT_UUID})/?$`, 'i');
 const ARTIFACT_PUBLIC = new RegExp(`/share/artifact/(${ARTIFACT_UUID})/?$`, 'i');
 
 /**
- * The artifact an app link names: `/projects/<project>/artifacts/<artifact>`
- * (the app viewer, on any Kortix host, or a relative path) or
+ * The artifact an app link names: `/workspaces/<workspace>/artifacts/<artifact>`
+ * or the older `/projects/<project>/artifacts/<artifact>` (the app viewer, on
+ * any Kortix host, or a relative path) or
  * `/share/artifact/<artifact>` (a public link, no project). Ids are
  * lower-case. Null for any other URL. This is the link an agent hands over
  * with `show`, so a host uses it to tell an artifact from a website.

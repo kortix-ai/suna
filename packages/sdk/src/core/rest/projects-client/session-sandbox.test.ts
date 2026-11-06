@@ -153,7 +153,7 @@ test("startProjectSession POSTs to /start with no query string when waitMs is om
     },
   };
   await startProjectSession(PROJECT, SESSION);
-  expect(last().url).toBe(`http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start`,
+  expect(last().url).toBe(`http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/start`,
   );
   expect(last().method).toBe("POST");
   expect(last().body).toEqual({});
@@ -179,7 +179,7 @@ test("startProjectSession explicitly requests the preserved previous-repository 
     repositoryMode: "previous",
   });
   expect(last().url).toBe(
-    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=5500&repository_mode=previous`,
+    `http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/start?wait_ms=5500&repository_mode=previous`,
   );
 });
 
@@ -190,7 +190,7 @@ test("startProjectSession keepStopped asks the API to report a stopped box, neve
   };
   await startProjectSession(PROJECT, SESSION, { waitMs: 15_000, keepStopped: true });
   expect(last().url).toBe(
-    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=15000&keep_stopped=1`,
+    `http://test.local/v1/workspaces/${PROJECT}/sessions/${SESSION}/start?wait_ms=15000&keep_stopped=1`,
   );
   await startProjectSession(PROJECT, SESSION, { waitMs: 15_000 });
   expect(last().url).not.toContain("keep_stopped");
@@ -369,7 +369,7 @@ test("startProjectSessionOrThrow resolves the start answer and records a ready r
     body: { stage: "ready", agent_name: "default", retriable: false, sandbox: readySandbox(), runtime_session_id: "rt-1" },
   };
   const result = await startProjectSessionOrThrow(PROJECT, SESSION, { waitMs: 5000 });
-  expect(last()).toMatchObject({ method: "POST", url: "http://test.local/v1/projects/P1/sessions/S1/start?wait_ms=5000" });
+  expect(last()).toMatchObject({ method: "POST", url: "http://test.local/v1/workspaces/P1/sessions/S1/start?wait_ms=5000" });
   expect(result.stage).toBe("ready");
   expect(getSessionRuntime(PROJECT, SESSION)?.runtimeSessionId).toBe("rt-1");
 });

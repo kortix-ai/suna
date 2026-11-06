@@ -77,12 +77,12 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     await result.replay.mutationFn({ slug: 'nightly', runId: 'run-1' });
 
     expect(sent).toEqual([
-      { url: 'http://test.local/projects/proj-1/triggers/nightly/fire', body: {} },
-      { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { payload: { body: { a: 1 } } } },
-      { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { payload: { body: { a: 1 } }, dry_run: true } },
-      { url: 'http://test.local/projects/proj-1/triggers/tickets/fire', body: { dry_run: true } },
-      { url: 'http://test.local/projects/proj-1/triggers/nightly/runs/run-1/replay', body: { confirm_unverified: true } },
-      { url: 'http://test.local/projects/proj-1/triggers/nightly/runs/run-1/replay', body: {} },
+      { url: 'http://test.local/workspaces/proj-1/triggers/nightly/fire', body: {} },
+      { url: 'http://test.local/workspaces/proj-1/triggers/tickets/fire', body: { payload: { body: { a: 1 } } } },
+      { url: 'http://test.local/workspaces/proj-1/triggers/tickets/fire', body: { payload: { body: { a: 1 } }, dry_run: true } },
+      { url: 'http://test.local/workspaces/proj-1/triggers/tickets/fire', body: { dry_run: true } },
+      { url: 'http://test.local/workspaces/proj-1/triggers/nightly/runs/run-1/replay', body: { confirm_unverified: true } },
+      { url: 'http://test.local/workspaces/proj-1/triggers/nightly/runs/run-1/replay', body: {} },
     ]);
   });
 
@@ -215,9 +215,9 @@ describe('useTriggerRuns takes an optional page { limit }', () => {
     await limited.queryFn({ pageParam: undefined });
     await limited.queryFn({ pageParam: 'c2' });
     expect(urls).toEqual([
-      'http://test.local/projects/proj-1/triggers/nightly/runs',
-      'http://test.local/projects/proj-1/triggers/nightly/runs?limit=30',
-      'http://test.local/projects/proj-1/triggers/nightly/runs?limit=30&cursor=c2',
+      'http://test.local/workspaces/proj-1/triggers/nightly/runs',
+      'http://test.local/workspaces/proj-1/triggers/nightly/runs?limit=30',
+      'http://test.local/workspaces/proj-1/triggers/nightly/runs?limit=30&cursor=c2',
     ]);
   });
 });

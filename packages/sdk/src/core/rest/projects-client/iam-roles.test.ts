@@ -19,6 +19,6 @@ configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }
 
 test("listProjectAgentIdentities reads one project's agents, readable by any project member", async () => {
   const agents: AgentIdentity[] = await listProjectAgentIdentities('P1');
-  expect(calls[0]).toBe('http://test.local/projects/P1/agent-identities');
+  expect(calls[0]).toBe('http://test.local/workspaces/P1/agent-identities');
   expect(agents).toEqual([{ service_account_id: 'SA1', name: 'kortix', project_id: 'P1', agent_name: 'kortix' }]);
 });

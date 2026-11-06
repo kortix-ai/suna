@@ -34,7 +34,7 @@ export interface ManagedGitRepositoriesResponse {
  */
 export async function getManagedGitBackend(): Promise<ManagedGitBackend> {
   return unwrap(
-    await backendApi.get<ManagedGitBackend>('/projects/git/backend', { showErrors: false }),
+    await backendApi.get<ManagedGitBackend>('/workspaces/git/backend', { showErrors: false }),
   );
 }
 
@@ -54,7 +54,7 @@ export async function listManagedGitRepositories(options?: {
   const query = params.toString();
   return unwrap(
     await backendApi.get<ManagedGitRepositoriesResponse>(
-      `/projects/git/backend/repositories${query ? `?${query}` : ''}`,
+      `/workspaces/git/backend/repositories${query ? `?${query}` : ''}`,
       { showErrors: false },
     ),
   );

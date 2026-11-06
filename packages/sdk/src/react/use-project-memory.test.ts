@@ -47,7 +47,7 @@ beforeEach(() => {
   }) as unknown as typeof fetch;
 });
 
-const base = 'http://test.local/projects/P1/memory';
+const base = 'http://test.local/workspaces/P1/memory';
 
 describe('memory query keys', () => {
   test('every memory key sits under the project scope and one memory prefix', () => {
@@ -161,7 +161,7 @@ describe('Used memory', () => {
     expect(usage.queryKey).toEqual(qk.project.sessionMemoryUsage('P1', 'T1'));
     expect(usage.enabled).toBe(true);
     expect(await usage.queryFn()).toEqual({ loaded_at: null, layers: [] });
-    expect(calls).toEqual([{ method: 'GET', url: 'http://test.local/projects/P1/sessions/T1/memory-usage', body: undefined }]);
+    expect(calls).toEqual([{ method: 'GET', url: 'http://test.local/workspaces/P1/sessions/T1/memory-usage', body: undefined }]);
   });
 
   test('never goes stale once the first turn loaded it; before that, the next mount reads it again', () => {

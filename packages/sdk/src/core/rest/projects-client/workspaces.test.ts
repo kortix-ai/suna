@@ -171,10 +171,10 @@ describe('compareWorkspacesByRecent', () => {
 describe('listWorkspaces', () => {
   test('reads the accounts, then each account\'s projects, and returns one flat list, most recent first', async () => {
     route('GET', /^\/accounts$/, [account(ACC_A, 'owner'), account(ACC_B, 'admin')]);
-    route('GET', new RegExp(`^/projects\\?account_id=${ACC_A}$`), [
+    route('GET', new RegExp(`^/workspaces\\?account_id=${ACC_A}$`), [
       project(WS_A, ACC_A, { last_opened_at: '2026-01-02T00:00:00.000Z' }),
     ]);
-    route('GET', new RegExp(`^/projects\\?account_id=${ACC_B}$`), [
+    route('GET', new RegExp(`^/workspaces\\?account_id=${ACC_B}$`), [
       project(WS_B, ACC_B, { last_opened_at: '2026-01-03T00:00:00.000Z' }),
     ]);
 
@@ -185,8 +185,8 @@ describe('listWorkspaces', () => {
     ]);
     expect(calls.map((c) => c.url)).toEqual([
       '/accounts',
-      `/projects?account_id=${ACC_A}`,
-      `/projects?account_id=${ACC_B}`,
+      `/workspaces?account_id=${ACC_A}`,
+      `/workspaces?account_id=${ACC_B}`,
     ]);
   });
 

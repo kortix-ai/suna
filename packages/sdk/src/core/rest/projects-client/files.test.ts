@@ -28,7 +28,7 @@ const last = () => calls[calls.length - 1];
 test('listProjectFiles GETs /projects/:id/files with ref/path query', async () => {
   nextResponse = { status: 200, body: [] };
   const result = await listProjectFiles('P1', { ref: 'main', path: 'src' });
-  expect(last().url).toContain('/projects/P1/files?ref=main&path=src');
+  expect(last().url).toContain('/workspaces/P1/files?ref=main&path=src');
   expect(last().method).toBe('GET');
   expect(result).toEqual([]);
 });
@@ -55,7 +55,7 @@ test('listProjectDirectory GETs one level of a folder (depth=1) and keeps the tr
     body: { entries: [{ path: 'src/lib', type: 'directory' }, { path: 'src/index.ts', type: 'file' }], truncated: false },
   };
   const result = await listProjectDirectory('P1', { ref: 'main', path: 'src' });
-  expect(last().url).toContain('/projects/P1/files?ref=main&path=src&depth=1');
+  expect(last().url).toContain('/workspaces/P1/files?ref=main&path=src&depth=1');
   expect(result).toEqual({
     entries: [{ path: 'src/lib', type: 'directory' }, { path: 'src/index.ts', type: 'file' }],
     truncated: false,
@@ -65,7 +65,7 @@ test('listProjectDirectory GETs one level of a folder (depth=1) and keeps the tr
 test('listProjectDirectory at the root sends no path', async () => {
   nextResponse = { status: 200, body: { entries: [], truncated: false } };
   await listProjectDirectory('P1');
-  expect(last().url).toMatch(/\/projects\/P1\/files\?depth=1$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/files\?depth=1$/);
 });
 
 // A folder over 500 entries is read in pages: `limit` and `cursor` ask for
@@ -76,7 +76,7 @@ test('listProjectDirectory sends cursor and limit when given, and returns next_c
     body: { entries: [{ path: 'a/f0500.txt', type: 'file', size: 4 }], truncated: true, next_cursor: 'c2' },
   };
   const result = await listProjectDirectory('P1', { path: 'a', cursor: 'c1', limit: 500 });
-  expect(last().url).toMatch(/\/projects\/P1\/files\?path=a&depth=1&cursor=c1&limit=500$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/files\?path=a&depth=1&cursor=c1&limit=500$/);
   expect(result).toEqual({
     entries: [{ path: 'a/f0500.txt', type: 'file', size: 4 }],
     truncated: true,
@@ -87,14 +87,14 @@ test('listProjectDirectory sends cursor and limit when given, and returns next_c
 test('listProjectDirectory with only a limit asks for the first page', async () => {
   nextResponse = { status: 200, body: { entries: [], truncated: false, next_cursor: null } };
   const result = await listProjectDirectory('P1', { limit: 500 });
-  expect(last().url).toMatch(/\/projects\/P1\/files\?depth=1&limit=500$/);
+  expect(last().url).toMatch(/\/workspaces\/P1\/files\?depth=1&limit=500$/);
   expect(result.next_cursor).toBeNull();
 });
 
 test('readProjectFile GETs /projects/:id/files/content with path/ref query', async () => {
   nextResponse = { status: 200, body: { path: 'a.md', ref: 'main', content: 'hi' } };
   const result = await readProjectFile('P1', 'a.md', 'main');
-  expect(last().url).toContain('/projects/P1/files/content?path=a.md&ref=main');
+  expect(last().url).toContain('/workspaces/P1/files/content?path=a.md&ref=main');
   expect(last().method).toBe('GET');
   expect(result.content).toBe('hi');
 });
@@ -116,7 +116,7 @@ test('readProjectFile is a silent background read — a 403 never hits the globa
 
 test('projectArchiveRequest names the archive route with ref, path and the bearer, without fetching', async () => {
   const request = await projectArchiveRequest('P 1', 'main', 'src/app');
-  expect(request.url).toBe('http://test.local/projects/P%201/files/archive?ref=main&path=src%2Fapp');
+  expect(request.url).toBe('http://test.local/workspaces/P%201/files/archive?ref=main&path=src%2Fapp');
   expect(request.headers.authorization).toBe('Bearer tok');
   expect(calls).toHaveLength(0);
 });
@@ -142,7 +142,7 @@ test('fetchProjectFileRaw GETs /projects/:id/files/raw and returns the exact byt
 
   const blob = await fetchProjectFileRaw('P1', 'assets/logo.png', 'main');
 
-  expect(seen!.url).toContain('/projects/P1/files/raw?path=assets%2Flogo.png&ref=main');
+  expect(seen!.url).toContain('/workspaces/P1/files/raw?path=assets%2Flogo.png&ref=main');
   expect(seen!.method).toBe('GET');
   // Other test files reconfigure the token provider concurrently; the contract
   // here is that the raw read attaches the configured Bearer token.
@@ -162,6 +162,6 @@ test('writeProjectFile commits the viewed revision and returns the pushed commit
   nextResponse = { status: 200, body: { commit_sha: 'b'.repeat(40) } };
   expect(await writeProjectFile('P1', body)).toEqual({ commit_sha: 'b'.repeat(40) });
   expect(last().method).toBe('PUT');
-  expect(last().url).toContain('/projects/P1/files/content');
+  expect(last().url).toContain('/workspaces/P1/files/content');
   expect(last().body).toEqual(body);
 });

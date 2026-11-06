@@ -6,7 +6,7 @@ import * as artifacts from './artifacts';
 
 const originalFetch = globalThis.fetch;
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
-const base = 'https://artifact-sdk.example/v1/projects/project-a/artifacts/artifact-a';
+const base = 'https://artifact-sdk.example/v1/workspaces/project-a/artifacts/artifact-a';
 const anchor = { type: 'text' as const, version: 'commit-a', quote: 'Revenue', prefix: '', suffix: ' is final.' };
 const comment: artifacts.ArtifactComment = {
   comment_id: 'comment-a', thread_id: 'thread-a', author_user_id: 'user-a', author_session_id: null,
@@ -162,7 +162,7 @@ test('listArtifactActivity preserves the page, opaque cursor and older-history m
 test('getArtifactCommentThread resolves a bare thread id within its project', async () => {
   response = { thread };
   expect(await artifacts.getArtifactCommentThread('project-a', 'thread-a')).toEqual(thread);
-  expect(calls[0]?.url).toBe('https://artifact-sdk.example/v1/projects/project-a/artifact-comment-threads/thread-a');
+  expect(calls[0]?.url).toBe('https://artifact-sdk.example/v1/workspaces/project-a/artifact-comment-threads/thread-a');
 });
 
 test('sendArtifactComments preserves the batch id and agent and returns the target session', async () => {
