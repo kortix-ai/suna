@@ -1,22 +1,4 @@
 /**
- * Legacy workspace commands that remain hidden from the session command palette.
- *
- * Session actions use the menu registry directly and must not be added here.
- */
-export const LEGACY_PALETTE_HIDDEN = new Set([
-  'dashboard',
-  'scheduled-tasks',
-  'files',
-  'running-services-cmd',
-  'agent-browser-cmd',
-  'internal-browser-cmd',
-  'changelog',
-  'credits-explained',
-  'llm-providers',
-  'open-terminal',
-]);
-
-/**
  * The IAM answers the palette reads, settled into plain values: the account
  * hub sections the caller may open (`useAccountHubAccess().sectionVisible`)
  * and, by row id, the verdict of the sidebar row a palette row mirrors.
