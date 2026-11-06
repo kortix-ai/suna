@@ -97,7 +97,8 @@ export async function approveCliDevice(userCode: string, options?: { accountId?:
 /** Mint a new account-scoped CLI PAT. The `secret_key` is returned once — the
  *  caller must persist it immediately; subsequent reads only ever see `public_key`.
  *
- * @deprecated Use `createWorkspaceToken(workspaceId, input)`. Kept permanently.
+ * @deprecated Use `createWorkspaceToken(workspaceId, input)`, which binds the
+ * token to that workspace. Kept permanently, account-wide as before.
  */
 export async function createAccountToken(input: CreateAccountTokenInput) {
   const { accountId, expiresAt, projectId, name } = input;

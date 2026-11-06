@@ -155,6 +155,7 @@ flow(
       'GET /v1/accounts/:workspaceId/tokens',
       'DELETE /v1/accounts/:workspaceId/tokens/:tokenId',
       'GET /v1/accounts/tokens',
+      'POST /v1/accounts/tokens',
     ],
   },
   async (ctx) => {
@@ -201,6 +202,35 @@ flow(
       }
       if ((await sameAnswer(ctx, pat, '/v1/projects', '/v1/workspaces')) !== 403) throw new Error('list not fenced');
       if ((await sameAnswer(ctx, pat, '/v1/accounts/me', '/v1/me')) !== 200) throw new Error('identity probe refused');
+    });
+
+    await ctx.step('a PAT minted under a workspace path without project_id is bound to that workspace; /v1/accounts/tokens stays account-wide', async () => {
+      const expires_at = new Date(Date.now() + 3_600_000).toISOString();
+      // A legacy account (split_pending): two projects, two workspaces.
+      const legacy = await ctx.fixtures.team();
+      const a = await legacy.project();
+      const b = await legacy.project();
+      for (const base of ['/v1/workspaces', '/v1/accounts']) {
+        const minted = await ctx.client.as(ctx.P.OWNER).post(`${base}/${a.id}/tokens`, { name: 'ws-route-3-bound', expires_at });
+        minted.status(201).body().has('$.project_id', a.id);
+        const pat: Principal = { ...ctx.P.OWNER, auth: { mode: 'bearer', token: minted.json<any>().secret_key } };
+        (await ctx.client.as(pat).get(`/v1/workspaces/${a.id}/sessions`)).status(200);
+        (await ctx.client.as(pat).get(`/v1/workspaces/${b.id}/sessions`)).status(403);
+      }
+      // The account key of a legacy account names two workspaces: say which.
+      (await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${legacy.id}/tokens`, { name: 'ws-route-3-ambiguous', expires_at }))
+        .status(409).body().has('$.code', 'workspace_ambiguous');
+      (await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${legacy.id}/tokens`, { name: 'ws-route-3-named', expires_at, project_id: b.id }))
+        .status(201).body().has('$.project_id', b.id);
+      // project_id must name the workspace in the path.
+      (await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${a.id}/tokens`, { name: 'ws-route-3-other', expires_at, project_id: b.id }))
+        .status(400);
+      // A 1:1 workspace named by its account key binds to its one project.
+      (await ctx.client.as(ctx.P.OWNER).post(`/v1/workspaces/${team.id}/tokens`, { name: 'ws-route-3-key', expires_at }))
+        .status(201).body().has('$.project_id', p.id);
+      // The older route keeps minting an account-wide PAT.
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', { name: 'ws-route-3-account', expires_at, account_id: legacy.id }))
+        .status(201).body().has('$.project_id', null);
     });
 
     await ctx.step('revoking under /v1/workspaces/:id/tokens kills the token on every name', async () => {

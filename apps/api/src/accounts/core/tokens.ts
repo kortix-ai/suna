@@ -34,6 +34,7 @@ import { accountIdParam } from '../../shared/route-params';
 import { workspaceIdsForAccounts } from '../../shared/resolve-account';
 import type { Context } from 'hono';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { resolveWorkspace, WorkspaceAmbiguousError, WORKSPACE_AMBIGUOUS_CODE } from '../../workspaces/surface';
 
 /**
  * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
@@ -68,6 +69,35 @@ const TOKEN_LIST_PATHS = ['/tokens', '/{workspaceId}/tokens'] as const;
 /** The account key of the workspace in the path, on the workspace-scoped token routes. */
 function pathAccountOf(c: Context): string | undefined {
   return c.req.param('workspaceId') ? accountIdParam(c) : undefined;
+}
+
+/**
+ * The workspace a PAT minted under a workspace path binds to. A token minted
+ * under `/v1/workspaces/:workspaceId/tokens` (or its alias
+ * `/v1/accounts/:workspaceId/tokens`) acts on that workspace only: on a
+ * legacy account an account-wide PAT would reach every other workspace of the
+ * account too. `/tokens`, the older route, has no path id and keeps minting
+ * an account-wide PAT unless the body names `project_id`.
+ *
+ *   - a workspace id, or the account key of a 1:1 workspace → that workspace;
+ *   - the account key of a legacy account → `ambiguous` (the body must name one);
+ *   - a dormant account key (no project) or an unknown id → `none`.
+ */
+type PathTokenBinding =
+  | { kind: 'none' }
+  | { kind: 'workspace'; projectId: string }
+  | { kind: 'ambiguous'; workspaceIds: string[] };
+
+async function pathTokenBinding(c: Context): Promise<PathTokenBinding> {
+  const raw = c.req.param('workspaceId');
+  if (!raw) return { kind: 'none' };
+  try {
+    const workspace = await resolveWorkspace(raw);
+    return workspace ? { kind: 'workspace', projectId: workspace.workspaceId } : { kind: 'none' };
+  } catch (err) {
+    if (err instanceof WorkspaceAmbiguousError) return { kind: 'ambiguous', workspaceIds: [...err.workspaceIds] };
+    throw err;
+  }
 }
 
 // Routes are registered via this function (called by the orchestrator AFTER
@@ -323,10 +353,27 @@ accountsRouter.openapi(
 
   // Optional project scope. A project-scoped key only ever works on that one
   // project (the auth middleware enforces the binding); it never widens access.
-  const projectId =
+  let projectId =
     typeof body.project_id === 'string' && body.project_id.trim()
       ? body.project_id.trim()
       : undefined;
+
+  const binding = await pathTokenBinding(c);
+  if (binding.kind === 'workspace') {
+    if (projectId && projectId !== binding.projectId) {
+      return c.json({ error: 'project_id names another workspace than the one in the path' }, 400);
+    }
+    projectId = binding.projectId;
+  } else if (binding.kind === 'ambiguous' && !projectId) {
+    return c.json(
+      {
+        error: 'This account holds several workspaces. Name one: mint under /v1/workspaces/<workspace id>/tokens, or pass project_id.',
+        code: WORKSPACE_AMBIGUOUS_CODE,
+        workspace_ids: binding.workspaceIds,
+      },
+      409,
+    );
+  }
 
   if (projectId) {
     const loaded = await loadProjectForUser(c, projectId, 'credentials');

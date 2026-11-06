@@ -362,7 +362,12 @@ export async function listWorkspaceTokens(workspaceId: string, options?: ListAcc
   return unwrap(await backendApi.get<AccountToken[]>(`/workspaces/${workspaceId}/tokens${qs}`));
 }
 
-/** Mint a personal access token for the workspace. `secret_key` is returned once. */
+/**
+ * Mint a personal access token bound to the workspace: it acts on that
+ * workspace only (`project_id` in the response). `secret_key` is returned
+ * once. On the account key of a legacy multi-workspace account the API
+ * answers 409 `workspace_ambiguous` unless `projectId` names one of them.
+ */
 export async function createWorkspaceToken(workspaceId: string, input: CreateWorkspaceTokenInput) {
   const { expiresAt, projectId, name } = input;
   return unwrap(
