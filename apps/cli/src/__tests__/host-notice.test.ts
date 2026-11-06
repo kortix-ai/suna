@@ -313,3 +313,12 @@ describe('host notice', () => {
     }
   });
 });
+
+test('findWorkspaceArg: the notice names the workspace --workspace/--project selects, never a grant', async () => {
+  const { findWorkspaceArg } = await import('../host-notice.ts');
+  expect(findWorkspaceArg(['ls', '--workspace', 'w2'])).toBe('w2');
+  expect(findWorkspaceArg(['ls', '--project=w3'])).toBe('w3');
+  expect(findWorkspaceArg(['invite', 'a@b.c', '--workspace', 'p1:manager'])).toBeUndefined();
+  expect(findWorkspaceArg(['ls', '--workspace', '--json'])).toBeUndefined();
+  expect(findWorkspaceArg(['ls'])).toBeUndefined();
+});

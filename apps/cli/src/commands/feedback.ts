@@ -60,7 +60,7 @@ Examples:
  *  unit-testable without a live host. */
 export function parseFeedbackInvocation(
   argv: string[],
-  env: { KORTIX_SESSION_ID?: string; KORTIX_PROJECT_ID?: string },
+  env: { KORTIX_SESSION_ID?: string; KORTIX_PROJECT_ID?: string; KORTIX_WORKSPACE_ID?: string },
 ): ParsedFeedbackInvocation | number {
   const rest = [...argv];
   let flags: Record<string, string | undefined>;
@@ -106,7 +106,7 @@ export function parseFeedbackInvocation(
   }
   const sessionId = env.KORTIX_SESSION_ID?.trim();
   if (sessionId) context.session_id = sessionId;
-  const projectId = env.KORTIX_PROJECT_ID?.trim();
+  const projectId = env.KORTIX_WORKSPACE_ID?.trim() || env.KORTIX_PROJECT_ID?.trim();
   if (projectId) context.project_id = projectId;
 
   return { message, kind, source, context, json, host: flags.host };
@@ -160,7 +160,7 @@ export async function runFeedback(argv: string[]): Promise<number> {
   if (help !== null) return help;
   const parsed = parseFeedbackInvocation(
     argv,
-    process.env as { KORTIX_SESSION_ID?: string; KORTIX_PROJECT_ID?: string },
+    process.env as { KORTIX_SESSION_ID?: string; KORTIX_PROJECT_ID?: string; KORTIX_WORKSPACE_ID?: string },
   );
   if (typeof parsed === 'number') return parsed;
   return submit(parsed);

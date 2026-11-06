@@ -60,7 +60,7 @@ The CLI enforces every edge. You cannot reach `verifying` except through
 | `kortix goals check` | owner | prints what is wrong in GOAL.md |
 | `kortix goals ls` / `status [<slug>]` | anyone | every goal / one goal |
 
-Add `--json` for machine-readable output. `new` needs the project features
+Add `--json` for machine-readable output. `new` needs the workspace features
 `goals`, `volumes` and `reminders`; it prints the enable command when one is off.
 `verify` and `handover` start sessions themselves: a "do not spawn sessions"
 contract does not apply to them.
@@ -89,7 +89,7 @@ done_criteria:
 links:
   - evidence/invoice-de.pdf
   - /Company/Finance/vat-ids.md
-  - https://<host>/projects/<project_id>/changes/12
+  - https://<host>/workspaces/<project_id>/changes/12
 waiting_on: null
 heartbeat: 4h
 max_wakes_per_day: 12

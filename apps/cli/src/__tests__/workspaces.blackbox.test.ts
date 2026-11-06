@@ -19,7 +19,7 @@ const NO_WORKSPACE =
 let tmp: string;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let paths: string[] = [];
-let accounts: Array<{ account_id: string; slug: string; name: string; role: string }> = [];
+let accounts: Array<{ account_id: string; workspace_id?: string | null; slug: string; name: string; role: string }> = [];
 
 function project(id: string) {
   return {
@@ -127,7 +127,7 @@ describe('a person with no workspace', () => {
   });
 
   test('whoami with only an empty account (0 projects) shows the line, not "pick one"', async () => {
-    accounts = [{ account_id: 'account_1', slug: 'acct', name: 'Empty', role: 'owner' }];
+    accounts = [{ account_id: 'account_1', workspace_id: null, slug: 'acct', name: 'Empty', role: 'owner' }];
     const r = await runCli(['whoami'], writeConfig(startServer(), 'account_1'));
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(`workspace ${NO_WORKSPACE}`);
@@ -298,5 +298,179 @@ describe('projects ls (older name) keeps its output; workspaces ls surfaces a fa
       expect(r.stderr).toContain('synthetic outage');
       expect(r.stdout).toContain('ws_one');
     }
+  });
+});
+
+describe('one workspace context for workspace-level commands (CLI-WS-1)', () => {
+  // W is the default workspace; W2 is another one the person belongs to.
+  const W = 'aaaaaaaa-0000-4000-8000-000000000001';
+  const W2 = 'aaaaaaaa-0000-4000-8000-000000000002';
+  let seen: string[] = [];
+
+  function startStateServer(): string {
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        seen.push(`${url.pathname}${url.search}`);
+        if (url.pathname === '/v1/billing/account-state') {
+          const id = url.searchParams.get('account_id');
+          return Response.json({ account_id: id, tier: { name: id === W2 ? 'pro' : 'free' } });
+        }
+        const members = url.pathname.match(/^\/v1\/workspaces\/([^/]+)\/members$/);
+        if (members) return Response.json([]);
+        return Response.json({ error: `unexpected ${url.pathname}` }, { status: 404 });
+      },
+    });
+    return `http://127.0.0.1:${server.port}/v1`;
+  }
+
+  function writeDefaultConfig(apiBase: string): string {
+    const path = join(tmp, 'config.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: apiBase, token: 'tok_ws', user_id: 'user_1', account_id: 'account_1',
+            default_project: { project_id: W, account_id: 'account_1', name: 'Workspace W' },
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    return path;
+  }
+
+  beforeEach(() => {
+    seen = [];
+  });
+
+  test('billing status --workspace W2 reads W2, not the default workspace W', async () => {
+    const r = await runCli(['billing', 'status', '--workspace', W2, '--json'], writeDefaultConfig(startStateServer()));
+    expect(`exit=${r.code} ${r.stderr}`).toBe(`exit=0 ${r.stderr}`);
+    expect(seen).toEqual([`/v1/billing/account-state?account_id=${W2}`]);
+    expect(JSON.parse(r.stdout).tier.name).toBe('pro');
+  });
+
+  test('billing status with no flag reads the default workspace', async () => {
+    const r = await runCli(['billing', 'status', '--json'], writeDefaultConfig(startStateServer()));
+    expect(r.code).toBe(0);
+    expect(seen).toEqual([`/v1/billing/account-state?account_id=${W}`]);
+  });
+
+  test('KORTIX_WORKSPACE_ID, then KORTIX_PROJECT_ID, outrank the default workspace', async () => {
+    const config = writeDefaultConfig(startStateServer());
+    await runCli(['members', 'ls', '--json'], config, { KORTIX_PROJECT_ID: W2 });
+    await runCli(['members', 'ls', '--json'], config, { KORTIX_PROJECT_ID: W, KORTIX_WORKSPACE_ID: W2 });
+    expect(seen).toEqual([`/v1/workspaces/${W2}/members?account_id=${W2}`, `/v1/workspaces/${W2}/members?account_id=${W2}`]);
+  });
+
+  test('a session box (only KORTIX_TOKEN + KORTIX_PROJECT_ID) runs members ls in its workspace', async () => {
+    const apiBase = startStateServer();
+    const r = await runCli(['members', 'ls', '--json'], join(tmp, 'absent.json'), {
+      KORTIX_TOKEN: 'tok_session',
+      KORTIX_API_URL: apiBase,
+      KORTIX_PROJECT_ID: W,
+    });
+    expect(`exit=${r.code} ${r.stderr}`).toBe(`exit=0 ${r.stderr}`);
+    expect(JSON.parse(r.stdout)).toEqual([]);
+    expect(seen).toEqual([`/v1/workspaces/${W}/members?account_id=${W}`]);
+  });
+});
+
+describe('a workspace-bound credential (CLI-WS-2)', () => {
+  const W = 'bbbbbbbb-0000-4000-8000-000000000001';
+  let seen: string[] = [];
+
+  function startBoundServer(): string {
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        seen.push(url.pathname);
+        if (url.pathname === '/v1/me') {
+          return Response.json({
+            user_id: 'user_1',
+            email: 'user@example.test',
+            token_context: {
+              auth_type: 'pat', project_id: W, workspace_id: W, session_id: null, agent: null,
+              connectors: null, kortix_permissions: null, kortix_cli: null,
+            },
+            accounts: [
+              { account_id: 'account_1', workspace_id: W, slug: 'account_', name: 'Bound Lab', role: 'owner' },
+              { account_id: 'account_2', workspace_id: 'other-ws', slug: 'account_', name: 'Other', role: 'member' },
+            ],
+          });
+        }
+        // The fence: a bound credential cannot list workspaces on an older server.
+        if (url.pathname === '/v1/workspaces') {
+          return Response.json({ message: 'refused [check=token-project-scope:project-list]' }, { status: 403 });
+        }
+        if (url.pathname === `/v1/workspaces/${W}`) return Response.json({ ...project(W), name: 'Bound Lab' });
+        return Response.json({ error: `unexpected ${url.pathname}` }, { status: 404 });
+      },
+    });
+    return `http://127.0.0.1:${server.port}/v1`;
+  }
+
+  const boundEnv = (apiBase: string) => ({ KORTIX_TOKEN: 'tok_bound', KORTIX_API_URL: apiBase, KORTIX_PROJECT_ID: W });
+
+  beforeEach(() => {
+    seen = [];
+  });
+
+  test('whoami prints the bound workspace, reads no list, never "No workspace yet"', async () => {
+    const r = await runCli(['whoami'], join(tmp, 'absent.json'), boundEnv(startBoundServer()));
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(`workspace Bound Lab (${W}, owner, bound)`);
+    expect(r.stdout).not.toContain(NO_WORKSPACE);
+    expect(seen).toEqual(['/v1/me']);
+  });
+
+  test('whoami --json carries the bound workspace_id', async () => {
+    const r = await runCli(['whoami', '--json'], join(tmp, 'absent.json'), boundEnv(startBoundServer()));
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).workspace_id).toBe(W);
+  });
+
+  test('workspaces ls prints its one workspace and exits 0', async () => {
+    const r = await runCli(['workspaces', 'ls'], join(tmp, 'absent.json'), boundEnv(startBoundServer()));
+    expect(`exit=${r.code} ${r.stderr}`).toBe(`exit=0 ${r.stderr}`);
+    expect(r.stdout).toContain('Bound Lab');
+    expect(r.stdout).toContain('1 workspace');
+    expect(r.stdout).not.toContain(NO_WORKSPACE);
+    expect(seen).toEqual(['/v1/me', `/v1/workspaces/${W}`]);
+  });
+});
+
+describe('a failed list never reads as "No workspace yet"', () => {
+  test('workspaces ls whose every read fails exits 1 with the failure and no create-or-join line', async () => {
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname === '/v1/me') {
+          return Response.json({ user_id: 'user_1', email: 'user@example.test', accounts: [{ account_id: 'account_1', workspace_id: null, slug: 'acct', name: 'Lab', role: 'owner' }] });
+        }
+        return Response.json({ message: 'synthetic outage' }, { status: 503 });
+      },
+    });
+    const r = await runCli(['workspaces', 'ls'], writeConfig(`http://127.0.0.1:${server.port}/v1`, 'account_1'));
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('synthetic outage');
+    expect(r.stdout).not.toContain(NO_WORKSPACE);
+  });
+});
+
+describe('a flag a subcommand does not read is refused (CLI-WS-3)', () => {
+  test('billing status --since exits 2 and sends nothing', async () => {
+    let calls = 0;
+    server = Bun.serve({ port: 0, fetch() { calls += 1; return Response.json({}); } });
+    const r = await runCli(['billing', 'status', '--since', '7d'], writeConfig(`http://127.0.0.1:${server.port}/v1`, 'account_1'));
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('billing status does not take --since');
+    expect(calls).toBe(0);
   });
 });

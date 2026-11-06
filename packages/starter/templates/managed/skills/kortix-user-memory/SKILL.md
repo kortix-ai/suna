@@ -6,7 +6,7 @@ description: "Per-user memory in the user's own Drive folder: `/drives/me/Memory
 <skill name="kortix-user-memory">
 
 <overview>
-Each person in a Kortix project has their own folder in Drive,
+Each person in a Kortix workspace has their own folder in Drive,
 `Users/<name>`, mounted in their sessions at `/drives/me` (and
 `~/Desktop`). Kortix creates `/drives/me/Memory` in it. That folder is this
 user's memory: what you keep about THIS person, read back in every session
@@ -20,7 +20,7 @@ they start.
   Kortix keeps with its `kortix_memory` tool. Read it if it helps; leave
   its files to My Kortix and the user.
 
-User memory is not project or team memory. Where every other fact goes is
+User memory is not workspace or team memory. Where every other fact goes is
 the one table in the `kortix-drives` skill (`<memory>`).
 </overview>
 
@@ -42,7 +42,7 @@ the one table in the `kortix-drives` skill (`<memory>`).
 people use (a shared session, a channel thread), keep only the owner's facts
 there. In a private channel's thread `/drives/me` is read-only: save nothing
 there, and keep what you learn in the channel's memory (the
-`kortix-channel-memory` skill). When `/drives/me` is absent (Volumes off for the project, or no
+`kortix-channel-memory` skill). When `/drives/me` is absent (Volumes off for the workspace, or no
 personal folder in `/drives/README.md`), there is no user memory: do not
 write one anywhere else, and tell the user if they asked you to remember
 something.

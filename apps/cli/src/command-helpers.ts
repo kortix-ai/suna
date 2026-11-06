@@ -11,7 +11,7 @@ import {
   markerActive,
 } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { loadLink, resolveProjectRef } from './project-link.ts';
+import { loadLink, resolveProjectId, resolveProjectRef } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
 import { NO_WORKSPACE_CODE, NO_WORKSPACE_LINE } from './api/no-workspace.ts';
 import { denialDetailFromBody, machineErrors, recordPermissionDenial, withIssues, writeMachineError } from './token-denial.ts';
@@ -265,21 +265,6 @@ export interface AccountContext {
 }
 
 /**
- * Common setup for any ACCOUNT-scoped command (`/accounts/:id/...`): validate
- * auth, resolve the account id, build a client already scoped to it.
- *
- * The canonical RBAC surface is account-scoped — `role_assignments`, the role
- * catalog and the permission catalog all hang off `/accounts/:accountId/iam`,
- * even for a grant that lands on ONE project. So `kortix access`, `kortix roles`
- * and `kortix permissions` all need this, not `resolveProjectContext`.
- *
- * Account resolution order: `--account` → the account of the cwd's host-bound
- * project link (the account the host notice prints as "(linked)") → the active
- * account → the host's default account from the stored credentials. With
- * `--host`, only that host's stored account is used unless `--account`
- * explicitly overrides it.
- */
-/**
  * The context of a session box's own token for a project-scoped read: no
  * account. The token is bound to one project, and the usage routes take that
  * `project_id` and refuse any `account_id`, so the account context of
@@ -292,7 +277,44 @@ export function resolveProjectTokenContext(): AccountContext | null {
   return auth?.token ? { client: clientFromAuth(auth, { accountId: '' }), accountId: '', auth } : null;
 }
 
+/**
+ * The workspace a workspace-level command (members, billing, audit, groups,
+ * roles, tokens, permissions, providers, the trigger switch, access) acts on.
+ * It is the same workspace context as every other command:
+ *
+ *   1. `--workspace` / `--project` (`workspaceArg`), or the hidden older
+ *      `--account` (`accountArg`)
+ *   2. `KORTIX_WORKSPACE_ID`, then `KORTIX_PROJECT_ID` (platform-injected in a
+ *      session box; a script's own value wins over the link and the default)
+ *   3. `.kortix/link.json` in cwd
+ *   4. the default workspace (`kortix workspaces use`)
+ *   5. the older active account, then the account of the stored credential
+ *
+ * An explicit `--host` (or an in-sandbox `hosts use` selection) scopes the
+ * chain to that host: its link, its default, its stored account. The ambient
+ * env ids belong to another deployment there (resolveProjectId).
+ *
+ * A workspace id is 1:1 with its account, so the id goes to the API as the
+ * account (`/workspaces/:id/...`, `account_id=`), which maps it.
+ */
+export function resolveAccountWorkspaceId(opts: {
+  workspaceArg?: string;
+  accountArg?: string;
+  hostArg?: string;
+  auth?: Auth | null;
+} = {}): string {
+  const explicit = opts.workspaceArg?.trim() || opts.accountArg?.trim();
+  if (explicit) return explicit;
+  const resolved = resolveProjectId(undefined, { hostScoped: true, hostArg: opts.hostArg });
+  if (resolved) return resolved;
+  if (opts.hostArg) return opts.auth?.account_id || '';
+  return activeAccount()?.id || opts.auth?.account_id || '';
+}
+
 export function resolveAccountContext(opts: {
+  /** `--workspace` / `--project`: the workspace to act on. */
+  workspaceArg?: string;
+  /** `--account`: the older name, kept as a hidden alias. */
   accountArg?: string;
   hostArg?: string;
   /** Commands on person-level routes (connected apps) run with no account. */
@@ -310,15 +332,11 @@ export function resolveAccountContext(opts: {
     }
     return null;
   }
-  const link = opts.hostArg ? null : loadLink();
-  const linkedAccountId = link?.host ? link.account_id : '';
-  const accountId =
-    opts.accountArg ||
-    (opts.hostArg ? auth.account_id : linkedAccountId || activeAccount()?.id || auth.account_id) ||
-    '';
+  const accountId = resolveAccountWorkspaceId({ ...opts, auth });
   if (!accountId && !opts.accountOptional) {
     process.stderr.write(
-      `${status.err('No active workspace. Run `kortix workspaces use` or pass --account <id>.')}\n`,
+      `${status.err('No workspace selected.')} Run \`kortix workspaces use\`, ` +
+        `\`kortix workspaces link\`, or pass ${C.cyan}--workspace <id>${C.reset}.\n`,
     );
     return null;
   }

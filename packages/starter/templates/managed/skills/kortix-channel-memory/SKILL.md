@@ -101,7 +101,7 @@ work for: `kortix spaces` (the space defaults to this thread's).
   space's files folder, then add a `file` tab whose ref is its Drive path
   (`/Company/Channels/<slug>/<file>`; `kortix spaces get` shows the slug).
 - A 403 means the person may not make that change (only a channel's
-  creator or a project manager renames, describes and sets agents; a member
+  creator or a workspace manager renames, describes and sets agents; a member
   adds people). Tell the user in one line; never work around it.
 - A space's main chat is its shared feed: post what others there should
   know, a question for a person, or a request that needs someone; tag them.
@@ -113,7 +113,7 @@ work for: `kortix spaces` (the space defaults to this thread's).
 </configure>
 
 <not-this>
-`memory/` in the project's repository is the project brain (the
+`memory/` in the workspace's repository is the workspace brain (the
 `kortix-memory` skill), changed through a change request. It is not a
 channel's memory.
 </not-this>

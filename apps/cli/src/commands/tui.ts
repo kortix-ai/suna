@@ -204,7 +204,9 @@ export function tuiChildEnv(
   return {
     ...base,
     ...(flags.host ? { KORTIX_TUI_HOST: flags.host } : {}),
-    ...(flags.project ? { KORTIX_PROJECT_ID: flags.project } : {}),
+    // Both names: the TUI reads KORTIX_WORKSPACE_ID first (the CLI and
+    // kortixd rule), so the flag must outrank an inherited one.
+    ...(flags.project ? { KORTIX_WORKSPACE_ID: flags.project, KORTIX_PROJECT_ID: flags.project } : {}),
     ...(flags.session ? { KORTIX_SESSION_ID: flags.session } : {}),
     ...(flags.newSession ? { KORTIX_TUI_NEW: '1' } : {}),
     ...(flags.agent ? { KORTIX_TUI_AGENT: flags.agent } : {}),

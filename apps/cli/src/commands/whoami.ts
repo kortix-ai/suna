@@ -7,7 +7,7 @@ import { takeFlags } from '../command-argv.ts';
 import { emitJson, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 import { NO_WORKSPACE_LINE } from '../api/no-workspace.ts';
-import { listWorkspaceRows } from '../project-bind.ts';
+import { boundWorkspaceId, listWorkspaceRowsReport } from '../project-bind.ts';
 
 const HELP = help`Usage: kortix whoami [options]
 
@@ -119,18 +119,29 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     whoamiTokenOnly(me);
     return 0;
   }
-  // With no default picked, tell "pick one" apart from "none exists": an
-  // account with 0 projects is not a workspace.
-  let hasWorkspace = me.accounts.length > 0;
-  if (hasWorkspace && !def) {
-    try {
-      hasWorkspace = (await listWorkspaceRows(auth, undefined, me)).length > 0;
-    } catch {
-      // Unreadable list: keep the "pick one" hint rather than claim none.
-    }
-  }
-  whoamiHuman(me, auth, resolvedHost, active, def, hasWorkspace);
+  whoamiHuman(me, auth, resolvedHost, active, def, await hasAnyWorkspace(auth, me, def));
   return 0;
+}
+
+/**
+ * Tell "pick one" apart from "none exists" from `/accounts/me` alone: a bound
+ * credential, a default, or a membership that names its workspace all mean
+ * one exists. Only memberships that name none (an account with no project,
+ * or several older projects) need the list read, and a failed read never
+ * claims "none".
+ */
+async function hasAnyWorkspace(auth: Auth, me: MeResponse, def: DefaultProjectRef | null): Promise<boolean> {
+  if (boundWorkspaceId(me) || def) return true;
+  if (me.accounts.length === 0) return false;
+  if (me.accounts.some((a) => a.workspace_id)) return true;
+  // An older server reports no workspace_id at all: an account is enough.
+  if (me.accounts.every((a) => a.workspace_id === undefined)) return true;
+  try {
+    const report = await listWorkspaceRowsReport(auth, undefined, me);
+    return report.rows.length > 0 || report.failed.length > 0;
+  } catch {
+    return true;
+  }
 }
 
 /** The machine-readable rendering (`--json`): the raw identity payload. */
@@ -146,6 +157,7 @@ function whoamiJson(
     url: auth.api_base,
     user_id: me.user_id,
     user_email: me.email || null,
+    workspace_id: boundWorkspaceId(me) ?? def?.project_id ?? null,
     account_id: active?.account_id ?? auth.account_id ?? null,
     account: active ?? null,
     accounts: me.accounts,
@@ -183,7 +195,13 @@ function whoamiHuman(
     process.stdout.write(`  ${C.dim}email     ${C.reset}${me.email}\n`);
   }
   process.stdout.write(`  ${C.dim}user_id   ${C.reset}${me.user_id}\n`);
-  if (!hasWorkspace) {
+  const bound = boundWorkspaceId(me);
+  if (bound) {
+    // A workspace key, session or agent token reaches one workspace.
+    const owner = me.accounts.find((a) => a.workspace_id === bound);
+    const label = owner?.name ? `${owner.name} ${C.faded}(${bound}, ${owner.role ? `${owner.role}, ` : ''}bound)${C.reset}` : `${bound} ${C.faded}(bound)${C.reset}`;
+    process.stdout.write(`  ${C.dim}workspace ${C.reset}${label}\n`);
+  } else if (!hasWorkspace) {
     // A new user belongs to no workspace: say how to get one.
     process.stdout.write(`  ${C.dim}workspace ${C.reset}${C.dim}${NO_WORKSPACE_LINE}${C.reset}\n`);
   } else if (def) {
@@ -196,7 +214,7 @@ function whoamiHuman(
       `  ${C.dim}workspace ${C.reset}${C.dim}none selected. Pick one with ${C.reset}${C.cyan}kortix workspaces use${C.reset}\n`,
     );
   }
-  if (me.accounts.length > 1 && def) {
+  if (me.accounts.length > 1 && def && !bound) {
     process.stdout.write(
       `  ${C.dim}switch workspace with ${C.reset}${C.cyan}kortix workspaces use${C.reset}\n`,
     );

@@ -198,7 +198,7 @@ describe('kortix access — invites + access requests', () => {
       'requests ls',
       'requests approve <req-id>',
       'requests reject <req-id>',
-      'project.members.manage',
+      'workspace.members.manage',
     ]) {
       expect(r.stdout).toContain(fragment);
     }

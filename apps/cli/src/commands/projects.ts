@@ -42,6 +42,7 @@ import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { projectWebUrl } from '../web-url.ts';
+import { settingsWhere } from '../settings-path.ts';
 
 /** Back-compat alias — the helper moved to ../project-git.ts so `ship` can use
  *  it without an import cycle through this command module. */
@@ -88,7 +89,7 @@ Subcommands:
                        connected yourself are never touched.
                        -y / --yes skips the confirmation.
   features [ls]        List every feature flag with its effective state for the
-                       workspace (Settings → Feature flags). (--json)
+                       workspace (${settingsWhere('feature-flags')}). (--json)
   features enable <flag>   Turn a flag on for the workspace.
   features disable <flag>  Turn a flag off for the workspace.
   features reset <flag>    Clear the workspace's override (follow the default).
@@ -265,11 +266,11 @@ export async function runProjects(argv: string[], options: RunProjectsOptions = 
   }
 }
 
-// ── Feature flags (Settings → Feature flags) ───────────────────────────────
+// ── Feature flags (Workspace settings → Feature flags) ───────────────────────────────
 
 const FEATURES_HELP = help`Usage: kortix workspaces features [ls | enable | disable | reset] [<flag>]
 
-Workspace feature flags — the same switches as Settings → Feature flags.
+Workspace feature flags — the same switches as ${settingsWhere('feature-flags')}.
 A flag is a stable key (e.g. monitors, event_triggers). State is
 stored on the workspace, never in kortix.yaml.
 
@@ -454,8 +455,8 @@ interface ProjectWithIcon extends ProjectSummary {
 
 const SET_HELP = help`Usage: kortix workspaces set [<id>] [options]
 
-Update one workspace's settings — the dashboard's Workspace settings →
-General (PATCH /projects/:id). Only the fields you pass are written.
+Update one workspace's settings — the dashboard's ${settingsWhere('general')}
+(PATCH /workspaces/:id). Only the fields you pass are written.
 
 Options:
   --name <name>          Display name.
@@ -1067,7 +1068,8 @@ async function projectsLs(
   if (rows.length === 0) {
     if (query && listed.length > 0) {
       process.stdout.write(`  ${C.dim}No workspace matches "${query}".${C.reset}\n\n`);
-    } else {
+    } else if (failed.length === 0) {
+      // Only a complete read may say none exists.
       writeNoWorkspaceYet();
     }
     return exitCode;
@@ -1093,11 +1095,18 @@ function renderWorkspaceTable(rows: WorkspaceRow[], marks: { linked?: string; de
     const isDefault = p.project_id === marks.def;
     const isLinked = p.project_id === marks.linked;
     const marker = isDefault ? `${C.green}● ${C.reset}` : isLinked ? `${C.cyan}◆ ${C.reset}` : '  ';
-    const tag = isDefault
-      ? `   ${C.green}default${C.reset}`
-      : isLinked
-        ? `   ${C.cyan}linked${C.reset}`
-        : '';
+    const state =
+      p.state === 'setup_required'
+        ? `   ${C.yellow}set up needed${C.reset}`
+        : p.state === 'deleting'
+          ? `   ${C.yellow}deleting${C.reset}`
+          : '';
+    const tag =
+      (isDefault
+        ? `   ${C.green}default${C.reset}`
+        : isLinked
+          ? `   ${C.cyan}linked${C.reset}`
+          : '') + state;
     process.stdout.write(
       `${marker}${pad(p.name, nameW)}   ${pad(p.project_id, 36)}   ${C.faded}${pad(account.role, roleW)}${C.reset}   ${C.faded}${formatRelative(p.updated_at)}${C.reset}${tag}\n`,
     );
@@ -1252,11 +1261,18 @@ function renderProjectTable(
     const isDefault = p.project_id === marks.def;
     const isLinked = p.project_id === marks.linked;
     const marker = isDefault ? `${C.green}● ${C.reset}` : isLinked ? `${C.cyan}◆ ${C.reset}` : '  ';
-    const tag = isDefault
-      ? `   ${C.green}default${C.reset}`
-      : isLinked
-        ? `   ${C.cyan}linked${C.reset}`
-        : '';
+    const state =
+      p.state === 'setup_required'
+        ? `   ${C.yellow}set up needed${C.reset}`
+        : p.state === 'deleting'
+          ? `   ${C.yellow}deleting${C.reset}`
+          : '';
+    const tag =
+      (isDefault
+        ? `   ${C.green}default${C.reset}`
+        : isLinked
+          ? `   ${C.cyan}linked${C.reset}`
+          : '') + state;
     const repo = trimMid(p.repo_url, 40);
     const updated = formatRelative(p.updated_at);
     process.stdout.write(

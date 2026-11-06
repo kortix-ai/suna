@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { KortixToolResult } from '@kortix/api-contract/kortix-tool-card'
 import { PLATFORM_TOOLS, loadTools, runTool } from '@/services/tools/host'
-import { runKortix } from '@/services/tools/platform/platform'
+import { adminHref, runKortix } from '@/services/tools/platform/platform'
+import { isWorkspaceSettingsSection, workspaceSettingsPath } from '@kortix/shared/workspace-settings'
 
 /**
  * The My Kortix platform tools (services/tools/platform/kortix_*.ts) at their
@@ -119,7 +120,7 @@ describe('kortix_agents', () => {
     expect(result.error?.kind).toBe('denied')
     expect(result.error?.message).toContain('project.agent.update')
     expect(result.error?.grantors).toEqual([
-      { name: 'Sam', role: 'project manager' },
+      { name: 'Sam', role: 'manager' },
       { name: 'ada@example.com', role: 'owner' },
     ])
     expect(result.card.subtitle).toBe('Sam, ada@example.com can grant it.')
@@ -392,7 +393,7 @@ describe('kortix_schedules follow-through', () => {
     fakeKortix(`'loop ${TEXT} --every=4h --json') echo '✗ Loops is not enabled for this project. Enable it in Settings → Feature flags.' >&2; echo '  Turn it on: kortix projects features enable reminders' >&2; exit 1 ;;`)
     const result = await run('kortix_schedules', { action: 'follow_up', text: TEXT, every: '4h' })
     expect(result.ok).toBe(false)
-    expect(result.error?.message).toBe('Loops is not enabled for this project. Enable it in Settings → Feature flags. Ask the person or a project admin to turn it on.')
+    expect(result.error?.message).toBe('Loops is not enabled for this project. Enable it in Settings → Feature flags. Ask the person or a workspace admin to turn it on.')
   })
 })
 
@@ -409,6 +410,42 @@ describe('kortix_people and kortix_access', () => {
     fakeKortix(ROSTER)
     const result = await run('kortix_access', { action: 'who_can_grant' })
     expect(result.card.rows?.map((row) => row.title)).toEqual(['Sam', 'ada@example.com'])
+    expect(result.card.links).toEqual([{ label: 'Members', href: '/workspaces/proj_1/admin/members' }])
+  })
+
+  test('me: one workspace role row, the workspace title, the older JSON fields kept', async () => {
+    fakeKortix(`'whoami --json') echo '{"user_id":"u_ada","email":"ada@example.com","accounts":[{"account_id":"a_1","role":"owner"}]}' ;;
+  ${ROSTER}`)
+    const result = await run('kortix_access', { action: 'me' })
+    expect(result.card.title).toBe('You manage this workspace')
+    expect(result.card.rows).toEqual([
+      { title: 'Signed in as', detail: 'ada@example.com' },
+      { title: 'Workspace role', detail: 'owner' },
+    ])
+    expect(result.data).toMatchObject({ workspace_role: 'owner', account_role: 'owner', project_role: 'manager', workspace_id: 'proj_1', project_id: 'proj_1' })
+  })
+
+  test('me: a member reads as a member of this workspace', async () => {
+    fakeKortix(`'whoami --json') echo '{"user_id":"u_me","email":"lee@example.com","accounts":[{"account_id":"a_1","role":"member"}]}' ;;
+  ${ROSTER}`)
+    const result = await run('kortix_access', { action: 'me' })
+    expect(result.card.title).toBe('You are a member of this workspace')
+    expect(result.card.rows).toContainEqual({ title: 'Workspace role', detail: 'member' })
+    expect(JSON.stringify(result.card)).not.toMatch(/Account role|Project role/)
+  })
+
+  test('people list shows one workspace role per person', async () => {
+    fakeKortix(ROSTER)
+    const result = await run('kortix_people', { action: 'list' })
+    expect(result.card.rows?.map((row) => row.badge)).toEqual(['manager', 'owner', 'member'])
+  })
+
+  test('every Settings link a tool prints is the registry path (workspaceSettingsPath)', () => {
+    const env = { KORTIX_PROJECT_ID: 'proj_1' } as Parameters<typeof adminHref>[0]
+    for (const section of ['members', 'connectors', 'triggers', 'models', 'feature-flags', 'secrets', 'skills'] as const) {
+      expect(isWorkspaceSettingsSection(section)).toBe(true)
+      expect(adminHref(env, section)).toBe(workspaceSettingsPath('proj_1', section))
+    }
   })
 })
 

@@ -35,7 +35,7 @@ Options:
   --scope <s>        account | workspace — only actions decided at that scope.
   --area <a>         Only actions in one area (e.g. customize, triggers).
                      Secret actions are in customize.
-  --account <id>     Operate on this account (default: the active account).
+  --workspace <id>   The workspace (default: KORTIX_WORKSPACE_ID, then KORTIX_PROJECT_ID, the linked workspace, the default workspace).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -58,6 +58,7 @@ export async function runPermissions(argv: string[]): Promise<number> {
     f.scope = fromWorkspaceAlias(takeFlagValue(rest, ['--scope']));
     f.area = takeFlagValue(rest, ['--area']);
     f.account = takeFlagValue(rest, ['--account']);
+    f.workspace = takeFlagValue(rest, ['--workspace', '--project']);
     f.host = takeFlagValue(rest, ['--host']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
@@ -69,7 +70,7 @@ export async function runPermissions(argv: string[]): Promise<number> {
     return fail(`--scope must be one of ${SCOPE_TYPES.join(', ')}`);
   }
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.workspace, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
 
   try {

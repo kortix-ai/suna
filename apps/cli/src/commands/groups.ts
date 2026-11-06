@@ -87,7 +87,8 @@ Options:
   --name <n>          New group name (set).
   --description <t>   Description (create, set).
   --no-description    Clear the description (set).
-  --account <id>      Operate on this account (default: the linked workspace's account, else the active account).
+  --workspace <id>    The workspace (default: KORTIX_WORKSPACE_ID, then
+                      KORTIX_PROJECT_ID, the linked workspace, the default workspace).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output (read subcommands).
   -y, --yes           Skip the confirmation prompt.
@@ -116,6 +117,7 @@ export async function runGroups(argv: string[]): Promise<number> {
   let clearDescription = false;
   try {
     f.account = takeFlagValue(rest, ['--account']);
+    f.workspace = takeFlagValue(rest, ['--workspace', '--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.name = takeFlagValue(rest, ['--name']);
     f.description = takeFlagValue(rest, ['--description', '--desc']);
@@ -127,7 +129,7 @@ export async function runGroups(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.workspace, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
   const base = `${iamBase(ctx.accountId)}/groups`;
 

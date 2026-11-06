@@ -383,9 +383,9 @@ export async function runTriggers(argv: string[]): Promise<number> {
         ? triggersToggleLive(positional[0], false, ctxOpts, json)
         : triggersToggle(positional[0], false);
     case 'pause':
-      return accountWide ? accountTriggersPause(true, hostFlag) : triggersActivation(ctxOpts, true);
+      return accountWide ? accountTriggersPause(true, hostFlag, projectFlag) : triggersActivation(ctxOpts, true);
     case 'resume':
-      return accountWide ? accountTriggersPause(false, hostFlag) : triggersActivation(ctxOpts, false);
+      return accountWide ? accountTriggersPause(false, hostFlag, projectFlag) : triggersActivation(ctxOpts, false);
     case 'events':
       return triggersEvents({ apps, app: eventsApp, source: tf.source, connector: tf.connector, event: tf.event }, ctxOpts, json);
     case 'info':
@@ -721,8 +721,8 @@ async function triggersActivation(opts: CtxOpts, paused: boolean): Promise<numbe
 
 // Pause all triggers (KRTX-1721): the ACCOUNT's switch, cloud state on the
 // account. Every project of the account stops auto-running its triggers.
-async function accountTriggersPause(paused: boolean, hostArg: string | undefined): Promise<number> {
-  const ctx = resolveAccountContext({ hostArg });
+async function accountTriggersPause(paused: boolean, hostArg: string | undefined, workspaceArg: string | undefined): Promise<number> {
+  const ctx = resolveAccountContext({ workspaceArg, hostArg });
   if (!ctx) return 1;
   try {
     await ctx.client.patch(`/workspaces/${ctx.accountId}/automations`, { paused });

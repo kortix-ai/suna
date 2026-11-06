@@ -127,7 +127,6 @@ Options:
   --expires <when>    ISO-8601, or a forward span: 30d, 12h, 6w, 1y.
   --workspace <id>    new: bind the key to one workspace.
   --description <t>   service-accounts new: what this identity is for.
-  --account <id>      Operate on this account (default: the active account).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output. List rows of both kinds
                       carry a shared \`id\`.
@@ -182,6 +181,7 @@ export async function runTokens(argv: string[]): Promise<number> {
   }
 
   const ctx = resolveAccountContext({
+    workspaceArg: f.project,
     accountArg: f.account,
     hostArg: f.host,
     accountOptional: sub === 'apps',

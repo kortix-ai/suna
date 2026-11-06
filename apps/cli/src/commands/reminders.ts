@@ -23,14 +23,15 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
+import { settingsWhere } from '../settings-path.ts';
 
 const HELP = help`Usage: kortix loops <subcommand> [options]
        kortix loop "<prompt>" [schedule]          (= loops add)
        aliases: kortix reminders, kortix remind
 
-Loops are a per-project feature flag, on by default. A workspace that turned them
+Loops are a per-workspace feature flag, on by default. A workspace that turned them
 off turns them back on with \`kortix workspaces features enable reminders\` (the
-flag key stays \`reminders\`; or Settings → Feature flags).
+flag key stays \`reminders\`; or ${settingsWhere('feature-flags')}).
 
 A Loop re-prompts ONE session on a schedule — "in 24h, check whether the email
 arrived", "every hour until the deploy is green". It is a trigger scoped to that
