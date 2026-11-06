@@ -36,8 +36,11 @@ import { resolveRefSha } from '../git/read-cache';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from '../git/types';
 import { getProjectGitConnection } from '../lib/git';
 
-/** The shape version of a saved summary. A row of any other format is rebuilt. */
-export const CONFIG_SUMMARY_FORMAT = 1;
+/**
+ * The shape version of a saved summary. A row of any other format is rebuilt.
+ * 2: no `open_code_raw` / `open_code_default_agent`, `signals.declaredAgents`.
+ */
+export const CONFIG_SUMMARY_FORMAT = 2;
 /** File paths stored per summary. Past it the reader lists the files from git. */
 export const CONFIG_SUMMARY_MAX_FILES = 50_000;
 
