@@ -12,8 +12,7 @@
 import { isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
-import type { FlowContext } from '../core/types';
-import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { openWorld } from '../fixtures/agent-principals';
 import { subscribe } from '../fixtures/billing';
 import type { Transcript } from '../fixtures/session-run';
 import { CliSandbox } from '../fixtures/cli';
@@ -27,19 +26,8 @@ const ROUTES = {
 };
 const REMINDERS = '/v1/projects/:projectId/sessions/:sessionId/reminders';
 const REMINDER = '/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId';
-const MANIFEST =
-  'project:\n  name: ke2e-reminders\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
 type Reminder = { id: string; state: string; every: string | null; next_fire_at: string | null; prompt: string };
-
-async function openWorld(ctx: FlowContext) {
-  const team = await ctx.fixtures.team();
-  const project = await team.project({ managedGit: true });
-  const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
-  await world.setFeature('reminders', true);
-  await world.writeManifest(MANIFEST, 'ke2e: reminders agent');
-  return { team, project, world };
-}
 
 flow(
   'REM-1',
@@ -50,7 +38,7 @@ flow(
     routes: [...Object.values(ROUTES), 'POST /v1/projects/:projectId/triggers', 'GET /v1/projects/:projectId/triggers'],
   },
   async (ctx) => {
-    const { team, project, world } = await openWorld(ctx);
+    const { team, project, world } = await openWorld(ctx, { manifest: 'reminders', features: ['reminders'] });
     const owner = ctx.client.as(ctx.P.OWNER);
     try {
       const session = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER });
@@ -145,7 +133,7 @@ flow(
     routes: Object.values(ROUTES),
   },
   async (ctx) => {
-    const { team, project, world } = await openWorld(ctx);
+    const { team, project, world } = await openWorld(ctx, { manifest: 'reminders', features: ['reminders'] });
     const sandbox = new CliSandbox('rem2');
     try {
       const own = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER });
@@ -240,7 +228,7 @@ flow(
     routes: ['GET /v1/projects/:projectId/reminders', ROUTES.create],
   },
   async (ctx) => {
-    const { team, project, world } = await openWorld(ctx);
+    const { team, project, world } = await openWorld(ctx, { manifest: 'reminders', features: ['reminders'] });
     const owner = ctx.client.as(ctx.P.OWNER);
     const PROJECT_REMINDERS = '/v1/projects/:projectId/reminders';
     try {
@@ -330,7 +318,7 @@ flow(
     ],
   },
   async (ctx) => {
-    const { project, world } = await openWorld(ctx);
+    const { project, world } = await openWorld(ctx, { manifest: 'reminders', features: ['reminders'] });
     const owner = ctx.client.as(ctx.P.OWNER);
     try {
       const session = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER });
@@ -374,7 +362,7 @@ flow(
     routes: [ROUTES.create, ROUTES.run],
   },
   async (ctx) => {
-    const { team, project, world } = await openWorld(ctx);
+    const { team, project, world } = await openWorld(ctx, { manifest: 'reminders', features: ['reminders'] });
     const RUN = `${REMINDER}/run`;
     const sandbox = new CliSandbox('rem5');
     // The prompts a reminder queued: who each acts as, and whether the turn binds to them.
