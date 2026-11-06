@@ -28,6 +28,11 @@ describe('workspaceSettingsHref — an old hub link opens a workspace section', 
     );
   });
 
+  test('an old tab that names a workspace section opens it (capture, a Library section)', () => {
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'capture' }))).toBe('/workspaces/p1/admin/capture');
+    expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'connectors' }))).toBe('/workspaces/p1/admin/connectors');
+  });
+
   test('no tab, or a tab that no longer exists, opens the settings root', () => {
     expect(workspaceSettingsHref('p1', hubTarget('a1'))).toBe('/workspaces/p1/admin');
     expect(workspaceSettingsHref('p1', hubTarget('a1', { tab: 'gone' }))).toBe('/workspaces/p1/admin');

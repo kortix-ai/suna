@@ -1,4 +1,5 @@
 import type { KortixProject } from '@kortix/sdk';
+import { parseWorkspaceSettingsSection } from '@kortix/shared/workspace-settings';
 
 import {
   SECTION_FOR_ACCOUNT_TAB,
@@ -19,11 +20,12 @@ import { parseAccountSection } from './sections';
 export function workspaceSettingsHref(projectId: string, target: HubTarget): string {
   const tab = parseAccountSection(target.params.tab);
   const query = Object.fromEntries(hubDrillDownParams(target).entries());
-  if (!tab) {
-    const search = new URLSearchParams(query).toString();
-    return `${adminPath(projectId)}${search ? `?${search}` : ''}`;
-  }
-  return projectAdminHref(projectId, SECTION_FOR_ACCOUNT_TAB[tab], query);
+  if (tab) return projectAdminHref(projectId, SECTION_FOR_ACCOUNT_TAB[tab], query);
+  // An old link may name the section itself (`?accountTab=capture`).
+  const section = parseWorkspaceSettingsSection(target.params.tab);
+  if (section) return projectAdminHref(projectId, section, query);
+  const search = new URLSearchParams(query).toString();
+  return `${adminPath(projectId)}${search ? `?${search}` : ''}`;
 }
 
 function openedAt(project: KortixProject): number {
