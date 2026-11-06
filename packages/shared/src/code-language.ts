@@ -4,8 +4,8 @@
  * Two kinds live here and both cost the reader something:
  *
  * 1. Hints Shiki has no grammar *or* alias for — `golang`, `env`, `patch`,
- *    `svg`, `psql`, `plaintext`. `ensureLangLoaded` throws on these, the catch
- *    warns, and the block renders unhighlighted forever.
+ *    `svg`, `psql`, `plaintext`. Without an alias the block renders
+ *    unhighlighted forever.
  * 2. Hints Shiki resolves but only through its own alias table — `rs`, `kt`,
  *    `c++`, `ps1`. Those highlight, but `highlightSync` gates on
  *    `loadedLangs.has(lang)`, which is seeded from `PRELOAD_LANGS` verbatim, so
