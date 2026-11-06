@@ -28,8 +28,8 @@ const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
   email: 'View your email address',
   kortix:
-    'Act on your behalf in Kortix — projects, sessions, files and everything your role allows',
-  'machines:read': 'View your project session sandboxes',
+    'Act on your behalf in Kortix — sessions, files and everything your role allows',
+  'machines:read': 'View your session sandboxes',
 };
 
 export default function OAuthConsentPage() {
