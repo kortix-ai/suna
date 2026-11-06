@@ -64,7 +64,7 @@ mock.module('../billing/services/compute-metering', () => ({
 }));
 
 const { db } = await import('../shared/db');
-const { runAppIdleReaper, runAppKeepAlive, KEEP_ALIVE_REFRESHES_PER_PASS, APPD_REVIVES_PER_HOUR, resetAppdRevivesForTest, resetCrashEpisodesForTest, crashVerdict } = await import('./idle-reaper');
+const { runAppIdleReaper, runAppKeepAlive, KEEP_ALIVE_REFRESHES_PER_PASS, APPD_REVIVES_PER_HOUR, resetCrashEpisodesForTest, crashVerdict } = await import('./idle-reaper');
 const { APP_RUNTIME_VERSION, REFRESH_RETRY_AFTER_MS } = await import('./deployment-worker');
 
 const confirmed = Boolean(
@@ -158,7 +158,6 @@ function reset(): void {
   providerStatus = {};
   appdStatus = {};
   revivals.length = 0;
-  resetAppdRevivesForTest();
   resetCrashEpisodesForTest();
   unfundedAccounts = new Set();
 }
@@ -213,6 +212,33 @@ withDb('always-on Apps', () => {
     expect((await work()).alertFailingSince).toBeNull();
     const after = await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, PROJECT_ID));
     expect(after.map((row) => (row.line as { name: string }).name).sort()).toEqual(['kortix.app.crashed', 'kortix.app.recovered']);
+  });
+
+  test('the restart budget is the release\'s supervisor_restarted events: a new leader with no memory still finds it spent', async () => {
+    await seed(ALWAYS, { alwaysOn: true, status: 'running' });
+    const slug = `keep-alive-${ALWAYS.app.slice(-3)}`;
+    await db.insert(projectTriggerRuntime).values({
+      projectId: PROJECT_ID, slug: 'status-work', triggerType: 'app', enabled: true, scheduleRevision: 'a'.repeat(64),
+      scheduleSpec: { slug: 'status-work', type: 'app', agent: 'default', enabled: true, app: slug, filter: { 'event.name': 'status.changed' } },
+    });
+    // Three restarts by the leader before this one, 50, 30 and 10 minutes ago; one 70 minutes ago is outside the hour.
+    for (const minutesAgo of [70, 50, 30, 10]) {
+      await db.insert(appDeploymentEvents).values({
+        deploymentId: ALWAYS.dep, runtimeId: ALWAYS.rt, level: 'warn', type: 'supervisor_restarted', message: 'x',
+        createdAt: new Date(Date.now() - minutesAgo * 60_000),
+      });
+    }
+    appdStatus[box(ALWAYS)] = 'down';
+    await runAppKeepAlive(new Date(), true);
+    expect(revivals).toEqual([]);
+    const [work] = await db.select().from(projectTriggerRuntime).where(and(eq(projectTriggerRuntime.projectId, PROJECT_ID), eq(projectTriggerRuntime.slug, 'status-work')));
+    expect(work!.alertSource).toBe('crash');
+    // A second leader (no crash episode in memory) writes no second kortix.app.crashed for the same open alert.
+    resetCrashEpisodesForTest();
+    await runAppKeepAlive(new Date(), true);
+    const crashed = (await db.select().from(projectMonitorEvents).where(eq(projectMonitorEvents.projectId, PROJECT_ID)))
+      .filter((row) => (row.line as { name: string }).name === 'kortix.app.crashed');
+    expect(crashed).toHaveLength(1);
   });
 
   test('crashVerdict: any machine past its budget is a crash; every machine ready ends it; anything else changes nothing', () => {
