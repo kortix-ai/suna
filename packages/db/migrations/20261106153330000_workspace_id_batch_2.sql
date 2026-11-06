@@ -12,7 +12,7 @@
 --   kortix.app_site_files
 -- At most 7 small tables per file, so the file waits for small locks only.
 -- kortix.api_keys is hot (every API-key request reads it): it has its own file,
--- 20261106142200000_workspace_id_api_keys.sql, so no other lock wait holds it.
+-- 20261106153340000_workspace_id_api_keys.sql, so no other lock wait holds it.
 -- Existing rows stay NULL here; the throttled background job workspace-id-fill
 -- (apps/api/src/workspaces/id-fill.ts) fills them after the deploy, never the
 -- migrate job. No index on workspace_id in Release 1: nothing reads it

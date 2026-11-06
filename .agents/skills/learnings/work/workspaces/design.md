@@ -535,8 +535,8 @@ timeout (the `20261011111553399_session_log_tables.sql` convention). No shared e
 
 | # | File | Content | Locks |
 |---|---|---|---|
-| M0 | `20261106140000000_free_credits_once_per_person.sql` (exists) | unchanged | — |
-| M1 | `20261106140100000_workspaces_expand.sql` (edit) | `projects.split_pending`, the two ledger tables, the projects name-sync trigger. Remove the view and the accounts trigger. Fix the header (manual rerun). | `projects` only, 3 s |
+| M0 | `20261106153000000_free_credits_once_per_person.sql` (exists) | unchanged | — |
+| M1 | `20261106153010000_workspaces_expand.sql` (edit) | `projects.split_pending`, the two ledger tables, the projects name-sync trigger. Remove the view and the accounts trigger. Fix the header (manual rerun). | `projects` only, 3 s |
 | M1b | new `.sql` | `kortix.workspace_account_name_sync()` + `CREATE OR REPLACE TRIGGER accounts_name_sync` (idempotent on DBs that ran the old M1) | `accounts` only, 3 s |
 | M2, M3 | exist | unchanged | — |
 | M4 | new `.sql` | `DROP VIEW IF EXISTS kortix.workspaces`; `CREATE TABLE IF NOT EXISTS kortix.workspaces` (C1) + indexes + RLS + grants; `kortix.person_deletion_requests (user_id PK, requested_at, scheduled_for, status, completed_at)` + RLS; the five C1 functions | new objects only |
@@ -547,14 +547,14 @@ timeout (the `20261011111553399_session_log_tables.sql` convention). No shared e
 | M9 | new `.sql` (billing, wave 2) | `credit_accounts.comp_plan_until timestamptz` | `credit_accounts`, 3 s |
 
 **Built (identity, sub-branch `ws-r1-identity`, 2026-11-06).** The files, in
-order: M1 `20261106140100000_workspaces_expand.sql` (edited); M1b
-`20261106140400000_workspaces_account_name_sync.sql` (sorts after M2/M3: M2's
+order: M1 `20261106153010000_workspaces_expand.sql` (edited); M1b
+`20261106153040000_workspaces_account_name_sync.sql` (sorts after M2/M3: M2's
 rename finds the names equal, so the order does not matter); M4
-`20261106140600000_workspaces_table.sql` (plus `kortix.workspace_expand_tables()`,
+`20261106153100000_workspaces_table.sql` (plus `kortix.workspace_expand_tables()`,
 the one list of the 44, and `kortix.workspace_id_stamp()`, the M7 trigger
-function); M5a–c `20261106140700000`–`20261106140900000`; M6
-`20261106141000000_workspaces_reconcile.concurrent.ts`; M7
-`20261106141100000`–`20261106142500000` (9 hot tables one per file, then 5
+function); M5a–c `20261106153110000`–`20261106153130000`; M6
+`20261106153140000_workspaces_reconcile.concurrent.ts`; M7
+`20261106153150000`–`20261106153410000` (9 hot tables one per file, then 5
 files of ≤ 7). M8 was `20261106142600000_workspace_id_fill.concurrent.ts`; it is
 deleted (no shared environment applied it) and runs as a background job.
 Decisions taken while building, each within C1:
@@ -610,13 +610,13 @@ leaves I1–I12 at 0.
 
 **Added by the finisher (2026-11-06), same order rules:**
 
-- `20261106140500000_workspaces_account_id_indexes.concurrent.ts` (before M4):
+- `20261106153050000_workspaces_account_id_indexes.concurrent.ts` (before M4):
   `(account_id)` indexes, `CREATE INDEX CONCURRENTLY`, on the six expand tables
   that had none (`oauth_access_tokens`, `oauth_authorization_codes`,
   `app_runtimes`, `app_volumes`, `cli_device_grants`, `capture_device_grants`).
   The fill the reconcile runs on a new workspace's first project no longer
   sequentially scans them inside the provision transaction.
-- `20261106142200000_workspace_id_api_keys.sql`: `api_keys` is hot (every
+- `20261106153340000_workspace_id_api_keys.sql`: `api_keys` is hot (every
   API-key request reads it, no cache), so it left batch 2 for its own file.
 - `apps/api/scripts/workspace-split.ts fill <account>... | fill --null` stamps
   the expand rows of an account that left `split_pending` outside the split

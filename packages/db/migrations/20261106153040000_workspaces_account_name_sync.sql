@@ -1,7 +1,7 @@
 -- Migration: workspaces_account_name_sync
 --
 -- Workspaces M1b (design: .agents/skills/learnings/work/workspaces/design.md §3.3).
--- The reverse half of the 1:1 name mirror of 20261106140100000_workspaces_expand.sql:
+-- The reverse half of the 1:1 name mirror of 20261106153010000_workspaces_expand.sql:
 -- accounts.name -> projects.name of the account's ONLY active project. It lives
 -- in its own file so the migration that locks kortix.projects never waits for
 -- the lock of kortix.accounts as well (review finding 29: one hot table per

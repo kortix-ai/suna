@@ -8,7 +8,7 @@
 //
 // An account holds at most ONE active project that is not split-pending. The
 // legacy multi-project accounts were marked split_pending by
-// 20261106140200000_workspaces_mark_and_name.concurrent.ts.
+// 20261106153020000_workspaces_mark_and_name.concurrent.ts.
 //
 // The race, and the loop that closes it: an old API pod can create a second
 // active project in a 1:1 account between M2 and this build. CREATE UNIQUE

@@ -1,8 +1,8 @@
 // Migration: workspaces_mark_and_name  (NON-TRANSACTIONAL -- batched data pass)
 //
 // Workspaces M2 (design: .agents/skills/learnings/work/workspaces/design.md §2).
-// Runs after 20261106140100000_workspaces_expand.sql, before
-// 20261106140300000_workspaces_one_per_account.concurrent.ts builds the
+// Runs after 20261106153010000_workspaces_expand.sql, before
+// 20261106153030000_workspaces_one_per_account.concurrent.ts builds the
 // 1:1 unique index.
 //
 // batched-dml: (a) ONE statement marks split_pending = true on the active

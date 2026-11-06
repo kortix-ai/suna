@@ -9,12 +9,12 @@
 --   3. Trigger projects_name_sync: a rename of the project of a 1:1 workspace
 --      renames its account.
 -- The reverse direction (accounts_name_sync) is in its own file,
--- 20261106140400000_workspaces_account_name_sync.sql, so each file waits
+-- 20261106153040000_workspaces_account_name_sync.sql, so each file waits
 -- for the lock of one hot table only (review finding 29). kortix.workspaces is
--- a TABLE, created by 20261106140600000_workspaces_table.sql.
+-- a TABLE, created by 20261106153100000_workspaces_table.sql.
 -- The unique index uq_projects_workspace_account is built CONCURRENTLY in
--- 20261106140300000_workspaces_one_per_account.concurrent.ts, after
--- 20261106140200000_workspaces_mark_and_name.concurrent.ts marks the legacy
+-- 20261106153030000_workspaces_one_per_account.concurrent.ts, after
+-- 20261106153020000_workspaces_mark_and_name.concurrent.ts marks the legacy
 -- multi-project accounts split_pending.
 --
 -- Locks: ALTER TABLE projects ADD COLUMN takes ACCESS EXCLUSIVE and CREATE
