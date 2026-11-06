@@ -20,11 +20,11 @@ export async function initializeFreeTierAccount(
   const freeCredits = options.freeCredits !== false;
   const billingAnchor = new Date();
   const expiresAt = calculateNextCreditGrant(billingAnchor).toISOString();
+  // A workspace without free credits gets no grant date: no grant ever comes.
   await upsertCreditAccount(accountId, {
     tier: 'free',
     billingCycleAnchor: billingAnchor.toISOString(),
-    nextCreditGrant: expiresAt,
-    ...(freeCredits ? {} : { freeCreditsEligible: false }),
+    ...(freeCredits ? { nextCreditGrant: expiresAt } : { nextCreditGrant: null, freeCreditsEligible: false }),
   });
   if (!freeCredits) return;
   await wallet.grant({

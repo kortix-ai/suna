@@ -1,55 +1,13 @@
 import { accountMembers, accounts, projects } from "@kortix/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
-import { syncLegacyStripeSubscription } from "../billing/services/legacy-stripe-sync";
 import { db } from "./db";
 import {
   IMPERSONATION_INVALID_CODE,
   impersonatedAccountFor,
 } from "./impersonation";
-import { ttlMemo } from "./ttl-memo";
 import { isUuid } from "./validate";
 import { noWorkspaceError } from "./no-workspace";
-import { withTimeout } from "./with-timeout";
-
-// Legacy Stripe recovery sync — throttled to once per account per hour and
-// bounded to 1.5s on the request path.
-//
-// This runs on resolveAccountId — i.e. on EVERY account-agnostic billing/
-// account request. When the account has canonical billing state it early-exits
-// on one DB read, but for accounts with a Stripe customer mapping and no
-// active paid subscription it used to re-run the FULL Stripe dance every
-// request (customers.search by email + retrieve + subscriptions.list per
-// candidate — observed 8-12s) because a no-find persists nothing. The memo
-// caches the attempt itself so at most one request per hour pays it, and the
-// timeout caps what that one request pays — the sync keeps running in the
-// background and its writes land for the next request. The sync is purely a
-// recovery side effect (its result is never read here), so skipping the wait
-// is always safe.
-const syncLegacySubscriptionThrottled = ttlMemo({
-  ttlMs: 60 * 60 * 1000,
-  keyFn: (accountId: string) => accountId,
-  loader: async (accountId: string): Promise<void> => {
-    const result = await syncLegacyStripeSubscription(accountId);
-    if (result.status === "error") {
-      console.warn(
-        `[resolve-account] Stripe sync error for ${accountId}: ${result.error}`,
-      );
-    }
-  },
-});
-
-async function syncLegacySubscription(accountId: string): Promise<void> {
-  try {
-    await withTimeout(
-      syncLegacySubscriptionThrottled(accountId),
-      1_500,
-      "legacy-stripe-sync",
-    );
-  } catch {
-    // Timeout or sync failure — never block account resolution on recovery.
-  }
-}
 
 /**
  * The account a billing request targets, from plain values: the caller's user
@@ -207,10 +165,6 @@ export async function resolveAccountId(
   // operator has no `account_members` row in the target account, so falling
   // through would return their OWN account and quietly mis-scope every write
   // the console believes it is making on the customer's behalf.
-  //
-  // The legacy-Stripe recovery sync below is deliberately skipped for an
-  // impersonated read — it is a write side effect on the customer's billing
-  // state, and an operator opening an account to look at it must not mutate it.
   const impersonated = impersonatedAccountFor(userId);
   if (impersonated) return impersonated;
 
@@ -227,10 +181,9 @@ export async function resolveAccountId(
     .orderBy(accountMembers.joinedAt)
     .limit(1);
 
-  if (membership) {
-    await syncLegacySubscription(membership.accountId);
-    return membership.accountId;
-  }
+  // No billing side effect here: the legacy Stripe recovery runs only from
+  // `POST /v1/billing/sync-subscription` (design.md §3.1 finding 8).
+  if (membership) return membership.accountId;
 
   // A sandbox / account API key: `userId` is the account id itself.
   if (options.allowAccountCredential !== false && (await accountExists(userId))) return userId;

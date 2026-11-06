@@ -3686,14 +3686,8 @@
     }
   },
   "src/shared/resolve-account.ts": {
-    "kortix-api/layers": {
-      "count": 1
-    },
     "kortix-api/workspace-store-only": {
       "count": 2
-    },
-    "no-console": {
-      "count": 1
     }
   },
   "src/shared/self-host-operator.ts": {
