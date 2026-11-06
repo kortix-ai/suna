@@ -351,7 +351,9 @@ the API checks the personal-token creation permission.
 The CLI polls `POST /v1/cli/device/poll` every five seconds for at most ten
 minutes. A network error, a 5xx or a 408 does not end the login: the
 CLI retries with a doubling wait and stops after 5 such errors in a row. A
-429 counts as `slow_down` (+5 s). The loop is `src/commands/device-login-poll.ts`. PostgreSQL stores only the polling-secret hash and approving
+429 counts as `slow_down` (+5 s). The loop is
+`src/commands/device-login-poll.ts`. PostgreSQL stores only the
+polling-secret hash and approving
 identity. A row lock spans PAT creation and one-time consumption across API
 replicas. Denied, expired, and consumed grants cannot issue credentials.
 
