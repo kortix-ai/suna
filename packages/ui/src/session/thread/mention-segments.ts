@@ -65,6 +65,9 @@ function trimTrailingPunctuation(token: string): string {
   return token.slice(0, end);
 }
 
+/** The most Drive chips one message draws: far past any real message, and a bound on the work. */
+const MAX_DRIVE_CHIPS = 100;
+
 /** What may follow a whole mention: space, or the sentence punctuation `trimTrailingPunctuation` drops. */
 const TOKEN_END = /[\s.,;:!?)\]}'"]/;
 
@@ -126,14 +129,19 @@ export function buildMentionSegments({
   // `@a b.png` wins over `@a`. The names come out of the message body, so they
   // are deduplicated and capped at the most files a message carries: a body
   // that spells out a thousand `<drive_ref>` tags buys no thousand full scans.
+  // The chips are capped too (`MAX_DRIVE_CHIPS`): each one is checked against every range claimed
+  // before it, so a body dense in one short `@name` must not buy a quadratic walk.
   const distinctDriveNames = [...new Set(driveNames.filter(Boolean))].slice(0, MAX_PROMPT_ATTACHMENT_FILES);
-  for (const name of distinctDriveNames.sort((a, b) => b.length - a.length)) {
+  let driveChips = 0;
+  drive: for (const name of distinctDriveNames.sort((a, b) => b.length - a.length)) {
     const needle = `@${name}`;
     for (let idx = text.indexOf(needle); idx !== -1; idx = text.indexOf(needle, idx + 1)) {
       const end = idx + needle.length;
       // A whole mention only: `@a` is not the start of `@ab`, nor the tail of `x@a`.
       const whole = (idx === 0 || /\s/.test(text.charAt(idx - 1))) && (end === text.length || TOKEN_END.test(text.charAt(end)));
-      if (whole && !overlaps(ranges, idx, end)) ranges.push({ start: idx, end, type: 'drive' });
+      if (!whole || overlaps(ranges, idx, end)) continue;
+      ranges.push({ start: idx, end, type: 'drive' });
+      if (++driveChips >= MAX_DRIVE_CHIPS) break drive;
     }
   }
 

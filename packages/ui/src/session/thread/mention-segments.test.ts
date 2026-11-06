@@ -181,4 +181,11 @@ describe('buildMentionSegments — Drive files', () => {
       { text: '@n4999', type: 'file' },
     ]);
   });
+
+  test('a body dense in one Drive name chips at most 100 of them; the rest stay ordinary mentions', () => {
+    const text = Array.from({ length: 2000 }, () => '@x').join(' ');
+    const segments = buildMentionSegments({ text, driveNames: ['x'] });
+    expect(segments.filter((segment) => segment.type === 'drive')).toHaveLength(100);
+    expect(segments.filter((segment) => segment.type === 'file')).toHaveLength(1900);
+  });
 });
