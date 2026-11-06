@@ -508,7 +508,7 @@ describe('kortix projects ls --query', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'ls', '--query', 'zzz-nothing'], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('No workspace matches "zzz-nothing"');
+    expect(r.stdout).toContain('match "zzz-nothing"');
   });
 
   test('--query with no value exits 2', async () => {

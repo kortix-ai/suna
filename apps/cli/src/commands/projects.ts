@@ -37,7 +37,7 @@ import {
   resolveProjectId,
   saveLink,
 } from '../project-link.ts';
-import { listWorkspaceRows, type WorkspaceRow } from '../project-bind.ts';
+import { listWorkspaceRowsReport, type WorkspaceListFailure, type WorkspaceRow } from '../project-bind.ts';
 import { confirm } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -109,7 +109,14 @@ Examples:
   kortix workspaces use 3f2a9c1e-…
 `;
 
-export async function runProjects(argv: string[]): Promise<number> {
+export interface RunProjectsOptions {
+  /** Invoked as `kortix projects` / `project`, the older name. `ls` then
+   *  prints exactly what it printed before Workspaces: the active account's
+   *  projects. Scripts parse that output. */
+  olderName?: boolean;
+}
+
+export async function runProjects(argv: string[], options: RunProjectsOptions = {}): Promise<number> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(HELP);
     return argv.length === 0 ? 2 : 0;
@@ -156,6 +163,7 @@ export async function runProjects(argv: string[]): Promise<number> {
         process.stderr.write(`${status.err((err as Error).message)}\n`);
         return 2;
       }
+      if (options.olderName) return projectsLsOlder(json, all, query, hostArg, accountArg);
       return projectsLs(json, all, query, hostArg, accountArg);
     }
     case 'set':
@@ -921,6 +929,13 @@ function requireAuth() {
   return auth;
 }
 
+/** The account `projects ls` should be scoped to: the active account, falling
+ *  back to the host's stored account id. Undefined lets the server pick its
+ *  earliest-joined-account default (pre-feature behavior). */
+function scopeAccountId(auth: Auth): string | undefined {
+  return activeAccount()?.id ?? auth.account_id ?? undefined;
+}
+
 /** Client-side `--query` filter. `GET /projects` has no server-side search, so
  *  the CLI narrows the list it already fetched — name, id and repo url, case
  *  insensitive. */
@@ -980,13 +995,27 @@ async function projectsCreate(argv: string[]): Promise<number> {
   }
 }
 
-/** Every workspace on one host, flat (see listWorkspaceRows). Returns the
- *  exit code when the read fails. */
-async function listWorkspaces(auth: Auth, accountId?: string): Promise<WorkspaceRow[] | number> {
+/** Every workspace on one host, flat (see listWorkspaceRowsReport). Returns
+ *  the exit code when the read fails. */
+async function listWorkspaces(
+  auth: Auth,
+  accountId?: string,
+): Promise<{ rows: WorkspaceRow[]; failed: WorkspaceListFailure[] } | number> {
   try {
-    return await listWorkspaceRows(auth, accountId);
+    return await listWorkspaceRowsReport(auth, accountId);
   } catch (err) {
     return surface(err);
+  }
+}
+
+/** Name each account whose list failed (stderr). The caller exits 1: a
+ *  failed read never looks like an account with no workspace. */
+function writeListFailures(failed: WorkspaceListFailure[]): void {
+  for (const { account, error } of failed) {
+    const reason = error instanceof ApiError ? `HTTP ${error.status}: ${error.message}` : String((error as Error)?.message ?? error);
+    process.stderr.write(
+      `${status.err(`Could not list the workspaces of account ${account.name || account.slug} (${account.slug}): ${reason}`)}\n`,
+    );
   }
 }
 
@@ -1015,8 +1044,11 @@ async function projectsLs(
   // Deprecated: the older grouped-by-account view and its JSON shape.
   if (all) return projectsLsAll(auth, json, query);
 
-  const listed = await listWorkspaces(auth, accountArg || undefined);
-  if (typeof listed === 'number') return listed;
+  const report = await listWorkspaces(auth, accountArg || undefined);
+  if (typeof report === 'number') return report;
+  const { rows: listed, failed } = report;
+  writeListFailures(failed);
+  const exitCode = failed.length > 0 ? 1 : 0;
   const q = query?.trim().toLowerCase();
   const rows = q
     ? listed.filter(({ project: p }) =>
@@ -1028,7 +1060,7 @@ async function projectsLs(
     // The API's own rows, flat — the same element shape `projects ls --json`
     // always printed.
     emitJson(rows.map((r) => r.project));
-    return 0;
+    return exitCode;
   }
 
   process.stdout.write('\n');
@@ -1038,7 +1070,7 @@ async function projectsLs(
     } else {
       writeNoWorkspaceYet();
     }
-    return 0;
+    return exitCode;
   }
 
   renderWorkspaceTable(rows, { linked: loadLink()?.project_id, def: defaultProject()?.project_id });
@@ -1046,7 +1078,7 @@ async function projectsLs(
     `\n  ${C.dim}${rows.length} workspace${rows.length === 1 ? '' : 's'} · ` +
       `switch with ${C.reset}${C.cyan}kortix workspaces use <id>${C.reset}\n\n`,
   );
-  return 0;
+  return exitCode;
 }
 
 /** Render the flat workspace table. `●` marks the global default, `◆` the
@@ -1072,7 +1104,79 @@ function renderWorkspaceTable(rows: WorkspaceRow[], marks: { linked?: string; de
   }
 }
 
-async function projectsLsAll(auth: Auth, json = false, query?: string): Promise<number> {
+/**
+ * `kortix projects ls`, the older name: the code and output as they were
+ * before Workspaces, unchanged. Scripts parse it. `kortix workspaces ls` is
+ * the flat list across accounts.
+ */
+async function projectsLsOlder(
+  json = false,
+  all = false,
+  query?: string,
+  hostArg?: string,
+  accountArg?: string,
+): Promise<number> {
+  // --host names a logged-in host other than the active one; --account picks
+  // the account within it (default: that host's active account).
+  const auth = hostArg ? loadAuthForHost(hostArg) : requireAuth();
+  if (!auth?.token) {
+    if (hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${hostArg}" is not logged in.`)} Run ${C.cyan}kortix login --host ${hostArg}${C.reset}.\n`,
+      );
+    }
+    return 1;
+  }
+  if (all) return projectsLsAll(auth, json, query, true);
+
+  // Scope to the active account so this lists exactly that account's projects
+  // (not the server's earliest-joined-account default).
+  // --host: that host's own stored account (never the global active one).
+  const accountId = accountArg || (hostArg ? auth.account_id || undefined : scopeAccountId(auth));
+  const client = clientFromAuth(auth, { accountId });
+  let projects: ProjectSummary[];
+  try {
+    projects = filterProjects(await client.get<ProjectSummary[]>('/projects'), query);
+  } catch (err) {
+    return surface(err);
+  }
+
+  if (json) {
+    emitJson(projects);
+    return 0;
+  }
+
+  const acct = activeAccount();
+  const linked = loadLink()?.project_id;
+  const def = defaultProject()?.project_id;
+
+  process.stdout.write('\n');
+  if (acct) {
+    const label = acct.name
+      ? `${C.bold}${acct.name}${C.reset} ${C.faded}(${acct.slug})${C.reset}`
+      : `${C.bold}${acct.slug}${C.reset}`;
+    process.stdout.write(`  ${C.dim}account  ${C.reset}${label}\n\n`);
+  }
+
+  if (projects.length === 0) {
+    process.stdout.write(
+      query
+        ? `  ${C.dim}No projects in this account match "${query}".${C.reset}\n\n`
+        : `  ${C.dim}No projects in this account.${C.reset}\n\n`,
+    );
+    return 0;
+  }
+
+  renderProjectTable(projects, { linked, def });
+  process.stdout.write(
+    `\n  ${C.dim}${projects.length} project${projects.length === 1 ? '' : 's'}` +
+      `${acct ? ` in ${acct.name || acct.slug}` : ''} · spans all accounts: ${C.reset}` +
+      `${C.cyan}kortix projects ls --all${C.reset}\n\n`,
+  );
+  return 0;
+}
+
+async function projectsLsAll(auth: Auth, json = false, query?: string, olderName = false): Promise<number> {
   let me: MeResponse;
   try {
     me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
@@ -1121,14 +1225,14 @@ async function projectsLsAll(auth: Auth, json = false, query?: string): Promise<
       `  ${C.bold}${s.account.name || s.account.slug}${C.reset} ${C.faded}(${s.account.slug}, ${s.account.role})${C.reset}${activeMark}\n`,
     );
     if (s.projects.length === 0) {
-      process.stdout.write(`  ${C.dim}— no workspace${C.reset}\n`);
+      process.stdout.write(`  ${C.dim}— no ${olderName ? 'projects' : 'workspace'}${C.reset}\n`);
       continue;
     }
     renderProjectTable(s.projects, { linked, def });
     total += s.projects.length;
   }
   process.stdout.write(
-    `\n  ${C.dim}${total} workspace${total === 1 ? '' : 's'} across ${me.accounts.length} ` +
+    `\n  ${C.dim}${total} ${olderName ? 'project' : 'workspace'}${total === 1 ? '' : 's'} across ${me.accounts.length} ` +
       `account${me.accounts.length === 1 ? '' : 's'}${C.reset}\n\n`,
   );
   return 0;
@@ -1268,8 +1372,11 @@ async function projectsUse(arg?: string, hostArg?: string): Promise<number> {
     }
   } else {
     // Pick from every workspace on the target host, flat.
-    const rows = await listWorkspaces(auth);
-    if (typeof rows === 'number') return rows;
+    const report = await listWorkspaces(auth);
+    if (typeof report === 'number') return report;
+    // The picker offers the readable workspaces and names the unreadable.
+    writeListFailures(report.failed);
+    const rows = report.rows;
     const list = rows.map((r) => r.project);
     if (!list.every(isDefaultProjectResponse)) return invalidDefaultProjectResponse(list);
     if (list.length === 0) return noWorkspace();
@@ -1386,8 +1493,11 @@ async function projectsLink(arg?: string, hostArg?: string): Promise<number> {
       return surface(err);
     }
   } else {
-    const rows = await listWorkspaces(auth);
-    if (typeof rows === 'number') return rows;
+    const report = await listWorkspaces(auth);
+    if (typeof report === 'number') return report;
+    // The picker offers the readable workspaces and names the unreadable.
+    writeListFailures(report.failed);
+    const rows = report.rows;
     const list = rows.map((r) => r.project);
     if (list.length === 0) return noWorkspace();
     const picked = await selectFromList<ProjectSummary>({

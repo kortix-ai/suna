@@ -243,8 +243,8 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   workspaces: (rest) => runProjects(rest),
   workspace: (rest) => runProjects(rest),
   // Older names of `workspaces`, kept working for scripts. Not listed in help.
-  projects: (rest) => runProjects(rest),
-  project: (rest) => runProjects(rest),
+  projects: (rest) => runProjects(rest, { olderName: true }),
+  project: (rest) => runProjects(rest, { olderName: true }),
   sessions: (rest) => runSessions(rest),
   session: (rest) => runSessions(rest),
   chat: (rest) => runSessionsChat(rest),

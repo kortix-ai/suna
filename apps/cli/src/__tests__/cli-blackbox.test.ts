@@ -964,9 +964,8 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
 
     expect(requests.map((r) => [r.method, r.path, r.body ?? null])).toEqual([
-      // `projects ls` is the flat workspace list: the memberships, then each
-      // account's projects. By-id routes are not account-scoped.
-      ['GET', '/v1/accounts/me', null],
+      // `projects ls` (the older name) is scoped to the active account; by-id
+      // routes are not.
       ['GET', '/v1/projects?account_id=account_1', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],

@@ -32,6 +32,12 @@ function bindableAccountId(auth: Auth): string | undefined {
   return activeAccount()?.id ?? auth.account_id ?? undefined;
 }
 
+/** One account whose project list could not be read. */
+export interface WorkspaceListFailure {
+  account: AccountMembership;
+  error: unknown;
+}
+
 /**
  * Every workspace the caller belongs to on one host, flat: one row per
  * project, across every account. A legacy account with several projects
@@ -39,14 +45,14 @@ function bindableAccountId(auth: Auth): string | undefined {
  * workspace and gives no row. `accountId` narrows to one account.
  *
  * Throws when the identity read (`/accounts/me`) fails, or when the one
- * account asked for cannot be read. One unreadable account among several is
- * skipped, so it cannot hide the others.
+ * account asked for cannot be read. One unreadable account among several
+ * cannot hide the others: its rows are absent and it is listed in `failed`.
  */
-export async function listWorkspaceRows(
+export async function listWorkspaceRowsReport(
   auth: Auth,
   accountId?: string,
   knownMe?: MeResponse,
-): Promise<WorkspaceRow[]> {
+): Promise<{ rows: WorkspaceRow[]; failed: WorkspaceListFailure[] }> {
   const me = knownMe ?? (await clientFromAuth(auth).get<MeResponse>('/accounts/me'));
   const memberships = Array.isArray(me.accounts) ? me.accounts : [];
   const accounts = accountId
@@ -55,6 +61,7 @@ export async function listWorkspaceRows(
   if (accountId && accounts.length === 0) {
     accounts.push({ account_id: accountId, slug: accountId.slice(0, 8), name: '', role: '' });
   }
+  const failed: WorkspaceListFailure[] = [];
   const lists = await Promise.all(
     accounts.map(async (account) => {
       try {
@@ -64,6 +71,7 @@ export async function listWorkspaceRows(
         return { account, projects: Array.isArray(projects) ? projects : [] };
       } catch (err) {
         if (accountId) throw err;
+        failed.push({ account, error: err });
         return { account, projects: [] as ProjectSummary[] };
       }
     }),
@@ -79,7 +87,17 @@ export async function listWorkspaceRows(
       rows.push({ project, account });
     }
   }
-  return rows;
+  return { rows, failed };
+}
+
+/** The rows of listWorkspaceRowsReport. Binding picks among the readable
+ *  workspaces, so an unreadable account is skipped here. */
+export async function listWorkspaceRows(
+  auth: Auth,
+  accountId?: string,
+  knownMe?: MeResponse,
+): Promise<WorkspaceRow[]> {
+  return (await listWorkspaceRowsReport(auth, accountId, knownMe)).rows;
 }
 
 /**

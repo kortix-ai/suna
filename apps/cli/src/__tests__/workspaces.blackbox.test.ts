@@ -189,3 +189,103 @@ describe('the workspace flag and env var', () => {
     expect(await infoId([], { KORTIX_WORKSPACE_ID: 'ws_env' }, dir)).toBe('/v1/projects/ws_link');
   });
 });
+
+/**
+ * `kortix projects ls` (the older name) prints what it printed before
+ * Workspaces: the active account's projects only, one `GET /projects`, no
+ * identity read. `kortix workspaces ls` lists every account and never turns a
+ * failed account read into an empty list.
+ */
+describe('projects ls (older name) keeps its output; workspaces ls surfaces a failed account', () => {
+  let failAccount = '';
+  let lsPaths: string[] = [];
+  function startTwoAccountServer(): string {
+    server = Bun.serve({
+      port: 0,
+      fetch(req) {
+        const url = new URL(req.url);
+        lsPaths.push(`${url.pathname}${url.search}`);
+        if (url.pathname === '/v1/accounts/me') {
+          return Response.json({
+            user_id: 'user_1',
+            email: 'user@example.test',
+            accounts: [
+              { account_id: 'account_1', slug: 'one', name: 'One', role: 'owner' },
+              { account_id: 'account_2', slug: 'two', name: 'Two', role: 'member' },
+            ],
+          });
+        }
+        if (url.pathname === '/v1/projects') {
+          const account = url.searchParams.get('account_id') ?? '';
+          if (account === failAccount) return Response.json({ error: 'synthetic outage' }, { status: 503 });
+          if (account === 'account_1') return Response.json([{ ...project('ws_one'), name: 'Alpha' }]);
+          if (account === 'account_2') return Response.json([{ ...project('ws_two'), account_id: 'account_2', name: 'Beta' }]);
+          return Response.json([]);
+        }
+        return Response.json({ error: `unexpected ${url.pathname}` }, { status: 404 });
+      },
+    });
+    return `http://127.0.0.1:${server.port}/v1`;
+  }
+  function writeActiveConfig(apiBase: string): string {
+    const path = join(tmp, 'config.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: apiBase, token: 'tok_ws', user_id: 'user_1', account_id: 'account_1',
+            account_slug: 'one', account_name: 'One', logged_in_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    return path;
+  }
+  beforeEach(() => {
+    failAccount = '';
+    lsPaths = [];
+  });
+
+  test('projects ls --json lists only the active account, with one call', async () => {
+    const r = await runCli(['projects', 'ls', '--json'], writeActiveConfig(startTwoAccountServer()));
+    expect(r.code).toBe(0);
+    expect((JSON.parse(r.stdout) as Array<{ project_id: string }>).map((p) => p.project_id)).toEqual(['ws_one']);
+    expect(lsPaths).toEqual(['/v1/projects?account_id=account_1']);
+  });
+
+  test('projects ls prints the account header and the older footer', async () => {
+    const r = await runCli(['projects', 'ls'], writeActiveConfig(startTwoAccountServer()));
+    expect(r.code).toBe(0);
+    expect(r.stdout).toStartWith('\n  account  One (one)\n\n');
+    expect(r.stdout).toContain('  NAME    REPO');
+    expect(r.stdout).toEndWith('\n  1 project in One · spans all accounts: kortix projects ls --all\n\n');
+    expect(r.stdout).not.toContain('Beta');
+  });
+
+  test('projects ls --all keeps the older section text', async () => {
+    failAccount = 'account_2';
+    const r = await runCli(['projects', 'ls', '--all'], writeActiveConfig(startTwoAccountServer()));
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('— no projects');
+    expect(r.stdout).toContain('1 project across 2 accounts');
+  });
+
+  test('workspaces ls lists every account', async () => {
+    const r = await runCli(['workspaces', 'ls', '--json'], writeActiveConfig(startTwoAccountServer()));
+    expect(r.code).toBe(0);
+    expect((JSON.parse(r.stdout) as Array<{ project_id: string }>).map((p) => p.project_id)).toEqual(['ws_one', 'ws_two']);
+  });
+
+  test('workspaces ls names a failed account and exits 1 instead of printing it empty', async () => {
+    failAccount = 'account_2';
+    for (const args of [['workspaces', 'ls'], ['workspaces', 'ls', '--json']]) {
+      const r = await runCli(args, writeActiveConfig(startTwoAccountServer()));
+      expect(r.code).toBe(1);
+      expect(r.stderr).toContain('two');
+      expect(r.stderr).toContain('synthetic outage');
+      expect(r.stdout).toContain('ws_one');
+    }
+  });
+});
