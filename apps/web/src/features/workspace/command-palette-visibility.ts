@@ -7,18 +7,13 @@ export const LEGACY_PALETTE_HIDDEN = new Set([
   'dashboard',
   'scheduled-tasks',
   'files',
-  'tunnel',
   'running-services-cmd',
   'agent-browser-cmd',
   'internal-browser-cmd',
-  'templates',
   'changelog',
   'credits-explained',
-  'secrets-manager',
-  'api-keys',
   'llm-providers',
   'open-terminal',
-  'ssh-quick',
 ]);
 
 /**

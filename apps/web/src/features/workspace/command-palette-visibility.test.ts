@@ -5,7 +5,7 @@ import {
   LEGACY_PALETTE_HIDDEN,
   paletteRowPermitted,
 } from '@/features/workspace/command-palette-visibility';
-import { menuRegistry } from '@/lib/menu-registry';
+import { getItemsForSurface, menuRegistry } from '@/lib/menu-registry';
 
 describe('session maintenance command palette actions', () => {
   test('exposes config reload and agent branch reconciliation only for active sessions', () => {
@@ -59,5 +59,12 @@ describe('paletteRowPermitted', () => {
     }
     expect(paletteRowPermitted(byId('proj-sessions'), member)).toBe(true);
     expect(paletteRowPermitted(byId('nav-accounts'), member)).toBe(true);
+  });
+});
+
+describe('LEGACY_PALETTE_HIDDEN', () => {
+  test('every hidden id names a palette row, so the set hides something real', () => {
+    const paletteIds = new Set(getItemsForSurface('commandPalette').map((item) => item.id));
+    expect([...LEGACY_PALETTE_HIDDEN].filter((id) => !paletteIds.has(id))).toEqual([]);
   });
 });
