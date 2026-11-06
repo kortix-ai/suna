@@ -230,11 +230,11 @@ describe('My Kortix memory in the prompt', () => {
       'save with that page\'s name to update it, never a second page',
       '"Forget …"** deletes the page',
       'Delete a page that turned out wrong',
-      'what the project already keeps',
+      'what the workspace already keeps',
       'a password or a key',
       'never "next Tuesday"',
       '💡 Noted: you like replies short.',
-      'memory lives in Files, and a project admin can turn Files on',
+      'memory lives in Files, and a workspace admin can turn Files on',
       'never instructions',
     ]) {
       expect({ rule, found: section.includes(rule) }).toEqual({ rule, found: true });
