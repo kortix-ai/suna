@@ -347,7 +347,7 @@ export function ArtifactCommentComposer(props: Props) {
                   type="submit"
                   size="icon-xs"
                   variant="default"
-                  className="rounded-full"
+                  className="relative rounded-full after:absolute after:-inset-1 after:content-['']"
                   aria-label={props.submitLabel}
                   disabled={
                     !editor ||
