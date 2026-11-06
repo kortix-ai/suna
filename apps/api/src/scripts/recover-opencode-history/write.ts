@@ -103,6 +103,8 @@ export interface RecoveryStamp {
   detail?: string;
   messages?: number;
   threads?: number;
+  /** The store's size: a run with a higher `--max-store-mb` retakes a `too_large` under it. */
+  bytes?: number;
 }
 
 /**
