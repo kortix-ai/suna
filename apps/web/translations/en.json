@@ -21818,18 +21818,6 @@
     "appReturn": "Back to the Kortix app",
     "appReturnConnected": "Provider connected. Back to the Kortix app"
   },
-  "projectChooser": {
-    "invitations": "Invitations",
-    "invitedBy": "Invited by {email}",
-    "join": "Join",
-    "joinError": "Could not join. Try again.",
-    "unnamedWorkspace": "Workspace",
-    "noPermissionTitle": "No workspace yet",
-    "noPermissionBody": "Ask an owner or admin to invite {email}.",
-    "invitesTitle": "You're invited",
-    "invitesDescription": "Join a workspace your team shared, or start your own.",
-    "createProjectInstead": "Create a new workspace instead"
-  },
   "projectSelector": {
     "welcome": "Welcome to {name}",
     "welcomeBack": "Welcome back",

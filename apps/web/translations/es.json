@@ -21773,18 +21773,6 @@
     "appReturn": "Volver a la app de Kortix",
     "appReturnConnected": "Proveedor conectado. Volver a la app de Kortix"
   },
-  "projectChooser": {
-    "invitations": "Invitaciones",
-    "invitedBy": "Invitado por {email}",
-    "join": "Unirse",
-    "joinError": "No se pudo unir. Inténtalo de nuevo.",
-    "unnamedWorkspace": "Espacio de trabajo",
-    "noPermissionTitle": "Aún no hay espacio de trabajo",
-    "noPermissionBody": "Pide a un propietario o administrador que invite a {email}.",
-    "invitesTitle": "Te han invitado",
-    "invitesDescription": "Únete a un espacio de trabajo de tu equipo o crea el tuyo.",
-    "createProjectInstead": "Crear un espacio de trabajo nuevo"
-  },
   "projectSelector": {
     "welcome": "Te damos la bienvenida a {name}",
     "welcomeBack": "Bienvenido de nuevo",

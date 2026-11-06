@@ -21773,18 +21773,6 @@
     "appReturn": "Kortix アプリに戻る",
     "appReturnConnected": "プロバイダーを接続しました。Kortix アプリに戻る"
   },
-  "projectChooser": {
-    "invitations": "招待",
-    "invitedBy": "{email} からの招待",
-    "join": "参加",
-    "joinError": "参加できませんでした。もう一度お試しください。",
-    "unnamedWorkspace": "ワークスペース",
-    "noPermissionTitle": "ワークスペースがまだありません",
-    "noPermissionBody": "オーナーまたは管理者に {email} の招待を依頼してください。",
-    "invitesTitle": "招待されています",
-    "invitesDescription": "チームが共有したワークスペースに参加するか、自分のワークスペースを作成してください。",
-    "createProjectInstead": "代わりに新しいワークスペースを作成"
-  },
   "projectSelector": {
     "welcome": "{name} へようこそ",
     "welcomeBack": "おかえりなさい",

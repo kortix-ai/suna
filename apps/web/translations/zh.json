@@ -21773,18 +21773,6 @@
     "appReturn": "返回 Kortix 应用",
     "appReturnConnected": "提供商已连接。返回 Kortix 应用"
   },
-  "projectChooser": {
-    "invitations": "邀请",
-    "invitedBy": "{email} 邀请了你",
-    "join": "加入",
-    "joinError": "无法加入，请重试。",
-    "unnamedWorkspace": "工作区",
-    "noPermissionTitle": "还没有工作区",
-    "noPermissionBody": "请让所有者或管理员邀请 {email}。",
-    "invitesTitle": "你收到了邀请",
-    "invitesDescription": "加入团队共享的工作区，或创建你自己的工作区。",
-    "createProjectInstead": "改为创建新工作区"
-  },
   "projectSelector": {
     "welcome": "欢迎使用 {name}",
     "welcomeBack": "欢迎回来",

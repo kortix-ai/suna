@@ -126,31 +126,6 @@ describe('useAccountsList — the object handed to useQuery', () => {
   });
 });
 
-describe('useAccountsQueryKey', () => {
-  // The two `setQueryData` writers seed the SAME entry the readers read. If
-  // this key and the hook's key could ever differ, a freshly created account
-  // would be written into a slot nothing renders.
-  test('is byte-identical to the key useAccountsList reads', async () => {
-    const realQuery = await import('@tanstack/react-query');
-    let captured: Record<string, unknown> | null = null;
-
-    mock.module('../../../providers/ui-provider', () => ({ ...realUiProvider, useUiViewerId: () => 'user_a' }));
-    mock.module('@tanstack/react-query', () => ({
-      ...realQuery,
-      useQuery: (opts: Record<string, unknown>) => {
-        captured = opts;
-        return { data: undefined };
-      },
-    }));
-
-    const mod = await import('./use-accounts-list');
-    mod.useAccountsList();
-    expect(mod.useAccountsQueryKey()).toEqual(
-      (captured as unknown as Record<string, unknown>).queryKey as never,
-    );
-  });
-});
-
 // ── the migration is total, and stays total ─────────────────────────────────
 
 /**

@@ -171,8 +171,3 @@ export function projectSettingsSectionHref(
 }
 
 /** The copy for one section, independent of any flag — used by pane headings. */
-export function projectSettingsSection(
-  key: ProjectSettingsSectionKey,
-): ProjectSettingsSection | undefined {
-  return ALL_PROJECT_SETTINGS_SECTIONS.find((s) => s.key === key);
-}

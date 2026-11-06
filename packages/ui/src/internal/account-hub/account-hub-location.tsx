@@ -64,11 +64,6 @@ export function EmbeddedAccountHubProvider({
   return <EmbeddedAccountHubContext.Provider value={value}>{children}</EmbeddedAccountHubContext.Provider>;
 }
 
-/** True inside Workspace settings: a pane draws no hub chrome of its own. */
-export function useIsEmbeddedAccountHub(): boolean {
-  return useContext(EmbeddedAccountHubContext) !== null;
-}
-
 /**
  * The account the modal is showing, or `undefined` for the account list.
  *
@@ -180,8 +175,3 @@ export const HubLink = forwardRef<
     />
   );
 });
-
-/** Move the modal without a link — for a mutation's success handler, say. */
-export function useHubNavigate(): (target: HubTarget) => void {
-  return openAccountPanel;
-}

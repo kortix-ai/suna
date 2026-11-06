@@ -21773,18 +21773,6 @@
     "appReturn": "Nazad u Kortix aplikaciju",
     "appReturnConnected": "Provajder je povezan. Nazad u Kortix aplikaciju"
   },
-  "projectChooser": {
-    "invitations": "Pozivi",
-    "invitedBy": "Poziva {email}",
-    "join": "Pridruži se",
-    "joinError": "Pridruživanje nije uspelo. Pokušajte ponovo.",
-    "unnamedWorkspace": "Radni prostor",
-    "noPermissionTitle": "Još nema radnog prostora",
-    "noPermissionBody": "Zamolite vlasnika ili administratora da pozove {email}.",
-    "invitesTitle": "Pozvani ste",
-    "invitesDescription": "Pridružite se radnom prostoru vašeg tima ili napravite svoj.",
-    "createProjectInstead": "Umesto toga napravite novi radni prostor"
-  },
   "projectSelector": {
     "welcome": "Dobro došli u {name}",
     "welcomeBack": "Dobro došli nazad",

@@ -21773,18 +21773,6 @@
     "appReturn": "Zurück zur Kortix-App",
     "appReturnConnected": "Anbieter verbunden. Zurück zur Kortix-App"
   },
-  "projectChooser": {
-    "invitations": "Einladungen",
-    "invitedBy": "Eingeladen von {email}",
-    "join": "Beitreten",
-    "joinError": "Beitritt fehlgeschlagen. Versuche es erneut.",
-    "unnamedWorkspace": "Workspace",
-    "noPermissionTitle": "Noch kein Workspace",
-    "noPermissionBody": "Bitte einen Owner oder Admin, {email} einzuladen.",
-    "invitesTitle": "Du wurdest eingeladen",
-    "invitesDescription": "Tritt einem Workspace deines Teams bei oder starte dein eigenes.",
-    "createProjectInstead": "Stattdessen einen neuen Workspace erstellen"
-  },
   "projectSelector": {
     "welcome": "Willkommen bei {name}",
     "welcomeBack": "Willkommen zurück",

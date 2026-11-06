@@ -6,12 +6,12 @@ import {
   ALL_PROJECT_SETTINGS_SECTIONS,
   DEFAULT_PROJECT_SETTINGS_SECTION,
   parseProjectSettingsSection,
-  projectSettingsSection,
   projectSettingsSectionHref,
   projectSettingsSections,
 } from './project-settings-sections';
 
 const keys = () => projectSettingsSections().map((s) => s.key);
+const sectionOf = (key: string) => ALL_PROJECT_SETTINGS_SECTIONS.find((s) => s.key === key);
 
 /**
  * The sections of `/workspaces/[id]/admin/general` — the Customize bar's Settings
@@ -56,7 +56,7 @@ describe('projectSettingsSections', () => {
   });
 
   test('the Experimental tab is called Feature flags here, and keys on the id it already gated on', () => {
-    const section = projectSettingsSection('feature-flags');
+    const section = sectionOf('feature-flags');
     expect(section?.label).toBe('Feature flags');
     expect(section?.gate).toBe('feature-flags');
     expect(parseProjectSettingsSection('experimental')).toBeNull();
@@ -64,7 +64,7 @@ describe('projectSettingsSections', () => {
 
   test('Sandbox templates and Snapshots merged into one section', () => {
     expect(parseProjectSettingsSection('snapshots')).toBeNull();
-    expect(projectSettingsSection('sandbox')?.label).toBe('Sandbox templates');
+    expect(sectionOf('sandbox')?.label).toBe('Sandbox templates');
   });
 
   test('Marketplace is gone, not merely hidden', () => {

@@ -140,12 +140,6 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   },
 };
 
-/** The distinct read leaves used to gate section visibility — handy for a single
- *  batched probe over every section the rail might show. */
-export const CUSTOMIZE_SECTION_READ_ACTIONS: readonly ProjectAction[] = Array.from(
-  new Set(Object.values(CUSTOMIZE_SECTION_ACCESS).map((a) => a.read)),
-);
-
 /**
  * Whether a section is visible in the rail, given the current user's resolved
  * capabilities (`caps[action].allowed`). Visibility gates on the section's own

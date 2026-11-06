@@ -103,20 +103,6 @@ export function accountsListQueryOptions(
 }
 
 /**
- * The exact cache key `useAccountsList` reads, for the two `setQueryData`
- * writers that seed a newly created account into the list.
- *
- * Those writers must never construct the key themselves — a writer and a
- * reader on different keys is silent: the create appears to succeed and the
- * list never changes. Invalidation is a different job and uses
- * `qk.accounts.scope()` instead; see the note on that member.
- */
-export function useAccountsQueryKey(): AccountsListQueryKey {
-  const viewerId = useUiViewerId();
-  return qk.accounts.list(viewerId);
-}
-
-/**
  * The account list for the signed-in user. Returns `undefined` data — never
  * another user's list — until identity is known.
  */

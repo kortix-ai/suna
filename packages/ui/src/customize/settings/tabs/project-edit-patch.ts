@@ -113,29 +113,3 @@ export function buildProjectEditPatch(
   if (Object.keys(patch).length === 0) return { status: 'unchanged' };
   return { status: 'ready', patch };
 }
-
-/**
- * What the success toast says, derived from the patch that was actually sent.
- *
- * The old modal always said `Renamed to "…"`, which stops being true the
- * moment the same modal can also change or remove an icon. Deriving the
- * sentence from the patch is what keeps it honest: there is exactly one
- * source for "what did this save do?", and it is the same object the request
- * carried.
- *
- * `savedName` comes from the API response rather than the draft, so a name the
- * server normalised is the one the user is told about.
- */
-export function summarizeProjectEdit(patch: Partial<ProjectInput>, savedName: string): string {
-  // The rename is the headline when both changed: it is the thing the user
-  // reads on the card, and the icon change is visible right beside it.
-  if (patch.name) return `Renamed to "${savedName}"`;
-  // `=== null` and not `!patch.icon`: an absent key is not a removal, and this
-  // function is reached with both icon keys absent whenever only the name
-  // moved.
-  if (patch.icon === null || patch.icon_glyph === null) return 'Project icon removed';
-  if (patch.icon || patch.icon_glyph) return 'Project icon updated';
-  // Unreachable from `status: 'ready'`, which never returns an empty patch —
-  // but a toast that says nothing is worse than one that says something dull.
-  return 'Project updated';
-}
