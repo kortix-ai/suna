@@ -1,10 +1,13 @@
 /** Project credentials: project-scoped CLI tokens and the BYO git credential. */
 import { PROJECT_ACTIONS } from '../../iam';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { keyScopeWire, type KeyScopes } from '../../iam/key-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   PatPolicyError,
   checkTokenMintExpiry,
+  resolveMintExpiry,
+  clampDefaultToParentExpiry,
   createAccountToken,
   listAccountTokens,
   revokeAccountToken,
@@ -77,6 +80,7 @@ export function registerProjectCredentialsRoutes(): void {
         last_used_at: t.lastUsedAt?.toISOString() ?? null,
         created_at: t.createdAt.toISOString(),
         revoked_at: t.revokedAt?.toISOString() ?? null,
+        ...keyScopeWire(t.scopes),
       })),
     });
   },
@@ -95,7 +99,7 @@ export function registerProjectCredentialsRoutes(): void {
           params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               name: z.string().optional().openapi({ description: 'Token label. Default "cli - <project name>".' }),
-              expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. Omit for a token that does not expire.' }),
+              expires_at: z.string().nullable().optional().openapi({ description: 'ISO-8601 expiry. Omitted: 90 days (or the workspace maximum, when shorter). `null`: no expiry, only when the workspace key policy allows it.' }),
             }) } } },
         },
       responses: {
@@ -135,11 +139,12 @@ export function registerProjectCredentialsRoutes(): void {
       typeof body.name === 'string' && body.name.trim()
         ? body.name.trim().slice(0, 255)
         : `cli · ${loaded.row.name}`;
-    const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
-    const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
-    if (expiresAt && Number.isNaN(expiresAt.getTime())) {
-      return c.json({ error: 'expires_at must be ISO-8601' }, 400);
-    }
+    const expiry = await resolveMintExpiry(loaded.row.accountId, Object.hasOwn(body, 'expires_at') ? body.expires_at : undefined);
+    if (!expiry.ok) return c.json({ error: expiry.error, code: expiry.code }, expiry.status);
+    const parentTokenId = c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined;
+    const expiresAt = Object.hasOwn(body, 'expires_at')
+      ? expiry.expiresAt
+      : await clampDefaultToParentExpiry(expiry.expiresAt, parentTokenId);
     // A project-scoped caller never mints a token that outlives itself.
     const expiryRefusal = await checkTokenMintExpiry(
       expiresAt,
@@ -158,6 +163,8 @@ export function registerProjectCredentialsRoutes(): void {
         projectId,
         name,
         expiresAt,
+        // A scoped key mints a key with its own scope, never a wider one.
+        scopes: (c.get('iamTokenBinding') as { scopes?: KeyScopes | null } | undefined)?.scopes ?? null,
       });
     } catch (err) {
       if (err instanceof PatPolicyError) {
@@ -176,6 +183,7 @@ export function registerProjectCredentialsRoutes(): void {
         project_id: created.projectId,
         expires_at: created.expiresAt?.toISOString() ?? null,
         created_at: created.createdAt.toISOString(),
+        ...keyScopeWire(created.scopes),
       },
       201,
     );

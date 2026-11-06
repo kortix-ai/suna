@@ -54,6 +54,10 @@ export function denialReasonMessage(rawAction: string, reason?: string): string 
       // The account enforces single sign-on for this email domain. The remedy
       // is a new sign-in through the IdP, not a role change.
       return 'Your organization requires single sign-on. Sign in with your company SSO to continue.';
+    case 'key_scope_insufficient':
+      // The key's own scope (read, or a custom list) denied it. The creator's
+      // role is not the limit, so a role change cannot fix it.
+      return `This key's scope does not include "${action}". Mint a key with that permission, or use a full key.`;
     case 'token_out_of_scope':
       return 'This key is bound to one workspace and cannot be used for this request.';
     case 'workspace_closed':

@@ -120,6 +120,15 @@ export const AccountTokenSchema = z
     created_at: z.string(),
     revoked_at: z.string().nullable().optional(),
     secret_key: z.string().optional(),
+    workspace_id: z.string().nullable().optional(),
+    scope: z.enum(['full', 'read', 'custom']).optional().openapi({
+      description: "What the key may do inside its creator's role: `full` (the whole role), `read` (every `*.read` permission, GET requests only) or `custom` (exactly `permissions`).",
+    }),
+    permissions: z.array(z.string()).nullable().optional().openapi({ description: 'A `custom` scope: the permissions, legacy spelling.' }),
+    workspace_permissions: z.array(z.string()).nullable().optional().openapi({ description: 'A `custom` scope: the permissions, workspace spelling.' }),
+    expiry_renews: z.boolean().optional().openapi({
+      description: 'True for the CLI device login: each use moves `expires_at` out again, so a key in use does not expire.',
+    }),
   })
   .openapi('AccountToken');
 

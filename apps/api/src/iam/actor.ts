@@ -22,6 +22,7 @@ import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
 import { registerPrincipalScopedMemo } from './cache-invalidation';
 import { agentPrincipalModeFor } from './agent-principal';
+import { readKeyScopes, type KeyScopes } from './key-scope';
 
 /**
  * uuid5 namespace for a `pending` principal — the invitee of an
@@ -205,6 +206,9 @@ export interface TokenBinding {
    *  never carries it: every turn rewrites it (`bindSessionTurnIdentity`), and a
    *  15 s copy on another replica would name the previous prompter. */
   onBehalfOfUserId?: string | null;
+  /** A workspace key's scope inside its creator's role (`iam/key-scope.ts`).
+   *  Null = full. Immutable after mint, so the memo below may carry it. */
+  scopes?: KeyScopes | null;
 }
 
 /**
@@ -229,6 +233,7 @@ const loadTokenBinding = ttlMemo({
         agentGrant: accountTokens.agentGrant,
         serviceAccountId: accountTokens.serviceAccountId,
         sessionId: accountTokens.sessionId,
+        scopes: accountTokens.scopes,
       })
       .from(accountTokens)
       .where(eq(accountTokens.tokenId, tokenId))
@@ -239,6 +244,7 @@ const loadTokenBinding = ttlMemo({
           agentGrant: readStoredAgentGrant(row.agentGrant),
           serviceAccountId: row.serviceAccountId ?? null,
           sessionId: row.sessionId ?? null,
+          scopes: readKeyScopes(row.scopes),
         }
       : null;
   },

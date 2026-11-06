@@ -9,7 +9,8 @@ import {
   isApiKeySecretConfigured,
   isAccountToken,
 } from '../shared/crypto';
-import type { AgentGrant } from '@kortix/db';
+import type { AgentGrant, StoredKeyScopes } from '@kortix/db';
+import { readKeyScopes, type KeyScopes } from '../iam/key-scope';
 import { isUuid } from '../shared/validate';
 import { createLastUsedTracker } from '../shared/throttled-last-used';
 import { accountsView, projectsView } from '../workspaces/rows';
@@ -42,6 +43,9 @@ export interface AccountTokenValidationResult {
   serviceAccountId?: string | null;
   /** When the token expires, or null for a token without an expiry. */
   expiresAt?: Date | null;
+  /** A workspace key's scope inside its creator's role (`iam/key-scope.ts`);
+   *  null = the creator's whole role. */
+  scopes?: KeyScopes | null;
   error?: string;
   /** True = the credential itself can never come back (missing, revoked,
    *  expired, or its sandbox lease closed). The auth middleware turns this
@@ -91,6 +95,11 @@ export interface CreateAccountTokenParams {
   /** Agent-session tokens only: the human the session acts on behalf of
    *  (spec 2026-09-22-agents-as-principals §2.3). Null = unattended. */
   onBehalfOfUserId?: string | null;
+  /** A workspace key's scope inside its creator's role. Null/undefined = full. */
+  scopes?: StoredKeyScopes | null;
+  /** A renewing expiry: each use moves `expires_at` to now + this many days
+   *  (the CLI device login). Null/undefined = a fixed expiry. */
+  expiryRenewDays?: number | null;
 }
 
 export interface CreateAccountTokenResult {
@@ -102,6 +111,7 @@ export interface CreateAccountTokenResult {
   projectId: string | null;
   expiresAt: Date | null;
   createdAt: Date;
+  scopes: KeyScopes | null;
 }
 
 export interface AccountTokenListEntry {
@@ -119,13 +129,27 @@ export interface AccountTokenListEntry {
   lastUsedAt: Date | null;
   createdAt: Date;
   revokedAt: Date | null;
+  scopes: KeyScopes | null;
+  /** Non-null = a renewing expiry: each use moves `expiresAt` this many days out. */
+  expiryRenewDays: number | null;
+}
+
+/** Normalize the stored scope of each listed row (`readKeyScopes`). */
+function withReadScopes<T extends { scopes: unknown }>(rows: T[]): Array<T & { scopes: KeyScopes | null }> {
+  return rows.map((row) => ({ ...row, scopes: readKeyScopes(row.scopes) }));
 }
 
 // ─── Throttle for last_used_at updates ───────────────────────────────────────
 
+// A renewing expiry (the CLI device login, `expiry_renew_days`) moves with the
+// same throttled write: a key in use never expires, an unused one does.
 const updateLastUsedThrottled = createLastUsedTracker((tokenId) =>
   db.update(accountTokens)
-    .set({ lastUsedAt: new Date() })
+    .set({
+      lastUsedAt: new Date(),
+      expiresAt: sql`CASE WHEN ${accountTokens.expiryRenewDays} IS NULL THEN ${accountTokens.expiresAt}
+        ELSE now() + make_interval(days => ${accountTokens.expiryRenewDays}) END`,
+    })
     .where(and(
       eq(accountTokens.tokenId, tokenId),
       eq(accountTokens.status, 'active'),
@@ -156,12 +180,14 @@ async function loadPatPolicy(
   maxLifetimeDays: number | null;
   requireExpiry: boolean;
   idleRevokeDays: number | null;
+  allowNoExpiry: boolean;
 } | null> {
   const [row] = await database
     .select({
       maxLifetimeDays: accountsView.patMaxLifetimeDays,
       requireExpiry: accountsView.patRequireExpiry,
       idleRevokeDays: accountsView.patIdleRevokeDays,
+      allowNoExpiry: accountsView.patAllowNoExpiry,
     })
     .from(accountsView)
     .where(eq(accountsView.accountId, accountId))
@@ -252,6 +278,8 @@ async function insertAccountToken(
       agentGrant: params.agentGrant ?? null,
       serviceAccountId: params.serviceAccountId ?? null,
       onBehalfOfUserId: params.onBehalfOfUserId ?? null,
+      scopes: params.scopes ?? null,
+      expiryRenewDays: params.expiryRenewDays ?? null,
     })
     .returning();
 
@@ -285,7 +313,75 @@ async function insertAccountToken(
     projectId: row.projectId,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
+    scopes: readKeyScopes(row.scopes),
   };
+}
+
+/** A new key expires this many days out when the caller names no expiry. */
+export const KEY_DEFAULT_LIFETIME_DAYS = 90;
+/** The longest lifetime a key may have when the workspace sets no maximum. */
+export const KEY_MAX_LIFETIME_DAYS = 365;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type MintExpiry =
+  | { ok: true; expiresAt: Date | undefined }
+  | { ok: false; status: 400; code: 'expiry_required' | 'expiry_too_far' | 'invalid_expiry'; error: string };
+
+/**
+ * The expiry of a key a person mints by hand (design.md §3.2 C4a), from the
+ * request's `expires_at` and the workspace's key policy:
+ *
+ *   - absent           → now + 90 days (or the policy maximum, when shorter);
+ *   - an ISO-8601 time → that time, at most the policy maximum out (365 days
+ *                        when the policy sets none);
+ *   - `null`           → no expiry, only when the policy allows it
+ *                        (`allow_no_expiry` and not `require_expiry`).
+ *
+ * Keys minted before this rule keep their stored expiry, none included: the
+ * rule decides new mints only.
+ */
+export async function resolveMintExpiry(accountId: string, requested: unknown, now = new Date()): Promise<MintExpiry> {
+  const policy = await loadPatPolicy(accountId, db);
+  const ceilingDays = policy?.maxLifetimeDays ?? KEY_MAX_LIFETIME_DAYS;
+  const mayNeverExpire = policy?.allowNoExpiry === true && policy.requireExpiry !== true;
+  if (requested === undefined || (typeof requested === 'string' && requested.trim() === '')) {
+    return { ok: true, expiresAt: new Date(now.getTime() + Math.min(KEY_DEFAULT_LIFETIME_DAYS, ceilingDays) * DAY_MS) };
+  }
+  if (requested === null || requested === 'never') {
+    if (mayNeverExpire) return { ok: true, expiresAt: undefined };
+    return {
+      ok: false,
+      status: 400,
+      code: 'expiry_required',
+      error: `This workspace requires every key to expire, at most ${ceilingDays} days from now. A workspace admin can allow keys without expiry in the key policy.`,
+    };
+  }
+  const at = typeof requested === 'string' ? new Date(requested.trim()) : new Date(Number.NaN);
+  if (Number.isNaN(at.getTime())) {
+    return { ok: false, status: 400, code: 'invalid_expiry', error: 'expires_at must be ISO-8601, or null for no expiry' };
+  }
+  if (at.getTime() - now.getTime() > ceilingDays * DAY_MS) {
+    return { ok: false, status: 400, code: 'expiry_too_far', error: `Expiry cannot be more than ${ceilingDays} days from now.` };
+  }
+  return { ok: true, expiresAt: at };
+}
+
+/**
+ * A default expiry (the caller named none) never outlives the minting key: a
+ * workspace key that mints a key without `expires_at` gives it the earlier of
+ * the default and its own expiry. `checkTokenMintExpiry` then passes it.
+ */
+export async function clampDefaultToParentExpiry(
+  expiresAt: Date | undefined,
+  parentTokenId: string | undefined,
+): Promise<Date | undefined> {
+  if (!expiresAt || !parentTokenId) return expiresAt;
+  const [parent] = await db
+    .select({ expiresAt: accountTokens.expiresAt })
+    .from(accountTokens)
+    .where(eq(accountTokens.tokenId, parentTokenId))
+    .limit(1);
+  return parent?.expiresAt && parent.expiresAt < expiresAt ? parent.expiresAt : expiresAt;
 }
 
 /**
@@ -368,11 +464,14 @@ export async function listAccountTokens(
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
       revokedAt: accountTokens.revokedAt,
+      scopes: accountTokens.scopes,
+      expiryRenewDays: accountTokens.expiryRenewDays,
     })
     .from(accountTokens)
     .leftJoin(projectsView, eq(projectsView.projectId, accountTokens.projectId))
     .where(filter)
-    .orderBy(desc(accountTokens.createdAt));
+    .orderBy(desc(accountTokens.createdAt))
+    .then(withReadScopes);
 }
 
 /**
@@ -411,6 +510,8 @@ export async function listPersonalAccountTokens(
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
       revokedAt: accountTokens.revokedAt,
+      scopes: accountTokens.scopes,
+      expiryRenewDays: accountTokens.expiryRenewDays,
     })
     .from(accountTokens)
     .where(
@@ -422,7 +523,8 @@ export async function listPersonalAccountTokens(
         isNull(accountTokens.agentGrant),
       ),
     )
-    .orderBy(desc(accountTokens.createdAt));
+    .orderBy(desc(accountTokens.createdAt))
+    .then(withReadScopes);
 }
 
 /**
@@ -442,10 +544,13 @@ export async function listPersonalTokensOfUser(userId: string) {
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
       revokedAt: accountTokens.revokedAt,
+      scopes: accountTokens.scopes,
+      expiryRenewDays: accountTokens.expiryRenewDays,
     })
     .from(accountTokens)
     .where(and(...personalOfUser(userId)))
-    .orderBy(desc(accountTokens.createdAt));
+    .orderBy(desc(accountTokens.createdAt))
+    .then(withReadScopes);
 }
 
 /** The account a personal key of `userId` was minted in, or null when it is not theirs. */
@@ -741,6 +846,7 @@ async function validateAccountTokenMatching(
         agentGrant: accountTokens.agentGrant,
         onBehalfOfUserId: accountTokens.onBehalfOfUserId,
         serviceAccountId: accountTokens.serviceAccountId,
+        scopes: accountTokens.scopes,
         patIdleRevokeDays: accountsView.patIdleRevokeDays,
       })
       .from(accountTokens)
@@ -862,9 +968,10 @@ async function validateAccountTokenMatching(
 
     // Idle-revoke: if the account has an idle policy and the PAT hasn't
     // been used in that window, soft-revoke it now and refuse the call.
-    // Project-scoped tokens (sandbox-injected, lifetime tied to the
-    // sandbox) are exempt — same carve-out as the mint path.
-    if (row.patIdleRevokeDays != null && !row.projectId) {
+    // Session tokens (sandbox-injected, lifetime tied to the sandbox) are
+    // exempt — same carve-out as the mint path. A workspace key is a durable
+    // credential like a personal key and follows the policy (design.md §3.2 C4a).
+    if (row.patIdleRevokeDays != null && !row.sessionId) {
       const reference = row.lastUsedAt ?? row.createdAt;
       const idleMs = Date.now() - reference.getTime();
       const maxIdleMs = row.patIdleRevokeDays * 24 * 60 * 60 * 1000;
@@ -904,6 +1011,7 @@ async function validateAccountTokenMatching(
       onBehalfOfUserId: row.onBehalfOfUserId ?? null,
       serviceAccountId: row.serviceAccountId ?? null,
       expiresAt: row.expiresAt ?? null,
+      scopes: readKeyScopes(row.scopes),
     };
   } catch (err) {
     console.error('Account token validation error:', err);

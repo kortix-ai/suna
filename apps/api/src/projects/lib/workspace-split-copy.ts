@@ -185,10 +185,10 @@ async function copyDirectory(tx: TransferTx, projectId: string, fromAccountId: s
   await tx.execute(sql`
     INSERT INTO kortix.accounts (account_id, name, setup_complete_at, setup_wizard_step, mfa_required,
       session_max_lifetime_minutes, session_idle_timeout_minutes, pat_max_lifetime_days, pat_require_expiry,
-      pat_idle_revoke_days, admins_see_all_sessions, automations_paused_at, automations_paused_by, branding)
+      pat_idle_revoke_days, pat_allow_no_expiry, admins_see_all_sessions, automations_paused_at, automations_paused_by, branding)
     SELECT ${toAccountId}::uuid, p.name, a.setup_complete_at, a.setup_wizard_step, a.mfa_required,
       a.session_max_lifetime_minutes, a.session_idle_timeout_minutes, a.pat_max_lifetime_days, a.pat_require_expiry,
-      a.pat_idle_revoke_days, a.admins_see_all_sessions, a.automations_paused_at, a.automations_paused_by, a.branding
+      a.pat_idle_revoke_days, a.pat_allow_no_expiry, a.admins_see_all_sessions, a.automations_paused_at, a.automations_paused_by, a.branding
       FROM kortix.accounts a JOIN kortix.projects p ON p.account_id = a.account_id
      WHERE a.account_id = ${fromAccountId} AND p.project_id = ${projectId}`);
   // Its wallet, in the same transaction: Free with 0 credits and no free

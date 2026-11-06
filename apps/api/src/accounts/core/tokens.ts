@@ -7,6 +7,8 @@ import { isNoWorkspaceError } from '../../shared/no-workspace';
 import {
   PatPolicyError,
   checkTokenMintExpiry,
+  resolveMintExpiry,
+  clampDefaultToParentExpiry,
   createAccountToken,
   listAccountTokens,
   listPersonalAccountTokens,
@@ -37,6 +39,18 @@ import { workspaceIdsForAccounts } from '../../shared/resolve-account';
 import type { Context } from 'hono';
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { resolveWorkspace, WorkspaceAmbiguousError, WORKSPACE_AMBIGUOUS_CODE } from '../../workspaces/surface';
+import { keyScopeWire, keyScopeWithin, parseKeyScopesInput, type KeyScopes } from '../../iam/key-scope';
+import type { TokenBinding } from '../../iam/actor';
+
+/** The scope and expiry fields every key row carries on the wire. */
+function keyWire(t: { scopes?: KeyScopes | null; expiryRenewDays?: number | null }) {
+  return { ...keyScopeWire(t.scopes ?? null), expiry_renews: t.expiryRenewDays != null };
+}
+
+/** The scope of the key this request authenticated with (null = full, or no key). */
+function callerKeyScopes(c: Context): KeyScopes | null {
+  return (c.get('iamTokenBinding') as TokenBinding | undefined)?.scopes ?? null;
+}
 
 /**
  * A query flag arrives as a string or not at all. `?mine`, `?mine=true` and
@@ -240,6 +254,7 @@ accountsRouter.openapi(
       last_used_at: t.lastUsedAt?.toISOString() ?? null,
       created_at: t.createdAt.toISOString(),
       revoked_at: t.revokedAt?.toISOString() ?? null,
+      ...keyWire(t),
     })),
   );
   },
@@ -350,6 +365,7 @@ accountsRouter.openapi(
       last_used_at: t.lastUsedAt?.toISOString() ?? null,
       created_at: t.createdAt.toISOString(),
       revoked_at: t.revokedAt?.toISOString() ?? null,
+      ...keyWire(t),
     })),
   );
   },
@@ -364,7 +380,14 @@ accountsRouter.openapi(
     method: 'post',
     path,
     tags: ['accounts'],
-    summary: 'Mint a new PAT (plaintext returned once)',
+    summary: path === '/tokens' ? 'Mint a key (deprecated: mint workspace keys under /v1/workspaces/{workspaceId}/tokens)' : 'Mint a workspace key (plaintext returned once)',
+    ...(path === '/tokens'
+      ? {
+          deprecated: true,
+          description:
+            'Kept for CLIs released before workspace keys. Without `project_id` it mints a personal key that acts as you in every workspace. New clients mint workspace keys with `POST /v1/workspaces/{workspaceId}/tokens`.',
+        }
+      : {}),
     ...auth,
     request: {
       ...(path === '/tokens' ? {} : { params: AccountIdParam }),
@@ -374,8 +397,22 @@ accountsRouter.openapi(
             schema: z.object({
               name: z.string(),
               account_id: z.string().optional(),
-              expires_at: z.string().optional(),
+              expires_at: z.string().nullable().optional().openapi({
+                description:
+                  'ISO-8601 expiry. Omitted: 90 days (or the workspace maximum, when shorter). At most the workspace maximum, 365 days by default. `null`: no expiry, only when the workspace key policy allows it (`allow_no_expiry`).',
+              }),
               project_id: z.string().uuid().optional(),
+              renews: z.boolean().optional().openapi({
+                description:
+                  'A renewing expiry for a personal key minted from a browser session (the CLI login): each use moves `expires_at` out again by the default lifetime. Ignored for any other caller.',
+              }),
+              scopes: z
+                .union([z.enum(['full', 'read']), z.array(z.string())])
+                .optional()
+                .openapi({
+                  description:
+                    "What the key may do inside its creator's role: `full` (default; the whole role), `read` (every `*.read` permission; GET requests only) or a list of permissions in either spelling. A workspace key only. Checked against the creator's current role on every request. A scoped key mints only keys inside its own scope.",
+                }),
             }),
           },
         },
@@ -426,11 +463,14 @@ accountsRouter.openapi(
       : ACCOUNT_ACTIONS.TOKEN_CREATE,
   );
 
-  const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
-  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
-  if (expiresAt && Number.isNaN(expiresAt.getTime())) {
-    return c.json({ error: 'expires_at must be ISO-8601' }, 400);
-  }
+  // Default 90 days, at most the workspace maximum (365 days by default); no
+  // expiry only when the key policy allows it (resolveMintExpiry).
+  const expiry = await resolveMintExpiry(accountId, Object.hasOwn(body, 'expires_at') ? body.expires_at : undefined);
+  if (!expiry.ok) return c.json({ error: expiry.error, code: expiry.code }, expiry.status);
+  const parentTokenId = c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined;
+  const expiresAt = Object.hasOwn(body, 'expires_at')
+    ? expiry.expiresAt
+    : await clampDefaultToParentExpiry(expiry.expiresAt, parentTokenId);
   const expiryRefusal = await checkTokenMintExpiry(
     expiresAt,
     c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined,
@@ -466,15 +506,60 @@ accountsRouter.openapi(
   }
 
   if (projectId) {
-    const loaded = await loadProjectForUser(c, projectId, 'credentials');
+    // The person minting their own key needs only to open the workspace: the
+    // key acts as them there, never wider than a personal key (which every
+    // member mints with `token.personal.create`). Any other caller (a key
+    // minting a key) keeps the credential leaf, `project.credentials.issue`.
+    const fullIdentity = actsAsFullIdentity(c.get('authType') as string | undefined, actor);
+    const loaded = await loadProjectForUser(c, projectId, fullIdentity ? 'read' : 'credentials');
     if (!loaded?.row || loaded.row.accountId !== accountId) {
       return c.json({ error: 'Project not found in account' }, 403);
     }
   }
 
+  // The key's scope (design.md §3.2 C4a). Omitted: full, or the minting key's
+  // own scope, so a scoped key never mints a wider one.
+  const parsedScopes = parseKeyScopesInput(body.scopes);
+  if (!parsedScopes.ok) return c.json({ error: parsedScopes.error, code: parsedScopes.code }, 400);
+  const parentScopes = callerKeyScopes(c);
+  const scopes = parsedScopes.explicit ? parsedScopes.scopes : parentScopes;
+  if (scopes && !projectId) {
+    return c.json(
+      { error: 'A scoped key is a workspace key: mint it under /v1/workspaces/<workspace id>/tokens.', code: 'invalid_scopes' },
+      400,
+    );
+  }
+  if (!keyScopeWithin(scopes, parentScopes)) {
+    return c.json({ error: 'A scoped key can only mint keys inside its own scope.', code: 'key_scope_exceeds_parent' }, 403);
+  }
+  if (scopes && 'permissions' in scopes && projectId) {
+    // Every listed permission must be one the creator holds NOW in this
+    // workspace. The scope only narrows; this refuses a list that names
+    // permissions the key could never use, so the key reads as what it does.
+    const denied: string[] = [];
+    for (const permission of scopes.permissions) {
+      if (!(await authorize(actor, permission, { type: 'workspace', id: projectId })).allowed) denied.push(permission);
+    }
+    if (denied.length > 0) {
+      return c.json(
+        {
+          error: `Your role in this workspace does not include ${denied.map((p) => `"${p}"`).join(', ')}. A key cannot hold a permission its creator lacks.`,
+          code: 'key_scope_exceeds_role',
+          permissions: denied,
+        },
+        403,
+      );
+    }
+  }
+
+  // The CLI browser login: a personal key from a browser session renews on use,
+  // as the device login does (cli/device-grants.ts).
+  const renews = body.renews === true && c.get('authType') === 'supabase' && !projectId && expiresAt !== undefined;
+  const expiryRenewDays = renews ? Math.max(1, Math.round((expiresAt!.getTime() - Date.now()) / 86_400_000)) : null;
+
   let created;
   try {
-    created = await createAccountToken({ accountId, userId, name, expiresAt, projectId });
+    created = await createAccountToken({ accountId, userId, name, expiresAt, projectId, scopes, expiryRenewDays });
   } catch (err) {
     if (err instanceof PatPolicyError) {
       return c.json({ error: err.message, code: err.code }, 400);
@@ -492,6 +577,7 @@ accountsRouter.openapi(
       status: created.status,
       expires_at: created.expiresAt?.toISOString() ?? null,
       created_at: created.createdAt.toISOString(),
+      ...keyWire({ scopes: created.scopes, expiryRenewDays }),
     },
     201,
   );

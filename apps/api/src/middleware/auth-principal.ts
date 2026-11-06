@@ -1,11 +1,27 @@
 import { Context } from 'hono';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
-import { auditLoginSuccess } from './auth-audit';
+import { HTTPException } from 'hono/http-exception';
+import { auditLoginFail, auditLoginSuccess } from './auth-audit';
+import { keyScopeMethodAllows } from '../iam/key-scope';
 import { jitSyncSso } from './auth-sso';
 import { setPreviewSessionCookie } from './auth-scope';
 
 type Preview = { token: string; enabled: boolean };
+
+/** The code a read-only key's write request is refused with. */
+export const KEY_SCOPE_READ_ONLY_CODE = 'key_scope_read_only';
+
+function keyScopeReadOnly403(method: string): HTTPException {
+  const message = `This key is read-only and cannot make a ${method.toUpperCase()} request. Use a key with write permissions.`;
+  return new HTTPException(403, {
+    message,
+    res: new Response(JSON.stringify({ error: true, message, status: 403, code: KEY_SCOPE_READ_ONLY_CODE }), {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
+    }),
+  });
+}
 
 export function serviceAccountPrincipal(c: Context, id: string, accountId: string, preview?: Preview) {
   c.set('userId', id);
@@ -21,6 +37,12 @@ export function serviceAccountPrincipal(c: Context, id: string, accountId: strin
 }
 
 export function patPrincipal(c: Context, result: Awaited<ReturnType<typeof import('../repositories/account-tokens').validateAccountToken>>, preview?: Preview) {
+  // A read-only workspace key (`scopes` holds only `*.read` actions) makes no
+  // write request at all, whatever the route gates on (iam/key-scope.ts).
+  if (!keyScopeMethodAllows(result.scopes ?? null, c.req.method)) {
+    auditLoginFail({ c, reason: 'key_scope_read_only', authType: 'pat', accountId: result.accountId ?? null });
+    throw keyScopeReadOnly403(c.req.method);
+  }
   const userId = result.userId!;
   c.set('userId', userId);
   c.set('userEmail', '');
@@ -47,6 +69,7 @@ export function patPrincipal(c: Context, result: Awaited<ReturnType<typeof impor
       agentGrant: result.agentGrant ?? null,
       serviceAccountId: result.serviceAccountId,
       onBehalfOfUserId: result.onBehalfOfUserId ?? null,
+      scopes: result.scopes ?? null,
     });
   }
   setSentryUser({ id: userId, accountId: result.accountId });

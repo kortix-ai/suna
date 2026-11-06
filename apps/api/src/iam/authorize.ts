@@ -43,6 +43,7 @@ import { isMyKortixAgentName } from '@kortix/shared';
 import { isHumanOnlyAction, toLegacyAction } from '@kortix/shared/workspace-actions';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
+import { keyScopeAllows } from './key-scope';
 import { AGENT_DEFAULT_CEILING, agentPrincipalDecision } from './agent-principal';
 import {
   loadPermissionCatalog,
@@ -135,6 +136,9 @@ export type Reason =
   /** A HUMAN_ONLY action (minting credentials, moving money; C8). No agent
    *  session, inherited or governed, ever passes it. */
   | 'agent_human_only_action'
+  /** A workspace key's scope (`read` or a custom list) does not hold the
+   *  action. The creator's role may; a key with that scope never does. */
+  | 'key_scope_insufficient'
   /** The workspace is closing (a deletion request is open). Only its owners
    *  keep reading it and restoring it (design.md §3.2 C3). */
   | 'workspace_closed';
@@ -194,6 +198,7 @@ const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
  *
  *   1  impersonation act-as, then impersonation confinement
  *   1b HUMAN_ONLY for every agent session
+ *   1c the workspace key's scope (read, custom), inside the creator's role
  *   2  the acting token's binding
  *   3  the acting principal (activated agent SA, else the launcher)
  *   3b the closing workspace (owners keep read, billing read, restore)
@@ -264,6 +269,12 @@ async function authorizeDecision(actor: Actor, action: string, obj: EvalObj): Pr
   if (isHumanOnlyAction(action) && isAgentSessionToken(actor, binding)) {
     return deny('agent_human_only_action');
   }
+
+  // 1c. KEY SCOPE (design.md §3.2 C4a): a workspace key does what its scope
+  // allows, and the rest of this function still decides the creator's CURRENT
+  // role, so a key never exceeds it. Above the super-admin bypass: a read key
+  // the workspace creator minted stays read-only.
+  if (binding?.scopes && !keyScopeAllows(binding.scopes, action)) return deny('key_scope_insufficient');
 
   const catalog = await loadPermissionCatalog();
   const entry = catalog.byAction.get(action);
