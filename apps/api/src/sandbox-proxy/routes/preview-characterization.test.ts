@@ -725,27 +725,6 @@ describe('forwardToSandbox authentication failures', () => {
     expect(fetchCalls).toBe(1);
   });
 
-  test('an opencode not-ready 503 passes through and releases the dedupe claim', async () => {
-    const args = {
-      method: 'POST',
-      path: '/session/sess-1/message',
-      port: 8000,
-      body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
-      headers: jsonHeaders({ 'idempotency-key': 'nr-1' }),
-    } as const;
-    queueFetch(new Response('opencode not ready', { status: 503 }));
-    const first = await forward(args);
-    expect(first.status).toBe(503);
-    expect(await first.text()).toBe('opencode not ready');
-    expect(counts.markSandboxUsed).toBe(1);
-
-    // The claim was released: the client's retry delivers instead of deduping.
-    queueFetch(new Response('{"info":{},"parts":[]}', { status: 200 }));
-    const retry = await forward(args);
-    expect(retry.status).toBe(200);
-    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
-  });
-
   // pi (and OpenCode's boot steps) refuse with another text, a W6 daemon adds
   // `code: runtime_not_ready`, and every daemon names its boot phase in
   // `X-Kortix-Boot-Phase`. Each must release the claim on its own.

@@ -1,8 +1,14 @@
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
 import pg from 'pg';
 
+const actual = await import('node-pg-migrate');
 const runner = mock(async (..._args: unknown[]) => []);
-mock.module('node-pg-migrate', () => ({ runner }));
+// mock.module is process-wide in Bun: after this file, every other suite gets the real runner back.
+let stubbed = true;
+mock.module('node-pg-migrate', () => ({
+  ...actual,
+  runner: (...args: Parameters<typeof actual.runner>) => (stubbed ? runner(...args) : actual.runner(...args)),
+}));
 
 const connect = spyOn(pg.Client.prototype, 'connect').mockImplementation(async function (this: pg.Client) { return this; });
 const end = spyOn(pg.Client.prototype, 'end').mockImplementation(async () => {});
@@ -19,6 +25,7 @@ beforeEach(() => {
 });
 afterEach(() => { process.argv = originalArgv; });
 afterAll(() => {
+  stubbed = false;
   connect.mockRestore(); end.mockRestore(); query.mockRestore(); log.mockRestore(); warn.mockRestore();
   if (originalUrl === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = originalUrl;
 });
