@@ -59,11 +59,13 @@ import { registerScimRoutes, scimRouter } from './scim';
 import {
   connectorWorkspacesApp,
   meApp,
+  registerWorkspaceRootRoutes,
   scimWorkspacesApp,
   workspaceAccountFamiliesApp,
-  workspaceDetailSettings,
   workspaceProjectsApp,
+  workspacesRootApp,
 } from './workspaces';
+import { canonicalWorkspaceGate } from './middleware/workspace-account';
 import { setupApp } from './setup';
 import { skillsApp } from './skills';
 import { tunnelApp } from './tunnel';
@@ -232,8 +234,9 @@ registerAllProjectRoutes();
 //    own auth chain scoped to those paths. Before the project app: the merged
 //    GET /:workspaceId/audit is the workspace audit log, not the project slice.
 app.route('/v1/workspaces', workspaceAccountFamiliesApp(accountsRouter));
-// 2. GET /:workspaceId adds the workspace settings to the project record.
-app.use('/v1/workspaces/:workspaceId', workspaceDetailSettings());
+// 2. The workspace resource: GET/POST /, GET/PATCH /:workspaceId (workspaces/routes.ts).
+registerWorkspaceRootRoutes();
+app.route('/v1/workspaces', workspacesRootApp);
 // 3. The project app, in the same order as its legacy mount.
 app.route('/v1/workspaces', tokenIssuerApp); // /v1/workspaces/:workspaceId/{.well-known/openid-configuration,jwks.json}
 app.route('/v1/workspaces', appEventsApp); // POST /v1/workspaces/:workspaceId/apps/:appId/events
@@ -289,6 +292,8 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /agen
 {
   app.use('/v1/connectors/projects/*', combinedAuth);
   app.use('/v1/connectors/workspaces/*', combinedAuth);
+  // Canonical id rule: an account id, an unknown id or an unreadable workspace → 404 workspace_not_found.
+  app.use('/v1/connectors/workspaces/*', canonicalWorkspaceGate());
   app.use('/v1/connectors/connect-status', combinedAuth); // deployment capability flag (authed)
   app.route('/v1/connectors', connectorApp);
   // /v1/connectors/workspaces/:workspaceId/* — canonical name of /v1/connectors/projects/:workspaceId/*.

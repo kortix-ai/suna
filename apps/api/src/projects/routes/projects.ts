@@ -44,6 +44,18 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
 import { isNoWorkspaceError } from '../../shared/no-workspace';
 import { accountTakenForNewProject, workspaceHasProjectDenial } from '../../workspaces/one-project';
 
+/** Who is asking, for the new-workspace caller rule (`new-workspace.ts`). */
+export function newWorkspaceCallerOf(c: Context): NewWorkspaceCaller {
+  return {
+    userId: c.get('userId') as string,
+    email: (c.get('userEmail') as string | undefined) || null,
+    authType: c.get('authType') as string | undefined,
+    // A browser JWT's `sessionId` is its Supabase login session, not a
+    // Kortix session (middleware/caller-session.ts): never a scoped credential.
+    scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
+  };
+}
+
 /**
  * Reads the request body and resolves the caller's account scope — the part
  * of the old `POST /provision` handler that runs BEFORE the
@@ -52,14 +64,7 @@ import { accountTakenForNewProject, workspaceHasProjectDenial } from '../../work
  */
 async function buildProvisionContext(c: Context): Promise<{ result: ProvisionResult } | { ctx: ProvisionContext }> {
   const body = await readJsonObject(c);
-  const caller: NewWorkspaceCaller = {
-    userId: c.get('userId') as string,
-    email: (c.get('userEmail') as string | undefined) || null,
-    authType: c.get('authType') as string | undefined,
-    // A browser JWT's `sessionId` is its Supabase login session, not a
-    // Kortix session (middleware/caller-session.ts): never a scoped credential.
-    scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
-  };
+  const caller = newWorkspaceCallerOf(c);
   const newWorkspace = async () => {
     const built = await buildNewWorkspaceProvisionContext(body, caller);
     if ('ctx' in built) c.set('accountId', built.ctx.scope.accountId);
@@ -469,61 +474,75 @@ export function registerProjectsRoutes(): void {
       if (occupied) return c.json(occupied, 409);
     }
 
-    return new Response(
-      new ReadableStream({
-        async start(controller) {
-          const encoder = new TextEncoder();
-
-          // Data-only framing: `data: <json>\n\n`, no `event:` line. Every
-          // payload already carries a `type` field ('phase' | 'done' |
-          // 'error') — a discriminated union the SDK switches on. Adding an
-          // `event:` name would duplicate that discriminator in two places
-          // that can drift out of sync with each other. Do not "fix" this by
-          // adding one back.
-          const write = (data: unknown) => {
-            try {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-            } catch {
-              // The client disconnected. Provisioning has no AbortSignal (see
-              // ProvisionContext in ../provision-core.ts) and keeps running to
-              // completion regardless — cancelling between backend.createRepo
-              // and the DB insert is exactly how an upstream repo gets
-              // orphaned, so a lost reader must not cancel it.
-            }
-          };
-
-          try {
-            const result = await runProvision(ctx, (phase) => write({ type: 'phase', phase }));
-            if (result.status === 201) {
-              write({ type: 'done', project: result.body });
-            } else {
-              // `status` alongside the body's `error`/`code` — see
-              // `ProvisionStreamEvent`'s doc comment in the SDK
-              // (`packages/sdk/src/core/rest/projects-client/projects.ts`).
-              // Spread first, explicit field last: `result.body` never carries
-              // a `status` key today, but this ordering means it never could
-              // silently shadow the real one if that changed.
-              write({ type: 'error', ...(result.body as object), status: result.status });
-            }
-          } catch (error) {
-            // The stream must never end in a bare close — that would hand the
-            // client an undefined project id. This catch is what guarantees a
-            // terminal frame even when runProvision THROWS instead of
-            // returning an error result.
-            write({ type: 'error', error: (error as Error).message || 'Failed to provision project' });
-          } finally {
-            try { controller.close(); } catch {}
-          }
-        },
-      }),
-      {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
-      },
-    ) as any;
+    return provisionStreamResponse(ctx) as any;
   },
+  );
+}
+
+/**
+ * The provision SSE stream: `data: <json>` frames of `phase`, then one
+ * terminal `done` or `error`. `done` carries `project`; `done(project)` adds
+ * fields to that frame (`POST /v1/workspaces` adds `workspace`). Shared by
+ * `POST /v1/projects/provision-stream` and `POST /v1/workspaces` with
+ * `Accept: text/event-stream`: one implementation of the create.
+ */
+export function provisionStreamResponse(
+  ctx: ProvisionContext,
+  done?: (project: unknown) => Promise<Record<string, unknown>>,
+): Response {
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+
+        // Data-only framing: `data: <json>\n\n`, no `event:` line. Every
+        // payload already carries a `type` field ('phase' | 'done' |
+        // 'error') — a discriminated union the SDK switches on. Adding an
+        // `event:` name would duplicate that discriminator in two places
+        // that can drift out of sync with each other. Do not "fix" this by
+        // adding one back.
+        const write = (data: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // The client disconnected. Provisioning has no AbortSignal (see
+            // ProvisionContext in ../provision-core.ts) and keeps running to
+            // completion regardless — cancelling between backend.createRepo
+            // and the DB insert is exactly how an upstream repo gets
+            // orphaned, so a lost reader must not cancel it.
+          }
+        };
+
+        try {
+          const result = await runProvision(ctx, (phase) => write({ type: 'phase', phase }));
+          if (result.status === 201) {
+            write({ type: 'done', project: result.body, ...(await done?.(result.body)) });
+          } else {
+            // `status` alongside the body's `error`/`code` — see
+            // `ProvisionStreamEvent`'s doc comment in the SDK
+            // (`packages/sdk/src/core/rest/projects-client/projects.ts`).
+            // Spread first, explicit field last: `result.body` never carries
+            // a `status` key today, but this ordering means it never could
+            // silently shadow the real one if that changed.
+            write({ type: 'error', ...(result.body as object), status: result.status });
+          }
+        } catch (error) {
+          // The stream must never end in a bare close — that would hand the
+          // client an undefined project id. This catch is what guarantees a
+          // terminal frame even when runProvision THROWS instead of
+          // returning an error result.
+          write({ type: 'error', error: (error as Error).message || 'Failed to provision project' });
+        } finally {
+          try { controller.close(); } catch {}
+        }
+      },
+    }),
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    },
   );
 }

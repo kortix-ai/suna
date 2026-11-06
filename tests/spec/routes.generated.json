@@ -1,7 +1,7 @@
 {
   "generatedAt": "static",
-  "count": 1720,
-  "aliases": 674,
+  "count": 1714,
+  "aliases": 665,
   "routes": [
     {
       "method": "GET",
@@ -2361,13 +2361,11 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects",
-      "aliasOf": "/v1/workspaces"
+      "path": "/v1/projects"
     },
     {
       "method": "POST",
-      "path": "/v1/projects",
-      "aliasOf": "/v1/workspaces"
+      "path": "/v1/projects"
     },
     {
       "method": "DELETE",
@@ -2380,8 +2378,7 @@
     },
     {
       "method": "PATCH",
-      "path": "/v1/projects/:workspaceId",
-      "aliasOf": "/v1/workspaces/:workspaceId"
+      "path": "/v1/projects/:workspaceId"
     },
     {
       "method": "GET",
@@ -4572,8 +4569,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:workspaceId/transfer",
-      "aliasOf": "/v1/workspaces/:workspaceId/transfer"
+      "path": "/v1/projects/:workspaceId/transfer"
     },
     {
       "method": "GET",
@@ -4677,8 +4673,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/create-repo",
-      "aliasOf": "/v1/workspaces/create-repo"
+      "path": "/v1/projects/create-repo"
     },
     {
       "method": "GET",
@@ -4742,8 +4737,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/link-repository",
-      "aliasOf": "/v1/workspaces/link-repository"
+      "path": "/v1/projects/link-repository"
     },
     {
       "method": "GET",
@@ -4752,18 +4746,15 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/provision",
-      "aliasOf": "/v1/workspaces/provision"
+      "path": "/v1/projects/provision"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/provision-stream",
-      "aliasOf": "/v1/workspaces/provision-stream"
+      "path": "/v1/projects/provision-stream"
     },
     {
       "method": "GET",
-      "path": "/v1/projects/quota",
-      "aliasOf": "/v1/workspaces/quota"
+      "path": "/v1/projects/quota"
     },
     {
       "method": "GET",
@@ -7402,10 +7393,6 @@
       "path": "/v1/workspaces/:workspaceId/top-up-requests"
     },
     {
-      "method": "POST",
-      "path": "/v1/workspaces/:workspaceId/transfer"
-    },
-    {
       "method": "GET",
       "path": "/v1/workspaces/:workspaceId/trigger-runs"
     },
@@ -7486,10 +7473,6 @@
       "path": "/v1/workspaces/:workspaceId/version-diff"
     },
     {
-      "method": "POST",
-      "path": "/v1/workspaces/create-repo"
-    },
-    {
       "method": "GET",
       "path": "/v1/workspaces/git/backend"
     },
@@ -7538,24 +7521,8 @@
       "path": "/v1/workspaces/github/user-token"
     },
     {
-      "method": "POST",
-      "path": "/v1/workspaces/link-repository"
-    },
-    {
       "method": "GET",
       "path": "/v1/workspaces/managed-git/status"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/provision"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/workspaces/provision-stream"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/workspaces/quota"
     }
   ]
 }
