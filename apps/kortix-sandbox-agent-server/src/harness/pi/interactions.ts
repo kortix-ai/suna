@@ -493,6 +493,8 @@ type PermissionEntry = {
   request: RuntimePermissionRequest
   resolve: (reply: PermissionReply | Parked) => void
   askedAt: string
+  /** `relaying`: registered, apps/api not answered yet, nothing on the wire. `asked`: published, waiting for a person. */
+  phase: 'relaying' | 'asked'
   timer?: ReturnType<typeof setTimeout>
 }
 
@@ -586,24 +588,32 @@ export class PermissionBroker {
       always: ['*'],
       ...(input.ref ? { tool: input.ref } : {}),
     }
+    // Registered BEFORE the relay, as QuestionBroker does: a Stop, a steer or a turn end
+    // during the relay (`parkAll`) parks this ask instead of missing it.
+    let entry!: PermissionEntry
+    const settled = new Promise<PermissionReply | Parked>((resolve) => {
+      entry = { request, resolve, askedAt: new Date().toISOString(), phase: 'relaying' }
+    })
+    this.pending.set(request.id, entry)
     const relayed = this.relay
       ? await this.relay(request, { tool: input.tool, argsHash: permissionArgsHash(input.tool, input.args) }).catch(() => null)
       : null
+    // Parked during the relay: the call does not run, the ask stays open in apps/api.
+    if (this.pending.get(request.id) !== entry) return settled
     if (relayed?.approved) {
       // The re-run of a call a person approved while it was parked.
+      this.take(request.id)
       if (relayed.grant) {
         this.granted.add(relayed.grant)
         this.onChange?.()
       }
       return 'once'
     }
-    return new Promise<PermissionReply | Parked>((resolve) => {
-      const entry: PermissionEntry = { request, resolve, askedAt: new Date().toISOString() }
-      this.pending.set(request.id, entry)
-      this.publish({ type: 'permission.asked', properties: { ...request } })
-      this.onChange?.()
-      entry.timer = liveWaitTimer(relayed?.liveWaitMs, () => void this.park(request.id))
-    })
+    entry.phase = 'asked'
+    this.publish({ type: 'permission.asked', properties: { ...request } })
+    this.onChange?.()
+    entry.timer = liveWaitTimer(relayed?.liveWaitMs, () => void this.park(request.id))
+    return settled
   }
 
   reply(id: string, reply: PermissionReply): boolean {
@@ -620,9 +630,10 @@ export class PermissionBroker {
   park(id: string): boolean {
     const entry = this.take(id)
     if (!entry) return false
-    this.publish({ type: 'permission.parked', properties: { sessionID: this.sessionID, requestID: id } })
+    // A relaying ask was never on the wire: nothing to withdraw there.
+    if (entry.phase === 'asked') this.publish({ type: 'permission.parked', properties: { sessionID: this.sessionID, requestID: id } })
     entry.resolve(PARKED)
-    this.onChange?.()
+    if (entry.phase === 'asked') this.onChange?.()
     return true
   }
 
@@ -640,13 +651,18 @@ export class PermissionBroker {
     return entry
   }
 
+  /** The asks a person can answer: a relaying one is not on the wire yet. */
+  private asked(): PermissionEntry[] {
+    return [...this.pending.values()].filter((entry) => entry.phase === 'asked')
+  }
+
   list(): RuntimePermissionRequest[] {
-    return [...this.pending.values()].map((entry) => entry.request)
+    return this.asked().map((entry) => entry.request)
   }
 
   /** The open requests, as the session log's `pending.permissions`. */
   records(): PendingRecord[] {
-    return [...this.pending.values()].map(({ request, askedAt }) => ({
+    return this.asked().map(({ request, askedAt }) => ({
       id: request.id,
       thread_id: request.sessionID,
       ...(request.tool?.callID ? { call_id: request.tool.callID } : {}),

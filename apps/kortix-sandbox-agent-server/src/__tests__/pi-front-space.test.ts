@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import { frontCall, frontAgentsFromDetail } from '../harness/pi/front'
-import { frontSpaceAgentsFrom, frontSpaceRoster, frontSpaceRosterSection } from '../harness/pi/front-space'
+import { frontCall, frontAgentsFromDetail } from '@/harness/pi/front'
+import { frontSpaceAgentsFrom, frontSpaceRoster, frontSpaceRosterSection } from '@/harness/pi/front-space'
 
 const project = [
   { name: 'worker', description: 'General-purpose worker' },

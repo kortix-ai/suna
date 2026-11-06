@@ -854,6 +854,54 @@ describe('simple gateway pipeline', () => {
     expect(cooldowns).toEqual([]);
   });
 
+  test('a stream-cut retry that answers non-2xx is a failed retry: its body never enters the SSE stream', async () => {
+    const cooldowns: Array<{ secretId: string; seconds: number }> = [];
+    const keys: string[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], []),
+          resolveUpstream: async () => [
+            { ...primary, poolSecretId: 'cut-a', apiKey: 'cut-first' },
+            { ...primary, poolSecretId: 'cut-b', apiKey: 'cut-second' },
+          ],
+          notePoolRateLimit: async (_principal, secretId, seconds) => {
+            cooldowns.push({ secretId, seconds });
+          },
+        },
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async (_url, init) => {
+          const key = new Headers(init?.headers).get('authorization') ?? '';
+          keys.push(key);
+          if (keys.length === 1) {
+            return new Response(new ReadableStream({ start(c) { c.close(); } }), {
+              headers: { 'content-type': 'text/event-stream' },
+            });
+          }
+          if (key.includes('cut-second')) {
+            return new Response('{"error":{"message":"pool key rate limited"}}', {
+              status: 429,
+              headers: { 'content-type': 'application/json', 'retry-after': '12' },
+            });
+          }
+          return new Response(
+            'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n' +
+              'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n' +
+              'data: [DONE]\n\n',
+            { headers: { 'content-type': 'text/event-stream' } },
+          );
+        },
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'm', messages: [{ role: 'user', content: 'hi' }], stream: true }) },
+    );
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).not.toContain('pool key rate limited');
+    expect(text).toContain('"content":"hi"');
+    expect(keys.length).toBe(3);
+    expect(cooldowns).toEqual([{ secretId: 'cut-b', seconds: 12 }]);
+  });
+
   test('a stream cut after bytes are already flowing gets an explicit terminal error and a pool cooldown, never a replay', async () => {
     const cooldowns: Array<{ secretId: string; seconds: number }> = [];
     let call = 0;
