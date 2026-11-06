@@ -131,7 +131,7 @@ describe('describeConfigStatus — with a `release` block', () => {
   });
 
   test('a session that edited its own config is never described as running it', () => {
-    // `/workspace` is not a config source. A session edits `.kortix/opencode`
+    // `/workspace` is not a config source. A session edits `kortix.yaml`
     // there, but those edits run only once they are pushed to the base branch.
     // No combination of the reported state may claim otherwise.
     for (const source of ['release', 'image-default'] as const) {

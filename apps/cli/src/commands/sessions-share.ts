@@ -101,7 +101,7 @@ Subcommands:
 
 Create options:
   --port <n>         Preview port (default 3000). Refused for 22, 3211 (the
-                     file-share server), 8000 and the opencode ports.
+                     file-share server), 4096, 4097 and 8000.
   --path <p>         Path inside the preview (default /).
   --preview <id>     Named candidate instead of --port/--path: web | vite |
                      dev-server | api-docs (see \`sessions preview --list\`).

@@ -173,7 +173,7 @@ export async function forwardToSandbox(
   // then sees the session's own agent. Sandbox-authored turns included: they
   // skip the authorization gate, which is exactly why the name must be gone
   // before the re-mint reads it. See `undeclared-prompt-agent.ts`.
-  // A client asking OpenCode to abort is a stop somebody REQUESTED. Record it on
+  // A client asking the runtime to abort is a stop somebody REQUESTED. Record it on
   // the open turn before the abort is forwarded: the end frame that follows is
   // the same "Aborted" as an abort nobody asked for. A sandbox-authored call is
   // the agent acting, not a person, so it is left to read as what it is.
@@ -181,10 +181,10 @@ export async function forwardToSandbox(
   // Only the turn's prompter, the session owner or a project manager may stop
   // a running turn (`abort-authority.ts`). A refusal forwards nothing and
   // stamps nothing. `by` names the person on the stamp ("Stopped by <name>").
-  const abortedOpencodeSessionId = sandboxAuthored
+  const abortedRuntimeSessionId = sandboxAuthored
     ? null
     : clientAbortTarget(upstreamPort, method, remainingPath);
-  if (abortedOpencodeSessionId) {
+  if (abortedRuntimeSessionId) {
     const stop = await decideClientAbort(access, record);
     if (!stop.allowed) {
       return jsonProxyError({ error: NOT_TURN_PROMPTER_MESSAGE, code: NOT_TURN_PROMPTER }, 403, origin);
@@ -192,7 +192,7 @@ export async function forwardToSandbox(
     await markTurnStopRequested(
       record.sessionId,
       'UserStop',
-      { opencodeSessionId: abortedOpencodeSessionId },
+      { runtimeSessionId: abortedRuntimeSessionId },
       stop.by,
     );
   }

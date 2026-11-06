@@ -445,7 +445,7 @@ interface SessionTurnProps {
   sessionWorking: boolean;
   /**
    * This turn is the one the agent is on — see `resolveWorkingTurn`. It used
-   * to be `isLast` by definition; a prompt queued mid-turn broke that: OpenCode
+   * to be `isLast` by definition; a prompt queued mid-turn broke that: the runtime
    * persists it as the last user message while the agent is still streaming
    * the turn before, so the shimmer sat under a bubble nobody had started and
    * the live turn looked settled.
@@ -476,7 +476,7 @@ interface SessionTurnProps {
   /**
    * A user message the agent has not reached yet — after the working turn,
    * with no assistant content. Drawn dimmed, like a queued prompt (it IS one:
-   * the server forwarded it and OpenCode holds it until the next step), and
+   * the server forwarded it and the runtime holds it until the next step), and
    * it fades up to full opacity the moment the agent takes it.
    */
   pending: boolean;
@@ -822,7 +822,7 @@ const turnError = useMemo(() => resolveTurnError(turn), [turn]);
  * renders nothing, hides what really went wrong. The identity is right here
  * on the message; read it
  * through the SDK's single `isAbortError` classifier, which recognizes both
- * real producers: the opencode wire's `MessageAbortedError` and the client's
+ * real producers: the runtime wire's `MessageAbortedError` and the client's
  * synthesized `AbortError` patch applied when the user hits Stop.
  */
 const turnErrorIsAbort = useMemo(() => deriveTurnErrorAbortState(turn).isAbort, [turn]);
@@ -1471,7 +1471,7 @@ const segments = useMemo(() => {
 
 /**
  * Shell mode — a live shell tool replaces the whole turn scaffold.
- * @deprecated Renders an OpenCode shell turn (session.shell; pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
+ * @deprecated Renders an OpenCode shell turn (session.shell; pi has none). Only a transcript OpenCode wrote holds one; this keeps it readable. No new code.
  */
 function TurnShellMode(
   props: Pick<SessionTurnProps, 'sessionId' | 'disableToolNavigation' | 'onPermissionReply' | 'providers' | 'permissions'> & {

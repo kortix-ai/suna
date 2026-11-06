@@ -22,7 +22,7 @@ const sortKeys = (map: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(map).sort(([a], [b]) => comparePatterns(a, b)));
 
 /**
- * One OpenCode `permission` block (a bare action, or `{ key: action | { pattern: action } }`)
+ * One `permission` block of the compiled agent config (a bare action, or `{ key: action | { pattern: action } }`)
  * with every key level ordered least specific first. Any other value is returned unchanged.
  *
  * ponytail: an integer-like key ("42") always iterates first in a JS object, so OpenCode

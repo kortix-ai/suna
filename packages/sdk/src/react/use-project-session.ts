@@ -15,7 +15,7 @@ import { qk } from './query-keys';
  * and the migration that unified their KEY left their CONTRACTS apart — the
  * narrower half of the same bug:
  *
- *   use-canonical-opencode-session.ts   staleTime: 10_000, showErrors: false
+ *   use-canonical-runtime-session.ts   staleTime: 10_000, showErrors: false
  *   session-files-panel.tsx             contract('inventory'), default errors
  *   session-changes-shared.tsx          contract('inventory'), default errors
  *

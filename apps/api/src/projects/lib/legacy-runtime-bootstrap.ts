@@ -30,8 +30,8 @@
  *      once and never respawns it, so the script stops the legacy chain and
  *      starts `/sbin/pt-app` detached. Daytona re-runs the entrypoint
  *      on every start, so staging alone converges them at the next wake.
- * The new daemon then converges OpenCode, CLI and skills by itself — this
- * module installs a supervisor and a current daemon, nothing else.
+ * The new daemon then converges its CLI and skills by itself, and boots pi —
+ * this module installs a supervisor and a current daemon, nothing else.
  *
  * SAFETY. Only an idle runtime is touched (health `turn_in_flight` must be
  * empty). Every attempt is stamped in sandbox metadata with a cooldown and a
@@ -103,13 +103,13 @@ export function legacyBootstrapCooldownMs(attempts: number): number {
 export const LEGACY_BOOTSTRAP_STALE_RUNNING_MS = 20 * 60 * 1000;
 /** Budget for the in-box script (downloads ~100 MB + relaunch + health wait). */
 export const LEGACY_BOOTSTRAP_EXEC_TIMEOUT_MS = 5 * 60 * 1000;
-/** After the relaunch, how long the new daemon may take to report a converged, serving OpenCode. */
+/** After the relaunch, how long the new daemon may take to report a converged, serving runtime. */
 export const LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS = 8 * 60 * 1000;
 export const LEGACY_BOOTSTRAP_POLL_MS = 5_000;
 
 /**
  * OpenCode home on the box: 'auto' = detect from the running OpenCode / on-disk data (image generations differ).
- * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
 export const LEGACY_OPENCODE_HOME = 'auto';
 
@@ -177,13 +177,8 @@ export interface RuntimeClassification {
   klass: RuntimeClass;
   /** `runtime.build` the box reports — INFORMATIONAL ONLY. Never an input to `klass`; see the module doc above for why. */
   runtimeBuild: number | null;
-  /** `opencode` field of health: 'ok' | 'starting' | ... */
-  opencode: string | null;
-  /**
-   * `runtime.components.opencode` outcome when reported.
-   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
-   */
-  opencodeComponent: string | null;
+  /** The runtime process state health reports (`harness.state`): 'ok' | 'starting' | ... */
+  runtimeState: string | null;
   /** Every reason `klass === 'stale'`. Always `[]` for every other klass. */
   staleReasons: StaleReason[];
   /** Human-readable specifics for `stale` AND `blocked` — which component failed, how long a swap has been pending, why this box is blocked. Empty for `current`/`legacy`/`not-ok`/`unreachable`. */
@@ -243,24 +238,22 @@ export function classifyDaemonHealth(
   body: unknown,
   expectedRunningAssets?: ExpectedRunningAssets,
 ): RuntimeClassification {
-  const empty = { runtimeBuild: null, opencode: null, opencodeComponent: null, staleReasons: [], detail: [] };
+  const empty = { runtimeBuild: null, runtimeState: null, staleReasons: [], detail: [] };
   if (!body || typeof body !== 'object') {
     return { klass: 'unreachable', ...empty };
   }
   const h = body as Record<string, unknown>;
-  const opencode = healthRuntimeState(h);
+  const runtimeState = healthRuntimeState(h);
   if (h.daemon !== 'ok') {
-    return { klass: 'not-ok', ...empty, opencode };
+    return { klass: 'not-ok', ...empty, runtimeState };
   }
   const runtime = h.runtime;
   if (!runtime || typeof runtime !== 'object') {
-    return { klass: 'legacy', ...empty, opencode };
+    return { klass: 'legacy', ...empty, runtimeState };
   }
   const r = runtime as Record<string, unknown>;
   const components = (r.components ?? {}) as Record<string, unknown>;
   const runtimeBuild = typeof r.build === 'number' ? r.build : null;
-  const opencodeComponent =
-    typeof components.opencode === 'string' ? (components.opencode as string) : null;
 
   // BLOCKED wins over everything else and is never repaired in a loop: the
   // supervisor itself already tried, rolled back, and latched updates off.
@@ -268,8 +261,7 @@ export function classifyDaemonHealth(
     return {
       klass: 'blocked',
       runtimeBuild,
-      opencode,
-      opencodeComponent,
+      runtimeState,
       staleReasons: [],
       detail: ['daemon has latched runtime updates off after a supervisor rollback (pinned=true) — needs a human, not another attempt'],
     };
@@ -347,8 +339,7 @@ export function classifyDaemonHealth(
   return {
     klass: staleReasons.length > 0 ? 'stale' : 'current',
     runtimeBuild,
-    opencode,
-    opencodeComponent,
+    runtimeState,
     staleReasons,
     detail,
   };
@@ -413,7 +404,7 @@ export function decideDeadDaemonOnOpen(input: {
 
 export interface RenderScriptOptions {
   relaunch: RelaunchStrategy;
-  /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
+  /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted". */
   opencodeHome?: string;
   /** Seconds the script waits for the relaunched daemon before it restores the legacy chain. */
   healthWaitS?: number;
@@ -422,8 +413,6 @@ export interface RenderScriptOptions {
    * asset yet. The box's own manifest wins whenever it has one.
    */
   entrypointSource?: string;
-  /** Fleet pnpm version (packages/shared runtime-versions.json); the script downgrades for an older Node. */
-  pnpmVersion?: string;
   /** A freshly minted session PAT to install as the box's KORTIX_TOKEN; empty = keep. */
   kortixToken?: string;
   /**
@@ -446,13 +435,11 @@ export function renderLegacyBootstrapScript(opts: RenderScriptOptions): string {
   if (opencodeHome !== 'auto' && !/^\/[A-Za-z0-9_./-]+$/.test(opencodeHome)) throw new Error('unsafe opencodeHome');
   const template = loadScriptTemplate();
   const embedded = opts.entrypointSource ? Buffer.from(opts.entrypointSource, 'utf8').toString('base64') : '';
-  const pnpmVersion = opts.pnpmVersion ?? '';
-  if (!/^[0-9A-Za-z.-]*$/.test(pnpmVersion)) throw new Error('unsafe pnpmVersion');
   const kortixToken = opts.kortixToken ?? '';
   if (!/^(kortix_pat_[A-Za-z0-9_-]+)?$/.test(kortixToken)) throw new Error('unsafe kortixToken');
   const repairToken = opts.repairToken ?? '';
   if (!/^(kortix_pat_[A-Za-z0-9_-]+)?$/.test(repairToken)) throw new Error('unsafe repairToken');
-  for (const placeholder of ['__OPENCODE_HOME__', '__RELAUNCH__', '__HEALTH_WAIT_S__', '__ENTRYPOINT_B64__', '__PNPM_VERSION__', '__KORTIX_TOKEN__', '__KORTIX_REPAIR_TOKEN__']) {
+  for (const placeholder of ['__OPENCODE_HOME__', '__RELAUNCH__', '__HEALTH_WAIT_S__', '__ENTRYPOINT_B64__', '__KORTIX_TOKEN__', '__KORTIX_REPAIR_TOKEN__']) {
     if (!template.includes(placeholder)) throw new Error(`bootstrap script template lacks ${placeholder}`);
   }
   return template
@@ -460,7 +447,6 @@ export function renderLegacyBootstrapScript(opts: RenderScriptOptions): string {
     .replace('__RELAUNCH__', opts.relaunch)
     .replace('__HEALTH_WAIT_S__', String(healthWaitS))
     .replace('__ENTRYPOINT_B64__', embedded)
-    .replace('__PNPM_VERSION__', pnpmVersion)
     .replace('__KORTIX_TOKEN__', kortixToken)
     .replace('__KORTIX_REPAIR_TOKEN__', repairToken);
 }
@@ -484,7 +470,7 @@ export interface ScriptReport {
   error?: string;
   agent_sha256?: string;
   entrypoint_sha256?: string;
-  /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
+  /** @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted". */
   previous_opencode?: string;
   token_rotated?: boolean;
 }
@@ -517,7 +503,7 @@ export interface LegacyBootstrapRecord {
   lastAttemptAt: string;
   finishedAt?: string;
   reason?: string;
-  from?: { opencode?: string | null };
+  from?: { runtimeState?: string | null };
   to?: { agentSha256?: string; entrypointSha256?: string; runtimeBuild?: number | null };
   error?: string;
   /** What this attempt was FOR — the classification that triggered it. Answers "why is this box stale" from metadata alone, without re-probing the box. */
@@ -566,8 +552,6 @@ export interface LegacyBootstrapInput {
    * caused, not a bad build (prod 2026-10-13: four concurrent repairs).
    */
   unpin?: boolean;
-  /** Internal: this call is the relaunch pass after an OpenCode install. */
-  postInstallPass?: boolean;
 }
 
 export interface LegacyBootstrapDeps {
@@ -590,8 +574,6 @@ export interface LegacyBootstrapDeps {
   exec: (command: string[], timeoutMs: number) => Promise<SandboxExecResult>;
   /** Entrypoint text to embed for an API that predates the asset; null when unavailable. */
   entrypointSource?: () => string | null;
-  /** Fleet pnpm version to install on a box whose pnpm predates `--allow-build`. */
-  pnpmVersion?: () => string | null;
   /**
    * When the box still carries the pre-2026-08 `kortix_sb_` service key as its
    * KORTIX_TOKEN, mint a session PAT, store it as the sandbox service key, and
@@ -857,7 +839,7 @@ export async function bootstrapLegacyRuntime(
     manifestBuild: build,
     lastAttemptAt: nowIso,
     reason: input.reason,
-    from: { opencode: classification.opencode },
+    from: { runtimeState: classification.runtimeState },
     classification: { klass: classification.klass, staleReasons: classification.staleReasons },
   };
   // Four concurrent `/start` polls on four replicas each relaunched the chain
@@ -1026,15 +1008,10 @@ async function probeRuntimeForBootstrap(
     return { result: { outcome: 'not-legacy', detail: 'daemon current, convergence pending', classification } };
   }
   if (classification.klass === 'current' && input.force) {
-    // Operator-forced re-run on a current daemon: its OpenCode install failed
-    // (a 2026-07 image's pnpm 8, for one), or an operator wants the chain
-    // relaunched so the daemon re-detects a freshly installed binary. The
-    // script is idempotent — agent and entrypoint are skipped when already at
-    // the manifest — so a re-run is "fix the floor, relaunch, converge again".
-    deps.log('forced re-run on a current daemon', {
-      sandboxId: input.sandboxId,
-      opencodeComponent: classification.opencodeComponent,
-    });
+    // Operator-forced re-run on a current daemon: an operator wants the chain
+    // relaunched. The script is idempotent — agent and entrypoint are skipped
+    // when already at the manifest — so a re-run is "relaunch, converge again".
+    deps.log('forced re-run on a current daemon', { sandboxId: input.sandboxId });
   } else if (classification.klass === 'current') {
     const patch: Record<string, unknown> = {
       [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [], manifestBuild, externalId: input.externalId } satisfies LegacyCheckRecord,
@@ -1195,7 +1172,6 @@ async function runBootstrapScript(
         renderLegacyBootstrapScript({
           relaunch: strategy,
           entrypointSource: deps.entrypointSource?.() ?? undefined,
-          pnpmVersion: deps.pnpmVersion?.() ?? undefined,
           kortixToken,
           repairToken: repair?.secret,
         }),
@@ -1261,35 +1237,14 @@ async function settleBootstrapReport(
     return finishBootstrap(attempt, 'staged', { to }, 'staged', 'staged; converges at the provider\'s next start');
   }
 
-  // Relaunched. The new daemon must now report a runtime block AND a serving
-  // OpenCode — the convergence pass installs the pinned OpenCode at boot, and
-  // "done" means a prompt would work, not that a process is listening.
+  // Relaunched. The new daemon must now report a runtime block and a serving
+  // runtime: "done" means a prompt would work, not that a process is listening.
   const deadline = deps.now() + LEGACY_BOOTSTRAP_CONVERGE_BUDGET_MS;
   let last: RuntimeClassification | null = null;
   while (deps.now() < deadline) {
     const after = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
     last = after;
-    // The daemon reports its own convergence pass. `failed` is final for this
-    // boot — waiting would not change it — and the reason lives in
-    // /kortix/diag. Checked INDEPENDENTLY of overall `klass`: opencode can be
-    // the one failed component on an otherwise-`stale` box (another
-    // component still catching up, or `running` not yet re-reported this
-    // pass) and the failure is just as final either way.
-    if (after.opencodeComponent === 'failed') {
-      return finishBootstrap(
-        attempt,
-        'failed',
-        { to: { ...to, runtimeBuild: after.runtimeBuild }, error: 'daemon converged but its OpenCode install failed (see /kortix/diag runtime.reasons.opencode)' },
-        'failed',
-        'opencode convergence failed',
-      );
-    }
-    if (
-      after.klass === 'current' &&
-      after.opencode === 'ok' &&
-      after.runtimeBuild !== null &&
-      (after.opencodeComponent === 'current' || after.opencodeComponent === 'updated')
-    ) {
+    if (after.klass === 'current' && after.runtimeState === 'ok' && after.runtimeBuild !== null) {
       await deps.patchMetadata({
         [LEGACY_CHECK_METADATA_KEY]: {
           at: new Date(deps.now()).toISOString(),
@@ -1299,34 +1254,7 @@ async function settleBootstrapReport(
           externalId: input.externalId,
         } satisfies LegacyCheckRecord,
       });
-      const converged = await finishBootstrap(attempt, 'converged', { to: { ...to, runtimeBuild: after.runtimeBuild } }, 'converged');
-      // `updated` = this daemon installed OpenCode during its boot pass. Daemon
-      // builds before the restart re-detection fix keep spawning the binary
-      // they memoised at boot, so one more relaunch is what makes the installed
-      // OpenCode the running one. Idempotent: agent, entrypoint and token are
-      // already at the manifest, only the chain restarts.
-      if (after.opencodeComponent === 'updated' && !input.postInstallPass) {
-        deps.log('relaunching once more so the installed OpenCode is the running one', {
-          sandboxId: input.sandboxId,
-        });
-        const finishedRecord: LegacyBootstrapRecord = {
-          ...running,
-          state: 'converged',
-          to: { ...to, runtimeBuild: after.runtimeBuild },
-          finishedAt: new Date(deps.now()).toISOString(),
-        };
-        return bootstrapLegacyRuntime(
-          {
-            ...input,
-            force: true,
-            postInstallPass: true,
-            reason: `${input.reason}:post-install-relaunch`,
-            metadata: { ...(input.metadata ?? {}), [LEGACY_BOOTSTRAP_METADATA_KEY]: finishedRecord },
-          },
-          deps,
-        );
-      }
-      return converged;
+      return finishBootstrap(attempt, 'converged', { to: { ...to, runtimeBuild: after.runtimeBuild } }, 'converged');
     }
     await deps.sleep(LEGACY_BOOTSTRAP_POLL_MS);
   }
@@ -1335,16 +1263,12 @@ async function settleBootstrapReport(
     'failed',
     {
       to,
-      // Name EVERY condition the acceptance gate above tests, not two of them.
-      // The old message printed `klass/opencode` only, so a box that timed out
-      // on `runtimeBuild === null` reported `last: current/ok` — a reading that
-      // says "converged" next to the word "not converged" and sent the next
-      // reader looking in the wrong place (a dev session, 2026-09-28).
+      // Name EVERY condition the acceptance gate above tests: a message that
+      // printed only some of them once read "converged" next to the words
+      // "not converged" (a dev session, 2026-09-28).
       error: `relaunched but not converged within budget (last: klass=${
         last?.klass ?? 'unreachable'
-      } opencode=${last?.opencode ?? '-'} opencodeComponent=${
-        last?.opencodeComponent ?? '-'
-      } runtimeBuild=${last?.runtimeBuild == null ? 'null' : 'present'})`,
+      } runtimeState=${last?.runtimeState ?? '-'} runtimeBuild=${last?.runtimeBuild == null ? 'null' : 'present'})`,
     },
     'failed',
     'converge timeout',

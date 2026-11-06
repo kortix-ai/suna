@@ -3,7 +3,7 @@ import type { Message } from '../core/runtime/runtime-types';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';
-import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { resetIdentityState } from './reset-identity-state';
@@ -103,16 +103,18 @@ test('resetIdentityState forgets the previous user\'s transcripts, asks, receipt
   act(() => {
     models.api.setSessionModel('ses_B', { providerID: 'kortix', modelID: 'model-of-user-b' });
   });
-  const persisted = storage.getItem('opencode-model-store-v1') ?? '';
+  const persisted = storage.getItem('kortix-model-store-v1') ?? '';
   expect(persisted).toContain('model-of-user-b');
   expect(persisted).not.toContain('model-of-user-a');
   expect(persisted).not.toContain('ses_A');
   models.unmount();
 });
 
-test('resetIdentityState removes the persisted model store', () => {
+test('resetIdentityState removes the persisted model store, under its current and its old key', () => {
+  storage.setItem('kortix-model-store-v1', JSON.stringify({ user: [], recent: [], variant: {} }));
   storage.setItem('opencode-model-store-v1', JSON.stringify({ user: [], recent: [], variant: {} }));
   resetIdentityState();
+  expect(storage.getItem('kortix-model-store-v1')).toBeNull();
   expect(storage.getItem('opencode-model-store-v1')).toBeNull();
 });
 

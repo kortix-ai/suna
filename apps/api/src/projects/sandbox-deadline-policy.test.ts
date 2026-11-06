@@ -164,7 +164,7 @@ describe('isPreviewUseObservation — a human using the preview keeps the box', 
 });
 
 // ═══ THE MID-TURN KILL THIS CLOSES ═══
-// `session.error` fires while opencode is RETRYING too — a 429 backoff, a
+// `session.error` fires while the runtime is RETRYING too — a 429 backoff, a
 // transient upstream 5xx. Treating that as a turn end pulled the deadline in to
 // 15 minutes WHILE THE TURN WAS STILL RUNNING, so any backoff longer than 15
 // minutes killed the box mid-work. It is the one state the deleted execution
@@ -180,7 +180,7 @@ describe('isTerminalTurnEnd — a retry is not a turn end', () => {
   });
 
   test('a rate-limit backoff longer than the idle tail does not shorten the box', () => {
-    // opencode marks a 429 retryable; the backoff can exceed 15 minutes.
+    // An OpenCode box marks a 429 retryable; the backoff can exceed 15 minutes.
     expect(isTerminalTurnEnd('error', { isRetryable: true })).toBe(false);
   });
 

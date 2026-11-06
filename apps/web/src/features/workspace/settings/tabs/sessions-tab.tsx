@@ -48,7 +48,7 @@ import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-he
 
 const SOUND_PACKS: { id: SoundPack }[] = [
   { id: 'off' },
-  { id: 'opencode' },
+  { id: 'classic' },
   { id: 'kortix' },
 ];
 
@@ -519,7 +519,7 @@ export function SessionsTab({ projectId }: { projectId?: string }) {
       onSoundEventToggle={setSoundEventEnabled}
       onSoundPreview={previewSound}
       onEnableCompletionSound={() => {
-        if (soundPreferences.pack === 'off') setSoundPack('opencode');
+        if (soundPreferences.pack === 'off') setSoundPack('classic');
         if (soundPreferences.volume <= 0) setSoundVolume(0.5);
         setSoundEventEnabled('completion', true);
         setNotificationPreference('playSound', true);
@@ -619,9 +619,9 @@ function useSessionCopy() {
         label: t('soundPacks.off.label'),
         description: t('soundPacks.off.description'),
       },
-      opencode: {
-        label: t('soundPacks.opencode.label'),
-        description: t('soundPacks.opencode.description'),
+      classic: {
+        label: t('soundPacks.classic.label'),
+        description: t('soundPacks.classic.description'),
       },
       kortix: {
         label: t('soundPacks.kortix.label'),

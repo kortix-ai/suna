@@ -1,7 +1,7 @@
 /**
  * /v1/skills — the kortix-managed system skills, served over HTTP.
  *
- * The point: an OpenCode agent holding only the `kortix` binary and a token can
+ * The point: an agent holding only the `kortix` binary and a token can
  * discover and read everything it needs to drive Kortix. No repo checkout, no
  * baked sandbox image. `kortix skills` /
  * `kortix skills get <name>` are thin wrappers over these two routes.

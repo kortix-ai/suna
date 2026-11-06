@@ -130,8 +130,8 @@ describe('classifyTurnError', () => {
     expect(r.text.toLowerCase()).toContain('context window');
   });
 
-  // OpenCode compacts on overflow by itself; this error reaches a thread only
-  // when its compaction failed, and a summary request would fail the same way.
+  // The runtime compacts on overflow and retries once; this error reaches a
+  // thread only when that failed, and a summary request would fail the same way.
   test('OpenCode`s ContextOverflowError → "Conversation too long", never "ask me to summarize"', () => {
     const r = classifyTurnError({
       name: 'ContextOverflowError',

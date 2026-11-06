@@ -109,7 +109,7 @@ async function api(path: string, init: RequestInit = {}) {
   return { status: res.status, ms, body, timing: parseServerTiming(res.headers.get('server-timing')) };
 }
 
-/** Runtime frames are the daemon's envelopes: { type, payload (OpenCode properties), seq }. */
+/** Runtime frames are the daemon's envelopes: { type, payload (OpenCode-shaped event properties), seq }. */
 interface Frame { t: number; type: string; payload: any }
 function openEvents(sessionId: string, frames: Frame[]): AbortController {
   const ac = new AbortController();
@@ -295,7 +295,7 @@ async function runSession(round: number): Promise<Session> {
       const h = await api(`${daemon}/kortix/health`).catch(() => null);
       if (h?.body?.runtimeReady === true) {
         s.readyMs = Math.round(performance.now() - t0);
-        s.harness = h.body.harness?.id ?? h.body.harness ?? 'opencode';
+        s.harness = h.body.harness?.id ?? h.body.harness ?? 'unknown';
       } else await sleep(250);
     }
     events = openEvents(s.sessionId, frames);

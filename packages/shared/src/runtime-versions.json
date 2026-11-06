@@ -30,7 +30,6 @@
   "bunSha256Amd64": "3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18",
   "bunSha256Arm64": "efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21",
   "opencode": "1.18.23",
-  "opencodeSdk": "1.18.23",
   "agentBrowser": "0.27.0",
   "playwright": "1.60.0",
   "anydoc": "0.1.6",

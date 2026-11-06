@@ -442,8 +442,9 @@ session fixture checks every session create the same way.
 
 A flow that runs a session turn registers with `harnessFlow` (`src/core/flow.ts`)
 instead of `flow`. `harnessFlow('RUN-1', meta, fn)` registers `RUN-1` and calls
-the body with `harness` = `pi`: every new session runs pi since 2026-10-23
-(OpenCode is sunset). The body proves the harness from `/kortix/health`.
+the body with `harness` = `pi`: every new session runs pi since 2026-10-23,
+and kortixd has no OpenCode adapter since 2026-10-30. The body proves the
+harness from `/kortix/health`.
 
 Drive these flows through `src/fixtures/session-run.ts`, which speaks only the
 Kortix session routes: `bootSession` (boot, prove the harness from

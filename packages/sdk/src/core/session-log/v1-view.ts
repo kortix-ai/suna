@@ -1,6 +1,6 @@
 /**
  * The v1 rows (`{ info, parts }`, `kortix.transcript.v1`) of a session-log thread, `fromV1`
- * (the OpenCode adapter's records) or native (the pi adapter's), for the hooks that render v1
+ * (converted v1 records) or native (the pi adapter's), for the hooks that render v1
  * (`useSessionMessages`, `useSession().messages`, `classifyTurn`).
  * Each message converts with `toV1`, the same conversion the API's v1 projection uses, and
  * its rows are cached on the message object: a row keeps its identity while its message is
@@ -43,7 +43,7 @@ const NO_MESSAGES: SessionLogMessage[] = [];
 
 /** The `fromV1` mark: the thread carries an ext entry of version `kortix.transcript.v1`. */
 const v1Ext = (head: SessionLogThreadHead) => Object.values(head.ext ?? {}).find((e) => e.version === KORTIX_TRANSCRIPT_SCHEMA);
-/** A thread `fromV1` built (the OpenCode adapter's records), as opposed to a native one (pi). */
+/** A thread `fromV1` built (converted v1 records), as opposed to a native one (pi). */
 export const isV1Thread = (head: SessionLogThreadHead | undefined): boolean => !!head && v1Ext(head) !== undefined;
 /** The runtime session id `toV1` gives the thread's rows: the v1 ext's native id, else the thread id. */
 const nativeOf = (head: SessionLogThreadHead) => {
@@ -363,6 +363,8 @@ export function sessionLogOfV1Rows(sessionId: string, runtimeSessionId: string, 
     created_at: created,
     restore_grade: counts.tool_input + counts.cut_point + counts.attachment > 0 ? 'partial' : 'converted',
     grade_counts: counts,
+    // `opencode` is `fromV1`'s default harness id, a stored format (`./v1.ts`, a copy of the
+    // API's). This view equals `fromV1(…, { live: true })`, so it keeps the id and the `ext` key.
     harness: { current: 'opencode', history: [] },
     selection: { agent: users.at(-1)?.agent ?? null, model: users.at(-1)?.model ?? null },
     threads: [{

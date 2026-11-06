@@ -11,19 +11,20 @@ import { servedManagedModels } from './served-managed-models';
 __setManagedLineupForTest(TEST_MANAGED_LINEUP);
 const SERVED = servedManagedModels();
 
-// The sandbox agent server injects this catalog into OpenCode verbatim and does NO
-// client-side limit backfill — so the gateway MUST guarantee a usable context window
-// on every served model, or OpenCode can't size conversations and a long session
-// pins at 100% context. These tests lock that server-side guarantee.
+// kortixd hands this catalog to the runtime as-is and does NO client-side limit
+// backfill (pi guesses 128k, `gatewayModel` in kortixd's harness/pi/model.ts) — so
+// the gateway MUST guarantee a usable context window on every served model.
+// These tests lock that server-side guarantee.
 //
 // The managed lineup and its prices are owned by Platinum Inference. This file
 // owns the mapping from a lineup entry to the served record.
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
 
-  // OpenCode (provider.ts) reads image support ONLY from `modalities.input`
-  // and replaces image parts with "ERROR: Cannot read image" when it is
-  // missing; the thinking control is built ONLY from effort values. Both come
+  // An old OpenCode box reads image support ONLY from `modalities.input` and
+  // replaces image parts with "ERROR: Cannot read image" when it is missing
+  // (pi reads `attachment`); the thinking control is built ONLY from effort
+  // values. Both come
   // from Platinum's model list.
   test('every served vision model advertises image input and a thinking control', () => {
     for (const managed of SERVED.filter((m) => m.vision)) {
@@ -147,7 +148,7 @@ describe('gatewayModelCatalog — served catalog', () => {
   });
 });
 
-// Every models.dev field the runtime reads must reach OpenCode unchanged.
+// Every models.dev field the runtime reads must reach it unchanged.
 // Regressions: description/open_weights/last_updated were dropped before the
 // served shape (PR #5010 review), and a `budget_tokens`-only reasoning entry
 // (mainline Claude) used to vanish.

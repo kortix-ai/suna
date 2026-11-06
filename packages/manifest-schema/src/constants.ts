@@ -569,6 +569,6 @@ export const CONTEXT_VALUES = ['record', 'summary'] as const;
 export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
 /**
  * OpenCode's built-in agents that v3 disables unless the manifest declares the name.
- * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only: OpenCode is deleted (2026-10-30). See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
-export const OPENCODE_BUILTIN_AGENTS_V3 = ['build', 'plan', 'general', 'explore'] as const;
+export const RUNTIME_BUILTIN_AGENTS = ['build', 'plan', 'general', 'explore'] as const;

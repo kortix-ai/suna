@@ -241,7 +241,7 @@ export function useSessionLogOlder(
  *     ones) at the same runtime cursor; the page is read again after each reconnect, on a
  *     `kortix.resync` (a v2 log on another epoch replays nothing for the old cursor), and when
  *     the tab becomes visible again.
- * Both kinds of thread read v2: a `fromV1` one (OpenCode) and a native one (pi). Hosts render
+ * Both kinds of thread read v2: a `fromV1` one (converted v1 records) and a native one (pi). Hosts render
  * the blocks (`sessionLogTurns`); the v1 hooks read a native thread through `toV1`.
  * Any answer without a page answers `'missing'`, and the stream stays without `schema=v2`;
  * `useSession` reads no v1 saved copy (`GET …/transcript`, P8.3). Two kinds:

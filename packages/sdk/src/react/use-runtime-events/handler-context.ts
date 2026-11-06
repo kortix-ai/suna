@@ -1,0 +1,33 @@
+import type {
+  Event as RuntimeWireEvent,
+  PermissionRequest,
+  QuestionRequest,
+} from '../../core/runtime/runtime-types';
+import type { QueryClient } from '@tanstack/react-query';
+import type { RefObject } from 'react';
+import type { getClient } from '../../core/runtime/client';
+import type { NormalizeDiagnosticPaths } from './types';
+export type HandlerContext = {
+  queryClient: QueryClient;
+  client: ReturnType<typeof getClient>;
+  applySyncEvent: (event: RuntimeWireEvent) => void;
+  stopCompaction: (sessionID: string) => void;
+  addPermission: (req: PermissionRequest) => void;
+  removePermission: (requestId: string) => void;
+  addQuestion: (req: QuestionRequest) => void;
+  removeQuestion: (requestId: string) => void;
+  normalizeDiagnosticPaths: RefObject<NormalizeDiagnosticPaths>;
+  markSessionAbortedLocally: RefObject<(sessionID: string, message?: string) => void>;
+  fetchLspDiagnosticsDebounced: RefObject<() => void>;
+  projectId?: string | null;
+  /** The project of the session this stream serves, else the route's: what a notification names. */
+  notificationProjectId?: string | null;
+  /** The Kortix session of the stream this handler serves; null on the global stream. */
+  sessionId?: string | null;
+  /** A `log.status` `compacting`: the thread compacts now. */
+  startCompaction?: (sessionID: string) => void;
+} & {
+  getSessionTitle: (sessionID: string) => string | undefined;
+  invalidateWorkspaceFilesAfterTurn: () => void;
+  projectId: string | null;
+};

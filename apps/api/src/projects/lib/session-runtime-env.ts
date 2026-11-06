@@ -171,21 +171,13 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
-    // The sandbox daemon owns OpenCode root creation for every cold session.
-    // The API adopts/persists that root; it must not create a competing one.
+    // The sandbox daemon creates the runtime's root session for every cold
+    // session. The API adopts/persists that root; it must not create a competing one.
     KORTIX_BOOTSTRAP_RUNTIME_SESSION: '1',
-    // The pre-W3 name of the variable above, for a daemon built before W3.
-    KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
-    ...(input.sessionModel
-      ? {
-          KORTIX_MODEL: input.sessionModel,
-          // The pre-W3 name of `KORTIX_MODEL`; the OpenCode adapter still falls back to it.
-          KORTIX_OPENCODE_MODEL: input.sessionModel,
-        }
-      : {}),
+    ...(input.sessionModel ? { KORTIX_MODEL: input.sessionModel } : {}),
     // The sandbox daemon applies this as the BASE of the agent config it runs
     // (connector / gateway provider / Slack overlays still apply on top). Per-call
-    // The resolved session model (KORTIX_OPENCODE_MODEL above), or an explicit
+    // The resolved session model (`KORTIX_MODEL` above), or an explicit
     // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig
       ? {

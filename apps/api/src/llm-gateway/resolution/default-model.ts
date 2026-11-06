@@ -269,7 +269,7 @@ export async function isModelServableForAccount(params: {
       personalUserId: params.personalUserId === undefined ? params.userId : params.personalUserId,
     });
   }
-  // Accept either the opencode ref (`kortix/<id>`) or the bare wire id — the
+  // Accept either the session model ref (`kortix/<id>`) or the bare wire id — the
   // gateway resolves the bare id, so normalize before probing candidates.
   const wire = toWireModel(params.model);
   try {

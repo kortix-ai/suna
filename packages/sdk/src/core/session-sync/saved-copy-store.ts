@@ -10,8 +10,8 @@
  *
  * WHAT IT STORES, AND WHY THAT IS SAFE. Only envelopes the SERVER sent: the
  * transcript mirror, which the API writes because a turn ended, carrying
- * OpenCode's `info` verbatim (`time.completed` and `error` included) and the
- * OpenCode root it was captured from. It never stores the live transcript. An
+ * the runtime's `info` verbatim (`time.completed` and `error` included) and the
+ * runtime root it was captured from. It never stores the live transcript. An
  * IndexedDB mirror of the live store was deleted (`5a7a43517f`) because its
  * write test read the transcript's shape, missed a Stop, and painted a stopped
  * turn as running. A server capture has no client-side freshness test to get
@@ -70,7 +70,7 @@ export interface SavedCopyStore {
   clear(): Promise<void>;
 }
 
-/** A copy worth painting: a non-empty mirror window that names its OpenCode root. */
+/** A copy worth painting: a non-empty mirror window that names its runtime root. */
 export function isPaintableSavedCopy(
   envelope: SessionTranscriptSyncEnvelope | null | undefined,
 ): envelope is SessionTranscriptSyncEnvelope {

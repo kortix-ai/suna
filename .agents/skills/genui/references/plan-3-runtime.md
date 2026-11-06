@@ -6,9 +6,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Load the **testing** skill before Task 1.
 
-**Goal:** A project owner turns on `genui`; every new session of that project (and any session rebuilt from scratch) teaches the agent the catalog on both harnesses; with the flag off, nothing about a session changes; no chat channel or CLI output ever shows OpenUI source.
+**Goal:** A project owner turns on `genui`; every new session of that project (and any session rebuilt from scratch) teaches the agent the catalog; with the flag off, nothing about a session changes; no chat channel or CLI output ever shows OpenUI source.
 
-**Architecture:** The API resolves `genui` (project flag AND the `GENUI_ENABLED` kill switch) into one sandbox env var, `KORTIX_GENUI=1|0`, at provisioning. kortixd turns `KORTIX_GENUI=1` into the prompt text from `buildGenuiPrompt()`: on OpenCode as an instruction file appended to `instructions`, on pi as a section of the root agent's `systemPrompt()`. Slack/Teams relay text and CLI output pass through `genuiToMarkdown`.
+**Architecture:** The API resolves `genui` (project flag AND the `GENUI_ENABLED` kill switch) into one sandbox env var, `KORTIX_GENUI=1|0`, at provisioning. kortixd turns `KORTIX_GENUI=1` into the prompt text from `buildGenuiPrompt()` (Tasks 3 and 4, removed: see there). Slack/Teams relay text and CLI output pass through `genuiToMarkdown`.
 
 **Tech Stack:** Hono API (`apps/api`), kortixd (`apps/kortix-sandbox-agent-server`, Bun, no-semicolon style), `@kortix/sdk/genui`, Bun test.
 
@@ -20,14 +20,12 @@
 
 See `plan.md`. Specific to this plan:
 - `process.env` is read only in `apps/api/src/config.ts` (API lint rule).
-- The literal `KORTIX_GENUI` appears in exactly two files: `apps/api/src/projects/lib/genui-env.ts` and `apps/kortix-sandbox-agent-server/src/services/sandbox-env/genui-instruction.ts`.
-- The flag is boot-only: it is read at provisioning, and an in-place restart keeps the sandbox env, so a running or restarted session keeps its prompt until a new session starts. Do not add `KORTIX_GENUI` to `OPENCODE_RUNTIME_ENV_NAMES` or pi `RUNTIME_ENV_NAMES`.
-- Flag off ⇒ the composed OpenCode config and the pi system prompt are byte-for-byte what they are on `dev` today (spec R-FLAG-1, snapshot-asserted in Tasks 3 and 4).
+- The flag is boot-only: it is read at provisioning, and an in-place restart keeps the sandbox env, so a running or restarted session keeps its prompt until a new session starts. Do not add `KORTIX_GENUI` to pi `RUNTIME_ENV_NAMES`.
+- Flag off ⇒ the pi system prompt is byte-for-byte what it is on `dev` today (spec R-FLAG-1).
 
 ## Review Focus
 
-- A sandbox that was provisioned with the flag on, then restarted with the flag off, still has `/tmp/kortix/genui.md` from the earlier boot → the OpenCode instruction must disappear. Pinned in Task 3 ("flag off removes a stale file").
-- `KORTIX_GENUI` missing entirely (old API, new kortixd) → treated as off. Pinned in Task 3 (`genuiEnabled({})`).
+- `KORTIX_GENUI` missing entirely (old API, new kortixd) → treated as off.
 
 ---
 
@@ -196,7 +194,7 @@ import { config } from '../../config';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 
-/** Read by kortixd (services/sandbox-env/genui-instruction.ts). Boot-only. */
+/** Read by kortixd. Boot-only. */
 export const GENUI_ENV_NAME = 'KORTIX_GENUI';
 
 /** '1' only when the kill switch is open and the project flag is on. */
@@ -254,268 +252,12 @@ git commit -m "feat(api): resolve the genui flag and kill switch into KORTIX_GEN
 
 ---
 
-### Task 3: kortixd — instruction file for OpenCode
-
-**Files:**
-- Create: `apps/kortix-sandbox-agent-server/src/services/sandbox-env/genui-instruction.ts`
-- Test: `apps/kortix-sandbox-agent-server/src/__tests__/genui-instruction.test.ts`
-- Modify: `apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts` (`buildOpencodeConfigContent` options ~L375 and existence check ~L420-423; instruction loop ~L484-492; `writeComposedConfig` ~L2064-2085; option threading ~L1001/L1020)
-- Modify: `apps/kortix-sandbox-agent-server/src/__tests__/opencode-config-composition.test.ts`
-- Modify: `apps/kortix-sandbox-agent-server/package.json`
-
-**Interfaces:**
-- Consumes: `buildGenuiPrompt` from `@kortix/sdk/genui`.
-- Produces: `GENUI_INSTRUCTION_PATH = '/tmp/kortix/genui.md'`, `genuiEnabled(env): boolean`, `genuiPromptText(): string` (memoized), `writeGenuiInstruction(env, path?): string | null`; `buildOpencodeConfigContent` option `genuiInstructionPath?: string | null`.
-
-- [ ] **Step 1: Write the failing test**
-
-`apps/kortix-sandbox-agent-server/src/__tests__/genui-instruction.test.ts`:
-
-```ts
-import { describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { genuiEnabled, genuiPromptText, writeGenuiInstruction } from '@/services/sandbox-env/genui-instruction'
-
-const dir = () => mkdtempSync(join(tmpdir(), 'genui-'))
-
-describe('genui instruction', () => {
-  test('only KORTIX_GENUI=1 enables it; missing means off', () => {
-    expect(genuiEnabled({ KORTIX_GENUI: '1' })).toBe(true)
-    expect(genuiEnabled({ KORTIX_GENUI: '0' })).toBe(false)
-    expect(genuiEnabled({})).toBe(false)
-  })
-
-  test('flag on writes the generated prompt', () => {
-    const path = join(dir(), 'genui.md')
-    expect(writeGenuiInstruction({ KORTIX_GENUI: '1' }, path)).toBe(path)
-    const text = readFileSync(path, 'utf8')
-    expect(text).toBe(genuiPromptText())
-    expect(text).toContain('```openui')
-  })
-
-  test('flag off removes a stale file from an earlier boot', () => {
-    const path = join(dir(), 'genui.md')
-    writeFileSync(path, 'stale')
-    expect(writeGenuiInstruction({ KORTIX_GENUI: '0' }, path)).toBeNull()
-    expect(existsSync(path)).toBe(false)
-  })
-
-  test('the prompt text is computed once', () => {
-    expect(genuiPromptText()).toBe(genuiPromptText())
-  })
-})
-```
-
-In `apps/kortix-sandbox-agent-server/src/__tests__/opencode-config-composition.test.ts`, add next to the existing `secretCapabilitiesInstructionPath` case (~L91), using the same env fixture that case uses:
-
-```ts
-  test('appends the genui instruction only when its file exists', () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'genui-')), 'genui.md')
-    writeFileSync(file, 'genui')
-    const withFile = JSON.parse(buildOpencodeConfigContent(env, { genuiInstructionPath: file }))
-    expect(withFile.instructions).toContain(file)
-    const without = JSON.parse(buildOpencodeConfigContent(env, { genuiInstructionPath: null }))
-    expect(without.instructions ?? []).not.toContain(file)
-    // Flag off ⇒ the composed config is identical to a config built without the option (spec R-FLAG-1).
-    expect(buildOpencodeConfigContent(env, { genuiInstructionPath: null })).toBe(buildOpencodeConfigContent(env, {}))
-  })
-```
-
-(If `buildOpencodeConfigContent` returns an object rather than a string in this file's existing cases, drop the `JSON.parse` and compare with `toEqual`, matching the existing case.)
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `pnpm --filter kortixd test -- src/__tests__/genui-instruction.test.ts src/__tests__/opencode-config-composition.test.ts`
-Expected: FAIL — module `@/services/sandbox-env/genui-instruction` not found; unknown option `genuiInstructionPath`.
-
-- [ ] **Step 3: Write the helper**
-
-`apps/kortix-sandbox-agent-server/src/services/sandbox-env/genui-instruction.ts`:
-
-```ts
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { buildGenuiPrompt } from '@kortix/sdk/genui'
-
-/** Set by the API (projects/lib/genui-env.ts) at provisioning. Boot-only. */
-export const GENUI_ENV_NAME = 'KORTIX_GENUI'
-export const GENUI_INSTRUCTION_PATH = '/tmp/kortix/genui.md'
-
-let promptText: string | null = null
-
-export function genuiEnabled(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
-  return env[GENUI_ENV_NAME] === '1'
-}
-
-/** The generated catalog prompt, computed once per process. */
-export function genuiPromptText(): string {
-  promptText ??= buildGenuiPrompt()
-  return promptText
-}
-
-/**
- * Flag on: write the prompt atomically and return the path. Flag off: remove any file an earlier
- * boot of this sandbox left behind, and return null, so OpenCode never reads a stale instruction.
- */
-export function writeGenuiInstruction(
-  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
-  path = GENUI_INSTRUCTION_PATH,
-): string | null {
-  if (!genuiEnabled(env)) {
-    rmSync(path, { force: true })
-    return null
-  }
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  const tmp = `${path}.${process.pid}.tmp`
-  writeFileSync(tmp, genuiPromptText(), { encoding: 'utf8', mode: 0o600 })
-  renameSync(tmp, path)
-  return path
-}
-```
-
-Add to `apps/kortix-sandbox-agent-server/package.json` dependencies: `"@kortix/sdk": "workspace:*"` and `"@openuidev/lang-core": "0.3.1"` (zod is already a dependency). Run `pnpm install --filter kortixd`.
-
-- [ ] **Step 4: Thread the option through the OpenCode config**
-
-In `lifecycle.ts`:
-
-1. In the options type of `buildOpencodeConfigContent` (~L375), next to `secretCapabilitiesInstructionPath?: string | null`, add:
-
-```ts
-  genuiInstructionPath?: string | null
-```
-
-2. Next to the existence check for the secret-capabilities path (~L420-423), add the same check:
-
-```ts
-  const genuiInstructionPath =
-    opts.genuiInstructionPath && existsSync(opts.genuiInstructionPath) ? opts.genuiInstructionPath : null
-```
-
-3. In the instruction loop (~L486), extend the list:
-
-```ts
-  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.configReleaseNoticePath, genuiInstructionPath]) {
-```
-
-4. In `writeComposedConfig` (~L2064-2085), after the `writeSecretCapabilitiesInstruction(baseEnv)` try/catch, add:
-
-```ts
-  let genuiInstructionPath: string | null = null
-  try {
-    genuiInstructionPath = writeGenuiInstruction(baseEnv)
-  } catch (error) {
-    logger.warn('[opencode] genui instruction write failed; sessions start without generative UI', { error })
-  }
-```
-
-and pass `genuiInstructionPath` in the options object given to `writeKortixOpencodeConfig`. If `writeKortixOpencodeConfig` copies fields one by one into `buildOpencodeConfigContent` (~L1001/L1020), add `genuiInstructionPath: opts.genuiInstructionPath` there too.
-
-5. Import at the top, next to the secret-capabilities import (~L123):
-
-```ts
-import { writeGenuiInstruction } from '@/services/sandbox-env/genui-instruction'
-```
-
-- [ ] **Step 5: Run tests to verify they pass**
-
-```bash
-pnpm --filter kortixd test -- src/__tests__/genui-instruction.test.ts src/__tests__/opencode-config-composition.test.ts src/__tests__/runtime-env-allowlist-completeness.test.ts
-cd apps/kortix-sandbox-agent-server && bun tsc --noEmit
-```
-
-Expected: PASS; typecheck exit 0. The allowlist test stays green because `lifecycle.ts` never reads `env.KORTIX_GENUI` directly.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add apps/kortix-sandbox-agent-server pnpm-lock.yaml
-git commit -m "feat(kortixd): teach OpenCode sessions the genui catalog when KORTIX_GENUI=1"
-```
-
----
-
-### Task 4: kortixd — prompt section for pi
-
-**Files:**
-- Modify: `apps/kortix-sandbox-agent-server/src/harness/pi/runtime.ts` (`systemPrompt()`, ~L1484-1508; imports)
-- Test: `apps/kortix-sandbox-agent-server/src/__tests__/genui-instruction.test.ts` (extend)
-
-**Interfaces:**
-- Consumes: `genuiEnabled`, `genuiPromptText` (Task 3).
-
-pi reads instruction files but never writes them (only the OpenCode lifecycle writes `/tmp/kortix/*.md`), so pi gets the text directly instead of a file. Only the root agent gets it: a subagent's reply reaches the user through the parent, as text the parent rewrites.
-
-- [ ] **Step 1: Write the failing test**
-
-pi's `systemPrompt` is private. Test the exact rule it applies, as an exported pure function. Append to `genui-instruction.test.ts`:
-
-```ts
-import { genuiPromptSection } from '@/services/sandbox-env/genui-instruction'
-
-describe('pi prompt section', () => {
-  test('root agent with the flag on gets the catalog', () => {
-    expect(genuiPromptSection({ KORTIX_GENUI: '1' }, false)).toBe(genuiPromptText())
-  })
-  test('subagents and flag-off sessions get nothing', () => {
-    expect(genuiPromptSection({ KORTIX_GENUI: '1' }, true)).toBeNull()
-    expect(genuiPromptSection({ KORTIX_GENUI: '0' }, false)).toBeNull()
-  })
-})
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `pnpm --filter kortixd test -- src/__tests__/genui-instruction.test.ts`
-Expected: FAIL — `genuiPromptSection` is not exported.
-
-- [ ] **Step 3: Implement**
-
-Append to `genui-instruction.ts`:
-
-```ts
-/** pi: the catalog for the root agent when the flag is on; null for subagents and when off. */
-export function genuiPromptSection(
-  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
-  isChild: boolean,
-): string | null {
-  return !isChild && genuiEnabled(env) ? genuiPromptText() : null
-}
-```
-
-In `pi/runtime.ts` `systemPrompt()`, after the secret-capabilities lines:
-
-```ts
-    const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
-    if (capabilities) parts.push(capabilities)
-    const genui = genuiPromptSection(this.env, Boolean(child))
-    if (genui) parts.push(genui)
-```
-
-and import next to the `SECRET_CAPABILITIES_INSTRUCTION_PATH` import (~L29):
-
-```ts
-import { genuiPromptSection } from '@/services/sandbox-env/genui-instruction'
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-```bash
-pnpm --filter kortixd test -- src/__tests__/genui-instruction.test.ts
-pnpm --filter kortixd test
-cd apps/kortix-sandbox-agent-server && bun tsc --noEmit
-```
-
-Expected: PASS; full kortixd suite green; typecheck exit 0.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add apps/kortix-sandbox-agent-server
-git commit -m "feat(kortixd): add the genui catalog to the pi root agent prompt"
-```
+### Tasks 3 and 4: prompt injection (removed)
+
+These tasks wrote the catalog into the prompt: an instruction file for the
+OpenCode adapter (`harness/open-code/`, deleted on 2026-10-30) and a section of
+pi's system prompt. The `kortix-genui` managed system skill replaced both on
+2026-10-13 (rule 4 in `../SKILL.md`). Their steps are removed from this plan.
 
 ---
 

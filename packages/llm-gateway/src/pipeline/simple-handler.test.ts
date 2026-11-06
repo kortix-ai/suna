@@ -440,7 +440,7 @@ describe('simple gateway pipeline', () => {
   });
 
   test('a provider 4xx labelled server_error reaches the client without the label OpenCode retries on', async () => {
-    // OpenCode retries any body matching /server_error|internal error|.../,
+    // The runtime retries any body matching /server_error|internal error|.../,
     // whatever the status: this permanent 400 was replayed 5 times (dev 2026-09-29).
     const upstreamBody = JSON.stringify({
       error: { type: 'server_error', message: 'Upstream request failed: This Go model requires Global regions.' },
@@ -610,7 +610,7 @@ describe('simple gateway pipeline', () => {
   });
 
   // An error frame before any output served nothing: the client gets the
-  // provider's status as an HTTP error, which OpenCode can retry or compact on.
+  // provider's status as an HTTP error, which the runtime can retry or compact on.
   test.each([
     ['a timeout', '"upstream_timeout"', 502],
     ['a numeric rate limit', '429', 429],
@@ -1132,7 +1132,8 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     expect(response.status).toBe(400);
     expect(response.headers.get('content-type')).toBe('application/json');
     const body = JSON.parse(text);
-    // OpenCode's parseAPICallError reads `error.code` to raise ContextOverflowError.
+    // pi-ai's `isContextOverflow` matches `context_length_exceeded` in the error
+    // text; OpenCode's parseAPICallError read `error.code`.
     expect(body.error.code).toBe('context_length_exceeded');
     expect(body.message).toBe('This request is longer than the primary-model context window.');
     expect(text).not.toMatch(LEAK);

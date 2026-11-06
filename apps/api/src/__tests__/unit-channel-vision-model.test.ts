@@ -18,8 +18,8 @@ import {
 /**
  * The flag that matters. `glm-5.3-flash` ships `attachment: true` with
  * text-only modalities — the managed catalog sets `vision: true` by hand while
- * its models.dev record carries no image modality — and OpenCode honours the
- * modalities. Selecting on `attachment` routed a Teams image turn to it and
+ * its models.dev record carries no image modality — and OpenCode (the runtime
+ * then) honoured the modalities. Selecting on `attachment` routed a Teams image turn to it and
  * the agent answered "the model I'm running on right now can't process images".
  */
 describe('capabilityReadsImages', () => {
@@ -43,8 +43,8 @@ describe('capabilityReadsImages', () => {
 });
 
 /**
- * Every served model is registered under the ONE synthetic `kortix` OpenCode
- * provider, so a slash belongs to the model id. Splitting it addresses a
+ * Every served model is registered under the ONE provider id `kortix`
+ * (`KORTIX_PROVIDER_ID` in kortixd's harness/pi/model.ts), so a slash belongs to the model id. Splitting it addresses a
  * provider the runtime has never heard of, the override is dropped without a
  * word, and the turn quietly runs on the text-only model again — which would
  * break exactly the `codex/*` models that can read images.
@@ -97,7 +97,7 @@ describe('channelTurnModel', () => {
 
   /**
    * A plain text message carries its healthy pin too. With no model on the
-   * prompt, OpenCode answers on the model of the session's last prompt: a
+   * prompt, the runtime answers on the model of the session's last prompt: a
    * Teams channel pinned to DeepSeek answered every message on
    * `codex/gpt-6-astra` from 2026-09-24 to 2026-10-01, because one earlier
    * prompt had carried it, and failed each with "Connect Codex".
@@ -110,8 +110,8 @@ describe('channelTurnModel', () => {
   /**
    * An image message ALWAYS carries an explicit model. On dev 2026-09-21 a
    * session whose metadata AND `/config` both read `kortix/codex/gpt-6-astra`
-   * answered on `deepseek-v4-pro-0813`: a live model change updates the config
-   * while the OpenCode session keeps its own. Returning null here would leave
+   * answered on `deepseek-v4-pro-0813`: a live model change updated the config
+   * while the OpenCode session kept its own. Returning null here would leave
    * the image turn on whatever stale model the runtime happened to hold.
    */
   test('an image message pins the model explicitly even when the pin already reads images', async () => {

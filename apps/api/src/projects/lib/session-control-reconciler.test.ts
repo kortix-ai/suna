@@ -368,7 +368,7 @@ describe('emission', () => {
 
 describe('the runtime control snapshot', () => {
   test('the mirror is not read and no mirror frame is sent (P8.2)', async () => {
-    mirrorRow = { capturedAt: new Date('2026-08-27T00:00:00Z'), headComplete: true, opencodeSessionId: 'synthetic-session' };
+    mirrorRow = { capturedAt: new Date('2026-08-27T00:00:00Z'), headComplete: true, runtimeSessionId: 'synthetic-session' };
     const handle = acquireControlReconciler(`${SESSION}-log`);
     await handle.ready();
     const types = handle.snapshot().map((event) => event.type);

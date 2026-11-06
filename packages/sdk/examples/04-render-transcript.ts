@@ -2,7 +2,7 @@
  * 04 — Render a session's transcript as plain text, no React.
  *
  * `classifyTurn` is framework-free: it normalizes every
- * opencode part type (text, reasoning, tool, file, subtask, patch, snapshot,
+ * transcript part type (text, reasoning, tool, file, subtask, patch, snapshot,
  * agent, retry, compaction, step) into a `ClassifiedPart` with a
  * compile-time-exhaustive `kind`, plus a normalized `TurnError` for a failed
  * assistant turn. This is the exact same classification the terminal client

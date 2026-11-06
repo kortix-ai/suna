@@ -93,7 +93,7 @@ export function toTransportError(err: unknown, provider: string): Error {
         : (e.message ?? '');
     // `responseHeaders` carries the upstream's `Retry-After` on a 429/503. The
     // pipeline relays it CLAMPED (`clampRetryAfterSeconds`) — never verbatim, because
-    // OpenCode >= 1.18.17 sleeps for whatever it is told, up to 24.8 days.
+    // a client can sleep for whatever it is told (OpenCode >= 1.18.17: up to 24.8 days).
     const headers = e.responseHeaders ?? e.cause?.responseHeaders;
     return new UpstreamHttpError(statusCode, body, provider, headers);
   }
@@ -240,7 +240,7 @@ export function mapToolCalls(
 // The AI-SDK transport engine. Given the same OpenAI chat.completions body and
 // descriptor the native path receives, drive the AI SDK provider package and
 // return a Response in the SAME OpenAI-compatible shape (SSE for stream, JSON
-// otherwise) — so the pipeline, billing, and opencode see no difference.
+// otherwise) — so the pipeline, billing, and the client see no difference.
 //
 // Both modes throw a provider failure that happens before any output, so the
 // dispatch plan can retry it. Streaming waits for the first output part for at

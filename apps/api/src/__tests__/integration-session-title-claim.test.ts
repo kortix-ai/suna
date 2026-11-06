@@ -15,8 +15,8 @@ import { eq, sql } from 'drizzle-orm';
 
 import {
   PLACEHOLDER_TITLE_SQL_PATTERN,
-  isPlaceholderOpencodeTitle,
-} from '../projects/lib/opencode-title';
+  isPlaceholderSessionTitle,
+} from '../projects/lib/session-title-placeholder';
 import type { ProjectSessionRow } from '../projects/lib/serializers';
 import { transitionSession } from '../projects/session-lifecycle/status-transitions';
 import { persistTitle } from '../projects/session-title-generate';
@@ -264,9 +264,9 @@ describe('persistTitle — compare-and-set', () => {
 });
 
 // The CAS matches placeholders with this SQL pattern; the TS `needsTitle` gate
-// uses `isPlaceholderOpencodeTitle`. If they disagree, the gate sends a row to
+// uses `isPlaceholderSessionTitle`. If they disagree, the gate sends a row to
 // the gateway that the UPDATE then refuses: a billed title on every prompt.
-describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderOpencodeTitle in PostgreSQL', () => {
+describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderSessionTitle in PostgreSQL', () => {
   test.each([
     'New session',
     'New session - Jul 29',
@@ -288,7 +288,7 @@ describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderOpencodeTitle i
     const [check] = await db.execute(
       sql`select (btrim(${title}::text) ~* ${PLACEHOLDER_TITLE_SQL_PATTERN})::bool as hit`,
     );
-    expect((check as { hit: boolean }).hit).toBe(isPlaceholderOpencodeTitle(title));
+    expect((check as { hit: boolean }).hit).toBe(isPlaceholderSessionTitle(title));
   });
 });
 

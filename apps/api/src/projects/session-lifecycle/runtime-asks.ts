@@ -1,4 +1,4 @@
-import { resolveSessionOpencodeEndpoint } from './runtime-client';
+import { resolveSessionRuntimeEndpoint } from './runtime-client';
 import { runtimeVerbPaths, sessionRuntimeFetch } from './runtime-fetch';
 
 export type RuntimeAskOutcome = 'released' | 'not_waiting' | 'unreachable';
@@ -15,7 +15,7 @@ export async function replyRuntimePermission(
   reply: 'once' | 'always' | 'reject',
 ): Promise<RuntimeAskOutcome> {
   try {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionRuntimeEndpoint(sessionId);
     if (!resolved) return 'unreachable';
     const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.permissionReply(requestId), {
       headers: { 'Content-Type': 'application/json' },
@@ -35,7 +35,7 @@ export async function replyRuntimePermission(
  */
 export async function parkRuntimeAsks(sessionId: string): Promise<number | null> {
   try {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionRuntimeEndpoint(sessionId);
     if (!resolved) return null;
     const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.parkAsks, {});
     if (!res.ok) return null;
@@ -49,7 +49,7 @@ export async function parkRuntimeAsks(sessionId: string): Promise<number | null>
 /** Dismiss a question the runtime still holds live. A parked one answers 404, which is fine: it is closed here. */
 export async function rejectRuntimeQuestion(sessionId: string, requestId: string): Promise<RuntimeAskOutcome> {
   try {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionRuntimeEndpoint(sessionId);
     if (!resolved) return 'unreachable';
     const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.questionReject(requestId), {});
     if (res.ok) return 'released';

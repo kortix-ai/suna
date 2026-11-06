@@ -14,10 +14,10 @@ import type { ChannelPlatform } from './core/conversation';
  * question hung after its card was posted. The daemons are image-baked, so
  * fixing them reaches only new sandboxes.
  *
- * This runs in `POST /turn-question`, which both harnesses already call with
- * the runtime's own question id. It reaches every existing sandbox on the next
- * API deploy, and it is harness-agnostic: real OpenCode and the pi harness both
- * serve `POST /question/:id/reply` with the same contract.
+ * This runs in `POST /turn-question`, which kortixd calls with the runtime's
+ * own question id. It reaches every existing sandbox on the next API deploy,
+ * and it is harness-agnostic: pi and an old OpenCode box both serve
+ * `POST /question/:id/reply` with the same contract.
  *
  * It also fixes Slack. The old daemon's Slack sentinel ended with "Next time,
  * just ask with `slack send` rather than the question tool" — the opposite of

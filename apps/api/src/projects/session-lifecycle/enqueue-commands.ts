@@ -66,7 +66,6 @@ export interface EnqueueContinueSessionCommandInput {
   /** See `QueuedContinueSessionPayload.mayStopAnyTurn`. */
   mayStopAnyTurn?: boolean;
   noReply?: boolean;
-  opencodeEnv?: Record<string, string | null>;
   directFollowUp?: boolean;
   /** See `QueuedContinueSessionPayload.resumesTurn`. */
   resumesTurn?: string;
@@ -94,7 +93,6 @@ export function buildContinueSessionCommandValues(input: EnqueueContinueSessionC
     ...(input.authorSessionId ? { authorSessionId: input.authorSessionId } : {}),
     ...(input.mayStopAnyTurn ? { mayStopAnyTurn: true } : {}),
     ...(input.noReply ? { noReply: true } : {}),
-    ...(input.opencodeEnv ? { opencodeEnv: input.opencodeEnv } : {}),
     ...(input.directFollowUp ? { directFollowUp: true } : {}),
     ...(input.resumesTurn ? { resumesTurn: input.resumesTurn } : {}),
   };

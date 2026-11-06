@@ -220,7 +220,7 @@ function AgentsSection({ projectId, space, editable }: { projectId: string; spac
   const tDetails = useTranslations('spaces.details');
   const config = useProjectConfig(projectId);
   const update = useUpdateProjectSpace(projectId);
-  const projectDefault = config?.default_agent ?? config?.open_code_default_agent ?? null;
+  const projectDefault = config?.default_agent ?? null;
   const agents = space.kind === 'dm' ? (space.dm_agent_name ? [space.dm_agent_name] : []) : (space.agents ?? []);
   // No agent list: a new thread starts on the project's default agent.
   const shown = agents.length > 0 ? agents : projectDefault ? [projectDefault] : [];

@@ -19,7 +19,7 @@ export const PROXY_ATTEMPT_TIMEOUT_MS = 15_000;
 // the longest delay together must stay under the ALB idle cut.
 export const PROXY_RETRY_DELAYS_MS = [250, 1_000, 3_000] as const;
 
-// OpenCode's synchronous send-message endpoint: the daemon holds the response
+// The box's synchronous send-message endpoint: the daemon holds the response
 // open until the ENTIRE reasoning + tool-call turn finishes, then emits headers
 // + body together — there is no early flush. (`prompt_async` is the sibling
 // endpoint that returns immediately and streams progress over the

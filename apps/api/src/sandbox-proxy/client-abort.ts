@@ -5,7 +5,7 @@ import { classifyRuntimeRequest } from './runtime-request';
  * not that call.
  *
  * Every client that stops a turn — web, mobile, SDK, CLI — does it with
- * `POST /kortix/runtime/sessions/:id/abort` or OpenCode's
+ * `POST /kortix/runtime/sessions/:id/abort` or the box's OpenCode-shaped
  * `POST /session/:id/abort` through this proxy. An abort the daemon
  * issues itself (memory guard, queue interrupt, runaway guard) never passes
  * here, which is what makes this the place to record that a stop was ASKED FOR:

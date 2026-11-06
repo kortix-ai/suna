@@ -1,5 +1,5 @@
 /**
- * The ONE projection from an OpenCode message envelope to the compact
+ * The ONE projection from a `kortix.transcript.v1` message envelope to the compact
  * transcript row the API returns.
  *
  * It lives in its own module because two sources now feed it — the live
@@ -16,7 +16,7 @@ export type {
 } from '@kortix/api-contract';
 import type { SessionTranscriptMessage as CompactMessage } from '@kortix/api-contract';
 
-export type RawOpencodePart = {
+export type RawRuntimePart = {
   type?: string;
   text?: string;
   synthetic?: boolean;
@@ -26,7 +26,7 @@ export type RawOpencodePart = {
   mime?: string;
 };
 
-export type RawOpencodeMessage = {
+export type RawRuntimeMessage = {
   info?: {
     id?: string;
     parentID?: string | null;
@@ -39,10 +39,10 @@ export type RawOpencodeMessage = {
   role?: string;
   time?: { created?: number; completed?: number };
   error?: { name?: string; message?: string } | null;
-  parts?: RawOpencodePart[];
+  parts?: RawRuntimePart[];
 };
 
-export function normalizeMessageList(payload: unknown): RawOpencodeMessage[] {
+export function normalizeMessageList(payload: unknown): RawRuntimeMessage[] {
   const list = Array.isArray(payload)
     ? payload
     : typeof payload === 'object' &&
@@ -51,7 +51,7 @@ export function normalizeMessageList(payload: unknown): RawOpencodeMessage[] {
         Array.isArray((payload as { messages?: unknown }).messages)
       ? (payload as { messages: unknown[] }).messages
       : [];
-  return list.filter((m): m is RawOpencodeMessage => typeof m === 'object' && m !== null);
+  return list.filter((m): m is RawRuntimeMessage => typeof m === 'object' && m !== null);
 }
 
 /**
@@ -59,7 +59,7 @@ export function normalizeMessageList(payload: unknown): RawOpencodeMessage[] {
  * survive, so code and command output stay legible, and each tool call carries
  * its input and output. The default stays the one-line digest the CLI prints.
  */
-export function compactMessage(msg: RawOpencodeMessage, maxChars: number, full = false): CompactMessage {
+export function compactMessage(msg: RawRuntimeMessage, maxChars: number, full = false): CompactMessage {
   const info = msg.info ?? msg;
   const parts = Array.isArray(msg.parts) ? msg.parts : [];
   const text = parts

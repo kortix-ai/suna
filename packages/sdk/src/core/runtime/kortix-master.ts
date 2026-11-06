@@ -628,6 +628,7 @@ export interface KortixMasterProject {
   path: string;
   description: string;
   created_at: string;
+  /** @deprecated No daemon sends it: the field named an OpenCode project id. Removed in the next major. */
   opencode_id: string | null;
   /** 1 = legacy tasks layout, 2 = new tickets/board. */
   structure_version?: number;

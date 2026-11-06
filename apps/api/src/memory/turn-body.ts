@@ -28,7 +28,7 @@ export const memoryChannelsOn = ttlMemo({
 
 
 
-/** Only the Kortix prompt route carries the memory `system`: not `/steer`, not OpenCode's `prompt_async`. */
+/** Only the Kortix prompt route carries the memory `system`: not `/steer`, not the box's OpenCode-shaped `prompt_async`. */
 export function isMemoryTurnRoute(method: string, path: string): boolean {
   const request = classifyRuntimeRequest(method, path);
   return request.kind === 'turn-start' && request.verb === 'prompt';

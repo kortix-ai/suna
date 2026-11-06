@@ -20,7 +20,7 @@ import {
 
 /**
  * Live-sandbox explorer source: writable, searchable, health-gated. Reads the
- * active sandbox's OpenCode server (via the server store), so it is a module
+ * active sandbox's daemon (via the server store), so it is a module
  * constant — no provider needed beyond the explorer's own store.
  */
 export const sandboxExplorerSource: FileExplorerSource = {

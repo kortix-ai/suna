@@ -374,7 +374,6 @@ describe('sweepRetiredDeviceCaches', () => {
     ];
     const kept = [STORAGE_KEY, 'kortix_composer_draft:s1', 'theme'];
     for (const key of [...retired, ...kept]) entries.set(key, '{}');
-    session.entries.set('opencode_stream_cache:ses_1', '{}');
     session.entries.set('kortix-impersonation', '{}');
 
     sweepRetiredDeviceCaches();

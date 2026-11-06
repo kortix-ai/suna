@@ -266,7 +266,7 @@ test('a prompt naming an agent the project does not declare is delivered as the 
   // Neither the env sync nor the token re-mint ever sees the foreign name.
   expect(envSyncCalls.map((c) => c.requestedAgent ?? null)).toEqual([null]);
   expect(remintCalls).toEqual([{ requestedAgent: null }]);
-  // The runtime receives the prompt with no agent field: OpenCode's default_agent runs.
+  // The runtime receives the prompt with no agent field: the manifest's default_agent runs.
   expect(upstreamCalls).toBe(1);
   expect(upstreamBodies.at(-1)).not.toHaveProperty('agent');
   expect(upstreamBodies.at(-1)?.parts).toEqual([

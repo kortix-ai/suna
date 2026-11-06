@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import { classifyPtyWebSocketPath } from './pty-ingress';
+import { isPtyWebSocketPath } from './pty-ingress';
 
-describe('classifyPtyWebSocketPath', () => {
-  test('distinguishes OpenCode and Kortix-native PTY websocket paths', () => {
-    expect(classifyPtyWebSocketPath('/pty/pty_test/connect')).toBe('opencode');
-    expect(classifyPtyWebSocketPath('/kortix/pty/kpty_test/connect')).toBe('kortix');
+describe('isPtyWebSocketPath', () => {
+  test('matches the daemon PTY websocket path', () => {
+    expect(isPtyWebSocketPath('/kortix/pty/kpty_test/connect')).toBe(true);
   });
 
-  test('does not classify unrelated daemon or preview paths as PTY', () => {
-    expect(classifyPtyWebSocketPath('/kortix/health')).toBeNull();
-    expect(classifyPtyWebSocketPath('/preview/pty/example')).toBeNull();
-    expect(classifyPtyWebSocketPath()).toBeNull();
+  test('does not match unrelated daemon or preview paths, or the retired OpenCode PTY path', () => {
+    expect(isPtyWebSocketPath('/kortix/health')).toBe(false);
+    expect(isPtyWebSocketPath('/preview/pty/example')).toBe(false);
+    expect(isPtyWebSocketPath('/pty/pty_test/connect')).toBe(false);
+    expect(isPtyWebSocketPath()).toBe(false);
   });
 });

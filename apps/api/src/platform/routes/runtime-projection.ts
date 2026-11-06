@@ -1,6 +1,6 @@
 /**
  * POST /v1/platform/runtime-projection — the daemon's sink for its own
- * `/kortix/opencode/state` document.
+ * `/kortix/runtime/state` document.
  *
  * WHY A PUSH AT ALL. The API can already PULL the same document
  * (`session-runtime-projection-refresh.ts`), and that is what serves v1. The

@@ -423,7 +423,7 @@ export interface AuditRelay {
  *        TOKEN. The token itself is stripped by `sanitizeRuntimeEvent`, so the
  *        persisted row is identity + hashes and nothing a reconstruction can
  *        use. The API already names this the one droppable class
- *        (`SUPPRESSED_ACTION_CLASS`, apps/api `shared/opencode-audit-rate-guard.ts`) — it just dropped it AFTER
+ *        (`SUPPRESSED_ACTION_CLASS` in apps/api's audit rate guard) — it just dropped it AFTER
  *        paying for the network hop, the two scope queries and the insert.
  *    Dropping happens BEFORE `sanitizeRuntimeEvent` and before `persist()`, so
  *    it also removes that share of the spool's fsyncs from the sandbox's hot path.
@@ -442,7 +442,7 @@ export interface AuditRelay {
  *    whichever comes first — the timer runs from the OLDEST pending event, so
  *    a steady stream cannot keep postponing a flush. `batchSize` defaults to
  *    the API's own ceiling
- *    (`MAX_BATCH_SIZE = 200`, apps/api `shared/opencode-audit-ingestion.ts`) and is
+ *    (`MAX_BATCH_SIZE = 200` in apps/api's audit ingestion) and is
  *    clamped to it, so a misconfigured env can never produce a 400. The route
  *    still writes in 25-row chunks server-side, so a 200-event POST costs the
  *    same insert work as four 50-event POSTs but ONE auth pass and ONE pair of
