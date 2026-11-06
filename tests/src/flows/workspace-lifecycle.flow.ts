@@ -105,6 +105,8 @@ flow(
       'DELETE /v1/workspaces/:workspaceId',
       'POST /v1/workspaces/:workspaceId/restore',
       'GET /v1/workspaces/:workspaceId',
+      'GET /v1/workspaces',
+      'GET /v1/accounts',
     ],
   },
   async (ctx) => {
@@ -132,6 +134,24 @@ flow(
         .body()
         .has('$.code', 'workspace_not_found');
     });
+    await ctx.step('only the owner still sees it: its record answers state deleting, a sub-path 409 workspace_deleting, GET /workspaces names it deleting with its date, GET /accounts names the team; the admin lists neither', async () => {
+      (await asOwner.get('/v1/workspaces/:workspaceId', { params }))
+        .status(200)
+        .body()
+        .has('$.workspace_id', p.id)
+        .has('$.state', 'deleting')
+        .has('$.role', 'owner');
+      (await asOwner.get('/v1/workspaces/:workspaceId/sessions', { params })).status(409).body().has('$.code', 'workspace_deleting');
+      const ownerList = (await asOwner.get('/v1/workspaces')).status(200).json<Array<{ workspace_id: string; state: string; deletion_scheduled_for: string | null }>>();
+      const mine = ownerList.find((w) => w.workspace_id === p.id);
+      if (mine?.state !== 'deleting' || !mine.deletion_scheduled_for) throw new Error(`owner list item ${JSON.stringify(mine)}`);
+      const adminList = (await ctx.client.as(admin).get('/v1/workspaces')).status(200).json<Array<{ workspace_id: string }>>();
+      if (adminList.some((w) => w.workspace_id === p.id)) throw new Error('the admin still lists the deleted workspace');
+      const ownerAccounts = (await asOwner.get('/v1/accounts')).status(200).json<Array<{ account_id: string }>>();
+      if (!ownerAccounts.some((a) => a.account_id === team.id)) throw new Error('the owner no longer lists the team account');
+      const adminAccounts = (await ctx.client.as(admin).get('/v1/accounts')).status(200).json<Array<{ account_id: string }>>();
+      if (adminAccounts.some((a) => a.account_id === team.id)) throw new Error('the admin still lists the closing team account');
+    });
     await ctx.step('a second DELETE answers 404: the project is no longer live', async () => {
       (await asOwner.del('/v1/workspaces/:workspaceId', { params })).status(404);
     });
@@ -140,6 +160,8 @@ flow(
       r.status(200).body().has('$.workspace_id', p.id).has('$.state', 'active').has('$.deletion_scheduled_for', null);
       (await asOwner.get('/v1/workspaces/:workspaceId', { params })).status(200).body().has('$.workspace_id', p.id);
       (await ctx.client.as(admin).get('/v1/workspaces/:workspaceId', { params })).status(200);
+      const adminList = (await ctx.client.as(admin).get('/v1/workspaces')).status(200).json<Array<{ workspace_id: string; state: string }>>();
+      if (adminList.find((w) => w.workspace_id === p.id)?.state !== 'active') throw new Error('the admin does not list the restored workspace as active');
       const row = await lifecycleOf(ctx, p.id);
       if (row?.lifecycle !== 'active' || row.deletion_scheduled_for !== null) throw new Error(`workspace row ${JSON.stringify(row)}`);
     });
@@ -173,7 +195,7 @@ flow(
   {
     domain: 'workspaces',
     requires: ['database'],
-    routes: ['POST /v1/workspaces/:workspaceId/setup'],
+    routes: ['POST /v1/workspaces/:workspaceId/setup', 'GET /v1/workspaces/:workspaceId', 'GET /v1/workspaces'],
   },
   async (ctx) => {
     const owner = await ctx.fixtures.user({ label: 'LIFE4-OWNER' });
@@ -186,6 +208,27 @@ flow(
     });
     await ctx.step('a project-less workspace that does not pay is not waiting for setup → 409 workspace_setup_not_required', async () => {
       (await setup(owner)).status(409).body().has('$.code', 'workspace_setup_not_required').has('$.workspace_id', workspaceId);
+    });
+    await ctx.step('the same workspace once it pays: its record → 200 state setup_required, the list names it, a project-backed sub-path → 409 workspace_setup_required', async () => {
+      (await ctx.client.as(owner).get('/v1/workspaces/:workspaceId', { params: { workspaceId } })).status(404);
+      await withDb(ctx, (db) =>
+        db.query(`UPDATE kortix.credit_accounts SET tier = 'tier_2_20' WHERE account_id = $1::uuid`, [workspaceId]),
+      );
+      (await ctx.client.as(owner).get('/v1/workspaces/:workspaceId', { params: { workspaceId } }))
+        .status(200)
+        .body()
+        .has('$.workspace_id', workspaceId)
+        .has('$.project_id', workspaceId)
+        .has('$.state', 'setup_required')
+        .has('$.role', 'owner');
+      const listed = (await ctx.client.as(owner).get('/v1/workspaces')).status(200).json<Array<{ workspace_id: string; state: string }>>();
+      if (listed.find((w) => w.workspace_id === workspaceId)?.state !== 'setup_required') {
+        throw new Error(`list ${JSON.stringify(listed)}`);
+      }
+      (await ctx.client.as(owner).get('/v1/workspaces/:workspaceId/sessions', { params: { workspaceId } }))
+        .status(409)
+        .body()
+        .has('$.code', 'workspace_setup_required');
     });
     await ctx.step('a workspace that has its project → 409 workspace_setup_not_required', async () => {
       const team = await ctx.fixtures.team();

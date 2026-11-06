@@ -29,6 +29,7 @@ import type { AppEnv } from '../../types';
 import { readWorkspaceSettings, type WorkspaceSettings } from '../../workspaces/settings';
 import {
   accountIsPaying,
+  getWorkspace,
   listAccountWorkspaces,
   listUserWorkspaceCandidates,
   type WorkspaceCandidate,
@@ -186,12 +187,40 @@ function recordId(c: Context<AppEnv>): string | null {
   return id && isUuid(id) ? id.toLowerCase() : null;
 }
 
+/**
+ * The record of a workspace with no live project row: `deleting` (its owner,
+ * the gate let only them through) and `setup_required` (no config repo yet).
+ * Served from the workspaces store with the list item's shape: the archived
+ * project row, or `project_id = workspace_id` and empty config-repo fields.
+ */
+async function readWorkspaceWithoutLiveProject(c: Context<AppEnv>, gated: CanonicalWorkspace): Promise<Response> {
+  const record = await getWorkspace(gated.workspaceId);
+  if (!record) return workspaceNotFound(c);
+  const role = await workspaceRoleFor(await actorOf(c, record.accountId), record.workspaceId);
+  if (!role) return workspaceNotFound(c);
+  const userId = c.get('userId') as string | undefined;
+  const settings = await readWorkspaceSettings(record.workspaceId, userId ?? null);
+  const row = projectRowOfRecord(record);
+  const managing = role === 'owner' || role === 'admin';
+  return c.json({
+    ...serializeProject(row, { projectRole: null, effectiveRole: managing ? 'manager' : ('member' as ProjectRole) }),
+    role,
+    state: stateOf(gated),
+    split_pending: record.splitPending,
+    deletion_scheduled_for: record.deletionScheduledFor?.toISOString() ?? null,
+    secret_default_strategy: row.secretDefaultStrategy,
+    workspace: settings,
+  });
+}
+
 /** `GET /v1/workspaces/:id`: the Workspace. `404 workspace_not_found` for every id it does not serve. */
 export async function readWorkspace(c: Context<AppEnv>): Promise<Response> {
   const id = recordId(c);
   if (!id) return workspaceNotFound(c);
   const refused = await canonicalWorkspaceDecision(c, id, { projectBacked: false });
   if (refused) return refused;
+  const gated = c.get(CANONICAL_WORKSPACE_VAR as never) as CanonicalWorkspace | undefined;
+  if (gated && gated.lifecycle !== 'active') return readWorkspaceWithoutLiveProject(c, gated);
   const record = await readProjectRecord(c, id);
   if (!record) return workspaceNotFound(c);
   const userId = c.get('userId') as string | undefined;

@@ -8,6 +8,7 @@ import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import { actorOf } from '../../iam/actor';
 import { countAccountMembers, countBillableAccountMembers, userAccountRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
+import { workspaceFactsOf } from '../../iam/workspace-facts';
 import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
 import { effectiveBranding } from '../branding';
@@ -120,7 +121,11 @@ export function registerAccountRoutes(): void {
       // a fresh sign-in claims the invite between this call's first read and
       // its claim, so this call sees no pending invite, claims 0, and would
       // return the list without the workspace the user was just added to.
-      const memberships = await loadMemberships();
+      const allMemberships = await loadMemberships();
+      // A workspace being deleted (K2) lists for its owners only, who can
+      // restore it; every other member lost it when the delete committed (C3).
+      const closing = await Promise.all(allMemberships.map(async (m) => (await workspaceFactsOf(m.accountId)).closing));
+      const memberships = allMemberships.filter((m, i) => !closing[i] || m.accountRole === 'owner');
       if (memberships.length === 0) return c.json([]);
 
       const displayNames = await resolveAccountDisplayNames(memberships, {
