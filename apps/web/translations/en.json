@@ -18425,7 +18425,6 @@
       "texte7f187cbe20d": "Finish setup inside the new folder",
       "texte7f95b0311f4": "Provisioning → Overview",
       "texte80375a6f7fa": "Agent Computer hours per day",
-      "texte80b27e5e39d": "Cap gateway spend for",
       "texte80f2760aa78": "Continue without minting",
       "texte82c81f0607b": "A group bundles people so you grant access once instead of per person. Attach a group to a workspace with a role, and every member of that group gets that role on that workspace.",
       "texte8334e58ccb2": "$ kortix channels status",
@@ -21942,7 +21941,10 @@
     "savedAs": "Saved as {label}",
     "connectFailed": "Could not connect the account. Try again.",
     "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the workspace's connection managers can also manage.",
-    "ownerMeta": "Your account"
+    "ownerMeta": "Your account",
+    "pickerEmpty": "No members or groups in this workspace yet.",
+    "pickerAllAdded": "Everyone is already added.",
+    "thisWorkspace": "this workspace"
   },
   "mfaStepUp": {
     "title": "Verify it’s you",
@@ -26662,5 +26664,9 @@
       "back": "Back to workspaces",
       "restoreFailed": "Could not restore the workspace."
     }
+  },
+  "gatewayBudgets": {
+    "capWorkspace": "Cap gateway spend for this workspace.",
+    "capMember": "Cap gateway spend for {who}."
   }
 }

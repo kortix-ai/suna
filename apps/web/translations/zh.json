@@ -18380,7 +18380,6 @@
       "texte7f187cbe20d": "在新文件夹中完成设置",
       "texte7f95b0311f4": "供应 → 概览",
       "texte80375a6f7fa": "Agent Computer 每日小时数",
-      "texte80b27e5e39d": "限制以下对象的网关支出",
       "texte80f2760aa78": "不生成令牌，直接继续",
       "texte82c81f0607b": "群组将人员集中管理，让你无需逐个授予访问权限。将群组以某个角色关联到工作区后，该群组的每位成员都会在该工作区中获得此角色。",
       "texte8334e58ccb2": "$ kortix channels status",
@@ -21942,7 +21941,10 @@
     "savedAs": "已保存为 {label}",
     "connectFailed": "无法连接账户，请重试。",
     "sharePrivateDescription": "选择还有谁可以使用你的账户。它会变为共享账户，工作区的连接管理员也可以管理它。",
-    "ownerMeta": "你的账户"
+    "ownerMeta": "你的账户",
+    "pickerEmpty": "此工作区还没有成员或群组。",
+    "pickerAllAdded": "所有人都已添加。",
+    "thisWorkspace": "此工作区"
   },
   "mfaStepUp": {
     "title": "验证你的身份",
@@ -26662,5 +26664,9 @@
       "back": "返回工作区",
       "restoreFailed": "无法恢复工作区。"
     }
+  },
+  "gatewayBudgets": {
+    "capWorkspace": "为此工作区的网关支出设置上限。",
+    "capMember": "为 {who} 的网关支出设置上限。"
   }
 }

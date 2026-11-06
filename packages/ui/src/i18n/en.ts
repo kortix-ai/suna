@@ -5454,7 +5454,6 @@ const catalog = {
       "texte7d93eed5869": "not a git repository",
       "texte7ee22e117a1": "Signing secret",
       "texte7f187cbe20d": "Finish setup inside the new folder",
-      "texte80b27e5e39d": "Cap gateway spend for",
       "texte84ccb2c62c8": "Kortix OpenAPI document",
       "texte85663498c96": "Invite members",
       "texte89cabb62100": "Preview unavailable. Open the App to retry.",
@@ -6748,7 +6747,10 @@ const catalog = {
     "savedAs": "Saved as {label}",
     "connectFailed": "Could not connect the account. Try again.",
     "sharePrivateDescription": "Choose who else can use your account. It becomes a shared account, which the workspace's connection managers can also manage.",
-    "ownerMeta": "Your account"
+    "ownerMeta": "Your account",
+    "pickerEmpty": "No members or groups in this workspace yet.",
+    "pickerAllAdded": "Everyone is already added.",
+    "thisWorkspace": "this workspace"
   },
   "connectorPages": {
     "addMcpMenu": "MCP server",
@@ -9985,6 +9987,10 @@ const catalog = {
       "billingFree": "It got its own free credits.",
       "dismiss": "Dismiss"
     }
+  },
+  "gatewayBudgets": {
+    "capWorkspace": "Cap gateway spend for this workspace.",
+    "capMember": "Cap gateway spend for {who}."
   }
 };
 

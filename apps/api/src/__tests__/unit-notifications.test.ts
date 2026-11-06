@@ -106,7 +106,7 @@ describe('notification emails', () => {
 
     const payload = sentPayload();
     expect(payload.html).toContain('>Acme</span> invited you to join the');
-    expect(payload.text).toContain('Acme invited you to join the kaab-demo project on Kortix.');
+    expect(payload.text).toContain('Acme invited you to join the kaab-demo workspace on Kortix.');
     expect(payload.html).not.toContain("You've been invited");
   });
 

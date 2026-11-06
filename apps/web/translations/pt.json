@@ -18380,7 +18380,6 @@
       "texte7f187cbe20d": "Conclua a configuração dentro da nova pasta",
       "texte7f95b0311f4": "Provisionamento → Visão geral",
       "texte80375a6f7fa": "Horas diárias do Agent Computer",
-      "texte80b27e5e39d": "Limitar os gastos pelo gateway para",
       "texte80f2760aa78": "Continuar sem gerar",
       "texte82c81f0607b": "Um grupo reúne pessoas para que você conceda acesso uma vez, em vez de pessoa por pessoa. Vincule um grupo a um espaço de trabalho com uma função, e todos os membros desse grupo receberão essa função no espaço de trabalho.",
       "texte8334e58ccb2": "$ kortix channels status",
@@ -21942,7 +21941,10 @@
     "savedAs": "Salva como {label}",
     "connectFailed": "Não foi possível conectar a conta. Tente novamente.",
     "sharePrivateDescription": "Escolha quem mais pode usar sua conta. Ela passa a ser uma conta compartilhada, que quem gerencia as conexões do espaço de trabalho também pode gerenciar.",
-    "ownerMeta": "Sua conta"
+    "ownerMeta": "Sua conta",
+    "pickerEmpty": "Ainda não há membros nem grupos neste espaço de trabalho.",
+    "pickerAllAdded": "Todos já foram adicionados.",
+    "thisWorkspace": "este espaço de trabalho"
   },
   "mfaStepUp": {
     "title": "Confirme que é você",
@@ -26662,5 +26664,9 @@
       "back": "Voltar aos espaços de trabalho",
       "restoreFailed": "Não foi possível restaurar o espaço de trabalho."
     }
+  },
+  "gatewayBudgets": {
+    "capWorkspace": "Limite os gastos do gateway deste espaço de trabalho.",
+    "capMember": "Limite os gastos do gateway de {who}."
   }
 }

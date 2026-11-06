@@ -27,6 +27,24 @@ import { accountsView, projectsView } from '../../workspaces/rows';
 
 type BootstrapEntry = NonNullable<(typeof accountInvitations.$inferInsert)['bootstrapGrants']>[number];
 
+/**
+ * The workspace-ladder role an invite grants, for its email: Admin, Manager
+ * or Member. A Manager invite stores `initial_role: member` plus a manager
+ * grant on the workspace's project in `bootstrap_grants` (applied at accept),
+ * so the role is read back from both.
+ */
+export function inviteLadderRole(invite: {
+  initialRole: string;
+  bootstrapGrants?: unknown;
+}): 'admin' | 'manager' | 'member' {
+  if (invite.initialRole === 'admin' || invite.initialRole === 'owner') return 'admin';
+  const grants = Array.isArray(invite.bootstrapGrants) ? invite.bootstrapGrants : [];
+  const manages = grants.some(
+    (grant) => grant !== null && typeof grant === 'object' && (grant as { role?: unknown }).role === 'manager',
+  );
+  return manages ? 'manager' : 'member';
+}
+
 export function registerMemberInviteRoute(): void {
   // POST /v1/accounts/:accountId/members — invite a user by email. If the user
   // exists, they're added immediately. Otherwise we create a pending invitation
@@ -288,7 +306,7 @@ export function registerMemberInviteRoute(): void {
         accountName: accountRow.name,
         inviterEmail: callerEmail,
         inviteId: invite.inviteId,
-        role: invite.initialRole === 'admin' ? 'admin' : 'member',
+        role: inviteLadderRole(invite),
       });
 
       return c.json(
@@ -467,7 +485,7 @@ export function registerInviteRoutes(): void {
           accountName: accountRow.name,
           inviterEmail: callerEmail,
           inviteId: updated.inviteId,
-          role: updated.initialRole === 'admin' ? 'admin' : 'member',
+          role: inviteLadderRole(updated),
         });
       }
 

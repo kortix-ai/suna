@@ -18380,7 +18380,6 @@
       "texte7f187cbe20d": "Terminez la configuration dans le nouveau dossier",
       "texte7f95b0311f4": "Provisioning → Vue d'ensemble",
       "texte80375a6f7fa": "Heures Agent Computer par jour",
-      "texte80b27e5e39d": "Plafonner les dépenses via la gateway pour",
       "texte80f2760aa78": "Continuer sans créer de jeton",
       "texte82c81f0607b": "Un groupe regroupe des personnes afin d’accorder l’accès une seule fois plutôt qu’à chaque personne. Associez un groupe à un espace de travail avec un rôle : chaque membre du groupe reçoit ce rôle sur cet espace de travail.",
       "texte8334e58ccb2": "$ kortix channels status",
@@ -21942,7 +21941,10 @@
     "savedAs": "Enregistré sous {label}",
     "connectFailed": "Impossible de connecter le compte. Réessayez.",
     "sharePrivateDescription": "Choisissez qui d’autre peut utiliser votre compte. Il devient un compte partagé, que les gestionnaires des connexions de l’espace de travail peuvent aussi gérer.",
-    "ownerMeta": "Votre compte"
+    "ownerMeta": "Votre compte",
+    "pickerEmpty": "Aucun membre ni groupe dans cet espace de travail pour l’instant.",
+    "pickerAllAdded": "Tout le monde est déjà ajouté.",
+    "thisWorkspace": "cet espace de travail"
   },
   "mfaStepUp": {
     "title": "Confirmez votre identité",
@@ -26662,5 +26664,9 @@
       "back": "Retour aux espaces de travail",
       "restoreFailed": "Impossible de restaurer l'espace de travail."
     }
+  },
+  "gatewayBudgets": {
+    "capWorkspace": "Plafonnez les dépenses du gateway de cet espace de travail.",
+    "capMember": "Plafonnez les dépenses du gateway de {who}."
   }
 }

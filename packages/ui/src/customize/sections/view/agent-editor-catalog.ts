@@ -116,7 +116,7 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
   bash: 'Run shell commands.',
   task: 'Start a subagent (the agent tool). A pattern names the subagent.',
   skill: 'Load a skill. A pattern names the skill.',
-  external_directory: 'Access paths outside this project workspace.',
+  external_directory: 'Access paths outside the workspace repository.',
   lsp: 'Use language-server tooling — go-to-definition, diagnostics.',
   todowrite: "Maintain the session's todo list.",
   question: 'Ask the user a clarifying question mid-run.',

@@ -18380,7 +18380,6 @@
       "texte7f187cbe20d": "Beenden Sie die Einrichtung im neuen Ordner",
       "texte7f95b0311f4": "Bereitstellung → Übersicht",
       "texte80375a6f7fa": "Agent Computer-Stunden pro Tag",
-      "texte80b27e5e39d": "Gateway-Ausgaben begrenzen für",
       "texte80f2760aa78": "Ohne neue Ausstellung fortfahren",
       "texte82c81f0607b": "Eine Gruppe bündelt Personen, sodass du Zugriff einmal statt für jede Person einzeln gewähren musst. Verknüpfe eine Gruppe mit einer Rolle mit einem Workspace, und jedes Mitglied dieser Gruppe erhält diese Rolle für den Workspace.",
       "texte8334e58ccb2": "$ kortix channels status",
@@ -21942,7 +21941,10 @@
     "savedAs": "Gespeichert als {label}",
     "connectFailed": "Das Konto konnte nicht verbunden werden. Versuchen Sie es erneut.",
     "sharePrivateDescription": "Wählen Sie, wer Ihr Konto außerdem verwenden darf. Es wird zu einem geteilten Konto, das auch die Verbindungsverwalter des Workspace verwalten können.",
-    "ownerMeta": "Ihr Konto"
+    "ownerMeta": "Ihr Konto",
+    "pickerEmpty": "Noch keine Mitglieder oder Gruppen in diesem Workspace.",
+    "pickerAllAdded": "Alle sind bereits hinzugefügt.",
+    "thisWorkspace": "dieser Workspace"
   },
   "mfaStepUp": {
     "title": "Bestätige, dass du es bist",
@@ -26662,5 +26664,9 @@
       "back": "Zurück zu den Workspaces",
       "restoreFailed": "Der Workspace konnte nicht wiederhergestellt werden."
     }
+  },
+  "gatewayBudgets": {
+    "capWorkspace": "Begrenze die Gateway-Ausgaben für diesen Workspace.",
+    "capMember": "Begrenze die Gateway-Ausgaben für {who}."
   }
 }

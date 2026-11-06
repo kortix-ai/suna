@@ -660,6 +660,7 @@ export function ProjectAccessPanel({
   heading?: ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSharing = useTranslations('accessSharing');
   const locale = useLocale();
   const queryClient = useQueryClient();
 
@@ -675,7 +676,7 @@ export function ProjectAccessPanel({
     ...contract('config'),
   });
   const project = projectQuery.data;
-  const projectName = project?.name ?? 'this project';
+  const projectName = project?.name ?? tSharing('thisWorkspace');
 
   const accessQuery = useQuery({
     queryKey: qk.project.access(projectId),

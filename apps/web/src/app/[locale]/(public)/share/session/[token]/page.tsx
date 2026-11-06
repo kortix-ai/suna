@@ -229,8 +229,8 @@ export default function PublicSessionSharePage() {
     ? 'This shared file is offline'
     : 'This shared preview is offline';
   const offlineDescription = isFileShare
-    ? 'The session runtime that serves this file is not active. Sign in with access to this project to start it.'
-    : 'The session runtime is not active. Sign in with access to this project to start it.';
+    ? 'The session runtime that serves this file is not active. Sign in with access to this workspace to start it.'
+    : 'The session runtime is not active. Sign in with access to this workspace to start it.';
 
   const openAppLabel = tI18nHardcoded.raw(
     'autoAppPublicShareSessionTokenPageJsxTextOpenAppa9aa1bb9',

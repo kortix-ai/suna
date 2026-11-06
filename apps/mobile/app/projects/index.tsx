@@ -206,7 +206,7 @@ export default function ProjectsPage() {
               <Text variant="small" className="leading-5 text-muted-foreground" numberOfLines={1}>
                 {row.title}
               </Text>
-              <Text variant="muted" className="mt-0.5 text-[13px]" numberOfLines={1}>
+              <Text variant="muted" className="mt-0.5 text-xs" numberOfLines={1}>
                 {deleting
                   ? t('workspace.deletingOn', {
                       defaultValue: 'Deleting on {{date}}',
@@ -238,7 +238,7 @@ export default function ProjectsPage() {
             <Text variant="small" className="leading-5 text-foreground" numberOfLines={1}>
               {row.title}
             </Text>
-            <Text variant="muted" className="mt-0.5 text-[13px]" numberOfLines={1}>
+            <Text variant="muted" className="mt-0.5 text-xs" numberOfLines={1}>
               {row.subtitle}
             </Text>
           </View>

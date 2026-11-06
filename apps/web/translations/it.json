@@ -18380,7 +18380,6 @@
       "texte7f187cbe20d": "Completa la configurazione all'interno della nuova cartella",
       "texte7f95b0311f4": "Provisioning → Panoramica",
       "texte80375a6f7fa": "Ore giornaliere di Agent Computer",
-      "texte80b27e5e39d": "Limita la spesa del gateway per",
       "texte80f2760aa78": "Continua senza generare",
       "texte82c81f0607b": "Un gruppo riunisce più persone, così puoi concedere l’accesso una sola volta invece che persona per persona. Associa un gruppo a un workspace con un ruolo e ogni membro del gruppo riceverà quel ruolo nel workspace.",
       "texte8334e58ccb2": "$ kortix channels status",
@@ -21942,7 +21941,10 @@
     "savedAs": "Salvato come {label}",
     "connectFailed": "Impossibile collegare l’account. Riprova.",
     "sharePrivateDescription": "Scegli chi altro può usare il tuo workspace. Diventa un workspace condiviso, che possono gestire anche i gestori delle connessioni del workspace.",
-    "ownerMeta": "Il tuo account"
+    "ownerMeta": "Il tuo account",
+    "pickerEmpty": "Ancora nessun membro o gruppo in questo workspace.",
+    "pickerAllAdded": "Sono già stati aggiunti tutti.",
+    "thisWorkspace": "questo workspace"
   },
   "mfaStepUp": {
     "title": "Verifica la tua identità",
@@ -26662,5 +26664,9 @@
       "back": "Torna ai workspace",
       "restoreFailed": "Impossibile ripristinare il workspace."
     }
+  },
+  "gatewayBudgets": {
+    "capWorkspace": "Limita la spesa del gateway per questo workspace.",
+    "capMember": "Limita la spesa del gateway per {who}."
   }
 }
