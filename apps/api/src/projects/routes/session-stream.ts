@@ -113,6 +113,7 @@ import {
   parseSseFrames,
 } from '../lib/session-runtime-transport';
 import { isV1TranscriptEvent } from '@kortix/api-contract/session-log';
+import { isParkedRuntimeDownReason } from '@kortix/api-contract/wire-values';
 
 /** Our own keepalive cadence. Matches the daemon's, so a stream with no box
  *  attached still proves liveness on the same clock a healthy one does. */
@@ -621,6 +622,8 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
       type: 'kortix.runtime.status',
       state: 'down',
       reason,
+      // The decision, not only the string: a client never parses `reason`.
+      parked: isParkedRuntimeDownReason(reason),
       at: Date.now(),
     });
   };

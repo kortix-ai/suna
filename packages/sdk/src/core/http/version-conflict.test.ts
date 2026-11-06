@@ -34,3 +34,15 @@ test('another 409 still reports', async () => {
   await answer(409, 'already_shared');
   expect(reports).toHaveLength(1);
 });
+
+test('a 409 goal_conflict (a goal write on a stale revision) is silent to onError: the goal page shows the change', async () => {
+  const reports: unknown[] = [];
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => null, onError: (e) => void reports.push(e) });
+  const result = await handleErrorResponse(
+    new Response(JSON.stringify({ error: 'goal_conflict', message: 'The goal changed.' }), { status: 409, headers: { 'content-type': 'application/json' } }),
+    new AbortController().signal,
+    true,
+  );
+  expect(reports).toHaveLength(0);
+  expect((result.error as ApiError).status).toBe(409);
+});

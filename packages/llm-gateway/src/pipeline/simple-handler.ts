@@ -11,7 +11,7 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError, type NoUpstreamReasonCode, UpstreamHttpError } from '../errors';
+import { ClientAbortError, GatewayResolutionError, type NoUpstreamReasonCode, UpstreamHttpError } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import {
   type ExtractedUsage,
@@ -34,6 +34,7 @@ import {
   upstreamHeadersTimeoutMs,
   withUpstreamHeadersTimeout,
 } from './dispatch';
+import { breakerKey, tripsBreaker, upstreamBreakers } from './circuit-breaker';
 import { clampRetryAfterSeconds, gatewayErrorResponse, providerClientErrorBody } from './error-response';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
 import { conversationError, requestFieldError } from './request-fields';
@@ -765,29 +766,96 @@ export async function handleChatCompletions(
       )
     : [];
   let streamRedispatchIndex = 0;
-  const redispatchStream = async (): Promise<ReadableStream<Uint8Array> | null> => {
-    if (!streamRedispatchBody) return null;
-    const candidate = streamRedispatchCandidates[streamRedispatchIndex] ?? served;
-    streamRedispatchIndex += 1;
-    const timeoutMs = upstreamHeadersTimeoutMs(streamRedispatchBody, candidate, true);
+  // One stream-cut retry attempt against `candidate`. It reports its outcome
+  // the way dispatch() does: to the candidate's circuit (success, failure or
+  // release), to the pool cooldown on a 429, and to `attemptFailures`. A
+  // non-2xx answer is a failed attempt (null), never the new SSE upstream.
+  const redispatchTo = async (
+    candidate: UpstreamDescriptor,
+    lastOption: boolean,
+  ): Promise<ReadableStream<Uint8Array> | null> => {
+    const key = breakerKey(candidate, routedModel);
+    const admitted = upstreamBreakers.allow(key);
+    // An open circuit skips a pool peer; the last option is tried anyway.
+    if (!admitted && !lastOption) return null;
+    const admittedAt = upstreamBreakers.now();
+    const failed = async (status: number | undefined, message: string, retryAfter?: string | null): Promise<null> => {
+      if (tripsBreaker(status)) {
+        upstreamBreakers.failure(key, {
+          provider: candidate.provider,
+          model: candidate.resolvedModel ?? routedModel,
+          reason: status === undefined ? 'network_error' : String(status),
+          publicListing: candidate.billingMode !== 'none',
+        });
+      } else if (admitted) upstreamBreakers.release(key);
+      attempts += 1;
+      candidatesTried = [...candidatesTried, `${candidate.provider}:stream-retry:${status ?? 'network_error'}`];
+      const shown = candidate.publicProvider ? publicUpstreamError(status ?? 0, message, routedModel) : null;
+      attemptFailures.push({
+        attempt: attemptFailures.length + 1,
+        provider: shownProvider(candidate),
+        routeModel: routedModel,
+        resolvedModel: shownModel(candidate, routedModel),
+        stage: 'dispatch',
+        status,
+        code: shown ? shown.code : status ?? 'network_error',
+        message: shown ? shown.message : message,
+      });
+      logger.warn(`[gateway] ${id}: stream-cut redispatch to ${candidate.provider} failed (${status ?? 'network error'}): ${message.slice(0, 300)}`);
+      if (status === 429 && candidate.poolSecretId && hooks.notePoolRateLimit) {
+        try {
+          await hooks.notePoolRateLimit(principal, candidate.poolSecretId, clampRetryAfterSeconds(retryAfter) ?? 30);
+        } catch (error) {
+          logger.error('[gateway] provider key cooldown could not be recorded', {
+            secretId: candidate.poolSecretId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return null;
+    };
+    const timeoutMs = upstreamHeadersTimeoutMs(streamRedispatchBody!, candidate, true);
+    let response: Response;
     try {
-      const response = await callUpstream(structuredClone(streamRedispatchBody), candidate, {
+      response = await callUpstream(structuredClone(streamRedispatchBody!), candidate, {
         fetchImpl: withUpstreamHeadersTimeout(fetchImpl ?? upstreamFetch, timeoutMs),
         signal: req.signal,
         requestId: id,
       });
-      if (!response.body) return null;
-      // Attribute whatever gets billed/logged from here on to the candidate
-      // that actually answered, exactly like dispatch()'s own retries do.
-      served = candidate;
-      attempts += 1;
-      candidatesTried = [...candidatesTried, `${candidate.provider}:stream-retry`];
-      return response.body;
     } catch (error) {
-      logger.warn(`[gateway] ${id}: stream-cut redispatch to ${candidate.provider} failed`, {
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (error instanceof ClientAbortError || req.signal?.aborted) {
+        if (admitted) upstreamBreakers.release(key);
+        return null;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      return failed(error instanceof UpstreamHttpError ? error.status : undefined, message);
+    }
+    if (!response.ok) {
+      const message = (await response.text().catch(() => '')).slice(0, 500);
+      return failed(response.status, message, response.headers.get('retry-after'));
+    }
+    if (!response.body) {
+      if (admitted) upstreamBreakers.release(key);
       return null;
+    }
+    upstreamBreakers.success(key, admittedAt);
+    // Attribute whatever gets billed/logged from here on to the candidate
+    // that actually answered, exactly like dispatch()'s own retries do.
+    served = candidate;
+    attempts += 1;
+    candidatesTried = [...candidatesTried, `${candidate.provider}:stream-retry`];
+    return response.body;
+  };
+  // Pool peers first, then the served descriptor again. A failed peer moves
+  // to the next one within the same retry; the served descriptor ends it.
+  const redispatchStream = async (): Promise<ReadableStream<Uint8Array> | null> => {
+    if (!streamRedispatchBody) return null;
+    for (;;) {
+      const lastOption = streamRedispatchIndex >= streamRedispatchCandidates.length;
+      const candidate = streamRedispatchCandidates[streamRedispatchIndex] ?? served;
+      streamRedispatchIndex += 1;
+      const body = await redispatchTo(candidate, lastOption);
+      if (body || lastOption || req.signal?.aborted) return body;
     }
   };
   if (!outcome.response) {

@@ -84,8 +84,11 @@ export {
   type GoalIconState,
   useGoalStateText,
   goalProgress,
+  goalCriteriaStatus,
+  goalNextWake,
   GoalStatusBadge,
   useGoalClock,
+  useGoalBlockedNextStep,
   useGoalIssueText,
 } from '../internal/goals/goal-meta';
 // Spaces: the per-viewer active space and the space filter the Goals and Artifacts pages share.
