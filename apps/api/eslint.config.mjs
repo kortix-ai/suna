@@ -41,7 +41,9 @@ const NO_PLATFORM = {
 export function layerOf(abs) {
   const rel = relative(SRC, abs).split(sep).join('/').replace(/\.ts$/, '');
   if (rel.startsWith('..')) return null;
-  if (/^(lib|shared)\//.test(rel) || rel === 'config' || rel === 'types') return 0;
+  // workspaces/rows: the account and project row handles. It imports only
+  // drizzle, @kortix/db and shared/db, so shared/ modules can read rows.
+  if (/^(lib|shared)\//.test(rel) || rel === 'config' || rel === 'types' || rel === 'workspaces/rows') return 0;
   if (['index', 'worker', 'app', 'bootstrap', 'http-middleware'].includes(rel)) return 3;
   if (/(^|\/)routes(\/|$)|(^|\/)(router|[^/]*-routes)$|^[^/]+\/index$/.test(rel)) return 2;
   return 1;
@@ -121,10 +123,11 @@ const WORKSPACE_STORE_TABLES = new Set(['accounts', 'projects', 'workspaces']);
 /**
  * `kortix-api/workspace-store-only` (Workspaces design.md §3.2 C2): only
  * src/workspaces/ imports the `accounts`, `projects` and `workspaces` tables
- * from `@kortix/db`. Everyone else reads and writes workspace identity through
- * `workspaces/surface.ts`. The importers that existed when the rule was added
- * are suppressed per file in eslint-suppressions.json; the count only shrinks
- * (Release 2 starts at 0).
+ * from `@kortix/db`, statically or through `await import('@kortix/db')`.
+ * Everyone else reads rows through the read-only handles of
+ * `workspaces/rows.ts` (`projectsView`, `accountsView`) and writes them through
+ * its functions (`updateProjectRows`, `insertAccountRow`, …). No suppression:
+ * Release 2 swaps the tables under these functions.
  * @type {import('eslint').Rule.RuleModule}
  */
 const workspaceStoreOnly = {
@@ -132,22 +135,36 @@ const workspaceStoreOnly = {
     type: 'problem',
     messages: {
       table:
-        "Import '{{name}}' from @kortix/db only inside src/workspaces/. Read and write workspace identity through 'workspaces/surface' (design.md §3.2 C2).",
+        "Import '{{name}}' from @kortix/db only inside src/workspaces/. Read rows through 'workspaces/rows' (projectsView, accountsView), write them through its functions, and read workspace identity through 'workspaces/surface' (design.md §3.2 C2).",
     },
     schema: [],
   },
   create(context) {
     if (relative(SRC, context.filename).split(sep).join('/').startsWith('workspaces/')) return {};
+    /** @param {any} source */
+    const fromDb = (source) => source?.value === '@kortix/db' || source?.value === '@kortix/db/schema';
+    /** @param {any} node @param {string | undefined} name */
+    const check = (node, name) => {
+      if (name && WORKSPACE_STORE_TABLES.has(name)) context.report({ node, messageId: 'table', data: { name } });
+    };
     return {
       ImportDeclaration: (/** @type {any} */ node) => {
-        const from = node.source?.value;
-        if (from !== '@kortix/db' && from !== '@kortix/db/schema') return;
-        for (const spec of node.specifiers) {
-          const name = spec.type === 'ImportSpecifier' ? spec.imported?.name : null;
-          if (name && WORKSPACE_STORE_TABLES.has(name)) {
-            context.report({ node: spec, messageId: 'table', data: { name } });
-          }
-        }
+        if (!fromDb(node.source)) return;
+        for (const spec of node.specifiers) if (spec.type === 'ImportSpecifier') check(spec, spec.imported?.name);
+      },
+      ExportNamedDeclaration: (/** @type {any} */ node) => {
+        if (!fromDb(node.source)) return;
+        for (const spec of node.specifiers) check(spec, spec.local?.name);
+      },
+      // `const { projects } = await import('@kortix/db')`
+      'VariableDeclarator[id.type="ObjectPattern"]': (/** @type {any} */ node) => {
+        const init = node.init?.type === 'AwaitExpression' ? node.init.argument : node.init;
+        if (init?.type !== 'ImportExpression' || !fromDb(init.source)) return;
+        for (const prop of node.id.properties) if (prop.type === 'Property') check(prop, prop.key?.name);
+      },
+      // `(await import('@kortix/db')).projects`
+      'MemberExpression[object.type="AwaitExpression"][object.argument.type="ImportExpression"]': (/** @type {any} */ node) => {
+        if (fromDb(node.object.argument.source)) check(node, node.property?.name);
       },
     };
   },
