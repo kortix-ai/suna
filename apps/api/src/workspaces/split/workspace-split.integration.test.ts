@@ -254,9 +254,9 @@ function mailStub() {
 
 /** The owner email outbox rows, oldest first. */
 async function outbox() {
-  return db.execute<{ idempotency_key: string; state: string; attempts: number; last_error: string | null; due: boolean }>(sql`
+  return [...(await db.execute<{ idempotency_key: string; state: string; attempts: number; last_error: string | null; due: boolean }>(sql`
     SELECT idempotency_key, state, attempts, last_error, next_attempt_at <= now() AS due
-      FROM kortix.workspace_split_emails ORDER BY created_at, email_id`);
+      FROM kortix.workspace_split_emails ORDER BY created_at, email_id`))];
 }
 
 /** LEGACY split to the end in apply mode, with the email transport `send`. */

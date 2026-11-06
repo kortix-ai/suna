@@ -76,6 +76,18 @@ beforeAll(async () => {
     if (/^\/app\/installations\/[^/]+\/access_tokens$/.test(url.pathname)) {
       return json(201, { token: 'ghs_synthetic', expires_at: new Date(Date.now() + 3_600_000).toISOString() });
     }
+    // create-repo under the organization installation, then the one-commit starter.
+    const orgCreate = /^\/orgs\/([^/]+)\/repos$/.exec(url.pathname);
+    if (orgCreate && init?.method === 'POST') {
+      const name = (JSON.parse(String(init.body)) as { name: string }).name;
+      const fullName = `${decodeURIComponent(orgCreate[1]!)}/${name}`;
+      REPOS.add(fullName);
+      return json(201, fakeRepo(fullName));
+    }
+    if (/^\/repos\/[^/]+\/[^/]+\/git\/ref\/heads\//.test(url.pathname)) return json(200, { object: { sha: 'synthetic-parent' } });
+    if (/^\/repos\/[^/]+\/[^/]+\/git\/commits\/[^/]+$/.test(url.pathname)) return json(200, { tree: { sha: 'synthetic-tree' } });
+    if (/^\/repos\/[^/]+\/[^/]+\/git\/(trees|commits)$/.test(url.pathname)) return json(201, { sha: 'synthetic-new' });
+    if (/^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\//.test(url.pathname)) return json(200, { object: { sha: 'synthetic-new' } });
     const repo = /^\/repos\/([^/]+)\/([^/]+)$/.exec(url.pathname);
     if (repo) {
       const fullName = `${decodeURIComponent(repo[1]!)}/${decodeURIComponent(repo[2]!)}`;
@@ -213,6 +225,44 @@ describe('the published CLI BYO creates into an occupied account', () => {
     expect(accountId).not.toBe(OCCUPIED);
     expect(await accountRoleFor(accountId, ADMIN)).toBe('owner');
     expect(((await connectionOf(res.body.project.project_id))?.metadata as Record<string, unknown>).project_grant).toBe(true);
+  });
+
+  test('create-repo naming the occupied account (the web form): 201 in a new workspace, a grant for the new repository only', async () => {
+    const before = await ownedAccounts(USER);
+    const res = await post('/create-repo', { name: 'web-created', account_id: OCCUPIED, installation_id: INSTALLATION_ID });
+    expect(res.status).toBe(201);
+    const accountId = res.body.account_id as string;
+    createdAccounts.push(accountId);
+    expect(accountId).not.toBe(OCCUPIED);
+    expect(await accountRoleFor(accountId, USER)).toBe('owner');
+    expect(await ownedAccounts(USER)).toEqual([...before, accountId].sort());
+    expect(githubCalls).toContain(`POST /orgs/${OWNER_LOGIN}/repos`);
+    const connection = await connectionOf(res.body.project_id);
+    expect(connection?.installationId).toBe(INSTALLATION_ID);
+    expect((connection?.metadata as Record<string, unknown>).project_grant).toBe(true);
+    const installs = await db
+      .select({ id: accountGithubInstallations.installationRowId })
+      .from(accountGithubInstallations)
+      .where(eq(accountGithubInstallations.accountId, accountId));
+    expect(installs).toEqual([]);
+  });
+
+  test('create-repo naming a deleted workspace: refused before any GitHub write, and nothing is created', async () => {
+    const closing = crypto.randomUUID();
+    createdAccounts.push(closing);
+    await db.insert(accounts).values({ accountId: closing, name: 'byo-closing' });
+    await insertIntoView(db, accountMembers, [{ accountId: closing, userId: USER, accountRole: 'owner' }]);
+    await db.execute(sql`INSERT INTO kortix.account_deletion_requests (account_id, user_id, scheduled_for, status)
+      VALUES (${closing}::uuid, ${USER}::uuid, now() + interval '14 days', 'pending')`);
+    const before = await ownedAccounts(USER);
+    const calls = githubCalls.length;
+    const res = await post('/create-repo', { name: 'into-closing', account_id: closing, installation_id: INSTALLATION_ID });
+    // The authorize engine refuses a create in a closing workspace (`workspace_closed`);
+    // projectCreationDenial's `409 workspace_deleting` is the second wall.
+    expect({ status: res.status, code: res.body.code }).toEqual({ status: 403, code: 'workspace_closed' });
+    expect(githubCalls.slice(calls).filter((call) => call.startsWith('POST'))).toEqual([]);
+    expect(await ownedAccounts(USER)).toEqual(before);
+    await db.execute(sql`DELETE FROM kortix.account_deletion_requests WHERE account_id = ${closing}::uuid`);
   });
 
   test('a workspace-bound key keeps 409 workspace_has_project, and nothing is created', async () => {

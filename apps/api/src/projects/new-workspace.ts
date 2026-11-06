@@ -131,6 +131,23 @@ async function replayedAccount(userId: string, idempotencyKey: string | null): P
   return virginAccountOf(userId, owned, new Date(Date.now() - IN_FLIGHT_ACCOUNT_WINDOW_MS));
 }
 
+/**
+ * `403 account_creation_restricted` when this deployment lets only a platform
+ * admin create a new account (`KORTIX_RESTRICT_ACCOUNT_CREATION`), else null.
+ * A route that writes upstream before it creates the account (create-repo)
+ * asks first, so a refused create leaves no repository behind.
+ */
+export async function newWorkspaceRestriction(userId: string): Promise<ProvisionResult | null> {
+  if (!config.KORTIX_RESTRICT_ACCOUNT_CREATION || (await isPlatformAdmin(userId))) return null;
+  return {
+    status: 403,
+    body: {
+      error: 'Creating new workspaces is restricted to the server admin on this deployment. Ask an admin to invite you.',
+      code: 'account_creation_restricted',
+    },
+  };
+}
+
 async function chooseOrCreate(
   caller: NewWorkspaceCaller,
   name: string,
@@ -139,13 +156,8 @@ async function chooseOrCreate(
   const reused = await replayedAccount(caller.userId, idempotencyKey);
   if (reused) return { ok: true, accountId: reused, created: false };
 
-  if (config.KORTIX_RESTRICT_ACCOUNT_CREATION && !(await isPlatformAdmin(caller.userId))) {
-    return refuse(
-      403,
-      'Creating new workspaces is restricted to the server admin on this deployment. Ask an admin to invite you.',
-      'account_creation_restricted',
-    );
-  }
+  const restricted = await newWorkspaceRestriction(caller.userId);
+  if (restricted) return { ok: false, result: restricted };
   const account = await createOwnedAccount({ userId: caller.userId, name, email: caller.email });
   return { ok: true, accountId: account.accountId, created: true };
 }

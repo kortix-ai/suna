@@ -6,6 +6,7 @@ import {
   workspaceHasProjectDenial,
 } from '../../workspaces/one-project';
 import { projectsView } from '../../workspaces/rows';
+import { workspaceFactsOf } from '../../iam/workspace-facts';
 
 /**
  * The one refusal to create a project in `accountId`: `409
@@ -15,7 +16,14 @@ import { projectsView } from '../../workspaces/rows';
  * (`POST /v1/workspaces`, `new_workspace: true`) gets a new account and never
  * meets it.
  */
-export type ProjectCreationDenial = { status: 409; body: WorkspaceHasProjectBody };
+export type ProjectCreationDenial = { status: 409; body: WorkspaceHasProjectBody | WorkspaceDeletingBody };
+
+/** The `409` body for a create into a workspace that is being deleted (K2). */
+export interface WorkspaceDeletingBody {
+  error: string;
+  code: 'workspace_deleting';
+  account_id: string;
+}
 
 /**
  * `null` when the account may create its project. Every create path calls this
@@ -24,7 +32,22 @@ export type ProjectCreationDenial = { status: 409; body: WorkspaceHasProjectBody
  */
 export async function projectCreationDenial(accountId: string): Promise<ProjectCreationDenial | null> {
   const occupied = await workspaceHasProjectDenial(accountId);
-  return occupied ? { status: 409, body: occupied } : null;
+  if (occupied) return { status: 409, body: occupied };
+  // A deleted workspace (its deletion request is open) holds no active project,
+  // but a create there would hand its members, grants, secrets and plan to the
+  // new project and be erased with it (review finding 1). Its owner restores it
+  // first, or creates a new workspace.
+  if ((await workspaceFactsOf(accountId)).closing) {
+    return {
+      status: 409,
+      body: {
+        error: 'This workspace is being deleted. Restore it first, or create a new workspace.',
+        code: 'workspace_deleting',
+        account_id: accountId,
+      },
+    };
+  }
+  return null;
 }
 
 /**

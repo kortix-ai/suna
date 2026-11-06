@@ -259,6 +259,13 @@ withDb('workspaces identity', () => {
     expect(await projectCreationDenial(EMPTY_ACCOUNT)).toBeNull();
   });
 
+  test('projectCreationDenial: 409 workspace_deleting for a deleted workspace (finding 1: no create inherits it)', async () => {
+    expect((await closeWorkspace({ workspaceId: asWorkspaceId(ONE_PROJECT), actorUserId: OWNER })).mode).toBe('closed');
+    const denial = await projectCreationDenial(ONE_ACCOUNT);
+    expect(denial?.status).toBe(409);
+    expect(denial?.body).toMatchObject({ code: 'workspace_deleting', account_id: ONE_ACCOUNT });
+  });
+
   test('projects_name_sync / accounts_name_sync mirror a 1:1 rename both ways', async () => {
     await db.update(projects).set({ name: 'Synthetic renamed project' }).where(eq(projects.projectId, ONE_PROJECT));
     expect(await accountName(ONE_ACCOUNT)).toBe('Synthetic renamed project');
