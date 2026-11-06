@@ -8487,6 +8487,37 @@ When the project's agent manifest cannot be read, `context` still answers: `agen
 
 Routes: `/projects/{projectId}/artifacts…`, `/projects/{projectId}/artifact-comment-threads/{threadId}`, and `/artifacts/meta/{artifactId}` for `getPublicArtifact`. See [Artifacts](/docs/guide#artifacts).
 
+#### Goals
+
+Goals are root exports that take `projectId` first. Kortix keeps each goal as a record and is the only authority for its state, pause, owner and verifier sessions, limits and verification. A goal's Drive folder holds the brief (`GOAL.md`), `log.md` and `evidence/`. Writing a state into `GOAL.md` changes nothing. Every `/projects/{projectId}/goals…` route returns `403 feature_disabled` while the `goals` flag is off, and `listProjectGoals` returns `[]` then.
+
+| Root export | What it does |
+| --- | --- |
+| `listProjectGoals(projectId)` | Every goal the caller may read: their own, the ones assigned to them, the ones in folders shared with them, every goal for a project admin. |
+| `getProjectGoal(projectId, goalId)` | One goal by `goal_id`. `ApiError` 404: no such goal. 403: no access. |
+| `listProjectGoalEvents(projectId, goalId, { cursor? })` | The audit trail, oldest first: `{ events, nextCursor }`. |
+| `createProjectGoal(projectId, { outcome, criteria?, agent?, assignedUser?, goalId? })` | Creates a goal in the caller's own folder and starts its owner session. `goalId` is the idempotency key: a retry with the same id returns the same goal. `sessionId` is deprecated and is sent as the goal id. |
+| `pauseProjectGoal(projectId, goal, reason)` · `resumeProjectGoal(projectId, goal)` · `stopProjectGoal(projectId, goal, reason)` · `restartProjectGoal(projectId, goal, reason)` | Person controls. Pause keeps the state and starts no new turn. Stop closes the goal and stops the owner's running turn; a retry on a stopped goal succeeds. |
+| `replyToProjectGoal(projectId, goal, text, { answerId? })` | Answers the goal as the caller. `answerId` is the idempotency key: the owner gets one answer per id. A goal that waits on a person goes back to active. |
+| `setProjectGoalBinding(goal, { space?, agent? })` | Groups the goal under a space or an agent. `null` clears a field. It grants nothing. |
+| `getProjectGoalFiles(driveId, folder)` | `GOAL.md` (`brief`), `log.md`, `notes.md` and `evidence/verification.md` as text, `null` when absent. |
+| `goalHealth(goalOrRecord, heartbeat, now?)` | `healthy`, `attention` or `closed`, with issues. For a record it reads `blocked_reason` (issue `blocked`), `next_wake_at` (`missed_wake` after 15 minutes, `no_heartbeat` for an active goal with no wake) and a pending verification older than 24 hours (`verification_stalled`). |
+
+Every write sends the `revision` the caller read. A stale revision throws `ProjectGoalConflictError` (`409 goal_conflict`), whose `goal` is the goal as it is now: show it, and let the person act again. Every write returns the document as before plus `projectGoal`, the goal with its new revision.
+
+A `ProjectGoal` keeps its older fields and adds the server's: `goalId`, `projectId`, `revision`, `capabilities`, `blockedReason`, `verification`, `criteria` and `record`. Read these rules:
+
+- **Capabilities.** `capabilities` (`pause`, `resume`, `stop`, `restart`, `answer`, `edit`, `edit_criteria`) says what the caller may do on this goal now. Show only those controls. A session credential gets none of them.
+- **Verified vs reported.** In `criteria`, `reported_met` is the owner agent's claim and `verified` is set only by a passed verification of the current criteria. `goal.success_criteria[].met` is `reported_met`.
+- **Blocked.** `blockedReason` is `credits`, `wake_cap`, `session_cap`, `owner_lost`, `storage`, `flag_off` or `setup`, else `null`.
+- **Waiting costs no turns.** While `waiting_on_user`, no heartbeat runs; `next_wake_at` is the `chase_at` time the owner asked for, or `null`.
+- **Limits.** `max_wakes_per_day` and `max_sessions` are checked before a turn starts; `wakes_today` counts this UTC day.
+- **Deprecated.** `heartbeat` is always `null` (the API owns the heartbeat); `items`, `transitions` and `links` of `goal` are empty (read the events).
+
+React: `useProjectGoals(projectId)`, `useProjectGoal(projectId, goalId)`, `useProjectGoalEvents(projectId, goalId)`, `useProjectGoalFiles(projectId, goal)` and `useSessionGoal(projectId, sessionId)` read; `useProjectGoalControl(projectId)` runs `pause`, `resume`, `stop`, `restart` and `answer` as one mutation. It sends one request for a double submit, writes the result into the cache, and on a conflict writes the current goal before it rethrows.
+
+Routes: `/projects/{projectId}/goals`, `/projects/{projectId}/goals/{goalId}` and its `events`, `pause`, `resume`, `stop`, `restart` and `answer`. See [Outcomes](/docs/guide#outcomes).
+
 #### Gateway and models
 
 | Method | What it does |
@@ -8654,7 +8685,7 @@ Every hook is in `@kortix/sdk/react`. Most are React Query hooks: unless a row s
 | `useArtifactCommentContext(projectId, artifactId, { version?, agent?, enabled? }?)` | The comment context: rights, mention tokens, the Send target and `agents_unavailable`. A comment write refreshes it. |
 | `useArtifactActivity(projectId, artifactId, { limit?, cursor?, enabled? }?)` · `useInfiniteArtifactActivity(projectId, artifactId, { limit?, enabled? }?)` | One activity page · every page, as ordered and deduplicated `items`, with `olderVersions` and `fetchNextPage`. |
 | `useArtifactCommentScreenshot(projectId, artifactId, commentId)` | One comment's screenshot as a `Blob`. The hook keeps no copy after unmount. |
-| `useProjectGoals` · `useSessionGoal` · `useProjectGoalFiles` | Goals, the goal a session works on, and one goal's files. Goals are experimental and off by default. Turn them on in **Project admin** → **Feature flags**. |
+| `useProjectGoals` · `useProjectGoal` · `useProjectGoalEvents` · `useSessionGoal` · `useProjectGoalFiles` · `useProjectGoalControl` | Goals, one goal by id, its events, the goal a session works on, one goal's files, and the person controls. See [Goals](#goals). Goals are experimental and off by default. Turn them on in **Project admin** → **Feature flags**. |
 | `useProjectTriggerEventApps` · `useProjectTriggerEventTypes` | The connectors and event types for `event` triggers. |
 | `useConnectorLinkInfo(token, options)` | The `ConnectorSetupLinkInfo` behind a connect token, for a card. `undefined` while it loads, `null` when the request failed. |
 | `useCaptureWorkspace` · `useSetCaptureEnabled` · `useCaptureDevices` · `useRevokeCaptureDevice` · `useCapturePolicy` · `useSetCapturePolicy` · `useCaptureDays` · `useCaptureTimeline` · `useCaptureTimelineItems` · `useCaptureSearch` · `useCaptureChunkMedia` · `useCaptureDeviceGrant` · `useApproveCaptureDevice` · `useDenyCaptureDevice` · `useCaptureStorage` · `useSetCaptureStorage` · `useCaptureEnrollments` · `useCaptureEnrollmentTokens` and their create, approve, deny and revoke hooks · `useLinkCaptureDevice` | Kortix Capture. Each account hook takes the account id first. A `null` id sends no request. `useCaptureDevices` polls every 10 s. |

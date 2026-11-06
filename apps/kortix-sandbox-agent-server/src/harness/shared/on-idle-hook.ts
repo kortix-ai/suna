@@ -1,90 +1,86 @@
 import { spawn } from 'node:child_process'
-import { accessSync, closeSync, constants, existsSync, openSync, readdirSync, readFileSync } from 'node:fs'
+import { accessSync, appendFileSync, closeSync, constants, openSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { enabledFeatureFlags } from '@/lib/config/feature-flags'
 import { logger } from '@/lib/log/logger'
 
 /**
- * A session's own turn-end hook: an executable the agent installs at
- * `~/.kortix/hooks/on-idle`. The daemon runs it after every turn end that
- * apps/api settled, for every harness, with the turn's status in the env.
- * It runs detached and best effort: its exit code and output never touch the
- * turn. A hook that wants another turn queues one itself (`kortix sessions
- * chat "$KORTIX_SESSION_ID" -p … --queue`).
+ * After every turn end that apps/api settled, for every harness, the daemon
+ * runs up to two commands, detached and best effort (their exit codes and
+ * output never touch the turn):
  *
- * Without a hook, a session that owns a goal (the last `role: owner` in the
- * `sessions:` list of a GOAL.md under /drives/<folder>/Goals/<slug>/, or a
- * legacy goal.json listing it as coordinator) runs
- * `kortix goals check --enforce --quiet` instead: live runs showed the model
- * skips installing the hook, so the check does not depend on it. Only in a box
- * whose project has the `goals` flag (KORTIX_FEATURE_FLAGS); off, Goals does
- * not exist in the box.
+ * 1. the session's own hook, an executable the agent installs at
+ *    `~/.kortix/hooks/on-idle`, with the turn's status in the env. A hook that
+ *    wants another turn queues one itself (`kortix sessions chat
+ *    "$KORTIX_SESSION_ID" -p … --queue`);
+ * 2. in a box whose project has the `goals` flag (KORTIX_FEATURE_FLAGS), the
+ *    goal check `kortix goals check --enforce --quiet`, always, also when a
+ *    custom hook exists. The CLI asks the Goals API which goals this session
+ *    owns, so no file is parsed here; a session that owns none exits 0. The
+ *    check is idempotent per turn: it reads KORTIX_TURN_MESSAGE_ID.
+ *
+ * Each command's output and its exit code go to the log file (owner-only:
+ * the output can carry secrets).
  */
 export const ON_IDLE_HOOK = join(homedir(), '.kortix', 'hooks', 'on-idle')
 export const GOAL_CHECK_COMMAND = 'kortix goals check --enforce --quiet'
+export const ON_IDLE_LOG = '/tmp/kortix-on-idle.log'
 
-/** The current owner in a GOAL.md: the last `- id: <x>` entry with `role: owner` (as `kortix goals` writes it). */
-function goalMdOwner(text: string): string | null {
-  const owners = [...text.matchAll(/^\s*- id: "?([^"\s]+)"?\s*\n\s+role: "?owner"?\s*$/gm)]
-  return owners.at(-1)?.[1] ?? null
-}
-
-/** True when a goal under `drivesRoot` has `sessionId` as its current owner. */
-export function coordinatesGoal(sessionId: string | undefined, drivesRoot = '/drives'): boolean {
-  if (!sessionId || !existsSync(drivesRoot)) return false
-  try {
-    for (const mount of readdirSync(drivesRoot)) {
-      const goals = join(drivesRoot, mount, 'Goals')
-      if (!existsSync(goals)) continue
-      for (const slug of readdirSync(goals)) {
-        const md = join(goals, slug, 'GOAL.md')
-        if (existsSync(md)) {
-          try {
-            if (goalMdOwner(readFileSync(md, 'utf8')) === sessionId) return true
-          } catch {}
-          continue
-        }
-        try {
-          const g = JSON.parse(readFileSync(join(goals, slug, 'goal.json'), 'utf8')) as { sessions?: Array<{ id?: string; role?: string }> }
-          if (g.sessions?.some((s) => s.id === sessionId && s.role === 'coordinator')) return true
-        } catch {}
-      }
-    }
-  } catch {}
-  return false
-}
-
-export function runOnIdleHook(
-  turn: { status: 'idle' | 'error'; messageId: string | null },
-  opts: { path?: string; logPath?: string; drivesRoot?: string; sessionId?: string; env?: NodeJS.ProcessEnv } = {},
-): boolean {
-  const path = opts.path ?? ON_IDLE_HOOK
-  let command: string
+function isExecutable(path: string): boolean {
   try {
     accessSync(path, constants.X_OK)
-    command = JSON.stringify(path)
+    return true
   } catch {
-    if (!enabledFeatureFlags(opts.env ?? process.env).has('goals')) return false
-    if (!coordinatesGoal(opts.sessionId ?? process.env.KORTIX_SESSION_ID, opts.drivesRoot)) return false
-    command = GOAL_CHECK_COMMAND
+    return false
   }
+}
+
+function logLine(logPath: string, line: string): void {
+  try {
+    appendFileSync(logPath, `${new Date().toISOString()} [on-idle] ${line}\n`, { mode: 0o600 })
+  } catch {}
+}
+
+/** Starts the turn-end commands; returns the commands it started (empty: none). */
+export function runOnIdleHook(
+  turn: { status: 'idle' | 'error'; messageId: string | null },
+  opts: { path?: string; logPath?: string; env?: NodeJS.ProcessEnv; goalCheckCommand?: string } = {},
+): string[] {
+  const path = opts.path ?? ON_IDLE_HOOK
+  const logPath = opts.logPath ?? ON_IDLE_LOG
+  const env = opts.env ?? process.env
+  const commands: Array<{ name: string; command: string }> = []
+  if (isExecutable(path)) commands.push({ name: 'hook', command: JSON.stringify(path) })
+  if (enabledFeatureFlags(env).has('goals')) commands.push({ name: 'goal check', command: opts.goalCheckCommand ?? GOAL_CHECK_COMMAND })
+  for (const { name, command } of commands) start(name, command, turn, logPath, env)
+  return commands.map((c) => c.command)
+}
+
+function start(name: string, command: string, turn: { status: 'idle' | 'error'; messageId: string | null }, logPath: string, env: NodeJS.ProcessEnv): void {
   let output: number | 'ignore' = 'ignore'
   try {
-    // Owner-only, like on_boot's log: the hook's output can carry secrets.
-    output = openSync(opts.logPath ?? '/tmp/kortix-on-idle.log', 'a', 0o600)
+    output = openSync(logPath, 'a', 0o600)
   } catch {}
   try {
-    // A login shell, so the hook sees the agent's environment (the kortix CLI, its token).
+    // A login shell, so the command sees the agent's environment (the kortix CLI, its token).
     const child = spawn('bash', ['-lc', command], {
-      env: { ...process.env, KORTIX_TURN_STATUS: turn.status, KORTIX_TURN_MESSAGE_ID: turn.messageId ?? '' },
+      env: { ...process.env, ...env, KORTIX_TURN_STATUS: turn.status, KORTIX_TURN_MESSAGE_ID: turn.messageId ?? '' },
       detached: true,
       stdio: ['ignore', output, output],
     })
-    child.on('error', (err) => logger.warn('[on-idle] hook failed to spawn', { err: (err as Error).message }))
+    child.on('error', (err) => {
+      logLine(logPath, `${name} failed to start: ${(err as Error).message}`)
+      logger.warn('[on-idle] command failed to spawn', { name, err: (err as Error).message })
+    })
+    child.on('exit', (code, signal) => {
+      if (code === 0) return
+      const why = signal ? `signal ${signal}` : `exit code ${code}`
+      logLine(logPath, `${name} failed (${why}) for turn ${turn.messageId ?? '(none)'}: ${command}`)
+      logger.warn('[on-idle] command failed', { name, code, signal, turnMessageId: turn.messageId })
+    })
     child.unref()
   } finally {
     if (typeof output === 'number') closeSync(output)
   }
-  return true
 }

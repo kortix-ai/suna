@@ -1580,8 +1580,22 @@
     {
       "idx": 225,
       "version": "7",
-      "when": 1793972101252,
-      "tag": "20261106133501_lifecycle_status_checks",
+      "when": 1793955408327,
+      "tag": "20261106085648_goals",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1793961910964,
+      "tag": "20261106104510_goals_sessions_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1793973700352,
+      "tag": "20261106140140_lifecycle_status_checks",
       "breakpoints": true
     }
   ]

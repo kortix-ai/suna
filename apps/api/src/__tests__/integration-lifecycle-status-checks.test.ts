@@ -1,5 +1,5 @@
 /**
- * Migration 20261106133501320_lifecycle_status_checks (real PostgreSQL,
+ * Migration 20261106140140429_lifecycle_status_checks (real PostgreSQL,
  * migrated from empty): nine lifecycle text columns that accepted any string
  * carry a NOT VALID CHECK. A write of an unknown value fails with 23514; a
  * value only old rows hold (kept so an old row stays updatable) passes.

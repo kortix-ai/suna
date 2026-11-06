@@ -7,6 +7,7 @@
  * zod. Every name here is harness-neutral.
  */
 import { z } from 'zod';
+import type { RuntimeThreadStatus } from './wire-values';
 
 /** `POST /v1/projects/:projectId/turn-stream` kinds the daemon sends. */
 export const DAEMON_TURN_STREAM_KINDS = [
@@ -213,52 +214,7 @@ export const BOOT_PHASE_HEADER = 'x-kortix-boot-phase';
  * `capabilities` beside the host's own entries (`file.import`, ...). A client
  * hides a control whose capability is absent.
  */
-export const RUNTIME_CAPABILITIES = [
-  /** Revert to a message and restore it (`/session/:id/revert`, `/unrevert`). */
-  'session.rewind',
-  /** Summarize the conversation on demand (`/session/:id/summarize`). */
-  'session.compact',
-  /** Project slash commands (`GET /command`, `/session/:id/command`). */
-  'session.commands',
-  /** Fork a session at a message. */
-  'session.fork',
-  /** Subagent child sessions, readable while the parent drives them. */
-  'session.subagents',
-  /** MCP servers the runtime connects itself. */
-  'session.mcp',
-  /** The runtime's todo list (`/session/:id/todo`). */
-  'session.todo',
-  /** A shell command run as a turn (`/session/:id/shell`). */
-  'session.shell',
-  /** Attach the harness's own terminal client to the session runtime. */
-  'session.attach',
-  /** A runtime config document a client may read and patch (`/global/config`). */
-  'session.config',
-  /**
-   * A message sent during a turn is read by that turn at its next step
-   * boundary (`POST /kortix/runtime/sessions/:id/steer`). The turn does not stop.
-   */
-  'session.steer',
-  /**
-   * `GET /kortix/runtime/events?schema=v2` streams the session log
-   * (`kortix.session/2`) as `log.*` frames (`@kortix/api-contract/session-log`
-   * `SESSION_LOG_EVENTS`). Without `schema` the stream is the v1 stream.
-   */
-  'session.log.v2',
-  /**
-   * Cross-session messages: the `send_message` and `list_agents` tools
-   * (`@kortix/api-contract/multi-agent`).
-   */
-  'session.messaging',
-  /** A team's shared task list: the `task_*` tools (flag `agent_teams`). */
-  'session.team_tasks',
-  /**
-   * A full context, and `/session/:id/summarize`, reset onto the session's searchable record:
-   * nothing is summarized (kortixd `extensions/context-record.ts`). Absent: a summary.
-   */
-  'session.context_record',
-] as const;
-export type RuntimeCapability = (typeof RUNTIME_CAPABILITIES)[number];
+export { RUNTIME_CAPABILITIES, type RuntimeCapability } from './wire-values';
 
 /**
  * The extensions the pi runtime loads for every agent (kortixd `harness/pi/runtime.ts`): the agent
@@ -396,8 +352,8 @@ export interface RuntimeCommandInfo {
   agents?: string[];
 }
 
-/** What a thread does now (`log.status`); `retry` is reported as `busy` here. */
-export type RuntimeThreadStatus = 'idle' | 'busy' | 'compacting';
+/** What a thread does now (`log.status`); `retry` is reported as `busy` here (`toRuntimeThreadStatus`). */
+export type { RuntimeThreadStatus } from './wire-values';
 
 /** One request the runtime waits on (the session log's `pending` record). */
 export interface RuntimePendingRecord {

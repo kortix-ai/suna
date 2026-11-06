@@ -18,8 +18,11 @@
 import { z } from 'zod';
 import { SessionLogPageSchema } from './session-log/wire';
 import { SessionAttentionSchema, SessionBoardStateSchema, SessionInboundSchema } from './multi-agent';
+import { SESSION_PROMPT_REASONS } from './wire-values';
 
 export * from './memory';
+export * from './goals';
+export * from './wire-values';
 
 /** Loose JSON object — jsonb metadata/config columns surfaced as-is. */
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
@@ -2351,8 +2354,8 @@ export const SessionPromptSchema = z.object({
   wire_message_id: z.string(),
   client_sent_at_ms: z.number().nullable(),
   state: SessionPromptStateSchema,
-  /** Why admission waits: `turn_active`, `older_prompt_pending` or `held`. */
-  reason: z.string().nullable(),
+  /** Why the row is in its state (`SESSION_PROMPT_REASONS`). `held` is not live work. */
+  reason: z.enum(SESSION_PROMPT_REASONS).nullable(),
   text: z.string(),
   attempts: z.number(),
   /** Automatic re-attempts a runtime-unreachable park has spent. */

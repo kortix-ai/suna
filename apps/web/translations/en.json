@@ -21302,7 +21302,8 @@
       "textba98740fde39": "ChatGPT subscription usage",
       "text856bf8853b69": "Claude subscription usage",
       "text116cd3982a9b": "Goals",
-      "textb0571ad96905": "goals goal objectives outcomes"
+      "textb0571ad96905": "goals goal objectives outcomes",
+      "text20d55e8c3373": "Cancelling"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
@@ -23654,7 +23655,8 @@
       "missed_wake": "The last wake is overdue.",
       "ask_overdue": "An ask is past its due time.",
       "verification_stalled": "Verification started more than 24 hours ago.",
-      "unreadable": "This folder has no goal file."
+      "unreadable": "This folder has no goal file.",
+      "blocked": "This goal cannot go on by itself."
     },
     "sessionChip": "Goal",
     "sessionRole": {
@@ -24467,7 +24469,43 @@
     "restart": "Start goal again",
     "restartReason": "Started again from the Goal page",
     "restartedToast": "Goal started again",
-    "restartError": "Could not start the goal again. Try again."
+    "restartError": "Could not start the goal again. Try again.",
+    "noAccess": "You do not have access to this goal.",
+    "noAccessHint": "Ask the person it is for, or a project admin, to share it with you.",
+    "notFoundHint": "It was deleted, or the link is wrong.",
+    "chooseGoal": "More than one goal has this name. Pick one.",
+    "goalLoadError": "Could not load this goal. Try again.",
+    "eventsLoadError": "Could not load the activity.",
+    "changedToast": "This goal changed before your action landed. The page shows it as it is now.",
+    "blockedTitle": "Blocked",
+    "blocked": {
+      "credits": "It ran out of credits, so no wake can start.",
+      "wake_cap": "It used all {max} wakes for today.",
+      "session_cap": "It used all {max} sessions it may start.",
+      "owner_lost": "Its agent session failed, and no session took over.",
+      "storage": "Its folder in Files could not be read or written.",
+      "flag_off": "Goals is turned off for this project.",
+      "setup": "Kortix is still setting it up."
+    },
+    "blockedNext": {
+      "credits": "Add credits, then resume it.",
+      "wake_cap": "It goes on by itself after midnight UTC.",
+      "session_cap": "Stop it, or ask a project admin to raise its session limit.",
+      "owner_lost": "Start it again to give it a new session.",
+      "storage": "Check the folder in Files, then resume it.",
+      "flag_off": "Turn on Goals for this project, then resume it.",
+      "setup": "This finishes by itself within a minute."
+    },
+    "legacyUnverifiedTitle": "Not verified by Kortix",
+    "legacyUnverified": "This goal was imported from its folder. Kortix did not check its result.",
+    "verified": "Verified",
+    "reportedMet": "Reported met, not verified yet",
+    "reportedMetHint": "The agent reports this done. The independent check has not passed it yet.",
+    "verifiedCount": "{verified} of {total} verified",
+    "checkFailed": "Check failed: {note}",
+    "waitingOnPerson": "Waiting on {person}",
+    "waitNoCost": "No checks run while it waits for an answer.",
+    "chaseAt": "Follows up {time}"
   },
   "agentEditor": {
     "manage": "Manage",

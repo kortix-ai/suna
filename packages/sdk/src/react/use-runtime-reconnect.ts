@@ -306,6 +306,20 @@ export function nextPollDelay(
 }
 
 /**
+ * May a `/kortix/health` answer write the connection store? Only while it still
+ * describes what the store does: the view still shows the runtime it asked
+ * (`probedUrl`), and no session stream drives the store. A probe in flight when
+ * the view switched sessions answers for the old box.
+ */
+export function shouldApplyProbeResult(input: {
+  probedUrl: string;
+  activeUrl: string | null;
+  streamDriven: boolean;
+}): boolean {
+  return input.activeUrl === input.probedUrl && !input.streamDriven;
+}
+
+/**
  * useRuntimeReconnect — monitors the active session's runtime reachability
  * mid-session (see `react/opencode.ts` for how this fits alongside the
  * server-truth boot readiness and the SSE heartbeat).
@@ -351,6 +365,9 @@ export function useRuntimeReconnect() {
     // `CONNECTION_FAULT_GRACE_MS` (see `computeFailureStatus`, `shouldHoldHealthy`).
     let failingSince: number | null = null;
     let notReadySince: number | null = null;
+    // The runtime those two clocks describe. A switch to another session's box
+    // starts them again: its failures and its boot are not the old box's.
+    let clockUrl: string | null = null;
 
     async function check() {
       if (!alive) return;
@@ -395,6 +412,12 @@ export function useRuntimeReconnect() {
         return;
       }
 
+      if (url !== clockUrl) {
+        clockUrl = url;
+        failingSince = null;
+        notReadySince = null;
+      }
+
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -411,6 +434,18 @@ export function useRuntimeReconnect() {
         clearTimeout(timer);
 
         if (!alive) return;
+        // The view switched sessions, or a stream took the store over, while
+        // this probe was in flight: its answer is about a box the store no
+        // longer describes. `finally` re-arms the loop for the current one.
+        if (
+          !shouldApplyProbeResult({
+            probedUrl: url,
+            activeUrl: useServerStore.getState().getActiveServerUrl(),
+            streamDriven: useSandboxConnectionStore.getState().streamDriven,
+          })
+        ) {
+          return;
+        }
 
         const outcome = classifyProbeResult(result);
         switch (outcome.kind) {
@@ -499,6 +534,17 @@ export function useRuntimeReconnect() {
         // classify, so this always counts as a plain (non-immediate) failure;
         // the threshold decides whether it flips the status.
         if (!alive) return;
+        // A probe aborted by a switch, or one for a box the view left, is no
+        // evidence about the box it shows now.
+        if (
+          !shouldApplyProbeResult({
+            probedUrl: url,
+            activeUrl: useServerStore.getState().getActiveServerUrl(),
+            streamDriven: useSandboxConnectionStore.getState().streamDriven,
+          })
+        ) {
+          return;
+        }
         failed = true;
         immediateOffline = false;
         hop = null;

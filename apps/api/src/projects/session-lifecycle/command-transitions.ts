@@ -1,3 +1,4 @@
+import type { SessionPromptAdmissionReason } from '@kortix/api-contract';
 import { sessionLifecycleCommands } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { releaseCreateClaims } from '../../channels/core/threads';
@@ -38,7 +39,7 @@ import { heldSql, notHeldSql, notStopPausedSql, stopPausedOnDeliverySql } from '
  * Reading a display marker to make a correctness decision is how the id got
  * sent stale; the payload merge (`||`) is the durable half.
  */
-export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+export type InboxAdmissionReason = Extract<SessionPromptAdmissionReason, 'older_prompt_pending' | 'turn_active'>;
 
 /** True when a lease write matched its row; logs the loss otherwise. */
 function appliedUnderLease(lease: CommandLease, write: string, rows: unknown[]): boolean {

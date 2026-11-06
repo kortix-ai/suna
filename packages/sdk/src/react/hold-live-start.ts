@@ -1,15 +1,5 @@
 import type { SessionStartResult } from '../core/rest/projects-client/session-sandbox';
-
-/**
- * `/start` reasons that describe the API's view of the box, not the box. A
- * probe that timed out through the provider ingress, a provider status call
- * that failed, one unconfirmed `stopped` read: none of them stopped anything.
- */
-const TRANSPORT_REASONS: ReadonlySet<string> = new Set([
-  'unreachable',
-  'runtime_status_unknown',
-  'runtime_stop_unconfirmed',
-]);
+import { isSessionStartTransportReason } from '../core/wire-values';
 
 /**
  * The one rule for a live session: once `/start` answered `ready`, only a
@@ -37,7 +27,9 @@ export function holdLiveStart(
     if (next.sandbox.external_id !== previous.sandbox?.external_id) return next;
     if (next.sandbox.status !== 'active') return next;
   }
-  return TRANSPORT_REASONS.has(next.reason ?? '') ? previous : next;
+  // A transport reason (`SESSION_START_TRANSPORT_REASONS`) is the API's view of
+  // the box, not the box: none of them stopped anything.
+  return isSessionStartTransportReason(next.reason) ? previous : next;
 }
 
 /**
