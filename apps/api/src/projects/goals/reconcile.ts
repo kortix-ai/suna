@@ -117,7 +117,17 @@ export async function reconcileGoal(goal: GoalRow, now: Date, result: GoalReconc
     const project = await loadProject(goal.projectId);
     if (project) {
       const sent: string[] = [];
-      for (const p of pending) if (await goalEffects().queuePrompt({ project, ...p })) sent.push(p.key);
+      for (const p of pending) {
+        // Re-aim at the goal as it is now: a verifier prompt only for the current attempt's
+        // verifier; any other prompt (answer, resume, handover, verdict wake) to the current
+        // owner, which a handover or a successor may have replaced.
+        const attempt = /^goal-verify:[^:]+:(\d+)$/.exec(p.key)?.[1];
+        const to = attempt !== undefined
+          ? goal.state === 'verifying' && Number(attempt) === goal.verification?.attempt ? goal.verifierSessionId : null
+          : goal.ownerSessionId;
+        if (!to) sent.push(p.key);
+        else if (await goalEffects().queuePrompt({ project, ...p, sessionId: to })) sent.push(p.key);
+      }
       await forgetGoalPrompts(goal.goalId, sent);
       result.repaired += sent.length;
     }

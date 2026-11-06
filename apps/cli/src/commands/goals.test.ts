@@ -82,13 +82,13 @@ test('the lifecycle mirror replaces itself and keeps the rest of the front matte
 
 test('check problems: a draft, or an active goal with nothing reported for 3 wakes; a paused goal has none', () => {
   const base = { state: 'active', paused_at: null, criteria: [crit('c1')] } as unknown as Goal;
-  expect(goalProblems({ ...base, state: 'draft', criteria: [] }, 0)[0]).toContain('no done criteria');
-  expect(goalProblems({ ...base, state: 'draft' }, 0)[0]).toContain('Still a draft');
-  expect(goalProblems(base, 2)).toEqual([]);
+  expect(goalProblems({ ...base, state: 'draft', criteria: [] })[0]).toContain('no done criteria');
+  expect(goalProblems({ ...base, state: 'draft' })[0]).toContain('Still a draft');
+  expect(goalProblems(base)).toEqual([]);
   // An active goal is never nudged: its wakes come from the API's admitted heartbeat (wake cap).
-  expect(goalProblems(base, 3)).toEqual([]);
-  expect(goalProblems({ ...base, paused_at: '2026-11-06T00:00:00Z' }, 9)).toEqual([]);
-  expect(goalProblems({ ...base, state: 'waiting_on_user' }, 9)).toEqual([]);
+  expect(goalProblems(base)).toEqual([]);
+  expect(goalProblems({ ...base, paused_at: '2026-11-06T00:00:00Z' })).toEqual([]);
+  expect(goalProblems({ ...base, state: 'waiting_on_user' })).toEqual([]);
 });
 
 test('enforcement prompts are capped at 3 per goal per 6 hours', () => {

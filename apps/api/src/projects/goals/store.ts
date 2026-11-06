@@ -215,6 +215,11 @@ export async function installGoalHeartbeat(goalId: string, expected: string | nu
   return rows.length === 1;
 }
 
+/** Set one `setup` key without rewriting the rest (a remembered prompt may land in between). */
+export async function setGoalSetupKey(goalId: string, key: string, value: unknown): Promise<void> {
+  await db.execute(sql`update kortix.project_goals set setup = jsonb_set(setup, ${`{${key}}`}::text[], ${JSON.stringify(value)}::jsonb) where goal_id = ${goalId}`);
+}
+
 export interface PendingGoalPrompt {
   sessionId: string;
   userId: string | null;

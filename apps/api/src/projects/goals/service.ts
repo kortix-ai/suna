@@ -70,6 +70,7 @@ import {
   goalOfSession,
   installGoalHeartbeat,
   rememberGoalPrompt,
+  setGoalSetupKey,
   insertGoal,
   setGoalRuntimeFields,
   writeGoal,
@@ -265,7 +266,7 @@ export async function finishGoalSetup(project: ProjectRow, goal: GoalRow): Promi
   const setup = { ...goal.setup };
   const mark = async (step: string) => {
     setup[step] = true;
-    await setGoalRuntimeFields(goal.goalId, { setup });
+    await setGoalSetupKey(goal.goalId, step, true);
   };
   const ownerId = goal.ownerSessionId!;
   try {
@@ -778,7 +779,8 @@ export async function stopGoal(ctx: GoalContext, goalId: string, req: GoalContro
     checkRevision(goal, req.revision);
     if (!isOpenState(goal.state)) conflict(goal, 'A done goal cannot be stopped.');
     return {
-      patch: { state: 'stopped', stoppedAt: now, stoppedByUserId: actorIdOf(ctx.actor), verifierSessionId: null },
+      // Prompts that never queued are moot once a person stops the goal; a restart starts fresh.
+      patch: { state: 'stopped', stoppedAt: now, stoppedByUserId: actorIdOf(ctx.actor), verifierSessionId: null, setup: { ...goal.setup, pending_prompts: [] } },
       bumpGeneration: true,
       event: ev(ctx.actor, 'stopped', req.reason ?? 'Stopped by a person.'),
     };

@@ -517,6 +517,27 @@ describe('council round 1 fixes', () => {
     expect((await getGoal(PROJECT, goal.goalId))!.setup.pending_prompts).toEqual([]);
   });
 
+  test('a remembered answer goes to the current owner after a handover; a stop clears remembered prompts', async () => {
+    const goal = await activeGoal();
+    const answerId = crypto.randomUUID();
+    failPromptOnce.add(`goal-answer:${goal.goalId}:${answerId}`);
+    const answered = await goals.answerGoal(ctx(ana), goal.goalId, { answer_id: answerId, text: 'EU only' });
+    const handed = await goals.handoverGoal(ctx(asSession(goal.ownerSessionId!)), goal.goalId, { revision: answered.goal.revision, note: 'context full' });
+    expect(handed.ownerSessionId).not.toBe(goal.ownerSessionId);
+    let cursor: string | null = null;
+    do {
+      cursor = (await runGoalReconcilerTick(cursor)).cursor;
+    } while (cursor);
+    const sent = prompts.filter((p) => p.key === `goal-answer:${goal.goalId}:${answerId}`);
+    expect(sent.map((p) => p.sessionId)).toEqual([handed.ownerSessionId!]);
+
+    const again = crypto.randomUUID();
+    failPromptOnce.add(`goal-answer:${goal.goalId}:${again}`);
+    const a2 = await goals.answerGoal(ctx(ana), goal.goalId, { answer_id: again, text: 'and GBP' });
+    await goals.stopGoal(ctx(ana), goal.goalId, { revision: a2.goal.revision });
+    expect((await getGoal(PROJECT, goal.goalId))!.setup.pending_prompts).toEqual([]);
+  });
+
   test("a verifier's queued prompt is refused after a stop (the stop cleared the verifier)", async () => {
     const goal = await activeGoal();
     const owner = asSession(goal.ownerSessionId!);
