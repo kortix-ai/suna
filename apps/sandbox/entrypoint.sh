@@ -510,8 +510,9 @@ AGENT_PINNED="${AGENT_STATE_DIR}/agent.pinned"
 # rolls back while a crash-looping OLD one never triggers an update.
 SWAP_CODE=75
 # A relaunched binary must survive this long to count as good. Shorter than any
-# real session, longer than a binary that dies on startup.
-HEALTHY_AFTER_S=60
+# real session, longer than a binary that dies on startup. Overridable for the
+# supervisor tests only, like the paths above.
+HEALTHY_AFTER_S="${KORTIX_AGENT_HEALTHY_AFTER_S:-60}"
 # Consecutive early exits after a swap before we give up and pin.
 MAX_EARLY_EXITS=2
 
@@ -648,7 +649,10 @@ while :; do
   status=$?
   set -e
   ran=$(( $(date +%s) - started ))
-
+  # A run that lasted HEALTHY_AFTER_S proves the binary starts: the early-exit
+  # budget counts only early exits in a row. Before, two early crashes hours
+  # apart, with healthy service between them, rolled back and pinned for good.
+  [ "${ran}" -ge "${HEALTHY_AFTER_S}" ] && early_exits=0
 
   if [ "${status}" -eq "${SWAP_CODE}" ]; then
     echo "[entrypoint] daemon requested update swap (ran ${ran}s)" >&2

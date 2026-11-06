@@ -3976,8 +3976,11 @@ describe('pi steering', () => {
     const rt = r.service.runtime()!
     const before = gateway.sent.length
     expect((await post(r, `/kortix/runtime/sessions/${rt.rootId}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
-    await waitFor(() => !rt.busy() && rt.activeTurnMessageId() === TURN && gateway.sent.length - before === 1)
+    await waitFor(() => rt.activeTurnMessageId() === TURN && gateway.sent.length - before === 1)
     await Bun.sleep(100)
+    // The turn's last step is over and pi said idle on the wire; the turn still runs, so it is busy.
+    expect(rt.activeTurnMessageId()).toBe(TURN)
+    expect(rt.busy()).toBe(true)
     const late = await sendTimeId(r)
     expect((await steer(r, late, 'STEER-LATE')).status).toBe(202)
     await waitFor(() => seen.ends.length === 2)

@@ -10,4 +10,4 @@ incident_date: 2026-11-06
 
 **Incident:** 2026-11-06, v0.15.0 (#11872). Two dispatches 4 min apart force-pushed the release branch. The second head's gate run stayed `pending` for 30 min behind the first, superseded run. The release driver cancelled the superseded run (`gh run cancel <id>`), and the real run started within 1 min.
 
-**Enforcement:** none yet: `promote.yml` should cancel in-progress `tests-release.yml` runs for the release PR whose `head_sha` is not the head it just pushed.
+**Enforcement:** `promote.yml` (open-release-pr job) cancels every not-completed `tests-release.yml` pull_request run on the release branch whose `head_sha` is not the head it just pushed. Test: `tests/unit/sandbox-workflow.test.ts` ("Promote to Production approves the release pull request's own gate run").

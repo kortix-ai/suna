@@ -108,7 +108,11 @@ export function createChromeBridge(opts: BridgeOptions = {}) {
   let bridge: ServerWebSocket<BridgeWsData> | null = null
   let lastFrameAt = 0
   let pinger: ReturnType<typeof setInterval> | null = null
-  let waiter: ((ok: boolean) => void) | null = null
+  /** Every attach() waiting for the dial: overlapping attaches each wait, and each timeout removes only its own. */
+  const waiters = new Set<(ok: boolean) => void>()
+  const settleWaiters = (ok: boolean) => {
+    for (const settle of [...waiters]) settle(ok)
+  }
   // The extension may dial before the API answers /chrome/attach (it dials as
   // soon as consent is granted), so the hello can land before attach() waits.
   let helloSeen = false
@@ -216,15 +220,13 @@ export function createChromeBridge(opts: BridgeOptions = {}) {
   function waitForDial(): Promise<boolean> {
     if (helloSeen) return Promise.resolve(true)
     return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        waiter = null
-        resolve(false)
-      }, dialTimeoutMs)
-      waiter = (ok) => {
+      const settle = (ok: boolean) => {
         clearTimeout(timer)
-        waiter = null
+        waiters.delete(settle)
         resolve(ok)
       }
+      const timer = setTimeout(() => settle(false), dialTimeoutMs)
+      waiters.add(settle)
     })
   }
 
@@ -265,7 +267,8 @@ export function createChromeBridge(opts: BridgeOptions = {}) {
     attachmentId = id
     const dialed = await waitForDial()
     if (!dialed || attachmentId !== id) {
-      if (attachmentId === id) {
+      // A later attach owns the ticket and the bridge now: leave both to it.
+      if (attachmentId === id && ticket === myTicket) {
         reset(true, 'dial timeout')
         await callApi('/chrome/release', { attachmentId: id }).catch(() => null)
       }
@@ -344,7 +347,7 @@ export function createChromeBridge(opts: BridgeOptions = {}) {
         const hello = frame.hello as Json
         if (hello.chrome && typeof hello.chrome === 'object') chrome = hello.chrome as Json
         helloSeen = true
-        waiter?.(true)
+        settleWaiters(true)
         return
       }
       if (frame.ping) return sendBridge({ pong: 1 })
@@ -362,7 +365,7 @@ export function createChromeBridge(opts: BridgeOptions = {}) {
     close(ws: ServerWebSocket<BridgeWsData>) {
       if (ws !== bridge) return
       reset(false, 'Browser disconnected')
-      waiter?.(false)
+      settleWaiters(false)
     },
   }
 

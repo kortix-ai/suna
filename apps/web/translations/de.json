@@ -21257,7 +21257,8 @@
       "textba98740fde39": "Nutzung des ChatGPT-Abonnements",
       "text856bf8853b69": "Nutzung des Claude-Abonnements",
       "text116cd3982a9b": "Ziele",
-      "textb0571ad96905": "ziele ziel zielsetzungen ergebnisse"
+      "textb0571ad96905": "ziele ziel zielsetzungen ergebnisse",
+      "text20d55e8c3373": "Wird gekündigt"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -23653,7 +23654,8 @@
       "missed_wake": "Der letzte Weckruf ist überfällig.",
       "ask_overdue": "Eine Anfrage ist überfällig.",
       "verification_stalled": "Die Prüfung läuft seit mehr als 24 Stunden.",
-      "unreadable": "GOAL.md fehlt oder hat keinen Front-Matter-Block mit dem Ziel."
+      "unreadable": "GOAL.md fehlt oder hat keinen Front-Matter-Block mit dem Ziel.",
+      "blocked": "Dieses Ziel kann nicht von selbst weitermachen."
     },
     "sessionChip": "Ziel",
     "sessionRole": {
@@ -24467,7 +24469,43 @@
     "restart": "Ziel erneut starten",
     "restartReason": "Von der Zielseite erneut gestartet",
     "restartedToast": "Ziel erneut gestartet",
-    "restartError": "Das Ziel konnte nicht erneut gestartet werden. Versuche es noch einmal."
+    "restartError": "Das Ziel konnte nicht erneut gestartet werden. Versuche es noch einmal.",
+    "noAccess": "Du hast keinen Zugriff auf dieses Ziel.",
+    "noAccessHint": "Bitte die Person, für die es ist, oder einen Projektadmin, es mit dir zu teilen.",
+    "notFoundHint": "Es wurde gelöscht, oder der Link ist falsch.",
+    "chooseGoal": "Mehrere Ziele haben diesen Namen. Wähle eines aus.",
+    "goalLoadError": "Dieses Ziel konnte nicht geladen werden. Versuche es erneut.",
+    "eventsLoadError": "Die Aktivität konnte nicht geladen werden.",
+    "changedToast": "Dieses Ziel hat sich vor deiner Aktion geändert. Die Seite zeigt den aktuellen Stand.",
+    "blockedTitle": "Blockiert",
+    "blocked": {
+      "credits": "Die Credits sind aufgebraucht, daher kann kein Durchlauf starten.",
+      "wake_cap": "Alle {max} Durchläufe für heute sind verbraucht.",
+      "session_cap": "Alle {max} Sitzungen, die es starten darf, sind verbraucht.",
+      "owner_lost": "Seine Agent-Sitzung ist fehlgeschlagen, und keine Sitzung hat übernommen.",
+      "storage": "Sein Ordner in Dateien konnte nicht gelesen oder geschrieben werden.",
+      "flag_off": "Ziele sind für dieses Projekt ausgeschaltet.",
+      "setup": "Kortix richtet es noch ein."
+    },
+    "blockedNext": {
+      "credits": "Lade Credits auf und setze es dann fort.",
+      "wake_cap": "Es geht nach Mitternacht UTC von selbst weiter.",
+      "session_cap": "Stoppe es, oder bitte einen Projektadmin, das Sitzungslimit zu erhöhen.",
+      "owner_lost": "Starte es erneut, um ihm eine neue Sitzung zu geben.",
+      "storage": "Prüfe den Ordner in Dateien und setze es dann fort.",
+      "flag_off": "Schalte Ziele für dieses Projekt ein und setze es dann fort.",
+      "setup": "Das erledigt sich innerhalb einer Minute von selbst."
+    },
+    "legacyUnverifiedTitle": "Nicht von Kortix geprüft",
+    "legacyUnverified": "Dieses Ziel wurde aus seinem Ordner importiert. Kortix hat das Ergebnis nicht geprüft.",
+    "verified": "Geprüft",
+    "reportedMet": "Als erfüllt gemeldet, noch nicht geprüft",
+    "reportedMetHint": "Der Agent meldet dies als erledigt. Die unabhängige Prüfung hat es noch nicht bestätigt.",
+    "verifiedCount": "{verified} von {total} geprüft",
+    "checkFailed": "Prüfung fehlgeschlagen: {note}",
+    "waitingOnPerson": "Wartet auf {person}",
+    "waitNoCost": "Während es auf eine Antwort wartet, laufen keine Prüfungen.",
+    "chaseAt": "Hakt {time} nach"
   },
   "agentEditor": {
     "manage": "Verwalten",

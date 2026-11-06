@@ -404,3 +404,56 @@ export function setRuntimeHealth(
 	}
 }
 
+
+// ── Which session this store describes ──
+//
+// The store is one per tab and describes ONE runtime: the session whose box
+// `useSession` switched the current runtime to. Every mounted session stream
+// receives its own box's `kortix.runtime.*` frames, so without an owner a
+// second mounted session (a Space thread beside a side panel) wrote its box's
+// state over the viewed session's. The owner is a `projectId/sessionId` key.
+// With no owner (no session view switched yet) every stream writes, as before.
+
+// replica-local: the one session that owns this tab's connection store.
+let connectionOwner: string | null = null;
+// replica-local: listeners told when the owner changes.
+const ownerListeners = new Set<() => void>();
+
+/** The session key (`projectId/sessionId`) for {@link claimSandboxConnection}. */
+export function sandboxConnectionKey(projectId: string, sessionId: string): string {
+	return `${projectId}/${sessionId}`;
+}
+
+/**
+ * Make `key`'s session the one this store describes. Returns the release; a
+ * release by a session that no longer owns the store changes nothing.
+ */
+export function claimSandboxConnection(key: string): () => void {
+	if (connectionOwner !== key) {
+		connectionOwner = key;
+		for (const listener of [...ownerListeners]) listener();
+	}
+	return () => {
+		if (connectionOwner !== key) return;
+		connectionOwner = null;
+		for (const listener of [...ownerListeners]) listener();
+	};
+}
+
+/** May `key`'s session stream write this store? True for the owner, and for anyone while no session owns it. */
+export function sandboxConnectionAccepts(key: string): boolean {
+	return connectionOwner === null || connectionOwner === key;
+}
+
+/** Called when the owner changes. Returns the unsubscribe. */
+export function subscribeSandboxConnectionOwner(listener: () => void): () => void {
+	ownerListeners.add(listener);
+	return () => {
+		ownerListeners.delete(listener);
+	};
+}
+
+/** Test-only: no session owns the store. */
+export function __resetSandboxConnectionOwnerForTests(): void {
+	connectionOwner = null;
+}

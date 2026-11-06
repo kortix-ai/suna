@@ -1,3 +1,4 @@
+import { isSessionPromptReason, type SessionPromptReason } from '@kortix/api-contract';
 import type { PromptRow } from './session-prompt-view';
 import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
 
@@ -14,7 +15,7 @@ import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
  */
 export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   state: 'queued' | 'delivering' | 'waiting' | 'failed';
-  reason: string | null;
+  reason: SessionPromptReason | null;
 } {
   const result = (row.result ?? {}) as Record<string, unknown>;
   // TERMINAL FIRST, above every marker on the row. A row can be given up on
@@ -40,7 +41,11 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
     return { state: 'delivering', reason: null };
   }
   const admission = result.admission_reason;
-  if (typeof admission === 'string') return { state: 'waiting', reason: admission };
+  // A row written by an older API may carry an admission reason outside the set.
+  // It still waits on admission, so it reads as the generic one.
+  if (typeof admission === 'string') {
+    return { state: 'waiting', reason: isSessionPromptReason(admission) ? admission : 'turn_active' };
+  }
   // Parked on a DOWN runtime. Still `queued` — the row IS in line and the server
   // re-attempts it (on a wake, or on its backoff ladder), so anything else would
   // be a lie in the direction that lost the message before: `failed` invited a

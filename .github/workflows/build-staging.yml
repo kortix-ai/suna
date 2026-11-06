@@ -50,9 +50,14 @@ on:
         required: false
         type: string
 
+# A push to staging supersedes the build of an older push (cancel). A
+# dispatched build (Promote to Production, or a person's rebuild of one SHA)
+# has its own group per SHA and is never cancelled: before 2026-11-06 a
+# cherry-pick push during a promote cancelled the promote's build, and the
+# promote failed after staging had already moved.
 concurrency:
-  group: build-staging-${{ github.ref }}
-  cancel-in-progress: true
+  group: build-staging-${{ github.event_name == 'workflow_dispatch' && format('sha-{0}', inputs.sha || github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 permissions:
   contents: read
