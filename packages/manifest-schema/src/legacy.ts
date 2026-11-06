@@ -405,7 +405,7 @@ interface AgentParts {
 }
 
 /** One agent: its block and its prompt file's frontmatter in the latest shape. */
-function convertAgentBlock(name: string, block: Table, agents: Table, parts: AgentParts, ctx: Conversion): Table {
+function convertAgentBlock(name: string, block: Table, parts: AgentParts, ctx: Conversion): Table {
   const { fs, changes, dropped, rewrite } = ctx;
   const { folderAgents, legacyDir, projectPermission, skills, removedTools, commandsOf, extensionsOf, codemodeTop } = parts;
   const next: Table = {};
@@ -529,7 +529,7 @@ export function convertLegacyManifest(input: Table, from: 1 | 2, manifestPath: s
   const { tools, removedTools } = collectTools(raw);
   const parts: AgentParts = { folderAgents, legacyDir, projectPermission, skills, removedTools, commandsOf, extensionsOf, codemodeTop: table(harnesses.pi)?.codemode };
   const nextAgents: Table = {};
-  for (const name of names) nextAgents[name] = convertAgentBlock(name, table(agents[name]) ?? {}, agents, parts, ctx);
+  for (const name of names) nextAgents[name] = convertAgentBlock(name, table(agents[name]) ?? {}, parts, ctx);
   return assembleManifest(raw, from, manifestPath, { skills, tools, commands, extensions, agents: nextAgents }, ctx);
 }
 
