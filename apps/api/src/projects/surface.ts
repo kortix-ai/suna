@@ -80,7 +80,13 @@ export { sessionHoldsLiveTurn } from './session-lifecycle/inbox-admission';
 export { sandboxKeepsMessageIds } from './session-lifecycle/inbox-admission';
 
 // Project access, the route app and the secret envelope.
-export { assertProjectCapability, loadProjectForUser } from './lib/access';
+export { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed } from './lib/access';
+
+// An App delete takes the triggers that name the App (consumed by ../apps routes and app-manifest).
+export { dropRetiredAppTriggers, runtimeTriggersNamingApp, withoutAppTriggers } from './lib/app-trigger-retire';
+
+// An always-on App that keeps crashing alerts the triggers that name it (consumed by ../apps/idle-reaper).
+export { clearAppCrashAlerts, raiseAppCrashAlerts } from './lib/app-health-alerts';
 
 // Who may decide a gated connector call (consumed by ../setup-links/approval-app,
 // so the approval page refuses exactly whom the resolve route refuses).
@@ -94,6 +100,8 @@ export { listProjectSecretNamesForConsumer, listResolvedProjectSecrets, resolveP
 export {
   APP_EVENT_LOG_STATUSES,
   asTestEvents,
+  emitAppPlatformEvent,
+  isAppPlatformEvent,
   decodeAppEventCursor,
   ingestAppEvents,
   listAppEventLog,

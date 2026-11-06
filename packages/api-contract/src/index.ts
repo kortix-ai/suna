@@ -1986,6 +1986,8 @@ export const TriggerSchema = z.object({
   last_event_at: z.string().nullable().optional(),
   /** Set while the App has been silent past `expect_event_within`: when the silence alert started. */
   silent_since: z.string().nullable().optional(),
+  /** Set while the always-on App it names is down past its restart budget: when that alert started. */
+  crashed_since: z.string().nullable().optional(),
   /** For type=app only — the slug of the App whose emitted events fire the trigger. */
   app: z.string().nullable().optional(),
   /** A fire calls this App (method path) instead of running an agent. Null: an agent run. */

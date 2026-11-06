@@ -1346,6 +1346,7 @@ const catalog = {
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Search apps",
+    "searchArtifacts": "Search artifacts",
     "appsNoMatches": "No matches",
     "spaces": {
       "channels": "Spaces",
@@ -4833,6 +4834,7 @@ const catalog = {
       "textb7668a581f59": "Failed to disconnect",
       "textb79cac926e0b": "Help",
       "textb7d2844482b4": "Open the full approval page",
+      "text648f297b3b79": "Show in App",
       "textb7de71558bf4": "Selected connectors resolve this secret on the server. The sandbox receives no value.",
       "textb7e29198fc4e": "{value0} key removed",
       "textb80a37564fbb": "Query",
