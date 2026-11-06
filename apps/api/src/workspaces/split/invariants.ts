@@ -14,8 +14,11 @@
  *   I6  a 1:1 workspace's account name equals its project name
  *   I7  each principal reaches the moved workspace through as many grants as
  *       before the move
+ *   I8  every member the split added to a split-off account holds a grant on
+ *       it (its own, through a group, or on a project secret) or is an owner
+ *       (design.md §2: memberships for grant holders, owners and admins)
  *
- * I2, I3, I5 and I7 read only the `done` split runs (scoped by `runIds` when
+ * I2, I3, I5, I7 and I8 read only the `done` split runs (scoped by `runIds` when
  * given); I1, I4 and I6 read the whole database.
  */
 import { sql } from 'drizzle-orm';
@@ -24,7 +27,7 @@ import { db } from '../../shared/db';
 import { probeAccountSecret } from '../../secrets/account-resource';
 import { PROJECT_TRANSFER_TABLES, projectGrantCounts, type SplitCopiedIds } from '../../projects/surface';
 
-export type InvariantId = 'I1' | 'I2' | 'I3' | 'I4' | 'I5' | 'I6' | 'I7';
+export type InvariantId = 'I1' | 'I2' | 'I3' | 'I4' | 'I5' | 'I6' | 'I7' | 'I8';
 
 export interface InvariantResult {
   ok: boolean;
@@ -173,7 +176,32 @@ async function i7(runs: DoneRun[]): Promise<InvariantResult> {
   return result(violations);
 }
 
-/** Every invariant, read-only. `runIds` narrows I2, I3, I5 and I7. */
+async function i8(runs: DoneRun[]): Promise<InvariantResult> {
+  const violations: string[] = [];
+  for (const run of runs) {
+    const added = JSON.stringify(run.copied_ids.memberships ?? []);
+    const rows = await db.execute<{ user_id: string }>(sql`
+      SELECT m.user_id::text FROM kortix.account_memberships m
+       WHERE m.account_id = ${run.to_account_id} AND NOT m.is_super_admin
+         AND m.user_id::text IN (SELECT jsonb_array_elements_text(${added}::jsonb))
+         AND NOT EXISTS (SELECT 1 FROM kortix.role_assignments ra
+               WHERE ra.account_id = m.account_id AND ra.principal_type = 'user' AND ra.principal_id = m.user_id
+                 AND (ra.expires_at IS NULL OR ra.expires_at > now()))
+         AND NOT EXISTS (SELECT 1 FROM kortix.group_members gm
+               JOIN kortix.account_groups g ON g.group_id = gm.group_id AND g.account_id = m.account_id
+               JOIN kortix.role_assignments ra ON ra.account_id = m.account_id AND ra.principal_type = 'group' AND ra.principal_id = g.group_id
+                 AND (ra.expires_at IS NULL OR ra.expires_at > now())
+               WHERE gm.user_id = m.user_id)
+         AND NOT EXISTS (SELECT 1 FROM kortix.account_secret_grants sg
+               JOIN kortix.account_secret_resources r ON r.secret_id = sg.secret_id
+               WHERE r.account_id = m.account_id AND r.project_id = ${run.project_id} AND sg.user_id = m.user_id)
+       ORDER BY 1`);
+    violations.push(...rows.map((row) => `${run.to_account_id}:${row.user_id}`));
+  }
+  return result(violations);
+}
+
+/** Every invariant, read-only. `runIds` narrows I2, I3, I5, I7 and I8. */
 export async function checkWorkspaceInvariants(options: { runIds?: string[] } = {}): Promise<WorkspaceInvariantReport> {
   const runs = await doneRuns(options.runIds);
   return {
@@ -184,5 +212,6 @@ export async function checkWorkspaceInvariants(options: { runIds?: string[] } = 
     I5: await i5(runs),
     I6: await i6(),
     I7: await i7(runs),
+    I8: await i8(runs),
   };
 }

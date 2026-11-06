@@ -68,6 +68,8 @@ const ADMIN = '00000000-0000-4000-a000-0000000e0202';
 const MEMBER = '00000000-0000-4000-a000-0000000e0203';
 const GROUP_USER = '00000000-0000-4000-a000-0000000e0204';
 const CUSTOM_USER = '00000000-0000-4000-a000-0000000e0205';
+// A member with no grant at all, and with a grant on the account-wide secret only.
+const BARE_USER = '00000000-0000-4000-a000-0000000e0206';
 const GROUP = '00000000-0000-4000-a000-0000000e0301';
 const CUSTOM_ROLE = '00000000-0000-4000-a000-0000000e0302';
 const ACCOUNT_SECRET = '00000000-0000-4000-a000-0000000e0401';
@@ -108,7 +110,7 @@ async function seed(storage: ReturnType<typeof memoryStorage>): Promise<void> {
     { projectId: PAYING_B, accountId: PAYING, name: 'Paying B', repoUrl: 'https://example.invalid/b.git', splitPending: true, lastOpenedAt: minutesAgo(50) },
   ]);
   await db.insert(creditPurchases).values({ accountId: PAYING, amountDollars: '10.00', status: 'completed' });
-  await db.insert(accountMemberships).values([OWNER, ADMIN, MEMBER, GROUP_USER, CUSTOM_USER].map((userId) => ({ userId, accountId: LEGACY })));
+  await db.insert(accountMemberships).values([OWNER, ADMIN, MEMBER, GROUP_USER, CUSTOM_USER, BARE_USER].map((userId) => ({ userId, accountId: LEGACY })));
   await db.insert(accountMemberships).values({ userId: OWNER, accountId: PAYING });
   await db.insert(accountGroups).values({ groupId: GROUP, accountId: LEGACY, name: 'Synthetic group' });
   await db.insert(accountGroupMembers).values({ groupId: GROUP, userId: GROUP_USER });
@@ -139,6 +141,7 @@ async function seed(storage: ReturnType<typeof memoryStorage>): Promise<void> {
   ]);
   await db.insert(accountSecretGrants).values([
     { secretId: ACCOUNT_SECRET, accountId: LEGACY, userId: MEMBER, grantedBy: OWNER },
+    { secretId: ACCOUNT_SECRET, accountId: LEGACY, userId: BARE_USER, grantedBy: OWNER },
     { secretId: PROJECT_SECRET, accountId: LEGACY, userId: MEMBER, grantedBy: OWNER },
   ]);
   await db.insert(projectSessions).values({ sessionId: SESSION, accountId: LEGACY, projectId: MOVED, branchName: 'main' });
@@ -198,7 +201,7 @@ withDb('workspace split', () => {
     ]);
     expect(runs[0]!.plan.keeper_project_id).toBe(KEEPER);
     expect(runs[2]!.plan.keeper_project_id).toBe(PAYING_A);
-    expect((runs[0]!.plan.account as Record<string, number>).members).toBe(5);
+    expect((runs[0]!.plan.account as Record<string, number>).members).toBe(6);
     expect((runs[0]!.plan.project as Record<string, number>).invites_to_split).toBe(1);
     expect((await accountOfProject(MOVED))?.accountId).toBe(LEGACY);
     // A second pass updates the same rows instead of adding more.
@@ -224,9 +227,17 @@ withDb('workspace split', () => {
     expect(account?.name).toBe('Moved');
     expect(account?.mfaRequired).toBe(true);
 
-    // Directory: every member, the group with its member, the custom role.
+    // Directory (design.md §2): a membership for everyone holding a grant on
+    // the project, owners and admins again; the group with its member, the
+    // custom role. A member with no grant on it does not come along.
     const members = await db.select({ userId: accountMemberships.userId }).from(accountMemberships).where(eq(accountMemberships.accountId, target));
     expect(members.map((m) => m.userId).sort()).toEqual([OWNER, ADMIN, MEMBER, GROUP_USER, CUSTOM_USER].sort());
+    // OLDEST has no project grant: only the account-wide grant holders.
+    const oldest = (await runFor(OLDEST))!;
+    const oldestMembers = await db.select({ userId: accountMemberships.userId }).from(accountMemberships).where(eq(accountMemberships.accountId, oldest.toAccountId!));
+    expect(oldestMembers.map((m) => m.userId).sort()).toEqual([OWNER, ADMIN, MEMBER].sort());
+    // The group reaches only MOVED: OLDEST gets no copy of it.
+    expect(Object.keys((oldest.copiedIds as unknown as SplitCopiedIds).groups)).toEqual([]);
     const groupCopy = copied.groups[GROUP]!;
     expect(await db.select({ userId: accountGroupMembers.userId }).from(accountGroupMembers).where(eq(accountGroupMembers.groupId, groupCopy))).toEqual([{ userId: GROUP_USER }]);
     const roleCopy = copied.roles[CUSTOM_ROLE]!;
@@ -287,7 +298,7 @@ withDb('workspace split', () => {
     expect((await accountOfProject(PAYING_B))?.accountId).toBe(PAYING);
 
     const report = await checkWorkspaceInvariants();
-    expect(Object.fromEntries(Object.entries(report).map(([id, r]) => [id, r.violations]))).toEqual({ I1: 0, I2: 0, I3: 0, I4: 0, I5: 0, I6: 0, I7: 0 });
+    expect(Object.fromEntries(Object.entries(report).map(([id, r]) => [id, r.violations]))).toEqual({ I1: 0, I2: 0, I3: 0, I4: 0, I5: 0, I6: 0, I7: 0, I8: 0 });
   });
 
   test('a project secret that does not decrypt moves unchanged, marked for a reconnect; the split still lands', async () => {
@@ -437,6 +448,14 @@ withDb('workspace split', () => {
     expect((await accountOfProject(PAYING_A))?.accountId).not.toBe(PAYING);
     const report = await checkWorkspaceInvariants();
     expect(report.I5.violations).toBe(0);
+  });
+
+  test('I8 reports a member the split added who holds no grant on the moved workspace', async () => {
+    await processWorkspaceSplits({ mode: 'apply', deps: { siteStorage: storage } });
+    const target = (await runFor(OLDEST))!.toAccountId!;
+    expect((await checkWorkspaceInvariants()).I8.violations).toBe(0);
+    await db.delete(roleAssignments).where(and(eq(roleAssignments.accountId, target), eq(roleAssignments.principalId, MEMBER)));
+    expect((await checkWorkspaceInvariants()).I8.sample).toContain(`${target}:${MEMBER}`);
   });
 
   test('the invariant checker reports a broken shape', async () => {

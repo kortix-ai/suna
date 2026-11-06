@@ -131,29 +131,56 @@ async function copyDirectory(tx: TransferTx, projectId: string, fromAccountId: s
       ${calculateNextCreditGrant(anchor).toISOString()}::timestamptz, false, now(), now())
     ON CONFLICT (account_id) DO UPDATE SET free_credits_eligible = false, updated_at = now()`);
 
-  // SCIM external ids are per identity-provider connection, which stays with
-  // the source: the copy carries none.
+  // The groups that reach the project: an account-wide grant (it reaches every
+  // project of a legacy account) or a grant on this project. Only they are
+  // copied; a group whose grants are all on other projects stays behind.
+  const groups = await tx.execute<{ group_id: string }>(sql`
+    SELECT g.group_id::text FROM kortix.account_groups g
+     WHERE g.account_id = ${fromAccountId}
+       AND EXISTS (SELECT 1 FROM kortix.role_assignments ra
+         WHERE ra.account_id = ${fromAccountId} AND ra.principal_type = 'group' AND ra.principal_id = g.group_id
+           AND (ra.expires_at IS NULL OR ra.expires_at > now())
+           AND (ra.scope_type = 'account' OR (ra.scope_type = 'project' AND ra.scope_id = ${projectId})))
+     ORDER BY g.group_id`);
+  for (const { group_id } of groups) out.groups[group_id] = randomUUID();
+  const reachingGroups = JSON.stringify(Object.keys(out.groups));
+
+  // Memberships (design.md §2): everyone holding a grant on the project
+  // (account-wide, on the project, through a reaching group, or on one of its
+  // project secrets), and the owners again. A member with no grant on it does
+  // not come along. SCIM external ids are per identity-provider connection,
+  // which stays with the source: the copy carries none.
   const members = await tx.execute<{ user_id: string }>(sql`
     INSERT INTO kortix.account_memberships (user_id, account_id, is_super_admin, joined_at)
-    SELECT user_id, ${toAccountId}::uuid, is_super_admin, joined_at FROM kortix.account_memberships
-     WHERE account_id = ${fromAccountId}
+    SELECT m.user_id, ${toAccountId}::uuid, m.is_super_admin, m.joined_at FROM kortix.account_memberships m
+     WHERE m.account_id = ${fromAccountId}
+       AND (m.is_super_admin
+         OR m.user_id IN (
+           SELECT ra.principal_id FROM kortix.role_assignments ra
+            WHERE ra.account_id = ${fromAccountId} AND ra.principal_type = 'user'
+              AND (ra.expires_at IS NULL OR ra.expires_at > now())
+              AND (ra.scope_type = 'account' OR (ra.scope_type = 'project' AND ra.scope_id = ${projectId})))
+         OR m.user_id IN (
+           SELECT gm.user_id FROM kortix.group_members gm
+            WHERE gm.group_id::text IN (SELECT jsonb_array_elements_text(${reachingGroups}::jsonb)))
+         OR m.user_id IN (
+           SELECT sg.user_id FROM kortix.account_secret_grants sg
+             JOIN kortix.account_secret_resources r ON r.secret_id = sg.secret_id
+            WHERE r.account_id = ${fromAccountId} AND r.project_id = ${projectId}))
     RETURNING user_id::text`);
   out.memberships = ids(members, 'user_id');
 
-  const groups = await tx.execute<{ group_id: string }>(sql`
-    SELECT group_id::text FROM kortix.account_groups WHERE account_id = ${fromAccountId} ORDER BY group_id`);
-  for (const { group_id } of groups) out.groups[group_id] = randomUUID();
   if (groups.length) {
     await tx.execute(sql`
       INSERT INTO kortix.account_groups (group_id, account_id, name, description, source, external_id, created_by, created_at, updated_at)
       SELECT (${jsonMap(out.groups)}::jsonb ->> g.group_id::text)::uuid, ${toAccountId}::uuid, g.name, g.description,
              g.source, g.external_id, g.created_by, g.created_at, g.updated_at
-        FROM kortix.account_groups g WHERE g.account_id = ${fromAccountId}`);
+        FROM kortix.account_groups g WHERE g.account_id = ${fromAccountId} AND (${jsonMap(out.groups)}::jsonb ? g.group_id::text)`);
     await tx.execute(sql`
       INSERT INTO kortix.group_members (group_id, user_id, added_by, added_at)
       SELECT (${jsonMap(out.groups)}::jsonb ->> gm.group_id::text)::uuid, gm.user_id, gm.added_by, gm.added_at
-        FROM kortix.group_members gm JOIN kortix.account_groups g ON g.group_id = gm.group_id
-       WHERE g.account_id = ${fromAccountId}`);
+        FROM kortix.group_members gm
+       WHERE (${jsonMap(out.groups)}::jsonb ? gm.group_id::text)`);
   }
 
   const roles = await tx.execute<{ role_id: string }>(sql`
@@ -220,7 +247,9 @@ async function copyAccountSecrets(tx: TransferTx, projectId: string, fromAccount
     INSERT INTO kortix.account_secret_grants (secret_id, account_id, user_id, granted_by, created_at)
     SELECT (${jsonMap(out.secrets)}::jsonb ->> g.secret_id::text)::uuid, ${toAccountId}::uuid, g.user_id, g.granted_by, g.created_at
       FROM kortix.account_secret_grants g
-     WHERE g.account_id = ${fromAccountId} AND (${jsonMap(out.secrets)}::jsonb ? g.secret_id::text)`);
+     WHERE g.account_id = ${fromAccountId} AND (${jsonMap(out.secrets)}::jsonb ? g.secret_id::text)
+       -- Only for the people who came along (copyDirectory's memberships).
+       AND g.user_id::text IN (SELECT jsonb_array_elements_text(${JSON.stringify(out.memberships)}::jsonb))`);
   out.pools = await rewriteProjectPools(tx, projectId, out.secrets);
 }
 

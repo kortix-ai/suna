@@ -215,6 +215,7 @@ The classification test in `project-transfer.integration.test.ts` must cover all
   - I5: credit balance sum and Stripe customers per account are unchanged; split-off accounts have 0.
   - I6: names equal for 1:1 workspaces.
   - I7: grant counts per (principal, workspace) are unchanged.
+  - I8: every member the split added to a new workspace holds a grant on it or is an owner.
 - **Mixed-version proof:** run the current prod image's API against a worktree `--db` with M1–M3 applied, then run the flow suite (learning 2026-10-28).
 - **Prod-shaped data:** the worktree `--db` only copies the young local DB, which is not enough.
   - (a) A synthetic, PII-free seed script in `apps/api/scripts/` reproducing the measured shape: 8,055 1:1 accounts, 401 multi-project accounts with 1,034 projects (max 23), 40,618 empty accounts, 58 people in several accounts. It feeds the dry-run, the parity run and the invariants.

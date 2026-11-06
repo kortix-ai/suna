@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Workspace invariants I1–I7 (Workspaces design.md §7), read-only.
+ * Workspace invariants I1–I8 (Workspaces design.md §7), read-only.
  *
  *   cd apps/api && dotenvx run -q -- bun scripts/workspace-invariants.ts [--run <run_id> ...]
  *
@@ -16,6 +16,7 @@
  *   I5  split-off accounts had no billing at the move; sources kept Stripe
  *   I6  a 1:1 workspace's account name equals its project name
  *   I7  grants per principal on the moved workspace are unchanged
+ *   I8  every member a split added holds a grant on the new workspace or is an owner
  */
 import { checkWorkspaceInvariants } from '../src/workspaces/split/invariants';
 
