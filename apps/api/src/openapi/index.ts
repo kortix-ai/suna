@@ -237,7 +237,7 @@ export function routingToOpenApiPath(path: string): string {
 }
 
 /** Canonical workspace prefixes: the only paths that publish `{workspaceId}`. */
-const CANONICAL_WORKSPACE_PATH = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|scim\/v2\/workspaces)(\/|$)/;
+const CANONICAL_WORKSPACE_PATH = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|v1\/webhooks\/workspaces|scim\/v2\/workspaces)(\/|$)/;
 
 /** The id name a legacy path published before Workspaces: account paths say `accountId`, every other `projectId`. */
 function legacyIdName(path: string): string {

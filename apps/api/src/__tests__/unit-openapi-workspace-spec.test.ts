@@ -115,6 +115,13 @@ describe('aliases in the spec and the manifest', () => {
     expect([...fromManifest].filter((row) => !fromSpec.has(row))).toEqual([]);
   });
 
+  test('the canonical trigger webhook publishes {workspaceId}; the project path names it as its alias', () => {
+    expect(spec.paths['/v1/webhooks/workspaces/{workspaceId}/{slug}']?.post).toBeDefined();
+    expect(spec.paths['/v1/webhooks/projects/{projectId}/{slug}']?.post?.['x-kortix-alias-of']).toBe(
+      'POST /v1/webhooks/workspaces/{workspaceId}/{slug}',
+    );
+  });
+
   test('a custom-verb legacy path is marked with its canonical twin', () => {
     const op = spec.paths['/v1/accounts/{accountId}/iam/policies:bulk-delete']?.post;
     expect(op?.['x-kortix-alias-of']).toBe('POST /v1/workspaces/{workspaceId}/iam/policies:bulk-delete');
