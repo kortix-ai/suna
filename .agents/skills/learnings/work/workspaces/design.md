@@ -129,10 +129,10 @@ the repo).
 | 7 | The move carries `account_model_preferences` rows keyed by `scope='project', scope_key=<project_id>` (delete a stale target row first). The split path copies the source's `scope='account'` default. Both accounts' model-default caches are invalidated after commit. An invariant and a transfer test cover `scope_key` rows. | split |
 | 8 | Legacy Stripe sync adopts only a subscription whose customer maps to this account (or is unmapped and whose `metadata.account_id` is empty or this account). No email search across customers. Never rewrite a `metadata.account_id` that names another live account. Refuse when another `credit_accounts` row holds the subscription id. The sync leaves the hourly request path (`resolveAccountId`); only `POST /v1/billing/sync-subscription` runs it. Invariant I11. | billing |
 | 9 | Same as 1, plus the integration tests: an owned account with only an archived project is not reused; an owned account with a second member is not reused. | identity |
-| 10 | `account-state` adds `credits.free_grant` and returns `tier.monthly_credits: 0` and `credits.expires_at: null` when the workspace is not eligible; `initializeFreeTierAccount({freeCredits:false})` stops writing `next_credit_grant` (C6). The billing modal treats a Free workspace that can buy credits and sits below the run floor as top-up-first. The Plan tab, the modal and the create form say where the free credits are. | billing (API, SDK) · web (UI) |
+| 10 | `account-state` adds `credits.free_grant` and returns `tier.monthly_credits: 0` and `credits.expires_at: null` when the workspace is not eligible; `initializeFreeTierAccount({freeCredits:false})` stops writing `next_credit_grant` (C6). The billing modal treats a Free workspace that can buy credits and sits below the run floor as top-up-first. The Plan tab and the modal say where the free credits are (from `free_grant`); the create form states the rule ("Only your first workspace gets the monthly free credits."). | billing (API, SDK, billing UI) · web (create form) |
 | 11 | Credentials bind (C4). Workspace settings → API keys mints workspace keys only (`POST /v1/workspaces/:id/tokens`), so "Whole workspace" is true. Personal keys (`project_id IS NULL`: CLI login, legacy `/v1/accounts/tokens`) act as the person and are listed under Preferences → Personal keys (`GET /v1/me/tokens`). Binding OAuth grants per workspace is a follow-up. | auth · api (SDK) · web |
 | 12 | The workspace session policy (lifetime, idle, force-logout) is enforced in `actorOf` (`middleware/actor.ts`), memoized per request: every request that builds an actor for a workspace and carries a Supabase session is checked against that workspace. `GET /v1/workspaces` omits a workspace where this session is revoked. No global GoTrue revoke (it would sign the person out of every workspace). | auth |
-| 13 | The `/v1/workspaces` IAM wire shows one scope: `/iam/roles` returns the four ladder roles plus custom roles (one `member` row, no `agent-user`); `/iam/permissions` emits `workspace_action` and `scope_type: 'workspace'`; `/iam/assignments` rows add `scope_type: 'workspace'` and `workspace_id` next to the legacy fields. `GET /v1/workspaces/:id/secret-resources` defaults `project_id` to the path workspace. | auth |
+| 13 | The `/v1/workspaces` IAM wire shows one scope: `/iam/roles` returns the four ladder roles plus custom roles (one `member` row, no `agent-user`); `/iam/permissions` emits `workspace_action` and `scope_type: 'workspace'`; `/iam/assignments` rows add `scope_type: 'workspace'` and `workspace_id` next to the legacy fields. `GET /v1/workspaces/:id/secret-resources` defaults `project_id` to the path workspace. | auth · api (secret-resources default) |
 | 14 | Impersonation refuses every state-changing method under `/v1/accounts/:id/iam/**` (one subtree rule; only `iam/members/:id/effective(:batch)` stays open), and `DELETE` on the workspace. `assignRole` refuses an impersonating writer (`impersonation_invalid`). An account-scope assignment to a non-member also writes the membership, so the holder shows in Members. | auth |
 | 15 | Fixed by K1: a person's workspace key manages its own workspace per the person's role. The SDK no longer lists `createAccountToken → createWorkspaceToken` as an exact equivalent (different reach). Fence refusals carry `code: 'credential_fence_refused'` and workspace wording. | auth · api (SDK) |
 | 16 | Canonical paths take workspace ids only (C5). An account id, an unknown id, a tombstone or a workspace the caller cannot read answers `404 workspace_not_found` on every sub-path, so existence cannot be probed. Legacy paths keep the either-id tolerance. SDK workspace helpers pass workspace ids. | api |
@@ -155,7 +155,7 @@ the repo).
 | 33 | Pricing copy comes from the same facts object as `pricing-plans.ts`: "500 credits a month on your first workspace", no "for 1 workspace", no "managed models" on Free. `text79c0703d2226` is fixed or deleted. | billing |
 | 34 | The `409 workspace_ambiguous` body drops `workspace_ids`. uuid path params are lowercased once at the edge (resolver, fence params, rate-limit keys). | auth (409) · api (lowercase) |
 | 35 | Every serializer that emits `project_id` also emits `workspace_id` (sessions, tokens, access, members, secrets, triggers). Workspace records carry a top-level `role` (ladder) and `state`. | api |
-| 36 | The SDK workspace handle is built from an explicit key list: project CLI tokens stay reachable as `workspace(id).cliTokens`; a test lists every overridden key. `createWorkspace` returns `Workspace`. New: `deleteWorkspace`, `restoreWorkspace`, `setupWorkspace`, `listPersonalTokens`, `revokePersonalToken`. New public names say workspace. | api |
+| 36 | The SDK workspace handle is built from an explicit key list: project CLI tokens stay reachable as `workspace(id).cliTokens`; a test lists every overridden key. `createWorkspace` returns `Workspace`. New: `deleteWorkspace`, `restoreWorkspace`, `setupWorkspace`, `listPersonalTokens`, `revokePersonalToken`, `getPersonDeletionPlan`. New public names say workspace. | api |
 | 37 | The Profile tab's workspace list is deleted; the rail is the one list (it closes the dialog through `ModalClose`). | web |
 | 38 | The chooser renders the handoff whenever `inlineCreate.submitting` is true, whatever the list holds. | web |
 | 39 | Outputs lead with the workspace name: the 403 body adds `workspace_action`; denial messages print the workspace name; `validate --scopes` lists `workspace.*` with a "legacy names, still accepted" section; `kortix validate --fix` rewrites `project.*` grants to `workspace.*`; `kortix-yaml.md` documents `workspace.*`. | auth · runtime |
@@ -284,7 +284,11 @@ the table row (shadow). A difference logs `[workspaces] shadow_mismatch` with
   `filterAccessibleObjects` and the visibility read. Object grants (step 9) still apply.
 - A principal's role in W: owner/admin from the account role; else `manager` when it holds
   project `manager` on W (directly or through a group); else `member` when it is an account
-  member (1:1) or holds a project grant (`split_pending`); else no access.
+  member (1:1) or holds a project grant (`split_pending`); else no access. auth exports the
+  one implementation from `apps/api/src/iam/index.ts`:
+  `workspaceRoleFor(actor: Actor, workspaceId: string): Promise<WorkspaceRole | null>`
+  (`WorkspaceRole = 'owner' | 'admin' | 'manager' | 'member'`). The list, the record and
+  the Members table all call it.
 - A closing workspace (lifecycle `closing`): every principal is denied except owners, who
   keep `workspace.read`, `workspace.billing.read` and restore. The canonical resolver maps
   the non-owner denial to 404 `workspace_not_found`; an owner's other calls get
@@ -357,7 +361,15 @@ New or changed canonical routes:
 | `POST /v1/workspaces/:id/restore` | Owners, while `deleting`. `200 Workspace`. |
 | `POST /v1/workspaces/:id/setup` | A `setup_required` workspace: provisions its config repo with `project_id = workspace_id`. `201 Workspace`. Same caller rules as create. |
 | `GET /v1/me/tokens`, `DELETE /v1/me/tokens/:tokenId` | Personal keys (C4). |
+| `GET /v1/account/deletion-plan` | The caller's `PersonDeletionPlan` (C2), for the "Delete my account" dialog. Person route. |
 | `/v1/workspaces/:id/<family>` | The account families of `WORKSPACE_ACCOUNT_FAMILIES`, with `secret-resources` defaulting `project_id` to W. |
+
+`GET /v1/workspaces` composition: `listUserWorkspaceCandidates(userId)` (C2) → per account,
+`actorOf(c, accountId)` (an account whose session policy revokes this session throws
+`session_token_revoked`: skip that account) → `listAccessible(actor, 'workspace.read',
+'workspace')` → `workspaceRoleFor` (C3) → `workspaceState` (C2). Every route this section
+adds needs a binding row in `middleware/workspace-binding.ts` (auth adds the wave-1 rows from
+this table; a wave-2 stream adds the row for a route it adds).
 
 - Id rules: canonical paths (`/v1/workspaces/**`, `/v1/connectors/workspaces/**`,
   `/scim/v2/workspaces/**`) take workspace ids only. Input uuids are case-insensitive;
@@ -489,9 +501,14 @@ export function parseWorkspaceSettingsSection(raw: string | null | undefined): W
 - Each stream's first commit implements its contract surface (exports with the signatures
   above, delegating to existing code where the behavior is not built yet) and is pushed
   within the stream's first hours; dependent streams merge that commit.
+- Step 0 (orchestrator, before any sub-branch is cut): merge `origin/dev` into `workspaces`
+  (PR #11857 reports CONFLICTING; `origin/dev` moved on 2026-11-06) and push.
 - Integration: wave 1 merges into `workspaces` in the order identity → auth → api →
   runtime; wave 2 in the order billing → split → web. After each merge: T0 for the touched
   packages, the stream's covering tests one by one, and its real-surface proof.
+- Shared seams, named once: the `split_pending` trigger (identity) makes the two
+  `recomputeSplitPending` calls in `project-transfer.ts` redundant; split removes them in
+  wave 2. `provision-core.ts` belongs to api except identity's additive setup option.
 
 ### 3.3 Release 1 migrations, in order
 
@@ -535,9 +552,9 @@ file asks the orchestrator):
 
 | Stream | Owns |
 |---|---|
-| identity | `packages/db/migrations/*workspace*`, `packages/db/src/schema/kortix.ts` (workspace objects, expand columns, comments), new `packages/db/src/workspace-key-classes.ts`, `apps/api/src/workspaces/*.ts` except `index.ts` and `split/`, `apps/api/src/workspaces/split/invariants.ts` (adds I9–I12 only), `apps/api/src/projects/new-workspace.ts`, `apps/api/src/projects/lib/project-deletion.ts`, the DELETE handler in `apps/api/src/projects/routes/project-settings.ts`, the restore and setup handlers, `apps/api/src/billing/services/account-deletion.ts`, `apps/api/src/billing/routes/account-deletion.ts`, `apps/api/src/billing/services/free-credit-claims.ts`, `apps/api/src/worker/jobs/account-deletion.ts`, `apps/api/eslint.config.mjs` + `eslint-suppressions.json`, `apps/api/scripts/workspace-invariants.ts`, `decisions.md`, `README.md` (this folder) |
+| identity | `packages/db/migrations/*workspace*`, `packages/db/src/schema/kortix.ts` (workspace objects, expand columns, comments), new `packages/db/src/workspace-key-classes.ts`, `apps/api/src/workspaces/*.ts` except `index.ts` and `split/`, `apps/api/src/workspaces/split/invariants.ts` (adds I9–I12 only), `apps/api/src/projects/new-workspace.ts`, `apps/api/src/projects/lib/project-deletion.ts`, the DELETE handler in `apps/api/src/projects/routes/project-settings.ts`, the restore and setup handlers, an additive explicit-project-id option in `apps/api/src/projects/provision-core.ts` (setup only), `GET /v1/account/deletion-plan`, `apps/api/src/billing/services/account-deletion.ts`, `apps/api/src/billing/routes/account-deletion.ts`, `apps/api/src/billing/services/free-credit-claims.ts`, `apps/api/src/worker/jobs/account-deletion.ts`, `apps/api/eslint.config.mjs` + `eslint-suppressions.json`, `apps/api/scripts/workspace-invariants.ts`, `decisions.md`, `README.md` (this folder) |
 | auth | `apps/api/src/iam/**`, `apps/api/src/middleware/{workspace-binding,actor,auth-scope,sso-gate,agent-scope}.ts`, `apps/api/src/accounts/request-gates.ts`, `apps/api/src/accounts/iam/**`, `apps/api/src/accounts/core/{invites,members,member-role-write,tokens,app}.ts`, `apps/api/src/accounts/invites.ts`, `apps/api/src/scim/users.ts`, `apps/api/src/projects/lib/project-access.ts`, the project access routes, `apps/api/src/shared/impersonation.ts`, `packages/shared/src/workspace-actions.ts`, `packages/manifest-schema/src/**`, `apps/api/scripts/workspace-verdict-parity.ts` |
-| api | `apps/api/src/app.ts`, `apps/api/src/workspaces/index.ts` + new `apps/api/src/workspaces/routes.ts`, `apps/api/src/middleware/workspace-account.ts`, `apps/api/src/shared/route-params.ts`, `apps/api/src/projects/routes/{projects,project-detail}.ts`, `apps/api/src/projects/lib/{serializers,project-quota}.ts`, `apps/api/src/accounts/secret-resources.ts`, `apps/api/src/openapi/**`, `apps/api/scripts/dump-routes.ts`, `tests/spec/routes.generated.json`, the `WS-ROUTE` rows of `tests/spec/end-to-end.md`, `packages/shared/src/workspace-routes.ts`, new `packages/shared/src/workspace-settings.ts`, `packages/sdk/**`, `apps/web/content/docs/developers.mdx` |
+| api | `apps/api/src/app.ts`, `apps/api/src/workspaces/index.ts` + new `apps/api/src/workspaces/routes.ts`, `apps/api/src/projects/provision-core.ts` (except identity's setup option), `apps/api/src/middleware/workspace-account.ts`, `apps/api/src/shared/route-params.ts`, `apps/api/src/projects/routes/{projects,project-detail}.ts`, `apps/api/src/projects/lib/{serializers,project-quota}.ts`, `apps/api/src/accounts/secret-resources.ts`, `apps/api/src/openapi/**`, `apps/api/scripts/dump-routes.ts`, `tests/spec/routes.generated.json`, the `WS-ROUTE` rows of `tests/spec/end-to-end.md`, `packages/shared/src/workspace-routes.ts`, new `packages/shared/src/workspace-settings.ts`, `packages/sdk/**`, `apps/web/content/docs/developers.mdx` |
 | runtime | `apps/cli/**`, `apps/tui/**`, `apps/kortix-sandbox-agent-server/**`, `packages/starter/templates/**`, `apps/api/src/projects/lib/my-kortix-prompt.ts`, `packages/shared/src/host-config/**` |
 | billing (wave 2) | `apps/api/src/billing/**` except identity's three files, `apps/api/src/shared/{session-costs,cost-rollups}.ts`, `apps/api/src/router/routes/usage.ts`, the SDK billing types, `apps/web/src/features/billing/**`, `packages/ui/src/internal/lib/billing/**`, the `billing.*` keys of the 9 web catalogs, `.agents/skills/billing/**`, the billing rows of `faq.md`, M9 |
 | split (wave 2) | `apps/api/src/workspaces/split/**` (I1, I2, I8), `apps/api/src/projects/lib/{workspace-split-copy,project-transfer}.ts`, `apps/api/src/worker/jobs/workspace-split.ts`, `apps/api/scripts/workspace-split.ts`, `apps/api/src/llm-gateway/credentials/{codex,opencode-console}.ts`, the split owner email, `split_notice` on `GET /v1/workspaces/:id` and its SDK type, `split-runbook.md` |
