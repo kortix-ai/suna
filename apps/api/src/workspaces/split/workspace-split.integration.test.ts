@@ -22,6 +22,7 @@ import {
   appSiteBlobs,
   appSiteFiles,
   claudeSubscriptionLogins,
+  creditAccounts,
   creditPurchases,
   iamRoleActions,
   iamRoles,
@@ -161,6 +162,7 @@ async function cleanup(): Promise<void> {
   await db.delete(workspaceSplitRuns);
   await db.delete(appSiteBlobs).where(inArray(appSiteBlobs.accountId, all));
   await db.delete(creditPurchases).where(inArray(creditPurchases.accountId, all));
+  await db.delete(creditAccounts).where(inArray(creditAccounts.accountId, all));
   await db.delete(accounts).where(inArray(accounts.accountId, all));
 }
 
@@ -395,6 +397,28 @@ withDb('workspace split', () => {
     expect(source?.name).toBe('Keeper');
     const report = await checkWorkspaceInvariants();
     expect(Object.entries(report).filter(([, r]) => !r.ok).map(([id]) => id)).toEqual([]);
+  });
+
+  test('an account that pays outside Stripe (RevenueCat, a paid plan set by hand) is held too', async () => {
+    // LEGACY has no Stripe purchase; each paid source alone must hold it.
+    const sources = [
+      { tier: 'credits', provider: 'revenuecat', revenuecatSubscriptionId: 'synthetic-rc-sub', revenuecatCustomerId: 'synthetic-rc-customer' },
+      { tier: 'credits', provider: 'manual' },
+    ];
+    for (const source of sources) {
+      await db.delete(workspaceSplitRuns);
+      await db.delete(creditAccounts).where(eq(creditAccounts.accountId, LEGACY));
+      await db.insert(creditAccounts).values({ accountId: LEGACY, ...source });
+      await planWorkspaceSplits({ accountIds: [LEGACY] });
+      expect([source.provider, (await runFor(MOVED))?.phase]).toEqual([source.provider, 'held']);
+      expect((await runFor(MOVED))?.plan.held_reason).toBe('account_has_billing');
+    }
+    // A free account with a credit row is not held.
+    await db.delete(workspaceSplitRuns);
+    await db.delete(creditAccounts).where(eq(creditAccounts.accountId, LEGACY));
+    await db.insert(creditAccounts).values({ accountId: LEGACY, tier: 'free' });
+    await planWorkspaceSplits({ accountIds: [LEGACY] });
+    expect((await runFor(MOVED))?.phase).toBe('planned');
   });
 
   test('an owner confirming the keeper releases a held account', async () => {

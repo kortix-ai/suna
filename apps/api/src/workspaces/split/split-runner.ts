@@ -96,6 +96,10 @@ async function accountPlanFacts(accountId: string): Promise<Record<string, unkno
       (SELECT count(*)::int FROM kortix.billing_customers WHERE account_id = ${accountId}) AS billing_customers,
       (SELECT count(*)::int FROM kortix.credit_purchases WHERE account_id = ${accountId} AND status = 'completed') AS completed_purchases,
       (SELECT count(*)::int FROM kortix.credit_accounts WHERE account_id = ${accountId} AND stripe_subscription_id IS NOT NULL) AS stripe_subscriptions,
+      (SELECT count(*)::int FROM kortix.credit_accounts WHERE account_id = ${accountId}
+          AND (revenuecat_subscription_id IS NOT NULL OR revenuecat_customer_id IS NOT NULL)) AS revenuecat_subscriptions,
+      (SELECT count(*)::int FROM kortix.credit_accounts WHERE account_id = ${accountId}
+          AND (coalesce(tier, 'free') NOT IN ('free', 'none') OR lifetime_purchased_precise > 0)) AS paid_plan_or_purchase,
       (SELECT count(*)::int FROM kortix.enterprise_contracts WHERE account_id = ${accountId}) AS enterprise_contracts`);
   return facts ?? {};
 }
@@ -120,7 +124,12 @@ async function planAccount(accountId: string): Promise<{ planned: number; held: 
   if (projects.length < 2) return counts;
   const { keeperId, confirmed, frozen } = await keeperFor(accountId, projects);
   const facts = await accountPlanFacts(accountId);
-  const paying = Number(facts.completed_purchases) > 0 || Number(facts.stripe_subscriptions) > 0 || Number(facts.enterprise_contracts) > 0;
+  // Every paid source billing knows: a completed purchase (Stripe or RevenueCat),
+  // a Stripe or RevenueCat subscription, a paid plan however it was set
+  // (Stripe, RevenueCat, an admin, a legacy tier key), purchased credit, and an
+  // enterprise contract.
+  const paying = ['completed_purchases', 'stripe_subscriptions', 'revenuecat_subscriptions', 'paid_plan_or_purchase', 'enterprise_contracts']
+    .some((key) => Number(facts[key]) > 0);
   const phase: WorkspaceSplitPhase = paying && !confirmed ? 'held' : 'planned';
   const open = await db.execute<{ run_id: string; project_id: string; phase: WorkspaceSplitPhase }>(sql`
     SELECT run_id::text, project_id::text, phase FROM kortix.workspace_split_runs
