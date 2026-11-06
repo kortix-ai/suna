@@ -20,7 +20,7 @@ export class Hub {
   private env: AttachmentEnv = {
     chrome: () => this.chrome,
     onBridgeOpen: (a) => this.send({ type: 'attached', attachmentId: a.rec.attachmentId }),
-    onGroup: () => void this.persist(),
+    onChanged: () => void this.persist(),
     onEnded: (a, reason) => {
       this.all.delete(a.rec.attachmentId);
       this.send({ type: 'detached', attachmentId: a.rec.attachmentId, reason });

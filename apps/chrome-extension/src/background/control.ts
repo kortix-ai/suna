@@ -24,6 +24,9 @@ async function identity() {
   };
 }
 
+/** A socket that opens but gets no auth_ok in this time is closed, so the retry path dials again. */
+export const AUTH_TIMEOUT_MS = 15_000;
+
 export class Control {
   online = false;
   private ws?: WebSocket;
@@ -55,13 +58,19 @@ export class Control {
     if (!token || !apiUrl) return;
     const ws = new WebSocket(wsUrl(apiUrl, '/v1/chrome/ws'));
     this.ws = ws;
-    ws.onopen = async () =>
+    let authTimer: ReturnType<typeof setTimeout> | undefined;
+    ws.onopen = async () => {
+      // connect() skips an OPEN socket, so without this deadline a server that never answers
+      // auth leaves the extension open-but-offline until the worker restarts.
+      authTimer = setTimeout(() => { if (this.ws === ws && !this.online) ws.close(); }, AUTH_TIMEOUT_MS);
       ws.send(JSON.stringify({ type: 'auth', token, chromeId: chromeId ?? null, info: await identity() }));
+    };
     ws.onmessage = (e) => {
       let f: any;
       try { f = JSON.parse(String(e.data)); } catch { return; }
       switch (f.type) {
         case 'auth_ok':
+          clearTimeout(authTimer);
           this.online = true;
           this.h.state(true);
           this.tries = 0;
@@ -77,6 +86,7 @@ export class Control {
       }
     };
     ws.onclose = async (e) => {
+      clearTimeout(authTimer);
       clearInterval(this.ping);
       this.online = false;
       if (this.ws !== ws) return;

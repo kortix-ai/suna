@@ -49,7 +49,8 @@ also gives the test state:
   be up: when `--target-full` hits the 90-minute worker cap (`Platinum worker exceeded
   5400000ms`), the job fails after the deploy. Find the origin in the log
   (`grep -o 'https://8080-[^ ]*sbx.platinum.dev'`) and check `<origin>/health`. Its `commit`
-  field names the deployed SHA. Push, or dispatch the workflow, to publish it again.
+  field names the deployed SHA. Dispatch the workflow to publish it again (a push does nothing):
+  `gh workflow run deploy-preview.yml -f pr_number=<N> -f run_tests=false`.
 
 ## Sign in
 
@@ -72,12 +73,13 @@ also gives the test state:
 | Event | Result |
 | --- | --- |
 | `preview` label added | Build and deploy (~7 min). No suite. |
-| Push to a labelled PR | Nothing. The environment keeps serving its last deployed commit. Re-add the label to deploy the new head. |
+| Push to a labelled PR | Nothing. The environment keeps serving its last deployed commit. Dispatch to deploy the new head (next rows). |
+| `gh workflow run deploy-preview.yml -f pr_number=<N> -f run_tests=false` | Redeploy the PR head. The database and its data stay. No suite. |
 | `gh workflow run deploy-preview.yml -f pr_number=<N>` | Redeploy, then run `pnpm test -- --target-full` (40–80 min). A push during the suite stops it within ~1 min. |
-| Label removed | Environment torn down. |
+| Label removed | Environment torn down: the sandbox and its Postgres volume are deleted. Never remove and re-add the label to redeploy. |
 | Branch deleted (including auto-delete on merge) | Environment torn down. |
 | PR closed, branch kept | **Keeps running.** Remove the label. |
-| Daily at 06:17 UTC | Reconciler deletes environments whose branch no longer exists. |
+| Hourly at :17 | Reconciler stops idle preview hosts and hosts of closed PRs, and deletes environments whose branch no longer exists. |
 
 - One deploy runs per PR at a time. Later ones queue. A queued run re-checks the head
   SHA, the label, and the branch when it starts. When any one changed, it cancels itself
