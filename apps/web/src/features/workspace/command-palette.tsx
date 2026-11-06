@@ -2171,7 +2171,6 @@ export function CommandPalette() {
   const actionHandlers: Record<string, () => void> = useMemo(
     () => ({
       newSession: handleNewSession,
-      openTerminal: handleOpenTerminal,
       compactSession: handleCompactSession,
       viewChanges: handleViewChanges,
       inviteMembers: handleInviteMembers,
@@ -2197,7 +2196,6 @@ export function CommandPalette() {
     }),
     [
       handleNewSession,
-      handleOpenTerminal,
       handleCompactSession,
       handleViewChanges,
       handleInviteMembers,

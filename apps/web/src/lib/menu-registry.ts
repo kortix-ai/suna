@@ -112,7 +112,6 @@ export type MenuGroup =
   | 'actions'
   | 'navigation'
   | 'quickActions'
-  | 'settingsPages'
   | 'account'
   | 'theme'
   | 'wallpaper'
