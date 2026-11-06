@@ -853,8 +853,12 @@ export function useCreateWorkspace(options?: { enterProject?: (projectId: string
         // are SIBLINGS (`'all'` vs `'<id>'`), so `list()` alone would match only
         // the accountless slot and silently stop refreshing the list this
         // create just added to. `scope()` is the shared prefix over every form.
-        invalidateProjects: () =>
-          void queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
+        // The accounts list too: a new workspace is usually a new account, and
+        // the switcher builds its rows from that list (`useWorkspaceDirectory`).
+        invalidateProjects: () => {
+          void queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
+          void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
+        },
         // The pre-create cached list — the SAME entry `primeProjectCache`
         // writes and the door/selector read, so on the signup journey (door →
         // selector → /new) it is always warm. `runCreate` reads it before the
