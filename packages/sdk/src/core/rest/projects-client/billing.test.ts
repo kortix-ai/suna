@@ -456,7 +456,7 @@ test('the app-access projection carries the resolved plan key', () => {
 test('requestTopUp POSTs to the account top-up-requests route and returns how many owners were told', async () => {
   nextResponse = { status: 202, body: { notified: 2 } };
   const result = await requestTopUp('acc/1');
-  expect(last().url).toBe('http://test.local/workspaces/acc%2F1/top-up-requests');
+  expect(last().url).toBe('http://test.local/accounts/acc%2F1/top-up-requests');
   expect(last().method).toBe('POST');
   expect(result).toEqual({ notified: 2 });
 });

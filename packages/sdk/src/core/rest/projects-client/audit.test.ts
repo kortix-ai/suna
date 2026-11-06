@@ -201,7 +201,7 @@ test('getAccountAuditActivity reads per-user activity with snake_case filters', 
     actorType: 'human',
     credentialKind: 'browser_session',
   });
-  expect(new URL(calls[0]!.url).pathname).toBe('/workspaces/account-1/audit/activity');
+  expect(new URL(calls[0]!.url).pathname).toBe('/accounts/account-1/audit/activity');
   expect(new URL(calls[0]!.url).search).toBe('');
   expect(new URL(calls[1]!.url).search.slice(1)).toBe(
     'since=2026-09-09&until=2026-10-21&project_id=project-1&actor=user-1&client=browser&actor_type=human&credential_kind=browser_session',

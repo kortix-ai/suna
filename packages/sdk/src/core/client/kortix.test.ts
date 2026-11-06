@@ -313,7 +313,7 @@ test('project(id).sessions.ensureWarm and claimWarm reject with ENDPOINT_RETIRED
 
 test('top-level projects.list hits /projects', async () => {
   await kortix.projects.list();
-  expect(last().url).toContain('/workspaces');
+  expect(last().url).toMatch(/\/projects$/);
 });
 
 test('session(...).audit hits the audit endpoint with the given limit', async () => {
@@ -546,11 +546,11 @@ test('kortix.sandboxShares hits /p/share (sandbox-scoped, not project-scoped)', 
 
 test('kortix.accounts covers cancel/resend invite (account-scoped)', async () => {
   await kortix.accounts.cancelInvite('ACC1', 'INV1');
-  expect(last().url).toContain('/workspaces/ACC1/invites/INV1');
+  expect(last().url).toContain('/accounts/ACC1/invites/INV1');
   expect(last().method).toBe('DELETE');
 
   await kortix.accounts.resendInvite('ACC1', 'INV1');
-  expect(last().url).toContain('/workspaces/ACC1/invites/INV1/resend');
+  expect(last().url).toContain('/accounts/ACC1/invites/INV1/resend');
   expect(last().method).toBe('POST');
 });
 
@@ -796,7 +796,7 @@ test('project(id) covers experimental-feature toggle, sandbox provider pin, and 
 
 test('kortix.projects.createRepo hits the create-repo endpoint (not bound to an existing project id)', async () => {
   await kortix.projects.createRepo({ name: 'new-repo' });
-  expect(last().url).toContain('/workspaces/create-repo');
+  expect(last().url).toContain('/projects/create-repo');
   expect(last().method).toBe('POST');
 });
 
@@ -893,29 +893,29 @@ test('project(id).changeRequests.requestChanges hits the request-changes endpoin
 
 test('kortix.accounts.audit covers log/export/webhooks CRUD', async () => {
   await kortix.accounts.audit.log('ACC1', { action: 'iam.', limit: 20 });
-  expect(last().url).toContain('/workspaces/ACC1/audit?action=iam.&limit=20');
+  expect(last().url).toContain('/accounts/ACC1/audit?action=iam.&limit=20');
   expect(last().method).toBe('GET');
 
   await kortix.accounts.audit.export('ACC1', { format: 'csv' });
-  expect(last().url).toContain('/workspaces/ACC1/audit/export?format=csv');
+  expect(last().url).toContain('/accounts/ACC1/audit/export?format=csv');
 
   await kortix.accounts.audit.webhooks.list('ACC1');
-  expect(last().url).toContain('/workspaces/ACC1/audit/webhooks');
+  expect(last().url).toContain('/accounts/ACC1/audit/webhooks');
   expect(last().method).toBe('GET');
 
   await kortix.accounts.audit.webhooks.create('ACC1', {
     name: 'siem',
     url: 'https://siem.example.com/hook',
   });
-  expect(last().url).toContain('/workspaces/ACC1/audit/webhooks');
+  expect(last().url).toContain('/accounts/ACC1/audit/webhooks');
   expect(last().method).toBe('POST');
 
   await kortix.accounts.audit.webhooks.update('ACC1', 'WH1', { enabled: false });
-  expect(last().url).toContain('/workspaces/ACC1/audit/webhooks/WH1');
+  expect(last().url).toContain('/accounts/ACC1/audit/webhooks/WH1');
   expect(last().method).toBe('PATCH');
 
   await kortix.accounts.audit.webhooks.remove('ACC1', 'WH1');
-  expect(last().url).toContain('/workspaces/ACC1/audit/webhooks/WH1');
+  expect(last().url).toContain('/accounts/ACC1/audit/webhooks/WH1');
   expect(last().method).toBe('DELETE');
 });
 
@@ -1982,7 +1982,7 @@ test('ensureReady() caps each /start long-poll to the remaining deadline budget'
 
 test('kortix.iam.assignments covers list/create/revoke against ONE endpoint family', async () => {
   await kortix.iam.assignments.list('ACC1', { scopeType: 'project', scopeId: 'PID1' });
-  expect(last().url).toContain('/workspaces/ACC1/iam/assignments');
+  expect(last().url).toContain('/accounts/ACC1/iam/assignments');
   expect(last().url).toContain('scope_type=project');
   expect(last().method).toBe('GET');
 
@@ -1991,29 +1991,29 @@ test('kortix.iam.assignments covers list/create/revoke against ONE endpoint fami
     roleKey: 'manager',
     scope: { type: 'project', id: 'PID1' },
   });
-  expect(last().url).toContain('/workspaces/ACC1/iam/assignments');
+  expect(last().url).toContain('/accounts/ACC1/iam/assignments');
   expect(last().method).toBe('POST');
   expect(last().body).toMatchObject({ principal_type: 'user', role_key: 'manager' });
 
   await kortix.iam.assignments.revoke('ACC1', 'AS1');
-  expect(last().url).toContain('/workspaces/ACC1/iam/assignments/AS1');
+  expect(last().url).toContain('/accounts/ACC1/iam/assignments/AS1');
   expect(last().method).toBe('DELETE');
 });
 
 test('kortix.iam.permissions reads the catalog and one role’s leaves', async () => {
   await kortix.iam.permissions.list('ACC1', { scopeType: 'account' });
-  expect(last().url).toContain('/workspaces/ACC1/iam/permissions?scope_type=account');
+  expect(last().url).toContain('/accounts/ACC1/iam/permissions?scope_type=account');
 
   await kortix.iam.permissions.forRole('ACC1', 'ROLE1');
-  expect(last().url).toContain('/workspaces/ACC1/iam/roles/ROLE1/permissions');
+  expect(last().url).toContain('/accounts/ACC1/iam/roles/ROLE1/permissions');
 });
 
 test('kortix.iam.roles and kortix.iam.groups reach their collections', async () => {
   await kortix.iam.roles.list('ACC1');
-  expect(last().url).toContain('/workspaces/ACC1/iam/roles');
+  expect(last().url).toContain('/accounts/ACC1/iam/roles');
 
   await kortix.iam.groups.list('ACC1');
-  expect(last().url).toContain('/workspaces/ACC1/iam/groups');
+  expect(last().url).toContain('/accounts/ACC1/iam/groups');
 });
 
 test('kortix.iam.can probes one leaf for one principal', async () => {
@@ -2024,7 +2024,7 @@ test('kortix.iam.can probes one leaf for one principal', async () => {
     resourceType: 'project',
     resourceId: 'PID1',
   });
-  expect(last().url).toContain('/workspaces/ACC1/iam/members/U1/effective:batch');
+  expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective:batch');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({
     probes: [{ action: 'project.write', resourceType: 'project', resourceId: 'PID1' }],

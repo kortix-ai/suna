@@ -627,7 +627,7 @@ export interface CaptureWorkspace {
   updated_at: string | null;
 }
 
-const base = (accountId: string) => `/workspaces/${accountId}/capture`;
+const base = (accountId: string) => `/accounts/${accountId}/capture`;
 
 function captureQuery(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();

@@ -665,7 +665,7 @@ test('createProjectTrigger sends the run caps, updateProjectTrigger removes one 
 test('getAccountAutomations reads the switch and setAccountAutomationsPaused flips it', async () => {
   nextResponse = { status: 200, body: { paused: false, paused_at: null, paused_by: null, can_change: true } };
   const status = await getAccountAutomations('A1');
-  expect(last().url).toContain('/workspaces/A1/automations');
+  expect(last().url).toContain('/accounts/A1/automations');
   expect(last().method ?? 'GET').toBe('GET');
   expect(status.paused).toBe(false);
 

@@ -193,7 +193,7 @@ test('provisionProject applies the caller timeout to slow managed-git provisioni
     ),
   ).rejects.toMatchObject({
     code: 'TIMEOUT',
-    endpoint: '/workspaces/provision',
+    endpoint: '/projects/provision',
     timeout: 5,
   });
 });
@@ -1263,7 +1263,7 @@ test('transferProject POSTs the target account id to the transfer route', async 
   const sent = await captureTransfer('proj-1', 'acc-2');
 
   expect(sent.method).toBe('POST');
-  expect(sent.url).toBe('http://backend.test/v1/workspaces/proj-1/transfer');
+  expect(sent.url).toBe('http://backend.test/v1/projects/proj-1/transfer');
   expect(sent.parsed).toEqual({ account_id: 'acc-2' });
 });
 
@@ -1290,7 +1290,7 @@ test('getProjectQuota reads the cap state for an explicit account', async () => 
 
   const quota = await getProjectQuota({ accountId: 'acc-1' });
 
-  expect(sentUrl).toBe('http://backend.test/v1/workspaces/quota?account_id=acc-1');
+  expect(sentUrl).toBe('http://backend.test/v1/projects/quota?account_id=acc-1');
   expect(quota.capped).toBe(true);
   expect(quota.limit).toBe(1);
   expect(quota.count).toBe(1);
@@ -1311,7 +1311,7 @@ test('getProjectQuota omits account_id to let the server resolve the default', a
 
   const quota = await getProjectQuota();
 
-  expect(sentUrl).toBe('http://backend.test/v1/workspaces/quota');
+  expect(sentUrl).toBe('http://backend.test/v1/projects/quota');
   expect(quota.capped).toBe(false);
   expect(quota.message).toBeNull();
 });

@@ -241,7 +241,7 @@ export async function updateAccountName(accountId: string, name: string) {
 
 /** Stored branding + entitlement state. Any member may read it. */
 export async function getAccountBranding(accountId: string) {
-  return unwrap(await backendApi.get<AccountBrandingState>(`/workspaces/${accountId}/branding`));
+  return unwrap(await backendApi.get<AccountBrandingState>(`/accounts/${accountId}/branding`));
 }
 
 
@@ -255,7 +255,7 @@ export async function updateAccountBranding(
   input: { app_name: string | null },
 ) {
   return unwrap(
-    await backendApi.put<AccountBrandingState>(`/workspaces/${accountId}/branding`, input),
+    await backendApi.put<AccountBrandingState>(`/accounts/${accountId}/branding`, input),
   );
 }
 
@@ -274,7 +274,7 @@ export async function uploadAccountBrandingAsset(
   form.append('file', file, filename ?? (file instanceof File ? file.name : kind));
   return unwrap(
     await backendApi.upload<AccountBrandingState>(
-      `/workspaces/${accountId}/branding/assets/${kind}`,
+      `/accounts/${accountId}/branding/assets/${kind}`,
       form,
     ),
   );
@@ -287,19 +287,19 @@ export async function removeAccountBrandingAsset(
 ) {
   return unwrap(
     await backendApi.delete<AccountBrandingState>(
-      `/workspaces/${accountId}/branding/assets/${kind}`,
+      `/accounts/${accountId}/branding/assets/${kind}`,
     ),
   );
 }
 
 /** Reset every mark and the name to Kortix defaults (permission only). */
 export async function resetAccountBranding(accountId: string) {
-  return unwrap(await backendApi.delete<AccountBrandingState>(`/workspaces/${accountId}/branding`));
+  return unwrap(await backendApi.delete<AccountBrandingState>(`/accounts/${accountId}/branding`));
 }
 
 /** @deprecated Use `listWorkspaceMembers(workspaceId)`. Kept permanently. */
 export async function listAccountMembers(accountId: string) {
-  return unwrap(await backendApi.get<AccountMember[]>(`/workspaces/${accountId}/members`));
+  return unwrap(await backendApi.get<AccountMember[]>(`/accounts/${accountId}/members`));
 }
 
 /** @deprecated Use `inviteWorkspaceMember(workspaceId, input)`. Kept permanently. */
@@ -308,7 +308,7 @@ export async function inviteAccountMember(
   input: { email: string; role?: AccountRole; project_grants?: InviteProjectGrant[] },
 ) {
   return unwrap(
-    await backendApi.post<InviteMemberResult>(`/workspaces/${accountId}/members`, input, {
+    await backendApi.post<InviteMemberResult>(`/accounts/${accountId}/members`, input, {
       // 409 (already member) is an expected business error; page surfaces it inline.
       showErrors: false,
     }),
@@ -317,13 +317,13 @@ export async function inviteAccountMember(
 
 /** @deprecated Use `listWorkspaceInvites(workspaceId)`. Kept permanently. */
 export async function listAccountInvites(accountId: string) {
-  return unwrap(await backendApi.get<AccountInvitation[]>(`/workspaces/${accountId}/invites`));
+  return unwrap(await backendApi.get<AccountInvitation[]>(`/accounts/${accountId}/invites`));
 }
 
 /** @deprecated Use `cancelWorkspaceInvite(workspaceId, inviteId)`. Kept permanently. */
 export async function cancelAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/workspaces/${accountId}/invites/${inviteId}`),
+    await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/invites/${inviteId}`),
   );
 }
 
@@ -331,7 +331,7 @@ export async function cancelAccountInvite(accountId: string, inviteId: string) {
 export async function resendAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
     await backendApi.post<ResendInviteResult>(
-      `/workspaces/${accountId}/invites/${inviteId}/resend`,
+      `/accounts/${accountId}/invites/${inviteId}/resend`,
       {},
     ),
   );
@@ -413,7 +413,7 @@ export async function declineAccountInvite(inviteId: string) {
 /** @deprecated Use `removeWorkspaceMember(workspaceId, userId)`. Kept permanently. */
 export async function removeAccountMember(accountId: string, userId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/workspaces/${accountId}/members/${userId}`),
+    await backendApi.delete<{ ok: boolean }>(`/accounts/${accountId}/members/${userId}`),
   );
 }
 
@@ -424,13 +424,13 @@ export async function updateAccountMemberRole(
   role: AccountRole,
 ) {
   return unwrap(
-    await backendApi.patch<AccountMember>(`/workspaces/${accountId}/members/${userId}`, { role }),
+    await backendApi.patch<AccountMember>(`/accounts/${accountId}/members/${userId}`, { role }),
   );
 }
 
 /** @deprecated Use `leaveWorkspace(workspaceId)`. Kept permanently. */
 export async function leaveAccount(accountId: string) {
-  return unwrap(await backendApi.post<{ ok: boolean }>(`/workspaces/${accountId}/leave`, {}));
+  return unwrap(await backendApi.post<{ ok: boolean }>(`/accounts/${accountId}/leave`, {}));
 }
 
 /**

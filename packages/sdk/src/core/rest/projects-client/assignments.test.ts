@@ -97,7 +97,7 @@ test('listAssignments GETs the account assignment collection and unwraps it', as
   nextResponse = { status: 200, body: { assignments: [row] } };
   const out = await listAssignments('acc-1');
   expect(last().method).toBe('GET');
-  expect(last().url).toContain('/workspaces/acc-1/iam/assignments');
+  expect(last().url).toContain('/accounts/acc-1/iam/assignments');
   expect(out).toEqual([row]);
 });
 
@@ -131,7 +131,7 @@ test('listAssignments maps scope, object and role filters onto snake_case params
 test('listAssignments omits every filter it was not given', async () => {
   nextResponse = { status: 200, body: { assignments: [] } };
   await listAssignments('acc-1');
-  expect(last().url).toBe('http://test.local/workspaces/acc-1/iam/assignments');
+  expect(last().url).toBe('http://test.local/accounts/acc-1/iam/assignments');
 });
 
 test('listAssignments is a background read — a 403 never reaches the global error sink', async () => {
@@ -150,7 +150,7 @@ test('createAssignment POSTs ONE row — principal, role, scope — and returns 
     scope: { type: 'project', id: 'proj-1' },
   });
   expect(last().method).toBe('POST');
-  expect(last().url).toContain('/workspaces/acc-1/iam/assignments');
+  expect(last().url).toContain('/accounts/acc-1/iam/assignments');
   expect(last().body).toEqual({
     principal_type: 'user',
     principal_id: 'u-1',
@@ -225,7 +225,7 @@ test('revokeAssignment DELETEs one assignment by id and returns the removed row'
   nextResponse = { status: 200, body: { revoked: true, assignment: row } };
   const out = await revokeAssignment('acc-1', 'as-1');
   expect(last().method).toBe('DELETE');
-  expect(last().url).toContain('/workspaces/acc-1/iam/assignments/as-1');
+  expect(last().url).toContain('/accounts/acc-1/iam/assignments/as-1');
   expect(out).toEqual(row);
 });
 
@@ -246,7 +246,7 @@ test('listPermissions GETs the catalog and unwraps `permissions`', async () => {
   nextResponse = { status: 200, body: { permissions: [permission] } };
   const out = await listPermissions('acc-1');
   expect(last().method).toBe('GET');
-  expect(last().url).toContain('/workspaces/acc-1/iam/permissions');
+  expect(last().url).toContain('/accounts/acc-1/iam/permissions');
   expect(out).toEqual([permission]);
 });
 

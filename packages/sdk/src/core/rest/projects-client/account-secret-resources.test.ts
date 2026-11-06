@@ -28,12 +28,12 @@ test('account secret resource calls use stable IDs and never send a value on rea
   await revokeAccountSecretResourceGrant('account', 'secret', 'member');
   await deleteAccountSecretResource('account', 'secret');
   expect(calls.map((call) => [call.method, call.url])).toEqual([
-    ['GET', 'http://test.local/workspaces/account/secret-resources'],
-    ['POST', 'http://test.local/workspaces/account/secret-resources'],
-    ['PUT', 'http://test.local/workspaces/account/secret-resources/secret/value'],
-    ['PUT', 'http://test.local/workspaces/account/secret-resources/secret/grants/member'],
-    ['DELETE', 'http://test.local/workspaces/account/secret-resources/secret/grants/member'],
-    ['DELETE', 'http://test.local/workspaces/account/secret-resources/secret'],
+    ['GET', 'http://test.local/accounts/account/secret-resources'],
+    ['POST', 'http://test.local/accounts/account/secret-resources'],
+    ['PUT', 'http://test.local/accounts/account/secret-resources/secret/value'],
+    ['PUT', 'http://test.local/accounts/account/secret-resources/secret/grants/member'],
+    ['DELETE', 'http://test.local/accounts/account/secret-resources/secret/grants/member'],
+    ['DELETE', 'http://test.local/accounts/account/secret-resources/secret'],
   ]);
   expect(calls[0]?.body).toBeNull();
   expect(calls[2]?.body).toEqual({ value: 'new-key' });
@@ -42,14 +42,14 @@ test('account secret resource calls use stable IDs and never send a value on rea
 test('retry ends a cooldown with a body-less POST on the secret', async () => {
   await retryAccountSecretResource('account', 'secret');
   expect(calls.map((call) => [call.method, call.url])).toEqual([
-    ['POST', 'http://test.local/workspaces/account/secret-resources/secret/retry'],
+    ['POST', 'http://test.local/accounts/account/secret-resources/secret/retry'],
   ]);
 });
 
 test('usage refresh carries the project that grants access to an existing account-wide subscription', async () => {
   await refreshAccountSecretUsage('account', 'secret', 'project/one');
   expect(calls.map((call) => [call.method, call.url, call.body])).toEqual([
-    ['POST', 'http://test.local/workspaces/account/secret-resources/secret/usage?project_id=project%2Fone', null],
+    ['POST', 'http://test.local/accounts/account/secret-resources/secret/usage?project_id=project%2Fone', null],
   ]);
 });
 
@@ -57,8 +57,8 @@ test('subscription discovery and legacy refresh preserve project and storage ide
   await listSubscriptionConnections('account', 'project/one');
   await refreshSubscriptionConnectionUsage('account', 'secret', 'project/one', 'project');
   expect(calls.map((call) => [call.method, call.url])).toEqual([
-    ['GET', 'http://test.local/workspaces/account/subscription-connections?project_id=project%2Fone'],
-    ['POST', 'http://test.local/workspaces/account/subscription-connections/secret/usage?project_id=project%2Fone&storage=project'],
+    ['GET', 'http://test.local/accounts/account/subscription-connections?project_id=project%2Fone'],
+    ['POST', 'http://test.local/accounts/account/subscription-connections/secret/usage?project_id=project%2Fone&storage=project'],
   ]);
 });
 
@@ -75,7 +75,7 @@ test('usage refresh is a body-less POST on the secret and returns the snapshot',
   expect(result).toEqual({ usage, provider_account: { email: 'person@example.test', plan: 'pro' } });
   expect(result.provider_account?.email).toBe('person@example.test');
   expect(calls.map((call) => [call.method, call.url, call.body])).toEqual([
-    ['POST', 'http://test.local/workspaces/account/secret-resources/secret/usage', null],
+    ['POST', 'http://test.local/accounts/account/secret-resources/secret/usage', null],
   ]);
 });
 
@@ -97,9 +97,9 @@ test('project access and member restriction use one scoped request', async () =>
   });
   await setAccountSecretResourceAccess('account', 'secret', 'members', ['member']);
   expect(calls.map((call) => [call.method, call.url])).toEqual([
-    ['GET', 'http://test.local/workspaces/account/secret-resources?project_id=project'],
-    ['POST', 'http://test.local/workspaces/account/secret-resources'],
-    ['PUT', 'http://test.local/workspaces/account/secret-resources/secret/access'],
+    ['GET', 'http://test.local/accounts/account/secret-resources?project_id=project'],
+    ['POST', 'http://test.local/accounts/account/secret-resources'],
+    ['PUT', 'http://test.local/accounts/account/secret-resources/secret/access'],
   ]);
   expect(calls[1]?.body).toMatchObject({ project_id: 'project' });
   expect(calls[2]?.body).toEqual({ mode: 'members', user_ids: ['member'] });

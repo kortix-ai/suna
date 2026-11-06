@@ -39,7 +39,7 @@ export async function listAccountResourceGrants(
   const query = appendQuery({ resourceType: filter.resourceType, principalType: filter.principalType, principalId: filter.principalId, projectId: filter.projectId });
   return unwrap(
     await iamGet<{ grants: AccountResourceGrant[] }>(
-      `/workspaces/${accountId}/iam/resource-grants${query}`,
+      `/accounts/${accountId}/iam/resource-grants${query}`,
     ),
   ).grants;
 }

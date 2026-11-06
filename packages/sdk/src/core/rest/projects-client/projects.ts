@@ -15,7 +15,6 @@ import {
   serverTokenGet,
   unwrap,
 } from './shared';
-import { withWorkspaceRouteFallback } from '../../http/workspace-routes';
 
 /**
  * Stable ids for the platform's per-project feature flags (mirrors
@@ -622,12 +621,12 @@ export interface RepoCollaboratorInvite {
 }
 
 export async function listProjects() {
-  return unwrap(await backendApi.get<KortixProject[]>('/workspaces'));
+  return unwrap(await backendApi.get<KortixProject[]>('/projects'));
 }
 
 export async function listProjectsForAccount(accountId?: string) {
   const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
-  return unwrap(await backendApi.get<KortixProject[]>(`/workspaces${query}`));
+  return unwrap(await backendApi.get<KortixProject[]>(`/projects${query}`));
 }
 
 export async function getProject(projectId: string, options?: ApiClientOptions) {
@@ -790,7 +789,7 @@ export async function getProjectLlmCatalogProviders(projectId: string, options?:
 }
 
 export async function createProject(input: ProjectInput) {
-  return unwrap(await backendApi.post<KortixProject>('/workspaces', input));
+  return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
 /**
@@ -801,7 +800,7 @@ export async function createProject(input: ProjectInput) {
  */
 export async function createProjectRepo(input: CreateProjectRepoInput) {
   return unwrap(
-    await backendApi.post<KortixProject>('/workspaces/create-repo', input, { showErrors: false }),
+    await backendApi.post<KortixProject>('/projects/create-repo', input, { showErrors: false }),
   );
 }
 
@@ -816,7 +815,7 @@ export async function provisionProject(
 ) {
   return unwrap(
     await backendApi.post<KortixProject>(
-      '/workspaces/provision',
+      '/projects/provision',
       {
         seed_starter: true,
         ...input,
@@ -972,7 +971,7 @@ export async function provisionProjectStream(
   options: ApiClientOptions = {},
 ): Promise<KortixProject> {
   const response = await backendApi.postStream(
-    '/workspaces/provision-stream',
+    '/projects/provision-stream',
     { seed_starter: true, ...input },
     options,
   );
@@ -1112,7 +1111,7 @@ export interface ProjectQuota {
  */
 export async function getProjectQuota(options?: { accountId?: string }): Promise<ProjectQuota> {
   const query = options?.accountId ? `?account_id=${encodeURIComponent(options.accountId)}` : '';
-  return unwrap(await backendApi.get<ProjectQuota>(`/workspaces/quota${query}`));
+  return unwrap(await backendApi.get<ProjectQuota>(`/projects/quota${query}`));
 }
 
 export interface ManagedGitStatus {
@@ -1388,7 +1387,7 @@ export async function archiveProject(projectId: string) {
 export async function transferProject(projectId: string, accountId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean; project_id: string; account_id: string }>(
-      `/workspaces/${projectId}/transfer`,
+      `/projects/${projectId}/transfer`,
       { account_id: accountId },
     ),
   );
@@ -1409,7 +1408,7 @@ export async function fetchProjectsForAccountWithToken(
 ): Promise<KortixProject[] | null> {
   return serverTokenGet<KortixProject[]>(
     opts,
-    `/v1/workspaces?account_id=${encodeURIComponent(accountId)}`,
+    `/v1/projects?account_id=${encodeURIComponent(accountId)}`,
   );
 }
 
@@ -1430,7 +1429,7 @@ export async function provisionProjectWithToken(
   if (!opts.backendUrl || !opts.accessToken) return { ok: false, limitReached: false };
   const base = normalizeServerBackendBase(opts.backendUrl);
   try {
-    const res = await withWorkspaceRouteFallback(fetch)(`${base}/v1/workspaces/provision`, {
+    const res = await fetch(`${base}/v1/projects/provision`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${opts.accessToken}`,

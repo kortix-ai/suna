@@ -451,13 +451,13 @@ export interface AccountAutomationsStatus {
 }
 
 export async function getAccountAutomations(accountId: string) {
-  return unwrap(await backendApi.get<AccountAutomationsStatus>(`/workspaces/${accountId}/automations`));
+  return unwrap(await backendApi.get<AccountAutomationsStatus>(`/accounts/${accountId}/automations`));
 }
 
 /** Pause or resume every trigger of the account. Needs account.write (owners and admins by default). */
 export async function setAccountAutomationsPaused(accountId: string, paused: boolean) {
   return unwrap(
-    await backendApi.patch<AccountAutomationsStatus>(`/workspaces/${accountId}/automations`, { paused }, { showErrors: false }),
+    await backendApi.patch<AccountAutomationsStatus>(`/accounts/${accountId}/automations`, { paused }, { showErrors: false }),
   );
 }
 
