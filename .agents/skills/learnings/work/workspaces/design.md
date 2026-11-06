@@ -962,6 +962,28 @@ against a view (learning `2026-08-19T163833Z`).
 5. Rollback: there is none by image (an older image names dropped columns). Forward-fix
    only, which is why step 1 rehearses the cutover.
 
+**API-internal names follow the column, in the R3 image (decided 2026-11-06).** The
+API's internal `projectId` / `accountId` variables, parameters, Drizzle field names and
+service signatures become `workspaceId` in the same R3 image that renames the columns
+(step 1), not before. Reasons:
+
+- The Drizzle schema names the column. `projectId: uuid('project_id')` renamed to
+  `workspaceId: uuid('project_id')` before R3 means two names for one column for a
+  release, and every raw `sql` fragment still says `project_id`: a reader cannot tell
+  which name is true. In R3 the field, the column and the SQL change in one commit.
+- Before R3 the two keys are physically different (`project_id` = workspace id,
+  `account_id` = account key). Renaming `accountId` to anything workspace-shaped before
+  the account key is dropped would hide which key a query filters on, which is exactly
+  the bug class the split ledger and the I1–I12 invariants exist to catch.
+- The rename is mechanical (13,886 `projectId` occurrences in 1,457 files of `apps/api/src`, counted 2026-11-06); doing it once,
+  with the SQL trace (`KORTIX_SQL_TRACE`) diffed before and after, proves it runs the
+  same SQL. Doing it twice (names now, columns later) doubles the review and the merge
+  conflicts with every branch in flight.
+- What callers see is already workspace-named in Release 1: the canonical routes
+  (`/v1/workspaces/*`, `:workspaceId` in every route template), the response field
+  `workspace_id`, the SDK's workspace twins (`listWorkspaceSessions`, …) and the CLI's
+  `--workspace`. Only the internal identifiers wait.
+
 ---
 
 ## 6. Measured facts and table classification
