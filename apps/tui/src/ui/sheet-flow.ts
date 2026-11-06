@@ -40,6 +40,8 @@ export function useSheetFlow<F extends { kind: string }>(onBusy: (busy: boolean)
   return { flow, setFlow, setFlowState, abort };
 }
 
+export type SheetFlow<F extends { kind: string }> = ReturnType<typeof useSheetFlow<F>>;
+
 export interface SheetRunOptions {
   setFlow(next: typeof VIEW): void;
   onToast(message: string, kind?: 'info' | 'error'): void;

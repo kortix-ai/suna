@@ -24,7 +24,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import { kortix } from '../../kortix.ts';
-import { VIEW, useSheetRun } from '../../ui/sheet-flow.ts';
+import { type SheetFlow, VIEW, useSheetRun } from '../../ui/sheet-flow.ts';
+import type { ProviderSheetProps } from './provider-sheet.tsx';
 import type { AccountMode, Flow } from './provider-flow.ts';
 import { accountsFor, providerSheetKind } from './providers-model.ts';
 import type { ProvidersData } from './use-providers.ts';
@@ -106,14 +107,11 @@ export function useProviderConnection(projectId: string, entry: LlmProviderEntry
   };
 }
 
-export interface ProviderActionsInput {
-  projectId: string;
-  entry: LlmProviderEntry;
-  data: ProvidersData;
+interface ProviderActionsInput
+  extends Pick<SheetFlow<Flow>, 'setFlow'>,
+    Pick<ProviderSheetProps, 'projectId' | 'entry' | 'data' | 'onToast'> {
   connection: Pick<ProviderConnection, 'sheet' | 'subscription' | 'accountNoun' | 'anthropicKeys'>;
   signIn: UseSignIn;
-  setFlow(next: Flow): void;
-  onToast(message: string, kind?: 'info' | 'error'): void;
 }
 
 /** The writes. Each one ends its flow step: pending, refresh, toast, back to the view. */

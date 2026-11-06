@@ -13,19 +13,19 @@ import {
   connectionSharedWithEveryone,
 } from '@kortix/sdk';
 import { useKeyboard } from '@opentui/react';
-import { type Dispatch, type MutableRefObject, type SetStateAction, useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { copyToClipboard } from '../../lib/clipboard.ts';
 import { errorText } from '../../lib/errors.ts';
 import { printableKey } from '../../lib/keys.ts';
 import { openUrl } from '../../lib/open-url.ts';
 import { hostOf } from '../../lib/url.ts';
-import { VIEW } from '../../ui/sheet-flow.ts';
+import { type SheetFlow, VIEW } from '../../ui/sheet-flow.ts';
 import { saveAccountCredential } from './account-flows.ts';
 import type { ConnectorActions } from './connector-actions.ts';
-import { type ProjectConnectorRow, accessChoices, mayChangeAccount } from './connectors-model.ts';
+import type { ConnectorSheetProps } from './connector-sheet.tsx';
+import { accessChoices, mayChangeAccount } from './connectors-model.ts';
 import { matchesConnectorsBinding as is } from './keys.ts';
-import type { ConnectorsData } from './use-connectors.ts';
 
 export type Flow =
   | typeof VIEW
@@ -64,7 +64,7 @@ export function pickedLists(selected: readonly string[]): NewConnectorAccountDra
 }
 
 /** The current grants of a shared account, as picker keys. */
-export function currentPicks(connection: Connection | undefined): string[] {
+function currentPicks(connection: Connection | undefined): string[] {
   if (!connection || connection.owner_type !== 'project' || connectionSharedWithEveryone(connection)) return [];
   return (connection.shared_with ?? []).map((share) => `${share.principal_type}:${share.principal_id}`);
 }
@@ -90,24 +90,16 @@ export function useAccountCursor(accounts: Connection[]) {
   return { current, moveCursor };
 }
 
-export interface ConnectorKeysInput extends ConnectorActions {
-  projectId: string;
-  row: ProjectConnectorRow;
+interface ConnectorKeysInput
+  extends ConnectorActions,
+    SheetFlow<Flow>,
+    ReturnType<typeof useAccountCursor>,
+    Pick<ConnectorSheetProps, 'projectId' | 'row' | 'data' | 'focused' | 'onToast' | 'onRemoved'> {
   connector: AdminConnector;
-  data: ConnectorsData;
-  focused: boolean;
   managed: boolean;
   webOnly: boolean;
   webUrl: string;
-  current: Connection | null;
-  moveCursor(delta: number): void;
-  flow: Flow;
-  setFlow(next: Flow): void;
-  setFlowState: Dispatch<SetStateAction<Flow>>;
-  abort: MutableRefObject<AbortController | null>;
   openAdd(): void;
-  onToast(message: string, kind?: 'info' | 'error'): void;
-  onRemoved(): void;
 }
 
 /** What each key does in each step. */

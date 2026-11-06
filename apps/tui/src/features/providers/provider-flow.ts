@@ -5,7 +5,7 @@
  * runs the write a step ends in.
  */
 
-import type { AccountSecretResource, ConnectionAccessChoice, LlmProviderEntry } from '@kortix/sdk';
+import type { AccountSecretResource, ConnectionAccessChoice } from '@kortix/sdk';
 import { useKeyboard } from '@opentui/react';
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -14,11 +14,10 @@ import { errorText } from '../../lib/errors.ts';
 import { printableKey } from '../../lib/keys.ts';
 import { openUrl } from '../../lib/open-url.ts';
 import { hostOf } from '../../lib/url.ts';
-import { VIEW } from '../../ui/sheet-flow.ts';
+import { type SheetFlow, VIEW } from '../../ui/sheet-flow.ts';
 import { matchesProvidersBinding as is } from './keys.ts';
 import type { ProviderActions, ProviderConnection } from './provider-actions.ts';
-import type { ProviderRow } from './providers-model.ts';
-import type { ProvidersData } from './use-providers.ts';
+import type { ProviderSheetProps } from './provider-sheet.tsx';
 import type { UseSignIn } from './use-sign-in.ts';
 export type AccountMode = 'oauth' | 'key';
 
@@ -67,17 +66,13 @@ export const editCode =
   (flow: Flow): Flow =>
     flow.kind === 'signin' ? { ...flow, code: change(flow.code) } : flow;
 
-export interface ProviderKeysInput extends ProviderConnection, ProviderActions {
-  entry: LlmProviderEntry;
-  row: ProviderRow;
-  data: ProvidersData;
-  focused: boolean;
+interface ProviderKeysInput
+  extends ProviderConnection,
+    ProviderActions,
+    Omit<SheetFlow<Flow>, 'abort'>,
+    Pick<ProviderSheetProps, 'entry' | 'row' | 'data' | 'focused' | 'onToast'> {
   signIn: UseSignIn;
-  flow: Flow;
-  setFlow(next: Flow): void;
-  setFlowState: Dispatch<SetStateAction<Flow>>;
   setCursor: Dispatch<SetStateAction<number>>;
-  onToast(message: string, kind?: 'info' | 'error'): void;
 }
 
 /** What each key does in each step. */

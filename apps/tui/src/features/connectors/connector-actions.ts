@@ -17,11 +17,11 @@ import {
   planPrivateConnectionShare,
   revokeAssignment,
 } from '@kortix/sdk';
-import { type Dispatch, type MutableRefObject, type SetStateAction, useCallback } from 'react';
+import { useCallback } from 'react';
 
 import { kortix } from '../../kortix.ts';
 import { errorText } from '../../lib/errors.ts';
-import { VIEW, useSheetRun } from '../../ui/sheet-flow.ts';
+import { type SheetFlow, VIEW, useSheetRun } from '../../ui/sheet-flow.ts';
 import {
   type SignInIo,
   connectManagedAccount,
@@ -29,23 +29,17 @@ import {
   signInDirectAccount,
 } from './account-flows.ts';
 import { type Flow, pickedLists } from './connector-flow.ts';
-import type { ProjectConnectorRow } from './connectors-model.ts';
-import type { ConnectorsData } from './use-connectors.ts';
+import type { ConnectorSheetProps } from './connector-sheet.tsx';
 
 export type ConnectorActions = ReturnType<typeof useConnectorActions>;
 
-export interface ConnectorActionsInput {
-  projectId: string;
-  row: ProjectConnectorRow;
+interface ConnectorActionsInput
+  extends Omit<SheetFlow<Flow>, 'flow'>,
+    Pick<ConnectorSheetProps, 'projectId' | 'row' | 'data' | 'onToast'> {
   connector: AdminConnector;
   accounts: Connection[];
   managed: boolean;
-  data: ConnectorsData;
   webUrl: string;
-  setFlow(next: Flow): void;
-  setFlowState: Dispatch<SetStateAction<Flow>>;
-  abort: MutableRefObject<AbortController | null>;
-  onToast(message: string, kind?: 'info' | 'error'): void;
 }
 
 /** The writes. Each one ends its flow step: pending, refresh, toast, back to the view. */
