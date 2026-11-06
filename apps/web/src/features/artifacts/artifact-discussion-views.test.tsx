@@ -101,6 +101,7 @@ const props = (
   onEditChange() {},
   onSaveEdit() {},
   onCancelEdit() {},
+  onLeaveEdit() {},
   onDelete() {},
   ...extra,
 });
