@@ -803,7 +803,16 @@ export async function executeComposio(
     // Composio's own rate limit (`RateLimitError`, HTTP 429) is a retry-later
     // answer, not a fault: the gateway turns it into a 429 with Retry-After.
     const limited = error as { status?: unknown; headers?: { get?: (name: string) => string | null } };
-    if (limited?.status !== 429) throw error;
+    if (limited?.status !== 429) {
+      if (isHtmlPage(error)) {
+        return {
+          ok: false,
+          status: 502,
+          data: `composio_upstream_unavailable: Composio answered ${String(limited?.status ?? 502)} with an HTML error page`,
+        };
+      }
+      throw error;
+    }
     const retryAfterSeconds = parseRetryAfter(limited.headers?.get?.('retry-after'));
     return {
       ok: false,
@@ -832,6 +841,12 @@ export async function executeComposio(
   return response.error
     ? { ok: false, status: callerError ? 400 : rateLimited ? 429 : 502, data }
     : { ok: true, status: 200, data };
+}
+
+/** An edge or proxy error page (Cloudflare 5xx) instead of Composio's JSON error. */
+function isHtmlPage(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /<!doctype html|<html[\s>]/i.test(message);
 }
 
 const COMPOSIO_RATE_LIMIT = /\b429\b|rate[ _-]?limit|too many requests/i;
