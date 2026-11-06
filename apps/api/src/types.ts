@@ -185,11 +185,21 @@ export interface AccountStateResponse {
     total: number;
     daily: number;
     monthly: number;
-    /** Next scheduled reset of the expiring credit bucket. */
+    /** Next scheduled reset of the expiring credit bucket. Null on a
+     *  workspace that gets no free credits: no reset is scheduled. */
     expires_at?: string | null;
     extra: number;
     /** Wallet admission only. Project model availability is resolved by /model-picker. */
     can_run: boolean;
+    /**
+     * The Free plan's monthly credits go to a person's first workspace only
+     * (Workspaces, design.md §3.2 C6). `eligible` is false on a further
+     * workspace: Free with 0 credits, `tier.monthly_credits` 0 and no reset.
+     * `claimed_workspace_id` is the workspace that holds the caller's free
+     * credits. It is set only on a workspace that is not eligible, and only
+     * when the caller is a member of the workspace that holds them.
+     */
+    free_grant?: { eligible: boolean; claimed_workspace_id: string | null };
     /** Lifetime rollups derived from credit_ledger (see the
      *  apply_credit_ledger_lifetime_rollup trigger). Reporting figures only —
      *  no gate reads them. */
@@ -321,6 +331,13 @@ export interface AccountStateResponse {
     period_start: string | null;
     period_end: string | null;
   } | null;
+  /**
+   * The plan is comped, with no Stripe subscription, until `until`: a
+   * workspace split off a paid account keeps that account's plan to the end of
+   * its period (design.md §3.2 C6). Then it moves to Free with free credits.
+   * Null when there is no comp.
+   */
+  plan_comp?: { until: string; source: 'workspace_split' } | null;
 }
 
 export interface ScheduledChange {
