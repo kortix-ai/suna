@@ -543,7 +543,7 @@ timeout (the `20261011111553399_session_log_tables.sql` convention). No shared e
 | M5a–c | new `.sql` ×3 | AFTER INSERT/UPDATE/DELETE row triggers calling `workspaces_reconcile_account`: on `projects` (the columns the table mirrors), on `accounts`, on `account_deletion_requests`; plus the `split_pending` trigger on `projects` (finding 27) | one table per file, 3 s |
 | M6 | new `.concurrent.ts` (`// batched-dml:`) | `workspaces_reconcile_account` for every account, 500 per batch by `account_id` (~49k accounts) | row locks |
 | M7a–n | new `.sql` | `ADD COLUMN workspace_id uuid` (nullable, no default: catalog-only) + `BEFORE INSERT OR UPDATE OF account_id` trigger `NEW.workspace_id := kortix.workspace_id_of_account(NEW.account_id)` on the 44 expand tables (§6.2). One file per hot table (`credit_ledger`, `credit_accounts`, `credit_usage`, `credit_purchases`, `sandbox_compute_sessions`, `account_session_activity`, `billing_customers`, `account_memberships`, `oauth_access_tokens`); the rest ≤ 8 per file | one hot table per file, 3 s |
-| M8 | new `.concurrent.ts` (`// batched-dml:`) | Fill `workspace_id` where NULL: keyset on the primary key (`ctid` ranges for composite keys), 5,000 rows per batch, smallest table first, `pg_sleep(0.02)` between batches. Skips `split_pending` accounts (NULL until the split). Measure on the 1/20 prod-shape seed and record the scaled time in the PR (`credit_ledger` 8.6M rows dominates). | row locks |
+| M8 | **not a migration** (moved 2026-11-06, see "M8 is a background job" below): the leader job `workspace-id-fill` (`apps/api/src/workspaces/id-fill.ts`) | Fill `workspace_id` where NULL: keyset on the primary key (`ctid` ranges for composite keys), 5,000 rows per batch, smallest table first, 250 ms between batches. Skips `split_pending` accounts (NULL until the split). | row locks, one batch at a time |
 | M9 | new `.sql` (billing, wave 2) | `credit_accounts.comp_plan_until timestamptz` | `credit_accounts`, 3 s |
 
 **Built (identity, sub-branch `ws-r1-identity`, 2026-11-06).** The files, in
@@ -555,7 +555,8 @@ the one list of the 44, and `kortix.workspace_id_stamp()`, the M7 trigger
 function); M5a–c `20261106140700000`–`20261106140900000`; M6
 `20261106141000000_workspaces_reconcile.concurrent.ts`; M7
 `20261106141100000`–`20261106142500000` (9 hot tables one per file, then 5
-files of ≤ 7); M8 `20261106142600000_workspace_id_fill.concurrent.ts`.
+files of ≤ 7). M8 was `20261106142600000_workspace_id_fill.concurrent.ts`; it is
+deleted (no shared environment applied it) and runs as a background job.
 Decisions taken while building, each within C1:
 
 - The reconcile takes the account row `FOR NO KEY UPDATE` before the advisory
@@ -571,7 +572,7 @@ Decisions taken while building, each within C1:
   account's dormant row to its first project), the reconcile calls
   `workspace_fill_account`. A move from NULL (a `split_pending` account
   resolving) is left to the split runner, which fills both accounts after
-  every move and reverse, and to M8: a keeper can hold millions of ledger rows.
+  every move and reverse, and to the fill job (M8): a keeper can hold millions of ledger rows.
 - `resolveWorkspace` (legacy routes) keeps the old answer: only a workspace
   whose project row is active. `resolveCanonicalWorkspace` resolves active,
   dormant and closing rows. `ResolvedWorkspace` gains optional `lifecycle` and
@@ -596,7 +597,8 @@ level, local PostgreSQL 17.6:
 | M1, M1b, M4, M5a–c, M7 (each `.sql`) | 1–11 ms | the 3 s lock wait bounds each |
 | M2 mark and name | 24 ms | ~0.5 s |
 | M6 reconcile | 3.19 s | ~64 s |
-| M8 fill | 15.91 s | ~5.3 min (`credit_ledger` dominates; ~4.5 GB of new row versions) |
+| M8 fill (as the migration, before 2026-11-06) | 15.91 s | ~5.3 min inside the migrate job (`credit_ledger` dominates) |
+| M8 fill (the job, no pause, 430,000 `credit_ledger` rows) | 7.5 s of batches (87 batches, 87 ms each); 211 MB WAL | ~2.5 min of batches + 1,740 × 250 ms pauses ≈ **10 min wall**; ~4.2 GB WAL at ~7 MB/s |
 
 After the run, I1–I12 report 0 violations; 3,504 ledger rows of the 20
 legacy accounts stay NULL (`split_pending`). A writer holding a row lock on
@@ -619,6 +621,41 @@ leaves I1–I12 at 0.
 - `apps/api/scripts/workspace-split.ts fill <account>... | fill --null` stamps
   the expand rows of an account that left `split_pending` outside the split
   runner (a transfer, an old pod's archive). R2a step 10a runs `fill --null`.
+
+**M8 is a background job (Readiness, 2026-11-06).** The fill left the migrate
+job: there it held the rollout and the migration advisory lock for ~5.3 min on
+prod. The migrations only add the columns and the BEFORE triggers (M7), so
+every new or re-keyed row is stamped at once; the job fills the rows that
+existed before.
+
+- Job: `workspace-id-fill` (`apps/api/src/worker/jobs/workspace-id-fill.ts`,
+  leader only, in the worker registry), tick = one batch in its own
+  transaction (`lock_timeout 5s`, `statement_timeout 60s`). The plan (tables
+  smallest first, partitions leaf by leaf) and the cursor commit with the batch
+  in the `workspace_id_fill_progress` platform setting, so a crash, deploy or
+  lease move resumes at the next batch. A batch that cannot take its row locks
+  rolls back with its progress and retries a minute later.
+- Control: platform setting `workspace_id_fill` =
+  `{"paused": true}` stops it after the batch in flight;
+  `{"batch_rows": n, "pause_ms": m}` retunes it (1,000–20,000 rows, 50 ms–60 s).
+  Deleting `workspace_id_fill_progress` restarts it from the first table (only
+  NULL rows are written).
+- Measured (local PostgreSQL 17, 430,000 `credit_ledger` rows = 1/20 of prod
+  across 400 one-project accounts, plus every other expand table empty): 142
+  batches, 87 ms per `credit_ledger` batch, 211 MB of WAL, 0 NULL rows after.
+  Scaled ×20 at the default 250 ms pause: ~10 min wall, ~4.2 GB WAL (~7 MB/s).
+  The bench's `credit_ledger` had free page space (most updates were HOT: the
+  table grew 224 → 227 MB); on prod's full pages expect up to one table copy of
+  dead tuples (~4.5 GB) until autovacuum reclaims them.
+- Prod run: deploy, then watch `workspace_id_fill_progress` (`rows`,
+  `batches`, `finished_at`) and the RDS `WriteIOPS`/`ReplicaLag`/WAL metrics.
+  If replica lag passes 30 s, set `{"pause_ms": 2000}`; if the write load must
+  stop, `{"paused": true}`. After `finished_at`, run
+  `VACUUM (ANALYZE) kortix.credit_ledger` in a quiet hour when autovacuum has
+  not yet caught up (`n_dead_tup` in `pg_stat_user_tables`).
+- Proof: `apps/api/src/workspaces/id-fill.integration.test.ts` (keyset and
+  ctid tables, `split_pending` stays NULL, pause, lock-timeout rollback and
+  resume).
 
 **Split holds (decided by the finisher, record for Marko):** an account with an
 `account_sso_providers` row or a live SCIM token is held
@@ -694,9 +731,10 @@ file asks the orchestrator):
 4. **Delete becomes restorable for 14 days.** The repo deletion moves from the DELETE
    request to the sweep. The DELETE description and the web copy change ("You can restore
    it for 14 days").
-5. **M8 duration.** The `workspace_id` fill runs in the deploy's migrate job: ~5.3 min on
-   prod by the 1/20 measurement (§3.3), holding the migration advisory lock and leaving
-   ~4.5 GB of dead `credit_ledger` row versions for autovacuum. The Promote must budget it.
+5. **M8 load.** The `workspace_id` fill is a background job, not part of the deploy
+   (§3.3 "M8 is a background job"): ~10 min after the worker takes the lease, ~4.2 GB of
+   WAL at ~7 MB/s, row locks on 5,000 rows at a time. The deploy's migrate job only adds
+   the columns and triggers.
 6. **Legacy `DELETE /v1/projects/:id` on a 1:1 workspace now closes the account** (K2).
    Old clients get the same 200 shape.
 
@@ -743,7 +781,8 @@ against a view (learning `2026-08-19T163833Z`).
 
 10a. Before R2a ships, re-measure prod read-only (Marko approves the read): I9
      and I10 at 0 for 7 days, the count of NULL `workspace_id` per expand table
-     (run `workspace-split.ts fill --null` until it reports 0 accounts), 0 accounts
+     (the `workspace_id_fill_progress` setting has `finished_at`, then
+     `workspace-split.ts fill --null` until it reports 0 accounts), 0 accounts
      held for `account_has_identity_provider` (the split must carry SSO/SCIM first),
      and classify `oauth_refresh_tokens` (§6.2). The store flip (step 8) is one
      change in `apps/api/src/workspaces/store.ts` (`livePairs`: answer from
