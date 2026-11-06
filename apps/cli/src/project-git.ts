@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { runGit } from './git-run.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // How the CLI talks git to a project — ONE resolver, shared by every command
@@ -105,25 +105,12 @@ export function configureProjectGitAuth(
 ): void {
   const context = repoUrl.replace(/\/+$/, '');
   const helperKey = `credential.${context}.helper`;
-  const reset = spawnSync('git', ['config', '--local', '--replace-all', helperKey, ''], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  if (reset.status !== 0) {
-    throw new Error(reset.stderr.trim() || 'Could not reset Git credential helpers');
-  }
-  const add = spawnSync('git', ['config', '--local', '--add', helperKey, helperCommand], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  if (add.status !== 0) {
-    throw new Error(add.stderr.trim() || 'Could not configure the Kortix Git credential helper');
-  }
-  const pathMode = spawnSync('git', ['config', '--local', 'credential.useHttpPath', 'true'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  if (pathMode.status !== 0) {
-    throw new Error(pathMode.stderr.trim() || 'Could not configure Git credential paths');
-  }
+  gitConfig(repoRoot, ['--replace-all', helperKey, ''], 'Could not reset Git credential helpers');
+  gitConfig(repoRoot, ['--add', helperKey, helperCommand], 'Could not configure the Kortix Git credential helper');
+  gitConfig(repoRoot, ['credential.useHttpPath', 'true'], 'Could not configure Git credential paths');
+}
+
+function gitConfig(repoRoot: string, args: string[], failure: string): void {
+  const result = runGit(repoRoot, ['config', '--local', ...args]);
+  if (!result.ok) throw new Error(result.stderr.trim() || failure);
 }

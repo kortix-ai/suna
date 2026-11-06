@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
@@ -18,6 +17,7 @@ import { printBanner, printGetStarted } from '../banner.ts';
 import { takeFlags } from '../command-argv.ts';
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { appendGitExcludeEntries } from '../git-exclude.ts';
+import { runGit } from '../git-run.ts';
 import { confirm, prompt } from '../prompts.ts';
 import { applyScaffold } from '../scaffold.ts';
 import { C, help, status } from '../style.ts';
@@ -106,7 +106,7 @@ function dirIsGitRepo(path: string): boolean {
 }
 
 function gitAvailable(): boolean {
-  return spawnSync('git', ['--version'], { encoding: 'utf8' }).status === 0;
+  return runGit(undefined, ['--version']).ok;
 }
 
 /** Keep post-clone agent wiring local so setup never dirties the user's repo. */
@@ -380,8 +380,8 @@ function wireAndReport(args: {
   // ── Optional `git init` ──────────────────────────────────────────────
   let gitNote = '';
   if (!noGit && !dirIsGitRepo(cwd) && gitAvailable()) {
-    const r = spawnSync('git', ['init', '-b', 'main'], { cwd, encoding: 'utf8' });
-    gitNote = r.status === 0 ? 'Git: initialized (main)' : `Git: init failed — ${r.stderr.trim()}`;
+    const r = runGit(cwd, ['init', '-b', 'main']);
+    gitNote = r.ok ? 'Git: initialized (main)' : `Git: init failed — ${r.stderr.trim()}`;
   } else if (noGit) {
     gitNote = 'Git: skipped (--no-git)';
   } else if (dirIsGitRepo(cwd)) {

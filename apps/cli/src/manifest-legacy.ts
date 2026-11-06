@@ -5,8 +5,8 @@
  * is `@kortix/manifest-schema` `convertLegacyManifest`; this module gives it
  * the filesystem.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
 import {
   type LegacyConversion,
   convertLegacyManifest,
@@ -17,24 +17,7 @@ import {
   renderManifest,
   splitManifestByOrigin,
 } from '@kortix/manifest-schema';
-import { resolveLocalManifestImports } from './manifest-imports.ts';
-
-const SKIP = new Set(['.git', 'node_modules']);
-
-/** Every file under `root`, repo-relative, without `.git` and `node_modules`. */
-function repoPaths(root: string): string[] {
-  const out: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (SKIP.has(entry.name)) continue;
-      const abs = join(dir, entry.name);
-      if (entry.isDirectory()) walk(abs);
-      else if (entry.isFile()) out.push(relative(root, abs).split('\\').join('/'));
-    }
-  };
-  walk(root);
-  return out;
-}
+import { repoPaths, resolveLocalManifestImports } from './manifest-imports.ts';
 
 export interface LocalLegacyManifest {
   /** Absolute path of the legacy file: `kortix.yaml`/`kortix.yml` with `kortix_version` 1 or 2, or `kortix.toml`. */

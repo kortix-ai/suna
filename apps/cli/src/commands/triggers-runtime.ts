@@ -17,7 +17,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { C, pad, status } from '../style.ts';
+import { C, formatUtcInstant, pad, status } from '../style.ts';
 
 export const RUNTIME_HELP = `Runtime triggers (no kortix.yaml commit):
   add "<prompt>" --on <source> | --session <id> | --runtime [options]
@@ -83,8 +83,6 @@ export function describeTarget(target: TriggerTarget): string {
   return `session ${target.session_name || target.session_id.slice(0, 8)}`;
 }
 
-const instant = (iso: string | null) => (iso ? `${iso.slice(0, 16).replace('T', ' ')} UTC` : '—');
-
 /** The runtime rows of `GET /triggers/all`, or null when the server has no such route. */
 export async function listRuntimeTriggers(client: ApiClient, projectId: string): Promise<UnifiedTrigger[] | null> {
   try {
@@ -109,7 +107,7 @@ export function printRuntimeTriggers(rows: UnifiedTrigger[]): void {
   process.stdout.write(`  ${C.dim}${pad('ID', idW)}  ${pad('SOURCE', srcW)}  ${pad('TARGET', tgtW)}  STATE    NEXT                  LAST FIRED${C.reset}\n`);
   for (const r of listed) {
     process.stdout.write(
-      `  ${pad(r.t.id, idW)}  ${pad(r.source.slice(0, srcW), srcW)}  ${pad(r.target.slice(0, tgtW), tgtW)}  ${pad(r.t.state, 7)}  ${pad(instant(r.t.next_fire_at), 20)}  ${instant(r.t.last_fired_at)}\n`,
+      `  ${pad(r.t.id, idW)}  ${pad(r.source.slice(0, srcW), srcW)}  ${pad(r.target.slice(0, tgtW), tgtW)}  ${pad(r.t.state, 7)}  ${pad(formatUtcInstant(r.t.next_fire_at), 20)}  ${formatUtcInstant(r.t.last_fired_at)}\n`,
     );
     if (r.t.last_error) process.stdout.write(`  ${' '.repeat(idW)}  ${C.red}${r.t.last_error}${C.reset}\n`);
   }
