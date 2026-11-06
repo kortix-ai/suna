@@ -1879,6 +1879,7 @@
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Buscar apps",
+    "searchArtifacts": "Buscar artefactos",
     "appsNoMatches": "Sin resultados",
     "spaces": {
       "channels": "Espacios",

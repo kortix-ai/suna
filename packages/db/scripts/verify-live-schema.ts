@@ -43,6 +43,7 @@
  * Exit 0 = nothing missing (waivers aside).  Exit 1 = drift.
  * Exit 2 = usage error, connection error, or a ledger the role cannot read.
  */
+import { flag } from './argv';
 import { type Catalog, type CatalogConstraint, type CatalogIndex, readDatabase } from './catalog';
 import { LIVE_SCHEMA_WAIVERS, type LiveSchemaWaivers } from './verify-live-schema-waivers';
 
@@ -242,12 +243,8 @@ export function pendingMigrations(canonicalLedger: readonly string[], liveLedger
 }
 
 function resolveUrls(argv: string[]): { canonical: string; live: string } {
-  const flag = (name: string) => {
-    const i = argv.indexOf(name);
-    return i >= 0 ? argv[i + 1] : undefined;
-  };
-  const canonical = flag('--canonical') ?? process.env.CANONICAL_DB_URL;
-  const live = flag('--live') ?? process.env.LIVE_DB_URL;
+  const canonical = flag('--canonical', argv) ?? process.env.CANONICAL_DB_URL;
+  const live = flag('--live', argv) ?? process.env.LIVE_DB_URL;
   if (!canonical || !live) {
     console.error(
       'Usage: CANONICAL_DB_URL=<fresh-migrated> LIVE_DB_URL=<target> bun scripts/verify-live-schema.ts\n' +

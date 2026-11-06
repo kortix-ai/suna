@@ -1350,6 +1350,7 @@ const catalog = {
     "drive": "Drive",
     "repo": "Repo",
     "searchApps": "Search apps",
+    "searchArtifacts": "Search artifacts",
     "appsNoMatches": "No matches",
     "spaces": {
       "channels": "Spaces",

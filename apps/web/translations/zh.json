@@ -1879,6 +1879,7 @@
     "drive": "云盘",
     "repo": "Repo",
     "searchApps": "搜索应用",
+    "searchArtifacts": "搜索工件",
     "appsNoMatches": "无匹配项",
     "spaces": {
       "channels": "空间",
