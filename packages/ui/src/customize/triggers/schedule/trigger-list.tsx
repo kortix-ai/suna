@@ -12,6 +12,7 @@ import { SessionDotMatrix } from '../../../primitives/dot-matrix/session-dot-mat
 import type { UiTranslator } from '../../../i18n';
 import { useLocale, useTranslations } from '../../../i18n';
 import { lastRunLabel, nextRunIn } from '../../../internal/lib/trigger-clock';
+import { useNow } from '../../../internal/reminders/use-refetch-after-fire';
 import { cn } from '../../../internal/lib/utils';
 import type { ProjectTrigger } from '@kortix/sdk';
 import { Fragment, type ReactNode } from 'react';
@@ -24,7 +25,7 @@ export function nextRunLabel(
   trigger: Pick<ProjectTrigger, 'type' | 'enabled' | 'next_fire_at' | 'next_cron_at' | 'auto_paused_at'>,
   t: UiTranslator,
   locale: string,
-  now: number = Date.now(),
+  now: number,
 ): string {
   // An auto-pause (KRTX-1721) is runtime state: the manifest still says enabled.
   if (!trigger.enabled || trigger.auto_paused_at) return t.raw('texte159b06187d3');
@@ -61,10 +62,13 @@ export function TriggerList({
     onToggle: (trigger: ProjectTrigger, range: boolean) => void;
   } | null;
 }) {
+  // A 30 s tick: the list's poll keeps unchanged data, so nothing else re-renders the countdown.
+  const now = useNow();
   const row = (trigger: ProjectTrigger) => (
     <TriggerRow
       key={trigger.slug}
       trigger={trigger}
+      now={now}
       eventNames={eventNames}
       selected={!selection && trigger.slug === selectedSlug}
       running={trigger.slug === runningSlug}
@@ -98,6 +102,7 @@ export function TriggerList({
 
 function TriggerRow({
   trigger,
+  now,
   eventNames,
   selected,
   running,
@@ -107,6 +112,7 @@ function TriggerRow({
   projectPaused,
 }: {
   trigger: ProjectTrigger;
+  now: number;
   eventNames?: ReadonlyMap<string, string>;
   selected: boolean;
   running: boolean;
@@ -169,7 +175,7 @@ function TriggerRow({
           )}
         >
           {/* The project switch stops every schedule: never show a next run it will not make. */}
-          {nextRunLabel(projectPaused ? { ...trigger, enabled: false } : trigger, t, locale)}
+          {nextRunLabel(projectPaused ? { ...trigger, enabled: false } : trigger, t, locale, now)}
         </span>
         {running ? (
           <span className="flex h-4 items-center">
@@ -177,7 +183,7 @@ function TriggerRow({
           </span>
         ) : (
           <span className="text-muted-foreground whitespace-nowrap">
-            {lastRunLabel(trigger, t, locale)}
+            {lastRunLabel(trigger, t, locale, now)}
           </span>
         )}
       </span>
