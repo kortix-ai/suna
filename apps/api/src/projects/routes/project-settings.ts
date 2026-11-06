@@ -43,7 +43,18 @@ import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
 import type { AppEnv } from '../../types';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import { archiveProjectAndRevokeTokens, deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
+import { deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
+import { accountRolesForUser } from '../../iam/read-models';
+import { newWorkspaceCallerDenial } from '../new-workspace';
+import {
+  asWorkspaceId,
+  closeWorkspace,
+  getWorkspace,
+  isWorkspaceLifecycleError,
+  prepareWorkspaceSetup,
+  restoreWorkspace,
+  type WorkspaceRecord,
+} from '../../workspaces/surface';
 import {
   requestProviderTransition,
   readPublicProjectTransitionState,
@@ -51,6 +62,19 @@ import {
 } from '../provider-transition/provider-transition-service';
 import { capturePersonEvent } from './product-events';
 import { workspaceIdParam } from '../../shared/route-params';
+
+/** The body of a restore: the workspace's ids, name, lifecycle and deletion date. */
+function workspaceLifecycleBody(record: WorkspaceRecord) {
+  return {
+    workspace_id: record.workspaceId,
+    project_id: record.projectId,
+    account_id: record.accountId,
+    name: record.name,
+    lifecycle: record.lifecycle,
+    state: record.lifecycle === 'active' ? 'active' : record.lifecycle === 'closing' ? 'deleting' : 'setup_required',
+    deletion_scheduled_for: record.deletionScheduledFor ? record.deletionScheduledFor.toISOString() : null,
+  };
+}
 
 // PATCH /v1/projects/:projectId/onboarding
 // Persist whether the project's guided onboarding wizard has been completed
@@ -243,16 +267,26 @@ export function registerProjectSettingsRoutes(): void {
   },
   );
 
-  // DELETE /v1/projects/:projectId
+  // DELETE /v1/workspaces/:workspaceId (and the legacy /v1/projects/:projectId)
+  //
+  // K2 (design.md §3.1): deleting a workspace closes its account. One
+  // transaction opens the account's deletion request (14-day grace), archives
+  // the project row, revokes every credential of the account and pauses its
+  // automations (`closeWorkspace`, workspaces/lifecycle.ts). The repository,
+  // the connectors, the sandboxes and the money go with the account-deletion
+  // sweep at `deletion_scheduled_for`; until then an owner can restore it. A
+  // `split_pending` workspace (a legacy account that still holds other
+  // projects) is deleted the old way: its repository, connectors and channels
+  // go now, and only its project row is archived.
 
   projectsApp.openapi(
     createRoute({
       method: 'delete',
       path: '/{workspaceId}',
       tags: ['projects'],
-      summary: 'Delete a project',
+      summary: 'Delete a workspace',
       description:
-        'Permanent: there is no restore. Deletes the project, its Kortix-managed repository (a connected repository is never touched), its connectors and its tokens. Afterwards the project answers 404.',
+        'Deletes the workspace: members lose it at once, and its credentials are revoked. An owner can restore it for 14 days (`POST /v1/workspaces/:id/restore`); after `deletion_scheduled_for` its Kortix-managed repository (a connected repository is never touched), connectors, sessions, subscription and credits are deleted. A legacy project of an account that still holds other projects is deleted at once instead (`deletion_scheduled_for: null`).',
       ...auth,
         request: {
           params: z.object({ workspaceId: z.string() }),
@@ -261,9 +295,10 @@ export function registerProjectSettingsRoutes(): void {
           200: json(
             z.object({
               ok: z.literal(true),
-              deleted: z.literal(true).openapi({ description: 'Always true. The project cannot be restored.' }),
+              deleted: z.literal(true).openapi({ description: 'Always true.' }),
               archived: z.literal(true).openapi({ description: 'Deprecated: the same as `deleted`. Kept for older clients.' }),
-              repo_deleted: z.boolean().openapi({ description: 'The Kortix-managed repository was deleted with the project.' }),
+              repo_deleted: z.boolean().openapi({ description: 'The Kortix-managed repository was deleted now. False for a workspace close: the sweep deletes it at `deletion_scheduled_for`.' }),
+              deletion_scheduled_for: z.string().nullable().openapi({ description: 'When the workspace is erased; it can be restored until then. Null for a legacy project deleted at once.' }),
             }),
             'Deleted',
           ),
@@ -277,16 +312,27 @@ export function registerProjectSettingsRoutes(): void {
     // project.delete is the gate; the load above only proves membership.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
-    // Release prompt attachments first. After the repository deletion below, a
-    // failed release would leave an active project without its repository; after
-    // the archive, the project answers 404, so a release could never be retried.
+    if (!loaded.row.splitPending) {
+      const closed = await closeWorkspace({ workspaceId: asWorkspaceId(projectId), actorUserId: loaded.userId });
+      return c.json({
+        ok: true,
+        deleted: true,
+        archived: true,
+        repo_deleted: false,
+        deletion_scheduled_for: closed.mode === 'closed' ? closed.deletionScheduledFor.toISOString() : null,
+      });
+    }
+
+    // A legacy project of a split_pending account: the pre-K2 delete. Release
+    // prompt attachments first. After the repository deletion below, a failed
+    // release would leave an active project without its repository; after the
+    // archive, the project answers 404, so a release could never be retried.
     const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
     await releasePromptAttachmentsForProject(projectId);
     const { releaseArtifactCommentScreenshotsForProject } = await import('../../artifacts/comment-screenshot-objects');
     await releaseArtifactCommentScreenshotsForProject(projectId);
 
-    // Deleting the project deletes the Kortix-managed upstream with it; the
-    // helper no-ops for user-connected/BYO repositories and never touches
+    // The helper no-ops for user-connected/BYO repositories and never touches
     // them. Delete before hiding the project so provider failures remain
     // visible and retryable.
     let repoDeleted: boolean;
@@ -298,28 +344,117 @@ export function registerProjectSettingsRoutes(): void {
     }
 
     // Purge the project's connector rows before the archive: after it the
-    // project answers 404, so a failed purge could never be retried.
-    // The row survives its archive as a tombstone, so the database's
-    // connectors FK cascade never fires and the rows would outlive the
-    // purged project (KRTX-1907). Same visibility rule as the repo delete:
-    // a failure leaves the project active and the deletion retryable.
+    // project answers 404, so a failed purge could never be retried. The row
+    // survives its archive as a tombstone, so the connectors FK cascade never
+    // fires (KRTX-1907).
     try {
       await purgeProjectConnectors(projectId);
-      // The tombstone keeps its chat installs, bindings and secrets too:
-      // release them, or the channels keep delivering to a deleted project.
       await releaseProjectChannels(projectId);
     } catch (error) {
       logger.error('[projects] failed to purge the project connectors', { projectId, error: String(error) });
       return c.json({ error: 'Failed to purge project connectors' }, 500);
     }
 
-    const row = await archiveProjectAndRevokeTokens(projectId, loaded.row.accountId);
-    if (!row) return c.json({ error: 'Not found' }, 404);
-    // An archived project fires nothing: release its app-event provider instances.
+    // closeWorkspace archives the row, revokes its tokens and refills the
+    // account's workspace ids when it is one workspace again.
+    await closeWorkspace({ workspaceId: asWorkspaceId(projectId), actorUserId: loaded.userId });
     await releaseProjectEventSubscriptions(projectId);
     // `archived` stays for clients that read it; `deleted` says what happened (KRTX-3384).
-    return c.json({ ok: true, deleted: true, archived: true, repo_deleted: repoDeleted });
+    return c.json({ ok: true, deleted: true, archived: true, repo_deleted: repoDeleted, deletion_scheduled_for: null });
   },
+  );
+
+  // POST /v1/workspaces/:workspaceId/restore — owners, while the workspace is deleting.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{workspaceId}/restore',
+      tags: ['projects'],
+      summary: 'Restore a deleted workspace',
+      description:
+        'Owners only, until `deletion_scheduled_for`: cancels the deletion, brings the workspace back with the same id, resumes the automations the deletion paused and reactivates the subscription the deletion set to cancel. Keys revoked by the deletion stay revoked. 404 `workspace_not_found` for anyone who is not an owner, 409 `workspace_not_deleting` when the workspace is not being deleted.',
+      ...auth,
+      request: { params: z.object({ workspaceId: z.string() }) },
+      responses: {
+        200: json(AnyObject, 'Restored'),
+        ...errors(404, 409),
+      },
+    }),
+    async (c: Context<AppEnv>) => {
+      const workspaceId = workspaceIdParam(c);
+      const userId = c.get('userId') as string;
+      const record = await getWorkspace(workspaceId);
+      const ownerOf = record ? (await accountRolesForUser(userId)).get(record.accountId) === 'owner' : false;
+      if (!record || !ownerOf) {
+        return c.json({ error: 'Workspace not found', code: 'workspace_not_found' }, 404);
+      }
+      try {
+        const restored = await restoreWorkspace({ workspaceId: record.workspaceId, actorUserId: userId });
+        return c.json(workspaceLifecycleBody(restored), 200);
+      } catch (error) {
+        if (isWorkspaceLifecycleError(error)) {
+          return c.json({ error: error.message, code: error.code, workspace_id: error.workspaceId }, error.status);
+        }
+        throw error;
+      }
+    },
+  );
+
+  // POST /v1/workspaces/:workspaceId/setup — a project-less workspace that pays gets its project.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{workspaceId}/setup',
+      tags: ['projects'],
+      summary: 'Set up a workspace',
+      description:
+        'For a workspace in state `setup_required` (it pays and has no config repository yet): provisions its Kortix-managed repository and project, with project_id = workspace_id. Takes the same repository fields as `POST /v1/workspaces`. Owners and admins, signed in as themselves. 409 `workspace_setup_not_required` for any other workspace.',
+      ...auth,
+      request: { params: z.object({ workspaceId: z.string() }), body: { required: false, content: { 'application/json': { schema: AnyObject } } } },
+      responses: {
+        201: json(AnyObject, 'Set up'),
+        ...errors(400, 403, 404, 409, 502, 503),
+      },
+    }),
+    async (c: Context<AppEnv>) => {
+      const workspaceId = workspaceIdParam(c);
+      const userId = c.get('userId') as string;
+      const record = await getWorkspace(workspaceId);
+      const role = record ? (await accountRolesForUser(userId)).get(record.accountId) : undefined;
+      if (!record || !role) return c.json({ error: 'Workspace not found', code: 'workspace_not_found' }, 404);
+      const denial = newWorkspaceCallerDenial({
+        userId,
+        email: (c.get('userEmail') as string | undefined) || null,
+        authType: c.get('authType') as string | undefined,
+        scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
+      });
+      if (denial) return c.json(denial.body as never, denial.status as 403);
+      if (role !== 'owner' && role !== 'admin') return c.json({ error: 'Owner or admin role required' }, 403);
+      let target: Awaited<ReturnType<typeof prepareWorkspaceSetup>>;
+      try {
+        target = await prepareWorkspaceSetup(record.workspaceId);
+      } catch (error) {
+        if (isWorkspaceLifecycleError(error)) {
+          return c.json({ error: error.message, code: error.code, workspace_id: error.workspaceId }, error.status as 409);
+        }
+        throw error;
+      }
+      const body = await readJsonObject(c);
+      const { account_id: _accountId, accountId: _accountIdCamel, new_workspace: _nw, newWorkspace: _nwCamel, ...rest } = body as Record<string, unknown>;
+      const { runProvision } = await import('../provision-core');
+      const result = await runProvision(
+        {
+          body: { name: record.name, ...rest },
+          scope: { userId, accountId: target.accountId, accountRole: role },
+          projectId: target.projectId,
+        },
+        () => {},
+      );
+      const out = result.status === 201 && result.body && typeof result.body === 'object'
+        ? { ...(result.body as Record<string, unknown>), workspace_id: target.projectId }
+        : result.body;
+      return c.json(out as never, result.status as 201, result.headers);
+    },
   );
 
   // POST /v1/projects/:projectId/transfer
@@ -404,7 +539,7 @@ export function registerProjectSettingsRoutes(): void {
       // create there: 409 `workspace_has_project` when it already holds its one
       // active project (Workspaces 1:1), else 403 at the plan's project cap.
       const denial = await projectCreationDenial(targetAccountId);
-      if (denial) return c.json(denial.body, denial.status);
+      if (denial) return c.json(denial.body as never, denial.status as 403);
 
       try {
         const result = await transferProjectOwnership({
