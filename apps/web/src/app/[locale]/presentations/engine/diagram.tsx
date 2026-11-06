@@ -767,10 +767,10 @@ export function LoopDiagram({ step, content }: { step: number; content: LoopDiag
         <Box
           label={change.label}
           title={change.title}
-          tone={step === 2 ? 'warn' : 'idle'}
+          tone={step === 2 ? 'active' : 'idle'}
           on={step >= 2}
         >
-          <NodeChips chips={change.chips} on={step >= 2} tone={step === 2 ? 'warn' : 'idle'} />
+          <NodeChips chips={change.chips} on={step >= 2} />
         </Box>
 
         <Link on={step >= 3} fire={step === 3} label={rails[2]} />
