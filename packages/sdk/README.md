@@ -946,7 +946,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
 | `kortix.notifications` | native push for a person's devices: `registerDeviceToken` · `unregisterDeviceToken` (Expo push tokens) · `releaseDeviceToken(token, { backendUrl?, signal? })` (**no token needed**: a signed-out app removes its device token from a backend, `POST /v1/notifications/device-token/release`; resolves `{ ok: true }`, a non-2xx answer throws `ApiError` with `status`). A session push reaches the phone of the person who created the session |
 | `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
-| `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
+| `kortix.validateToken()` | pasted-API-key validation helper — `GET /me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / app; `.fire(slug, { payload, dryRun })`; run history `.runs(slug)` / `.projectRuns({ status })`; `.replay(slug, runId)`) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.skills`, `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`restore`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`setPinned`/`setArchived`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind` (needs `session.rewind`)/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · the session verbs (`messages`/`pending`/`answerPermission`/`answerQuestion`/`compact`) · `stream()` · the deprecated `.runtime` |
@@ -1340,7 +1340,7 @@ the root import — offers the same agents and models and sends the same pick.
 
 | Function | Input → output |
 |---|---|
-| `projectConfigAgentsToRuntimeAgents(config)` | `/projects/:id/detail` config → agent roster, project default first |
+| `projectConfigAgentsToRuntimeAgents(config)` | `/workspaces/:id/detail` config → agent roster, project default first |
 | `composerSelectableAgents(agents, { enableProjects?, includeSubagents? })` | roster → picker list (no hidden agents, no subagents, `project-manager` only with `enableProjects`) |
 | `resolveComposerAgent({ agents, boundAgent, defaultAgent, selectedAgent })` | → the agent to send, and `disabled` when none is accessible |
 | `pickerProviderList({ modelPicker })` | `/model-picker` catalog → provider list (the single `kortix` provider). `gatewayEnabled`, `runtimeProviders`, `llmCatalogProviders` and `secretNames` are deprecated and ignored |
@@ -1442,7 +1442,7 @@ workspace.
 A workspace is one account and its one project; the workspace id is the
 `project_id`. `createWorkspace(input, onEvent?, options?)` (also
 `kortix.workspaces.create` and `kortix.projects.createWorkspace`) creates both in one call
-(`new_workspace: true` on `POST /projects/provision`). The server reuses the
+(`new_workspace: true` on `POST /workspaces/provision`). The server reuses the
 caller's newest owned account with no active project, else creates one named
 after the workspace. `input` is `CreateWorkspaceInput`: the provision fields
 without `account_id`. Pass `onEvent` to stream the same phases as
@@ -1683,6 +1683,19 @@ Its only platform code for the session runtime is the event transport
   `authenticatedFetch` in `apps/web/src/lib/auth-token.ts` — migration pending.)
 - **React data** comes from `@kortix/sdk/react` hooks; **imperative actions** from
   the `createKortix` facade.
+
+## Route names and older APIs
+
+The SDK calls the canonical workspace routes: `/v1/workspaces/:id/…`,
+`/v1/workspaces/:id/<family>` for the account settings (members, invites, IAM,
+audit, tokens, …), `/v1/me` and `/v1/invites`. The API serves the older names
+(`/v1/projects/…`, `/v1/accounts/:id/<family>`, `/v1/accounts/me`,
+`/v1/account-invites`) permanently. An API older than the workspace routes
+answers a canonical name with its unknown-route 404 (`{ "error": true,
+"message": "Not found", "status": 404 }`). The SDK then sends the same request
+once more on the older name and uses the older names for that API base until
+the process restarts. A 404 that a route returns for a missing resource is
+returned as is. Function names and signatures do not change.
 
 ## Auth
 
