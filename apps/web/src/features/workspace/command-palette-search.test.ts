@@ -389,7 +389,9 @@ describe('queries return the rows they name', () => {
   });
 
   test('"inbox" and "notifications" reach the Inbox page', () => {
-    expect(hits('inbox')).toContain('nav:proj-inbox');
+    // The palette keeps registry order inside a group: the Inbox row comes
+    // before Channels and Review, whose keywords also hold "inbox".
+    expect(hits('inbox')[0]).toBe('nav:proj-inbox');
     expect(hits('notifications')).toContain('nav:proj-inbox');
   });
 
