@@ -11,9 +11,7 @@ const sampleConfig: Record<string, unknown> = {
   manifest_raw: 'raw yaml',
   manifest: { name: 'x' },
   env: [{ name: 'FOO' }],
-  open_code_raw: '{}',
   default_agent: 'bot',
-  open_code_default_agent: 'bot',
   agent_discovery: 'declared',
   agents: [{ name: 'a' }],
   skills: [{ name: 's' }],
@@ -55,7 +53,6 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.agents).toEqual([]);
     expect(out.config.agent_discovery).toBeNull();
     // The default names one of those agents, so it goes with them.
-    expect(out.config.open_code_default_agent).toBeNull();
     expect(out.config.default_agent).toBeNull();
   });
 
@@ -65,7 +62,6 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
   test('agent.read without file.read → the default agent name survives', () => {
     const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canFiles: false });
     expect(out.config.agents).toEqual([{ name: 'a' }]);
-    expect(out.config.open_code_default_agent).toBe('bot');
     expect(out.config.default_agent).toBe('bot');
   });
 
@@ -80,7 +76,6 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.manifest_raw).toBeNull();
     expect(out.config.manifest).toEqual({});
     expect(out.config.env).toEqual([]);
-    expect(out.config.open_code_raw).toBeNull();
     // Structural signals survive so the workspace shell still renders.
     expect(out.config.is_kortix_repo).toBe(true);
     expect(out.config.signals).toEqual({ manifest: true });
