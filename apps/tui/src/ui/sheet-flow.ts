@@ -42,7 +42,7 @@ export function useSheetFlow<F extends { kind: string }>(onBusy: (busy: boolean)
 
 export type SheetFlow<F extends { kind: string }> = ReturnType<typeof useSheetFlow<F>>;
 
-export interface SheetRunOptions {
+interface SheetRunOptions {
   setFlow(next: typeof VIEW): void;
   onToast(message: string, kind?: 'info' | 'error'): void;
   /** Re-read what the write changed. `expect` names the provider a write connected. */

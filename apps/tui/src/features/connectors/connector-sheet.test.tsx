@@ -54,15 +54,22 @@ interface Recorded {
 let server: ReturnType<typeof Bun.serve>;
 const requests: Recorded[] = [];
 
+/** Records every request and answers it. */
+async function record(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  requests.push({ method: request.method, path: url.pathname, body: await request.text() });
+  return Response.json({ ok: true });
+}
+
+/** Records every request and fails it after `ms`: a write still pending when the test acts. */
+const failAfter = (ms: number) => async (request: Request) => {
+  await record(request);
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return Response.json({ error: 'nope' }, { status: 500 });
+};
+
 beforeAll(() => {
-  server = Bun.serve({
-    port: 0,
-    async fetch(request) {
-      const url = new URL(request.url);
-      requests.push({ method: request.method, path: url.pathname, body: await request.text() });
-      return Response.json({ ok: true });
-    },
-  });
+  server = Bun.serve({ port: 0, fetch: record });
   resetKortixForTest();
   initKortix({
     name: 'test',
@@ -230,32 +237,61 @@ describe('<ConnectorSheet/> credential', () => {
 
   test('a failed write refreshes, toasts the error and keeps the flow open', async () => {
     const view = await mount();
-    server.reload({
-      fetch: async (request) => {
-        const url = new URL(request.url);
-        requests.push({ method: request.method, path: url.pathname, body: await request.text() });
-        return Response.json({ error: 'nope' }, { status: 500 });
-      },
-    });
+    server.reload({ fetch: failAfter(0) });
     try {
       await key(view, 'x');
       await type(view, 'tok');
       await key(view, 'return');
       await settle(view.flush, 150);
     } finally {
-      server.reload({
-        fetch: async (request) => {
-          const url = new URL(request.url);
-          requests.push({ method: request.method, path: url.pathname, body: await request.text() });
-          return Response.json({ ok: true });
-        },
-      });
+      server.reload({ fetch: record });
     }
     expect(view.log.refreshes).toBe(1);
     expect(view.log.toasts.map(([, kind]) => kind)).toEqual(['error']);
     expect(view.log.busy).toEqual([true]);
     expect(view.captureCharFrame()).toContain('Set credential · Linear');
     view.renderer.destroy();
+  });
+
+  test('a paste while the save is pending is dropped: the field keeps what was typed', async () => {
+    const view = await mount();
+    server.reload({ fetch: failAfter(300) });
+    try {
+      await key(view, 'x');
+      await type(view, 'ab');
+      await key(view, 'return');
+      expect(view.captureCharFrame()).toContain('Saving credential…');
+      await paste(view, 'cd');
+      await settle(view.flush, 400);
+    } finally {
+      server.reload({ fetch: record });
+    }
+    expect(view.log.toasts.map(([, kind]) => kind)).toEqual(['error']);
+    expect(view.captureCharFrame()).toContain('▌ LINEAR_TOKEN  ••');
+    expect(view.captureCharFrame()).not.toContain('▌ LINEAR_TOKEN  •••');
+    view.renderer.destroy();
+  });
+});
+
+describe('<ConnectorSheet/> sign-in', () => {
+  test('unmounting during a sign-in aborts it: its late failure toasts nothing', async () => {
+    const view = await mount();
+    server.reload({ fetch: failAfter(200) });
+    try {
+      await key(view, 's');
+      expect(view.captureCharFrame()).toContain('Connect Linear');
+      expect(view.captureCharFrame()).toContain('Starting authorization…');
+      expect(writes()).toEqual([['POST', '/v1/projects/p-1/connections/c-1/oauth2/discover-resource']]);
+      await act(async () => {
+        view.renderer.destroy();
+      });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    } finally {
+      server.reload({ fetch: record });
+    }
+    // Unmount releases the keys; the aborted sign-in then ends its step, which releases them again.
+    expect(view.log.busy).toEqual([true, false, false]);
+    expect(view.log.toasts).toEqual([]);
   });
 });
 

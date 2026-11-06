@@ -42,18 +42,18 @@ interface Recorded {
 let server: ReturnType<typeof Bun.serve>;
 const requests: Recorded[] = [];
 
+/** Records every request; answers a new pooled key like the API does. */
+async function record(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  requests.push({ method: request.method, path: url.pathname, body: await request.text() });
+  if (url.pathname.endsWith('/secret-resources') && request.method === 'POST') {
+    return Response.json({ secret_id: 'sec-new', label: 'Work', provider_id: 'acme' });
+  }
+  return Response.json({ ok: true });
+}
+
 beforeAll(() => {
-  server = Bun.serve({
-    port: 0,
-    async fetch(request) {
-      const url = new URL(request.url);
-      requests.push({ method: request.method, path: url.pathname, body: await request.text() });
-      if (url.pathname.endsWith('/secret-resources') && request.method === 'POST') {
-        return Response.json({ secret_id: 'sec-new', label: 'Work', provider_id: 'acme' });
-      }
-      return Response.json({ ok: true });
-    },
-  });
+  server = Bun.serve({ port: 0, fetch: record });
   resetKortixForTest();
   initKortix({
     name: 'test',
@@ -270,13 +270,7 @@ describe('<ProviderSheet/> project key (`key` sheet)', () => {
       await key(view, 'y');
       await settleWrite(view);
     } finally {
-      server.reload({
-        fetch: async (request) => {
-          const url = new URL(request.url);
-          requests.push({ method: request.method, path: url.pathname, body: await request.text() });
-          return Response.json({ ok: true });
-        },
-      });
+      server.reload({ fetch: record });
     }
     expect(view.log.refreshed).toEqual([]);
     expect(view.log.toasts.map(([, kind]) => kind)).toEqual(['error']);
