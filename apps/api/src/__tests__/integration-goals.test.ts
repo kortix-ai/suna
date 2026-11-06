@@ -538,6 +538,30 @@ describe('council round 1 fixes', () => {
     expect((await getGoal(PROJECT, goal.goalId))!.setup.pending_prompts).toEqual([]);
   });
 
+  test('the verifier is a fresh session the engine creates: a session made earlier under any id is never adopted', async () => {
+    const goal = await activeGoal();
+    const owner = asSession(goal.ownerSessionId!);
+    volume.put(`${goal.folder}/evidence/a.md`, 'a');
+    volume.put(`${goal.folder}/evidence/b.md`, 'b');
+    const reported = await goals.reportProgress(ctx(owner), goal.goalId, { revision: goal.revision, criteria: [{ id: 'c1', reported_met: true, evidence: 'evidence/a.md' }, { id: 'c2', reported_met: true, evidence: 'evidence/b.md' }] });
+    const before = new Set((await db.select({ id: projectSessions.sessionId }).from(projectSessions).where(eq(projectSessions.projectId, PROJECT))).map((r) => r.id));
+    const verifying = await goals.requestVerification(ctx(owner), goal.goalId, { revision: reported.revision });
+    expect(before.has(verifying.verifierSessionId!)).toBe(false);
+    const [row] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, verifying.verifierSessionId!));
+    expect((row!.metadata as Record<string, unknown>).goal_role).toBe('verifier');
+  });
+
+  test('a queued goal prompt is refused while the project goals flag is off', async () => {
+    const goal = await activeGoal();
+    expect(await goalPromptRefusal(goal.ownerSessionId!)).toBeNull();
+    await db.update(projects).set({ metadata: { experimental: { goals: false, reminders: true } } }).where(eq(projects.projectId, PROJECT));
+    try {
+      expect(await goalPromptRefusal(goal.ownerSessionId!)).toContain('turned off');
+    } finally {
+      await db.update(projects).set({ metadata: { experimental: { goals: true, reminders: true } } }).where(eq(projects.projectId, PROJECT));
+    }
+  });
+
   test("a verifier's queued prompt is refused after a stop (the stop cleared the verifier)", async () => {
     const goal = await activeGoal();
     const owner = asSession(goal.ownerSessionId!);

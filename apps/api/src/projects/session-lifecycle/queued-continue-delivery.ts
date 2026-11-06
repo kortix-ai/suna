@@ -20,8 +20,6 @@ import { MAX_RUNTIME_UNREACHABLE_RETRIES, markCommandFailed, parkPromptForUnreac
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import { DELIVERY_FAILURE_COPY, type SessionDeliveryOutcome, type SessionInvocationSource } from './types';
 
-/** Sources of goal prompts: the engine's own, and a goal heartbeat fire that waited in the queue. */
-const GOAL_PROMPT_SOURCES = new Set(['system:goal', 'trigger:reminder']);
 
 const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 type Status = 'succeeded' | 'queued' | 'failed';
@@ -179,16 +177,15 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
         ...(payload.clientMessageId ? {} : { queuedAt: row.createdAt }),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
-      payload.clientMessageId || row.source === 'system:artifact-comment' || GOAL_PROMPT_SOURCES.has(row.source) ? async () => {
-        // A goal prompt (the engine's, or a heartbeat fire that waited in the queue) that a
-        // person's pause or stop overtook does not run. A non-goal session is unaffected.
-        if (GOAL_PROMPT_SOURCES.has(row.source)) {
-          const refusal = await goalPromptRefusal(row.sessionId!);
-          if (refusal) throw new PromptDeliveryRefused(409, 'goal_not_running', refusal);
-        }
+      async () => {
+        // Nothing runs in a session that works a goal while a person has paused or closed
+        // that goal, or the project's goals flag is off, whoever queued the prompt (the
+        // engine, a heartbeat, or the session itself). A non-goal session is unaffected.
+        const refusal = await goalPromptRefusal(row.sessionId!);
+        if (refusal) throw new PromptDeliveryRefused(409, 'goal_not_running', refusal);
         if (payload.clientMessageId) await assertInboxDeliveryActive(row);
         if (row.source === 'system:artifact-comment') return refreshArtifactCommentQueuedPrompt(row, overrides?.model ?? undefined);
-      } : undefined);
+      });
       tl.mark('delivered');
       if (delivery !== 'delivered') break;
       // A repair round re-sends after round 0's forward closed the claim.

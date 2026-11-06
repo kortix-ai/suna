@@ -1583,6 +1583,13 @@
       "when": 1793955408327,
       "tag": "20261106085648_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1793961910964,
+      "tag": "20261106104510_goals_sessions_index",
+      "breakpoints": true
     }
   ]
 }

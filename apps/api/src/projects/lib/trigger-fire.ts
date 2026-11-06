@@ -22,7 +22,7 @@ import { alertTriggerAutoPaused, alertTriggerThrottled, clearTriggerAlert } from
 import { autoPauseTrigger, readTriggerAutoPause, triggerAutoPauseReason, triggerRunCapVerdict } from './trigger-run-caps';
 import { triggerChecksOverlap, triggerOverlapReason } from './trigger-overlap';
 import { captureAccountProductEvent } from '../../iam/account-analytics';
-import { admitReminderFire, goalSuccessorAllowed, goalSuccessorMetadata } from '../goals/admission';
+import { admitReminderFire, goalForSession, goalSuccessorAllowed, goalSuccessorMetadata } from '../goals/admission';
 import { GOAL_SESSION_SOURCE } from '../goals/effects';
 
 /**
@@ -614,6 +614,15 @@ async function fireReminderSuccessor(
       errorCode: 'goal_session_cap',
       retryable: false,
     };
+  }
+  // A person's pause or stop that landed after this fire was admitted wins: the successor's
+  // first turn is its initial prompt, which no delivery guard sees, so check right before it.
+  if (goal.goal) {
+    const now = await goalForSession(failedSessionId);
+    if (!now || now.pausedAt || now.state === 'done' || now.state === 'stopped') {
+      await disableSessionReminder(project.projectId, spec.slug, new Date());
+      return { status: 'failed', error: 'The goal was paused or stopped, so no successor starts', errorCode: 'goal_not_running', retryable: false };
+    }
   }
   const goalMetadata = goal.goal ? goalSuccessorMetadata(goal.goal) : {};
   const result = await createSession({

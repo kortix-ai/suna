@@ -310,6 +310,8 @@ flow(
         const resumed = (await owner.post(verb(R.resume), { revision: now.revision }, at)).status(200).json<{ goal: Goal }>().goal;
         if (resumed.paused_at) throw new Error('still paused');
         expectError(await owner.patch(GOAL, { revision: resumed.revision, max_wakes_per_day: 49 }, at), 422, 'goal_invalid');
+        // The agent is an authorization decision: one without Files (My Kortix) is refused like on create.
+        expectError(await owner.patch(GOAL, { revision: resumed.revision, agent: 'mykortix' }, at), 422, 'goal_invalid');
         const edited = (await owner.patch(GOAL, { revision: resumed.revision, max_wakes_per_day: 6, title: 'Publish the synthetic report v2' }, at)).status(200).json<{ goal: Goal & { max_wakes_per_day: number } }>().goal;
         if (edited.max_wakes_per_day !== 6 || edited.title !== 'Publish the synthetic report v2') throw new Error(JSON.stringify(edited));
       });

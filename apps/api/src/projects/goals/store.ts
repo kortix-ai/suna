@@ -6,8 +6,9 @@
  * the same transaction bumps `revision` (and `generation` when asked) and
  * appends one `project_goal_events` row. A refusal writes nothing.
  */
-import { projectGoalEvents, projectGoals } from '@kortix/db';
+import { projectGoalEvents, projectGoals, projects } from '@kortix/db';
 import { and, desc, eq, inArray, lt, or, sql, type SQL } from 'drizzle-orm';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 
 export type GoalRow = typeof projectGoals.$inferSelect;
@@ -86,6 +87,12 @@ export async function goalOfSession(sessionId: string): Promise<GoalRow | null> 
     .orderBy(desc(projectGoals.updatedAt))
     .limit(1);
   return row ?? null;
+}
+
+/** Is the project's `goals` flag on, read the way the routes and the admission gate read it? */
+export async function goalFlagOn(projectId: string): Promise<boolean> {
+  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  return row ? resolveFeatureFlag(row.metadata, 'goals') : false;
 }
 
 export async function insertGoal(values: typeof projectGoals.$inferInsert, event: GoalEventInput): Promise<GoalRow | null> {

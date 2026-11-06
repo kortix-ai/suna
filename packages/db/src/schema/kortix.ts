@@ -1521,6 +1521,8 @@ export const projectGoals = kortixSchema.table(
     index('idx_project_goals_verifier_session').on(table.verifierSessionId),
     // The admission gate's lookup on every reminder fire.
     index('idx_project_goals_heartbeat').on(table.heartbeatReminderId),
+    // The delivery guard's lookup: the goal a session works or worked for (`sessions @> [{id}]`).
+    index('idx_project_goals_sessions').using('gin', sql`${table.sessions} jsonb_path_ops`),
   ],
 ).enableRLS();
 

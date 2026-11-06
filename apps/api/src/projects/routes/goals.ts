@@ -130,7 +130,12 @@ async function parseBody<T>(c: GoalContextC, schema: z.ZodType<T>): Promise<T | 
 type Action = (ctx: goals.GoalContext, goalId: string, body: never) => Promise<GoalRow | { goal: GoalRow; deduped: boolean }>;
 
 /** One `POST /goals/:id/<verb>` (or PUT/PATCH): scope, readable goal, body, service call, the goal back. */
-function goalWrite<T>(schema: z.ZodType<T>, run: (ctx: goals.GoalContext, goalId: string, body: T) => Promise<GoalRow | { goal: GoalRow; deduped: boolean }>) {
+function goalWrite<T>(
+  schema: z.ZodType<T>,
+  run: (ctx: goals.GoalContext, goalId: string, body: T) => Promise<GoalRow | { goal: GoalRow; deduped: boolean }>,
+  /** An authorization decision the body carries; a Response ends the request before the write. */
+  guard?: (c: GoalContextC, scope: Exclude<Awaited<ReturnType<typeof scopeOf>>, Response>, body: T) => Promise<Response | void>,
+) {
   return async (c: GoalContextC) => {
     const scope = await scopeOf(c);
     if (scope instanceof Response) return scope;
@@ -138,6 +143,8 @@ function goalWrite<T>(schema: z.ZodType<T>, run: (ctx: goals.GoalContext, goalId
     if (goal instanceof Response) return goal;
     const body = await parseBody(c, schema);
     if (body instanceof Response) return body;
+    const refused = guard ? await guard(c, scope, body) : undefined;
+    if (refused) return refused;
     try {
       const out = await run({ project: scope.loaded.row, actor: scope.actor }, goal.goalId, body);
       const row = 'goal' in out ? out.goal : out;
@@ -295,7 +302,17 @@ export function registerGoalRoutes(): void {
       request: { params: goalParams, body: { content: { 'application/json': { schema: lenientBody(EditGoalRequestSchema.shape) } } } },
       responses: { 200: json(GoalResponseSchema, 'The goal'), ...GOAL_ERRORS },
     }),
-    handler(goalWrite(EditGoalRequestSchema, goals.editGoal)),
+    handler(
+      goalWrite(EditGoalRequestSchema, goals.editGoal, async (c, scope, body) => {
+        // The agent a goal runs is an authorization decision: a person may point a goal only at
+        // an agent they may run, and one with Files. The same two gates `POST /goals` applies.
+        const agent = typeof body.agent === 'string' ? body.agent.trim() : '';
+        if (!agent) return;
+        if (NO_FILES_AGENTS.has(agent)) return c.json({ error: 'goal_invalid' as const, message: `${agent} cannot work a goal: it has no Files. Pick another agent.` }, 422);
+        const resolved = await resolveAndAuthorizeAgent(c, scope.loaded, scope.loaded.row.projectId, agent).catch(() => null);
+        if (resolved?.agentName !== agent) return c.json({ error: 'goal_forbidden' as const, message: `You may not run the ${agent} agent.` }, 403);
+      }),
+    ),
   );
 
   projectsApp.openapi(

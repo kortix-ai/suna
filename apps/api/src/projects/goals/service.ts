@@ -94,13 +94,6 @@ const ev = (actor: GoalActor, kind: string, message: string, data?: Record<strin
   ...(dedupeKey ? { dedupeKey } : {}),
 });
 
-/** A stable UUID from parts: a retried step names the same session. */
-export function derivedUuid(...parts: string[]): string {
-  const h = createHash('sha256').update(parts.join(':')).digest('hex');
-  const variant = ((parseInt(h[16]!, 16) & 3) | 8).toString(16);
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
-}
-
 /** The row after the side effects (heartbeat id, next wake) a write ran. */
 async function reread(goal: GoalRow): Promise<GoalRow> {
   return (await getGoal(goal.projectId, goal.goalId)) ?? goal;
@@ -223,7 +216,8 @@ export async function createGoal(
   const drive = await ensureProjectDrive(project.accountId, project.projectId);
   const personal = await ensurePersonalFolder(drive, actor.userId);
   const { title, context } = splitBrief(input.brief);
-  const ownerId = derivedUuid(input.goal_id, 'owner', '1');
+  // Session ids nobody can predict: a derived id would let another session create it first and be adopted.
+  const ownerId = randomUUID();
   const now = ctx.now ?? new Date();
   for (let attempt = 0; attempt < 3; attempt++) {
     const { slug, folder } = await pickFolder(drive, personal, title, (f) => goalFolderTaken(project.projectId, drive.driveId, f));
@@ -496,8 +490,10 @@ export async function requestVerification(ctx: GoalContext, goalId: string, req:
   if (violations.length) invalid('The goal is not ready for verification.', violations);
   if (goal.sessions.length >= goal.maxSessions) await blockSessionCap(goal, ctx);
   const attempt = goal.verificationAttempts + 1;
-  const verifierId = derivedUuid(goal.goalId, 'verifier', String(attempt));
-  if (!(await sessionExists(verifierId))) {
+  // A fresh, unpredictable id per attempt: a derived one would let the owner create the
+  // "independent" verifier itself before asking for verification, and be adopted as it.
+  const verifierId = randomUUID();
+  {
     const made = await goalEffects().createSession({
       project: ctx.project,
       userId: goal.createdByUserId,
@@ -658,7 +654,7 @@ export async function handoverGoal(ctx: GoalContext, goalId: string, req: z.infe
   requireOwner(goal, ctx.actor);
   checkRevision(goal, req.revision);
   if (goal.sessions.length >= goal.maxSessions) await blockSessionCap(goal, ctx);
-  const newOwner = derivedUuid(goal.goalId, 'owner', String(goal.generation + 1), String(goal.sessions.length));
+  const newOwner = randomUUID();
   await ensureOwnerSession(ctx.project, goal, newOwner, ctx.actor.kind === 'session' ? ctx.actor.sessionId : null);
   const result = await writeGoal(ctx.project.projectId, goalId, (row, now) => {
     requireOwner(row, ctx.actor);
@@ -806,7 +802,7 @@ export async function restartGoal(ctx: GoalContext, goalId: string, req: GoalCon
   let owner = current.ownerSessionId;
   if (!owner || (await sessionHealth(owner)) !== 'ok') {
     if (current.sessions.length >= current.maxSessions) await blockSessionCap(current, ctx);
-    owner = derivedUuid(current.goalId, 'owner', String(current.generation + 1), String(current.sessions.length));
+    owner = randomUUID();
     await ensureOwnerSession(ctx.project, current, owner, null);
   }
   const newOwner = owner;

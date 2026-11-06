@@ -16,7 +16,7 @@ import type { ProjectRow } from '../lib/serializers';
 import { rescheduleHeartbeat, setHeartbeatEnabled } from './effects';
 import { notifyGoal } from './notify';
 import { decideWake, nextUtcMidnight, type WakeDecision } from './rules';
-import { GoalError, goalByHeartbeat, goalOfSession, setGoalRuntimeFields, writeGoal, type GoalRow } from './store';
+import { GoalError, goalByHeartbeat, goalFlagOn, goalOfSession, setGoalRuntimeFields, writeGoal, type GoalRow } from './store';
 
 export type GoalWakeVerdict =
   | { goal: null }
@@ -200,5 +200,6 @@ export async function goalPromptRefusal(sessionId: string): Promise<string | nul
   if (!goal) return null;
   if (goal.state === 'done' || goal.state === 'stopped') return `The goal is ${goal.state}: its queued prompt does not run.`;
   if (goal.pausedAt) return 'A person paused the goal: its queued prompt does not run.';
+  if (!(await goalFlagOn(goal.projectId))) return 'Goals is turned off for this project: its queued prompt does not run.';
   return null;
 }
