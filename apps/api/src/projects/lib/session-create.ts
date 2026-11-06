@@ -162,6 +162,12 @@ type PostgresErrorFields = {
  * A `23505` unique violation on the session PK means the caller retried a
  * create with a `session_id` that already exists; that is an idempotent race,
  * not a defect, so it maps to a typed 409 (`createProjectGoal` retries rely on it).
+ *
+ * A `42703` undefined column or `42P01` undefined table means the schema is
+ * ahead of this code: a release migration renamed or dropped what this
+ * (previous) API task still names, and the task serves until the rollout
+ * replaces it (v0.15.0: ~8 min, KRTX-4341). That window is accepted downtime,
+ * so it maps to a typed, retryable 503 the web does not report as an error.
  */
 export function resolveSessionInsertFailure(error: unknown): SessionCreateError {
   // Drizzle throws its own `Failed query: …` error and keeps the postgres.js
@@ -190,6 +196,13 @@ export function resolveSessionInsertFailure(error: unknown): SessionCreateError 
     return {
       status: 409,
       body: { error: 'A session with this id already exists', code: 'session_already_exists' },
+    };
+  }
+  if (pg.code === '42703' || pg.code === '42P01') {
+    return {
+      status: 503,
+      headers: { 'Retry-After': '30' },
+      body: { error: 'An update is in progress. Try again in a moment.', code: 'deploy_in_progress', retry: true },
     };
   }
   return {
