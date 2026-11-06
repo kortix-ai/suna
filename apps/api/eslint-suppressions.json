@@ -1923,9 +1923,6 @@
     "no-console": {
       "count": 3
     },
-    "no-restricted-imports": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 3
     }

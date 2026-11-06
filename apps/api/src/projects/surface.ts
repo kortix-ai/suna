@@ -231,5 +231,5 @@ export { ManifestWriteRefusedError } from './manifest-io';
 // Session and sandbox status transitions (consumed by the preview proxy's
 // lifecycle writes) and the canonical live session set (consumed by every
 // domain that counts or stops live sessions).
-export { transitionSandbox, transitionSession } from './session-lifecycle/status-transitions';
+export { settleLiveSessionsOfAccounts, transitionSandbox, transitionSession } from './session-lifecycle/status-transitions';
 export { ACTIVE_SESSION_STATUSES } from './lib/session-status';

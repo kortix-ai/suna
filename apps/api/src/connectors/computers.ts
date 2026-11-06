@@ -13,7 +13,7 @@
 import { connectorActions, connectorConnections, connectors, tunnelConnections } from '@kortix/db';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { revokeConnections } from './connection-status';
+import { connectConnection, revokeConnections } from './connection-status';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 import cuaDriverTools from './cua-driver-tools.generated.json';
 
@@ -356,18 +356,17 @@ export async function attachComputerConnection(
   const rows = await tx.select().from(connectorConnections).where(owner);
   const hasDefault = rows.some((row) => row.isDefault);
   const reactivate = async (row: ConnectionRow) => {
-    const [updated] = await tx
-      .update(connectorConnections)
-      .set({
+    // A person pairs the machine now: a deliberate reconnect.
+    const updated = await connectConnection(
+      row.connectionId,
+      {
         tunnelId: input.tunnelId,
-        status: 'active',
         // An active account was not revoked: offboarding's reason no longer holds.
-        metadata: sql`${connectorConnections.metadata} - 'revokedReason'`,
+        metadata: sql`${connectorConnections.metadata} - 'revokedReason' - 'revokedAt'`,
         ...(hasDefault ? {} : { isDefault: true }),
-        updatedAt: new Date(),
-      })
-      .where(eq(connectorConnections.connectionId, row.connectionId))
-      .returning();
+      },
+      tx,
+    );
     return { connection: updated!, created: false };
   };
 

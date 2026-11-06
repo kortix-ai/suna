@@ -344,6 +344,21 @@ export async function transitionSandbox(
   return moved ?? null;
 }
 
+/**
+ * Account closure: every live session of the accounts goes `stopped`
+ * (`reconcileStuck`, deleted sessions included). The sessions it moved.
+ */
+export async function settleLiveSessionsOfAccounts(accountIds: readonly string[], at: Date = new Date()): Promise<string[]> {
+  if (accountIds.length === 0) return [];
+  const rule: SessionTransitionRule = SESSION_TRANSITIONS.reconcileStuck;
+  const rows = await db
+    .update(projectSessions)
+    .set({ status: rule.to, updatedAt: at })
+    .where(and(inArray(projectSessions.accountId, [...accountIds]), statusIn(projectSessions.status, rule.from, ANY_SESSION)))
+    .returning({ sessionId: projectSessions.sessionId });
+  return rows.map((row) => row.sessionId);
+}
+
 class RuntimeTransitionLost extends Error {}
 
 type RuntimeTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
