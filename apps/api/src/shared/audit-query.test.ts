@@ -72,7 +72,6 @@ describe('serializeAuditEvent runtime session', () => {
     } as unknown as Parameters<typeof serializeAuditEvent>[0];
     expect(serializeAuditEvent(row)).toMatchObject({
       runtime_session_id: 'ses_root',
-      opencode_session_id: 'ses_root',
     });
   });
 });

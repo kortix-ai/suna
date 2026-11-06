@@ -11,7 +11,7 @@ import { FadedScrollArea } from '../../primitives/faded-scroll-area';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../../primitives/hover-card';
 import { menuRow } from '../../primitives/menu-recipe';
 import { Popover, PopoverAnchor, PopoverContent } from '../../primitives/popover';
-import { ShowMoreButton } from '../../workspace/sidebar/session-list-chrome';
+import { ShowMoreButton } from '../list/session-list-chrome';
 import { getSessionDisplayTitle, shortRelative } from '../actions/project-session-list-helpers';
 import { subagentTitle } from '../agents/agent-model';
 import { childSessionHref } from '../tool/tools/session-spawn-urls';

@@ -64,7 +64,7 @@ const NO_REPAIR: SessionModelRepairResult = { repointed: null };
  * trap `session-model-repoint.ts` documents.
  */
 export function storedPinWireId(metadata: Record<string, unknown> | null): string | null {
-  const pin = metadata?.opencode_model;
+  const pin = metadata?.model;
   if (typeof pin !== 'string' || !pin) return null;
   return pin.startsWith('kortix/') ? pin.slice('kortix/'.length) : pin;
 }
@@ -85,7 +85,7 @@ export async function repairRetiredSessionModelOnOpen(
 ): Promise<SessionModelRepairResult> {
   // The fast path, and the one that runs for every healthy session: no IO.
   if (!pinNeedsRepair(input.metadata)) return NO_REPAIR;
-  const pin = input.metadata?.opencode_model as string;
+  const pin = input.metadata?.model as string;
   try {
     const next = await repointRetiredSessionModel(pin, {
       projectId: input.projectId,

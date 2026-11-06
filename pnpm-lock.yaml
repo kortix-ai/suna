@@ -251,13 +251,13 @@ importers:
         version: 0.1.0-alpha.76
       '@composio/core':
         specifier: 0.17.0
-        version: 0.17.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@3.25.76)
+        version: 0.17.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@4.6.7)
       '@daytonaio/sdk':
         specifier: ^0.184.0
         version: 0.184.0(ws@8.22.0)
       '@hono/zod-openapi':
-        specifier: ^0.19.10
-        version: 0.19.10(hono@4.13.11)(zod@3.25.76)
+        specifier: 1.6.2
+        version: 1.6.2(hono@4.13.11)(zod@4.6.7)
       '@kortix/api-contract':
         specifier: workspace:*
         version: link:../../packages/api-contract
@@ -290,7 +290,7 @@ importers:
         version: 0.5.8
       '@openuidev/lang-core':
         specifier: 0.3.1
-        version: 0.3.1(zod@3.25.76)
+        version: 0.3.1(zod@4.6.7)
       '@react-email/components':
         specifier: 1.0.12
         version: 1.0.12(react-dom@19.2.0)(react@19.2.0)
@@ -358,8 +358,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: ^3.25.0
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@aws-crypto/sha256-js':
         specifier: 5.2.0
@@ -440,7 +440,7 @@ importers:
         version: link:../../packages/starter
       '@openuidev/lang-core':
         specifier: 0.3.1
-        version: 0.3.1(zod@3.25.76)
+        version: 0.3.1(zod@4.6.7)
       ignore:
         specifier: 7.0.5
         version: 7.0.5
@@ -454,8 +454,8 @@ importers:
         specifier: ^2.8.2
         version: 2.9.1
       zod:
-        specifier: ^3.25.0
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/bun':
         specifier: ^1.1.0
@@ -487,25 +487,25 @@ importers:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.316
-        version: 0.3.316(@anthropic-ai/sdk@0.129.0)(@modelcontextprotocol/sdk@1.32.0)(zod@3.25.76)
+        version: 0.3.316(@anthropic-ai/sdk@0.129.0)(@modelcontextprotocol/sdk@1.32.0)(zod@4.6.7)
       '@earendil-works/pi-agent-core':
         specifier: 1.4.0
-        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
+        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@4.6.7)
       '@earendil-works/pi-ai':
         specifier: 1.4.0
-        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
+        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@4.6.7)
       '@earendil-works/pi-codemode':
         specifier: 1.4.0
         version: 1.4.0
       '@earendil-works/pi-coding-agent':
         specifier: 1.4.0
-        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(zod@3.25.76)
+        version: 1.4.0(@modelcontextprotocol/sdk@1.32.0)(zod@4.6.7)
       '@earendil-works/pi-tui':
         specifier: 1.4.0
         version: 1.4.0
       '@modelcontextprotocol/sdk':
         specifier: 1.32.0
-        version: 1.32.0(zod@3.25.76)
+        version: 1.32.0(zod@4.6.7)
       '@silvia-odwyer/photon-node':
         specifier: 0.3.4
         version: 0.3.4
@@ -525,8 +525,8 @@ importers:
         specifier: 1.3.27
         version: 1.3.27
       zod:
-        specifier: ^3.23.8
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/bun':
         specifier: ^1.1.0
@@ -606,7 +606,7 @@ importers:
         version: 4.1.3
       '@openuidev/lang-core':
         specifier: 0.3.1
-        version: 0.3.1(zod@3.25.76)
+        version: 0.3.1(zod@4.6.7)
       '@react-native-async-storage/async-storage':
         specifier: 2.2.0
         version: 2.2.0(react-native@0.88.1)
@@ -809,7 +809,7 @@ importers:
         specifier: ^9.6.5
         version: 9.15.2(react-native-web@0.21.4)(react-native@0.88.1)(react@19.3.0)
       react-native-purchases-ui:
-        specifier: ^9.6.5
+        specifier: 9.15.2
         version: 9.15.2(react-native-purchases@9.15.2)(react-native-web@0.21.4)(react-native@0.88.1)(react@19.3.0)
       react-native-reanimated:
         specifier: 4.7.1
@@ -857,8 +857,8 @@ importers:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19)
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: 4.6.7
+        version: 4.6.7
       zustand:
         specifier: ^5.0.8
         version: 5.0.15(@types/react@19.2.18)(react@19.3.0)(use-sync-external-store@1.7.0)
@@ -1076,7 +1076,7 @@ importers:
         version: 16.4.2(next@16.4.2)(react@19.3.0)
       '@openuidev/lang-core':
         specifier: 0.3.1
-        version: 0.3.1(zod@3.25.76)
+        version: 0.3.1(zod@4.6.7)
       '@paper-design/shaders-react':
         specifier: ^0.0.76
         version: 0.0.76(@types/react@19.2.18)(react@19.3.0)
@@ -1310,7 +1310,7 @@ importers:
         version: 0.3.0(react@19.3.0)(typescript@5.9.3)
       fumadocs-core:
         specifier: 16.14.0
-        version: 16.14.0(@types/react@19.2.18)(lucide-react@1.61.0)(next@16.4.2)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76)
+        version: 16.14.0(@types/react@19.2.18)(lucide-react@1.61.0)(next@16.4.2)(react-dom@19.3.0)(react@19.3.0)(zod@4.6.7)
       fumadocs-mdx:
         specifier: 15.2.3
         version: 15.2.3(@types/react@19.2.18)(fumadocs-core@16.14.0)(next@16.4.2)(react@19.3.0)(vite@8.3.4)
@@ -1468,8 +1468,8 @@ importers:
         specifier: 13.6.33
         version: 13.6.33
       zod:
-        specifier: ^3.25.76
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
       zustand:
         specifier: ^5.0.3
         version: 5.0.15(@types/react@19.2.18)(react@19.3.0)(use-sync-external-store@1.7.0)
@@ -1553,8 +1553,8 @@ importers:
   apps/white-label/lumen:
     dependencies:
       '@convex-dev/better-auth':
-        specifier: 0.12.5
-        version: 0.12.5(better-auth@1.6.33)(convex@1.46.0)(react@19.3.0)(typescript@5.9.3)
+        specifier: 0.13.0
+        version: 0.13.0(better-auth@1.7.17)(convex@1.46.0)(react@19.3.0)(typescript@5.9.3)
       '@kortix/sdk':
         specifier: workspace:*
         version: link:../../../packages/sdk
@@ -1571,8 +1571,8 @@ importers:
         specifier: 8.18.0
         version: 8.18.0
       better-auth:
-        specifier: 1.6.33
-        version: 1.6.33(next@16.4.2)(pg@8.23.0)(react-dom@19.3.0)(react@19.3.0)(vitest@4.1.12)
+        specifier: 1.7.17
+        version: 1.7.17(next@16.4.2)(pg@8.23.0)(react-dom@19.3.0)(react@19.3.0)(vitest@4.1.12)
       convex:
         specifier: 1.46.0
         version: 1.46.0(react@19.3.0)
@@ -1746,8 +1746,8 @@ importers:
   packages/api-contract:
     dependencies:
       zod:
-        specifier: ^3.23.0
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/bun':
         specifier: ^1.1.0
@@ -1904,7 +1904,7 @@ importers:
     devDependencies:
       '@openuidev/lang-core':
         specifier: 0.3.1
-        version: 0.3.1(zod@3.25.76)
+        version: 0.3.1(zod@4.6.7)
       '@tanstack/react-query':
         specifier: ^5.75.2
         version: 5.103.0(react@19.3.0)
@@ -1939,14 +1939,14 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
       zod:
-        specifier: 3.25.76
-        version: 3.25.76
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/shared:
     dependencies:
       zod:
-        specifier: ^3.25.0
-        version: 3.25.76
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/bun':
         specifier: ^1.3.9
@@ -2684,7 +2684,7 @@ packages:
     dev: false
     optional: true
 
-  /@anthropic-ai/claude-agent-sdk@0.3.316(@anthropic-ai/sdk@0.129.0)(@modelcontextprotocol/sdk@1.32.0)(zod@3.25.76):
+  /@anthropic-ai/claude-agent-sdk@0.3.316(@anthropic-ai/sdk@0.129.0)(@modelcontextprotocol/sdk@1.32.0)(zod@4.6.7):
     resolution: {integrity: sha512-mCMr0que5kIy80JslJub6WFDB2+GYRGWNeVgSZaBpkBwXrr4wnRMnnGHitkA2BEJ5QP5xWyc6YH/6do/edxCWg==}
     engines: {node: '>=18.14.0'}
     peerDependencies:
@@ -2692,9 +2692,9 @@ packages:
       '@modelcontextprotocol/sdk': 1.32.0
       zod: 4.6.7
     dependencies:
-      '@anthropic-ai/sdk': 0.129.0(zod@3.25.76)
-      '@modelcontextprotocol/sdk': 1.32.0(zod@3.25.76)
-      zod: 3.25.76
+      '@anthropic-ai/sdk': 0.129.0(zod@4.6.7)
+      '@modelcontextprotocol/sdk': 1.32.0(zod@4.6.7)
+      zod: 4.6.7
     optionalDependencies:
       '@anthropic-ai/claude-agent-sdk-darwin-arm64': 0.3.316
       '@anthropic-ai/claude-agent-sdk-darwin-x64': 0.3.316
@@ -2706,7 +2706,7 @@ packages:
       '@anthropic-ai/claude-agent-sdk-win32-x64': 0.3.316
     dev: false
 
-  /@anthropic-ai/sdk@0.129.0(zod@3.25.76):
+  /@anthropic-ai/sdk@0.129.0(zod@4.6.7):
     resolution: {integrity: sha512-MH7LB20kNpGLUpPTe2OG5XvL/KhX8HUO9XyBaFjgFk6TLS4Xjt0VPIuMKywe7POKKPslX+QxSlVok9e+8kG5Nw==}
     hasBin: true
     peerDependencies:
@@ -2717,7 +2717,7 @@ packages:
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
-      zod: 3.25.76
+      zod: 4.6.7
     dev: false
 
   /@apm-js-collab/code-transformer-bundler-plugins@0.7.4:
@@ -2742,13 +2742,13 @@ packages:
       source-map: 0.6.1
     dev: false
 
-  /@asteasolutions/zod-to-openapi@7.3.4(zod@3.25.76):
-    resolution: {integrity: sha512-/2rThQ5zPi9OzVwes6U7lK1+Yvug0iXu25olp7S0XsYmOqnyMfxH7gdSQjn/+DSOHRg7wnotwGJSyL+fBKdnEA==}
+  /@asteasolutions/zod-to-openapi@9.1.0(zod@4.6.7):
+    resolution: {integrity: sha512-pLMeRgRYS7/vZIgAAkOe2P6+XGTifR1MT9pqDoxZ11EmcJJ+DPmdPqLN8ZZF4U8R9KHCCQCS9c2wtuE8wSrfkw==}
     peerDependencies:
-      zod: ^3.20.2
+      zod: 4.6.7
     dependencies:
       openapi3-ts: 4.6.1
-      zod: 3.25.76
+      zod: 4.6.7
     dev: false
 
   /@astrojs/check@0.9.10(prettier@3.9.7)(typescript@6.0.3):
@@ -4518,13 +4518,13 @@ packages:
       use-sync-external-store: 1.7.0(react@19.3.0)
     dev: false
 
-  /@better-auth/core@1.6.33(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5):
-    resolution: {integrity: sha512-DTadFTdcEad+IAmcJAEVGjD+6wtjt8BkLqmfBdRK+AeYOHaKy/gwtSlmxDuHKfsRaOmn1P8/gtEi/L5wVeEojQ==}
+  /@better-auth/core@1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5):
+    resolution: {integrity: sha512-GB3OtOjNfeOKxKOQByXLdj3CNNDbZ65HdbfHSZhoLI6VzlURlb2VXMFnf05NE8fhDoytXY+zlbqTcwaWKTS7/g==}
     peerDependencies:
-      '@better-auth/utils': 0.4.2
-      '@better-fetch/fetch': 1.3.1
+      '@better-auth/utils': ^0.4.2 || ^0.5.0
+      '@better-fetch/fetch': 1.3.3
       '@opentelemetry/api': 1.9.0
-      better-call: 1.4.0
+      better-call: 1.4.5
       jose: ^6.1.0
       kysely: ^0.28.5 || ^0.29.0
       nanostores: ^1.0.1
@@ -4532,75 +4532,74 @@ packages:
       '@opentelemetry/api':
         optional: true
     dependencies:
-      '@better-auth/utils': 0.4.2
-      '@better-fetch/fetch': 1.3.1
-      '@opentelemetry/semantic-conventions': 1.43.0
+      '@better-auth/utils': 0.5.1
+      '@better-fetch/fetch': 1.3.3
       '@standard-schema/spec': 1.1.0
-      better-call: 1.4.0(zod@4.6.7)
+      better-call: 1.4.5(zod@4.6.7)
       jose: 6.2.12
       kysely: 0.29.7
       nanostores: 1.5.5
       zod: 4.6.7
     dev: false
 
-  /@better-auth/drizzle-adapter@1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2):
-    resolution: {integrity: sha512-/BXRx0FoqoWKV3LZLWjnPJHHGvXEZro7goVzzV7K7ZPZG+PbBa+HYN+eJuXSMFb3JCwJEhW+JNLHWekzHQnTLA==}
+  /@better-auth/drizzle-adapter@1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1):
+    resolution: {integrity: sha512-A63iAB9tZLw/HU2bwf+FNwd3Hm5dzoNULOJckzPVMnddf0hO/gnjM94D/yVuu7w9cg8QTVAV7Zu3ehz1lKnX9A==}
     peerDependencies:
-      '@better-auth/core': ^1.6.33
-      '@better-auth/utils': 0.4.2
-      drizzle-orm: ^0.45.2
+      '@better-auth/core': ^1.7.17
+      '@better-auth/utils': ^0.4.2 || ^0.5.0
+      drizzle-orm: ^0.45.2 || >=1.0.0-rc.1 <2.0.0
     peerDependenciesMeta:
       drizzle-orm:
         optional: true
     dependencies:
-      '@better-auth/core': 1.6.33(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': 1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
+      '@better-auth/utils': 0.5.1
     dev: false
 
-  /@better-auth/kysely-adapter@1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2)(kysely@0.29.7):
-    resolution: {integrity: sha512-CUYXGxJhx29iilmCr2jdzWBGg/Iq1XjghGlRO15N5SsR+hz8KOGob57UFMVtHEQAhN3tcdgJNllx/ZLmNCyO/A==}
+  /@better-auth/kysely-adapter@1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1)(kysely@0.29.7):
+    resolution: {integrity: sha512-YPBdzMtwky0p3Jwbp6FmO7CnREOkxXJklwJsm2Hl6MN4qF+AY7T61Wq3IZ784BP7fmW7AaSPjkTe4+OGrFz1mQ==}
     peerDependencies:
-      '@better-auth/core': ^1.6.33
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': ^1.7.17
+      '@better-auth/utils': ^0.4.2 || ^0.5.0
       kysely: ^0.28.17 || ^0.29.0
     peerDependenciesMeta:
       kysely:
         optional: true
     dependencies:
-      '@better-auth/core': 1.6.33(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': 1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
+      '@better-auth/utils': 0.5.1
       kysely: 0.29.7
     dev: false
 
-  /@better-auth/memory-adapter@1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2):
-    resolution: {integrity: sha512-vw8uuW+zWUd4TLNnmtlwIiUb4jcj/mAopKWohv7ojDR6Esha7ZkM6EsW8W1PVdRhAfLiHeGqh0RvNtFm5mNDjQ==}
+  /@better-auth/memory-adapter@1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1):
+    resolution: {integrity: sha512-nEFRisxbSy1i3nmP0mqR5kwtNpYWSOqcdT+0axcPHeGK7DIeN6lpc5bEoPIkxPcSTyDzv0K67jlt1A60wGUY4g==}
     peerDependencies:
-      '@better-auth/core': ^1.6.33
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': ^1.7.17
+      '@better-auth/utils': ^0.4.2 || ^0.5.0
     dependencies:
-      '@better-auth/core': 1.6.33(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': 1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
+      '@better-auth/utils': 0.5.1
     dev: false
 
-  /@better-auth/mongo-adapter@1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2):
-    resolution: {integrity: sha512-JxAENypnmQbYcNboePWafLaP2egLgKQYoKPnZ8dNvaV50/h/dSlBDn1KaUrEMkJWjRXQ2rwgJzUl2yvGxQUZow==}
+  /@better-auth/mongo-adapter@1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1):
+    resolution: {integrity: sha512-Pu6rutW9h3K+pUiiDCtedjdPgD/62cYScKCM04az8g7SGVDJVAWF73ly3cN2EflYnLs96yp68e4zAnr0XJDgsQ==}
     peerDependencies:
-      '@better-auth/core': ^1.6.33
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': ^1.7.17
+      '@better-auth/utils': ^0.4.2 || ^0.5.0
       mongodb: ^6.0.0 || ^7.0.0
     peerDependenciesMeta:
       mongodb:
         optional: true
     dependencies:
-      '@better-auth/core': 1.6.33(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': 1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
+      '@better-auth/utils': 0.5.1
     dev: false
 
-  /@better-auth/prisma-adapter@1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2):
-    resolution: {integrity: sha512-wloYc35VpI7tjuWgOckB4GVX8y0Ow12ER5CfSqc55K88BefgRtR3brruZ9GhHSll+ZIxjf/0p5IGa+z8rKUR2Q==}
+  /@better-auth/prisma-adapter@1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1):
+    resolution: {integrity: sha512-gxowKIc8X8fUDPikuN+kWtfcGjXcy6CY/dpxJecSBDCn61g+T0AJdQpUzu7KhkjfYyw/ADxk7xtAc00tR7BoFA==}
     peerDependencies:
-      '@better-auth/core': ^1.6.33
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': ^1.7.17
+      '@better-auth/utils': ^0.4.2 || ^0.5.0
       '@prisma/client': ^5.0.0 || ^6.0.0 || ^7.0.0
       prisma: ^5.0.0 || ^6.0.0 || ^7.0.0
     peerDependenciesMeta:
@@ -4609,40 +4608,26 @@ packages:
       prisma:
         optional: true
     dependencies:
-      '@better-auth/core': 1.6.33(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
-      '@better-auth/utils': 0.4.2
+      '@better-auth/core': 1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
+      '@better-auth/utils': 0.5.1
     dev: false
 
-  /@better-auth/telemetry@1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1):
-    resolution: {integrity: sha512-k8BmE90sWIXlst84zyvCjWoXuftdujCmevlDDI86zXg81Pl+F2AZFPZFXzWkqaNmecnUjbm9bohNGCY6JonWQQ==}
+  /@better-auth/telemetry@1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3):
+    resolution: {integrity: sha512-VhBBYBBtSK6tZlEdc5MwV6L/8HHjuGIns9QmlhqxiCk2xA4ILAVXo7O9S1iltxqe+H8gUKh5jbpY9hriW88MeQ==}
     peerDependencies:
-      '@better-auth/core': ^1.6.33
-      '@better-auth/utils': 0.4.2
-      '@better-fetch/fetch': 1.3.1
+      '@better-auth/core': ^1.7.17
+      '@better-auth/utils': ^0.4.2 || ^0.5.0
+      '@better-fetch/fetch': 1.3.3
     dependencies:
-      '@better-auth/core': 1.6.33(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
-      '@better-auth/utils': 0.4.2
-      '@better-fetch/fetch': 1.3.1
-    dev: false
-
-  /@better-auth/utils@0.4.2:
-    resolution: {integrity: sha512-AUxrvu+HaaODsUyzDxFgwd/8RZ1yZaYo42LXKSrU2oGgR38pS1ij8nqQKNgtTWoYGpNevNXtCfgTy6loHveW9A==}
-    dependencies:
-      '@noble/hashes': 2.4.0
+      '@better-auth/core': 1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
+      '@better-auth/utils': 0.5.1
+      '@better-fetch/fetch': 1.3.3
     dev: false
 
   /@better-auth/utils@0.5.1:
     resolution: {integrity: sha512-WETqw5vQ52uQ/xwWR4E8rTgT6fDEr/wnS+otDNkBCa/69281FCF32OKDdQUcahMCnjsvqXBNiEvAQHFB0EVRRg==}
     dependencies:
       '@noble/hashes': 2.4.0
-    dev: false
-
-  /@better-fetch/fetch@1.3.1:
-    resolution: {integrity: sha512-ABkD1WhyfPZprKRQI3bhATjeiFuNWC9PXhfGWqL+sg/gKrM977oFrYkdb4msM3hgUGonr7KlOsOFT5TU2rht9g==}
-    dev: false
-
-  /@better-fetch/fetch@1.3.2:
-    resolution: {integrity: sha512-Gs7n99b5tqUC6cQAPbV0uED3IraHB6xQbHLQ/C3l7ZFafHScOx9pQ+DYmP5blbLFShVWLqxNUlI9wi4xU/X+ow==}
     dev: false
 
   /@better-fetch/fetch@1.3.3:
@@ -5271,21 +5256,21 @@ packages:
     resolution: {integrity: sha512-MXC5JGRVdiQ4EgLricy9o/mqBa1+1T7wHFZ6Q4ZJkrjzZqOMvxTgy21Zlb5J/1oGkB2bg9UDzpH8PkXCp/D4zA==}
     dev: false
 
-  /@composio/core@0.17.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@3.25.76):
+  /@composio/core@0.17.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@4.6.7):
     resolution: {integrity: sha512-HJzpKWgise3piltWorEHt07nrjUR3gPZnBmrFgnJXx5+6AiKn79YGBYLytdtuMscElLt/7pHOIxfcaYpiGkJ7A==}
     peerDependencies:
       zod: 4.6.7
     dependencies:
       '@composio/client': 0.1.0-alpha.76
-      '@composio/json-schema-to-zod': 0.3.0(zod@3.25.76)
+      '@composio/json-schema-to-zod': 0.3.0(zod@4.6.7)
       '@types/json-schema': 7.0.15
       is-fs-case-sensitive: 2.0.0
-      openai: 7.15.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@3.25.76)
+      openai: 7.15.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@4.6.7)
       picocolors: 1.1.1
       pusher-js: 8.6.0
       semver: 7.8.5
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.2(zod@3.25.76)
+      zod: 4.6.7
+      zod-to-json-schema: 3.25.2(zod@4.6.7)
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@smithy/hash-node'
@@ -5294,29 +5279,28 @@ packages:
       - ws
     dev: false
 
-  /@composio/json-schema-to-zod@0.3.0(zod@3.25.76):
+  /@composio/json-schema-to-zod@0.3.0(zod@4.6.7):
     resolution: {integrity: sha512-Lgz5QlclPsd9mo8FGn/12h3cwTpN6A9aYvucO1umjnuvyetb6nC//nHEu9TDU+BN5Sa0n+qmUUv4Tzd4wI4xeA==}
     peerDependencies:
       zod: 4.6.7
     dependencies:
-      zod: 3.25.76
+      zod: 4.6.7
     dev: false
 
-  /@convex-dev/better-auth@0.12.5(better-auth@1.6.33)(convex@1.46.0)(react@19.3.0)(typescript@5.9.3):
-    resolution: {integrity: sha512-YFUbGk04OlINno9FpOTNZN67AP+kSQsblfep5zs1f/WTgMWjD5FymU6rSSh3mu52gukmDNnBJTjC/lj4QRpjlQ==}
+  /@convex-dev/better-auth@0.13.0(better-auth@1.7.17)(convex@1.46.0)(react@19.3.0)(typescript@5.9.3):
+    resolution: {integrity: sha512-U82uCij3drlk8ktHeo6sUrPP06KIPEo1FCmB2VFKnQb+Xbv10gUf05SGJYKiPH1mmCrG2ylFRfUFku3I9vnCTw==}
     peerDependencies:
-      better-auth: '>=1.6.11 <1.7.0'
+      better-auth: '>=1.7.16 <1.8.0'
       convex: ^1.25.0
       react: ^18.3.1 || ^19.0.0
     dependencies:
-      '@better-fetch/fetch': 1.3.2
-      better-auth: 1.6.33(next@16.4.2)(pg@8.23.0)(react-dom@19.3.0)(react@19.3.0)(vitest@4.1.12)
+      '@better-fetch/fetch': 1.3.3
+      better-auth: 1.7.17(next@16.4.2)(pg@8.23.0)(react-dom@19.3.0)(react@19.3.0)(vitest@4.1.12)
       common-tags: 1.8.2
       convex: 1.46.0(react@19.3.0)
       convex-helpers: 0.1.128(convex@1.46.0)(react@19.3.0)(typescript@5.9.3)(zod@4.6.7)
       jose: 6.2.12
       react: 19.3.0
-      remeda: 2.52.0
       semver: 7.8.5
       type-fest: 5.9.0
       zod: 4.6.7
@@ -5435,11 +5419,11 @@ packages:
       playwright: 1.63.0
     dev: true
 
-  /@earendil-works/pi-agent-core@1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76):
+  /@earendil-works/pi-agent-core@1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@4.6.7):
     resolution: {integrity: sha512-PoKY84SKUwnt7S5QBZaGUqfNO1kjP3KHpHUA9QpFTj4cOjaVWMYIcBPJ6FDRCdE8Zen9OSECQUd0uUfVgtSmgA==}
     engines: {node: '>=22.19.0'}
     dependencies:
-      '@earendil-works/pi-ai': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
+      '@earendil-works/pi-ai': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@4.6.7)
       typebox: 1.3.27
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -5455,19 +5439,19 @@ packages:
       - zod
     dev: false
 
-  /@earendil-works/pi-ai@1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76):
+  /@earendil-works/pi-ai@1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@4.6.7):
     resolution: {integrity: sha512-hQM/C4+1w8rHYACzDDf+0vQMnEnpzIop1tptIERVgR3ZeT/hHSzBNG8PaWPgxWQjqSeKCyBZSyp8uTT6eKK1pQ==}
     engines: {node: '>=22.19.0'}
     hasBin: true
     dependencies:
-      '@anthropic-ai/sdk': 0.129.0(zod@3.25.76)
+      '@anthropic-ai/sdk': 0.129.0(zod@4.6.7)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
       '@earendil-works/pi-telemetry': 1.4.0
       '@google/genai': 2.21.0(@modelcontextprotocol/sdk@1.32.0)
       '@smithy/node-http-handler': 4.12.1
       http-proxy-agent: 9.1.0
       https-proxy-agent: 9.1.0
-      openai: 7.19.0(undici@8.12.2)(zod@3.25.76)
+      openai: 7.19.0(undici@8.12.2)(zod@4.6.7)
       partial-json: 0.1.7
       typebox: 1.3.27
     transitivePeerDependencies:
@@ -5491,13 +5475,13 @@ packages:
       quickjs-wasi: 3.6.2
     dev: false
 
-  /@earendil-works/pi-coding-agent@1.4.0(@modelcontextprotocol/sdk@1.32.0)(zod@3.25.76):
+  /@earendil-works/pi-coding-agent@1.4.0(@modelcontextprotocol/sdk@1.32.0)(zod@4.6.7):
     resolution: {integrity: sha512-Z41LpZ3yYHSC/UUps6Mr39UMFPwH8elhJBG9DY1P7kuzsE5qSK/6eMj2EHzO5evJRQWLbKSqUMw+4nCNtIyiQg==}
     engines: {node: '>=22.19.0'}
     hasBin: true
     dependencies:
-      '@earendil-works/pi-agent-core': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
-      '@earendil-works/pi-ai': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@3.25.76)
+      '@earendil-works/pi-agent-core': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@4.6.7)
+      '@earendil-works/pi-ai': 1.4.0(@modelcontextprotocol/sdk@1.32.0)(undici@8.12.2)(zod@4.6.7)
       '@earendil-works/pi-codemode': 1.4.0
       '@earendil-works/pi-mcp': 1.4.0
       '@earendil-works/pi-tui': 1.4.0
@@ -7411,7 +7395,7 @@ packages:
       '@modelcontextprotocol/sdk':
         optional: true
     dependencies:
-      '@modelcontextprotocol/sdk': 1.32.0(zod@3.25.76)
+      '@modelcontextprotocol/sdk': 1.32.0(zod@4.6.7)
       google-auth-library: 10.9.1
       p-retry: 4.6.2
       protobufjs: 7.6.5
@@ -7485,28 +7469,28 @@ packages:
       hono: 4.13.11
     dev: false
 
-  /@hono/zod-openapi@0.19.10(hono@4.13.11)(zod@3.25.76):
-    resolution: {integrity: sha512-dpoS6DenvoJyvxtQ7Kd633FRZ/Qf74+4+o9s+zZI8pEqnbjdF/DtxIib08WDpCaWabMEJOL5TXpMgNEZvb7hpA==}
+  /@hono/zod-openapi@1.6.2(hono@4.13.11)(zod@4.6.7):
+    resolution: {integrity: sha512-ktnBqVgvIlopiiB9ab6hqoYefhcb0DUZU5QJ1F5UtDu8w6+cIORENz93sTZT6G0mQNes0/TbbadfrOpdehioPA==}
     engines: {node: '>=16.0.0'}
     peerDependencies:
       hono: 4.13.11
       zod: 4.6.7
     dependencies:
-      '@asteasolutions/zod-to-openapi': 7.3.4(zod@3.25.76)
-      '@hono/zod-validator': 0.7.6(hono@4.13.11)(zod@3.25.76)
+      '@asteasolutions/zod-to-openapi': 9.1.0(zod@4.6.7)
+      '@hono/zod-validator': 0.9.1(hono@4.13.11)(zod@4.6.7)
       hono: 4.13.11
       openapi3-ts: 4.6.1
-      zod: 3.25.76
+      zod: 4.6.7
     dev: false
 
-  /@hono/zod-validator@0.7.6(hono@4.13.11)(zod@3.25.76):
-    resolution: {integrity: sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw==}
+  /@hono/zod-validator@0.9.1(hono@4.13.11)(zod@4.6.7):
+    resolution: {integrity: sha512-iiv6w0qrIc0arfvCtUqBWsvl4fXjzaTcQcCJTTtCnkawF9HHGE+KjEl0ox3gQJ6rKZEgE3mLExlQCF72M+mNuw==}
     peerDependencies:
       hono: 4.13.11
       zod: 4.6.7
     dependencies:
       hono: 4.13.11
-      zod: 3.25.76
+      zod: 4.6.7
     dev: false
 
   /@humanfs/core@0.19.2:
@@ -8276,37 +8260,6 @@ packages:
     dependencies:
       zod: 4.6.7
     dev: true
-
-  /@modelcontextprotocol/sdk@1.32.0(zod@3.25.76):
-    resolution: {integrity: sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      '@cfworker/json-schema': ^4.1.1
-      zod: 4.6.7
-    peerDependenciesMeta:
-      '@cfworker/json-schema':
-        optional: true
-    dependencies:
-      '@hono/node-server': 2.1.3(hono@4.13.11)
-      ajv: 8.18.0
-      ajv-formats: 3.0.1(ajv@8.18.0)
-      content-type: 1.0.5
-      cors: 2.8.6
-      cross-spawn: 7.0.6
-      eventsource: 3.0.7
-      eventsource-parser: 3.1.1
-      express: 5.2.1
-      express-rate-limit: 8.7.0(express@5.2.1)
-      hono: 4.13.11
-      jose: 6.2.12
-      json-schema-typed: 8.0.2
-      pkce-challenge: 5.0.1
-      raw-body: 3.0.2
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.2(zod@3.25.76)
-    transitivePeerDependencies:
-      - supports-color
-    dev: false
 
   /@modelcontextprotocol/sdk@1.32.0(zod@4.6.7):
     resolution: {integrity: sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA==}
@@ -9253,7 +9206,7 @@ packages:
       - web-tree-sitter
     dev: false
 
-  /@openuidev/lang-core@0.3.1(zod@3.25.76):
+  /@openuidev/lang-core@0.3.1(zod@4.6.7):
     resolution: {integrity: sha512-lya0jEt6MXYDJT14ZBxysRSg8AWxvcJLyMmqgl/IJ3Ci+D8rdRXPHGeHD5XxJmxqgdX+P1UxhLp9cQ+ml8diYw==}
     requiresBuild: true
     peerDependencies:
@@ -9264,7 +9217,7 @@ packages:
         optional: true
     dependencies:
       ci-info: 4.4.0
-      zod: 3.25.76
+      zod: 4.6.7
 
   /@orama/orama@3.1.18:
     resolution: {integrity: sha512-a61ljmRVVyG5MC/698C8/FfFDw5a8LOIvyOLW5fztgUXqUpc1jOfQzOitSCbge657OgXXThmY3Tk8fpiDb4UcA==}
@@ -17886,17 +17839,16 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
-  /better-auth@1.6.33(next@16.4.2)(pg@8.23.0)(react-dom@19.3.0)(react@19.3.0)(vitest@4.1.12):
-    resolution: {integrity: sha512-QkVKOmJw/LQ3HjIib2wx2Td0xB9EuPgw0ARYPKeFu3niN0VSBW32j4QwfewFZOQi5Hb/jOB6U+wdvtBhF7+URw==}
+  /better-auth@1.7.17(next@16.4.2)(pg@8.23.0)(react-dom@19.3.0)(react@19.3.0)(vitest@4.1.12):
+    resolution: {integrity: sha512-jLPt758k4R3kzCE2ie5BV2FXiLtpbINyC6e/OkcZK0aQOAnZdE2oLZofK1cZg3oXVd2GCFo47gnMy7sgykfUhQ==}
     peerDependencies:
       '@lynx-js/react': '*'
       '@prisma/client': ^5.0.0 || ^6.0.0 || ^7.0.0
-      '@sveltejs/kit': ^2.0.0
+      '@sveltejs/kit': ^2.0.0 || ^3.0.0
       '@tanstack/react-start': ^1.0.0
       '@tanstack/solid-start': ^1.0.0
-      better-sqlite3: ^12.0.0
-      drizzle-kit: '>=0.31.4'
-      drizzle-orm: ^0.45.2
+      drizzle-kit: '>=0.31.4 || >=1.0.0-beta.1'
+      drizzle-orm: ^0.45.2 || >=1.0.0-rc.1 <2.0.0
       mongodb: ^6.0.0 || ^7.0.0
       mysql2: ^3.0.0
       next: 16.4.2
@@ -17906,7 +17858,7 @@ packages:
       react-dom: ^18.0.0 || ^19.0.0
       solid-js: ^1.0.0
       svelte: ^4.0.0 || ^5.0.0
-      vitest: ^2.0.0 || ^3.0.0 || ^4.0.0
+      vitest: ^2.0.0 || ^3.0.0 || ^4.0.0 || ^5.0.0
       vue: ^3.0.0
     peerDependenciesMeta:
       '@lynx-js/react':
@@ -17918,8 +17870,6 @@ packages:
       '@tanstack/react-start':
         optional: true
       '@tanstack/solid-start':
-        optional: true
-      better-sqlite3:
         optional: true
       drizzle-kit:
         optional: true
@@ -17948,18 +17898,18 @@ packages:
       vue:
         optional: true
     dependencies:
-      '@better-auth/core': 1.6.33(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(better-call@1.4.0)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
-      '@better-auth/drizzle-adapter': 1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2)
-      '@better-auth/kysely-adapter': 1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2)(kysely@0.29.7)
-      '@better-auth/memory-adapter': 1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2)
-      '@better-auth/mongo-adapter': 1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2)
-      '@better-auth/prisma-adapter': 1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2)
-      '@better-auth/telemetry': 1.6.33(@better-auth/core@1.6.33)(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)
-      '@better-auth/utils': 0.4.2
-      '@better-fetch/fetch': 1.3.1
+      '@better-auth/core': 1.7.17(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.5)(jose@6.2.12)(kysely@0.29.7)(nanostores@1.5.5)
+      '@better-auth/drizzle-adapter': 1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1)
+      '@better-auth/kysely-adapter': 1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1)(kysely@0.29.7)
+      '@better-auth/memory-adapter': 1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1)
+      '@better-auth/mongo-adapter': 1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1)
+      '@better-auth/prisma-adapter': 1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1)
+      '@better-auth/telemetry': 1.7.17(@better-auth/core@1.7.17)(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)
+      '@better-auth/utils': 0.5.1
+      '@better-fetch/fetch': 1.3.3
       '@noble/ciphers': 2.4.0
       '@noble/hashes': 2.4.0
-      better-call: 1.4.0(zod@4.6.7)
+      better-call: 1.4.5(zod@4.6.7)
       defu: 6.1.7
       jose: 6.2.12
       kysely: 0.29.7
@@ -17974,8 +17924,8 @@ packages:
       - '@opentelemetry/api'
     dev: false
 
-  /better-call@1.4.0(zod@4.6.7):
-    resolution: {integrity: sha512-bBKOT4vv1kZLDgxVePdilk/Jwkn+dtRRsmi3DzHcDP+WnswyVl6dR59l2HEeP/0cB+bDoopASAesWDPIdd/zZA==}
+  /better-call@1.4.5(zod@4.6.7):
+    resolution: {integrity: sha512-GVOWfn3pjEfUXn6GrfGf2h7tPAqj1oMLFBWBEswJrSkDKcLk6TIcjV0zexibcZZ0c5N1mkLMsPFopXWzWj/gDQ==}
     peerDependencies:
       zod: 4.6.7
     peerDependenciesMeta:
@@ -22246,7 +22196,7 @@ packages:
     requiresBuild: true
     optional: true
 
-  /fumadocs-core@16.14.0(@types/react@19.2.18)(lucide-react@1.61.0)(next@16.4.2)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76):
+  /fumadocs-core@16.14.0(@types/react@19.2.18)(lucide-react@1.61.0)(next@16.4.2)(react-dom@19.3.0)(react@19.3.0)(zod@4.6.7):
     resolution: {integrity: sha512-CQBsVm2XoxytoK5iTxd2Q3L76XBXY9yrWdThH9iJxZPcZ4aHED7YJCYuHPHZDIWg80fy1UAgVc6ogfE+24jTDA==}
     peerDependencies:
       '@mdx-js/mdx': '*'
@@ -22328,7 +22278,7 @@ packages:
       vfile: 6.0.3
       yaml: 2.9.1
       zbsearch: 3.3.4
-      zod: 3.25.76
+      zod: 4.6.7
     transitivePeerDependencies:
       - supports-color
     dev: false
@@ -22376,7 +22326,7 @@ packages:
       chokidar: 5.0.0
       esbuild: 0.28.2
       estree-util-value-to-estree: 3.5.0
-      fumadocs-core: 16.14.0(@types/react@19.2.18)(lucide-react@1.61.0)(next@16.4.2)(react-dom@19.3.0)(react@19.3.0)(zod@3.25.76)
+      fumadocs-core: 16.14.0(@types/react@19.2.18)(lucide-react@1.61.0)(next@16.4.2)(react-dom@19.3.0)(react@19.3.0)(zod@4.6.7)
       github-slugger: 2.0.0
       magic-string: 1.4.1
       mdast-util-mdx: 3.0.0
@@ -26462,7 +26412,7 @@ packages:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  /openai@7.15.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@3.25.76):
+  /openai@7.15.0(@aws-sdk/credential-provider-node@3.972.62)(@smithy/signature-v4@5.6.2)(ws@8.22.0)(zod@4.6.7):
     resolution: {integrity: sha512-2DIwesnPSduw68MFx7nAdgvshrgvS8WOan5W8+tgUMlAy/tY+Q41g80Pa+w/v64rHA6rtn+dketa8QvMVxU96w==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
@@ -26489,10 +26439,10 @@ packages:
       '@aws-sdk/credential-provider-node': 3.972.62
       '@smithy/signature-v4': 5.6.2
       ws: 8.22.0
-      zod: 3.25.76
+      zod: 4.6.7
     dev: false
 
-  /openai@7.19.0(undici@8.12.2)(zod@3.25.76):
+  /openai@7.19.0(undici@8.12.2)(zod@4.6.7):
     resolution: {integrity: sha512-MX2s3u2L5racTO0CC/SWpCOasJQBCJrqLKXK+l82cAhdeF8mPMBEe/gxMm0ZFa2xpKpOFLRjxv5afYEZbBXmbQ==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
@@ -26517,7 +26467,7 @@ packages:
         optional: true
     dependencies:
       undici: 8.12.2(patch_hash=mu6tw5d72jgydn6wat3dblh4w4)
-      zod: 3.25.76
+      zod: 4.6.7
     dev: false
 
   /openapi-sampler@1.7.5:
@@ -29013,11 +28963,6 @@ packages:
       unified: 11.0.5
     transitivePeerDependencies:
       - supports-color
-    dev: false
-
-  /remeda@2.52.0:
-    resolution: {integrity: sha512-PReYy2iQJbKq7t/4grlsew2rUKRgZYMRQOVjlxsl9+j8yQWfEdyuzJFPSF4kDmO11KoHSanilyHnG4xSBA21nQ==}
-    engines: {node: '>=18.0.0'}
     dev: false
 
   /remend@1.0.1:
@@ -32585,14 +32530,6 @@ packages:
     resolution: {integrity: sha512-msJxIvYDYcoNL+PJsu+7qmpDWsYmAxTY+2TNYXXF0hzBzBk0BMecOqDOG/EckUoKCuKwObfbugIl8QpqHDXeFA==}
     dev: false
 
-  /zod-to-json-schema@3.25.2(zod@3.25.76):
-    resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
-    peerDependencies:
-      zod: 4.6.7
-    dependencies:
-      zod: 3.25.76
-    dev: false
-
   /zod-to-json-schema@3.25.2(zod@4.6.7):
     resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
     peerDependencies:
@@ -32608,9 +32545,6 @@ packages:
       zod: 4.6.7
     dependencies:
       zod: 4.6.7
-
-  /zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
   /zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}

@@ -831,7 +831,7 @@ describe('session_turns ledger', () => {
       sandbox_id: SANDBOX_ID,
       project_id: PROJECT_ID,
       account_id: ACCOUNT_ID,
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_id: 'msg_ledger_begin',
       state: 'delivering',
       end_reason: null,
@@ -886,7 +886,7 @@ describe('session_turns ledger', () => {
     expect(await readTurn(t('ledger-boot'))).toMatchObject({
       session_id: SESSION_ID,
       state: 'active',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_id: 'msg_ledger_boot',
     });
   });
@@ -1002,7 +1002,7 @@ describe('session_turns ledger', () => {
     expect(await readTurn(t('ledger-abandon'))).toMatchObject({
       state: 'ended',
       end_reason: 'abandoned',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_id: 'msg_ledger_abandon',
     });
   });
@@ -1371,7 +1371,7 @@ describe('end_error: causes, requested stops, and which one wins', () => {
     await db.execute(sql`
       INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+         runtime_session_id, message_id, state, started_at, created_at, updated_at)
       VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
               ${ACCOUNT_ID}::uuid, ${opencodeSessionId}, ${messageId}, 'active',
               now(), now(), now())`);
@@ -1504,7 +1504,7 @@ describe('recordUnidentifiedTurnCause: a cause frame that does not name its turn
     await db.execute(sql`
       INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+         runtime_session_id, message_id, state, started_at, created_at, updated_at)
       VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
               ${ACCOUNT_ID}::uuid, ${ROOT}, ${messageId}, 'active', now(), now(), now())`);
     return token;
@@ -1609,7 +1609,7 @@ describe('clearSandboxTurn: the reaper names what it saw', () => {
     await db.execute(sql`
       INSERT INTO kortix.session_turns
         (turn_token, session_id, sandbox_id, project_id, account_id,
-         opencode_session_id, message_id, state, started_at, created_at, updated_at)
+         runtime_session_id, message_id, state, started_at, created_at, updated_at)
       VALUES (${token}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
               ${ACCOUNT_ID}::uuid, ${ROOT}, ${messageId}, 'active', now(), now(), now())`);
     return token;

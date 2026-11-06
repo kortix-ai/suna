@@ -155,7 +155,7 @@ storeFlow(
           .has("$.source", "mirror")
           .has("$.available", true)
           .has("$.message_count", 2)
-          .has("$.opencode_session_id", fixture.root)
+          .has("$.runtime_session_id", fixture.root)
           .has(
             "$.messages[1].info.time.completed",
             fixture.messages[1].info.time.completed,
@@ -178,7 +178,7 @@ storeFlow(
           .status(200)
           .body()
           .has("$.available", true)
-          .has("$.opencode_session_id", child)
+          .has("$.runtime_session_id", child)
           .has("$.message_count", 1)
           .has("$.messages[0].parts[0].text", "List the files.");
         (
@@ -211,7 +211,7 @@ storeFlow(
         await db.connect();
         try {
           await db.query(
-            "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
+            "UPDATE kortix.project_sessions SET runtime_session_id = $2 WHERE session_id = $1",
             [sessionId, "ses_replacement"],
           );
         } finally {
@@ -222,7 +222,7 @@ storeFlow(
           .body()
           .has("$.available", false)
           .has("$.message_count", 0)
-          .has("$.opencode_session_id", "ses_replacement");
+          .has("$.runtime_session_id", "ses_replacement");
       },
     );
     await ctx.step(
@@ -239,7 +239,7 @@ storeFlow(
         await restore.connect();
         try {
           await restore.query(
-            "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
+            "UPDATE kortix.project_sessions SET runtime_session_id = $2 WHERE session_id = $1",
             [sessionId, fixture.root],
           );
         } finally {

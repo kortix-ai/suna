@@ -73,15 +73,15 @@ export interface SessionModelFallback {
   atMs: number;
 }
 
-/** The session's fallback record (`metadata.opencode_model_source: 'fallback'`), if any. */
+/** The session's fallback record (`metadata.model_source: 'fallback'`), if any. */
 export function sessionModelFallback(
   session: { metadata?: Record<string, unknown> | null } | null | undefined,
 ): SessionModelFallback | undefined {
   const metadata = session?.metadata;
-  if (metadata?.opencode_model_source !== 'fallback') return undefined;
-  const { opencode_model: pin, opencode_model_fallback_from: from, opencode_model_fallback_at: atMs } = metadata;
+  if (metadata?.model_source !== 'fallback') return undefined;
+  const { model: pin, model_fallback_from: from, model_fallback_at: atMs } = metadata;
   if (typeof pin !== 'string' || typeof from !== 'string' || typeof atMs !== 'number') return undefined;
-  const reason = metadata.opencode_model_fallback_reason;
+  const reason = metadata.model_fallback_reason;
   return {
     model: modelRefToKey(pin),
     from: modelRefToKey(from),
@@ -111,12 +111,12 @@ export function sessionPickStands(
  * for this session and before every cross-session pick and default, so a
  * session opens on its own model and its next prompt does not switch it.
  *
- * 1. A chosen pin (`metadata.opencode_model` with source `explicit` or
+ * 1. A chosen pin (`metadata.model` with source `explicit` or
  *    `repointed`). The CLI, the SDK and Slack set the model this way, and
  *    they send it with every prompt.
  * 2. `lastPromptModel`: the model of the session's newest user message, which
  *    is what the session last ran on.
- *    A pin the server moved back off a fallback (`opencode_model_restored`)
+ *    A pin the server moved back off a fallback (`model_restored`)
  *    ranks here too until the next prompt runs on it, whatever its source.
  * 3. Any other pin. That is the default resolved when the session was
  *    created, which a later prompt may have replaced.
@@ -132,9 +132,9 @@ export function sessionModelCandidates(input: {
   const pin = input.session ? sessionModelPin(input.session) : null;
   const pinKey = pin ? modelRefToKey(pin) : undefined;
   const metadata = input.session?.metadata;
-  // `opencode_model_restored`: the server moved the pin back off a fallback
+  // `model_restored`: the server moved the pin back off a fallback
   // and no prompt has run on it yet, so the last prompt names the fallback.
-  const chosen = CHOSEN_PIN_SOURCES.has(String(metadata?.opencode_model_source)) || metadata?.opencode_model_restored === true;
+  const chosen = CHOSEN_PIN_SOURCES.has(String(metadata?.model_source)) || metadata?.model_restored === true;
   const ordered = chosen
     ? [pinKey, input.lastPromptModel]
     : [input.lastPromptModel, pinKey];

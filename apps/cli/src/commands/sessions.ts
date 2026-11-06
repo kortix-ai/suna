@@ -5,7 +5,6 @@ import {
   type SessionConfigStatusInput,
   type SessionReloadOutcomeInput,
 } from './session-config-format';
-import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
@@ -40,6 +39,7 @@ import {
   sessionModelPin,
 } from '@kortix/sdk';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
+import { runGit } from '../git-run.ts';
 import { type SessionStartPayload, startPollIntervalMs, startProgressTracker } from '../session-boot.ts';
 import { C, help, pad, status } from '../style.ts';
 import { sessionWebUrl } from '../web-url.ts';
@@ -703,8 +703,8 @@ async function sessionsNew(
   // non-binding 'default' sentinel when none is configured. See
   // apps/api/src/projects/lib/sessions.ts createProjectSession.
   if (agent) body.agent_name = agent;
-  // `model` since W4; `opencode_model` is the same pin for an older self-hosted API.
-  if (overrides.model) body.model = body.opencode_model = overrides.model;
+  // `model` since W4; `model` is the same pin for an older self-hosted API.
+  if (overrides.model) body.model = overrides.model;
   if (overrides.secrets !== undefined) body.secrets = overrides.secrets;
   if (overrides.connectors !== undefined) body.connector_bindings = overrides.connectors;
   if (overrides.runtimeContext) body.runtime_context = overrides.runtimeContext;
@@ -918,7 +918,7 @@ export async function prepareClientCreatedBranch(
   }
 
   const sessionId = randomUUID();
-  const push = runGit(['push', 'origin', `refs/heads/${baseRef}:refs/heads/${sessionId}`]);
+  const push = runGit(undefined, ['push', 'origin', `refs/heads/${baseRef}:refs/heads/${sessionId}`]);
   if (!push.ok) {
     const detail = (push.stderr || push.stdout).trim();
     process.stderr.write(
@@ -1432,23 +1432,8 @@ function normalizeGitUrl(url: string): string {
     .toLowerCase();
 }
 
-function runGit(args: string[]): {
-  ok: boolean;
-  stdout: string;
-  stderr: string;
-  code: number | null;
-} {
-  const result = spawnSync('git', args, { encoding: 'utf8' });
-  return {
-    ok: result.status === 0,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
-    code: result.status,
-  };
-}
-
 function gitStdout(args: string[]): string | null {
-  const result = runGit(args);
+  const result = runGit(undefined, args);
   return result.ok ? result.stdout.trim() : null;
 }
 

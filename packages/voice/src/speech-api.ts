@@ -4,7 +4,7 @@
 // attachment, a phone line that plays a file) and hears a voice message from any of them. A channel's voice note lands
 // in its inbox as a file, and before this its only way to hear one was to install a speech-to-text tool for the turn.
 // The models are a call's own: its voice (VOICE_TTS; the box's gateway in Kortix) and its Whisper, billed the same way.
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { open, writeFile } from 'node:fs/promises'
 import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { chargeStt } from './cost'
 import { ISO, family, serbianLatin } from './lang'
@@ -125,13 +125,23 @@ export async function transcribe(ask: { file?: unknown; language?: unknown }, o:
   const path = isAbsolute(file) ? file : resolve(process.env.KORTIX_WORKSPACE || process.cwd(), file)
   const as = AUDIO[extname(path).slice(1).toLowerCase()]
   if (!as) return bad(`${basename(path)} is not a file Whisper reads (${Object.keys(AUDIO).join(', ')}): convert it first (ffmpeg -i in out.mp3)`)
-  const info = await stat(path).catch(() => undefined)
-  if (!info?.isFile()) return bad(`no file at ${path}`, 404)
-  if (info.size > MAX_BYTES) return bad(`${basename(path)} is ${(info.size / 2 ** 20).toFixed(1)} MB, more than 25: cut it (ffmpeg -t) or make it smaller (ffmpeg -ac 1 -b:a 32k)`)
+  // One handle for the check and the read: a path swapped between a stat and a readFile cannot slip past the checks.
+  const handle = await open(path, 'r').catch(() => undefined)
+  if (!handle) return bad(`no file at ${path}`, 404)
+  let audio: Buffer
+  try {
+    const info = await handle.stat()
+    if (!info.isFile()) return bad(`no file at ${path}`, 404)
+    if (info.size > MAX_BYTES) return bad(`${basename(path)} is ${(info.size / 2 ** 20).toFixed(1)} MB, more than 25: cut it (ffmpeg -t) or make it smaller (ffmpeg -ac 1 -b:a 32k)`)
+    audio = await handle.readFile()
+  } finally {
+    await handle.close()
+  }
+  if (audio.length > MAX_BYTES) return bad(`${basename(path)} grew past 25 MB while it was read`)
   const language = typeof ask.language === 'string' && /^[a-z]{2}$/i.test(ask.language.trim()) ? ask.language.trim().toLowerCase() : undefined
   const model = process.env.WHISPER_MODEL ?? 'whisper-large-v3'
   const form = new FormData()
-  form.append('file', new Blob([await readFile(path)]), `audio.${as}`)
+  form.append('file', new Blob([audio]), `audio.${as}`)
   form.append('model', model)
   if (language) form.append('language', language)
   // The product's and the project's names, spelled as they are, as a call's Whisper gets them: a dev voice note's

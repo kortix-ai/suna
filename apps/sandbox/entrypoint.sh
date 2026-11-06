@@ -68,7 +68,14 @@ desktop() {
       startxfce4 &
       # ponytail: voxl restarts on exit; Xvfb or XFCE dying needs `kortix-desktop stop && kortix-desktop start`.
       while :; do
-        voxl --port="${DESKTOP_PORT}" --enable-resize=true --files-root="${HOME}" || true
+        # The Kortix proxy authenticates every viewer, so voxl's own login is
+        # off. Its Host and Origin checks stay on: the box's browser loads any
+        # site, and a page there reaches this port on loopback. The edges
+        # rename the Host (Platinum `6901-<id>.aec.local`, Daytona
+        # `6901-<id>.daytonaproxy01.net`); the proxy sends no Origin here.
+        voxl --port="${DESKTOP_PORT}" --enable-resize=true --files-root="${HOME}" \
+          --enable-basic-auth=false \
+          --allowed-hosts="${KORTIX_DESKTOP_ALLOWED_HOSTS:-.aec.local,.daytonaproxy01.net}" || true
         sleep 1
       done
       ;;

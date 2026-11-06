@@ -183,7 +183,7 @@ describe('sessionPromptDefaults', () => {
     expect(
       sessionPromptDefaults({
         agent_name: 'kortix',
-        metadata: { opencode_model: 'kortix/glm-5.3-flash' },
+        metadata: { model: 'kortix/glm-5.3-flash' },
       }),
     ).toEqual({ agent: 'kortix', model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } });
   });
@@ -191,7 +191,7 @@ describe('sessionPromptDefaults', () => {
   test('omits missing pieces instead of guessing', () => {
     expect(sessionPromptDefaults({ agent_name: null, metadata: {} })).toEqual({});
     expect(
-      sessionPromptDefaults({ agent_name: 'meta', metadata: { opencode_model: 'nonsense' } }),
+      sessionPromptDefaults({ agent_name: 'meta', metadata: { model: 'nonsense' } }),
     ).toEqual({
       agent: 'meta',
     });

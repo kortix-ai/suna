@@ -107,7 +107,7 @@ my-agent/
 ```
 
 - `kortix.yaml` turns on My Kortix (`builtin_agents: { my_kortix: true }`) and sets `default_agent: mykortix`. A session that names no agent runs My Kortix, and My Kortix hands the work to `worker` unless you name another agent.
-- `worker` is a general-purpose agent. Every grant it has is `all`. A project created before `worker` existed keeps its `kortix` agent.
+- `worker` is a general-purpose agent. Every grant it has is `"*"`: every name. A project created before `worker` existed keeps its `kortix` agent.
 - `worker` sets `workspace: { project_repository: true }`, so each session gets a checkout of the repository on its own branch in `/workspace`.
 - `kortix-cli` is the one Kortix skill in the folder. The other `kortix-*` skills are always registered and come with every session. The `skills` key in `kortix.yaml` lists the other 10.
 
@@ -153,7 +153,7 @@ git pull              # bring the merged work into your clone
 
 `1` is the change request number from `kortix cr ls`. To send the work back, run `kortix cr request-changes 1 --message "…"`. The note goes to the change request's session and wakes it if it sleeps. In the web app, use the project's **Review** page.
 
-The starter `worker` agent holds `kortix_permissions: all`, so the API lets it merge its own change request. The `kortix-system` skill tells it to wait until you ask. Who may merge: [Agents that merge](/docs/developers#agents-that-merge).
+The starter `worker` agent holds `kortix_permissions: "*"`, so the API lets it merge its own change request. The `kortix-system` skill tells it to wait until you ask. Who may merge: [Agents that merge](/docs/developers#agents-that-merge).
 
 ### Check your setup
 
@@ -379,7 +379,7 @@ IP allowlist and MFA policies of the account apply to git requests too.
 - A session pushes only its own branch, the branch named after its `session_id`.
 - Any other branch needs `project.gitops.ref.any` in the agent's `kortix_permissions`. Deleting a branch needs `project.gitops.ref.delete`.
 - A push to the default branch also needs `project.agent.write`, `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`.
-- The agent's `kortix_permissions` must list the permission, or be `all`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/guide#agents).
+- The agent's `kortix_permissions` must list the permission, or be `"*"`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/guide#agents).
 
 By default, agents land work through [change requests](#change-requests). [Agents](/docs/guide#agents) shows how to grant permissions.
 
@@ -727,8 +727,8 @@ agents:
   assistant:
     description: Answers questions about the project.
     prompt: You answer questions about this project. Read the files before you answer.
-    tools: all                               # omitted: all, with a warning
-    skills: all                              # omitted: no skills
+    tools: "*"                               # every tool; omitted: every tool, with a warning
+    skills: "*"                              # every skill; omitted: no skills
     workspace: { project_repository: true }  # omitted: no repository in /workspace
 ```
 
@@ -819,7 +819,7 @@ Each row still works. `kortix validate --fix` writes the replacement with the sa
 | --- | --- | --- |
 | `legacy-format` | A `kortix_version: 2` file, or a `kortix.toml` | The converted files: run `kortix validate --fix` (see [Older formats](#older-formats)). |
 | `drop-kortix-version` | `kortix_version: 3` | Nothing: delete the line. |
-| `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: all`, or the list of tools it needs |
+| `tools-explicit` | An agent without `tools` (it gets every tool) | `tools: "*"`, or the list of tools it needs |
 | `agent-disable` | `disable: true` | `enabled: false` |
 | `agent-env` | An agent's `env` | `secrets` |
 | `agent-kortix-cli` | `kortix_cli` | `kortix_permissions` |
@@ -911,10 +911,10 @@ agents:
       bash:
         "*": allow
         "git push *": ask
-    tools: all
+    tools: "*"
     skills: [refund-policy, kortix-cli]
     subagents: [researcher]
-    commands: all
+    commands: "*"
     extensions: [web-access]
     connectors: [helpdesk]
     secrets: [HELPDESK_TOKEN]
@@ -984,13 +984,13 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `apps`: Apps | `apps` |
 | `agents`: other agents | `subagents` |
 
-- **A grant** is `all` (or `*`), `none` (or `""`), or a list of names. A list that contains `*` means all.
+- **A grant** is `"*"` (every name), `none` (or `""`), or a list of names. Quote the `*`: a bare `*` is a YAML alias, and `kortix validate` prints the quoted line. `all` is the accepted alias of `"*"`, and a list that contains `"*"` is every name too.
 - **Omitted means none.** An omitted `skills`, `subagents`, `commands`, `extensions`, `connectors`, `secrets`, `apps` or `kortix_permissions` grants nothing.
-- **Three keys are open by default:** `tools` is `all` (`kortix validate` warns when an agent omits it), `permission` is `allow`, and `codemode` is `on`.
+- **Three keys are open by default:** `tools` is `"*"` (`kortix validate` warns when an agent omits it), `permission` is `allow`, and `codemode` is `on`.
 - **`workspace.project_repository` defaults to `false`.** Set `true` on every agent that reads or changes the repository, runs its scripts, or opens change requests.
 - **Names must exist.** A listed skill, command, extension, subagent or tool that is not registered or built in is an error.
 - **`secrets` reaches the sandbox.** A granted secret is an environment variable or a network-enforced secret in the agent's sandbox. Model logins, connector and git credentials stay with Kortix services: the agent's model and connector settings decide their use.
-- **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `all`.
+- **Built in, with no entry.** The Kortix skills: `kortix-cli`, `kortix-memory` and the other `kortix-*` skills. The Kortix tools: `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show`. See [Kortix tools](/docs/developers#kortix-tools). The built-in tools: `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `task`. An agent loads a Kortix skill only when its `skills` grant names it or is `"*"`.
 - **My Kortix runs only when the file turns it on.** `builtin_agents: { my_kortix: true }` turns it on, and the starter sets it. No key, `false`, or a file Kortix cannot read leaves it off. With it off, a request for the agent `mykortix` returns `409 builtin_agent_disabled`.
 - **Which agent a session runs.** A session or trigger that names no agent runs `default_agent`. With My Kortix on and no `default_agent`, it runs My Kortix. When My Kortix starts a session and names no agent, the session runs `default_agent`, or the first enabled agent with `mode` `primary` or `all` when `default_agent` is `mykortix`. The starter manifest sets `builtin_agents.my_kortix: true`, `default_agent: mykortix` and one project agent, `worker`, so a new project runs My Kortix, and My Kortix hands work to `worker`. A project made before `worker` existed keeps its `kortix` agent.
 - **A file with an error** still runs My Kortix when it sets `my_kortix: true`, so My Kortix can fix the file.
@@ -1037,17 +1037,17 @@ The project registers what exists. Each agent enables what it uses, by name. A r
 | `color` | string or `primary`, `secondary`, `accent`, `success`, `warning`, `error`, `info` | — | Accepted. Sessions do not use it. |
 | `hidden` | boolean | `false` | `true`: agent pickers do not list the agent. |
 | `options` | map | — | Accepted. Sessions do not use it. |
-| `permission` | `ask`, `allow`, `deny` or map | `allow` | Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`. See [Permission rules](#permission-rules). |
+| `permission` | `ask`, `allow`, `deny` or map | `allow` | Which tool calls run, ask a person, or never run: `allow`, `ask` or `deny` (`"*"` and `all` also mean `allow`). `skill` and `task` belong to `skills` and `subagents`. See [Permission rules](#permission-rules). |
 | `prompt` | string | — | The system prompt. Set `prompt` or `prompt_file`, not both. |
 | `prompt_file` | string | — | A repository path to a `.md` file. The whole file is the system prompt. |
 | `enabled` | boolean | `true` | `false`: no session starts with the agent, and no agent starts it as a subagent. |
 | `codemode` | `on`, `only`, `off` | `on` | `on`: the model gets every tool plus `codemode`, which runs one JavaScript script that calls the other tools. `only`: `codemode` alone. `off`: no `codemode`. A script's calls follow the agent's `permission`. |
 | `context` | `record`, `summary` | `record` | What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it. |
-| `tools` | `all`, `none`, list or map | `all` | The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
-| `skills` | grant or map | — | Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
+| `tools` | grant | `"*"` | The tools the agent may call: built-in tools, Kortix tools and registered tools. `"*"` (quoted; `all` is its alias) is every tool, `none` is none. A list allows only those. `{ exclude: [bash] }` allows every tool but those. |
+| `skills` | grant or map | — | Registered skills and Kortix skills the agent may load. `{ exclude: [...] }` grants every one but those. "*" (every name; alias `all`), "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
 | `subagents` | grant | `none` | Agents this agent may start with the `agent` tool (alias `task`): declared, enabled, `mode` `subagent` or `all`, and not itself. A subagent cannot start another subagent. |
 | `commands` | grant | `none` | Registered commands the agent runs. |
-| `extensions` | grant or map | — | Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. "all", "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
+| `extensions` | grant or map | — | Registered extensions that a session of the agent loads. `{ exclude: [...] }` grants every one but those. "*" (every name; alias `all`), "none" (default), a list of names, or `{ exclude: [names] }` for every name but those. |
 | `connectors` | grant | `none` | Connector slugs the agent may call. |
 | `connectors_required` | list | — | Connector slugs, a subset of `connectors`. Sessions do not check it. |
 | `policy_sets` | map | the base rules | Connector slug → the name of a policy set on that connector. See [Connector rules and approvals](#connector-rules-and-approvals). |
@@ -1233,7 +1233,7 @@ permission:
   webfetch: ask
 ```
 
-- **Value.** One action for every tool: `allow`, `ask` or `deny`. Or a map of key → action, or of key → map of glob → action.
+- **Value.** One action for every tool: `allow`, `ask` or `deny`. Or a map of key → action, or of key → map of glob → action. `"*"` and `all` as an action also mean `allow`.
 - **Keys.** A capability: `read`, `edit`, `glob`, `grep`, `bash`, `external_directory`, `question`, `webfetch`, `websearch`. Or a tool's own name, which wins over its capability.
 - **Tools that follow a capability.** `write` follows `edit`. A project's own `memory` tool (the ejected copy of the retired Kortix tool) follows `edit`, or `read` when it only views. `image_gen` follows `edit`. `web_search` and `image_search` follow `websearch`. `scrape_webpage` follows `webfetch`.
 - **Action only.** `question`, `webfetch` and `websearch` take an action, not a glob map.
@@ -3319,11 +3319,11 @@ agents:
   report-writer:
     prompt: Write the weekly report from the reports App.
     kortix_permissions: [project.app.read]
-    apps: [reports]    # App slugs, all, or none (the default)
+    apps: [reports]    # App slugs, "*", or none (the default)
 ```
 
 Set the list in `kortix.yaml`, with `kortix agents scope report-writer --apps reports`
-(also `all` and `none`), or in **Customize** → **Agents** → the agent → **Apps**.
+(also `all` for every App, and `none`), or in **Customize** → **Agents** → the agent → **Apps**.
 The App's access dialog lists the agents granted to it. From code, call `apps.access.agents(appId)`. See
 [Agents](/docs/guide#agents).
 
@@ -6968,7 +6968,7 @@ The fence tags `openui` and `openui-lang` mean schema version 1. The tag `openui
 
 Generative UI has no project flag and no kill switch. Every session lists the `kortix-genui` system skill by name and a one-line description. The agent loads the full catalog only when an answer needs a block, so a turn without blocks does not load it.
 
-An agent sees the skill only when its `skills` grant in `kortix.yaml` is `all` or names `kortix-genui`. The starter agents grant `all`. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
+An agent sees the skill only when its `skills` grant in `kortix.yaml` is `"*"` or names `kortix-genui`. The starter agents grant `"*"`. See [kortix.yaml reference](/docs/developers#kortixyaml-reference).
 
 The viewer has a separate switch. Pass `enabled={false}` to `GenuiBlock` and the block renders as markdown.
 
@@ -8025,7 +8025,7 @@ createRoot(document.getElementById('root')!).render(
 
 ### For agents
 
-`@kortix/ui` ships the `kortix-ui` skill at `packages/ui/skills/kortix-ui/SKILL.md`. Every Kortix project gets it as a managed skill. An agent loads it when its `skills` grant in `kortix.yaml` is `all` or names `kortix-ui`. It tells an agent how to set up the package, which component to compose, which primitives are banned and how to verify a page. Its references:
+`@kortix/ui` ships the `kortix-ui` skill at `packages/ui/skills/kortix-ui/SKILL.md`. Every Kortix project gets it as a managed skill. An agent loads it when its `skills` grant in `kortix.yaml` is `"*"` or names `kortix-ui`. It tells an agent how to set up the package, which component to compose, which primitives are banned and how to verify a page. Its references:
 
 | File | Holds |
 | --- | --- |
@@ -8896,6 +8896,8 @@ The grouping and status functions accept the structural types `PartLike`, `Messa
 | Every name that contains `OpenCode` (for example `useOpenCodeSessions`, `opencodeKeys`, `OpencodeClient`, `OpenCodeEvent`) | The same name with `Runtime` (`useRuntimeSessions`, `runtimeKeys`, `RuntimeClient`, `RuntimeEvent`). |
 | The OpenCode-only hooks: MCP (`useAddMcpServer`, `useMcpAuthStart`, …), `useShareSession`, `useUnshareSession`, `useUpdatePart`, `useDeletePart`, `useRuntimeTools`, `useUpdateRuntimeSession`, `useRuntimeSessionDiff`, `useInitSession`, `useSendRuntimeMessage`, `useRuntimeAgent`, `useUpdateRuntimeConfig`, the provider auth calls (`authorizeRuntimeProvider`, …), `getRuntimeConfig`, `updateRuntimeConfig`, `refreshRuntimeConfiguration`, `logRuntimeEvent`, the `RuntimeConfigInvalidError` helpers, `NoCompactionModelError` | No replacement: pi does not serve these routes. Send a prompt with `useSession().send`; read the diff with `useRuntimeVcsDiff`. |
 | The retired admin hooks (`use-admin-analytics`, `use-admin-feedback`, `use-system-status`, `use-admin-billing`, the per-sandbox admin hooks, `useAdminAccountSandboxes`, `useAdminSetManagedModels`, `useAdminSetEnterpriseDemo`, `useAdminSetEnterpriseEntitled`) and the tunnel permission hooks (`useTunnelPermissions`, `useTunnelAuditLogs`, …) | No replacement: the API removed the routes. |
+| Field aliases `opencode_session_id`, `opencode_sessions`, `opencode_version`, `opencode_model`, `opencode_reload` on sessions, turns, transcripts, audit events and session starts, and `opencodeModel` on channel bindings | The neutral field with the same value: `runtime_session_id`, `runtime_sessions`, `harness_version`, `model`, `runtime_reload`, and `model` on channel bindings. The API no longer sends the old names. |
+| Session `metadata` keys `opencode_model`, `opencode_model_source`, `opencode_model_*` and `opencode_sessions` | `model`, `model_source`, `model_*` and `runtime_sessions`. A migration renamed the keys on every stored session. |
 
 ### Deprecated names
 

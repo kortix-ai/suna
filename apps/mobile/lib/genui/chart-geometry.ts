@@ -12,7 +12,7 @@ export interface BarRect {
 }
 
 /** The value axis: `min` to `max` (the outer ticks), and the ticks between them. */
-export interface ValueScale {
+interface ValueScale {
   min: number;
   max: number;
   ticks: number[];

@@ -14,27 +14,27 @@
  */
 
 import type { ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
-import { parseKortixToolResult, multiAgentTool, type MultiAgentTool } from '@kortix/sdk';
-import { peerHandleLabel } from '@kortix/shared';
-import { Text } from '@/components/ui/text';
-import { SessionStatusMark } from '@/components/session/SessionStatusMark';
-import { ChatCircleIcon, ListChecksIcon, StopCircleIcon, UsersThreeIcon } from '@/lib/icons';
+import { View } from 'react-native';
+import { PressableSurface } from '@/components/kortix/pressable-surface';
 import {
-  AGENT_STATE_LABEL,
-  PEER_STATUS_LABEL,
-  agentStateGlyph,
   looksLikeTeamTaskInput,
+  multiAgentTool,
+  parseKortixToolResult,
   parsePeerSend,
   parseReachable,
   parseStoppedChild,
   parseTasks,
-  taskGlyph,
+  type MultiAgentTool,
   type PeerSendSummary,
   type ReachableAgentRow,
   type StoppedChild,
   type TeamTaskRow,
-} from '@/lib/session/multi-agent';
+} from '@kortix/sdk';
+import { peerHandleLabel } from '@kortix/shared';
+import { Text } from '@/components/ui/text';
+import { SessionStatusMark } from '@/components/session/SessionStatusMark';
+import { ChatCircleIcon, ListChecksIcon, StopCircleIcon, UsersThreeIcon } from '@/lib/icons';
+import { AGENT_STATE_LABEL, PEER_STATUS_LABEL, agentStateGlyph, taskGlyph } from '@/lib/session/multi-agent';
 import { webSpace } from '@/lib/session/user-message';
 import { AgentCard } from '../shared/agent-surface';
 import { MessageRow } from '../shared/message-row';
@@ -165,14 +165,14 @@ function AgentRow({ agent }: { agent: ReachableAgentRow }) {
     </>
   );
   return enabled ? (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       accessibilityLabel={`Open @${agent.handle}${agent.state ? `, ${AGENT_STATE_LABEL[agent.state]}` : ''}`}
       onPress={() => openSession(agent.sessionId)}
       style={({ pressed }) => [rowStyle, pressed && { backgroundColor: palette.pressed }]}
     >
       {body}
-    </Pressable>
+    </PressableSurface>
   ) : (
     <View style={rowStyle}>{body}</View>
   );

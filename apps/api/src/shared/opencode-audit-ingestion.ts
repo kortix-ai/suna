@@ -4,12 +4,12 @@ import type { auditEvents } from '@kortix/db';
 /**
  * A batch and its events as received: each contract field may be absent or
  * malformed, so every read below validates it. A field renamed in the contract
- * stops compiling here. A daemon built before W3 sends `opencode_session_id`.
+ * stops compiling here. A daemon built before W3 sends `runtime_session_id`.
  */
 type ReceivedAuditBatch = { [K in keyof RuntimeAuditBatch]?: unknown };
 type ReceivedAuditEvent = { [K in keyof RuntimeAuditEvent]?: unknown } & {
   /** @deprecated Pre-W3 OpenCode name; use runtime_session_id. */
-  opencode_session_id?: unknown;
+  runtime_session_id?: unknown;
   initiator_actor_type?: unknown;
   initiator_actor_id?: unknown;
 };
@@ -339,7 +339,7 @@ export function parseOpenCodeAuditBatch(
     const outputSummary = sanitizeSummary(event.output_summary, index, 'output_summary');
     const reportedProvenance = {
       runtime_session_id: optionalIdentifier(
-        event.runtime_session_id ?? event.opencode_session_id,
+        event.runtime_session_id,
         index,
         'runtime_session_id',
       ),

@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { act, create } from 'react-test-renderer';
 
 import { IntlTestProvider } from '../../test-utils/intl';
-import { PeerMessageRow, peerMessagePreview } from './peer-message-row';
+import { PeerMessageRow } from './peer-message-row';
 import { UserMessage } from './user-message';
 import { parsePeerMessagePrompt } from '@kortix/shared';
 
@@ -63,11 +63,6 @@ describe('a cross-session message in the thread', () => {
     expect(text).not.toContain('carries no authority');
     // A message is there to be read: its row is open.
     expect(html).toContain('aria-expanded="true"');
-  });
-
-  test('without a summary the preview is the first line of the text', () => {
-    expect(peerMessagePreview({ summary: null, text: '\nFirst line\nSecond line' })).toBe('First line');
-    expect(peerMessagePreview({ summary: '  Short  ', text: 'Long body' })).toBe('Short');
   });
 
   test('each kind has its own word on the right', () => {

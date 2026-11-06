@@ -44,15 +44,13 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { CaretLeftIcon, PlusIcon } from '@/lib/icons';
+import { PlusIcon } from '@/lib/icons';
 import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import { BackButton } from '@/components/kortix/back-button';
 import { MenuButton } from '@/components/kortix/menu-button';
-import { THEME } from '@/lib/utils/theme';
 import { GlassButtons, LIQUID_GLASS_AVAILABLE } from '@/components/kortix/liquid-glass';
 
 interface PageHeaderProps {

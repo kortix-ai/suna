@@ -3,10 +3,15 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 
 mock.module('../lib/sentry', () => ({
+  addBreadcrumb: () => {},
   captureException: () => {},
   isSentryIgnoredError: () => false,
 }));
+mock.module('../middleware/audit', () => ({
+  auditApiRequest: async (_context: unknown, next: () => Promise<void>) => next(),
+}));
 const { installHttpErrors } = await import('../http-errors');
+const { installHttpMiddleware } = await import('../http-middleware');
 
 for (const status of [500, 502, 503, 504] as const) {
   for (const explicitResponse of [false, true]) {
@@ -38,18 +43,54 @@ test('a typed JSON 5xx body the thrower built keeps its code', async () => {
   expect(await response.json()).toEqual(body);
 });
 
-test('malformed JSON and unknown deep paths return safe envelopes', async () => {
+test('malformed JSON is a 400 and unknown deep paths return safe envelopes', async () => {
   const app = new OpenAPIHono();
+  installHttpMiddleware(app);
   installHttpErrors(app);
   app.post('/json', async (c) => c.json(await c.req.json()));
-  const malformed = await app.request('/json', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{',
+  for (const body of ['{', '', '{"a":', 'not json']) {
+    const malformed = await app.request('/json', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+    });
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toEqual({ error: true, message: 'Malformed JSON in request body', status: 400 });
+  }
+  const valid = await app.request('/json', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"ok":true}',
   });
-  expect(malformed.status).toBe(500);
-  expect(await malformed.json()).toEqual({ error: true, message: 'Internal server error', status: 500 });
+  expect(valid.status).toBe(200);
+  expect(await valid.json()).toEqual({ ok: true });
   const missing = await app.request('/unknown/deep/synthetic/path');
   expect(missing.status).toBe(404);
   expect(await missing.json()).toEqual({ error: true, message: 'Not found', status: 404 });
+});
+
+test('a literal null body is a 400 whatever the content type, never a TypeError 500', async () => {
+  const app = new OpenAPIHono();
+  installHttpMiddleware(app);
+  installHttpErrors(app);
+  app.post('/deref', async (c) => c.json({ name: (await c.req.json()).name }));
+  for (const contentType of ['application/json', 'text/plain', undefined]) {
+    const response = await app.request('/deref', {
+      method: 'POST', headers: contentType ? { 'Content-Type': contentType } : {}, body: 'null',
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: true, message: 'Request body must not be null', status: 400 });
+  }
+  const valid = await app.request('/deref', {
+    method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"name":"x"}',
+  });
+  expect(valid.status).toBe(200);
+});
+
+test('a SyntaxError that is not the request body stays a 500', async () => {
+  const app = new OpenAPIHono();
+  installHttpMiddleware(app);
+  installHttpErrors(app);
+  app.post('/upstream', () => JSON.parse('{'));
+  const response = await app.request('/upstream', { method: 'POST', body: '{}' });
+  expect(response.status).toBe(500);
+  expect(await response.json()).toEqual({ error: true, message: 'Internal server error', status: 500 });
 });
 
 test('typed client denials and request deadlines retain their contracts', async () => {

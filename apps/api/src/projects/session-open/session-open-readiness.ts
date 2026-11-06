@@ -226,7 +226,7 @@ export async function observeOpenCodeReadiness(
     agent_name: visible.row.agentName ?? 'default',
     retriable: false,
     sandbox: serializeSandboxRow(row),
-    opencode_session_id: ensured.pin,
+    runtime_session_id: ensured.pin,
     runtime_url: sessionRuntimeUrlPath(runningExternalId),
     reason: ensured.reason,
     ...(capabilities ? { capabilities } : {}),
@@ -453,7 +453,7 @@ export async function judgeBootBudget(
           agent_name: visible.row.agentName ?? 'default',
           retriable: true,
           sandbox: serializeSandboxRow(row),
-          opencode_session_id: null,
+          runtime_session_id: null,
           runtime_url: sessionRuntimeUrlPath(runningExternalId),
           reason: 'runtime_updating',
         };

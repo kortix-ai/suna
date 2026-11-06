@@ -489,6 +489,7 @@ export * from './core/http/instance-routes';
 export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
+export * from './core/multi-agent/tool-data';
 export * from './core/cache/persisted-query-cache';
 export * from './core/files/image-cache';
 export * from './core/attachments/limits';

@@ -1042,8 +1042,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
     expect(sessionRows.at(-1)?.metadata).toMatchObject({
-      opencode_model: 'kortix/glm-5.3-flash',
-      opencode_model_source: 'project',
+      model: 'kortix/glm-5.3-flash',
+      model_source: 'project',
     });
   });
 

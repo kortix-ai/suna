@@ -880,7 +880,7 @@ async function sendMessageTool(ctx: ToolContext, input: Record<string, unknown>)
   if (found.status >= 400) return apiResult(found);
   const session = JSON.parse(found.body);
   // The same body `kortix sessions chat --queue` sends (apps/cli/src/commands/sessions-queue.ts).
-  const model = typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : '';
+  const model = typeof session.metadata?.model === 'string' ? session.metadata.model : '';
   const slash = model.indexOf('/');
   const overrides = {
     ...(session.agent_name ? { agent: session.agent_name } : {}),

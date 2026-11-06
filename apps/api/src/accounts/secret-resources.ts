@@ -14,6 +14,7 @@ import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry'
 import { SUBSCRIPTION_PROVIDERS, SubscriptionAccountSchema, SubscriptionUsageSchema, refreshSubscriptionUsage, storedSubscriptionUsage, subscriptionAccount } from '../llm-gateway/subscription-usage';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
+import { projectInAccount } from '../secrets/project-account';
 import { listLegacySubscriptionConnections, refreshLegacySubscriptionUsage } from '../llm-gateway/legacy-subscription-usage';
 
 const SecretIdParam = AccountIdParam.extend({ secretId: z.string().uuid() });
@@ -92,7 +93,7 @@ export function registerSecretResourceRoutes() {
     const { accountId } = c.req.valid('param');
     const { project_id: projectId } = c.req.valid('query');
     const userId = c.get('userId') as string;
-    if (!(await getMembership(userId, accountId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await getMembership(userId, accountId)) || !(await projectInAccount(accountId, projectId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
     const rows = await db.select().from(accountSecretResources).where(and(
       eq(accountSecretResources.accountId, accountId),
       sql`(${accountSecretResources.projectId} is null or ${accountSecretResources.projectId} = ${projectId})`,
@@ -113,7 +114,7 @@ export function registerSecretResourceRoutes() {
     const { accountId, secretId } = c.req.valid('param');
     const { project_id: projectId, storage } = c.req.valid('query');
     const userId = c.get('userId') as string;
-    if (!(await getMembership(userId, accountId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await getMembership(userId, accountId)) || !(await projectInAccount(accountId, projectId)) || !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) return c.json({ error: 'Forbidden' }, 403);
     if (storage !== 'account_resource') {
       const result = await refreshLegacySubscriptionUsage({ accountId, projectId, userId, secretId, storage });
       return result ? c.json(result, 200) : c.json({ error: 'Not found' }, 404);
@@ -137,6 +138,7 @@ export function registerSecretResourceRoutes() {
     const membership = await getMembership(userId, accountId);
     if (!membership) return c.json({ error: 'Forbidden' }, 403);
     const projectId = c.req.query('project_id') as string | undefined;
+    if (projectId && !(await projectInAccount(accountId, projectId))) return c.json({ error: 'Forbidden' }, 403);
     // This route authorizes the caller's own request here, so MFA counts.
     if (projectId && !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) {
       return c.json({ error: 'Forbidden' }, 403);
@@ -302,6 +304,7 @@ export function registerSecretResourceRoutes() {
     const row = await loadSecret(accountId, secretId);
     if (!row) return c.json({ error: 'Not found' }, 404);
     const { project_id: projectId } = c.req.valid('query');
+    if (projectId && !(await projectInAccount(accountId, projectId))) return c.json({ error: 'Forbidden' }, 403);
     if (projectId && !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: (c as Context).get('mfaAal') as string | undefined }))) {
       return c.json({ error: 'Forbidden' }, 403);
     }

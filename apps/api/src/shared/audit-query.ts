@@ -160,7 +160,6 @@ export function serializeAuditEvent(row: AuditEventRow, names?: Map<string, stri
     project_id: row.projectId,
     session_id: row.sessionId,
     runtime_session_id: row.runtimeSessionId,
-    opencode_session_id: row.runtimeSessionId,
     turn_id: row.turnId,
     message_id: row.messageId,
     tool_call_id: row.toolCallId,

@@ -66,7 +66,7 @@ export function normalizeDefaultReasoningEffort(value: unknown): string | null {
 
 /** The wire model a prompt would run on: the prompt's own model override
  *  (`{providerID, modelID}`, the form every client sends), else the session's
- *  stored pin (`metadata.opencode_model`, the `kortix/<wire>` ref form or a
+ *  stored pin (`metadata.model`, the `kortix/<wire>` ref form or a
  *  native `provider/model`). `null` when neither names a model the platform
  *  knows — the runtime's own default then applies, and the clamp has nothing
  *  to check the value against. */

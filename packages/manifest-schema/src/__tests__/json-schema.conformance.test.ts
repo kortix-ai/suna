@@ -1090,6 +1090,24 @@ for (const image of ['', '   ', '\t\n', '\u00a0', 'python:3.12']) {
     FIXTURES.push({ name: `trigger ${name}`, valid, input: JSON.stringify({ ...base, triggers: [{ slug: 'tick', type: 'cron', cron: '0 9 * * *', prompt: 'Go', ...fields }] }) });
   }
 }
+// "*" is the canonical "every" value on every grant; `all` stays its alias; both mean allow as a permission action.
+{
+  const PERMISSION = '    permission:\n      bash:\n        "*": allow\n        "git push *": ask\n      external_directory: deny\n';
+  const cases: Array<[string, string, string, boolean]> = [
+    ['tools "*"', '    tools: all\n', '    tools: "*"\n', true],
+    ['tools ["*"]', '    tools: all\n', '    tools: ["*"]\n', true],
+    ['tools ALL', '    tools: all\n', '    tools: ALL\n', true],
+    ['tools everything', '    tools: all\n', '    tools: everything\n', false],
+    ['skills "*"', '    skills: all\n', '    skills: "*"\n', true],
+    ['connectors ["*"]', '    connectors: all\n', '    connectors: ["*"]\n', true],
+    ['permission "*"', PERMISSION, '    permission: "*"\n', true],
+    ['permission all', PERMISSION, '    permission: all\n', true],
+    ['permission rule all', PERMISSION, '    permission:\n      bash: all\n      edit: "*"\n', true],
+    ['permission pattern all', PERMISSION, '    permission:\n      bash:\n        "*": all\n', true],
+    ['permission maybe', PERMISSION, '    permission: maybe\n', false],
+  ];
+  for (const [name, from, to, valid] of cases) FIXTURES.push({ name: `every-grant: ${name}`, valid, input: swapV3(from, to) });
+}
 describe('JSON Schema vs. imperative validator — accept/reject conformance', () => {
   for (const fixture of FIXTURES) {
     test(fixture.name, () => {

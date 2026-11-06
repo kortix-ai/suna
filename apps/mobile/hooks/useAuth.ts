@@ -39,13 +39,7 @@ import { useComposerDraftStore } from '@/stores/composer-draft-store';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
 import { useSessionTreeStore } from '@/stores/session-tree-store';
 
-let useTracking: any = null;
-try {
-  const TrackingModule = require('@/contexts/TrackingContext');
-  useTracking = TrackingModule.useTracking;
-} catch (e) {
-  log.warn('⚠️ TrackingContext not available');
-}
+import { useTracking } from '@/contexts/TrackingContext';
 import type {
   AuthState,
   SignInCredentials,
@@ -158,28 +152,6 @@ function extractAuthCallbackState(url: string): string | null {
 }
 
 /**
- * Create session from OAuth callback URL
- */
-async function createSessionFromUrl(url: string) {
-  const tokens = readCallbackTokens(url);
-
-  if (!tokens) {
-    log.log('⚠️ No tokens found in URL');
-    return null;
-  }
-
-  log.log('✅ Tokens extracted, setting session...');
-  const { data, error } = await supabase.auth.setSession(tokens);
-
-  if (error) {
-    log.error('❌ Failed to set session:', error);
-    throw error;
-  }
-
-  return data.session;
-}
-
-/**
  * What the auth context shows. No `session`: a token refresh replaces it about
  * once an hour, and code that needs the token reads it at call time
  * (`getAuthToken`, `api/config.ts`). `mfaRequired`: the session owes a TOTP
@@ -210,8 +182,7 @@ function nextAuthState(prev: UserState, session: Session | null): UserState {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const trackingState = useTracking ? useTracking() : { canTrack: false, isLoading: false };
-  const { canTrack, isLoading: trackingLoading } = trackingState;
+  const { canTrack } = useTracking();
   const [authState, setAuthState] = useState<UserState>({
     user: null,
     isLoading: true,

@@ -34,7 +34,6 @@ import {
   type AppIcon,
 } from '@/lib/icons';
 
-import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';

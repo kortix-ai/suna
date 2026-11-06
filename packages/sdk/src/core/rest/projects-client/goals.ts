@@ -522,7 +522,8 @@ function goalSlug(text: string): string {
       .toLowerCase()
       .normalize('NFKD')
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
+      // One `-` at most at each end: the line above leaves no `--` (and a `-+$` would backtrack).
+      .replace(/^-|-$/g, '')
       .split('-')
       .slice(0, 5)
       .join('-') || 'goal'

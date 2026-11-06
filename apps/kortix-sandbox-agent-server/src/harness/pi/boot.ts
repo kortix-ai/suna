@@ -248,6 +248,9 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
   const runtime = harness.runtime()!
+  // A restore at boot means this box did not hold the conversation: on a volume session that is a new
+  // computer, so the model hears that programs from before are not running (TEMPORARY_COMPUTER).
+  if (cfg.workspaceVolume && logBoot && logBoot.cursors.length > 0) runtime.markNewComputer()
   logger.info('[boot] proxy up; pi runtime ready', { servicePort: cfg.servicePort, rootId: runtime.rootId })
   convergeAfterReady(harness)
   // The reconcile floor: every 60 s the box re-checks its release and its

@@ -336,8 +336,8 @@ describe('sessionModelCandidates', () => {
   const kortix = (modelID: string) => ({ providerID: 'kortix', modelID });
   const session = (pin?: string, source?: string) => ({
     metadata: {
-      ...(pin ? { opencode_model: pin } : {}),
-      ...(source ? { opencode_model_source: source } : {}),
+      ...(pin ? { model: pin } : {}),
+      ...(source ? { model_source: source } : {}),
     },
   });
 
@@ -390,11 +390,11 @@ describe('sessionModelCandidates', () => {
 describe('sessionModelFallback', () => {
   const fallbackSession = (extra: Record<string, unknown> = {}) => ({
     metadata: {
-      opencode_model: 'kortix/deepseek-v4.1-flash',
-      opencode_model_source: 'fallback',
-      opencode_model_fallback_from: 'kortix/codex/gpt-6.1-sol',
-      opencode_model_fallback_reason: 'provider_pool_rate_limited',
-      opencode_model_fallback_at: 1_000,
+      model: 'kortix/deepseek-v4.1-flash',
+      model_source: 'fallback',
+      model_fallback_from: 'kortix/codex/gpt-6.1-sol',
+      model_fallback_reason: 'provider_pool_rate_limited',
+      model_fallback_at: 1_000,
       ...extra,
     },
   });
@@ -409,9 +409,9 @@ describe('sessionModelFallback', () => {
   });
 
   test('any other source, or a half-written record, is no fallback', () => {
-    expect(sessionModelFallback(fallbackSession({ opencode_model_source: 'explicit' }))).toBeUndefined();
-    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_from: undefined }))).toBeUndefined();
-    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_at: 'soon' }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ model_source: 'explicit' }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ model_fallback_from: undefined }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ model_fallback_at: 'soon' }))).toBeUndefined();
     expect(sessionModelFallback(null)).toBeUndefined();
   });
 
@@ -431,9 +431,9 @@ describe('sessionModelFallback', () => {
         sessionModelCandidates({
           session: {
             metadata: {
-              opencode_model: 'kortix/codex/gpt-6.1-sol',
-              ...(source ? { opencode_model_source: source } : {}),
-              opencode_model_restored: true,
+              model: 'kortix/codex/gpt-6.1-sol',
+              ...(source ? { model_source: source } : {}),
+              model_restored: true,
             },
           },
           lastPromptModel: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },

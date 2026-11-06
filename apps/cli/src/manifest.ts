@@ -173,7 +173,10 @@ function validateLegacyManifestFile(
     legacy = readLegacyManifest(path);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    return { parsed: null, issues: [{ path: '<toml>', message: `Syntax error: ${detail}`, severity: 'error', file: path }] };
+    // The yaml parser's message names the position; a legacy TOML file is labelled as TOML.
+    const pos = /at line (\d+), column (\d+)/.exec(detail);
+    const where = pos ? { line: Number(pos[1]), column: Number(pos[2]) } : {};
+    return { parsed: null, issues: [{ path: path.endsWith('.toml') ? '<toml>' : '<yaml>', message: `Syntax error: ${detail}`, severity: 'error', file: path, ...where }] };
   }
   if (!legacy) return null;
   const conversion = convertLocalLegacy(dirname(path), legacy);

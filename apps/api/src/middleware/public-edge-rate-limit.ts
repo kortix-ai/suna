@@ -50,9 +50,12 @@ export function createPublicEdgeRateLimitMiddleware(): MiddlewareHandler {
     const result = isAuth
       ? authLimiter.check(key, { limit: 30, windowMs: 60_000 })
       : apiLimiter.check(key, { limit: 300, windowMs: 60_000 });
-    c.header('X-RateLimit-Limit', String(result.limit));
-    c.header('X-RateLimit-Remaining', String(result.remaining));
-    c.header('X-RateLimit-Reset', String(Math.ceil(result.resetMs / 1000)));
+    const setBudgetHeaders = () => {
+      c.header('X-RateLimit-Limit', String(result.limit));
+      c.header('X-RateLimit-Remaining', String(result.remaining));
+      c.header('X-RateLimit-Reset', String(Math.ceil(result.resetMs / 1000)));
+    };
+    setBudgetHeaders();
     c.header('Cache-Control', 'no-store');
     if (!result.allowed) {
       const seconds = Math.max(1, Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000));
@@ -60,5 +63,10 @@ export function createPublicEdgeRateLimitMiddleware(): MiddlewareHandler {
       return c.json({ error: 'rate_limit_exceeded', retry_after_seconds: seconds }, 429);
     }
     await next();
+    // A route that answers with a Response it built (proxies, streams) drops the
+    // headers set above; set them again on the final response (KRTX-4302).
+    // An upgrade response is not rebuilt, and an inner limiter's own budget
+    // headers stay.
+    if (c.res.status !== 101 && !c.res.headers.has('X-RateLimit-Limit')) setBudgetHeaders();
   };
 }

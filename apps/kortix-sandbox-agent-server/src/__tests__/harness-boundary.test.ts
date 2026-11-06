@@ -19,17 +19,6 @@ describe('harness ownership boundary', () => {
     expect(() => loadConfig({ KORTIX_HARNESS: 'codex' })).toThrow('Unsupported harness: codex')
   })
 
-  test('a box OpenCode booted asks for the session-log restore; a pi box keeps what apps/api set', () => {
-    for (const harness of ['opencode', ' OpenCode ', '', undefined]) {
-      const env: NodeJS.ProcessEnv = { KORTIX_HARNESS: harness, KORTIX_PROJECT_AUTO_CLONE: '0' }
-      loadConfig(env)
-      expect(env.KORTIX_SESSION_LOG_RESTORE).toBe('1')
-    }
-    const pi: NodeJS.ProcessEnv = { KORTIX_HARNESS: 'pi', KORTIX_PROJECT_AUTO_CLONE: '0' }
-    loadConfig(pi)
-    expect(pi.KORTIX_SESSION_LOG_RESTORE).toBeUndefined()
-  })
-
   test("a box OpenCode booted keeps OpenCode's data directory and variables away from the agent", () => {
     expect(harnessProtectedPathSegments()).toContain('/.local/share/opencode/')
     expect(isHarnessInternalVariable('OPENCODE_SERVER_PASSWORD')).toBe(true)

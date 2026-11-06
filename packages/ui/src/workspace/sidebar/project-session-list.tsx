@@ -73,7 +73,7 @@ import {
   SESSION_ROW_HEIGHT_CLASS,
   SIDEBAR_PAGE_SIZE,
   ShowMoreButton,
-} from './session-list-chrome';
+} from '../../session/list/session-list-chrome';
 import {
   SessionGroupNameModal,
   SessionGroupSections,
@@ -86,7 +86,7 @@ import {
   type SessionSection,
 } from './session-grouping';
 import { useSessionOpenIntent } from './session-open-intent';
-import { GoalStatusMark, isReviewOverdue, SessionStatusMark } from './session-status-mark';
+import { GoalStatusMark, isReviewOverdue, SessionStatusMark } from '../../session/list/session-status-mark';
 import { SessionTitle } from './session-title';
 import { useMediaQuery } from '../../internal/hooks';
 import { cn } from '../../internal/lib/utils';
@@ -565,7 +565,7 @@ export function ProjectSessionList({ projectId, secondary = false }: ProjectSess
           canFork={
             runtimeForks &&
             session.session_id === activeSessionId &&
-            !!(session.runtime_session_id ?? session.opencode_session_id)
+            !!session.runtime_session_id
           }
           isForking={
             forkSession.isPending &&
@@ -1459,7 +1459,7 @@ function ProjectSessionRow({
   // The conversation the runtime can fork: the pinned root conversation id,
   // not the project-session id — `POST /session/{id}/fork` addresses the
   // runtime's own id space (`ses_…`). canFork already guarantees one.
-  const runtimeRootId = session.runtime_session_id ?? session.opencode_session_id;
+  const runtimeRootId = session.runtime_session_id;
   // The starter of the RUN, from the server's `initiator`. The viewer's own
   // runs show no mark: it is everyone else's and the automations' that need one.
   const starter = useSessionStarter(session);

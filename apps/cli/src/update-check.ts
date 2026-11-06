@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { configFilePath } from './api/config.ts';
-import { C, stripAnsi } from './style.ts';
+import { boxBottom as drawBottom, boxLine as drawLine, boxTop as drawTop } from './box.ts';
+import { C } from './style.ts';
 import { isSupervised } from './supervised.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,24 +177,17 @@ async function resolveLatestTag(allowFetch: boolean): Promise<string | null> {
 
 const BOX_INNER = 52;
 
-function boxLine(content: string): string {
-  const padding = Math.max(0, BOX_INNER - stripAnsi(content).length);
-  return `  ${C.yellow}║${C.reset} ${content}${' '.repeat(padding)} ${C.yellow}║${C.reset}`;
-}
+const boxLine = (content: string): string => drawLine(content, BOX_INNER, C.yellow, '  ');
 
 /** `hint` is the call-to-action line. The interactive path replaces the
  *  "run kortix update" advice, since it's about to ask instead. */
 function renderBox(current: string, latestDisplay: string, hint: string): string {
-  const title = ' update available ';
-  const fill = Math.max(0, BOX_INNER + 2 - 2 - title.length);
-  const top = `  ${C.yellow}╔══${C.reset}${C.bold}${title}${C.reset}${C.yellow}${'═'.repeat(fill)}╗${C.reset}`;
-  const bottom = `  ${C.yellow}╚${'═'.repeat(BOX_INNER + 2)}╝${C.reset}`;
   return [
     '',
-    top,
+    drawTop('update available', BOX_INNER, C.yellow, '  ', 2),
     boxLine(`${C.bold}Kortix CLI${C.reset} ${C.dim}v${current}${C.reset}  ${C.yellow}→${C.reset}  ${C.green}${C.bold}${latestDisplay}${C.reset}`),
     boxLine(hint),
-    bottom,
+    drawBottom(BOX_INNER, C.yellow, '  '),
   ].join('\n');
 }
 

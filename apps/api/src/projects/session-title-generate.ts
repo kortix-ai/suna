@@ -337,7 +337,7 @@ function platformDefaultModel(): string | null {
 /**
  * The model to title with when neither the turn nor the session names one —
  * create-with-prompt and every server-side delivery arrive that way, and
- * `metadata.opencode_model` is absent whenever session create resolved no
+ * `metadata.model` is absent whenever session create resolved no
  * default (free tier or a gateway-disabled project).
  *
  * The account's own default chain first, then the platform default — but ONLY
@@ -376,7 +376,7 @@ async function resolveFallbackModel(
 /** The model the session was started with, in gateway wire form. */
 function sessionModel(row: ProjectSessionRow): string | null {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
-  const ref = typeof metadata.opencode_model === 'string' ? metadata.opencode_model.trim() : '';
+  const ref = typeof metadata.model === 'string' ? metadata.model.trim() : '';
   return ref ? toWireModel(ref) : null;
 }
 
@@ -452,7 +452,7 @@ export interface GenerateSessionTitleInput {
   firstPromptText: string;
   /** The model the user actually picked for this turn (gateway wire form, from
    *  the prompt body). Preferred over the session's stale boot-default
-   *  `opencode_model`, which goes out of date the moment the model is switched. */
+   *  `model`, which goes out of date the moment the model is switched. */
   modelHint?: string;
 }
 
@@ -557,7 +557,7 @@ export async function generateSessionTitleFromFirstPrompt(
     const promptText = titlePromptText(storedTitleSource(row) ?? suppliedText);
 
     // Prefer the model the user actually picked for this turn (from the prompt
-    // body); the session's stored `opencode_model` is only the boot default and
+    // body); the session's stored `model` is only the boot default and
     // goes stale the moment the model is switched. Both are known-servable —
     // one is being served right now, the other was validated at create — so
     // only the last resort has to prove itself.

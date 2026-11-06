@@ -4,12 +4,7 @@
  * its `GET /kortix/health` serves.
  *
  * kortixd bundles this file into the guest binary, so it imports nothing but
- * zod. Every name here is harness-neutral: an OpenCode box and a pi box send
- * the same fields.
- *
- * `normalizeRuntimeRelayBody` accepts the pre-W3 spellings a daemon built
- * before these names existed still sends (`opencode_session_id`, turn-stream
- * kind `opencode_session`). Remove it when no such daemon runs.
+ * zod. Every name here is harness-neutral.
  */
 import { z } from 'zod';
 
@@ -201,24 +196,6 @@ export const DAEMON_FILE_IMPORT_TIMEOUT_MS = 120_000;
  * a short one aborts a turn that is still computing.
  */
 export const BLOCKING_TURN_VERBS = ['message', 'command', 'summarize'] as const;
-
-/**
- * Rewrite the pre-W3 names an older daemon sends to the names above: the
- * `opencode_session_id` field and the `opencode_session` turn-stream kind.
- * Returns a copy; the neutral name wins when a body carries both.
- * @deprecated Pre-W3 OpenCode names (opencode_session_id, kind opencode_session) from older daemons; new daemons send runtime_session_id / runtime_session.
- */
-export function normalizeRuntimeRelayBody<T extends Record<string, unknown>>(
-  body: T,
-): T & { runtime_session_id?: string } {
-  const { opencode_session_id: legacyId, ...rest } = body as Record<string, unknown>;
-  const out = rest as Record<string, unknown>;
-  if (out.runtime_session_id === undefined && typeof legacyId === 'string') {
-    out.runtime_session_id = legacyId;
-  }
-  if (out.kind === 'opencode_session') out.kind = 'runtime_session';
-  return out as T & { runtime_session_id?: string };
-}
 
 /**
  * `code` on the daemon's 503 while the session runtime cannot take a request:
