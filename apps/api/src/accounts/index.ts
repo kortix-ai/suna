@@ -6,8 +6,7 @@
 // registration order is byte-identical to the original file.
 import { accountsRouter } from './core/app';
 import { supabaseAuth } from '../middleware/auth';
-import { accountSessionGate } from '../iam/session-gate';
-import { accountSsoGate } from '../middleware/sso-gate';
+import { accountRequestGates } from './request-gates';
 import { iamRouter, registerIamRoutes } from './iam';
 import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
@@ -20,38 +19,11 @@ import { registerBrandingRoutes } from './branding';
 import { registerSecretResourceRoutes } from './secret-resources';
 import { registerCaptureRoutes } from '../capture/account-routes';
 import { registerCaptureEnrollmentRoutes } from '../capture/enrollment-routes';
-import { isNoWorkspaceError } from '../shared/no-workspace';
-import { resolveAccountId } from '../shared/resolve-account';
-import { accountIdParam } from '../shared/route-params';
-import { resolveWorkspaceAccount, workspacePathSegment } from '../middleware/workspace-account';
 
 accountsRouter.use('/*', supabaseAuth);
-// Enforce per-account session policies (max lifetime / idle timeout /
-// force-logout) on every authenticated, account-scoped request. No-op
-// on routes without an :accountId param.
-accountsRouter.use('/*', async (c, next) => {
-  if (!accountIdParam(c) && !c.get('accountId') && c.get('authType') === 'supabase') {
-    const userId = c.get('userId') as string | undefined;
-    const sessionId = c.get('sessionId') as string | undefined;
-    if (userId && sessionId) {
-      // A user with no workspace has no account policy to enforce: the gate
-      // below stays a no-op for them, and the handler answers for itself
-      // (GET /v1/accounts → []). Nothing is created here.
-      try {
-        c.set('accountId', await resolveAccountId(userId, { allowAccountCredential: false }));
-      } catch (err) {
-        if (!isNoWorkspaceError(err)) throw err;
-      }
-    }
-  }
-  return accountSessionGate()(c, next);
-});
-// The path id may name the workspace by its public id or by its account key:
-// map it to the account key every handler below reads (`accountIdParam`).
-// After the session gate, which keeps its pre-workspace behavior, and before
-// the SSO gate, which must judge the account the path resolves to.
-accountsRouter.use('/*', resolveWorkspaceAccount(workspacePathSegment));
-accountsRouter.use('/*', accountSsoGate());
+// Resolve the workspace in the path, then enforce its session policy (max
+// lifetime / idle timeout / force-logout) and its SSO rule (request-gates.ts).
+for (const gate of accountRequestGates()) accountsRouter.use('/*', gate);
 
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
