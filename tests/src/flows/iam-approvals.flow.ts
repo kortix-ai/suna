@@ -79,13 +79,15 @@ flow(
     });
 
     await ctx.step(
-      'a plain member with no project grant cannot review requests → 403',
+      'a plain member with no project grant of this split_pending account cannot review requests: canonical 404 workspace_not_found, legacy 403',
       async () => {
         const bare = await team.addMember('member');
-        const r = await ctx.client
-          .as(bare)
-          .get('/v1/workspaces/:projectId/access-requests', { params: { projectId: project.id } });
-        r.status(403);
+        const params = { params: { projectId: project.id } };
+        (await ctx.client.as(bare).get('/v1/workspaces/:projectId/access-requests', params))
+          .status(404)
+          .body()
+          .has('$.code', 'workspace_not_found');
+        (await ctx.client.as(bare).get('/v1/projects/:projectId/access-requests', params)).status(403);
       },
     );
 
@@ -271,12 +273,16 @@ flow(
     });
 
     await ctx.step(
-      'a plain member with no project grant cannot read the manager-only inbox → 403',
+      'a plain member with no project grant of this split_pending account cannot read the manager-only inbox: canonical 404, legacy 403 with the workspace action',
       async () => {
         const bare = await team.addMember('member');
+        (await ctx.client.as(bare).get('/v1/workspaces/:projectId/approvals', { params: { projectId: project.id } }))
+          .status(404)
+          .body()
+          .has('$.code', 'workspace_not_found');
         const r = await ctx.client
           .as(bare)
-          .get('/v1/workspaces/:projectId/approvals', { params: { projectId: project.id } });
+          .get('/v1/projects/:projectId/approvals', { params: { projectId: project.id } });
         r.status(403);
         deepStrictEqual(r.json(), {
           error: true,
@@ -317,13 +323,13 @@ flow(
       r.status(200).body().has('$.total', 0);
     });
 
-    await ctx.step('a non-project-member has no visibility into needs-input → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/workspaces/:projectId/approvals/needs-input', {
-          params: { projectId: project.id },
-        });
-      r.status(403);
+    await ctx.step('a non-member has no visibility into needs-input: canonical 404 workspace_not_found, legacy 403', async () => {
+      const params = { params: { projectId: project.id } };
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/workspaces/:projectId/approvals/needs-input', params))
+        .status(404)
+        .body()
+        .has('$.code', 'workspace_not_found');
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/approvals/needs-input', params)).status(403);
     });
   },
 );

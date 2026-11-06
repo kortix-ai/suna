@@ -608,20 +608,20 @@ flow(
     });
 
     await ctx.step(
-      'a person outside the workspace cannot read/write the config → 403',
+      'a person outside the workspace cannot read the config: canonical 404 workspace_not_found, legacy 403',
       async () => {
         // Membership is access (design.md C3): the outsider is a non-member.
-        const r = await ctx.client
-          .as(ctx.P.NONMEMBER)
-          .get('/v1/workspaces/:projectId/agents/:agentName/config', {
-            params: { projectId: project.id, agentName: 'worker' },
-          });
-        r.status(403);
+        const params = { params: { projectId: project.id, agentName: 'worker' } };
+        (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/workspaces/:projectId/agents/:agentName/config', params))
+          .status(404)
+          .body()
+          .has('$.code', 'workspace_not_found');
+        (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/agents/:agentName/config', params)).status(403);
       },
     );
 
     await ctx.step(
-      'GET capabilities lists every tool, built-in skill and platform extension; an undeclared agent → 404; a non-member → 403',
+      'GET capabilities lists every tool, built-in skill and platform extension; an undeclared agent → 404; a non-member → 404 workspace_not_found',
       async () => {
         const projectCatalog = (await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/capabilities', {
           params: { projectId: project.id },
@@ -644,7 +644,7 @@ flow(
         if (required !== 'kortix-nested-calls,kortix-presentation,kortix-turn') throw new Error(`required extensions: ${required}`);
         (await ctx.client.as(ctx.P.OWNER).get(path, { params: { projectId: project.id, agentName: 'ghost' } }))
           .status(404).body().has('$.code', 'agent_not_found');
-        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params: { projectId: project.id, agentName: 'worker' } })).status(403);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params: { projectId: project.id, agentName: 'worker' } })).status(404);
       },
     );
   },
