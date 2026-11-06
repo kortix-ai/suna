@@ -13,9 +13,7 @@ function github(file: unknown, opts: { refStatus?: number; fileStatus?: number }
     const url = String(input);
     urls.push(url);
     if (url.endsWith('/git/ref/kortix/changelog-weekly')) {
-      return opts.refStatus
-        ? json({ message: 'Not Found' }, opts.refStatus)
-        : json({ object: { sha: 'c0ffee' } });
+      return opts.refStatus ? json({ message: 'Not Found' }, opts.refStatus) : json({ object: { sha: 'c0ffee' } });
     }
     if (url.endsWith('/contents/briefs.json?ref=c0ffee')) return json(file, opts.fileStatus ?? 200);
     throw new Error(`unexpected ${url}`);
@@ -24,25 +22,15 @@ function github(file: unknown, opts: { refStatus?: number; fileStatus?: number }
 }
 
 describe('readWeeklyBriefs', () => {
-  test("reads each week's highlight lines from briefs.json at the ref's commit", async () => {
+  test('reads each week\'s highlight lines from briefs.json at the ref\'s commit', async () => {
     const g = github({
       version: 1,
       weeks: {
-        '2026-W42': {
-          highlights: [
-            { text: ' One credits plan for every account ', tags: ['v0.14.0'] },
-            { text: 'Enterprise SSO', tags: ['v0.13.57'] },
-          ],
-        },
+        '2026-W42': { highlights: [{ text: ' One credits plan for every account ', tags: ['v0.14.0'] }, { text: 'Enterprise SSO', tags: ['v0.13.57'] }] },
         '2026-W41': { highlights: [] },
       },
     });
-    expect(await readWeeklyBriefs(g.impl)).toEqual({
-      '2026-W42': {
-        highlights: ['One credits plan for every account', 'Enterprise SSO'],
-        media: undefined,
-      },
-    });
+    expect(await readWeeklyBriefs(g.impl)).toEqual({ '2026-W42': { highlights: ['One credits plan for every account', 'Enterprise SSO'], media: undefined } });
     expect(g.urls).toEqual([
       'https://api.github.com/repos/kortix-ai/CompanyOS/git/ref/kortix/changelog-weekly',
       'https://api.github.com/repos/kortix-ai/CompanyOS/contents/briefs.json?ref=c0ffee',
@@ -83,20 +71,8 @@ describe('readWeeklyBriefs', () => {
 
   test('a GitHub error, a network error, another version or junk is no summaries, never a throw', async () => {
     expect(await readWeeklyBriefs(github({}, { fileStatus: 500 }).impl)).toEqual({});
-    expect(
-      await readWeeklyBriefs((async () => {
-        throw new TypeError('fetch failed');
-      }) as unknown as typeof fetch),
-    ).toEqual({});
-    expect(
-      await readWeeklyBriefs(
-        github({ version: 2, weeks: { '2026-W42': { highlights: [{ text: 'x' }] } } }).impl,
-      ),
-    ).toEqual({});
-    expect(
-      await readWeeklyBriefs(
-        github({ version: 1, weeks: { '2026-W42': { highlights: [{ text: 42 }, null] } } }).impl,
-      ),
-    ).toEqual({});
+    expect(await readWeeklyBriefs((async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch)).toEqual({});
+    expect(await readWeeklyBriefs(github({ version: 2, weeks: { '2026-W42': { highlights: [{ text: 'x' }] } } }).impl)).toEqual({});
+    expect(await readWeeklyBriefs(github({ version: 1, weeks: { '2026-W42': { highlights: [{ text: 42 }, null] } } }).impl)).toEqual({});
   });
 });
