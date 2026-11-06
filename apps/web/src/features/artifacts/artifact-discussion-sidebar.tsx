@@ -339,6 +339,11 @@ export function ArtifactDiscussionSidebar({
     if (thread) setFilter(thread.status);
     onFocusThread(threadId);
   };
+  /** The control that had focus left with the editor: the keyboard stays on its thread. */
+  const focusCard = (threadId: string) =>
+    requestAnimationFrame(() =>
+      document.getElementById(`artifact-thread-${threadId}`)?.focus({ preventScroll: true }),
+    );
   const perform = async <T,>(
     key: string,
     action: () => Promise<T>,
@@ -359,13 +364,16 @@ export function ArtifactDiscussionSidebar({
           ? t('sendScreenshotLimit')
           : (error ?? t('commentFailed'));
       setErrors((current) => ({ ...current, [key]: message }));
-      if (
-        !key.startsWith('new') &&
-        !key.startsWith('reply') &&
-        !key.startsWith('edit') &&
-        !key.startsWith('delete')
-      )
-        errorToast(message);
+      // One report per failure. Composers and the delete dialog show theirs in place, and so does
+      // Send while it keeps its batch for Retry. A status change, a delivery retry and a final Send
+      // failure have no place of their own, so they toast.
+      const shownInPlace =
+        key.startsWith('new') ||
+        key.startsWith('reply') ||
+        key.startsWith('edit') ||
+        key.startsWith('delete') ||
+        (key === 'send' && !!sendBatchRef.current);
+      if (!shownInPlace) errorToast(message);
     } finally {
       activeRef.current.delete(key);
       setPending((current) => ({ ...current, [key]: false }));
@@ -417,12 +425,14 @@ export function ArtifactDiscussionSidebar({
       `status:${thread.thread_id}`,
       () => comments.setStatus(thread.thread_id, status),
       () => {
-        if (status !== 'resolved') return;
-        successToast(t('threadResolved'), {
-          duration: 5000, // audit:allow toast lifetime for Undo (undoToast's 5 s), not motion
-          actions: [{ label: t('undo'), onClick: () => void setStatus(thread, 'open') }],
-        });
-        // The card leaves the Open list with its focused control: keep focus in the panel.
+        // The card leaves its list either way: say where it went.
+        if (status === 'resolved')
+          successToast(t('threadResolved'), {
+            duration: 5000, // audit:allow toast lifetime for Undo (undoToast's 5 s), not motion
+            actions: [{ label: t('undo'), onClick: () => void setStatus(thread, 'open') }],
+          });
+        else successToast(t('threadReopened'));
+        // The card leaves the list with its focused control: keep focus in the panel.
         requestAnimationFrame(() => {
           if (!document.activeElement || document.activeElement === document.body)
             heading.current?.focus({ preventScroll: true });
@@ -587,7 +597,8 @@ export function ArtifactDiscussionSidebar({
       onStatus={() => void setStatus(thread, thread.status === 'open' ? 'resolved' : 'open')}
       onEdit={(comment) => {
         setEditing({ threadId: thread.thread_id, commentId: comment.comment_id });
-        setDraft('edit', comment.body, comment.comment_id);
+        // An edit left with Escape comes back as it was; otherwise it starts from the saved text.
+        if (!draft('edit', comment.comment_id)) setDraft('edit', comment.body, comment.comment_id);
       }}
       onEditChange={(value) => {
         if (editing) setDraft('edit', value, editing.commentId);
@@ -597,11 +608,22 @@ export function ArtifactDiscussionSidebar({
         void perform(
           `edit:${comment.comment_id}`,
           () => comments.edit(thread.thread_id, comment.comment_id, { body }),
-          () =>
-            setEditing((current) => (current?.commentId === comment.comment_id ? null : current)),
+          () => {
+            setDraft('edit', '', comment.comment_id);
+            setEditing((current) => (current?.commentId === comment.comment_id ? null : current));
+            focusCard(thread.thread_id);
+          },
         );
       }}
-      onCancelEdit={() => setEditing(null)}
+      onCancelEdit={() => {
+        if (editing) setDraft('edit', '', editing.commentId);
+        setEditing(null);
+        focusCard(thread.thread_id);
+      }}
+      onLeaveEdit={() => {
+        setEditing(null);
+        focusCard(thread.thread_id);
+      }}
       onDelete={(comment) => setDeleting({ threadId: thread.thread_id, comment })}
       {...retryProps(thread)}
     />
@@ -803,12 +825,23 @@ export function ArtifactDiscussionSidebar({
                 </Button>
               }
             />
-          ) : !grouped.current.length && !grouped.outdated.length && !composerOpen ? (
+          ) : !grouped.current.length &&
+            !grouped.outdated.length &&
+            !composerOpen &&
+            // The context decides whether this viewer may comment: no invitation before it answers.
+            !contextError &&
+            !(contextLoading && !context) ? (
             <EmptyState
               size="sm"
               media={<EmptyArt icon={ChatCircleIcon} />}
               title={t(filter === 'resolved' ? 'noResolved' : 'noComments')}
-              description={t(filter === 'resolved' ? 'noResolvedHint' : 'noCommentsHint')}
+              description={t(
+                filter === 'resolved'
+                  ? 'noResolvedHint'
+                  : canComment
+                    ? 'noCommentsHint'
+                    : 'noCommentsReadOnlyHint',
+              )}
             />
           ) : null}
           {grouped.current.map(renderThread)}
@@ -916,7 +949,11 @@ export function ArtifactDiscussionSidebar({
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(open) => {
-          if (!open && !pending[`delete:${deleting?.comment.comment_id}`]) setDeleting(null);
+          if (open || !deleting || pending[`delete:${deleting.comment.comment_id}`]) return;
+          // A failed delete's message belongs to that attempt: the next Delete starts clean.
+          const key = `delete:${deleting.comment.comment_id}`;
+          setErrors((current) => ({ ...current, [key]: '' }));
+          setDeleting(null);
         }}
         title={t('deleteTitle')}
         description={

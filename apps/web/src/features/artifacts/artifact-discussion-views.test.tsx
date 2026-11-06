@@ -101,13 +101,14 @@ const props = (
   onEditChange() {},
   onSaveEdit() {},
   onCancelEdit() {},
+  onLeaveEdit() {},
   onDelete() {},
   ...extra,
 });
 
 test('a current writable thread shows quote focus, a Resolve icon, a collapsed reply and an action menu', () => {
   const html = renderToStaticMarkup(<ArtifactCommentThreadView {...props(thread())} />);
-  expect(html).toContain('aria-label="Show passage"');
+  expect(html).toContain('<span class="sr-only">, Show passage</span>');
   expect(html).toContain('aria-label="Resolve"');
   expect(html).toContain('aria-label="Comment actions"');
   // The reply editor mounts only on demand: one line until the person replies.
@@ -238,7 +239,7 @@ test('missing action permissions fail closed; outdated quotes remain visible wit
     />,
   );
   expect(html).toContain('The source');
-  expect(html).not.toContain('aria-label="Show passage"');
+  expect(html).not.toContain(', Show passage</span>');
   expect(html).not.toContain('aria-label="Reply"');
   expect(html).not.toContain('aria-label="Comment actions"');
 });

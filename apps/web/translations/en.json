@@ -25059,7 +25059,7 @@
       "composerKeys": "Enter to send · Shift+Enter for a new line",
       "closeSelection": "Discard selected passage",
       "preparingSelection": "Preparing selected passage…",
-      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a whole-Artifact comment.",
+      "selectionCaptureFailed": "Could not prepare the selected passage. Discard it to leave a comment on the whole artifact.",
       "commentSelection": "Comment",
       "selectionTooLong": "This passage is too long to comment on. Select {max} characters or fewer.",
       "selectionUnavailable": "This passage cannot be anchored. Select another passage.",
@@ -25067,8 +25067,8 @@
       "commentSaveFailed": "Could not save the document. Try again before commenting.",
       "events": {
         "saved": "saved a version",
-        "published": "published the Artifact",
-        "renamed": "renamed the Artifact",
+        "published": "published the artifact",
+        "renamed": "renamed the artifact",
         "visibility_changed": "changed visibility",
         "shared_with_changed": "changed who can view",
         "restored": "restored a version",
@@ -25080,7 +25080,7 @@
         "sent_to_agent": "sent feedback to an agent"
       },
       "person": "Person",
-      "deleteRootDescription": "Its text is removed for everyone, and the thread becomes read-only. This cannot be undone.",
+      "deleteRootDescription": "Its text is removed for everyone, and the thread leaves the comments list. This cannot be undone.",
       "showPanel": "Show comments",
       "hidePanel": "Hide comments",
       "panelTitle": "Comments and activity",
@@ -25123,7 +25123,14 @@
       "pagePinLabel": "Comment {number}",
       "showPanelCount": "Show comments, {count} open",
       "hidePanelCount": "Hide comments, {count} open",
-      "commentSelectionHint": "Comment on the selection"
+      "commentSelectionHint": "Comment on the selection",
+      "threadReopened": "Thread reopened",
+      "noCommentsReadOnlyHint": "Comments on this artifact appear here.",
+      "commentTooLong": "A comment can be up to {max} characters. Remove {over}.",
+      "discardDrawingTitle": "Discard this drawing?",
+      "discardDrawingHint": "Your strokes are not saved. This cannot be undone.",
+      "discardDrawing": "Discard",
+      "keepDrawing": "Keep drawing"
     },
     "insertMedia": "Image or video…",
     "diagram": "Diagram",
@@ -25151,7 +25158,7 @@
     "showAll": "Show all",
     "live": {
       "here": "Here now",
-      "hereLabel": "On this Artifact now: {names}",
+      "hereLabel": "On this artifact now: {names}",
       "reconnecting": "Reconnecting…",
       "you": "You",
       "agents": "Agents",
@@ -25170,13 +25177,28 @@
       "writing": "{name} is writing…"
     },
     "coedit": {
-      "offLarge": "Live co-editing is off: this doc is over 1 MiB. Changes save as you type.",
-      "offLineEndings": "Live co-editing is off: this doc mixes CRLF and LF line endings. Changes save as you type.",
-      "offShape": "Live co-editing is off: the editor would rewrite part of this doc's Markdown. Changes save as you type.",
+      "offLarge": "Live co-editing is off: this doc is too large. Changes save as you type.",
+      "offLineEndings": "Live co-editing is off: this doc mixes two kinds of line breaks. Changes save as you type.",
+      "offShape": "Live co-editing is off: the editor cannot keep part of this doc exactly as written. Changes save as you type.",
       "stoppedLarge": "Live co-editing stopped: one change was too large to share. Changes save as you type.",
       "stoppedFailed": "Live co-editing stopped: the connection failed. Changes save as you type.",
-      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type."
-    }
+      "stoppedHistory": "Live co-editing stopped: this doc's edit history is too large. Changes save as you type.",
+      "offFailed": "Live co-editing is off: it could not connect. Changes save as you type."
+    },
+    "conflictTitle": "Someone else changed this doc",
+    "conflictReloadTitle": "Reload the newer version?",
+    "conflictReloadHint": "Your edits since the last save are discarded. This cannot be undone.",
+    "docLoadError": "Could not load this doc.",
+    "openError": "Could not open this artifact.",
+    "viewOnly": "View only",
+    "viewingOldUndated": "You are viewing an earlier version.",
+    "exportWaiting": "Saving your edits, then exporting…",
+    "exportBlocked": "Export stopped: your latest edits are not saved.",
+    "clearFilters": "Clear filters",
+    "linkCopyFailed": "Could not copy the link. Select it in the field and copy it.",
+    "shareDropsPeople": "{count, plural, one {Saving removes the person you added. Only Private keeps a list of people.} other {Saving removes the # people you added. Only Private keeps a list of people.}}",
+    "askAgentHistoryError": "Could not load earlier chats.",
+    "embedUnavailable": "This link has no preview, so it stays a link."
   },
   "emailConnect": {
     "homeTitle": "Where the inbox lives",

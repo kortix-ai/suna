@@ -18,7 +18,26 @@ import { useEffect, useState } from 'react';
 /** Region screenshots without a known shape load as a 16:10 frame. */
 const FALLBACK_RATIO = 16 / 10;
 
-export function ArtifactCommentImage({ image }: { image: Blob | undefined }) {
+/** The placeholder a screenshot holds while it loads: the image's own box, so nothing moves. */
+function ImagePlaceholder({ aspectRatio }: { aspectRatio?: number }) {
+  const ratio = aspectRatio && Number.isFinite(aspectRatio) ? aspectRatio : FALLBACK_RATIO;
+  // The image renders at most max-h-40 tall and full width, so the frame is the smaller fit.
+  return (
+    <Skeleton
+      className="max-w-full"
+      style={{ aspectRatio: String(ratio), width: `min(100%, calc(var(--spacing) * 40 * ${ratio}))` }}
+    />
+  );
+}
+
+export function ArtifactCommentImage({
+  image,
+  aspectRatio,
+}: {
+  image: Blob | undefined;
+  /** Width / height of the captured region, so the placeholder keeps the final shape. */
+  aspectRatio?: number;
+}) {
   const t = useTranslations('artifacts.discussion');
   const [url, setUrl] = useState<{ image: Blob; url: string } | null>(null);
   useEffect(() => {
@@ -28,7 +47,8 @@ export function ArtifactCommentImage({ image }: { image: Blob | undefined }) {
     return () => URL.revokeObjectURL(next);
   }, [image]);
   const src = url?.image === image ? url?.url : undefined;
-  if (!src) return null;
+  // Until the object URL exists (one effect after the bytes arrive), the frame keeps the image's place.
+  if (!src) return image ? <ImagePlaceholder aspectRatio={aspectRatio} /> : null;
   return (
     <Modal>
       <ModalTrigger asChild>
@@ -76,16 +96,7 @@ export function SavedArtifactCommentImage({
 }) {
   const t = useTranslations('artifacts.discussion');
   const image = useArtifactCommentScreenshot(projectId, artifactId, commentId);
-  if (image.isLoading) {
-    const ratio = aspectRatio && Number.isFinite(aspectRatio) ? aspectRatio : FALLBACK_RATIO;
-    // The image renders at most max-h-40 tall and full width, so the frame is the smaller fit.
-    return (
-      <Skeleton
-        className="max-w-full"
-        style={{ aspectRatio: String(ratio), width: `min(100%, calc(var(--spacing) * 40 * ${ratio}))` }}
-      />
-    );
-  }
+  if (image.isLoading) return <ImagePlaceholder aspectRatio={aspectRatio} />;
   if (image.isError)
     return (
       <ErrorState
@@ -98,5 +109,5 @@ export function SavedArtifactCommentImage({
         }
       />
     );
-  return <ArtifactCommentImage image={image.data} />;
+  return <ArtifactCommentImage image={image.data} aspectRatio={aspectRatio} />;
 }
