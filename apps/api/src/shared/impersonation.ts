@@ -30,6 +30,7 @@ import { and, desc, eq, gt, isNull } from 'drizzle-orm';
 import { getRequestContext } from '../lib/request-context';
 import { db } from './db';
 import { isUuid } from './validate';
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 
 // The table is imported LAZILY inside each query below, never at module scope.
 // This module is reached from `resolve-account`, `projects/lib/git`,
@@ -134,6 +135,7 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // accounts exist) and is useful for support; only minting and revoking are
   // refused, which is what the non-GET rule below expresses.
   { re: /^\/v1\/accounts\/tokens(\/|$)/ },
+  { re: /^\/v1\/accounts\/[^/]+\/tokens(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/scim\/tokens(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/service-accounts(\/|$)/ },
   { re: /^\/v1\/projects\/[^/]+\/cli-token(\/|$)/ },
@@ -247,8 +249,12 @@ const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  */
 export function isImpersonationForbiddenPath(path: string, method = 'GET'): boolean {
   const normalizedMethod = method.toUpperCase();
+  // The list names the legacy routes. A canonical name (`/v1/workspaces/…`,
+  // `/v1/invites/…`, `/v1/connectors/workspaces/…`) reaches the same handler,
+  // so it is judged by its legacy twin as well as by its own spelling.
+  const legacy = asLegacyWorkspaceRoute(path);
   return IMPERSONATION_FORBIDDEN_ROUTES.some((route) => {
-    if (!route.re.test(path)) return false;
+    if (!route.re.test(path) && !route.re.test(legacy)) return false;
     if (route.methods) return route.methods.includes(normalizedMethod);
     return route.allMethods || !READ_ONLY_METHODS.has(normalizedMethod);
   });
