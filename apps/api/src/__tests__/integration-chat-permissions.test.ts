@@ -92,8 +92,8 @@ beforeAll(async () => {
     { userId: OWNER, accountId: project.account_id, accountRole: 'owner' },
     { userId: MEMBER, accountId: project.account_id, accountRole: 'member' },
     { userId: JOINER, accountId: project.account_id, accountRole: 'member' },
-    // In the account, with no role on the project.
-    { userId: OUTSIDER, accountId: project.account_id, accountRole: 'member' },
+    // OUTSIDER is linked in the Teams tenant but is not a workspace member: in
+    // a 1:1 workspace membership is access, so no member lacks project access.
   ]);
   await insertIntoView(db, projectMembers, [
     { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' },

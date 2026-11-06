@@ -219,10 +219,11 @@ describe('canAccessPreviewSandbox', () => {
   test.each([
     { who: 'a member of the owning account', userId: MEMBER, sandbox: EXTERNAL_ID, allowed: true },
     {
-      who: 'an account member with no role on the sandbox project',
+      // A 1:1 workspace: membership is access (design.md §3.2 C3).
+      who: 'a workspace member with no project role (membership is access)',
       userId: SECOND_MEMBER,
       sandbox: EXTERNAL_ID,
-      allowed: false,
+      allowed: true,
     },
     { who: 'a member of another account', userId: OUTSIDER, sandbox: EXTERNAL_ID, allowed: false },
     {

@@ -127,7 +127,7 @@ describe('only a project admin turns Channels on or off', () => {
   test('a member gets 403 naming project.settings.write, and the flag stays on', async () => {
     const res = await req('PATCH', `${base}/features`, keys.priya, { feature: 'chat', enabled: false });
     expect(res.status).toBe(403);
-    expect(JSON.stringify(await res.json())).toContain('(project.settings.write)');
+    expect(JSON.stringify(await res.json())).toContain('(workspace.settings.write)');
     const [row] = await db.select({ m: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT));
     expect((row!.m as any).experimental.chat).toBe(true);
   });

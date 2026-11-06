@@ -127,7 +127,8 @@ describe.if(hasDatabase)('assignRole / revokeAssignment', () => {
   test('an owner can, and the grant is live on the next authorize', async () => {
     const before = await authorize(jwt(target), 'project.write', { type: 'project', id: PROJECT });
     expect(before.allowed).toBe(false);
-    expect(before.reason).toBe('no_project_membership');
+    // Membership is access (a 1:1 workspace): the member tier lacks project.write.
+    expect(before.reason).toBe('project_role_insufficient');
 
     const row = await assignRole(jwt(owner), ACCOUNT, {
       principal: { type: 'user', id: target },

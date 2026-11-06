@@ -24,6 +24,7 @@
  * (AGENT_GRANT_EXEMPT_ACTIONS) — the coarse floor always passes there, so it
  * cannot see this bug. Only a real member's token can.
  */
+import { toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { accountMembers, accounts, projectMembers, projectSessions, projects } from '@kortix/db';
@@ -259,7 +260,10 @@ describe('project member — project.write is still withheld', () => {
     test(`${route.name} still refuses a member`, async () => {
       const res = await req(route.method, route.path, memberKey, route.body);
       expect(res.status).toBe(403);
-      expect(JSON.stringify(await res.json())).toContain(`(${route.leaf})`);
+      // The message names the workspace action; the body still carries the stored leaf.
+      const body = JSON.stringify(await res.json());
+      expect(body).toContain(`(${toWorkspaceAction(route.leaf)})`);
+      expect(body).toContain(route.leaf);
     });
   }
 });

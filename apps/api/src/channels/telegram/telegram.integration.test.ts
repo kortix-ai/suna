@@ -911,7 +911,7 @@ describe('Telegram notices addressed by session — migrated PostgreSQL', () => 
     const text = String(calls[0]!.body.text);
     expect(text).toContain(reason);
     expect(text).toContain('Send /new');
-    expect(text).toContain(`/projects/${PROJECT}/sessions/${sessionId}`);
+    expect(text).toContain(`/workspaces/${PROJECT}/sessions/${sessionId}`);
   });
 
   test('a failure the provider may clear is told once, as retrying; a final failure still is', async () => {
