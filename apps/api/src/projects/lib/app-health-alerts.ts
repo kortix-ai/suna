@@ -2,10 +2,10 @@
  * Crash alerts of an always-on App. Keep-alive (apps/idle-reaper.ts) starts a
  * stopped App supervisor again at most 3 times an hour; past that the App
  * stays down until someone acts. Then every enabled `type: app` trigger that
- * names the App opens a `crash` streak (its watchers hear it once, whatever
- * the `notification_center` flag says), and `kortix.app.crashed` goes to the
- * App's log for a repair trigger. The next keep-alive pass that finds the App
- * running ends the streaks and writes `kortix.app.recovered`.
+ * names the App opens a `crash` streak (its watchers hear it once), and
+ * `kortix.app.crashed` goes to the App's log for a repair trigger. The next
+ * keep-alive pass that finds the App running ends the streaks and writes
+ * `kortix.app.recovered`.
  */
 import { projectTriggerRuntime } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';

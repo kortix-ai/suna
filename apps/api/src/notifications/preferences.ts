@@ -7,6 +7,7 @@ import {
   NOTIFICATION_KINDS,
   effectiveNotificationPreferences,
   type NotificationChannelPreference,
+  type NotificationDefaultsOverride,
   type NotificationKindName,
   type NotificationKindPreferences,
 } from '@kortix/shared/notification-kinds';
@@ -16,10 +17,15 @@ export type NotificationPreferencesPatch = {
   kinds?: Partial<Record<NotificationKindName, Partial<NotificationChannelPreference>>>;
 };
 
-/** Effective preferences for each user; a user with no record gets the defaults. */
+/**
+ * Effective preferences for each user; a user with no record gets the
+ * defaults. `defaults` replaces kind defaults for one delivery
+ * (`DeliverInput.emailDefault`); a saved choice still wins.
+ */
 export async function loadEffectivePreferences(
   userIds: readonly string[],
   database: Database = defaultDb,
+  defaults?: NotificationDefaultsOverride,
 ): Promise<Map<string, NotificationKindPreferences>> {
   const out = new Map<string, NotificationKindPreferences>();
   if (userIds.length === 0) return out;
@@ -28,7 +34,7 @@ export async function loadEffectivePreferences(
     .from(notificationPreferences)
     .where(inArray(notificationPreferences.userId, [...userIds]));
   const stored = new Map(rows.map((row) => [row.userId, row.settings]));
-  for (const userId of userIds) out.set(userId, effectiveNotificationPreferences(stored.get(userId)));
+  for (const userId of userIds) out.set(userId, effectiveNotificationPreferences(stored.get(userId), defaults));
   return out;
 }
 

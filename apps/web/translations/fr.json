@@ -812,30 +812,10 @@
       "notificationsDescription": "Notifications du navigateur pour les événements de vos sessions.",
       "unsupported": "Votre navigateur ne prend pas en charge les notifications.",
       "enableNotifications": "Activer les notifications",
-      "permissionGranted": "Autorisation du navigateur accordée",
       "permissionDenied": "Bloquées par le navigateur — modifiez l'autorisation dans les paramètres du site",
-      "permissionDefault": "L'autorisation du navigateur sera demandée lors de l'activation",
       "notificationTypes": "Types de notification",
       "behavior": "Comportement",
       "sendTestNotification": "Envoyer une notification de test",
-      "types": {
-        "onCompletion": {
-          "label": "Tâches terminées",
-          "description": "Lorsqu'une session termine sa tâche"
-        },
-        "onError": {
-          "label": "Erreurs",
-          "description": "Lorsqu'une session rencontre une erreur"
-        },
-        "onQuestion": {
-          "label": "Questions",
-          "description": "Lorsque Kortix a besoin de votre réponse pour continuer"
-        },
-        "onPermission": {
-          "label": "Demandes d'autorisation",
-          "description": "Lorsque Kortix a besoin d'une autorisation pour utiliser un outil"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Uniquement lorsque l'onglet est masqué",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Affiche les notifications dans ce navigateur, même lorsque tous les onglets Kortix sont fermés.",
       "enableDescriptionDesktop": "Affiche les notifications de l'application de bureau tant que sa fenêtre est ouverte.",
       "enableDescriptionBrowser": "Affiche les notifications dans ce navigateur tant qu'un onglet Kortix est ouvert.",
-      "notificationTypesDescription": "Ces choix s'appliquent sur chaque téléphone et dans chaque navigateur. Un téléphone a aussi son propre interrupteur pour Tour terminé, Tour en échec, Question et Demande d'autorisation. Il ne les reçoit que si les deux sont activés. La cloche liste toutes les notifications des projets où Centre de notifications est activé.",
+      "notificationTypesDescription": "Ces choix s'appliquent sur chaque téléphone et dans chaque navigateur. Un téléphone a aussi son propre interrupteur pour Tour terminé, Tour en échec, Question et Demande d'autorisation. Il ne les reçoit que si les deux sont activés. La boîte de réception liste toutes les notifications, quels que soient ces choix. L'e-mail est désactivé pour la plupart des types jusqu'à ce que vous l'activiez.",
       "push": "Push",
       "email": "E-mail",
       "channelSwitch": "{kind} : {channel}",
@@ -1287,10 +1267,6 @@
         "us_region": {
           "name": "Région États-Unis",
           "description": "Exécutez les nouvelles sessions de ce projet dans la région Est des États-Unis. Une session en cours garde sa région jusqu’à son redémarrage."
-        },
-        "notification_center": {
-          "name": "Centre de notifications",
-          "description": "Prévient les personnes concernées par une session (l'auteur du prompt, son créateur et ses abonnés) par une boîte de réception avec cloche, des notifications push du navigateur et des e-mails, et signale les déclencheurs et boucles en échec. Désactivé : seul le téléphone du créateur de la session reçoit son push, et le téléphone d'un propriétaire du compte en reçoit un quand un déclencheur commence à échouer."
         },
         "event_triggers": {
           "name": "Déclencheurs d’événements Composio",
@@ -3394,22 +3370,28 @@
       "capture_device_recovered": "Un ordinateur Kortix Capture arrêté enregistre à nouveau.",
       "artifact_comment": "Retours, mentions et réponses sur les artefacts que vous pouvez consulter."
     },
-    "bell": {
-      "label": "Notifications",
-      "unreadLabel": "Notifications : {count} non lues",
+    "inbox": {
+      "title": "Boîte de réception",
+      "description": "Les nouvelles des sessions, déclencheurs et artefacts qui vous concernent, dans tous les projets.",
+      "unreadLabel": "Boîte de réception : {count} non lues",
+      "unreadCount": "{count} non lues",
       "markAllRead": "Tout marquer comme lu",
       "tabAll": "Tout",
       "tabNeedsYou": "Pour vous",
       "tabDone": "Terminé",
       "emptyNeedsYou": "Rien ne vous attend pour l’instant",
+      "emptyNeedsYouDescription": "Les questions, demandes d'autorisation et échecs s'affichent dans cet onglet.",
       "empty": "Les notifications s'afficheront ici",
+      "emptyDescription": "Kortix vous prévient quand une session se termine, attend votre réponse ou échoue.",
       "loadError": "Impossible de charger les notifications",
       "retry": "Réessayer",
       "unread": "Non lue",
       "promptPush": "Être notifié quand Kortix est fermé",
       "promptBackground": "Être notifié quand Kortix est en arrière-plan",
       "turnOn": "Activer",
-      "dismiss": "Ignorer"
+      "dismiss": "Ignorer",
+      "settings": "Paramètres de notification",
+      "emailOptIn": "L'e-mail est désactivé pour la plupart des types jusqu'à ce que vous l'activiez."
     },
     "arrival": {
       "inProject": "{kind} dans {project}",

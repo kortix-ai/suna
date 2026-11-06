@@ -812,30 +812,10 @@
       "notificationsDescription": "Notificações do navegador sobre eventos nas suas sessões.",
       "unsupported": "Seu navegador não oferece suporte a notificações.",
       "enableNotifications": "Ativar notificações",
-      "permissionGranted": "Permissão do navegador concedida",
       "permissionDenied": "Bloqueadas pelo navegador — altere a permissão nas configurações do site",
-      "permissionDefault": "A permissão do navegador será solicitada ao ativar",
       "notificationTypes": "Tipos de notificação",
       "behavior": "Comportamento",
       "sendTestNotification": "Enviar notificação de teste",
-      "types": {
-        "onCompletion": {
-          "label": "Tarefas concluídas",
-          "description": "Quando uma sessão conclui sua tarefa"
-        },
-        "onError": {
-          "label": "Erros",
-          "description": "Quando uma sessão encontra um erro"
-        },
-        "onQuestion": {
-          "label": "Perguntas",
-          "description": "Quando o Kortix precisa da sua resposta para continuar"
-        },
-        "onPermission": {
-          "label": "Solicitações de permissão",
-          "description": "Quando o Kortix precisa de permissão para usar uma ferramenta"
-        }
-      },
       "notificationBehavior": {
         "onlyWhenHidden": {
           "label": "Somente quando a aba estiver oculta",
@@ -887,7 +867,7 @@
       "enableDescriptionPush": "Mostra notificações neste navegador, mesmo com todas as abas do Kortix fechadas.",
       "enableDescriptionDesktop": "Mostra notificações do aplicativo desktop enquanto a janela dele estiver aberta.",
       "enableDescriptionBrowser": "Mostra notificações neste navegador enquanto uma aba do Kortix estiver aberta.",
-      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. Um celular também tem a própria chave para Turno concluído, Turno com falha, Pergunta e Pedido de permissão. Ele só os recebe quando as duas estão ligadas. O sino lista todas as notificações dos projetos com a Central de notificações ligada.",
+      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. Um celular também tem a própria chave para Turno concluído, Turno com falha, Pergunta e Pedido de permissão. Ele só os recebe quando as duas estão ligadas. A caixa de entrada lista todas as notificações, independentemente destas escolhas. O e-mail fica desligado para a maioria dos tipos até você ativá-lo.",
       "push": "Push",
       "email": "E-mail",
       "channelSwitch": "{kind}: {channel}",
@@ -1287,10 +1267,6 @@
         "us_region": {
           "name": "Região dos EUA",
           "description": "Execute as novas sessões deste projeto na região Leste dos EUA. Uma sessão em andamento mantém a região até reiniciar."
-        },
-        "notification_center": {
-          "name": "Central de notificações",
-          "description": "Avisa as pessoas a quem uma sessão diz respeito (quem enviou o prompt, quem a criou e quem a segue) com uma caixa de entrada com sino, push do navegador e e-mail, e alerta sobre gatilhos e ciclos que falham. Desligado: só o telefone de quem criou a sessão recebe o push dela, e o telefone de um proprietário da conta recebe um quando um gatilho começa a falhar."
         },
         "event_triggers": {
           "name": "Gatilhos de eventos do Composio",
@@ -3394,22 +3370,28 @@
       "capture_device_recovered": "Um computador do Kortix Capture que parou voltou a gravar.",
       "artifact_comment": "Feedback, menções e respostas nos artefatos que você pode visualizar."
     },
-    "bell": {
-      "label": "Notificações",
-      "unreadLabel": "Notificações: {count} não lidas",
+    "inbox": {
+      "title": "Caixa de entrada",
+      "description": "Atualizações das sessões, gatilhos e artefatos que envolvem você, de todos os projetos.",
+      "unreadLabel": "Caixa de entrada: {count} não lidas",
+      "unreadCount": "{count} não lidas",
       "markAllRead": "Marcar tudo como lido",
       "tabAll": "Tudo",
       "tabNeedsYou": "Precisa de você",
       "tabDone": "Concluído",
       "emptyNeedsYou": "Nada precisa de você agora",
+      "emptyNeedsYouDescription": "Perguntas, pedidos de permissão e falhas aparecem nesta aba.",
       "empty": "As notificações aparecerão aqui",
+      "emptyDescription": "O Kortix avisa você quando uma sessão termina, precisa da sua resposta ou falha.",
       "loadError": "Não foi possível carregar as notificações",
       "retry": "Tentar novamente",
       "unread": "Não lida",
       "promptPush": "Receba notificações quando o Kortix estiver fechado",
       "promptBackground": "Receba notificações quando o Kortix estiver em segundo plano",
       "turnOn": "Ativar",
-      "dismiss": "Dispensar"
+      "dismiss": "Dispensar",
+      "settings": "Configurações de notificação",
+      "emailOptIn": "O e-mail fica desligado para a maioria dos tipos até você ativá-lo."
     },
     "arrival": {
       "inProject": "{kind} em {project}",

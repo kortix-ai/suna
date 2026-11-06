@@ -15,11 +15,11 @@ import {
   SidebarRail,
   useSidebar,
 } from '../../primitives/sidebar';
-import { NotificationBell } from '../../internal/notifications/notification-bell';
 import { ComputerConnectModal } from '../../internal/tunnel/computer-connect';
 import { ConnectMcpModal } from '../../internal/layout/connect-mcp-modal';
 import { ProjectMcpNavItem } from './footer/project-mcp-nav';
 import { ProjectComputerNavItem } from './footer/project-computer-nav';
+import { ProjectInboxNavItem } from './footer/project-inbox-nav';
 import { ProjectManifestIssuesAlert } from './footer/project-manifest-issues-alert';
 import { ProjectSandboxAlert } from './footer/project-sandbox-alert';
 import { ProjectRepositoryDisconnectedAlert } from '../repository-disconnected';
@@ -192,10 +192,9 @@ export function ProjectSidebar({
         data-peek={peek ? '' : undefined}
       >
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
-            single layout. Up to four controls on one 240px row, all 32px
-            tall: the merged brand/switcher control, the notification bell
-            (only with the `notification_center` flag on), search, and the
-            panel's own collapse toggle — so the collapse control sits inside
+            single layout. Up to three controls on one 240px row, all 32px
+            tall: the merged brand/switcher control, search, and the panel's
+            own collapse toggle — so the collapse control sits inside
             the thing it collapses and the session header no longer has to
             carry a toggle while the panel is docked open.
 
@@ -216,16 +215,9 @@ export function ProjectSidebar({
         >
           {menu ? <div className="min-w-0">{menu}</div> : null}
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
-            {/* The inbox (KRTX-1742), first, while this project has the
-                `notification_center` flag on. The switcher shrinks before any
-                of the three icon buttons, so the row fits the 208px floor. */}
-            <NotificationBell
-              projectId={projectId}
-              surface="bg-sidebar"
-              onNavigate={() => {
-                if (isMobile) setOpenMobile(false);
-              }}
-            />
+            {/* The switcher shrinks before either icon button, so the row
+                fits the 208px floor. The inbox is a nav row below
+                (KRTX-1742), not a header control. */}
             {/* Search is the palette's only pointer-reachable entry point —
                 ⌘K is otherwise the whole discovery story. Renders on mobile
                 too: there is no keystroke to fall back on there. The ⌘K
@@ -313,7 +305,6 @@ export function ProjectSidebar({
           side only: right padding still clears trailing badges. */}
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden [&_[data-sidebar=menu-button]]:pl-2">
         <div className="flex h-full min-h-0 flex-col space-y-2">
-          {chat ? null : (
           <SidebarGroup className="py-0">
             <SidebarMenu>
               {chat ? null : (
@@ -339,13 +330,17 @@ export function ProjectSidebar({
                 </SidebarMenuItem>
               )}
 
+              {/* The person's notifications from every project (KRTX-1742).
+                  With Spaces on (`chat`) it is the one row up here: the rest
+                  waits in "More". */}
+              <ProjectInboxNavItem projectId={projectId} />
+
               {/* Customize, Apps, Files: order and
                   visibility come from "Customize sidebar". They moved up here
                   from the footer (Jay, 2026-10-12) to keep the footer short. */}
-              <ProjectNavItems projectId={projectId} />
+              {chat ? null : <ProjectNavItems projectId={projectId} />}
             </SidebarMenu>
           </SidebarGroup>
-          )}
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             {chat ? (
