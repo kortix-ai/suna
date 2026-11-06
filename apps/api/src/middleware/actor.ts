@@ -7,6 +7,7 @@
 import type { Context } from 'hono';
 import { tokenCredential, type Actor, type TokenBinding } from '../iam/actor';
 import { requestClientIp } from './client-ip';
+import { enforceSessionPolicy } from './session-gate';
 
 /**
  * Build the Actor for this request from the Hono context.
@@ -89,5 +90,11 @@ export async function actorFor(c: Context, accountId: string): Promise<Actor | n
  * every route at once, which is a contract change, not a refactor.
  */
 export async function actorOf(c: Context, accountId: string): Promise<Actor> {
-  return (await actorFor(c, accountId)) ?? { userId: '', accountId, credential: { kind: 'jwt' }, ctx: {} };
+  // The account's session policy (max lifetime, idle timeout, force-logout)
+  // covers EVERY route that authorizes against it, not only the account
+  // subtrees (design.md §3.2 C4, finding 12): a revoked browser session gets
+  // `401 session_token_revoked` here. Memoized per request and account, and
+  // run beside the actor build so it adds no depth.
+  const [actor] = await Promise.all([actorFor(c, accountId), enforceSessionPolicy(c, accountId)]);
+  return actor ?? { userId: '', accountId, credential: { kind: 'jwt' }, ctx: {} };
 }
