@@ -299,8 +299,8 @@ describe('pi agent teams: the teammate spawn', () => {
     const off = await boot([team({}), { text: 'done' }], { KORTIX_FEATURE_FLAGS: 'chat' })
     await off.rt.admit({ text: 'team', files: [] }).done
     expect(finalState(off.frames)).toMatchObject({ status: 'error' })
-    expect(finalState(off.frames).error).toContain('Agent teams are off in this project: team: true needs the agent_teams feature. Omit team to start a plain subagent')
-    expect(agentDescription()).not.toContain('Agent teams (on in this project)')
+    expect(finalState(off.frames).error).toContain('Agent teams are off in this workspace: team: true needs the agent_teams feature. Omit team to start a plain subagent')
+    expect(agentDescription()).not.toContain('Agent teams (on in this workspace)')
 
     const mate = await boot([team({ name: 'helper' }), { text: 'done' }], TEAMMATE)
     await mate.rt.admit({ text: 'team', files: [] }).done

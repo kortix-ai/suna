@@ -162,7 +162,7 @@ async function remove(name: string, context: PlatformToolContext) {
 
 export default {
   description:
-    'Your memory of the person you talk to, kept across every session with them in this project. One fact per page. The person has no screen for it: they ask you what you remember, to change it, or to forget it. ' +
+    'Your memory of the person you talk to, kept across every session with them in this workspace. One fact per page. The person has no screen for it: they ask you what you remember, to change it, or to forget it. ' +
     'Your turn starts with the index of these pages. Actions: `list` (every page); `view` (name); `save` (name, type and title; description and body optional: creates the page, or replaces the page with that name); `delete` (name). One save per fact: when the answer says it is saved, it is done. Never save the same page again in the same turn.\n\n' +
     'Save when the person states a preference, corrects how you work, tells you something durable about themself, their role or their work, or asks you to remember something. ' +
     '"Forget …" deletes the page. Before you save, check the index: when a page covers it, `save` with that page\'s name to update it, never a second page. Delete a page that turned out wrong.\n\n' +
