@@ -407,17 +407,27 @@ function buildPreviewRuntimeEnvironment(
   });
 }
 
-function buildPreviewTestEnvironment(
-  input: PreviewStackInput,
-  origin: string,
-  runtime: Record<string, string>,
-  rawSecrets: Record<string, string>,
-  postgresPassword: string,
-  anonKey: string,
-  serviceRoleKey: string,
-  internalServiceKey: string,
-  managedGitEnabled: boolean,
-): Record<string, string> {
+function buildPreviewTestEnvironment({
+  input,
+  origin,
+  runtime,
+  rawSecrets,
+  postgresPassword,
+  anonKey,
+  serviceRoleKey,
+  internalServiceKey,
+  managedGitEnabled,
+}: {
+  input: PreviewStackInput;
+  origin: string;
+  runtime: Record<string, string>;
+  rawSecrets: Record<string, string>;
+  postgresPassword: string;
+  anonKey: string;
+  serviceRoleKey: string;
+  internalServiceKey: string;
+  managedGitEnabled: boolean;
+}): Record<string, string> {
   return {
     CI: '1',
     KE2E_TARGET: 'preview',
@@ -483,7 +493,7 @@ export function applyPreviewEnvironment(
   return {
     runtimeEnv: renderEnvironment(runtime),
     testEnv: renderEnvironment(
-      buildPreviewTestEnvironment(
+      buildPreviewTestEnvironment({
         input,
         origin,
         runtime,
@@ -493,7 +503,7 @@ export function applyPreviewEnvironment(
         serviceRoleKey,
         internalServiceKey,
         managedGitEnabled,
-      ),
+      }),
     ),
   };
 }

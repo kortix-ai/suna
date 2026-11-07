@@ -184,7 +184,7 @@ export function loadEnv(): Env {
     admin: adminToken != null,
     internalCron: internalServiceKey != null,
     funded: pick('KE2E_CAP_FUNDED') === '1',
-    appHost: pick('KE2E_CAP_APP_HOST') === '1' || inferTarget(apiUrl) === 'local',
+    appHost: pick('KE2E_CAP_APP_HOST') === '1' || target === 'local',
     projectSnapshots: pick('KE2E_CAP_PROJECT_SNAPSHOTS') !== '0',
   };
 

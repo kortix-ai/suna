@@ -14,9 +14,8 @@ import {
   type SandboxPreviewDeploymentInput,
   deployPlatinumPreview,
   runPlatinumPreviewSuite,
-  reconcilePlatinumPreviews,
-  teardownPlatinumPreview,
 } from '../src/core/sandbox-preview-providers';
+import { reconcilePlatinumPreviews, teardownPlatinumPreview } from '../src/core/preview-reaper-io';
 import { readPreviewRuntimeSecrets } from '../src/core/preview-stack';
 
 function value(name: string, fallback = ''): string {

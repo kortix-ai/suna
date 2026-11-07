@@ -20,10 +20,10 @@ export function assertAgenticListenerOwnership(topology: LocalTopology): void {
     }
     const pids = new Set(listeners.stdout.match(/^p\d+$/gm) ?? []);
     for (const pid of pids) {
-      const process = spawnSync('lsof', ['-a', '-p', pid.slice(1), '-d', 'cwd', '-Fn'], {
+      const inspection = spawnSync('lsof', ['-a', '-p', pid.slice(1), '-d', 'cwd', '-Fn'], {
         encoding: 'utf8',
       });
-      const cwd = process.stdout
+      const cwd = inspection.stdout
         .split('\n')
         .find((line) => line.startsWith('n'))
         ?.slice(1);

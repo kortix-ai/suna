@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { reconcilePlatinumPreviews, teardownPlatinumPreview } from '../src/core/preview-reaper-io';
 import {
   managedReposCreatedLastHour,
-  reconcilePlatinumPreviews,
   runPlatinumPreviewSuite,
-  teardownPlatinumPreview,
 } from '../src/core/sandbox-preview-providers';
 import { PREVIEW_SUITE_SUPERSEDED } from '../src/core/sandbox-preview';
 
@@ -126,6 +125,19 @@ describe('preview teardown and sweep against the provider API', () => {
       liveBranchSandboxNames: new Set(['kortix-env-feature-x']),
     });
     expect(calls.some((call) => call.includes('host-feature') || call.includes('sfeature'))).toBe(false);
+  });
+
+  it('the reconcile deletes only the stale host and stops only the idle session box of a surviving host', async () => {
+    stubPlatinum([...listing, session('sfeature-idle', 'kortix-env-feature-x', 'preview', 9)]);
+    await reconcilePlatinumPreviews({
+      apiUrl: 'https://platinum.example.test',
+      apiKey: 'k',
+      activePullRequests: new Map(),
+      liveBranchSandboxNames: new Set(['kortix-env-feature-x']),
+    });
+    expect(calls.filter((call) => call.startsWith('DELETE'))).toEqual(['DELETE /v1/sandboxes/host-7']);
+    expect(calls).toContain('POST /v1/sandboxes/sfeature-idle/stop');
+    expect(calls).not.toContain('POST /v1/sandboxes/sfeature/stop');
   });
 
   it('a suite waits for pool headroom and never launches into a full pool once superseded', async () => {

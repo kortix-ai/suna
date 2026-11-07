@@ -65,7 +65,6 @@ export interface ShardPlan {
   loads: number[];
 }
 
-/** Parse `CURRENT/TOTAL`. Throws on anything that is not a usable shard spec. */
 /**
  * The one CURRENT/TOTAL shard grammar. `parseShardSpec` (--shard) and the lane
  * flags (--browser-shard/--api-shard) share the regex and the
@@ -88,6 +87,7 @@ export function parseShardBounds(
   };
 }
 
+/** Parse `CURRENT/TOTAL`. Throws on anything that is not a usable shard spec. */
 export function parseShardSpec(value: string): ShardSpec {
   const parsed = parseShardBounds(value, 1);
   if (!parsed.matched) {
@@ -108,10 +108,6 @@ export function isPinnedToFirstShard(flow: RegisteredFlow): boolean {
   return Boolean(flow.meta.serial) || Boolean(flow.meta.global);
 }
 
-/**
- * Assign every flow to a shard and return the ids belonging to `spec.current`.
- * Total across all shards is a partition: every input flow appears exactly once.
- */
 /**
  * Longest-processing-time greedy bin packing, the one load-balance algorithm
  * both shard planners share: items arrive heaviest-first and each lands in the
@@ -138,6 +134,10 @@ export function packLeastLoaded(
   return { bins, loads };
 }
 
+/**
+ * Assign every flow to a shard and return the ids belonging to `spec.current`.
+ * Total across all shards is a partition: every input flow appears exactly once.
+ */
 export function planShard(flows: RegisteredFlow[], spec: ShardSpec): ShardPlan {
   const assigned = new Array<string[]>(spec.total);
   for (let i = 0; i < spec.total; i++) assigned[i] = [];
