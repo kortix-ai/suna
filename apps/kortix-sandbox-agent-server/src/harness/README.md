@@ -1576,8 +1576,11 @@ box creates its own child; `isSpawnAncestor`,
 `apps/api/src/projects/lib/session-visibility.ts`), as a reader, never an
 owner, and only on the read routes (`GET …/sessions/:id`, `GET …/sessions/:id/log`):
 a prompt, a permission answer or any other write to a parent stays `404`. The
-box's live log stays closed too (`403` on `/p/<box>/8000/kortix/runtime/log`);
-the CLI reads the stored log, which the box journals every 5 s during a turn.
+box's live log is open to the same readers: the sandbox proxy lets a session
+token `GET /p/<box>/8000/kortix/runtime/log[/messages/<id>]` of a session that
+spawned it (a read only; any other request to that box stays `403`). Before this
+the proxy gate kept it closed and the CLI fell back to the stored log, which the
+box journals every 5 s during a turn.
 A person-set `parent_session_id` grants no read. `fork: true` (a full
 copy) stays opt-in: a copy is a large input, and it does not reuse the
 parent's prompt cache, because the `agent` tool text differs by depth.
