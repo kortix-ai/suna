@@ -758,6 +758,16 @@ export const EXTENSION_RULES: readonly NoiseRule[] = [
       frames.some((frame) => frame.filename === 'app:///page.js' && frame.function === 'ne.handleResponse'),
   },
   {
+    // The locked Shield wallet rejects a dapp request from its background.js
+    // (KRTX-4433). Require its exact message and that script's frame.
+    id: 'shield-wallet-locked',
+    appliesTo: 'sentry',
+    match: ({ message, frames }) =>
+      normalizeString(message) === 'NotUnlocked: Unlock Shield to use a DApp.' &&
+      !frames.some((frame) => isFirstPartyResolvedSource(frame.filename)) &&
+      frames.some((frame) => frame.filename === 'app:///background.js'),
+  },
+  {
     id: 'injected-app-source',
     appliesTo: 'both',
     match: (evidence) => sourcesOf(evidence).some(isInjectedAppSource),
