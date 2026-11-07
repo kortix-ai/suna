@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-const root = resolve(import.meta.dirname, '../..');
+import { readRepoFile } from '../src/fixtures/repo';
 
 /**
  * `pnpm dev` warms the heavy /workspaces/* routes in the background. Its
@@ -22,7 +22,7 @@ const root = resolve(import.meta.dirname, '../..');
  * old empty-array expansion aborted; it skips when the variable is unset.
  */
 function extractFunction(name: string): string {
-  const lines = readFileSync(join(root, 'scripts/dev-local.sh'), 'utf8').split('\n');
+  const lines = readRepoFile('scripts/dev-local.sh').split('\n');
   const start = lines.findIndex((line) => line.startsWith(`${name}() {`));
   if (start === -1) throw new Error(`scripts/dev-local.sh does not define ${name}()`);
   const end = lines.findIndex((line, i) => i > start && line === '}');

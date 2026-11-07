@@ -20,11 +20,11 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { readWorkflow } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
-const WORKFLOW = readFileSync(resolve(root, '.github/workflows/capture-build.yml'), 'utf8');
+const WORKFLOW = readWorkflow('capture-build.yml');
 const RAN = 'versitygw-ran';
 const BINARY = `#!/bin/sh\necho ${RAN}\n`;
 

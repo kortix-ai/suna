@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/fixtures/repo';
 
 // A server module (an apps/web file a route reaches before any 'use client' boundary) may
 // render a client component from @kortix/ui, but it must not call a function exported from
@@ -10,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 // so localizeUiCatalog() in lib/seo/metadata.ts turned 10 marketing and changelog pages into
 // the error page. A component (PascalCase) is allowed; any other value is not.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const WEB_SRC = join(REPO_ROOT, 'apps/web/src');
 const UI = join(REPO_ROOT, 'packages/ui');
 const EXPORTS: Record<string, unknown> = JSON.parse(readFileSync(join(UI, 'package.json'), 'utf8')).exports;
@@ -69,7 +69,7 @@ function isClientReference(file: string, name: string, seen = new Set<string>())
   return false;
 }
 
-export function serverCallsIntoClient(): string[] {
+function serverCallsIntoClient(): string[] {
   const routes = execFileSync('git', ['ls-files', '--', 'apps/web/src/app'], { cwd: REPO_ROOT, encoding: 'utf8' })
     .split('\n')
     .filter((f) => ROUTE_FILE.test(`/${f}`))

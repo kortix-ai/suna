@@ -170,7 +170,7 @@ export async function signIn(
  */
 const promoHandled = new WeakSet<Page>();
 
-export async function closeMobileAppPromo(page: Page, userId: string): Promise<void> {
+async function closeMobileAppPromo(page: Page, userId: string): Promise<void> {
   await page.evaluate((id) => {
     try {
       localStorage.setItem("kortix-last-user-id", id);

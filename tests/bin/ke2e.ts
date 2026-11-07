@@ -14,6 +14,7 @@ import { resolve } from 'node:path';
 import { writeCatalog } from '../src/core/catalog';
 import { describeEnv, loadEnv } from '../src/core/env';
 import { exitOnceDecided } from '../src/core/exit-once-decided';
+import { parseFlags } from '../src/core/flags';
 import { allFlows } from '../src/core/flow';
 import { localEnvironmentOverrides, localRunExitCode } from '../src/core/local-profile';
 import {
@@ -35,23 +36,6 @@ import { parseShardSpec, planShard } from '../src/core/shard';
 import { installPgConnectionGuard } from '../src/core/pg-connection-guard';
 
 installPgConnectionGuard();
-
-function parseArgs(argv: string[]): { _: string[]; flags: Record<string, string | boolean> } {
-  const _: string[] = [];
-  const flags: Record<string, string | boolean> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a.startsWith('--')) {
-      const key = a.slice(2);
-      const next = argv[i + 1];
-      if (next && !next.startsWith('--')) {
-        flags[key] = next;
-        i++;
-      } else flags[key] = true;
-    } else _.push(a);
-  }
-  return { _, flags };
-}
 
 function list(v: string | boolean | undefined): string[] | undefined {
   if (typeof v !== 'string') return undefined;
@@ -114,7 +98,7 @@ async function resolveShardIds(
 }
 
 async function main(): Promise<number> {
-  const { _, flags } = parseArgs(process.argv.slice(2));
+  const { positional: _, flags } = parseFlags(process.argv.slice(2));
   const cmd = _[0] ?? 'run';
 
   if (cmd === 'list') {

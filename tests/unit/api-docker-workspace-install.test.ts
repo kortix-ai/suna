@@ -1,16 +1,16 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { expect, test } from 'vitest';
+import { REPO_ROOT as root, readRepoFile } from '../src/fixtures/repo';
 
 // Exercise pnpm against the actual dependency-stage COPY inputs, not the full
 // checkout: a workspace override must resolve even when no app imports it.
 test('API Docker dependency context resolves workspace overrides', () => {
-  const root = resolve(import.meta.dirname, '../..');
   const context = mkdtempSync(join(tmpdir(), 'api-docker-workspace-'));
   try {
-    const dockerfile = readFileSync(join(root, 'apps/api/Dockerfile'), 'utf8');
+    const dockerfile = readRepoFile('apps/api/Dockerfile');
     const stage = dockerfile.split('FROM node:22-slim AS deps')[1].split('RUN corepack')[0];
     for (const line of stage.split('\n')) {
       if (!line.startsWith('COPY ')) continue;

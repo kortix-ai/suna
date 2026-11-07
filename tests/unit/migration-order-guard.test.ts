@@ -3,12 +3,13 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/fixtures/repo';
 
 // On 2026-10-07 a migration older than dev's newest merged, and every Deploy Dev
 // stopped at migrate (checkOrder). pre-push runs scripts/check-migration-order.sh,
 // which refuses a branch whose new migration sorts at or before origin/dev's newest.
 
-const SCRIPT = join(import.meta.dirname, '..', '..', 'scripts', 'check-migration-order.sh');
+const SCRIPT = join(REPO_ROOT, 'scripts', 'check-migration-order.sh');
 const DIR = 'packages/db/migrations';
 
 function repo(devRef = 'refs/remotes/origin/dev') {

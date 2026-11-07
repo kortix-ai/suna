@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { readdirSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PROJECT_SNAPSHOT_SUITE,
@@ -16,8 +16,7 @@ import {
   templateWeekKey,
   withDatabase,
 } from '../src/core/db-suites';
-
-const root = resolve(import.meta.dirname, '../..');
+import { REPO_ROOT as root, readRepoFile } from '../src/fixtures/repo';
 
 function testFiles(directory: string): string[] {
   const out: string[] = [];
@@ -63,7 +62,7 @@ describe('db-suites discovery', () => {
       ...testFiles(join(root, 'packages')),
     ].filter((file) =>
       /process\.env\.(TEST_DATABASE_(URL|ADMIN_URL|SUPERUSER_URL)|KORTIX_TEST_DB_CONFIRM)\b/.test(
-        readFileSync(join(root, file), 'utf8'),
+        readRepoFile(file),
       ),
     );
     expect(readsLaneDatabase.length).toBeGreaterThan(10);
@@ -82,15 +81,15 @@ describe('db-suites discovery', () => {
   });
 
   it('keeps DB suites out of the unit discovery of every package', () => {
-    const apiTestScript = readFileSync(join(root, 'apps/api/scripts/test.sh'), 'utf8');
+    const apiTestScript = readRepoFile('apps/api/scripts/test.sh');
     expect(apiTestScript).toContain("! -name 'integration-*'");
     expect(apiTestScript).toContain("! -name '*.integration.test.ts'");
     expect(apiTestScript).toContain('tests/bin/db-suites.ts');
-    const dbPackage = JSON.parse(readFileSync(join(root, 'packages/db/package.json'), 'utf8')) as {
+    const dbPackage = JSON.parse(readRepoFile('packages/db/package.json')) as {
       scripts: Record<string, string>;
     };
     expect(dbPackage.scripts.test).toContain("--path-ignore-patterns='**/*.integration.test.ts'");
-    const packageQuality = readFileSync(join(root, 'tests/bin/package-quality.ts'), 'utf8');
+    const packageQuality = readRepoFile('tests/bin/package-quality.ts');
     expect(packageQuality).not.toContain("'tests/migration'");
   });
 });

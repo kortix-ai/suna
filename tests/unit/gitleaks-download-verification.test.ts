@@ -18,12 +18,12 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { readWorkflow } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const VERSION = '9.9.9';
 const ARCHIVE = `gitleaks_${VERSION}_linux_x64.tar.gz`;
 const SUMS = `gitleaks_${VERSION}_checksums.txt`;
@@ -103,7 +103,7 @@ const workflows = [
 ];
 
 for (const { file, step } of workflows) {
-  const source = readFileSync(resolve(root, '.github/workflows', file), 'utf8');
+  const source = readWorkflow(file);
   // The step assigns its release to `base`; the test swaps that assignment
   // for the fixture release, so the real download, checksum and extract lines
   // run unchanged. An unverified install reads neither `base` nor

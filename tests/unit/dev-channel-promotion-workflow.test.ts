@@ -1,11 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { readWorkflow } from '../src/fixtures/repo';
 
-const workflow = readFileSync(
-  resolve(import.meta.dirname, '../../.github/workflows/deploy-dev.yml'),
-  'utf8',
-);
+const workflow = readWorkflow('deploy-dev.yml');
 
 function jobBody(name: string): string {
   const start = workflow.indexOf(`  ${name}:`);

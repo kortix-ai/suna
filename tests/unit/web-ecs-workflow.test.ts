@@ -1,13 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-const root = resolve(import.meta.dirname, '../..');
-
-function read(relativePath: string): string {
-  return readFileSync(resolve(root, relativePath), 'utf8');
-}
+import { REPO_ROOT as root, readRepoFile as read } from '../src/fixtures/repo';
 
 describe('web ECS migration', () => {
   it('maps --service web to the dedicated cluster, container, and secret', () => {

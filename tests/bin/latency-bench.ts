@@ -35,6 +35,7 @@
  * wired in `../src/core/local-runner.ts`) can be invoked either way.
  */
 import { spawn } from 'node:child_process';
+import { parseFlags } from '../src/core/flags';
 import {
   type RegionTopology,
   type TimelineSummary,
@@ -63,16 +64,6 @@ interface Config {
   pollTimeoutMs: number;
 }
 
-function flagValue(args: string[], name: string): string | undefined {
-  const index = args.indexOf(name);
-  if (index === -1) return undefined;
-  const value = args[index + 1];
-  if (!value || value.startsWith('--')) {
-    throw new Error(`${name} requires a value`);
-  }
-  return value;
-}
-
 function normalizeApiBase(raw: string): string {
   let url: URL;
   try {
@@ -91,15 +82,16 @@ function normalizeApiBase(raw: string): string {
 }
 
 function resolveConfig(argv: string[], env: NodeJS.ProcessEnv): Config {
-  const targetRaw = flagValue(argv, '--target') ?? env.KE2E_LATENCY_TARGET;
+  const { value } = parseFlags(argv);
+  const targetRaw = value('target') ?? env.KE2E_LATENCY_TARGET;
   if (!targetRaw) {
     throw new Error('--target <origin> (or KE2E_LATENCY_TARGET) is required');
   }
-  const token = flagValue(argv, '--token') ?? env.KE2E_LATENCY_TOKEN;
+  const token = value('token') ?? env.KE2E_LATENCY_TOKEN;
   if (!token) {
     throw new Error('--token <bearer> (or KE2E_LATENCY_TOKEN) is required');
   }
-  const sandboxId = flagValue(argv, '--sandbox-id') ?? env.KE2E_LATENCY_SANDBOX_ID;
+  const sandboxId = value('sandbox-id') ?? env.KE2E_LATENCY_SANDBOX_ID;
   if (!sandboxId) {
     throw new Error(
       '--sandbox-id <id> (or KE2E_LATENCY_SANDBOX_ID) is required — the Kortix session id, ' +
@@ -107,7 +99,7 @@ function resolveConfig(argv: string[], env: NodeJS.ProcessEnv): Config {
         'this file\'s header comment for how to create one with the real CLI.',
     );
   }
-  const iterations = Number(flagValue(argv, '--iterations') ?? env.KE2E_LATENCY_ITERATIONS ?? '5');
+  const iterations = Number(value('iterations') ?? env.KE2E_LATENCY_ITERATIONS ?? '5');
   if (!Number.isInteger(iterations) || iterations < 1) {
     throw new Error('--iterations must be a positive integer');
   }
@@ -115,9 +107,9 @@ function resolveConfig(argv: string[], env: NodeJS.ProcessEnv): Config {
     apiBase: normalizeApiBase(targetRaw),
     token,
     sandboxId,
-    ocSessionId: flagValue(argv, '--oc-session-id') ?? env.KE2E_LATENCY_OC_SESSION_ID ?? null,
+    ocSessionId: value('oc-session-id') ?? env.KE2E_LATENCY_OC_SESSION_ID ?? null,
     iterations,
-    prompt: flagValue(argv, '--prompt') ?? env.KE2E_LATENCY_PROMPT ?? 'Reply with exactly: OK',
+    prompt: value('prompt') ?? env.KE2E_LATENCY_PROMPT ?? 'Reply with exactly: OK',
     pollIntervalMs: Number(env.KE2E_LATENCY_POLL_INTERVAL_MS ?? '75'),
     pollTimeoutMs: Number(env.KE2E_LATENCY_POLL_TIMEOUT_MS ?? '60000'),
   };

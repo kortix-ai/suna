@@ -2,7 +2,7 @@ import type { createApiJsonClient } from './http';
 
 type ApiJson = ReturnType<typeof createApiJsonClient>;
 
-export interface SessionStartState {
+interface SessionStartState {
   stage: string;
   retriable?: boolean;
   reason?: string;
