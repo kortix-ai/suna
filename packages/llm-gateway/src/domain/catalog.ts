@@ -75,6 +75,10 @@ export interface ModelInfo {
   // When models.dev last refreshed this model's own entry (distinct from
   // `released`, the model's original release date).
   last_updated?: string;
+  // `scope=picker` stamps: false when the project turned the model off, or
+  // when only a default names it and its provider is not connected.
+  enabled?: boolean;
+  available?: boolean;
 }
 
 export type ModelCatalog = Record<string, ModelInfo>;

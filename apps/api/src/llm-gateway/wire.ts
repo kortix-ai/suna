@@ -535,6 +535,18 @@ const ModelsResponseSchema = z
     },
   });
 
+const OpenAiModelListSchema = z
+  .object({
+    object: z.literal('list'),
+    data: z.array(GatewayModelSchema.extend({
+      id: z.string(),
+      object: z.literal('model'),
+      created: z.number(),
+      owned_by: z.string(),
+    })),
+  })
+  .openapi('GatewayModelList');
+
 function modelsRoute(path: string) {
   const fullPath = `/v1/llm${path}`;
   return createRoute({
@@ -542,18 +554,18 @@ function modelsRoute(path: string) {
     path,
     tags: [GATEWAY_INFERENCE_TAG],
     summary: "List models served by the LLM gateway",
-    description: `Servable model catalog for the caller\'s account/project — a keyed object (NOT the OpenAI \`{object:"list",data:[...]}\` array shape) mapping model id → capabilities.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
+    description: `The models the caller\'s key can call, in the OpenAI \`{object:"list",data:[...]}\` shape: the project\'s servable set (the \`scope=picker\` set) without the models the project turned off or whose provider is not connected. An explicit \`scope\` answers a keyed object mapping model id → capabilities instead.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
     request: {
       query: z.object({
-        scope: z.enum(['managed', 'picker']).optional().openapi({
+        scope: z.enum(['managed', 'picker', 'all']).optional().openapi({
           description:
-            "Set to `picker` for the caller's project SERVABLE set (~80KB: managed models the account may use, connected BYOK providers, routing-named ids — the same list the web model picker shows; sandboxes fetch it on every boot). `managed` is the platform-managed lineup only (~3KB). Omit for the caller's full catalog (~3.3MB).",
+            "Omit for the OpenAI list of the models this key can call. `picker` is the caller's project SERVABLE set as a keyed map (~80KB: managed models the account may use, connected BYOK providers, routing-named ids, each stamped `enabled` — the same list the web model picker shows; sandboxes fetch it on every boot). `managed` is the platform-managed lineup only (~3KB). `all` is the full discovery catalog (~3.3MB), each entry stamped with its `availability`.",
           example: 'managed',
         }),
       }),
     },
     ...auth,
-    responses: { 200: json(ModelsResponseSchema, 'Servable model catalog'), ...errors(401, 502) },
+    responses: { 200: json(z.union([OpenAiModelListSchema, ModelsResponseSchema]), 'Callable models (no scope) or the model catalog'), ...errors(401, 502) },
   });
 }
 

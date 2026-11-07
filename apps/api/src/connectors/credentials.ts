@@ -529,7 +529,7 @@ export async function upsertConnectionCredential(input: {
     // the upstream rejected, and the account is no longer revoked.
     const metadata = sql`${connectorConnections.metadata} - 'credential_rejected_at' - 'revokedAt'`;
     const live = input.connectNow
-      ? (await connectConnection(input.connectionId, { metadata }, tx)) !== null
+      ? (await connectConnection(input.connectionId, { metadata }, tx, 'person')) !== null
       : await completeConnection(input.connectionId, input.startedAt ?? null, { metadata }, tx);
     if (!live) throw new ConnectionRevokedError(input.connectionId);
     await tx.insert(connectionCredentials).values({

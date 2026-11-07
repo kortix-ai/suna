@@ -17,6 +17,7 @@ import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { createDatabaseSession } from '../fixtures/database-project';
+import { withDb } from '../fixtures/chat';
 import { waitFor } from '../core/poll';
 
 // ─── Groups ──────────────────────────────────────────────────────────────
@@ -758,11 +759,32 @@ flow(
       'POST /v1/accounts/:accountId/iam/service-accounts',
       'POST /v1/accounts/:accountId/iam/service-accounts/:saId/disable',
       'DELETE /v1/accounts/:accountId/iam/service-accounts/:saId',
+      'GET /v1/accounts',
+      'GET /v1/accounts/me',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/projects/:projectId',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
+    const project = await team.project();
     let saId = '';
+    let asSa: ReturnType<typeof ctx.client.withBearer>;
+    // A service account has no membership and no workspace of its own: its
+    // reads list nothing and never create an account (KRTX-4426).
+    const saOwnsNoAccount = async () => {
+      (await asSa.get('/v1/accounts')).status(200).body().has('$', []);
+      (await asSa.get('/v1/accounts/me')).status(200).body().has('$.accounts', []).has('$.token_context.auth_type', 'service_account');
+      if (!ctx.env.capabilities.database) return;
+      const rows = await withDb(ctx, (db) =>
+        db.query(
+          `SELECT 1 FROM kortix.accounts WHERE account_id = $1
+           UNION ALL SELECT 1 FROM kortix.account_members WHERE user_id = $1`,
+          [saId],
+        ),
+      );
+      if (rows.rowCount !== 0) throw new Error(`the service account owns ${rows.rowCount} account rows`);
+    };
     await ctx.step('create service account → 201 secret once', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -773,6 +795,22 @@ flow(
         );
       r.status(201).body().exists('$.secret').exists('$.service_account_id');
       saId = r.json<any>().service_account_id;
+      asSa = ctx.client.withBearer(r.json<{ secret: string }>().secret, 'SA');
+    });
+    await ctx.step("the service account's bearer lists no account (GET /v1/accounts → [], /accounts/me → accounts: []) and the reads create no account row", saOwnsNoAccount);
+    await ctx.step('granted member on a team project, the bearer reads that project → 200 and still owns no account', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        { principal_type: 'service_account', principal_id: saId, role_key: 'member', scope_type: 'project', scope_id: project.id },
+        { params: { accountId: team.id } },
+      )).status(201);
+      await waitFor(() => asSa.get('/v1/projects/:projectId', { params: { projectId: project.id } }), {
+        until: (r) => r.statusCode === 200,
+        timeoutMs: 20_000,
+        intervalMs: 1_000,
+        description: 'the service account reads its granted project',
+      });
+      await saOwnsNoAccount();
     });
     await ctx.step('missing name → 400', async () => {
       const r = await ctx.client
@@ -790,7 +828,7 @@ flow(
         .get('/v1/accounts/:accountId/iam/service-accounts', { params: { accountId: team.id } });
       r.status(200).body().exists('$.service_accounts');
     });
-    await ctx.step('disable service account → 200', async () => {
+    await ctx.step('disable service account → 200; its bearer → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
@@ -799,6 +837,7 @@ flow(
           { params: { accountId: team.id, saId } },
         );
       r.status(200).body().has('$.disabled', true);
+      (await asSa.get('/v1/accounts')).status(401);
     });
     await ctx.step('disable again → 409 already disabled', async () => {
       const r = await ctx.client
@@ -2476,5 +2515,92 @@ flow(
         (await asFloor.post('/v1/workspaces/:projectId/secrets', { name: 'FLOOR_TRY', value: 'v1' }, { params })).status(403);
       },
     );
+  },
+);
+
+// IAM-45 — a service account lists the projects it was granted. It has no
+// account membership: it acts in its own account only, the engine filters the
+// list to its grants, and every account-level route still refuses it.
+flow(
+  'IAM-45',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/iam/service-accounts',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'DELETE /v1/accounts/:accountId/iam/service-accounts/:saId',
+      'GET /v1/projects',
+      'GET /v1/projects/:projectId',
+      'GET /v1/projects/quota',
+      'POST /v1/projects',
+      'POST /v1/projects/provision',
+      'GET /v1/projects/github/repositories',
+      'GET /v1/projects/github/installations',
+      'DELETE /v1/projects/github/installation',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const other = await ctx.fixtures.team();
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const accountParams = { accountId: team.id };
+    const created = await owner.post(
+      '/v1/accounts/:accountId/iam/service-accounts',
+      { name: ctx.fixtures.name('sa'), description: 'e2e' },
+      { params: accountParams },
+    );
+    created.status(201);
+    const { service_account_id: saId, secret } = created.json<{ service_account_id: string; secret: string }>();
+    const sa = ctx.client.withBearer(secret, 'service-account');
+    const listed = async (query?: Record<string, string>) => {
+      const r = await sa.get('/v1/projects', query ? { query } : undefined);
+      r.status(200);
+      return r.json<Array<{ project_id: string }>>().map((p) => p.project_id);
+    };
+    const listIs = (actual: string[], expected: string[], description: string) =>
+      assert({ kind: 'body', description, pass: JSON.stringify(actual) === JSON.stringify(expected), expected, actual });
+    try {
+      await ctx.step('before any grant: GET /v1/projects → 200 []', async () => {
+        listIs(await listed(), [], 'the list is empty');
+      });
+      await ctx.step('the owner grants the service account member on the project → 201', async () => {
+        (await owner.post('/v1/accounts/:accountId/iam/assignments', {
+          principal_type: 'service_account', principal_id: saId, role_key: 'member',
+          scope_type: 'project', scope_id: project.id,
+        }, { params: accountParams })).status(201);
+      });
+      await ctx.step('the service account reads the project and the list holds exactly that project', async () => {
+        // IAM verdicts are cached per API process for up to 15 s.
+        await waitFor(
+          async () => (await sa.get('/v1/projects/:projectId', { params: { projectId: project.id } })).statusCode,
+          { until: (s) => s === 200, timeoutMs: 30_000, intervalMs: 1_000, description: 'GET /v1/projects/:id → 200' },
+        );
+        const ids = await waitFor(() => listed(), {
+          until: (v) => v.length > 0, timeoutMs: 30_000, intervalMs: 1_000, description: 'a non-empty list',
+        });
+        listIs(ids, [project.id], 'the list holds exactly the granted project');
+      });
+      await ctx.step('account_id naming its own account, by account id or workspace id → the same list', async () => {
+        listIs(await listed({ account_id: team.id }), [project.id], 'account_id = its account id');
+        listIs(await listed({ account_id: project.id }), [project.id], 'account_id = its workspace id');
+      });
+      await ctx.step('account_id naming another account → 403; a malformed one → 400', async () => {
+        (await sa.get('/v1/projects', { query: { account_id: other.id } })).status(403);
+        (await sa.get('/v1/projects', { query: { account_id: 'not-a-uuid' } })).status(400);
+      });
+      await ctx.step('every account-level route of the same gate still refuses the service account → 403', async () => {
+        (await sa.get('/v1/projects/quota')).status(403);
+        (await sa.post('/v1/projects', { repo_url: 'https://github.com/example/example' })).status(403);
+        (await sa.post('/v1/projects/provision', { name: ctx.fixtures.name('sa-provision') })).status(403);
+        (await sa.get('/v1/projects/github/repositories')).status(403);
+        (await sa.get('/v1/projects/github/installations')).status(403);
+        (await sa.del('/v1/projects/github/installation')).status(403);
+      });
+    } finally {
+      (await owner.del('/v1/accounts/:accountId/iam/service-accounts/:saId', {
+        params: { ...accountParams, saId },
+      })).status(200);
+    }
   },
 );
