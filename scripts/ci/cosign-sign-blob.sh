@@ -24,39 +24,12 @@ if ! command -v cosign >/dev/null 2>&1; then
   exit 1
 fi
 
+# shellcheck source=scripts/ci/lib/cosign-retry.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/cosign-retry.sh"
+cosign_retry_env
+
 bundle="${manifest}.bundle"
-max_attempts="${COSIGN_MAX_ATTEMPTS:-3}"
-retry_delay_seconds="${COSIGN_RETRY_DELAY_SECONDS:-10}"
-[[ "$max_attempts" =~ ^[1-9][0-9]*$ ]] || { echo "COSIGN_MAX_ATTEMPTS must be a positive integer" >&2; exit 2; }
-[[ "$retry_delay_seconds" =~ ^[0-9]+$ ]] || { echo "COSIGN_RETRY_DELAY_SECONDS must be a non-negative integer" >&2; exit 2; }
-
-attempt=1
-while :; do
-  set +e
-  output="$(cosign sign-blob --yes --bundle "$bundle" "$manifest" 2>&1)"
-  status=$?
-  set -e
-  [ -z "$output" ] || printf '%s\n' "$output" >&2
-
-  if [ "$status" -eq 0 ]; then
-    break
-  fi
-  # Rekor can persist an entry and lose the response; the retry then reports
-  # the entry already exists, which is the operation succeeding twice.
-  if grep -Fq 'equivalent entry already exists' <<<"$output" && [ -s "$bundle" ]; then
-    echo "cosign: equivalent Rekor entry already exists; accepting."
-    break
-  fi
-  if [ "$attempt" -lt "$max_attempts" ] \
-    && grep -Eq 'rekor\.sigstore\.dev|transparency log' <<<"$output" \
-    && grep -Eqi 'giving up|timed out|timeout|temporarily unavailable|connection reset|unexpected EOF|[^0-9]50[0234][^0-9]' <<<"$output"; then
-    echo "cosign: transient Rekor failure on attempt ${attempt}/${max_attempts}; retrying."
-    sleep "$retry_delay_seconds"
-    attempt=$((attempt + 1))
-    continue
-  fi
-  exit "$status"
-done
+run_with_rekor_retry "cosign" cosign sign-blob --yes --bundle "$bundle" "$manifest"
 
 [ -s "$bundle" ] || { echo "::error::cosign produced no bundle at $bundle" >&2; exit 1; }
 echo "✔ signed $(basename "$manifest") → $(basename "$bundle")"
