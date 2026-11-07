@@ -34,6 +34,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Drive: 'text6312b4b9baf1',
   Files: 'textabc7e9892806',
   Home: 'text3a78695388b3',
+  Inbox: 'text94835ea2fcf7',
   'Internal Browser': 'text875c0e464942',
   'Invite members': 'texte85663498c96',
   'Kortix Capture': 'texta67e3dc962e8',
