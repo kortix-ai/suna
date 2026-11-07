@@ -470,7 +470,8 @@ describe('isSessionLogRead', () => {
   test('is a GET of the box log or one of its messages', () => {
     expect(isSessionLogRead(8000, 'GET', '/kortix/runtime/log')).toBe(true);
     expect(isSessionLogRead(8000, 'GET', '/kortix/runtime/log/messages/msg_1')).toBe(true);
-    expect(isSessionLogRead(8000, 'GET', '/proxy/8000/kortix/runtime/log')).toBe(true);
+    expect(isSessionLogRead(8000, 'GET', '/proxy/3000/kortix/runtime/log')).toBe(false);
+    expect(isSessionLogRead(8000, 'GET', '/proxy/8000/kortix/runtime/log')).toBe(false);
   });
 
   test('is not a write, another path or a non-session port', () => {

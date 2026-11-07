@@ -179,10 +179,16 @@ export async function refuseSessionOrControlAccess(input: {
   return null;
 }
 
-/** Is this a read of the box's session log (`GET /kortix/runtime/log`, or one message of it)? */
+/**
+ * Is this a read of the box's session log (`GET /kortix/runtime/log`, or one message of it)?
+ *
+ * Matches the path as sent, never the `/proxy/{port}`-stripped one: kortixd pipes
+ * `/proxy/<any port>/…` to that user port, so stripping would call a read of a
+ * user's own dev server a log read.
+ */
 export function isSessionLogRead(upstreamPort: number, method: string, remainingPath: string): boolean {
   if (method !== 'GET' || !carriesSessionData(upstreamPort)) return false;
-  return /^\/kortix\/runtime\/log(?:\/messages\/[^/?#]+)?\/?$/.test(stripInBoxProxyPrefix(remainingPath));
+  return /^\/kortix\/runtime\/log(?:\/messages\/[^/?#]+)?\/?$/.test(remainingPath);
 }
 
 /**
