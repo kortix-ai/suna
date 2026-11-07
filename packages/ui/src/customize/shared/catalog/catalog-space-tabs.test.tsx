@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { groupBySpace } from '@kortix/sdk';
 
+import { UiProvider } from '../../../providers/ui-provider';
+
 import { ALL_SPACES, CatalogSpaceTabs } from './catalog-space-tabs';
 
 type Item = { name: string; space?: string | null };
@@ -38,4 +40,20 @@ describe('CatalogSpaceTabs', () => {
     // Only the default bucket → no filter worth showing.
     expect(markup([{ name: 'a' }, { name: 'b' }])).toBe('');
   });
+});
+
+test('space filter translates its accessible name and All chip using the host locale', () => {
+  const markup = renderToStaticMarkup(
+    <UiProvider i18n={{ locale: 'de', messages: { spaces: { filter: 'Nach Bereich filtern', all: 'Alle' } } }}>
+      <CatalogSpaceTabs
+        groups={[{ name: 'engineering', label: 'Engineering', isDefault: false, items: [1] }]}
+        value="all"
+        onValueChange={() => {}}
+      />
+    </UiProvider>,
+  );
+  expect(markup).toContain('aria-label="Nach Bereich filtern"');
+  expect(markup).toContain('Alle');
+  expect(markup).toContain('Engineering');
+  expect(markup).not.toContain('Filter by space');
 });
