@@ -73,7 +73,7 @@ function refuse(c: Ctx, status: 400 | 403 | 404 | 413, error: string): Response 
 
 /** The session box calling, or a refusal. */
 async function scopeOf(c: Ctx): Promise<SyncScope | Response> {
-  const projectId = param(c, 'projectId');
+  const projectId = param(c, 'workspaceId');
   const sessionId = param(c, 'sessionId');
   if (!isUuid(sessionId) || !isSessionSandboxCredential(c) || c.get('sessionId') !== sessionId) {
     return refuse(c, 403, 'Drive sync takes the session sandbox credential');
