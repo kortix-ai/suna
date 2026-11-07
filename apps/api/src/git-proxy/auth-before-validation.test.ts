@@ -17,11 +17,13 @@ const ROUTES = [
   `/${PROJECT_ID}/fast-boot-bundle?ref=main&tip=${SHA}&parent=${SHA}`,
   `/${PROJECT_ID}/project-snapshot`,
   `/${PROJECT_ID}/project-snapshot?sha=${SHA}`,
+  `/${PROJECT_ID}/info/refs?service=bogus`,
+  `/${PROJECT_ID}/info/refs?service=git-upload-pack`,
 ];
 
 describe('git-proxy: auth before validation', () => {
   for (const path of ROUTES) {
-    test(`anonymous GET ${path.split('?')[0].slice(PROJECT_ID.length + 1)}${path.includes('?') ? ' (valid query)' : ' (no query)'} -> 401`, async () => {
+    test(`anonymous GET ${path.split('?')[0].slice(PROJECT_ID.length + 1)}${path.includes('?') ? ` (${path.split('?')[1].slice(0, 20)})` : ' (no query)'} -> 401`, async () => {
       const res = await gitProxyApp.request(path);
       expect(res.status).toBe(401);
       expect(res.headers.get('www-authenticate')).toContain('Basic');
