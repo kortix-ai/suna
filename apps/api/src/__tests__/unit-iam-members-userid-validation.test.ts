@@ -24,6 +24,8 @@ mock.module('../iam', () => ({
   },
   authorize: async () => ({ allowed: true }),
   resourceTypeForAction: () => 'account',
+  // members.ts names each probed action by its workspace name too.
+  toWorkspaceAction: (action: string) => action,
 }));
 mock.module('../iam/actor', () => ({
   actorOf: async () => ({ userId: CALLER_ID, accountId: ACCOUNT_ID }),

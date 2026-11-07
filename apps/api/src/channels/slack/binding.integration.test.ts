@@ -29,8 +29,8 @@ const DM = 'D0SYNTHETIC';
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'slack-bind-test' });
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'slack-bind-a', repoUrl: 'https://example.test/a.git' },
-    { projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'slack-bind-b', repoUrl: 'https://example.test/b.git' },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'slack-bind-a', repoUrl: 'https://example.test/a.git' },
+    { splitPending: true, projectId: OTHER_PROJECT, accountId: ACCOUNT, name: 'slack-bind-b', repoUrl: 'https://example.test/b.git' },
   ]);
   await db.insert(projectSessions).values([
     { sessionId: WEB_SESSION, accountId: ACCOUNT, projectId: PROJECT, branchName: WEB_SESSION, createdBy: USER },
@@ -58,7 +58,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.delete(chatThreads).where(eq(chatThreads.workspaceId, TEAM));
+  await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, TEAM));
   for (const projectId of [PROJECT, OTHER_PROJECT]) await deleteSlackInstall(projectId);
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));

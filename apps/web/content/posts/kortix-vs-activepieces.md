@@ -40,7 +40,7 @@ An open-ended job pushed into a flow because a flow was already there surfaces m
 
 ## The same job as a session
 
-A Kortix session starts from the sentence instead of the diagram. You hand an agent the job in plain words: a competitor moved its Plus tier, find every page we publish that quotes its price, correct them, and open a change request. The session plans its own steps. It greps the project repo, opens the pricing page in a browser, judges which pages are stale, edits them, runs the build, and opens the change request.
+A Kortix session starts from the sentence instead of the diagram. You hand an agent the job in plain words: a competitor moved its Plus tier, find every page we publish that quotes its price, correct them, and open a change request. The session plans its own steps. It greps the workspace repo, opens the pricing page in a browser, judges which pages are stale, edits them, runs the build, and opens the change request.
 
 Each session has its own isolated machine and branch. That is what makes the planning safe to run. Two jobs cannot collide in one working tree, and the branch carries the session id. Session work reaches `main` through a change request, and merge is default-deny for agents unless their `kortix_permissions` grant includes `project.gitops.merge`. With that grant left out, the diff waits for a person. When the vendor renames a tier next quarter, the exception is a decision inside that morning's plan. Nobody has to remember a node.
 
@@ -59,7 +59,7 @@ agents:
 
 That last line decides how much review the job gets. `all` includes `project.gitops.merge`, so the starter agent can merge its own change request. Give it a list without that permission and a person merges every change the agent opens. The rule sits one grep away from the prompt it governs. A change to it made on a session branch arrives as a diff a teammate reads.
 
-Kortix bills machine time in credits. Free is $0 with 500 credits per month and 1 project, on your own provider keys or a ChatGPT subscription; managed models are on the Credits plan only. Paid starts at $50 a month. Every tier buys credits at 1 credit = $0.01, and the $200 tier carries 20,000 credits, about 1,830 agent-computer hours. Members are unlimited and free, and the account shares one credit pool ([Kortix pricing](https://kortix.com/pricing), checked October 2026). A running machine bills by the second. A stopped one costs nothing. A job that needs four attempts pays for four attempts, and you can watch each one.
+Kortix bills machine time in credits. Free is $0 with 500 credits per month on your first workspace, on your own provider keys or a ChatGPT subscription; managed models are on the Credits plan only. Paid starts at $50 a month. Every tier buys credits at 1 credit = $0.01, and the $200 tier carries 20,000 credits, about 1,830 agent-computer hours. Members are unlimited and free, and the account shares one credit pool ([Kortix pricing](https://kortix.com/pricing), checked October 2026). A running machine bills by the second. A stopped one costs nothing. A job that needs four attempts pays for four attempts, and you can watch each one.
 
 ## Where Activepieces is the cheaper answer
 

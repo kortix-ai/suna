@@ -41,7 +41,7 @@ mock.module('@tanstack/react-query', () => ({
 }));
 
 mock.module('./route-project', () => ({
-  useKortixRouteProjectId: () => routeProjectId,
+  useKortixRouteWorkspaceId: () => routeProjectId,
 }));
 
 mock.module('./use-runtime-sessions/keys', () => ({
@@ -51,13 +51,13 @@ mock.module('./use-runtime-sessions/keys', () => ({
 
 mock.module('../core/rest/projects-client', () => ({
   getProject: async () => projectRow,
-  getProjectModelPicker: async () => {
+  getWorkspaceModelPicker: async () => {
     pickerFetches++;
     throw new ApiError('Invalid or expired token', { status: 401 });
   },
-  getProjectLlmCatalogProviders: async () => ({ providers: [] }),
-  listProjectSecrets: async () => ({ items: [] }),
-  addComputerToProject: async () => ({ tunnelId: 'tunnel-1' }),
+  getWorkspaceLlmCatalogProviders: async () => ({ providers: [] }),
+  listWorkspaceSecrets: async () => ({ items: [] }),
+  addComputerToWorkspace: async () => ({ tunnelId: 'tunnel-1' }),
 }));
 
 const actualApiClient: Record<string, unknown> = await import('../core/http/api-client');

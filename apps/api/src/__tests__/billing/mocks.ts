@@ -76,6 +76,8 @@ export function registerGlobalMocks() {
   mock.module('../../shared/resolve-account', () => ({
     resolveAccountId: async (userId: string) =>
       mockRegistry.resolveAccountId ? mockRegistry.resolveAccountId(userId) : userId,
+    // project-access.ts and accounts/core/app.ts import it at load.
+    accountKeyForWorkspaceId: async (id: string) => id,
   }));
 
   mock.module('../../billing/repositories/credit-accounts', () => ({

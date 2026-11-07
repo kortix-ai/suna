@@ -8,6 +8,7 @@ import type { ConnectorRouterDeps } from '../router';
 import { OkSchema, OpaqueSchema, ProjectSlugParam, featureNotSupportedResponse } from './shared';
 import { analyticsSource, isPersonSource } from '../../middleware/analytics-source';
 import { captureProductEvent } from '../../shared/product-analytics';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /**
  * Connecting an account the whole project uses is a person's choice, and the
@@ -15,7 +16,7 @@ import { captureProductEvent } from '../../shared/product-analytics';
  * connects its own account (owner `me`) instead.
  */
 const AGENT_PROJECT_CONNECT_REFUSAL = {
-  error: 'An agent cannot connect an account the whole project uses. A person connects it in Customize → Connectors; the agent can connect its own with owner "me".',
+  error: 'An agent cannot connect an account the whole workspace uses. A person connects it in Customize → Connectors; the agent can connect its own with owner "me".',
   code: 'agent_session_forbidden',
 } as const;
 
@@ -24,7 +25,7 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors/{slug}/connect',
+      path: '/projects/{workspaceId}/connectors/{slug}/connect',
       tags: ['connector'],
       summary: 'Start an easy-connect authorization',
       ...auth,
@@ -39,7 +40,7 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -94,7 +95,7 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors/{slug}/connect/finalize',
+      path: '/projects/{workspaceId}/connectors/{slug}/connect/finalize',
       tags: ['connector'],
       summary: 'Finalize an easy-connect authorization',
       ...auth,
@@ -108,7 +109,7 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -173,12 +174,12 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/sessions/{sessionId}/connect-requests',
+      path: '/projects/{workspaceId}/sessions/{sessionId}/connect-requests',
       tags: ['connector'],
       summary: 'Connectors this session asked a human to authorize',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string().min(1) }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string().min(1) }),
       },
       responses: {
         200: json(OpaqueSchema, 'Pending connect requests'),
@@ -186,7 +187,7 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);

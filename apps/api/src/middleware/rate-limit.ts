@@ -6,6 +6,7 @@ import { existsPublicShare } from '../shared/session-public-shares';
 import { recordAuditEvent } from '../shared/audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { TokenBucketRateLimiter, type RateLimitPolicy, type RateLimitResult } from '../shared/rate-limit';
+import { workspaceIdParam } from '../shared/route-params';
 
 interface AuditContext {
   accountId?: string | null;
@@ -121,7 +122,7 @@ export function createProjectSecretWriteRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
     const method = c.req.method.toUpperCase();
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
-    const projectId = c.req.param('projectId') || 'unknown';
+    const projectId = workspaceIdParam(c) || 'unknown';
     const result = projectSecretWriteLimiter.check(projectId, {
       limit: positiveInt((config as any).KORTIX_PROJECT_SECRET_WRITES_PER_HOUR, 100),
       windowMs: 60 * 60_000,
@@ -342,7 +343,7 @@ export function createCheckEmailRateLimitMiddleware() {
  */
 export function createProjectWebhookRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
-    const projectId = c.req.param('projectId') || 'unknown';
+    const projectId = workspaceIdParam(c) || 'unknown';
     const result = projectWebhookLimiter.check(`${projectId}:${requestClientKey(c)}`, {
       limit: positiveInt((config as any).KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN, 120),
       windowMs: 60_000,

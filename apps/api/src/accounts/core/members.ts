@@ -1,7 +1,8 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects } from '@kortix/db';
+import { roleAssignments } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
-import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { ACCOUNT_ACTIONS, assertAuthorized, authorize, workspaceFactsOf } from '../../iam';
+import { accountRoleForWorkspaceRole, parseWorkspaceRole, workspaceRoleFromRows } from '../../iam/roles';
 import { actorOf } from '../../iam/actor';
 import { visibleDirectory } from '../../iam/directory-visibility';
 import { isAudienceObjectType } from '../../iam/audience-grants';
@@ -14,9 +15,11 @@ import {
   projectRoleGrants,
 } from '../../iam/read-models';
 import {
+  assignRole,
   auditAssignmentRevoked,
   deleteProjectScopeAssignments,
   listAssignments,
+  SYSTEM_ACTOR,
   type Writer,
 } from '../../iam/assignments';
 import { db } from '../../shared/db';
@@ -32,9 +35,10 @@ import {
   countOwners,
   getMembership,
   lookupEmailsByUserIds,
-  parseRole,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
+import { projectsView } from '../../workspaces/rows';
 
 
 /**
@@ -99,6 +103,17 @@ async function auditProjectAssignmentsRevoked(
   }
 }
 
+/** The user's live system `manager` row on one project, or null. */
+async function projectManagerAssignment(accountId: string, userId: string, projectId: string) {
+  const rows = await listAssignments({
+    accountId,
+    principal: { type: 'user', id: userId },
+    scopeType: 'project',
+    scopeId: projectId,
+  });
+  return rows.find((row) => row.roleIsSystem && row.objectType === null && row.roleKey === 'manager') ?? null;
+}
+
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
 export function registerMemberRoutes(): void {
@@ -106,7 +121,7 @@ export function registerMemberRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/members',
+      path: '/{workspaceId}/members',
       tags: ['accounts'],
       summary: 'List account members',
       ...auth,
@@ -118,7 +133,7 @@ export function registerMemberRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
@@ -167,9 +182,9 @@ export function registerMemberRoutes(): void {
         Promise.all([
           projectRoleGrants({ accountId }),
           db
-            .select({ projectId: projects.projectId, name: projects.name })
-            .from(projects)
-            .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active'))),
+            .select({ projectId: projectsView.projectId, name: projectsView.name })
+            .from(projectsView)
+            .where(and(eq(projectsView.accountId, accountId), eq(projectsView.status, 'active'))),
         ]),
         // Group memberships for every member, in one query — so the member list
         // can show which groups each person belongs to without N round-trips.
@@ -255,12 +270,19 @@ export function registerMemberRoutes(): void {
       const projectGrantCountByUser = new Map<string, number>();
       const projectsByUser = new Map<
         string,
-        Array<{ project_id: string; name: string; role: string }>
+        Array<{ project_id: string; workspace_id: string; name: string; role: string }>
       >();
+      // The ladder role on the workspace's one project (1:1); a split_pending
+      // account has no single workspace project, so a member reads `member`.
+      const soleProjectId = activeProjects.length === 1 ? activeProjects[0]!.projectId : null;
+      const projectRoleOnWorkspace = new Map<string, string>();
+      for (const r of projectGrantRows) {
+        if (r.projectId === soleProjectId) projectRoleOnWorkspace.set(r.userId, r.role);
+      }
       for (const r of projectGrantRows) {
         projectGrantCountByUser.set(r.userId, (projectGrantCountByUser.get(r.userId) ?? 0) + 1);
         const list = projectsByUser.get(r.userId) ?? [];
-        list.push({ project_id: r.projectId, name: r.name, role: r.role });
+        list.push({ project_id: r.projectId, workspace_id: r.projectId, name: r.name, role: r.role });
         projectsByUser.set(r.userId, list);
       }
 
@@ -283,6 +305,7 @@ export function registerMemberRoutes(): void {
             return {
               user_id: r.userId,
               email: emails.get(r.userId) ?? null,
+              role: workspaceRoleFromRows(r.accountRole, projectRoleOnWorkspace.get(r.userId) ?? null) ?? 'member',
               account_role: r.accountRole,
               is_super_admin: r.isSuperAdmin,
               explicit_project_count: showSensitive
@@ -307,11 +330,11 @@ export function registerMemberRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/members/{userId}',
+      path: '/{workspaceId}/members/{userId}',
       tags: ['accounts'],
       summary: 'Remove a member',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), userId: z.string().uuid() }) },
+      request: { params: z.object({ workspaceId: z.string(), userId: z.string().uuid() }) },
       responses: {
         200: json(OkSchema, 'Removal result'),
         ...errors(401, 403, 404, 409),
@@ -319,7 +342,7 @@ export function registerMemberRoutes(): void {
     }),
     async (c: any) => {
       const callerUserId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const targetUserId = c.req.param('userId');
 
       const callerMembership = await getMembership(callerUserId, accountId);
@@ -350,18 +373,21 @@ export function registerMemberRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/members/{userId}',
+      path: '/{workspaceId}/members/{userId}',
       tags: ['accounts'],
       summary: "Change a member's role",
       ...auth,
       request: {
-        params: z.object({ accountId: z.string(), userId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string(), userId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({ role: z.string() }) } } },
       },
       responses: {
         200: json(
           z.object({
             user_id: z.string(),
+            /** The workspace ladder role: owner | admin | manager | member. */
+            role: z.string(),
+            /** Deprecated: the stored account-scope role. */
             account_role: z.string(),
             unchanged: z.boolean().optional(),
           }),
@@ -372,7 +398,7 @@ export function registerMemberRoutes(): void {
     }),
     async (c: any) => {
       const callerUserId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const targetUserId = c.req.param('userId');
 
       const callerMembership = await getMembership(callerUserId, accountId);
@@ -380,8 +406,11 @@ export function registerMemberRoutes(): void {
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_UPDATE);
 
       const body = await readJsonObject(c);
-      const newRole = parseRole(body.role, ['owner', 'admin', 'member']);
-      if (!newRole) return c.json({ error: 'role must be one of owner|admin|member' }, 400);
+      // The one ladder (design.md §3.2 C3). `manager` = account member +
+      // project manager on the workspace's one project.
+      const newRole = parseWorkspaceRole(body.role);
+      if (!newRole) return c.json({ error: 'role must be one of owner|admin|manager|member' }, 400);
+      const newAccountRole = accountRoleForWorkspaceRole(newRole);
 
       const targetMembership = await getMembership(targetUserId, accountId);
       if (!targetMembership) return c.json({ error: 'Member not found' }, 404);
@@ -395,10 +424,22 @@ export function registerMemberRoutes(): void {
         return c.json({ error: 'Only an owner can assign or change the owner role' }, 403);
       }
 
-      if (targetMembership.accountRole === newRole) {
+      const { soleProjectId } = await workspaceFactsOf(accountId);
+      if (newRole === 'manager' && !soleProjectId) {
+        return c.json(
+          { error: 'Manager needs a workspace that is set up. On a legacy account with several projects, grant Manager per project.' },
+          400,
+        );
+      }
+      const managerRow = soleProjectId ? await projectManagerAssignment(accountId, targetUserId, soleProjectId) : null;
+      const currentRole =
+        workspaceRoleFromRows(targetMembership.accountRole, managerRow ? 'manager' : null) ?? 'member';
+
+      if (currentRole === newRole) {
         return c.json({
           user_id: targetUserId,
-          account_role: newRole,
+          role: newRole,
+          account_role: newAccountRole,
           unchanged: true,
         });
       }
@@ -410,7 +451,7 @@ export function registerMemberRoutes(): void {
         return c.json({ error: 'Only owners can grant the owner role' }, 403);
       }
 
-      if (targetMembership.accountRole === 'owner' && newRole !== 'owner') {
+      if (targetMembership.accountRole === 'owner' && newAccountRole !== 'owner') {
         const owners = await countOwners(accountId);
         if (owners <= 1) {
           return c.json({ error: 'Cannot demote the last owner' }, 409);
@@ -418,19 +459,37 @@ export function registerMemberRoutes(): void {
       }
 
       const writer = await actorOf(c, accountId);
-      await auditAccountRoleRevoked(writer, accountId, targetUserId, newRole);
-      // Demoting an owner also clears the super-admin bypass the owner held
-      // (`clearSuperAdminAfterOwnerLoss`, run by the exclusive grant).
-      await grantAccountRole(writer, accountId, targetUserId, newRole);
+      if (targetMembership.accountRole !== newAccountRole) {
+        await auditAccountRoleRevoked(writer, accountId, targetUserId, newAccountRole);
+        // Demoting an owner also clears the super-admin bypass the owner held
+        // (`clearSuperAdminAfterOwnerLoss`, run by the exclusive grant).
+        await grantAccountRole(writer, accountId, targetUserId, newAccountRole);
+      }
 
       if (newRole === 'owner' || newRole === 'admin') {
         // Owners/admins get implicit Manager on every project; their direct
         // project assignments would shadow nothing useful, so clean them up.
         await auditProjectAssignmentsRevoked(writer, accountId, targetUserId);
         await deleteProjectScopeAssignments(accountId, targetUserId);
+      } else if (newRole === 'manager' && soleProjectId) {
+        // The route asserted member.update; `SYSTEM_ACTOR` skips re-deriving
+        // project.members.manage, `grantedBy` names the caller.
+        await assignRole(SYSTEM_ACTOR, accountId, {
+          principal: { type: 'user', id: targetUserId },
+          roleKey: 'manager',
+          scope: { type: 'project', id: soleProjectId },
+          source: 'manual',
+          exclusive: true,
+          grantedBy: callerUserId,
+        });
+      } else if (newRole === 'member' && managerRow) {
+        // Membership is access: a member needs no project row, so the manager
+        // row goes and nothing replaces it.
+        await auditAssignmentRevoked(writer, accountId, managerRow);
+        await db.delete(roleAssignments).where(eq(roleAssignments.assignmentId, managerRow.assignmentId));
       }
       invalidateIamCacheForUser(targetUserId);
-      if (newRole === 'member') {
+      if (newAccountRole === 'member') {
         // An owner or admin reached every company drive; as a member they reach
         // only what is granted, and drives they attached by role leave now.
         await import('../../drives/service').then(({ enforceDriveMounts }) => enforceDriveMounts({ accountId }));
@@ -438,7 +497,8 @@ export function registerMemberRoutes(): void {
 
       return c.json({
         user_id: targetUserId,
-        account_role: newRole,
+        role: newRole,
+        account_role: newAccountRole,
       });
     },
   );
@@ -447,7 +507,7 @@ export function registerMemberRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/leave',
+      path: '/{workspaceId}/leave',
       tags: ['accounts'],
       summary: 'Leave an account',
       ...auth,
@@ -459,7 +519,7 @@ export function registerMemberRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Not a member' }, 404);

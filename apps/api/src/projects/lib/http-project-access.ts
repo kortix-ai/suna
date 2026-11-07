@@ -14,7 +14,7 @@ import { authorize, assertAuthorized } from '../../iam/authorize';
 import { actorOf } from '../../iam/actor';
 import type { ProjectAccessAction } from '../access';
 import { authorizeProjectAccess, loadProjectRow, resolveRequestedProjectAccount } from './project-access';
-import { projectQuotaDenial } from './project-quota';
+import { projectCreationDenial } from './project-quota';
 import { normalizeString } from './serializers';
 import { isRepositoryProjectAction, sessionWorkspaceAllowsRepositoryAccess } from './session-workspace-access';
 
@@ -26,7 +26,12 @@ export async function resolveProjectAccount(c: Context<AppEnv>, body?: Record<st
     body?.account_id ??
     body?.accountId,
   );
-  const scope = await resolveRequestedProjectAccount(userId, requested);
+  // A workspace-bound key with no account named acts in its own workspace's
+  // account (the fence's `reach: 'credential'`), never the person's first one.
+  const bound = c.get('tokenProjectId') ? (c.get('accountId') as string | undefined) : undefined;
+  // A service account acts in the account its credential belongs to, never another.
+  const serviceAccountOf = c.get('authType') === 'service_account' ? (c.get('accountId') ?? '') : null;
+  const scope = await resolveRequestedProjectAccount(userId, requested ?? bound ?? null, serviceAccountOf);
   c.set('accountId', scope.accountId);
   return scope;
 }
@@ -149,12 +154,14 @@ export async function loadProjectForUser(c: Context<AppEnv>, projectId: string, 
   return access;
 }
 
-// Enforce the per-account project cap. Returns a typed 403 response to send, or
-// null when the account may create another project.
+// Refuse one more project in the account: 409 `workspace_has_project` when the
+// account already holds its one active project (Workspaces 1:1). Returns the
+// response to send, or null when the account may create its project
+// (`projectCreationDenial`).
 export async function enforceProjectQuota(
   c: Context,
   accountId: string,
 ) {
-  const denial = await projectQuotaDenial(accountId);
-  return denial ? c.json(denial, 403) : null;
+  const denial = await projectCreationDenial(accountId);
+  return denial ? c.json(denial.body, denial.status) : null;
 }

@@ -44,7 +44,7 @@ import {
   type ReachableScope,
   type SessionInbound,
 } from '@kortix/api-contract/multi-agent';
-import { projectSessions, projects, sessionLifecycleCommands, sessionPeerMessages } from '@kortix/db';
+import { projectSessions, sessionLifecycleCommands, sessionPeerMessages } from '@kortix/db';
 import { peerMessagePromptText, type PeerMessageKind } from '@kortix/shared';
 import { and, desc, eq, gt, gte, inArray, lte, or, sql } from 'drizzle-orm';
 import { randomAlphanumeric } from '../../shared/crypto';
@@ -58,6 +58,7 @@ import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { buildSessionTranscriptDigest } from '../lib/session-transcript';
 import { RESULT_EXCERPT_KEY, RESULT_EXCERPT_MAX_CHARS, plainExcerpt, readSessionBoards, sessionInbound, sessionTeamLead } from '../lib/session-board';
 import { projectSessionMetadataMerge } from '../lib/session-metadata-merge';
+import { sessionTitleFromMetadata } from '../lib/session-title-placeholder';
 import { readSessionsWorking } from '../lib/session-working-read';
 import type { ProjectSessionRow } from '../lib/serializers';
 import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
@@ -65,6 +66,7 @@ import { stopSession } from '../session-lifecycle/stop';
 import { enqueueSessionNotice } from '../session-notice-batch';
 import { teamHandle } from '../team-tasks/service';
 import { mintWireMessageId } from '../wire-message-id';
+import { projectsView } from '../../workspaces/rows';
 
 /** Sessions one reachable list returns at most. */
 export const REACHABLE_MAX = 200;
@@ -100,11 +102,6 @@ const isLive = (row: Pick<SessionRow, 'metadata'>) =>
   typeof ((row.metadata ?? {}) as Record<string, unknown>).deletedAt !== 'string';
 
 const liveSql = sql`coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
-
-function title(row: SessionRow): string | null {
-  const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  return [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
-}
 
 /** How `other` relates to `self`. */
 export function relationOf(self: SessionRow, other: SessionRow): AgentRelation {
@@ -166,7 +163,7 @@ async function describe(self: SessionRow, rows: SessionRow[], caller: PeerCaller
       short_id: row.sessionId.slice(0, 8),
       project_id: row.projectId,
       agent_name: row.agentName,
-      title: title(row),
+      title: sessionTitleFromMetadata(row.metadata),
       relation,
       state: boards.get(row.sessionId)?.board_state ?? 'idle',
       inbound,
@@ -189,7 +186,7 @@ export async function reachableAgents(input: {
   const { self, caller } = input;
   const otherProject = input.projectId && input.projectId !== self.projectId ? input.projectId : null;
   if (otherProject) {
-    const [project] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, otherProject)).limit(1);
+    const [project] = await db.select({ accountId: projectsView.accountId }).from(projectsView).where(eq(projectsView.projectId, otherProject)).limit(1);
     if (!project || project.accountId !== self.accountId) throw new PeerMessageError(404, 'Project not found', 'project_not_found');
     if (input.scope !== 'project') throw new PeerMessageError(400, 'project_id needs scope=project', 'project_id_needs_project_scope');
   }
@@ -405,7 +402,7 @@ export async function sendPeerMessage(input: {
   }
   const projectId = body.project_id ?? sender.projectId;
   if (projectId !== sender.projectId) {
-    const [project] = await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+    const [project] = await db.select({ accountId: projectsView.accountId }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
     if (!project || project.accountId !== sender.accountId) throw new PeerMessageError(404, 'Project not found', 'project_not_found');
   }
   const found = await resolveRecipient(sender, body.to, projectId);

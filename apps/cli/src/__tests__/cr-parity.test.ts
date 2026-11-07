@@ -76,7 +76,7 @@ function startServer(): string {
       const url = new URL(req.url);
       const body = req.method === 'GET' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
-      const base = `/v1/projects/${PROJECT}`;
+      const base = `/v1/workspaces/${PROJECT}`;
 
       if (url.pathname === `${base}/change-requests` && req.method === 'GET') {
         return Response.json({ change_requests: [changeRequest()] });
@@ -249,8 +249,8 @@ describe('kortix cr — review parity', () => {
     const r = await runCli(['cr', 'merge-preview', CR_ID, '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls.map((c) => c.path)).toEqual([
-      `/v1/projects/${PROJECT}/change-requests/${CR_ID}`,
-      `/v1/projects/${PROJECT}/change-requests/${CR_ID}/merge-preview`,
+      `/v1/workspaces/${PROJECT}/change-requests/${CR_ID}`,
+      `/v1/workspaces/${PROJECT}/change-requests/${CR_ID}/merge-preview`,
     ]);
     expect(r.stdout).toContain('Mergeable cleanly');
     expect(r.stdout).toContain('fast-forward');
@@ -282,7 +282,7 @@ describe('kortix cr — review parity', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/change-requests/${CR_ID}/request-changes`,
+      path: `/v1/workspaces/${PROJECT}/change-requests/${CR_ID}/request-changes`,
       body: { feedback: 'Rename it first' },
     });
     expect(r.stdout).toContain('Delivering to the agent');
@@ -306,7 +306,7 @@ describe('kortix cr — review parity', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'GET',
-      path: `/v1/projects/${PROJECT}/version-diff?from=feature%2Fx&into=main`,
+      path: `/v1/workspaces/${PROJECT}/version-diff?from=feature%2Fx&into=main`,
       body: null,
     });
     expect(r.stdout).toContain('3 files');

@@ -126,6 +126,7 @@ describe('kortix tui — flags', () => {
     expect(flags).toMatchObject({ newSession: true, agent: 'engineering', terminal: true });
     const env = tuiChildEnv(flags, {});
     expect(env).toEqual({
+      KORTIX_WORKSPACE_ID: 'p1',
       KORTIX_PROJECT_ID: 'p1',
       KORTIX_TUI_NEW: '1',
       KORTIX_TUI_AGENT: 'engineering',
@@ -171,9 +172,16 @@ describe('kortix tui — the child environment', () => {
     ).toEqual({
       PATH: '/usr/bin',
       KORTIX_TUI_HOST: 'cloud',
+      KORTIX_WORKSPACE_ID: 'p1',
       KORTIX_PROJECT_ID: 'p1',
       KORTIX_SESSION_ID: 's1',
     });
+  });
+
+  test('--workspace beats an inherited KORTIX_WORKSPACE_ID (the TUI reads that name first)', () => {
+    const env = tuiChildEnv({ project: 'from-flag' }, { KORTIX_WORKSPACE_ID: 'from-shell', KORTIX_PROJECT_ID: 'from-shell' });
+    expect(env.KORTIX_WORKSPACE_ID).toBe('from-flag');
+    expect(env.KORTIX_PROJECT_ID).toBe('from-flag');
   });
 
   test('an unset flag never shadows what the shell already exported', () => {

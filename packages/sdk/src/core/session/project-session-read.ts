@@ -15,7 +15,7 @@
  * Internal: not exported from any public entry point.
  */
 
-import { getProjectSession, type ProjectSession } from '../rest/projects-client/sessions';
+import { getWorkspaceSession, type ProjectSession } from '../rest/projects-client/sessions';
 import { claimOpenBundle } from './open-bundle';
 
 export async function readProjectSessionRow(
@@ -25,7 +25,7 @@ export async function readProjectSessionRow(
     bundle: boolean;
     /** The row endpoint. Injected so a host-level test double of the REST
      *  barrel reaches this read too. */
-    fetchRow?: typeof getProjectSession;
+    fetchRow?: typeof getWorkspaceSession;
   },
 ): Promise<ProjectSession> {
   const claimed = options.bundle ? claimOpenBundle(projectId, sessionId) : null;
@@ -33,6 +33,6 @@ export async function readProjectSessionRow(
     const bundle = await claimed;
     if (bundle?.session) return bundle.session;
   }
-  const fetchRow = options.fetchRow ?? getProjectSession;
+  const fetchRow = options.fetchRow ?? getWorkspaceSession;
   return fetchRow(projectId, sessionId, { showErrors: false });
 }

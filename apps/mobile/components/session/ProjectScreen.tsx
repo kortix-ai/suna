@@ -81,7 +81,6 @@ import {
 import { Drawer } from 'react-native-drawer-layout';
 import { haptics } from '@/lib/haptics';
 import {
-  useAccounts,
   useProject,
   useProjectSession,
   useProjectSessions,
@@ -191,11 +190,7 @@ export function ProjectScreen() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const openSwitcher = useCallback(() => setSwitcherOpen(true), []);
   const closeSwitcher = useCallback(() => setSwitcherOpen(false), []);
-  // The switcher opens on the project's own account (a deep link can open a
-  // project in an account other than the selected one). Same queries as
-  // the drawer's switcher row, so react-query shares them.
   const { data: project } = useProject(projectId);
-  const accountsQuery = useAccounts();
 
   // This phone's opt-outs reach the user's record once (KRTX-1742). A no-op
   // after the first success (`legacyKindsMigrated`).
@@ -356,6 +351,9 @@ export function ProjectScreen() {
   const { topRouteRef, topNavigationRef, edgeGesture, setEdgeGesture, replaceProject, returnHome, navigateProjectRoute, openSubPage } = useProjectStack(
     projectId, goHome, returnToThread, drawerOpen, setDrawerOpen,
   );
+  // The switcher's "Workspace settings": the settings page, pushed as a
+  // sub-page (back returns to where the user was).
+  const openWorkspaceSettings = useCallback(() => openSubPage('page:settings'), [openSubPage]);
 
   // ── Presentation glue ──
 
@@ -923,16 +921,15 @@ export function ProjectScreen() {
           all open it through `openSessionActions` (ProjectRouteValue). */}
       <SessionActionsSheet ref={actionsSheetRef} projectId={projectId} onOpenFiles={openFilesOverThread} />
 
-      {/* The project/account switcher (COR-124), opened by the drawer's
-          switcher row. A picked project closes the drawer too. */}
+      {/* The workspace switcher (COR-124, Workspaces ux.md §3), opened by
+          the drawer's switcher row. A picked workspace closes the drawer too. */}
       <ProjectSwitcherSheet
         open={switcherOpen}
-        accounts={accountsQuery.data ?? []}
-        selectedAccountId={project?.account_id ?? null}
         currentProjectId={projectId}
         onClose={closeSwitcher}
         onProjectOpen={closeDrawer}
         openProjectRoute={replaceProject}
+        onOpenWorkspaceSettings={openWorkspaceSettings}
       />
     </>
   );

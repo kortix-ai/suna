@@ -266,31 +266,18 @@ describe('queries return the rows they name', () => {
     expect(hits('customize').sort()).toEqual(['nav:proj-customize']);
   });
 
-  test('"project" returns the three rows that say the word, not every project-scoped row', () => {
-    // `account-access-projects` is the account hub's "Projects" pane — the
-    // word is its own label, which is exactly the bar this file sets. Ten
-    // `proj-*` rows used to answer this by their ids.
-    //
-    // `proj-members` joined them when the product settled on ONE noun for a
-    // unit of work: its label is now "Project members" (it was "Workspace
-    // members"), so it answers by visible text like the other two — not by its
-    // id (`features/workspace/workspace-vocabulary.test.ts`).
-    expect(hits('project').sort()).toEqual([
-      'nav:account-access-projects',
-      'nav:nav-projects',
-      'nav:proj-members',
-    ]);
+  test('"project" still finds the workspace switcher, by its search keyword only', () => {
+    // 2026-11-05: "project" left the UI for "workspace". No row label says
+    // "project" any more. The switcher keeps "project projects" in its hidden
+    // keywords so a person who learned the old word still finds it. Ten
+    // `proj-*` rows used to answer by their ids; none does.
+    expect(hits('project').sort()).toEqual(['nav:nav-projects']);
   });
 
   test('"proj" matches nothing by id', () => {
-    // Ten `proj-*` rows used to answer this. The three that survive all carry
-    // the word as visible label text — "Projects" for two, "Project members"
-    // for `proj-members` — so the `proj-*` id itself still matches nothing.
-    expect(hits('proj').sort()).toEqual([
-      'nav:account-access-projects',
-      'nav:nav-projects',
-      'nav:proj-members',
-    ]);
+    // Ten `proj-*` rows used to answer this. Only the switcher survives, through
+    // its "project" keyword, so the `proj-*` id itself still matches nothing.
+    expect(hits('proj').sort()).toEqual(['nav:nav-projects']);
   });
 
   test('"nav" and "pref" are not queries at all', () => {
@@ -314,26 +301,13 @@ describe('queries return the rows they name', () => {
       expect(`${item.label} ${item.keywords ?? ''}`.toLowerCase()).toContain('account');
     }
     const result = hits('account');
-    // Every hit owns the word: the switcher, the nine "Account · X" sections,
-    // "your account", "connected accounts".
+    // Every hit owns the word: the account switcher row, the members row and
+    // the service account tokens row by their keywords or labels, and "your
+    // account" on the profile row. The "Account · X" sections became
+    // "Workspace · X" on 2026-11-05.
     expect(result.sort()).toEqual([
-      'nav:account-access-projects',
-      'nav:account-audit',
-      'nav:account-billing',
-      'nav:account-branding',
-      'nav:account-general',
-      'nav:account-git',
-      'nav:account-groups',
-      'nav:account-help',
-      'nav:account-identity',
       'nav:account-members',
-      'nav:account-roles',
       'nav:account-tokens',
-      'nav:account-usage',
-      'nav:nav-accounts',
-      // Credits and Plan left the overlay for the account page on 2026-09-03;
-      // their `nav:account-usage` / `nav:account-billing` rows above own the
-      // word now.
       'settings:profile',
     ]);
   });
@@ -430,7 +404,7 @@ describe('queries return the rows they name', () => {
     expect(hits('skills')).not.toContain('nav:restart-config');
     expect(hits('skills')).toContain('nav:proj-skills');
     // The Marketplace installs both and used to keep the words. It is a
-    // section of `/projects/<id>/config` now, and that row deliberately drops
+    // section of `/workspaces/<id>/config` now, and that row deliberately drops
     // 'agents'/'skills': it would shadow the two rows above, which ARE those
     // pages, and `filteredNavItems` preserves declaration order rather than
     // ranking by relevance.
@@ -451,7 +425,7 @@ describe('queries return the rows they name', () => {
   test('"log" no longer drags Snapshots into an audit search', () => {
     expect(hits('log')).toContain('nav:account-audit');
     // Snapshots merged into the Sandbox templates section of
-    // `/projects/<id>/config`. That row carries the word "snapshots" but
+    // `/workspaces/<id>/config`. That row carries the word "snapshots" but
     // deliberately NOT "logs" — nor "catalog", which is why the Models row
     // does not carry that word either — so an audit search still does not drag
     // either of them in.
@@ -481,7 +455,7 @@ describe('genuine synonyms still answer', () => {
     ['abilities', 'nav:proj-skills'],
     ['drive', 'nav:proj-files'],
     ['threads', 'nav:proj-sessions'],
-    ['organizations', 'nav:nav-accounts'],
+    ['organizations', 'nav:nav-workspace-settings'],
     ['conflict', 'nav:sync-session-branch'],
     ['reconcile', 'nav:sync-session-branch'],
     ['restart', 'nav:restart-config'],
@@ -489,7 +463,7 @@ describe('genuine synonyms still answer', () => {
     ['signout', 'nav:logout'],
     // Was `settings:secrets`, then `nav:proj-customize` while Secrets' words
     // sat in that row's thirteen-page keyword bag. Secrets is its own
-    // capability page (`/projects/<id>/secrets`) and has had its own row since
+    // capability page (`/workspaces/<id>/secrets`) and has had its own row since
     // this change.
     ['env', 'nav:proj-secrets'],
     // Was `settings:schedules` / `settings:webhooks`. Both merged into one
@@ -502,7 +476,7 @@ describe('genuine synonyms still answer', () => {
     // answered by a registry row. `api-keys` came BACK on 2026-08-18 as the
     // `tokens` tab (the personal half only), so `pat` reaches a settings row
     // again — `nav:account-tokens` answers for service account tokens.
-    ['pat', 'settings:tokens'],
+    ['pat', 'nav:account-tokens'],
     ['hotkeys', 'settings:preferences'],
     ['ledger', 'nav:account-usage'],
     ['configure', 'nav:proj-customize'],
@@ -571,7 +545,7 @@ describe('subscription usage destinations', () => {
   });
   test('subscription results select the Usage tab and matching provider', () => {
     const items = getItemsForSurface('commandPalette');
-    expect(items.find(item => item.id === 'proj-chatgpt-usage')?.href).toBe('/projects/{projectId}/admin/models?tab=usage&provider=codex');
-    expect(items.find(item => item.id === 'proj-claude-usage')?.href).toBe('/projects/{projectId}/admin/models?tab=usage&provider=claude-agent');
+    expect(items.find(item => item.id === 'proj-chatgpt-usage')?.href).toBe('/workspaces/{projectId}/admin/models?tab=usage&provider=codex');
+    expect(items.find(item => item.id === 'proj-claude-usage')?.href).toBe('/workspaces/{projectId}/admin/models?tab=usage&provider=claude-agent');
   });
 });

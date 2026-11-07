@@ -23,10 +23,10 @@ export function settingsRefusalText(reason: SettingsRefusal, command: string, no
   switch (reason) {
     case 'unlinked':
       return config.SLACK_REQUIRE_USER_IDENTITY
-        ? `Connect your Kortix account first: \`${command} login\`. Channel settings change only for a linked project manager.`
+        ? `Connect your Kortix account first: \`${command} login\`. Channel settings change only for a linked workspace manager.`
         : "Change this channel's settings in Kortix: Slack account linking is off on this server.";
     case 'forbidden':
-      return "Only a project manager, or an account owner or admin, can change this channel's settings.";
+      return "Only a workspace manager, or a workspace owner or admin, can change this channel's settings.";
     case 'no_binding':
       return noBinding;
   }

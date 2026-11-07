@@ -10,11 +10,11 @@ import {
   resolveSettingsOverlayHref,
 } from './settings-tabs';
 
-describe('personal connected-account destinations', () => {
-  test('opens the personal profile without waiting for an organization', () => {
-    expect(isAccountGraduatedSection('connected')).toBe(false);
-    expect(resolveOverlayTab('connected')).toBe('profile');
-    expect(legacySectionRedirect('p1', 'connected')).toBe('/projects/p1/settings/profile');
+describe('Workspaces: workspace things leave /settings', () => {
+  test('connected opens Workspace settings › Git repo, never an overlay tab', () => {
+    expect(isAccountGraduatedSection('connected')).toBe(true);
+    expect(resolveOverlayTab('connected')).toBeNull();
+    expect(legacySectionRedirect('p1', 'connected', 'acc1')).toBe('/workspaces/p1?accountId=acc1&accountTab=git');
   });
 });
 
@@ -48,7 +48,8 @@ describe('SETTINGS_TABS', () => {
       'sessions',
       'preferences',
       'chrome',
-      'tokens',
+      // The caller's keys bound to no workspace (`GET /v1/me/tokens`).
+      'personal-keys',
       // The Connect pages (KRTX-1997).
       'mcp',
       'computer',
@@ -56,14 +57,14 @@ describe('SETTINGS_TABS', () => {
   });
 
   // The id has to stay `workspace`. `general` is spent on a GRADUATED redirect
-  // to `/projects/<id>/config`, and a live tab under that key would shadow
+  // to `/workspaces/<id>/config`, and a live tab under that key would shadow
   // every bookmark pointing at the config page.
   test('neither the workspace tab nor the graduated `general` id is live', () => {
     expect(SETTINGS_TABS).not.toContain('workspace' as never);
     expect(SETTINGS_TABS).not.toContain('general' as never);
   });
 
-  // Every project-configuration id left for `/projects/[id]/admin/general`. Asserted
+  // Every project-configuration id left for `/workspaces/[id]/admin/general`. Asserted
   // absent rather than merely left out of the list above, so re-adding one
   // without re-adding a pane fails here instead of shipping a rail row that
   // opens onto nothing.
@@ -88,7 +89,7 @@ describe('SETTINGS_TABS', () => {
   test('sandbox and feature-flags are not live tabs; their ids open the Settings tab sections', () => {
     for (const id of ['sandbox', 'feature-flags'] as const) {
       expect(parseSettingsTab(id)).toBeNull();
-      expect(legacySectionRedirect('p1', id)).toBe(`/projects/p1/admin/${id}`);
+      expect(legacySectionRedirect('p1', id)).toBe(`/workspaces/p1/admin/${id}`);
     }
   });
 
@@ -133,16 +134,16 @@ describe('legacySectionRedirect', () => {
   // entry. Without it the deep-link route falls back to the bare `/settings`
   // overlay and the link silently stops going where it used to.
   test('schedules and webhooks graduated to the merged Triggers page', () => {
-    expect(legacySectionRedirect('p1', 'schedules')).toBe('/projects/p1/admin/triggers');
-    expect(legacySectionRedirect('p1', 'webhooks')).toBe('/projects/p1/admin/triggers');
+    expect(legacySectionRedirect('p1', 'schedules')).toBe('/workspaces/p1/admin/triggers');
+    expect(legacySectionRedirect('p1', 'webhooks')).toBe('/workspaces/p1/admin/triggers');
     expect(parseSettingsTab('schedules')).toBeNull();
     expect(parseSettingsTab('webhooks')).toBeNull();
     // They must not reopen the overlay either — a stale `/settings/schedules`
     // href has to fall through to a real navigation.
-    expect(resolveSettingsOverlayHref('/projects/p1/settings/schedules')).toEqual({
+    expect(resolveSettingsOverlayHref('/workspaces/p1/settings/schedules')).toEqual({
       opensOverlay: false,
     });
-    expect(resolveSettingsOverlayHref('/projects/p1/settings/webhooks')).toEqual({
+    expect(resolveSettingsOverlayHref('/workspaces/p1/settings/webhooks')).toEqual({
       opensOverlay: false,
     });
   });
@@ -154,7 +155,7 @@ describe('legacySectionRedirect', () => {
    * the seven `llm-*` ids) now names a section on it — so the
    * rename map is gone and all of them are `GRADUATED` entries.
    *
-   * The URL segment is `config`, not `settings`: `/projects/<id>/settings` is
+   * The URL segment is `config`, not `settings`: `/workspaces/<id>/settings` is
    * the overlay's own deep-link route. Pinning the segment matters — a
    * redirect back onto `/settings/<id>` would bounce through
    * `parseSettingsTab`, get `null`, and land on the bare overlay.
@@ -163,21 +164,21 @@ describe('legacySectionRedirect', () => {
     // `workspace` was the overlay's own id for General between 2026-09-02
     // and 2026-09-03.
     for (const id of ['settings', 'general', 'workspace']) {
-      expect(legacySectionRedirect('p1', id)).toBe('/projects/p1/admin/general');
+      expect(legacySectionRedirect('p1', id)).toBe('/workspaces/p1/admin/general');
       expect(resolveOverlayTab(id)).toBeNull();
     }
     for (const id of ['git', 'repositories']) {
-      expect(legacySectionRedirect('p1', id)).toBe('/projects/p1/admin/git');
+      expect(legacySectionRedirect('p1', id)).toBe('/workspaces/p1/admin/git');
       expect(resolveOverlayTab(id)).toBeNull();
     }
   });
 
   test('experimental is renamed to feature-flags, and both ids open the Settings tab section', () => {
     expect(legacySectionRedirect('p1', 'experimental')).toBe(
-      '/projects/p1/admin/feature-flags',
+      '/workspaces/p1/admin/feature-flags',
     );
     expect(legacySectionRedirect('p1', 'feature-flags')).toBe(
-      '/projects/p1/admin/feature-flags',
+      '/workspaces/p1/admin/feature-flags',
     );
     expect(resolveOverlayTab('experimental')).toBeNull();
   });
@@ -187,42 +188,42 @@ describe('legacySectionRedirect', () => {
   // which is a capability tab of its own.
   test('every config id lands on the Settings tab, and review on its own tab', () => {
     const sections: Record<string, string> = {
-      general: '/projects/p1/admin/general',
-      settings: '/projects/p1/admin/general',
-      git: '/projects/p1/admin/git',
-      repositories: '/projects/p1/admin/git',
-      workspace: '/projects/p1/admin/general',
-      sandbox: '/projects/p1/admin/sandbox',
+      general: '/workspaces/p1/admin/general',
+      settings: '/workspaces/p1/admin/general',
+      git: '/workspaces/p1/admin/git',
+      repositories: '/workspaces/p1/admin/git',
+      workspace: '/workspaces/p1/admin/general',
+      sandbox: '/workspaces/p1/admin/sandbox',
       // Snapshots merged INTO the sandbox pane — a snapshot is the build
       // history of a sandbox template, not a separate pane any more.
-      snapshots: '/projects/p1/admin/sandbox',
-      experimental: '/projects/p1/admin/feature-flags',
-      'feature-flags': '/projects/p1/admin/feature-flags',
+      snapshots: '/workspaces/p1/admin/sandbox',
+      experimental: '/workspaces/p1/admin/feature-flags',
+      'feature-flags': '/workspaces/p1/admin/feature-flags',
     };
     for (const [legacyId, href] of Object.entries(sections)) {
       expect(legacySectionRedirect('p1', legacyId)).toBe(href);
       // None of them is an overlay tab any more — a `/settings/<id>` link
       // redirects instead of opening the dialog.
-      expect(resolveSettingsOverlayHref(`/projects/p1/settings/${legacyId}`)).toEqual({
+      expect(resolveSettingsOverlayHref(`/workspaces/p1/settings/${legacyId}`)).toEqual({
         opensOverlay: false,
       });
     }
-    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/review');
-    expect(resolveSettingsOverlayHref('/projects/p1/review')).toEqual({ opensOverlay: false });
+    expect(legacySectionRedirect('p1', 'review')).toBe('/workspaces/p1/review');
+    expect(resolveSettingsOverlayHref('/workspaces/p1/review')).toEqual({ opensOverlay: false });
   });
 
   test('secrets, channels, and models graduated a SECOND time — off /config, onto their own top-level tab', () => {
     const routes: Record<string, string> = {
-      secrets: '/projects/p1/admin/secrets',
-      channels: '/projects/p1/admin/connectors?scope=channels',
-      models: '/projects/p1/admin/models',
-      'llm-management': '/projects/p1/admin/models',
-      'llm-overview': '/projects/p1/admin/models',
-      'llm-providers': '/projects/p1/admin/models',
-      'llm-logs': '/projects/p1/admin/models',
-      'llm-budgets': '/projects/p1/admin/models',
-      'llm-keys': '/projects/p1/admin/models',
-      'llm-api': '/projects/p1/admin/models',
+      secrets: '/workspaces/p1/admin/secrets',
+      channels: '/workspaces/p1/admin/connectors?scope=channels',
+      models: '/workspaces/p1/admin/models',
+      'llm-management': '/workspaces/p1/admin/models',
+      'llm-overview': '/workspaces/p1/admin/models',
+      'llm-providers': '/workspaces/p1/admin/models',
+      'llm-logs': '/workspaces/p1/admin/models',
+      'llm-budgets': '/workspaces/p1/admin/models',
+      'llm-keys': '/workspaces/p1/admin/models',
+      'llm-api': '/workspaces/p1/admin/models',
       // `members` graduated a second time too, then a THIRD — off the project
       // entirely, onto the account page's Access tab. It is account-scoped
       // now (`ACCOUNT_GRADUATED`, with a `&project=` special case), covered
@@ -231,21 +232,21 @@ describe('legacySectionRedirect', () => {
     };
     for (const [legacyId, href] of Object.entries(routes)) {
       expect(legacySectionRedirect('p1', legacyId)).toBe(href);
-      expect(resolveSettingsOverlayHref(`/projects/p1/settings/${legacyId}`)).toEqual({
+      expect(resolveSettingsOverlayHref(`/workspaces/p1/settings/${legacyId}`)).toEqual({
         opensOverlay: false,
       });
     }
   });
 
   test('marketplace redirects to the Customize index — the product removed it, it did not move', () => {
-    expect(legacySectionRedirect('p1', 'marketplace')).toBe('/projects/p1/customize');
+    expect(legacySectionRedirect('p1', 'marketplace')).toBe('/workspaces/p1/customize');
   });
 
   test('graduated capability pages still leave the overlay', () => {
-    expect(legacySectionRedirect('p1', 'skills')).toBe('/projects/p1/admin/skills');
-    expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/customize/agents');
-    expect(legacySectionRedirect('p1', 'connectors')).toBe('/projects/p1/admin/connectors');
-    expect(legacySectionRedirect('p1', 'files')).toBe('/projects/p1/files');
+    expect(legacySectionRedirect('p1', 'skills')).toBe('/workspaces/p1/admin/skills');
+    expect(legacySectionRedirect('p1', 'agents')).toBe('/workspaces/p1/customize/agents');
+    expect(legacySectionRedirect('p1', 'connectors')).toBe('/workspaces/p1/admin/connectors');
+    expect(legacySectionRedirect('p1', 'files')).toBe('/workspaces/p1/files');
   });
 
   test('computers graduated to Connectors — a bookmark must not 404', () => {
@@ -253,7 +254,7 @@ describe('legacySectionRedirect', () => {
     // account of the `computer` connector. Both the legacy `/customize/
     // computers` and the settings-era `/settings/computers` deep links resolve
     // through this map, so neither can land on a tab that no longer exists.
-    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/admin/connectors');
+    expect(legacySectionRedirect('p1', 'computers')).toBe('/workspaces/p1/admin/connectors');
     expect(SETTINGS_TABS).not.toContain('computers' as never);
     expect(parseSettingsTab('computers')).toBeNull();
   });
@@ -268,7 +269,7 @@ describe('legacySectionRedirect', () => {
       'llm-keys',
       'llm-api',
     ]) {
-      expect(legacySectionRedirect('p1', s)).toBe('/projects/p1/admin/models');
+      expect(legacySectionRedirect('p1', s)).toBe('/workspaces/p1/admin/models');
     }
   });
 
@@ -279,17 +280,17 @@ describe('legacySectionRedirect', () => {
   // Coverage carried forward from the retired legacy Customize-sections test —
   // cases the spec test above doesn't exercise but the old suite caught.
   test('the graduated agent/agents spellings both redirect', () => {
-    expect(legacySectionRedirect('p1', 'agent')).toBe('/projects/p1/customize/agents');
+    expect(legacySectionRedirect('p1', 'agent')).toBe('/workspaces/p1/customize/agents');
   });
 
   test('changes redirects to the files proposed-changes panel', () => {
     expect(legacySectionRedirect('p1', 'changes')).toBe(
-      '/projects/p1/files?panel=proposed-changes',
+      '/workspaces/p1/files?panel=proposed-changes',
     );
   });
 
   test('an id that is still a settings tab resolves to its own overlay URL', () => {
-    expect(legacySectionRedirect('p1', 'preferences')).toBe('/projects/p1/settings/preferences');
+    expect(legacySectionRedirect('p1', 'preferences')).toBe('/workspaces/p1/settings/preferences');
   });
 
   test('files, connectors, skills, and agent are not settings tabs', () => {
@@ -302,7 +303,7 @@ describe('legacySectionRedirect', () => {
 
 /**
  * The eight account-scoped sections that left the overlay for
- * `/accounts/[id]`. Every one of them was a live `/projects/<id>/settings/<id>`
+ * `/accounts/[id]`. Every one of them was a live `/workspaces/<id>/settings/<id>`
  * URL, so the ONLY thing keeping those bookmarks alive is this map — without
  * it the deep-link route falls back to the bare overlay and the link silently
  * stops going where it used to.
@@ -327,6 +328,11 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     // The overlay's Account group (Credits, Plan) left on 2026-09-03.
     credits: 'transactions',
     plan: 'billing',
+    // Workspaces: personal access keys and GitHub connections are the
+    // workspace's (Workspace settings › API keys, Git repo).
+    tokens: 'tokens',
+    'api-keys': 'tokens',
+    connected: 'git',
   };
 
   test('the mirror above is the whole map', () => {
@@ -338,12 +344,12 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     for (const [legacyId, tab] of Object.entries(ACCOUNT_SECTIONS)) {
       // `members` is the one non-generic id: it carries an `accountProject=`
       // special case (see `legacySectionRedirect`) so a stale
-      // `/projects/<id>/members` bookmark lands pre-filtered to the project
+      // `/workspaces/<id>/members` bookmark lands pre-filtered to the project
       // it came from, not every project the account can see.
       const expected =
         legacyId === 'members'
-          ? `/projects/p1?accountId=acc1&accountTab=${tab}&accountProject=p1`
-          : `/projects/p1?accountId=acc1&accountTab=${tab}${legacyId === 'credits' ? '&accountTransactions=credit-ledger' : ''}`;
+          ? `/workspaces/p1?accountId=acc1&accountTab=${tab}&accountProject=p1`
+          : `/workspaces/p1?accountId=acc1&accountTab=${tab}${legacyId === 'credits' ? '&accountTransactions=credit-ledger' : ''}`;
       expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe(expected);
     }
   });
@@ -352,7 +358,7 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     for (const legacyId of Object.keys(ACCOUNT_SECTIONS)) {
       expect(SETTINGS_TABS).not.toContain(legacyId as never);
       expect(parseSettingsTab(legacyId)).toBeNull();
-      expect(resolveSettingsOverlayHref(`/projects/p1/settings/${legacyId}`)).toEqual({
+      expect(resolveSettingsOverlayHref(`/workspaces/p1/settings/${legacyId}`)).toEqual({
         opensOverlay: false,
       });
     }
@@ -377,29 +383,25 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
    * `api-keys` because `RENAMED` carries the old name to the new one. Neither
    * needs an account id any more, which is the observable difference.
    */
-  test('api-keys and tokens resolve INTO the overlay, with or without an account id', () => {
+  test('api-keys and tokens open Workspace settings › API keys', () => {
     for (const legacyId of ['api-keys', 'tokens']) {
-      expect(isAccountGraduatedSection(legacyId)).toBe(false);
-      expect(legacySectionRedirect('p1', legacyId)).toBe('/projects/p1/settings/tokens');
-      expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe('/projects/p1/settings/tokens');
+      expect(isAccountGraduatedSection(legacyId)).toBe(true);
+      expect(legacySectionRedirect('p1', legacyId, 'acc1')).toBe('/workspaces/p1?accountId=acc1&accountTab=tokens');
     }
   });
 
-  test('`tokens` is a live settings tab; `api-keys` is only ever a redirect', () => {
-    expect(parseSettingsTab('tokens')).toBe('tokens');
-    // The rename is one-way: `api-keys` never becomes a tab id, so nothing
-    // renders a pane for it and no rail row can claim it.
+  test('neither `tokens` nor `api-keys` is a settings tab any more', () => {
+    expect(parseSettingsTab('tokens')).toBeNull();
     expect(parseSettingsTab('api-keys')).toBeNull();
-    expect(SETTINGS_TABS).not.toContain('api-keys' as never);
   });
 
   test('an account id does not divert a project-scoped section', () => {
     // The account branch is checked first, so a bug there would swallow every
     // other id. These must still resolve to their project URLs with an
     // account id in hand.
-    expect(legacySectionRedirect('p1', 'skills', 'acc1')).toBe('/projects/p1/admin/skills');
+    expect(legacySectionRedirect('p1', 'skills', 'acc1')).toBe('/workspaces/p1/admin/skills');
     expect(legacySectionRedirect('p1', 'schedules', 'acc1')).toBe(
-      '/projects/p1/admin/triggers',
+      '/workspaces/p1/admin/triggers',
     );
     expect(legacySectionRedirect('p1', 'nope', 'acc1')).toBeNull();
   });
@@ -419,27 +421,27 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
 
 describe('resolveSettingsOverlayHref', () => {
   test('a bare settings href opens the default tab', () => {
-    expect(resolveSettingsOverlayHref('/projects/p1/settings')).toEqual({
+    expect(resolveSettingsOverlayHref('/workspaces/p1/settings')).toEqual({
       opensOverlay: true,
       tab: undefined,
     });
   });
 
   test('a named tab opens that tab', () => {
-    expect(resolveSettingsOverlayHref('/projects/p1/settings/preferences')).toEqual({
+    expect(resolveSettingsOverlayHref('/workspaces/p1/settings/preferences')).toEqual({
       opensOverlay: true,
       tab: 'preferences',
     });
   });
 
   test('an unresolvable segment does not open the overlay', () => {
-    expect(resolveSettingsOverlayHref('/projects/p1/settings/skills')).toEqual({
+    expect(resolveSettingsOverlayHref('/workspaces/p1/settings/skills')).toEqual({
       opensOverlay: false,
     });
   });
 
   test('a non-settings href does not open the overlay', () => {
-    expect(resolveSettingsOverlayHref('/projects/p1/files')).toEqual({ opensOverlay: false });
+    expect(resolveSettingsOverlayHref('/workspaces/p1/files')).toEqual({ opensOverlay: false });
   });
 });
 

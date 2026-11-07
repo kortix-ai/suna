@@ -108,7 +108,7 @@ async function connect(slug: string, shared: boolean, context: PlatformToolConte
     'connect',
     {
       title: `Sign in to ${slug}`,
-      subtitle: shared ? 'Everyone in the project will use this sign-in.' : 'Only you will use this sign-in.',
+      subtitle: shared ? 'Everyone in the workspace will use this sign-in.' : 'Only you will use this sign-in.',
       status: 'needs_you',
       links: [{ label: 'Sign in', href: url }],
     },
@@ -120,7 +120,7 @@ export default {
   description:
     'Outside apps agents may use (Gmail, Google Drive, Notion, Slack, a CRM…). Actions: `list` (what is added and signed in); ' +
     '`find` (query: search every app Kortix can connect); `add` (app: an id from find); ' +
-    '`connect` (slug: get the sign-in link for the person; shared=true makes the sign-in the whole project\'s). ' +
+    '`connect` (slug: get the sign-in link for the person; shared=true makes the sign-in the whole workspace\'s). ' +
     'Never ask for a password: the person signs in through the link. To let an agent use a connector, use kortix_agents set_access.',
   parameters: {
     type: 'object',
@@ -129,7 +129,7 @@ export default {
       query: { type: 'string', description: 'For find: the app to look for.' },
       app: { type: 'string', description: 'For add: the app id find returned.' },
       slug: { type: 'string', description: 'For connect: the connector slug list shows.' },
-      shared: { type: 'boolean', description: 'For connect: share the sign-in with the whole project. Default: only this person.' },
+      shared: { type: 'boolean', description: 'For connect: share the sign-in with the whole workspace. Default: only this person.' },
     },
     required: ['action'],
   },

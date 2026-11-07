@@ -19,6 +19,7 @@ import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { resolveProjectContext, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { loadLocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
+import { fromWorkspaceAlias } from '../command-argv.ts';
 
 // The `kortix apps` shared plumbing — context resolution and small parse
 // helpers every apps subcommand uses — plus the `deploy` pipeline. The
@@ -196,12 +197,12 @@ export function deployFlags(rest: string[]): DeployFlags {
   if (provider && !['platinum', 'daytona'].includes(provider)) {
     throw new Error('--provider must be platinum');
   }
-  const accessMode = takeFlagValue(rest, ['--access']) as AppAccessMode | undefined;
+  const accessMode = fromWorkspaceAlias(takeFlagValue(rest, ['--access'])) as AppAccessMode | undefined;
   if (
     accessMode &&
     !APP_ACCESS_MODES.includes(accessMode)
   ) {
-    throw new Error('--access must be private, project, restricted, public, or password');
+    throw new Error('--access must be private, workspace, restricted, public, or password');
   }
   const spa = takeFlagBool(rest, ['--spa']);
   const noSpa = takeFlagBool(rest, ['--no-spa']);

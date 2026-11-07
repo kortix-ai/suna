@@ -93,7 +93,7 @@ describe('Slack posts', () => {
     expect(await write('send_message', { channel: 'C0MINE0001', text: 'hi' })).toBeNull();
     expect(await write('send_message', { channel: 'C0NOBODY01', text: 'hi' })).toBeNull();
     expect(await refused('send_message', { channel: 'C0OTHER001', text: 'hi' })).toBe(
-      "Slack conversation C0OTHER001 belongs to another Kortix project. This project's agent does not post in, change, or react to messages in another project's channels. Post in a channel of this project, in a channel no project is connected to, or in a direct message.",
+      "Slack conversation C0OTHER001 belongs to another Kortix workspace. This workspace's agent does not post in, change, or react to messages in another workspace's channels. Post in a channel of this workspace, in a channel no Kortix workspace is connected to, or in a direct message.",
     );
   });
 
@@ -106,7 +106,7 @@ describe('Slack posts', () => {
   test("a reply into another project's thread is refused everywhere, even in a DM or this project's channel", async () => {
     for (const channel of ['D0OTHERDM1', 'U0PERSON01', 'C0MINE0001', 'C0NOBODY01']) {
       expect(await refused('send_message', { channel, thread_ts: '100.000100', text: 'hi' })).toBe(
-        `Slack thread 100.000100 in ${channel} belongs to another Kortix project. This project's agent does not post in, change, or react to another project's threads.`,
+        `Slack thread 100.000100 in ${channel} belongs to another Kortix workspace. This workspace's agent does not post in, change, or react to another workspace's threads.`,
       );
     }
   });
@@ -118,7 +118,7 @@ describe('Slack posts', () => {
   test("a reply into a thread no session owns follows the channel: adopting a thread in another project's channel is refused", async () => {
     expect(await write('send_message', { channel: 'C0NOBODY01', thread_ts: '300.000300', text: 'hi' })).toBeNull();
     expect(await refused('send_message', { channel: 'C0OTHER001', thread_ts: '300.000300', text: 'hi' })).toContain(
-      'Slack conversation C0OTHER001 belongs to another Kortix project',
+      'Slack conversation C0OTHER001 belongs to another Kortix workspace',
     );
   });
 });

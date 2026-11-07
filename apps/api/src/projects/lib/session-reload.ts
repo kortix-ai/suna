@@ -32,7 +32,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { logger } from '../../lib/logger';
@@ -67,6 +67,7 @@ import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 import { parseActualRuntime, UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../../runtime-convergence/actual';
+import { projectsView } from '../../workspaces/rows';
 
 /** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
 const REFRESH_BUSY_RETRIES = 5;
@@ -603,12 +604,12 @@ export async function latestAgentConfigEtag(
       const [[project], [session]] = await Promise.all([
         db
           .select({
-            repoUrl: projects.repoUrl,
-            defaultBranch: projects.defaultBranch,
-            manifestPath: projects.manifestPath,
+            repoUrl: projectsView.repoUrl,
+            defaultBranch: projectsView.defaultBranch,
+            manifestPath: projectsView.manifestPath,
           })
-          .from(projects)
-          .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
+          .from(projectsView)
+          .where(and(eq(projectsView.projectId, input.projectId), eq(projectsView.accountId, input.accountId)))
           .limit(1),
         input.sessionId
           ? db

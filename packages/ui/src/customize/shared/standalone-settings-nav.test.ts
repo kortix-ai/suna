@@ -31,12 +31,12 @@ function navFor(activeTab = 'members', accountId?: string) {
  * ids, and `hubUrl()` is what proves the click went somewhere.
  */
 const originalWindow = (globalThis as { window?: unknown }).window;
-let historyUrl = '/projects/p1';
+let historyUrl = '/workspaces/p1';
 
 function installFakeBrowser() {
-  historyUrl = '/projects/p1';
+  historyUrl = '/workspaces/p1';
   (globalThis as { window?: unknown }).window = {
-    location: { pathname: '/projects/p1', search: '' },
+    location: { pathname: '/workspaces/p1', search: '' },
     history: {
       pushState: (_s: unknown, _t: unknown, url: string) => {
         historyUrl = url;
@@ -66,7 +66,7 @@ describe('buildStandaloneCapabilityNav', () => {
   test('navigate() to a sibling top-level Customize tab routes there', () => {
     const { nav, pushed } = navFor('members');
     nav.navigate('secrets');
-    expect(pushed).toEqual(['/projects/p1/admin/secrets']);
+    expect(pushed).toEqual(['/workspaces/p1/admin/secrets']);
   });
 
   test('navigate() to the page it is already on is a no-op, not a self-route', () => {
@@ -83,7 +83,7 @@ describe('buildStandaloneCapabilityNav', () => {
     const { nav, pushed } = navFor('members', 'acct-1');
     nav.navigate('groups');
     expect(pushed).toEqual([]);
-    expect(hubUrl()).toBe('/projects/p1?accountId=acct-1&accountTab=groups');
+    expect(hubUrl()).toBe('/workspaces/p1?accountId=acct-1&accountTab=groups');
   });
 
   test('roles resolves the same way', () => {
@@ -91,7 +91,7 @@ describe('buildStandaloneCapabilityNav', () => {
     const { nav, pushed } = navFor('members', 'acct-1');
     nav.navigate('roles');
     expect(pushed).toEqual([]);
-    expect(hubUrl()).toBe('/projects/p1?accountId=acct-1&accountTab=roles');
+    expect(hubUrl()).toBe('/workspaces/p1?accountId=acct-1&accountTab=roles');
   });
 
   test('an ACCOUNT_GRADUATED id with no accountId yet does nothing, not a broken URL', () => {

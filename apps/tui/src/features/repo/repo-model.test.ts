@@ -88,6 +88,6 @@ describe('labels', () => {
   });
 
   test('the web URL drops a trailing slash', () => {
-    expect(repoWebUrl('https://kortix.com/', 'p1')).toBe('https://kortix.com/projects/p1/files');
+    expect(repoWebUrl('https://kortix.com/', 'p1')).toBe('https://kortix.com/workspaces/p1/files');
   });
 });

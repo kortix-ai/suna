@@ -1,12 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
-import { accountMemberships, projects } from '@kortix/db';
 // Straight from the engine + the actor builder, not the barrel: the barrel is
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
 import { authorize, type Verdict } from '../../iam/authorize';
 import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { addWorkspaceMember } from '../../iam/workspace-members';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
@@ -17,12 +17,13 @@ import { buildDenialError, denialReasonMessage } from '../../iam/denial-message'
 import { projectRoleForUser } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { IMPERSONATION_INVALID_CODE, impersonatedAccountFor } from '../../shared/impersonation';
-import { resolveAccountId } from '../../shared/resolve-account';
+import { accountKeyForWorkspaceId, resolveAccountId } from '../../shared/resolve-account';
 import { isUuid } from '../../shared/validate';
 import { logger } from '../../lib/logger';
 import { setContextField } from '../../lib/request-context';
 import { effectiveProjectRole, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { getAccountMembership } from './user-identity';
+import { projectsView } from '../../workspaces/rows';
 
 // Memoized briefly (positive hits only) — same rationale and trade-off as
 // getAccountMembership: runs on every project request. Each statement is a
@@ -124,24 +125,10 @@ export async function ensureOrgMembership(
 ): Promise<AccountRole> {
   const existing = await getAccountMembership(userId, accountId);
   if (existing) return existing.accountRole as AccountRole;
-  // Membership is two facts in two stores now. IDENTITY (the row that says this
-  // user belongs to this account, and carries is_super_admin / scim_external_id)
-  // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
-  // Writing the identity row first is what lets `assignRole`'s principal check
-  // resolve without falling back to auth.users.
-  await db.insert(accountMemberships).values({ userId, accountId }).onConflictDoNothing();
-  // The grant, through the ONE write path, so joining an account emits
-  // `iam.assignment.granted` like every other grant. `SYSTEM_ACTOR`: the two
+  // THE membership write (iam/workspace-members.ts). `SYSTEM_ACTOR`: the two
   // callers (accepting a project invite, approving an access request) were
   // authorized by their own route, and the person being added is not the writer.
-  await assignRole(SYSTEM_ACTOR, accountId, {
-    principal: { type: 'user', id: userId },
-    roleKey: 'member',
-    scope: { type: 'account' },
-    source: 'system',
-    // One account role per member, as the `account_role` COLUMN enforced.
-    exclusive: true,
-  });
+  await addWorkspaceMember(accountId, userId, 'member', [], { writer: SYSTEM_ACTOR, source: 'system' });
   invalidateIamCacheForUser(userId);
   return 'member';
 }
@@ -151,25 +138,48 @@ export async function ensureOrgMembership(
  * `account_id`, already normalized) when the caller is a member of it, else
  * the caller's own account. Throws the 400/403 the request answers with. The
  * HTTP reader is `resolveProjectAccount` (`http-project-access.ts`).
+ *
+ * `serviceAccountOf` is set for a service-account request: the account its
+ * credential belongs to ('' when none). A service account has no membership
+ * row, so it acts in that account only, and every gate after this one asks the
+ * engine about its own grants.
  */
-export async function resolveRequestedProjectAccount(userId: string, requested: string | null) {
+export async function resolveRequestedProjectAccount(
+  userId: string,
+  requested: string | null,
+  serviceAccountOf: string | null,
+) {
   // A malformed account_id is caller input, not a lookup miss: past this point
   // it reaches the account-membership query, whose account_id comparison is a
   // uuid column, and Postgres answers SQLSTATE 22P02 — a 500. Refuse the shape
   // before any lookup (see shared/validate.ts for the shape contract).
   if (requested && !isUuid(requested)) {
     throw new HTTPException(400, {
-      message: 'account_id must be a valid id',
+      message: 'account_id must be a valid workspace id',
       res: new Response(
         JSON.stringify({
           error: true,
-          message: 'account_id must be a valid id',
+          message: 'account_id must be a valid workspace id',
           status: 400,
           code: 'invalid_account_id',
         }),
         { status: 400, headers: { 'content-type': 'application/json' } },
       ),
     });
+  }
+  if (serviceAccountOf !== null) {
+    if (
+      !serviceAccountOf ||
+      (requested &&
+        requested !== serviceAccountOf &&
+        (await accountKeyForWorkspaceId(requested)) !== serviceAccountOf)
+    ) {
+      throw new HTTPException(403, { message: 'You do not have access to this workspace' });
+    }
+    setContextField('accountId', serviceAccountOf);
+    // No membership, so no account role: `member` is the label of least reach.
+    const accountRole: AccountRole = 'member';
+    return { userId, accountId: serviceAccountOf, accountRole };
   }
   // ACT-AS: the grant, not the query string, decides the account. Defense in
   // depth — under impersonation `/v1/accounts` returns only the target, so a
@@ -178,12 +188,17 @@ export async function resolveRequestedProjectAccount(userId: string, requested: 
   // here and write to the operator's account while the banner named the
   // customer's. Refuse instead.
   const impersonated = impersonatedAccountFor(userId);
-  if (impersonated && requested && requested !== impersonated) {
+  if (
+    impersonated &&
+    requested &&
+    requested !== impersonated &&
+    (await accountKeyForWorkspaceId(requested)) !== impersonated
+  ) {
     throw new HTTPException(403, {
-      message: 'Impersonated requests cannot target another account',
+      message: 'Impersonated requests cannot target another workspace',
       res: new Response(
         JSON.stringify({
-          error: 'Impersonated requests cannot target another account',
+          error: 'Impersonated requests cannot target another workspace',
           code: IMPERSONATION_INVALID_CODE,
         }),
         { status: 403, headers: { 'content-type': 'application/json' } },
@@ -192,9 +207,14 @@ export async function resolveRequestedProjectAccount(userId: string, requested: 
   }
   const accountId = impersonated ?? requested ?? await resolveAccountId(userId);
 
-  const membership = await getAccountMembership(userId, accountId);
+  let membership = await getAccountMembership(userId, accountId);
+  // `account_id` may name the workspace by its public id (`project_id`).
+  if (!membership && requested && !impersonated) {
+    const accountKey = await accountKeyForWorkspaceId(requested);
+    if (accountKey) membership = await getAccountMembership(userId, accountKey);
+  }
   if (!membership) {
-    throw new HTTPException(403, { message: 'You do not have access to this account' });
+    throw new HTTPException(403, { message: 'You do not have access to this workspace' });
   }
   setContextField('accountId', membership.accountId);
 
@@ -304,7 +324,7 @@ async function resolveProjectGate(
   const { isServiceAccount } = request;
 
   if (!membership && !isServiceAccount) {
-    throw new HTTPException(403, { message: 'You do not have access to this account' });
+    throw new HTTPException(403, { message: 'You do not have access to this workspace' });
   }
 
   const accountRole = membership?.accountRole as AccountRole | undefined;
@@ -323,6 +343,8 @@ async function denyProjectAccess(input: {
   actor: Actor;
   projectId: string;
   verdict: Verdict;
+  /** The workspace's name, printed only to a caller who can read it. */
+  workspaceName?: string | null;
 }): Promise<never> {
   const { action, iamAction, actor, projectId, verdict } = input;
   // The engine already computed WHY. When the reason names a constraint other
@@ -352,17 +374,20 @@ async function denyProjectAccess(input: {
       // wording ("manage project members" / "issue project credentials")
       // rather than the coarse "change this project" — the coarse phrasing is
       // what made a members-only denial read as a project-wide one.
+      // The caller can read the workspace, so its name is theirs to see.
+      const named = { workspaceName: input.workspaceName ?? null };
       if (action === 'members' || action === 'credentials') {
-        throw buildDenialError(iamAction, verdict.reason);
+        throw buildDenialError(iamAction, verdict.reason, undefined, named);
       }
       throw buildDenialError(
         iamAction,
         verdict.reason,
-        "Your role on this project doesn't let you change this project. Ask an account owner or admin to grant you a higher role.",
+        "Your role doesn't let you change this workspace. Ask a workspace owner or admin to grant you a higher role.",
+        named,
       );
     }
   }
-  throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this project');
+  throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this workspace');
 }
 
 /**
@@ -374,8 +399,8 @@ export async function loadProjectRow(projectId: string) {
   if (!isUuid(projectId)) return null;
   const [row] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!row || row.status === 'archived') return null;
   setContextField('accountId', row.accountId);
@@ -408,7 +433,7 @@ export async function authorizeProjectAccess(input: {
   );
   const { accountRole, projectRole } = gate;
   if (!gate.verdict.allowed) {
-    await denyProjectAccess({ action, iamAction, actor, projectId, verdict: gate.verdict });
+    await denyProjectAccess({ action, iamAction, actor, projectId, verdict: gate.verdict, workspaceName: row.name });
   }
   // effectiveRole label for the UI / downstream helpers. The engine
   // doesn't hand back a role — it answers yes/no. Mirror the prior

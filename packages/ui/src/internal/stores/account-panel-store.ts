@@ -12,7 +12,7 @@
  * the hub's JS chunk and a shell teardown, twice, for a surface that was never
  * a page in the first place.
  *
- * `/projects/p_1?accountId=acc_1&accountTab=members` is a complete, shareable
+ * `/workspaces/p_1?accountId=acc_1&accountTab=members` is a complete, shareable
  * address: reload it, paste it, and the modal comes back over the same page.
  *
  * **Open is derived, never stored.** The param present IS the modal being
@@ -168,7 +168,36 @@ function currentUrl(): string {
 }
 
 /**
- * Show the hub over the current page, and put it in the address bar.
+ * The host's router for a hub place (Workspaces, ux.md section 4).
+ *
+ * The account hub is no longer a surface of its own: each of its sections is
+ * a section of the current workspace's settings (`/workspaces/<id>/admin/…`).
+ * The host registers a navigator that turns a `HubTarget` into that page and
+ * navigates. It returns `false` when it cannot resolve the workspace yet;
+ * `openAccountPanel` then writes `?accountId=` and the host's URL router
+ * resolves it asynchronously, the same way it resolves an old pasted link.
+ */
+export type AccountHubNavigator = (target: HubTarget) => boolean;
+
+let hubNavigator: AccountHubNavigator | null = null;
+
+/** Register (or clear, with `null`) the host's hub navigator. */
+export function setAccountHubNavigator(navigator: AccountHubNavigator | null): void {
+  hubNavigator = navigator;
+}
+
+/** The hub section names, prefixed as they travel on a URL. */
+export function hubDrillDownParams(target: HubTarget): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(target.params) as [HubParamKey, string][]) {
+    if (key !== 'tab') params.set(HUB_PARAM_ALIASES[key], value);
+  }
+  return params;
+}
+
+/**
+ * Show a hub place: the host's navigator first (Workspace settings), else the
+ * hub URL over the current page.
  *
  * Exactly ONE history entry per visit: the first open pushes, and every move
  * inside — a section, a drill-down, a different account — replaces. One Back
@@ -176,6 +205,7 @@ function currentUrl(): string {
  */
 export function openAccountPanel(target: HubTarget): void {
   if (typeof window === 'undefined') return;
+  if (hubNavigator?.(target)) return;
   const current = currentUrl();
   const url = accountPanelUrl(current, target);
   if (readAccountPanelUrl(current)) {

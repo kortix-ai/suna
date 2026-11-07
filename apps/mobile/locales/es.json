@@ -610,7 +610,6 @@
     "cancelRequestDescription": "Puedes cancelar esta solicitud en cualquier momento antes de la fecha de eliminación. Todos tus datos serán preservados si cancelas.",
     "scheduledBadge": "Programada",
     "notAvailableTitle": "No disponible en este servidor",
-    "projectsAndSessions": "Proyectos y sesiones",
     "credentialsAndConnections": "Credenciales y conexiones",
     "subscriptionAndBilling": "Suscripción",
     "when": "Cuándo",
@@ -624,8 +623,9 @@
     "deleting": "Eliminando…",
     "cancelling": "Cancelando…",
     "finalTitle": "¿Estás seguro?",
-    "finalDescriptionNow": "Tus proyectos, sesiones y credenciales se eliminan ahora. Los registros de facturación se conservan durante el tiempo que exige la ley. Esto no se puede deshacer.",
-    "finalDescriptionScheduled": "Tus proyectos, sesiones y credenciales se eliminarán en 14 días. Los registros de facturación se conservan durante el tiempo que exige la ley. Puedes cancelarlo antes."
+    "finalDescriptionNow": "Tus espacios de trabajo, sesiones y credenciales se eliminan ahora. Los registros de facturación se conservan durante el tiempo que exige la ley. Esto no se puede deshacer.",
+    "finalDescriptionScheduled": "Tus espacios de trabajo, sesiones y credenciales se eliminarán en 14 días. Los registros de facturación se conservan durante el tiempo que exige la ley. Puedes cancelarlo antes.",
+    "workspacesAndSessions": "Espacios de trabajo y sesiones"
   },
   "models": {
     "selectModel": "Elegir Modelo",
@@ -682,7 +682,7 @@
     "upgradeYourPlan": "Mejora tu Plan",
     "upgradeDescription": "Obtén más créditos y desbloquea funciones premium",
     "topUp": "Recargar",
-    "topUpDescription": "Recarga tu cuenta con créditos adicionales",
+    "topUpDescription": "Recarga tu espacio de trabajo con créditos adicionales",
     "upgrade": "Mejorar",
     "totalUsage": "Uso total",
     "selectedPeriod": "Periodo seleccionado",
@@ -1149,7 +1149,6 @@
     "sounds": "Sonidos",
     "richAnswers": "Respuestas enriquecidas",
     "workspace": "Espacio de trabajo",
-    "accounts": "Cuentas",
     "help": "Ayuda",
     "docs": "Documentación",
     "support": "Soporte",
@@ -1165,7 +1164,7 @@
     "current": "Actual",
     "currentPlan": "Plan actual",
     "includes": "{{plan}} incluye",
-    "askOwner": "Pide a una persona propietaria o administradora de la cuenta que la mejore",
+    "askOwner": "Pide a una persona propietaria o administradora del espacio de trabajo que lo mejore",
     "contactSales": "Contactar con ventas",
     "upgradeTo": "Mejorar a {{plan}}",
     "switchTo": "Cambiar a {{plan}}",
@@ -1176,7 +1175,8 @@
     "creditsPlan": "Kortix Credits",
     "pickAmount": "Elige en la web cualquier importe mensual. Miembros ilimitados comparten un único fondo de créditos.",
     "includes": "Incluye",
-    "notNow": "Ahora no"
+    "notNow": "Ahora no",
+    "continueFree": "Continuar con Free"
   },
   "sessions": {
     "showMoreSubsessions_one": "Mostrar {{count}} más",
@@ -1200,7 +1200,7 @@
     "archivedView": "Archivadas",
     "archivedEmpty": "Las sesiones que archives aparecerán aquí.",
     "stoppedBy": "Detenido por {{name}}",
-    "stopNotAllowed": "Solo el miembro que inició esta ejecución, el propietario de la sesión o un gestor del proyecto puede detenerla."
+    "stopNotAllowed": "Solo el miembro que inició esta ejecución, el propietario de la sesión o un gestor del espacio de trabajo puede detenerla."
   },
   "genui": {
     "call": "Llamar",
@@ -1229,12 +1229,6 @@
   "invites": {
     "group": "Invitaciones",
     "fallbackTitle": "Invitación",
-    "invitedYouToProject": "{{inviter}} te invitó a un proyecto.",
-    "invitedToProject": "Te invitaron a un proyecto.",
-    "invitedYouToTeam": "{{inviter}} te invitó a unirte a un equipo.",
-    "invitedToTeam": "Te invitaron a unirte a un equipo.",
-    "joinProject": "Te unirás a {{project}} como {{role}}.",
-    "joinAccount": "Te unirás a esta cuenta como {{role}} y verás los proyectos a los que el propietario te dé acceso.",
     "roleMember": "miembro",
     "roleManager": "gestor",
     "roleAdmin": "administrador",
@@ -1253,15 +1247,19 @@
     "wrongAccountTitle": "Cambia de cuenta",
     "wrongAccountBody": "Esta invitación es para otra cuenta. Iniciaste sesión como {{email}}.",
     "directoryTitle": "Inicia sesión con inicio de sesión único",
-    "directoryBody": "El directorio de tu organización te añadió a esta cuenta. Abre esta invitación en un navegador e inicia sesión con el inicio de sesión único de tu organización, o pide a un administrador de la cuenta que reenvíe la invitación.",
+    "directoryBody": "El directorio de tu organización te añadió a este espacio de trabajo. Abre esta invitación en un navegador e inicia sesión con el inicio de sesión único de tu organización, o pide a un administrador del espacio de trabajo que reenvíe la invitación.",
     "ssoDomainUnverifiedBody": "Tu proveedor de inicio de sesión único no ha verificado el dominio de este correo. Cierra sesión y vuelve a iniciarla con tu correo electrónico para usar esta invitación.",
     "signOutAndContinue": "Cerrar sesión y continuar",
-    "backToProjects": "Volver a los proyectos"
+    "invitedYouToWorkspace": "{{inviter}} te invitó a un espacio de trabajo.",
+    "invitedToWorkspace": "Te han invitado a un espacio de trabajo.",
+    "joinWorkspace": "Te unirás a {{workspace}} como {{role}}.",
+    "joinThisWorkspace": "Te unirás a este espacio de trabajo como {{role}}.",
+    "backToWorkspaces": "Volver a los espacios de trabajo"
   },
   "approvals": {
-    "waitingManagers": "Alguien que gestione este proyecto puede aprobar o rechazar la llamada.",
+    "waitingManagers": "Alguien que gestione este espacio de trabajo puede aprobar o rechazar la llamada.",
     "waitingTitle": "Esperando aprobación",
-    "waitingWho": "La persona que inició esta sesión o alguien que gestione este proyecto puede aprobar o rechazar la llamada."
+    "waitingWho": "La persona que inició esta sesión o alguien que gestione este espacio de trabajo puede aprobar o rechazar la llamada."
   },
   "imageGen": {
     "generating": "Generando imagen",
@@ -1290,10 +1288,69 @@
     "states": {
       "resolving": "Eligiendo la imagen para esta sesión.",
       "serving_last_ready": "Iniciando desde la última imagen lista. La nueva se crea en segundo plano.",
-      "waiting_for_build": "Se está creando la primera imagen de este proyecto. La sesión se inicia cuando esté lista.",
-      "building": "Creando la primera imagen de este proyecto. Ocurre una sola vez y tarda unos minutos.",
+      "waiting_for_build": "Se está creando la primera imagen de este espacio de trabajo. La sesión se inicia cuando esté lista.",
+      "building": "Creando la primera imagen de este espacio de trabajo. Ocurre una sola vez y tarda unos minutos.",
       "copying_to_region": "Copiando la imagen a la región de esta sesión.",
       "waiting_for_provider": "La imagen se está terminando. La sesión se inicia cuando esté lista."
+    }
+  },
+  "workspace": {
+    "switcherTitle": "Espacios de trabajo",
+    "create": "Crear espacio de trabajo",
+    "createTitle": "Crea un espacio de trabajo",
+    "createBody": "Un espacio de trabajo es donde tu empresa trabaja con Kortix: personas, agentes y todo lo que crean.",
+    "createOnWebTitle": "Crear un espacio de trabajo en la web",
+    "createOnWebLine": "Los espacios de trabajo se crean en kortix.com.",
+    "invitedHint": "¿Te invitaron? Abre el enlace de invitación de tu correo, o pide a un administrador que invite a {{email}}.",
+    "yours": "Tu espacio de trabajo",
+    "openNamed": "Abrir {{workspace}}",
+    "open": "Abrir espacio de trabajo",
+    "settings": "Ajustes del espacio de trabajo",
+    "search": "Buscar espacios de trabajo",
+    "loadFailed": "No se pudieron cargar los espacios de trabajo",
+    "loadFailedBody": "Comprueba tu conexión e inténtalo de nuevo.",
+    "loadOneFailed": "No se pudo cargar este espacio de trabajo",
+    "emptyTitle": "Aún no hay espacios de trabajo",
+    "noMatches": "Sin resultados para \"{{query}}\"",
+    "noMatchesBody": "Prueba con otro término de búsqueda",
+    "allWorkspaces": "Todos los espacios de trabajo",
+    "switch": "Cambiar de espacio de trabajo",
+    "switchNamed": "Cambiar de espacio de trabajo, {{workspace}}",
+    "actions": "Acciones del espacio de trabajo",
+    "actionsNamed": "Acciones del espacio de trabajo, {{workspace}}",
+    "archive": "Archivar espacio de trabajo",
+    "archiveConfirm": "¿Archivar «{{workspace}}»?",
+    "archiveFailed": "No se pudo archivar. Comprueba tu conexión e inténtalo de nuevo.",
+    "archiving": "Archivando…",
+    "archived": "Espacio de trabajo archivado",
+    "delete": "Eliminar espacio de trabajo",
+    "deleteBody": "Elimina «{{workspace}}» y todo su contenido para todos los miembros. Esto no se puede deshacer. Escribe el nombre del espacio de trabajo para confirmar.",
+    "deleteTypeName": "Escribe el nombre del espacio de trabajo para confirmar",
+    "deleteConfirmTitle": "¿Eliminar este espacio de trabajo?",
+    "deleteConfirmBody": "Elimina «{{workspace}}» para todos los miembros. Esto no se puede deshacer.",
+    "deleteFailed": "No se pudo eliminar el espacio de trabajo",
+    "name": "Nombre del espacio de trabajo",
+    "billing": "Facturación",
+    "billingAndMembers": "Facturación y miembros",
+    "onWeb": "En kortix.com",
+    "members": "Miembros",
+    "git": "Git",
+    "auditLog": "Registro de auditoría",
+    "join": "Unirse",
+    "joinNamed": "Unirse a {{workspace}}",
+    "inviteFrom": "{{inviter}} · {{role}}",
+    "roleOwner": "Propietario",
+    "roleAdmin": "Administrador",
+    "roleManager": "Gestor",
+    "roleMember": "Miembro",
+    "startFailure": {
+      "sessionTitle": "Tu sesión ha terminado",
+      "sessionBody": "Vuelve a iniciar sesión para continuar.",
+      "unreachableTitle": "No se puede conectar con Kortix",
+      "unreachableBody": "Comprueba tu conexión y vuelve a intentarlo.",
+      "serverTitle": "No se pudo abrir tu espacio de trabajo",
+      "serverBody": "Vuelve a intentarlo o abre otro espacio de trabajo.",
+      "signInAgain": "Volver a iniciar sesión"
     }
   }
 }

@@ -16,7 +16,7 @@ import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { resolveSessionPersonalOwner } from '../lib/personal-resources';
 
-const Params = z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid(), providerId: z.string().min(1).max(100) });
+const Params = z.object({ workspaceId: z.string().uuid(), sessionId: z.string().uuid(), providerId: z.string().min(1).max(100) });
 const Pool = z.object({ provider_id: z.string(), configured: z.boolean(), secret_ids: z.array(z.string()) });
 const PersonalKeysReason = z.enum(['shared', 'prompted_by_another_member', 'no_person']);
 type PersonalKeysReason = z.infer<typeof PersonalKeysReason>;
@@ -94,7 +94,7 @@ export async function validateProviderSecretPool(input: {
 
 export function registerProviderSecretPoolsRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/sessions/{sessionId}/provider-secret-pools',
+    method: 'get', path: '/{workspaceId}/sessions/{sessionId}/provider-secret-pools',
     tags: ['sessions'], summary: 'List configured session provider secret pools', ...auth,
     request: { params: Params.omit({ providerId: true }) },
     responses: { 200: json(z.object({
@@ -105,7 +105,7 @@ export function registerProviderSecretPoolsRoutes(): void {
       personal_keys_reason: PersonalKeysReason.nullable(),
     }), 'Configured session pools'), ...errors(403, 404) },
   }), async (c: any) => {
-    const { projectId, sessionId } = c.req.param();
+    const { workspaceId: projectId, sessionId } = c.req.param();
     if (callerKortixSessionId(c) && callerKortixSessionId(c) !== sessionId) return c.json({ error: 'Not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -131,11 +131,11 @@ export function registerProviderSecretPoolsRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/sessions/{sessionId}/provider-secret-pools/{providerId}',
+    method: 'get', path: '/{workspaceId}/sessions/{sessionId}/provider-secret-pools/{providerId}',
     tags: ['sessions'], summary: 'Read the selected provider secret pool', ...auth,
     request: { params: Params }, responses: { 200: json(Pool, 'Session pool'), ...errors(403, 404) },
   }), async (c: any) => {
-    const { projectId, sessionId, providerId } = c.req.param();
+    const { workspaceId: projectId, sessionId, providerId } = c.req.param();
     if (callerKortixSessionId(c) && callerKortixSessionId(c) !== sessionId) return c.json({ error: 'Not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -150,19 +150,19 @@ export function registerProviderSecretPoolsRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'put', path: '/{projectId}/sessions/{sessionId}/provider-secret-pools/{providerId}',
+    method: 'put', path: '/{workspaceId}/sessions/{sessionId}/provider-secret-pools/{providerId}',
     tags: ['sessions'], summary: 'Replace one session provider secret pool', ...auth,
     request: { params: Params, body: { content: { 'application/json': { schema: Input } } } },
     responses: { 200: json(Pool, 'Session pool'), ...errors(400, 403, 404, 409) },
   }), async (c: any) => {
-    const { projectId, sessionId, providerId } = c.req.param();
+    const { workspaceId: projectId, sessionId, providerId } = c.req.param();
     if (callerKortixSessionId(c) && callerKortixSessionId(c) !== sessionId) return c.json({ error: 'Not found' }, 404);
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!mayChangeSessionModel(visible)) return c.json({ error: 'Only the session owner or a project manager can select provider secrets' }, 403);
+    if (!mayChangeSessionModel(visible)) return c.json({ error: 'Only the session owner or a workspace manager can select provider secrets' }, 403);
     const gate = requireFeatureFlag(c, loaded.row.metadata, 'pooled_provider_secrets');
     if (gate) return gate;
     const parsed = Input.safeParse(await c.req.json().catch(() => null));
@@ -194,7 +194,7 @@ export function registerProviderSecretPoolsRoutes(): void {
       // the refusal names that cause, and mayUseProviderKeys checks only keys.
       if (!(await memberMayReadProject(loaded.row.accountId, projectId, ownerId))) {
         return c.json({
-          error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
+          error: 'The session owner can no longer read this workspace, so the session cannot use provider secrets',
           code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
         }, 403);
       }

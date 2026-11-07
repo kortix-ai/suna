@@ -1,7 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 
 import { configureKortix } from '../../http/config';
-import { getProjectLlmCatalogProviders } from './projects';
+import { getWorkspaceLlmCatalogProviders } from './projects';
 
 let calls: Array<{ url: string; method: string }> = [];
 
@@ -43,11 +43,11 @@ configureKortix({
 });
 
 test('loads the live provider-level catalog', async () => {
-  const result = await getProjectLlmCatalogProviders('P1');
+  const result = await getWorkspaceLlmCatalogProviders('P1');
   expect(result.providers[0]?.id).toBe('amazon-bedrock');
   expect(result.providers[0]?.env).toContain('AWS_BEARER_TOKEN_BEDROCK');
   expect(calls.at(-1)).toEqual({
-    url: 'http://test.local/projects/P1/llm-catalog/providers',
+    url: 'http://test.local/workspaces/P1/llm-catalog/providers',
     method: 'GET',
   });
 });

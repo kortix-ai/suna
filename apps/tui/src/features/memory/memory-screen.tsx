@@ -129,7 +129,7 @@ export function pageDetail(page: ProjectMemoryPage): MemoryPageDetail {
 
 /** The web route for this screen. The page id is not a route: the list opens. */
 export function memoryWebUrl(webBaseUrl: string, projectId: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/memory`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/memory`;
 }
 
 export function MemoryScreen({
@@ -203,13 +203,13 @@ export function MemoryScreen({
   }, [searchActive, searchQuery.refetch, pagesQuery.refetch, onToast]);
 
   if (!projectId) {
-    return <text fg={theme.faint}>No project selected.</text>;
+    return <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>;
   }
   if (flag.isLoading) return <Spinner label="checking Memory" />;
   if (!enabled) {
     return (
       <text fg={theme.faint}>
-        Memory is off: the project's Chat feature (chat) is not enabled.
+        Memory is off: the workspace's Chat feature (chat) is not enabled.
       </text>
     );
   }

@@ -11,8 +11,8 @@ test('open commands ignore frontend environment from a different API deployment'
   const server = Bun.serve({ port: 0, fetch(request) {
     const path = new URL(request.url).pathname;
     paths.push(path);
-    if (path === `/v1/projects/${projectId}`) return Response.json({ project_id: projectId });
-    if (path === `/v1/projects/${projectId}/sessions/${sessionId}`) {
+    if (path === `/v1/workspaces/${projectId}`) return Response.json({ project_id: projectId });
+    if (path === `/v1/workspaces/${projectId}/sessions/${sessionId}`) {
       return Response.json({ session_id: sessionId, project_id: projectId });
     }
     return Response.json({ error: 'not found' }, { status: 404 });
@@ -40,10 +40,10 @@ test('open commands ignore frontend environment from a different API deployment'
       ]);
       expect(code).toBe(0);
       expect(stderr).toContain('host selected');
-      expect(stdout).toContain(`Opening http://127.0.0.1:3000/projects/${projectId}${args[0] === 'sessions' ? `/sessions/${sessionId}` : ''}`);
+      expect(stdout).toContain(`Opening http://127.0.0.1:3000/workspaces/${projectId}${args[0] === 'sessions' ? `/sessions/${sessionId}` : ''}`);
     }
-    expect(paths).toContain(`/v1/projects/${projectId}`);
-    expect(paths).toContain(`/v1/projects/${projectId}/sessions/${sessionId}`);
+    expect(paths).toContain(`/v1/workspaces/${projectId}`);
+    expect(paths).toContain(`/v1/workspaces/${projectId}/sessions/${sessionId}`);
   } finally {
     server.stop(true);
     rmSync(root, { recursive: true, force: true });

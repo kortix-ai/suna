@@ -82,5 +82,7 @@ export interface EffectivePermissionProbe {
   allowed: boolean;
   reason: string | null;
   action: string;
+  /** The same action's workspace name (`workspace.read` for `project.read`). Sent by API versions with Workspaces. */
+  workspace_action?: string;
   resource_type: ResourceType;
 }

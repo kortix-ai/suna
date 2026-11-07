@@ -105,8 +105,8 @@ export function useFolderMountNotice() {
 }
 
 /**
- * The storage block of the Files page: the project's Files against the plan's
- * limit (and the account's, when it is the closer one), what to do when it is
+ * The storage block of the Files page: this workspace's Files against the
+ * plan's limit (the closer of the workspace and plan figures), what to do when it is
  * nearly full, and each folder close to the folder-mount cap.
  */
 export function DriveStorageSummary({ driveId, className }: { driveId: string; className?: string }) {
@@ -115,17 +115,25 @@ export function DriveStorageSummary({ driveId, className }: { driveId: string; c
   const folderNotice = useFolderMountNotice();
   const data = usage.data;
   if (!data || data.usedBytes === null) return null;
-  const project = { used: data.usedBytes, limit: data.limits.projectBytes };
   const account = data.account;
-  // The account figure shows only when it is the one closer to full.
-  const accountLeft = account ? account.limitBytes - account.usedBytes : Number.POSITIVE_INFINITY;
+  // A workspace is one account: when this workspace holds all of the
+  // account's Files, the account limit is this workspace's limit, so the one
+  // meter shows the closer of the two. Only a legacy account that still holds
+  // several workspaces (split_pending) shares its total, and says so.
+  const sharesAccount = !!account && account.usedBytes > data.usedBytes;
+  const limit =
+    account && !sharesAccount
+      ? Math.min(data.limits.projectBytes ?? Number.POSITIVE_INFINITY, account.limitBytes)
+      : data.limits.projectBytes;
+  const project = { used: data.usedBytes, limit: limit === Number.POSITIVE_INFINITY ? null : limit };
+  const accountLeft = account && sharesAccount ? account.limitBytes - account.usedBytes : Number.POSITIVE_INFINITY;
   const projectLeft = project.limit === null ? Number.POSITIVE_INFINITY : project.limit - project.used;
   const tightest = account && accountLeft < projectLeft ? storageTone(account.usedBytes, account.limitBytes) : storageTone(project.used, project.limit);
   const folders = data.folders.filter((f) => f.state !== 'ok');
   return (
     <div className={cn('flex flex-col gap-2', className)}>
       <StorageMeter label={t('storageLabel')} usedBytes={project.used} limitBytes={project.limit} />
-      {account && accountLeft < projectLeft ? (
+      {account && sharesAccount && accountLeft < projectLeft ? (
         <AccountLine usedBytes={account.usedBytes} limitBytes={account.limitBytes} />
       ) : null}
       {tightest !== 'ok' ? (

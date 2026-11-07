@@ -186,7 +186,7 @@ export function SessionSiteHeader({
   // The ids come from the session view (`SessionIdsProvider`); a host whose
   // URL has another shape still gets them. apps/web's route is the fallback.
   const sessionIds = useSessionIds();
-  const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+  const projectRoute = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
   const projectId = sessionIds.projectId ?? projectRoute?.[1];
   const projectSessionId = sessionIds.sessionId ?? projectRoute?.[2];
   const isProjectSession = !!projectId && !!projectSessionId;

@@ -2,7 +2,7 @@
  * `kortix goals` — what a person wants plus a definition of done, worked by an
  * assigned agent until an independent verifier session confirms it.
  *
- * The Goals API is the authority (`/v1/projects/:projectId/goals/*`, wire
+ * The Goals API is the authority (`/v1/workspaces/:projectId/goals/*`, wire
  * contract `packages/api-contract/src/goals.ts`). The `project_goals` row
  * holds state, pause, stop, owner, verifier, caps and counters. The API
  * derives who calls from the credential: inside a session that is the session
@@ -21,8 +21,10 @@ import { closeSync, constants, existsSync, fstatSync, ftruncateSync, mkdirSync, 
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { parseGoalFile } from '@kortix/sdk';
-import { ApiError, type ApiClient } from '../api/client.ts';
+import { createWorkspaceGoalRecord, getWorkspaceGoal, listWorkspaceGoalRecords, MAX_GOAL_CRITERIA, parseGoalFile, postWorkspaceGoalAction, setWorkspaceGoalBinding, setWorkspaceGoalCriteria, WorkspaceGoalConflictError } from '@kortix/sdk';
+import type { WorkspaceGoalCriterionStatus, WorkspaceGoalRecord, WorkspaceGoalRecordState, WorkspaceGoalVerification } from '@kortix/sdk';
+import type { Auth } from '../api/auth.ts';
+import { ApiError, type ApiClient, withCliErrors } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
 import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
@@ -96,73 +98,17 @@ Options:
   -h, --help          Show this help.
 `;
 
-// ── Wire types: mirrored from packages/api-contract/src/goals.ts ─────────────
-// The CLI does not depend on @kortix/api-contract (see session-boot.ts), so
-// only the fields this command reads are declared here.
+/** A goal as the Goals API returns it: `@kortix/sdk` owns the wire type. */
+export type Goal = WorkspaceGoalRecord;
 
-export type GoalState = 'draft' | 'active' | 'waiting_on_user' | 'verifying' | 'done' | 'stopped';
-
-export interface GoalCriterion {
-  id: string;
-  text: string;
-  reported_met: boolean;
-  evidence: string | null;
-  verified: boolean;
-}
-
-export interface GoalCriterionResult {
-  criterion_id: string;
-  result: 'pass' | 'fail' | 'inconclusive';
-  note: string;
-}
-
-export interface Goal {
-  goal_id: string;
-  project_id: string;
-  revision: number;
-  title: string;
-  state: GoalState;
-  waiting_on: string | null;
-  chase_at: string | null;
-  summary: string;
-  paused_at: string | null;
-  stopped_at: string | null;
-  blocked_reason: string | null;
-  assigned_user_id: string | null;
-  agent: string | null;
-  space: string | null;
-  folder: string;
-  box_folder: string;
-  slug: string;
-  owner_session_id: string | null;
-  verifier_session_id?: string | null;
-  sessions: Array<{ id: string; role: 'owner' | 'verifier'; since: string }>;
-  criteria_revision: number;
-  criteria: GoalCriterion[];
-  verification: { attempt: number; outcome: 'pending' | 'pass' | 'fail'; verifier_session_id: string } | null;
-  heartbeat_every: string;
-  next_wake_at: string | null;
-  max_wakes_per_day: number;
-  wakes_today: number;
-  max_sessions: number;
-  provenance: 'api' | 'legacy_unverified';
-}
-
-interface GoalErrorBody {
-  error: 'goal_conflict' | 'goal_forbidden' | 'goal_invalid' | 'goal_not_found' | 'goal_flag_off';
-  message: string;
-  violations?: string[];
-  goal?: Goal;
-}
-
+/** The codes of a Goals route's own refusal body; any other error is worded by `surfaceApiError`. */
 const GOAL_ERRORS = new Set(['goal_conflict', 'goal_forbidden', 'goal_invalid', 'goal_not_found', 'goal_flag_off']);
-export const CRITERIA_MAX = 8;
 const CHASE_MIN_MS = 60 * 60_000;
 const CHASE_MAX_MS = 14 * 24 * 60 * 60_000;
 const NOTE_MAX = 2_000;
 /** Wakes with no new report before `check --enforce` prompts the owner. */
 export const STALL_WAKES = 3;
-const OPEN = new Set<GoalState>(['draft', 'active', 'waiting_on_user', 'verifying']);
+const OPEN = new Set<WorkspaceGoalRecordState>(['draft', 'active', 'waiting_on_user', 'verifying']);
 const SPACE_SLUG = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 const AGENT_NAME = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 const CRITERION_ID = /^c[1-9]\d*$/;
@@ -178,10 +124,10 @@ class Refusal extends Error {
   }
 }
 
-export function goalErrorBody(err: unknown): GoalErrorBody | null {
+function goalErrorBody(err: unknown): { error: string; message: string; violations?: string[] } | null {
   if (!(err instanceof ApiError)) return null;
-  const body = err.body as Partial<GoalErrorBody> | null;
-  return body && typeof body === 'object' && typeof body.error === 'string' && GOAL_ERRORS.has(body.error) ? (body as GoalErrorBody) : null;
+  const body = err.details;
+  return body && typeof body === 'object' && typeof body.error === 'string' && GOAL_ERRORS.has(body.error) ? body : null;
 }
 
 // ── GOAL.md: the brief, and the read-only lifecycle mirror ───────────────────
@@ -330,9 +276,9 @@ const SUBCOMMANDS = ['new', 'transition', 'progress', 'verify', 'verdict', 'hand
 
 interface Ctx {
   client: ApiClient;
+  auth: Auth;
   projectId: string;
   sessionId: string | null;
-  base: string;
 }
 
 export async function runGoals(argv: string[]): Promise<number> {
@@ -354,9 +300,9 @@ export async function runGoals(argv: string[]): Promise<number> {
   if (!resolved) return sub === 'ls' || sub === 'list' || sub === 'status' ? listLocal(rest[0], flags.json) : 1;
   const ctx: Ctx = {
     client: resolved.client,
+    auth: resolved.auth,
     projectId: resolved.projectId,
     sessionId: process.env.KORTIX_SESSION_ID || null,
-    base: `/projects/${encodeURIComponent(resolved.projectId)}/goals`,
   };
   const inSession = ['transition', 'progress', 'verify', 'verdict', 'handover', 'check'];
   if (inSession.includes(sub) && !ctx.sessionId) return fail(`No $KORTIX_SESSION_ID: kortix goals ${sub} runs inside the goal's session.`);
@@ -390,15 +336,11 @@ export async function runGoals(argv: string[]): Promise<number> {
 
 // ── API access ───────────────────────────────────────────────────────────────
 
-const goalPath = (ctx: Ctx, id: string, tail = '') => `${ctx.base}/${encodeURIComponent(id)}${tail}`;
+/** A Goals SDK call as this CLI's credential. A failure is the CLI's `ApiError`, as an `ApiClient` request's is. */
+const api = <T>(ctx: Ctx, fn: () => Promise<T>): Promise<T> => withCliErrors(ctx.auth, fn);
 
-async function getGoal(ctx: Ctx, id: string): Promise<Goal> {
-  return (await ctx.client.get<{ goal: Goal }>(goalPath(ctx, id))).goal;
-}
-
-async function listByRole(ctx: Ctx, role: 'owner' | 'verifier'): Promise<Goal[]> {
-  return (await ctx.client.get<{ goals: Goal[] }>(`${ctx.base}?${role}_session_id=${encodeURIComponent(ctx.sessionId!)}`)).goals;
-}
+const getGoal = async (ctx: Ctx, id: string): Promise<Goal> => (await api(ctx, () => getWorkspaceGoal(ctx.projectId, id))).record;
+const listByRole = (ctx: Ctx, role: 'owner' | 'verifier'): Promise<Goal[]> => api(ctx, () => listWorkspaceGoalRecords(ctx.projectId, { role, sessionId: ctx.sessionId! }));
 
 /**
  * This session's goal, freshly read: `--goal`, else the session's `goal_id`
@@ -407,7 +349,7 @@ async function listByRole(ctx: Ctx, role: 'owner' | 'verifier'): Promise<Goal[]>
 async function resolveGoal(ctx: Ctx, role: 'owner' | 'verifier', explicit?: string): Promise<Goal> {
   if (explicit) return getGoal(ctx, explicit);
   const session = await ctx.client
-    .get<{ metadata?: Record<string, unknown> }>(`/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`)
+    .get<{ metadata?: Record<string, unknown> }>(`/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`)
     .catch(() => null);
   const fromMeta = session?.metadata?.goal_id;
   if (typeof fromMeta === 'string' && fromMeta) return getGoal(ctx, fromMeta);
@@ -428,7 +370,7 @@ interface Move {
   to: string;
   /** Why the move is not valid on `g` now. Empty: send it. */
   valid(g: Goal): string[];
-  send(g: Goal): Promise<{ goal: Goal }>;
+  send(g: Goal): Promise<Goal>;
 }
 
 /** Send `move` with `g.revision`. On `409 goal_conflict`: re-read once, and retry only when the move is still valid. */
@@ -437,22 +379,17 @@ async function commit(ctx: Ctx, start: Goal, move: Move): Promise<Goal> {
   for (let attempt = 0; ; attempt++) {
     const violations = move.valid(g);
     if (violations.length) throw new Refusal(violations, g.state, move.to);
-    try {
-      const { goal } = await move.send(g);
-      writeMirror(goal);
-      return goal;
-    } catch (err) {
-      const body = goalErrorBody(err);
-      if (attempt > 0 || body?.error !== 'goal_conflict') throw err;
-      g = body.goal ?? (await getGoal(ctx, g.goal_id));
+    // The conflict comes back as a value so the CLI's ApiError still wraps every other failure.
+    const sent = await api(ctx, () => move.send(g).catch((err: unknown) => (attempt === 0 && err instanceof WorkspaceGoalConflictError ? err : Promise.reject(err))));
+    if (!(sent instanceof WorkspaceGoalConflictError)) {
+      writeMirror(sent);
+      return sent;
     }
+    g = sent.goal.record;
   }
 }
 
-const post = (ctx: Ctx, g: Goal, action: string, body: Record<string, unknown>) =>
-  ctx.client.post<{ goal: Goal }>(goalPath(ctx, g.goal_id, `/${action}`), { revision: g.revision, ...body });
-
-const inState = (g: Goal, states: GoalState[], what: string): string[] =>
+const inState = (g: Goal, states: WorkspaceGoalRecordState[], what: string): string[] =>
   states.includes(g.state) ? [] : [`The goal is ${g.state}; ${what} runs on a goal that is ${states.join(' or ')}.`];
 const notPaused = (g: Goal): string[] => (g.paused_at ? ['A person paused this goal from the Goals page. Do no work on it: end the turn.'] : []);
 
@@ -503,22 +440,22 @@ async function activate(ctx: Ctx, start: Goal, flags: Flags): Promise<number> {
     const path = join(localFolder(g), 'GOAL.md');
     const written = existsSync(path) ? briefCriteria(readFileSync(path, 'utf8')) : [];
     const current = g.criteria.map((c) => c.text);
-    if (written.length > CRITERIA_MAX) return refuse(flags.json, g.state, 'active', [`GOAL.md lists ${written.length} done criteria; the limit is ${CRITERIA_MAX}.`]);
+    if (written.length > MAX_GOAL_CRITERIA) return refuse(flags.json, g.state, 'active', [`GOAL.md lists ${written.length} done criteria; the limit is ${MAX_GOAL_CRITERIA}.`]);
     if (written.length === 0 && current.length === 0) {
-      return refuse(flags.json, g.state, 'active', [`Write 1 to ${CRITERIA_MAX} done criteria as a list under "## Done criteria" in ${path}, each checkable by someone else.`]);
+      return refuse(flags.json, g.state, 'active', [`Write 1 to ${MAX_GOAL_CRITERIA} done criteria as a list under "## Done criteria" in ${path}, each checkable by someone else.`]);
     }
     if (written.length && JSON.stringify(written) !== JSON.stringify(current)) {
       g = await commit(ctx, g, {
         to: 'draft',
         valid: (x) => inState(x, ['draft'], 'setting criteria from a session'),
-        send: (x) => ctx.client.put<{ goal: Goal }>(goalPath(ctx, x.goal_id, '/criteria'), { revision: x.revision, criteria: written }),
+        send: (x) => setWorkspaceGoalCriteria(ctx.projectId, x, written),
       });
     }
   }
   const next = await commit(ctx, g, {
     to: 'active',
     valid: (x) => [...inState(x, ['draft', 'waiting_on_user'], 'activate'), ...notPaused(x), ...(x.criteria.length ? [] : ['The goal has no done criteria.'])],
-    send: (x) => post(ctx, x, 'activate', { reason: flags.reason }),
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'activate', { reason: flags.reason }),
   });
   return done(flags.json, start.state, next);
 }
@@ -538,7 +475,7 @@ async function wait(ctx: Ctx, g: Goal, flags: Flags): Promise<number> {
   const next = await commit(ctx, g, {
     to: 'waiting_on_user',
     valid: (x) => [...inState(x, ['active'], 'wait'), ...notPaused(x)],
-    send: (x) => post(ctx, x, 'wait', { question: flags.reason, ...(flags.chaseAt ? { chase_at: flags.chaseAt } : {}) }),
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'wait', { question: flags.reason, ...(flags.chaseAt ? { chase_at: flags.chaseAt } : {}) }),
   });
   if (!flags.json) {
     process.stdout.write(`${status.ok(`${g.state} → ${next.state}`)}\n`);
@@ -555,7 +492,7 @@ export function evidencePathOk(path: string): boolean {
 
 /** The criteria part of a `progress` request, or the reasons it is refused. */
 export function progressCriteria(
-  criteria: Pick<GoalCriterion, 'id' | 'reported_met' | 'evidence'>[],
+  criteria: Pick<WorkspaceGoalCriterionStatus, 'id' | 'reported_met' | 'evidence'>[],
   f: Pick<Flags, 'met' | 'unmet' | 'evidence'>,
 ): { criteria: Array<{ id: string; reported_met: boolean; evidence?: string | null }>; violations: string[] } {
   const known = new Map(criteria.map((c) => [c.id, c]));
@@ -595,7 +532,7 @@ async function progressGoal(ctx: Ctx, flags: Flags): Promise<number> {
     },
     send: (x) => {
       const { criteria } = progressCriteria(x.criteria, flags);
-      return post(ctx, x, 'progress', { ...(flags.summary !== undefined ? { summary: flags.summary } : {}), ...(criteria.length ? { criteria } : {}) });
+      return postWorkspaceGoalAction(ctx.projectId, x, 'progress', { ...(flags.summary !== undefined ? { summary: flags.summary } : {}), ...(criteria.length ? { criteria } : {}) });
     },
   });
   if (flags.json) return done(true, g.state, next);
@@ -609,10 +546,10 @@ async function verifyGoal(ctx: Ctx, flags: Flags): Promise<number> {
   const next = await commit(ctx, g, {
     to: 'verifying',
     valid: (x) => [...inState(x, ['active'], 'verify'), ...notPaused(x)],
-    send: (x) => post(ctx, x, 'request-verification', {}),
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'request-verification', {}),
   });
-  if (flags.json) return done(true, g.state, next, { verifier_session_id: next.verifier_session_id ?? next.verification?.verifier_session_id ?? null });
-  process.stdout.write(`${status.ok(`${g.state} → ${next.state}: verifier ${next.verifier_session_id ?? next.verification?.verifier_session_id ?? '(starting)'}`)}\n`);
+  if (flags.json) return done(true, g.state, next, { verifier_session_id: next.verification?.verifier_session_id ?? null });
+  process.stdout.write(`${status.ok(`${g.state} → ${next.state}: verifier ${next.verification?.verifier_session_id ?? '(starting)'}`)}\n`);
   process.stdout.write(`  ${C.dim}End the turn. The verdict wakes this goal's owner.${C.reset}\n`);
   return 0;
 }
@@ -624,7 +561,7 @@ async function handoverGoal(ctx: Ctx, flags: Flags): Promise<number> {
   const next = await commit(ctx, g, {
     to: g.state,
     valid: (x) => [...(OPEN.has(x.state) ? [] : [`The goal is ${x.state} (closed).`]), ...notPaused(x)],
-    send: (x) => post(ctx, x, 'handover', { note }),
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'handover', { note }),
   });
   if (flags.json) return done(true, g.state, next, { owner_session_id: next.owner_session_id });
   process.stdout.write(`${status.ok(`Handed over to ${next.owner_session_id ?? '(new owner)'}`)}\n`);
@@ -636,9 +573,9 @@ async function handoverGoal(ctx: Ctx, flags: Flags): Promise<number> {
 
 /** One result per current criterion from `--pass/--fail/--inconclusive/--note`, or the reasons it is refused. */
 export function verdictResults(
-  criteria: Pick<GoalCriterion, 'id'>[],
+  criteria: Pick<WorkspaceGoalCriterionStatus, 'id'>[],
   f: Pick<Flags, 'pass' | 'fail' | 'inconclusive' | 'notes' | 'reason'>,
-): { results: GoalCriterionResult[]; violations: string[] } {
+): { results: WorkspaceGoalVerification['results']; violations: string[] } {
   const violations: string[] = [];
   const known = criteria.map((c) => c.id);
   const notes = new Map<string, string>();
@@ -651,7 +588,7 @@ export function verdictResults(
     else if (text.length > NOTE_MAX) violations.push(`--note ${id} is ${text.length} characters; the limit is ${NOTE_MAX}.`);
     else notes.set(id, text);
   }
-  const given = new Map<string, GoalCriterionResult['result']>();
+  const given = new Map<string, WorkspaceGoalVerification['results'][number]['result']>();
   for (const [result, list] of [['pass', f.pass], ['fail', f.fail], ['inconclusive', f.inconclusive]] as const) {
     for (const id of list) {
       if (!known.includes(id)) violations.push(`No criterion ${id}. Criteria: ${known.join(', ') || '(none)'}.`);
@@ -680,7 +617,7 @@ async function verdictGoal(ctx: Ctx, legacy: string | undefined, flags: Flags): 
   const next = await commit(ctx, g, {
     to: 'done',
     valid: (x) => [...inState(x, ['verifying'], 'verdict'), ...verdictResults(x.criteria, flags).violations],
-    send: (x) => post(ctx, x, 'verdict', { results: verdictResults(x.criteria, flags).results }),
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'verdict', { results: verdictResults(x.criteria, flags).results }),
   });
   if (flags.json) return done(true, g.state, next);
   process.stdout.write(`${status.ok(`${g.state} → ${next.state}`)}\n`);
@@ -731,7 +668,7 @@ export function goalProblems(g: Goal): string[] {
   // Paused, closed or blocked (wake cap, credits, flag off, a lost owner): the API holds it; a nudge would be a turn the admission gate refused.
   if (g.paused_at || g.blocked_reason || !OPEN.has(g.state)) return [];
   if (g.state === 'draft' && g.criteria.length === 0) {
-    return [`Draft with no done criteria: write 1 to ${CRITERIA_MAX} under "## Done criteria" in GOAL.md, then kortix goals transition active --reason "…".`];
+    return [`Draft with no done criteria: write 1 to ${MAX_GOAL_CRITERIA} under "## Done criteria" in GOAL.md, then kortix goals transition active --reason "…".`];
   }
   // Only a draft is nudged: it has no heartbeat, so without the nudge nothing wakes it. An active
   // goal is woken by heartbeat fires the API admits within its wake cap; a nudge would be a turn outside it.
@@ -744,7 +681,7 @@ async function checkGoals(ctx: Ctx, flags: Flags): Promise<number> {
   const turn = flags.turn ?? (process.env.KORTIX_TURN_MESSAGE_ID || null);
   const wakesPath = join(STATE_DIR(), 'goal-wakes.json');
   const wakes = readJson<Record<string, WakeRecord>>(wakesPath, {});
-  const results: Array<{ goal_id: string; title: string; state: GoalState; problems: string[]; notes: string[]; skipped?: string }> = [];
+  const results: Array<{ goal_id: string; title: string; state: WorkspaceGoalRecordState; problems: string[]; notes: string[]; skipped?: string }> = [];
   for (const g of goals) {
     const notes = [
       ...(g.paused_at ? [`paused by a person at ${g.paused_at}`] : []),
@@ -779,7 +716,7 @@ async function checkGoals(ctx: Ctx, flags: Flags): Promise<number> {
   if (!flags.enforce) return broken.length ? 1 : 0;
   const due = broken.filter((b) => takeEnforcementSlot(b.goal_id, Date.now()));
   if (due.length) {
-    const session = await ctx.client.get<ProjectSession>(`/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`);
+    const session = await ctx.client.get<ProjectSession>(`/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`);
     const text =
       '[GOAL CHECK] A goal this session owns needs you. Do this now, then end the turn:\n' +
       due.map((b) => `${b.title} (${b.goal_id})\n${b.problems.map((p) => `- ${p}`).join('\n')}`).join('\n\n');
@@ -794,13 +731,13 @@ async function checkGoals(ctx: Ctx, flags: Flags): Promise<number> {
 async function newGoal(ctx: Ctx, brief: string, flags: Flags): Promise<number> {
   if (!brief) return missing('the goal, e.g. kortix goals new "EU billing live: invoices in EUR with VAT"');
   try {
-    const { goal } = await ctx.client.post<{ goal: Goal }>(ctx.base, {
+    const goal = await api(ctx, () => createWorkspaceGoalRecord(ctx.projectId, {
       goal_id: randomUUID(),
       brief,
       ...(flags.criterion.length ? { criteria: flags.criterion } : {}),
       ...(flags.agent ? { agent: flags.agent } : {}),
       ...(flags.user ? { assigned_user_id: flags.user } : {}),
-    });
+    }));
     if (flags.json) emitJson({ ok: true, goal });
     else {
       process.stdout.write(`${status.ok(`Goal created: ${C.bold}${goal.title}${C.reset} (${goal.goal_id})`)}\n`);
@@ -828,7 +765,7 @@ async function newGoal(ctx: Ctx, brief: string, flags: Flags): Promise<number> {
 async function findGoal(ctx: Ctx, ref: string | undefined, explicit: string | undefined): Promise<Goal> {
   const id = ref ?? explicit;
   if (!id && ctx.sessionId) return resolveGoal(ctx, 'owner');
-  const { goals } = await ctx.client.get<{ goals: Goal[] }>(ctx.base);
+  const goals = await api(ctx, () => listWorkspaceGoalRecords(ctx.projectId));
   const hit = id ? goals.filter((g) => g.goal_id === id || g.slug === id) : goals;
   if (hit.length !== 1) {
     throw new Refusal([
@@ -844,13 +781,12 @@ async function bindGoal(ctx: Ctx, ref: string | undefined, flags: Flags): Promis
   const next = await commit(ctx, g, {
     to: g.state,
     valid: () => [],
-    send: (x) =>
-      ctx.client.patch<{ goal: Goal }>(goalPath(ctx, x.goal_id), {
-        revision: x.revision,
+    send: async (x) =>
+      (await setWorkspaceGoalBinding({ projectId: ctx.projectId, goalId: x.goal_id, revision: x.revision }, {
         ...(flags.clear ? { space: null, agent: null } : {}),
         ...(flags.space !== undefined ? { space: flags.space } : {}),
         ...(flags.agent !== undefined ? { agent: flags.agent } : {}),
-      }),
+      })).projectGoal.record,
   });
   if (flags.json) emitJson({ ok: true, goal_id: next.goal_id, space: next.space, agent: next.agent });
   else process.stdout.write(`${status.ok(`Goal ${C.bold}${next.slug}${C.reset} is in ${next.space ?? (next.agent ? `${next.agent}'s space` : 'no space (project-wide)')}`)}\n`);
@@ -872,7 +808,7 @@ const stateCell = (g: Goal) => (g.paused_at ? `${g.state} (paused)` : g.blocked_
 async function listGoals(ctx: Ctx, flags: Flags): Promise<number> {
   let goals: Goal[];
   try {
-    goals = (await ctx.client.get<{ goals: Goal[] }>(ctx.base)).goals;
+    goals = await api(ctx, () => listWorkspaceGoalRecords(ctx.projectId));
   } catch (err) {
     if (unreachable(err)) return listLocal(undefined, flags.json);
     throw err;
@@ -909,7 +845,7 @@ async function goalStatus(ctx: Ctx, ref: string | undefined, flags: Flags): Prom
   row('state', `${g.state}${g.paused_at ? ` (paused by a person ${g.paused_at})` : ''}${g.blocked_reason ? ` (blocked: ${g.blocked_reason})` : ''}`);
   row('revision', String(g.revision));
   row('owner', g.owner_session_id ?? '—');
-  if (g.verifier_session_id || g.verification) row('verifier', `${g.verifier_session_id ?? g.verification?.verifier_session_id ?? '—'}${g.verification ? ` (attempt ${g.verification.attempt}, ${g.verification.outcome})` : ''}`);
+  if (g.verification) row('verifier', `${g.verification.verifier_session_id} (attempt ${g.verification.attempt}, ${g.verification.outcome})`);
   row('wakes', `${g.wakes_today}/${g.max_wakes_per_day} today, every ${g.heartbeat_every}, next ${g.next_wake_at ?? '—'}`);
   row('sessions', `${g.sessions.length}/${g.max_sessions}`);
   if (g.provenance === 'legacy_unverified') row('note', 'imported from a folder: no criterion was verified by the API');

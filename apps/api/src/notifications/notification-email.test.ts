@@ -46,7 +46,8 @@ describe('notification emails follow the transactional email rules', () => {
   test('links are absolute app URLs that open the subject', () => {
     const email = renderImmediateNotificationEmail(failed)!;
     const href = absoluteAppUrl(failed.url);
-    expect(href).toMatch(/^https?:\/\/[^/]+\/projects\//);
+    // The row keeps `/projects/…` for shipped mobile apps; the email names the canonical `/workspaces/…` page.
+    expect(href).toMatch(/^https?:\/\/[^/]+\/workspaces\//);
     expect(email.html).toContain(href.replace(/&/g, '&amp;'));
     expect(email.text).toContain(`Open triggers: ${href}`);
   });

@@ -127,7 +127,7 @@ export function ChannelInstallComplete({
       action={
         projectId ? (
           <Button size="lg" variant="secondary" className="w-full" asChild>
-            <Link href={`/projects/${encodeURIComponent(projectId)}`}>
+            <Link href={`/workspaces/${encodeURIComponent(projectId)}`}>
               {t('channelInstall.backToProject')}
             </Link>
           </Button>

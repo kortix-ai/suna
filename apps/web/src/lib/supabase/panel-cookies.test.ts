@@ -46,15 +46,15 @@ describe('hasPanelMarker', () => {
 
 describe('safePanelNext', () => {
   test('keeps same-origin relative paths', () => {
-    expect(safePanelNext('/projects/abc?tab=1')).toBe('/projects/abc?tab=1');
+    expect(safePanelNext('/workspaces/abc?tab=1')).toBe('/workspaces/abc?tab=1');
   });
   test.each([null, undefined, '', 'https://evil.example', '//evil.example', '/\\evil.example', 'projects', '/auth', '/auth/panel?next=/x', '/auth?redirect=/x', '/\t/evil.example', '/\n/evil.example', '/\r/evil.example'])(
-    'falls back to /projects for %p',
+    'falls back to /workspaces for %p',
     (value) => {
-      expect(safePanelNext(value as string | null)).toBe('/projects');
+      expect(safePanelNext(value as string | null)).toBe('/workspaces');
     },
   );
   test('panelAuthUrl encodes the target', () => {
-    expect(panelAuthUrl('/projects/a?b=1')).toBe('/auth/panel?next=%2Fprojects%2Fa%3Fb%3D1');
+    expect(panelAuthUrl('/workspaces/a?b=1')).toBe('/auth/panel?next=%2Fworkspaces%2Fa%3Fb%3D1');
   });
 });

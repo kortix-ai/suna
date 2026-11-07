@@ -12,7 +12,6 @@ import {
   actingPrincipal,
   actingTokenId,
   credentialAgentGrant,
-  credentialProjectId,
   pendingPrincipalId,
   type Actor,
 } from '../iam/actor';
@@ -93,11 +92,6 @@ describe('credential accessors', () => {
     expect(actingTokenId(actor({ kind: 'sandbox' }))).toBeUndefined();
     expect(actingTokenId(actor({ kind: 'pat', tokenId: TOKEN, projectId: null }))).toBe(TOKEN);
     expect(actingTokenId(actor({ kind: 'service_account', serviceAccountId: SA }, SA))).toBe(SA);
-  });
-
-  test('only token credentials carry a project confinement', () => {
-    expect(credentialProjectId(actor({ kind: 'jwt' }))).toBeNull();
-    expect(credentialProjectId(actor({ kind: 'pat', tokenId: TOKEN, projectId: PROJECT }))).toBe(PROJECT);
   });
 
   test('only an agent session carries a grant', () => {

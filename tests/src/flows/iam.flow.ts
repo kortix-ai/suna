@@ -17,6 +17,7 @@ import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
 import { createDatabaseSession } from '../fixtures/database-project';
+import { withDb } from '../fixtures/chat';
 import { waitFor } from '../core/poll';
 
 // ─── Groups ──────────────────────────────────────────────────────────────
@@ -758,11 +759,32 @@ flow(
       'POST /v1/accounts/:accountId/iam/service-accounts',
       'POST /v1/accounts/:accountId/iam/service-accounts/:saId/disable',
       'DELETE /v1/accounts/:accountId/iam/service-accounts/:saId',
+      'GET /v1/accounts',
+      'GET /v1/accounts/me',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'GET /v1/projects/:projectId',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
+    const project = await team.project();
     let saId = '';
+    let asSa: ReturnType<typeof ctx.client.withBearer>;
+    // A service account has no membership and no workspace of its own: its
+    // reads list nothing and never create an account (KRTX-4426).
+    const saOwnsNoAccount = async () => {
+      (await asSa.get('/v1/accounts')).status(200).body().has('$', []);
+      (await asSa.get('/v1/accounts/me')).status(200).body().has('$.accounts', []).has('$.token_context.auth_type', 'service_account');
+      if (!ctx.env.capabilities.database) return;
+      const rows = await withDb(ctx, (db) =>
+        db.query(
+          `SELECT 1 FROM kortix.accounts WHERE account_id = $1
+           UNION ALL SELECT 1 FROM kortix.account_members WHERE user_id = $1`,
+          [saId],
+        ),
+      );
+      if (rows.rowCount !== 0) throw new Error(`the service account owns ${rows.rowCount} account rows`);
+    };
     await ctx.step('create service account → 201 secret once', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -773,6 +795,22 @@ flow(
         );
       r.status(201).body().exists('$.secret').exists('$.service_account_id');
       saId = r.json<any>().service_account_id;
+      asSa = ctx.client.withBearer(r.json<{ secret: string }>().secret, 'SA');
+    });
+    await ctx.step("the service account's bearer lists no account (GET /v1/accounts → [], /accounts/me → accounts: []) and the reads create no account row", saOwnsNoAccount);
+    await ctx.step('granted member on a team project, the bearer reads that project → 200 and still owns no account', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/assignments',
+        { principal_type: 'service_account', principal_id: saId, role_key: 'member', scope_type: 'project', scope_id: project.id },
+        { params: { accountId: team.id } },
+      )).status(201);
+      await waitFor(() => asSa.get('/v1/projects/:projectId', { params: { projectId: project.id } }), {
+        until: (r) => r.statusCode === 200,
+        timeoutMs: 20_000,
+        intervalMs: 1_000,
+        description: 'the service account reads its granted project',
+      });
+      await saOwnsNoAccount();
     });
     await ctx.step('missing name → 400', async () => {
       const r = await ctx.client
@@ -790,7 +828,7 @@ flow(
         .get('/v1/accounts/:accountId/iam/service-accounts', { params: { accountId: team.id } });
       r.status(200).body().exists('$.service_accounts');
     });
-    await ctx.step('disable service account → 200', async () => {
+    await ctx.step('disable service account → 200; its bearer → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
@@ -799,6 +837,7 @@ flow(
           { params: { accountId: team.id, saId } },
         );
       r.status(200).body().has('$.disabled', true);
+      (await asSa.get('/v1/accounts')).status(401);
     });
     await ctx.step('disable again → 409 already disabled', async () => {
       const r = await ctx.client
@@ -1544,7 +1583,7 @@ flow(
     await ctx.step('the grant is visible on the project access read model', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       r.status(200);
       const row = (r.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (!row || row.project_role !== 'manager') {
@@ -1571,7 +1610,7 @@ flow(
     await ctx.step('the revoke is gone from the read model too', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       r.status(200);
       const row = (r.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (row && row.project_role !== null) {
@@ -1767,8 +1806,8 @@ flow(
     domain: 'iam',
     routes: [
       'GET /v1/accounts/:accountId/iam/resource-grants',
-      'GET /v1/projects/:projectId/resource-grants',
-      'GET /v1/projects/:projectId/access',
+      'GET /v1/workspaces/:projectId/resource-grants',
+      'GET /v1/workspaces/:projectId/access',
       'GET /v1/accounts/:accountId/iam/members/:userId/project-access',
     ],
   },
@@ -1795,7 +1834,7 @@ flow(
     await ctx.step('every read model reports the same grant', async () => {
       const access = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
       access.status(200).body().has('$.project_id', project.id).exists('$.group_access');
       const row = (access.json<any>().members as any[]).find((m) => m.user_id === member.userId);
       if (!row || row.project_role !== 'manager' || row.effective_project_role !== 'manager') {
@@ -1834,7 +1873,7 @@ flow(
     await ctx.step('resource-grant read models answer for an unscoped project', async () => {
       const perProject = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/resource-grants', { params: { projectId: project.id } });
+        .get('/v1/workspaces/:projectId/resource-grants', { params: { projectId: project.id } });
       perProject.status(200).body().exists('$.grants');
 
       const accountWide = await ctx.client
@@ -1879,8 +1918,8 @@ flow(
     routes: [
       'GET /v1/accounts/:accountId/iam/session-oversight',
       'PATCH /v1/accounts/:accountId/iam/session-oversight',
-      'GET /v1/projects/:projectId/sessions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/workspaces/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
       'GET /v1/accounts/:accountId/audit',
     ],
     timeoutMs: 240_000,
@@ -1909,11 +1948,11 @@ flow(
     });
 
     const readSession = (as: typeof owner) =>
-      as.get('/v1/projects/:projectId/sessions/:sessionId', {
+      as.get('/v1/workspaces/:projectId/sessions/:sessionId', {
         params: { projectId: project.id, sessionId: privateSessionId },
       });
     const inventoryIds = async (as: typeof owner, scope?: 'project') => {
-      const r = await as.get('/v1/projects/:projectId/sessions', {
+      const r = await as.get('/v1/workspaces/:projectId/sessions', {
         params: { projectId: project.id },
         ...(scope ? { query: { scope } } : {}),
       });
@@ -2060,13 +2099,13 @@ flow(
     routes: [
       'POST /v1/accounts/:accountId/iam/assignments',
       'GET /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/projects/:projectId',
+      'GET /v1/workspaces/:projectId',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
-    // A signed-in user who owns (and is super-admin of) only their personal account.
+    // A signed-in user who owns (and is super-admin of) only their own account.
     const outsider = await ctx.fixtures.user({ label: 'OUTSIDER' });
     const ownAccount = { accountId: outsider.accountId! };
 
@@ -2111,7 +2150,7 @@ flow(
       if ((own.json<any>().assignments as any[]).some((a) => a.scope_id === project.id)) {
         throw new Error('a project-scoped row for a foreign project was stored');
       }
-      (await ctx.client.as(outsider).get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+      (await ctx.client.as(outsider).get('/v1/workspaces/:projectId', { params: { projectId: project.id } }))
         .status([403, 404]);
     });
 
@@ -2210,11 +2249,11 @@ flow(
     domain: 'iam',
     routes: [
       'POST /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/projects/:projectId',
-      'GET /v1/projects/:projectId/detail',
-      'GET /v1/projects/:projectId/resource-grants',
-      'GET /v1/projects/:projectId/access',
-      'DELETE /v1/projects/:projectId/resource-grants/:grantId',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:projectId/detail',
+      'GET /v1/workspaces/:projectId/resource-grants',
+      'GET /v1/workspaces/:projectId/access',
+      'DELETE /v1/workspaces/:projectId/resource-grants/:grantId',
     ],
   },
   async (ctx) => {
@@ -2237,7 +2276,7 @@ flow(
 
     // `/detail` narrows `config.agents` to the agents the caller may use.
     const visibleAgents = async (who: typeof member): Promise<string[]> => {
-      const r = await ctx.client.as(who).get('/v1/projects/:projectId/detail', {
+      const r = await ctx.client.as(who).get('/v1/workspaces/:projectId/detail', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2304,23 +2343,25 @@ flow(
       grantId = r.json<any>().assignment_id;
     });
 
-    await ctx.step('the member now lists the agent; the account member outside the project still reaches nothing', async () => {
-      const agents = await visibleAgents(member);
-      assert({
-        kind: 'body',
-        description: 'member sees the agent granted to everyone',
-        pass: agents.includes(AGENT),
-        expected: AGENT,
-        actual: agents,
-      });
-      const r = await ctx.client.as(outsider).get('/v1/projects/:projectId', {
+    await ctx.step('the member and every other account member (membership is access) list the agent; a non-member reaches nothing', async () => {
+      for (const who of [member, outsider]) {
+        const agents = await visibleAgents(who);
+        assert({
+          kind: 'body',
+          description: `${who.label} sees the agent granted to everyone in the workspace`,
+          pass: agents.includes(AGENT),
+          expected: AGENT,
+          actual: agents,
+        });
+      }
+      const r = await ctx.client.as(ctx.P.NONMEMBER).get('/v1/workspaces/:projectId', {
         params: { projectId: project.id },
       });
       r.status([403, 404]);
     });
 
     await ctx.step('the resource-grants list shows the grant as everyone, labelled with the project name', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/resource-grants', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/resource-grants', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2335,7 +2376,7 @@ flow(
     });
 
     await ctx.step('the access screen folds it onto every member as source "project", never as a group', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/access', {
         params: { projectId: project.id },
       });
       r.status(200);
@@ -2362,7 +2403,7 @@ flow(
     await ctx.step('deleting the grant closes the agent to the member again', async () => {
       const del = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/resource-grants/:grantId', {
+        .del('/v1/workspaces/:projectId/resource-grants/:grantId', {
           params: { projectId: project.id, grantId },
         });
       del.status(200);
@@ -2395,13 +2436,13 @@ flow(
     routes: [
       'POST /v1/accounts/:accountId/iam/roles',
       'POST /v1/accounts/:accountId/iam/policies',
-      'POST /v1/projects/:projectId/triggers',
-      'PATCH /v1/projects/:projectId/triggers/:slug',
-      'POST /v1/projects/:projectId/apps/artifacts',
-      'POST /v1/projects/:projectId/apps',
-      'POST /v1/projects/:projectId/secrets',
-      'GET /v1/projects/:projectId/secrets',
-      'DELETE /v1/projects/:projectId/secrets/:name',
+      'POST /v1/workspaces/:projectId/triggers',
+      'PATCH /v1/workspaces/:projectId/triggers/:slug',
+      'POST /v1/workspaces/:projectId/apps/artifacts',
+      'POST /v1/workspaces/:projectId/apps',
+      'POST /v1/workspaces/:projectId/secrets',
+      'GET /v1/workspaces/:projectId/secrets',
+      'DELETE /v1/workspaces/:projectId/secrets/:name',
     ],
   },
   async (ctx) => {
@@ -2441,11 +2482,11 @@ flow(
       async () => {
         const author = await leafHolder('trigger_author', ['project.trigger.read', 'project.trigger.create']);
         const trigger = { name: 'Leaf Only', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'noop' };
-        (await once(() => author.post('/v1/projects/:projectId/triggers', trigger, { params }), 'trigger create'))
+        (await once(() => author.post('/v1/workspaces/:projectId/triggers', trigger, { params }), 'trigger create'))
           .status(201);
-        (await author.patch('/v1/projects/:projectId/triggers/:slug', { prompt_template: 'x' }, { params: { ...params, slug: 'leaf-only' } }))
+        (await author.patch('/v1/workspaces/:projectId/triggers/:slug', { prompt_template: 'x' }, { params: { ...params, slug: 'leaf-only' } }))
           .status(403);
-        (await asFloor.post('/v1/projects/:projectId/triggers', { ...trigger, name: 'Floor' }, { params })).status(403);
+        (await asFloor.post('/v1/workspaces/:projectId/triggers', { ...trigger, name: 'Floor' }, { params })).status(403);
       },
     );
 
@@ -2454,12 +2495,12 @@ flow(
       async () => {
         const deployer = await leafHolder('app_deployer', ['project.app.read', 'project.app.deploy']);
         const artifact = { kind: 'oci_image', image: 'docker.io/library/nginx:alpine' };
-        (await once(() => deployer.post('/v1/projects/:projectId/apps/artifacts', artifact, { params }), 'artifact register'))
+        (await once(() => deployer.post('/v1/workspaces/:projectId/apps/artifacts', artifact, { params }), 'artifact register'))
           .status(201)
           .body()
           .exists('$.artifact.artifact_id');
-        (await deployer.post('/v1/projects/:projectId/apps', { slug: 'leaf-only', name: 'Leaf only' }, { params })).status(403);
-        (await asFloor.post('/v1/projects/:projectId/apps/artifacts', artifact, { params })).status(403);
+        (await deployer.post('/v1/workspaces/:projectId/apps', { slug: 'leaf-only', name: 'Leaf only' }, { params })).status(403);
+        (await asFloor.post('/v1/workspaces/:projectId/apps/artifacts', artifact, { params })).status(403);
       },
     );
 
@@ -2467,12 +2508,99 @@ flow(
       'a custom role with project.secret.write (+ project.read, project.secret.read) writes, lists with can_manage: true and deletes a shared secret; a floor member → 403',
       async () => {
         const writer = await leafHolder('secret_writer', ['project.secret.read', 'project.secret.write']);
-        (await once(() => writer.post('/v1/projects/:projectId/secrets', { name: 'LEAF_ONLY', value: 'v1' }, { params }), 'secret write'))
+        (await once(() => writer.post('/v1/workspaces/:projectId/secrets', { name: 'LEAF_ONLY', value: 'v1' }, { params }), 'secret write'))
           .status([200, 201]);
-        (await writer.get('/v1/projects/:projectId/secrets', { params })).status(200).body().has('$.can_manage', true);
-        (await writer.del('/v1/projects/:projectId/secrets/:name', { params: { ...params, name: 'LEAF_ONLY' } })).status(200);
-        (await asFloor.post('/v1/projects/:projectId/secrets', { name: 'FLOOR_TRY', value: 'v1' }, { params })).status(403);
+        (await writer.get('/v1/workspaces/:projectId/secrets', { params })).status(200).body().has('$.can_manage', true);
+        (await writer.del('/v1/workspaces/:projectId/secrets/:name', { params: { ...params, name: 'LEAF_ONLY' } })).status(200);
+        (await asFloor.post('/v1/workspaces/:projectId/secrets', { name: 'FLOOR_TRY', value: 'v1' }, { params })).status(403);
       },
     );
+  },
+);
+
+// IAM-45 — a service account lists the projects it was granted. It has no
+// account membership: it acts in its own account only, the engine filters the
+// list to its grants, and every account-level route still refuses it.
+flow(
+  'IAM-45',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/iam/service-accounts',
+      'POST /v1/accounts/:accountId/iam/assignments',
+      'DELETE /v1/accounts/:accountId/iam/service-accounts/:saId',
+      'GET /v1/projects',
+      'GET /v1/projects/:projectId',
+      'GET /v1/projects/quota',
+      'POST /v1/projects',
+      'POST /v1/projects/provision',
+      'GET /v1/projects/github/repositories',
+      'GET /v1/projects/github/installations',
+      'DELETE /v1/projects/github/installation',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const other = await ctx.fixtures.team();
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const accountParams = { accountId: team.id };
+    const created = await owner.post(
+      '/v1/accounts/:accountId/iam/service-accounts',
+      { name: ctx.fixtures.name('sa'), description: 'e2e' },
+      { params: accountParams },
+    );
+    created.status(201);
+    const { service_account_id: saId, secret } = created.json<{ service_account_id: string; secret: string }>();
+    const sa = ctx.client.withBearer(secret, 'service-account');
+    const listed = async (query?: Record<string, string>) => {
+      const r = await sa.get('/v1/projects', query ? { query } : undefined);
+      r.status(200);
+      return r.json<Array<{ project_id: string }>>().map((p) => p.project_id);
+    };
+    const listIs = (actual: string[], expected: string[], description: string) =>
+      assert({ kind: 'body', description, pass: JSON.stringify(actual) === JSON.stringify(expected), expected, actual });
+    try {
+      await ctx.step('before any grant: GET /v1/projects → 200 []', async () => {
+        listIs(await listed(), [], 'the list is empty');
+      });
+      await ctx.step('the owner grants the service account member on the project → 201', async () => {
+        (await owner.post('/v1/accounts/:accountId/iam/assignments', {
+          principal_type: 'service_account', principal_id: saId, role_key: 'member',
+          scope_type: 'project', scope_id: project.id,
+        }, { params: accountParams })).status(201);
+      });
+      await ctx.step('the service account reads the project and the list holds exactly that project', async () => {
+        // IAM verdicts are cached per API process for up to 15 s.
+        await waitFor(
+          async () => (await sa.get('/v1/projects/:projectId', { params: { projectId: project.id } })).statusCode,
+          { until: (s) => s === 200, timeoutMs: 30_000, intervalMs: 1_000, description: 'GET /v1/projects/:id → 200' },
+        );
+        const ids = await waitFor(() => listed(), {
+          until: (v) => v.length > 0, timeoutMs: 30_000, intervalMs: 1_000, description: 'a non-empty list',
+        });
+        listIs(ids, [project.id], 'the list holds exactly the granted project');
+      });
+      await ctx.step('account_id naming its own account, by account id or workspace id → the same list', async () => {
+        listIs(await listed({ account_id: team.id }), [project.id], 'account_id = its account id');
+        listIs(await listed({ account_id: project.id }), [project.id], 'account_id = its workspace id');
+      });
+      await ctx.step('account_id naming another account → 403; a malformed one → 400', async () => {
+        (await sa.get('/v1/projects', { query: { account_id: other.id } })).status(403);
+        (await sa.get('/v1/projects', { query: { account_id: 'not-a-uuid' } })).status(400);
+      });
+      await ctx.step('every account-level route of the same gate still refuses the service account → 403', async () => {
+        (await sa.get('/v1/projects/quota')).status(403);
+        (await sa.post('/v1/projects', { repo_url: 'https://github.com/example/example' })).status(403);
+        (await sa.post('/v1/projects/provision', { name: ctx.fixtures.name('sa-provision') })).status(403);
+        (await sa.get('/v1/projects/github/repositories')).status(403);
+        (await sa.get('/v1/projects/github/installations')).status(403);
+        (await sa.del('/v1/projects/github/installation')).status(403);
+      });
+    } finally {
+      (await owner.del('/v1/accounts/:accountId/iam/service-accounts/:saId', {
+        params: { ...accountParams, saId },
+      })).status(200);
+    }
   },
 );

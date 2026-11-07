@@ -4,7 +4,7 @@
  * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
  * is the glue to Postgres + the credential store + Pipedream.
  */
-import { connectorConnections, connectors, projectSessions, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectSessions } from '@kortix/db';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { config } from '../config';
@@ -109,6 +109,7 @@ import {
   resolveSecretReader,
 } from './db-deps-principal';
 import { connectorConnected } from './db-deps-rows';
+import { projectsView } from '../workspaces/rows';
 
 export {
   composioConnectionMetadata,
@@ -375,9 +376,9 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
           .limit(1)
       : [];
     const [project] = await db
-      .select({ accountId: projects.accountId })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .select({ accountId: projectsView.accountId })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .limit(1);
     if (!project) return [];
     const entitled = await listEntitledConnectorConnections({
@@ -456,8 +457,9 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         .where(eq(connectorConnections.connectionId, connectionId))
         .limit(1);
       const previous = (previousRow?.metadata ?? {}) as Record<string, unknown>;
-      // A person starts the authorization now: a deliberate (re)connect
-      // (connectors/connection-status.ts).
+      // Starting an authorization is not a reconnect: an agent session reaches
+      // this with owner "me", and only a person leaves `revoked`
+      // (connectors/connection-status.ts `ConnectAuthority`).
       // INVARIANT (2026-09-16, account_required rule): never set is_default
       // here — an auto-authorized account is not a deliberately pinned one.
       // `connectorFinalize` below finds this row back by recency
@@ -760,7 +762,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     for (const key of ['provider', 'url', 'transport', 'endpoint', 'spec', 'baseUrl', 'name'] as const) {
       if (typeof draft[key] === 'string' && draft[key]) query.set(key === 'baseUrl' ? 'base_url' : key, draft[key] as string);
     }
-    return `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/projects/${projectId}/admin/connectors?${query}`;
+    return `${(config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')}/workspaces/${projectId}/admin/connectors?${query}`;
   },
   listConnectorIdentities: async (projectId) =>
     (

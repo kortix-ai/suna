@@ -56,6 +56,18 @@ describe('buildSessionRuntimeEnv — server-claimed initial turn', () => {
 
 });
 
+describe('buildSessionRuntimeEnv — workspace id', () => {
+  test('the box gets KORTIX_PROJECT_ID only, so a script that sets KORTIX_PROJECT_ID=<other> still wins', () => {
+    // The CLI reads KORTIX_WORKSPACE_ID before KORTIX_PROJECT_ID. An injected
+    // KORTIX_WORKSPACE_ID would outrank an older script's own
+    // KORTIX_PROJECT_ID override and silently target the box's project.
+    const env = buildSessionRuntimeEnv(BASE_INPUT);
+
+    expect(env.KORTIX_PROJECT_ID).toBe(BASE_INPUT.projectId);
+    expect('KORTIX_WORKSPACE_ID' in env).toBe(false);
+  });
+});
+
 describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
   test('every new box runs pi: KORTIX_HARNESS=pi, next to the same model and compiled config keys', () => {
     // An unset KORTIX_HARNESS marks a box OpenCode booted before the sunset, so the key is never left out.

@@ -33,7 +33,7 @@ test('reads the instance git backend without naming its credential', async () =>
 
   const backend = await getManagedGitBackend();
 
-  expect(calls[0]).toBe('http://backend.local/v1/projects/git/backend');
+  expect(calls[0]).toBe('http://backend.local/v1/workspaces/git/backend');
   expect(backend).toEqual({
     configured: true,
     kind: 'pat',
@@ -84,7 +84,7 @@ test('lists instance backend repositories under their own namespace', async () =
   const result = await listManagedGitRepositories({ search: 'port al', limit: 25 });
 
   expect(calls[0]).toBe(
-    'http://backend.local/v1/projects/git/backend/repositories?search=port+al&limit=25',
+    'http://backend.local/v1/workspaces/git/backend/repositories?search=port+al&limit=25',
   );
   expect(result.owner).toBe('managed-kortix');
   expect(result.repositories[0]?.full_name).toBe('managed-kortix/portal');
@@ -95,5 +95,5 @@ test('omits empty search and limit parameters', async () => {
 
   await listManagedGitRepositories();
 
-  expect(calls[0]).toBe('http://backend.local/v1/projects/git/backend/repositories');
+  expect(calls[0]).toBe('http://backend.local/v1/workspaces/git/backend/repositories');
 });

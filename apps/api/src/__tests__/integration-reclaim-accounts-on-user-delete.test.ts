@@ -91,6 +91,7 @@ async function seedUser(id: string, email: string) {
 
 async function seedProject(projectId: string, accountId: string, label: string) {
   await db.insert(projects).values({
+    splitPending: true,
     projectId,
     accountId,
     name: label,
@@ -177,7 +178,7 @@ describe('deleting an auth user reclaims the accounts it would orphan', () => {
     expect((await get(`/v1/projects/${P4}`, lastLivePat)).status).toBe(200);
   });
 
-  test('deleting the sole member reclaims the personal account and its projects; the same-address re-signup finds no 403 orphan', async () => {
+  test('deleting the sole member reclaims the personal account and its projects; the same-address re-signup gets no account and finds no 403 orphan', async () => {
     await db.insert(creditAccounts).values({
       accountId: SOLO_A,
       stripeSubscriptionId: 'sub_synthetic_admin_deleted',
@@ -199,12 +200,15 @@ describe('deleting an auth user reclaims the accounts it would orphan', () => {
     expect(cancelledSubscriptions).toEqual(['sub_synthetic_admin_deleted']);
 
     // Re-signup with the same address: a new auth id, same email — what the
-    // Supabase admin re-create does. The signup path (resolveAccountId) must
-    // boot a fresh personal account for the new id, and the old
-    // project id must answer 404 (gone), never 403 (exists but unreachable).
+    // Supabase admin re-create does. No account is created at sign-up
+    // (Workspaces D3): the new id has no workspace until it makes one. Once
+    // it does, the old project id must answer 404 (gone), never 403 (exists
+    // but unreachable).
     await seedUser(NEW, SOLO_EMAIL);
-    expect(await resolveAccountId(NEW)).toBe(NEW);
-    expect(await countRows(sql`select count(*) n from kortix.accounts where account_id = ${NEW}::uuid`)).toBe(1);
+    await expect(resolveAccountId(NEW)).rejects.toMatchObject({ status: 409, code: 'no_workspace' });
+    expect(await countRows(sql`select count(*) n from kortix.accounts where account_id = ${NEW}::uuid`)).toBe(0);
+    await db.insert(accounts).values({ accountId: NEW, name: 'reclaim-on-delete-new-workspace' });
+    await insertIntoView(db, accountMembers, [{ accountId: NEW, userId: NEW, accountRole: 'owner' }]);
     const newPat = (
       await createAccountToken({ accountId: NEW, userId: NEW, name: 'new', agentGrant: null })
     ).secretKey;

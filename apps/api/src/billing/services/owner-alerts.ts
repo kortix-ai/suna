@@ -4,7 +4,6 @@
  * accept a plan. One helper for every billing alert: auto top-up turned off,
  * a member asking for credits, a trial or contract about to end.
  */
-import { accounts } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { lookupEmailsByUserIds } from '../../accounts/core/owner-emails';
 import { config } from '../../config';
@@ -12,6 +11,7 @@ import { accountRoleMap } from '../../iam/read-models';
 import type { EmailMessage } from '../../lib/email/types';
 import { sendEmail } from '../../lib/email/transport';
 import { db } from '../../shared/db';
+import { accountsView } from '../../workspaces/rows';
 
 let send = sendEmail;
 
@@ -28,7 +28,7 @@ export function sendAlertEmail(message: EmailMessage) {
 /** The account's Billing pane: the hub opened over the project list. */
 export function billingPaneUrl(accountId: string): string {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  return `${base}/projects?accountId=${encodeURIComponent(accountId)}&accountTab=billing`;
+  return `${base}/workspaces?accountId=${encodeURIComponent(accountId)}&accountTab=billing`;
 }
 
 /**
@@ -48,7 +48,7 @@ export async function emailBillingManagers(
   if (managers.length === 0) return 0;
   const [emails, [account]] = await Promise.all([
     lookupEmailsByUserIds(managers),
-    db.select({ name: accounts.name }).from(accounts).where(eq(accounts.accountId, accountId)).limit(1),
+    db.select({ name: accountsView.name }).from(accountsView).where(eq(accountsView.accountId, accountId)).limit(1),
   ]);
   const recipients = [...new Set([...emails.values()].filter((email): email is string => !!email))];
   if (recipients.length === 0) return 0;

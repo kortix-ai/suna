@@ -8,6 +8,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { Button } from '@kortix/ui/button';
 import { InfoBanner } from '@kortix/ui/info-banner';
+import { Label } from '@kortix/ui/label';
 import Loading from '@kortix/ui/loading';
 import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
@@ -20,14 +21,15 @@ import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-prim
 import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
-import { getOAuthConsentRequest, submitOAuthConsent } from '@kortix/sdk';
+import { getOAuthConsentRequest, listWorkspaces, submitOAuthConsent, type WorkspaceSummary } from '@kortix/sdk';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kortix/ui/select';
 
-const SCOPE_DESCRIPTIONS: Record<string, string> = {
-  profile: 'View your account information',
-  email: 'View your email address',
-  kortix:
-    'Act on your behalf in Kortix — projects, sessions, files and everything your role allows',
-  'machines:read': 'View your project session sandboxes',
+/** Scope → its `oauthConsent.scopes.<key>` description. An unknown scope shows as itself. */
+const SCOPE_MESSAGE_KEYS: Record<string, 'profile' | 'email' | 'kortix' | 'machinesRead'> = {
+  profile: 'profile',
+  email: 'email',
+  kortix: 'kortix',
+  'machines:read': 'machinesRead',
 };
 
 export default function OAuthConsentPage() {
@@ -45,6 +47,10 @@ type ConsentRequestView = {
   /** The client registered itself (an MCP client): no account vouches for its name. */
   selfRegistered: boolean;
   redirectTo: string;
+  /** The consent names the workspace the app gets; the token reaches it only. */
+  asksWorkspace: boolean;
+  /** The workspaces the person can give the app, most recently opened first. */
+  workspaces: Pick<WorkspaceSummary, 'workspace_id' | 'name'>[];
 };
 type ConsentLoadResult =
   | { kind: 'consent'; request: ConsentRequestView }
@@ -86,14 +92,29 @@ async function loadAndMaybeApprove(
     remembered: data.remembered === true,
     selfRegistered: data.self_registered === true,
     redirectTo: typeof data.redirect_to === 'string' ? data.redirect_to : '',
+    asksWorkspace: data.asks_workspace === true,
+    workspaces: [],
   };
-  if (!request.remembered) return { kind: 'consent', request };
+  if (request.asksWorkspace) {
+    // A failed list leaves the picker empty: the person can still deny, and
+    // an approval without a workspace is refused by nothing but its reach.
+    request.workspaces = (await listWorkspaces().catch(() => [])).map((w) => ({
+      workspace_id: w.workspace_id,
+      name: w.name,
+    }));
+  }
+  // A remembered consent approves straight away, unless there is a workspace
+  // to choose: with more than one, the person picks it every time.
+  const autoWorkspace = request.asksWorkspace ? request.workspaces[0]?.workspace_id : undefined;
+  if (!request.remembered || (request.asksWorkspace && request.workspaces.length !== 1)) {
+    return { kind: 'consent', request: { ...request, remembered: false } };
+  }
 
   // Remembered consent: approve straight away and send the user back. A
   // failure falls through to the normal Allow/Deny screen with the error strip.
   try {
     const approved = await submitOAuthConsent(
-      { requestId, approved: true },
+      { requestId, approved: true, ...(autoWorkspace ? { workspaceId: autoWorkspace } : {}) },
       { backendUrl, accessToken: session.access_token },
     );
     if (approved.redirect_uri) {
@@ -126,6 +147,7 @@ function OAuthConsent() {
   // (`oauth_consents`). The Allow screen is skipped: the load effect approves
   // and redirects on its own, and this page shows the pending screen meanwhile.
   const [consentRequest, setConsentRequest] = useState<ConsentRequestView | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string>('');
   const t = useTranslations('oauthConsent');
 
   const requestId = searchParams.get('request_id') || '';
@@ -174,6 +196,7 @@ function OAuthConsent() {
       }
       setError(null);
       setConsentRequest(result.request);
+      setWorkspaceId((current) => current || result.request.workspaces[0]?.workspace_id || '');
     });
     return () => {
       cancelled = true;
@@ -200,6 +223,8 @@ function OAuthConsent() {
         {
           requestId,
           approved,
+          // The token reaches this workspace only (design.md §3.2 C4a).
+          ...(approved && consentRequest?.asksWorkspace && workspaceId ? { workspaceId } : {}),
         },
         {
           backendUrl,
@@ -277,10 +302,29 @@ function OAuthConsent() {
                 {scopes.map((s) => (
                   <li key={s} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm">
                     <Check className="text-muted-foreground size-4 shrink-0" />
-                    <span className="min-w-0">{SCOPE_DESCRIPTIONS[s] || s}</span>
+                    <span className="min-w-0">{SCOPE_MESSAGE_KEYS[s] ? t(`scopes.${SCOPE_MESSAGE_KEYS[s]}`) : s}</span>
                   </li>
                 ))}
               </ul>
+            </div>
+          ) : null}
+
+          {consentRequest.asksWorkspace && consentRequest.workspaces.length > 0 ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="oauth-consent-workspace">{t('workspaceLabel')}</Label>
+              <Select value={workspaceId} onValueChange={setWorkspaceId} disabled={submitting}>
+                <SelectTrigger id="oauth-consent-workspace" size="md" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {consentRequest.workspaces.map((w) => (
+                    <SelectItem key={w.workspace_id} value={w.workspace_id}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">{t('workspaceHint', { client: clientName })}</p>
             </div>
           ) : null}
 
@@ -296,7 +340,7 @@ function OAuthConsent() {
               size="lg"
               className="w-full"
               onClick={() => handleConsent(true)}
-              disabled={submitting}
+              disabled={submitting || (consentRequest.asksWorkspace && consentRequest.workspaces.length > 0 && !workspaceId)}
             >
               {decision === 'allow' ? <Loading className="size-4 shrink-0" /> : null}
               {tI18nComplete.raw('texte213c161d5ce')}

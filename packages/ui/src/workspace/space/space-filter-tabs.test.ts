@@ -33,7 +33,7 @@ mock.module('../../providers/ui-provider', () => ({
   ...provider,
   useUiSearchParams: () => new URLSearchParams(param ? { space: param } : {}),
   useUiRouter: () => ({ push: () => {}, replace: () => {} }),
-  useUiPathname: () => '/projects/p1/goals',
+  useUiPathname: () => '/workspaces/p1/goals',
 }));
 
 const { SpaceFilterTabs } = await import('./space-filter-tabs');
@@ -70,7 +70,7 @@ test('the selected space has a tab with 0 when nothing is bound to it', () => {
   const html = tabs('sales');
   expect(html).toContain('aria-label="Filter by space"');
   expect(html).toMatch(/aria-selected="true"[^>]*>Sales<span[^>]*>0</);
-  expect(html).toContain('Project-wide');
+  expect(html).toContain('Workspace-wide');
   expect(html).toContain('>All<');
 });
 

@@ -32,7 +32,7 @@ function Page({
   expose: (guard: Guard) => void;
   children?: ReactNode;
 }) {
-  const guard = useUnsavedChangesGuard(dirty, '/projects/p/customize/agents/a');
+  const guard = useUnsavedChangesGuard(dirty, '/workspaces/p/customize/agents/a');
   expose(guard);
   return createElement(LeaveGuardProvider, { value: guard.confirmLeave }, children);
 }

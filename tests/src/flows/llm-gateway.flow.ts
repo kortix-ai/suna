@@ -72,18 +72,22 @@ flow(
     const gw = new Client(ctx.env.gatewayUrl);
     const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('gateway-models') });
     for (const path of ['/v1/llm/models', '/v1/models', '/v1/openai/models'] as const) {
-      await ctx.step(`${path} returns the authenticated model catalog`, async () => {
+      await ctx.step(`${path} lists the models the funded PAT can call in the OpenAI list shape`, async () => {
         const r = await gw.withBearer(pat, 'OWNER_PAT').get(path);
-        r.status(200).body().exists('$.models');
-        const models = r.json<any>()?.models;
-        if (!models || typeof models !== 'object' || Object.keys(models).length === 0) {
-          throw new Error(`${path} returned an empty model catalog`);
-        }
-        if ('auto' in models || 'kortix/auto' in models) {
+        r.status(200).body().has('$.object', 'list');
+        const ids = (r.json<{ data?: { id: string; object: string }[] }>().data ?? []).map((model) => model.id);
+        if (ids.length === 0) throw new Error(`${path} listed no callable model`);
+        if (ids.includes('auto') || ids.includes('kortix/auto')) {
           throw new Error(`${path} returned the removed Auto model`);
         }
       });
     }
+    await ctx.step('/v1/models?scope=all returns the full model catalog as a keyed map', async () => {
+      const r = await gw.withBearer(pat, 'OWNER_PAT').get('/v1/models?scope=all');
+      r.status(200).body().exists('$.models');
+      const models = r.json<{ models?: Record<string, unknown> }>().models ?? {};
+      if (Object.keys(models).length === 0) throw new Error('scope=all returned an empty model catalog');
+    });
   },
 );
 
@@ -140,8 +144,8 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
-      'GET /v1/projects/:projectId/llm-catalog',
-      'GET /v1/projects/:projectId/llm-catalog/providers',
+      'GET /v1/workspaces/:projectId/llm-catalog',
+      'GET /v1/workspaces/:projectId/llm-catalog/providers',
     ],
   },
   async (ctx) => {
@@ -172,7 +176,7 @@ flow(
 
     await ctx.step('the catalog retains published rates for ChatGPT picker rows', async () => {
       const response = await ctx.client.as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/llm-catalog', { params });
+        .get('/v1/workspaces/:projectId/llm-catalog', { params });
       response.status(200);
       const models = response.json<{ models: Record<string, { cost?: Record<string, unknown> }> }>().models;
       const subscription = models['codex/gpt-5.6-sol']?.cost;
@@ -185,7 +189,7 @@ flow(
     await ctx.step('OWNER → 200 with a provider catalog on /providers', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/llm-catalog/providers', { params });
+        .get('/v1/workspaces/:projectId/llm-catalog/providers', { params });
       r.status(200);
       // The runtime catalog snapshot is an object (provider-keyed); assert it
       // parsed to a non-null object so a future regression that returns
@@ -233,12 +237,12 @@ flow(
   'GW-3c',
   {
     domain: 'llm-gateway',
-    routes: ['POST /v1/projects/:projectId/gateway/keys', 'POST /v1/chat/completions', 'POST /v1/messages', 'POST /v1/responses'],
+    routes: ['POST /v1/workspaces/:projectId/gateway/keys', 'POST /v1/chat/completions', 'POST /v1/messages', 'POST /v1/responses'],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
     const minted = await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/projects/:projectId/gateway/keys',
+      '/v1/workspaces/:projectId/gateway/keys',
       { name: 'ke2e field types' },
       { params: { projectId: project.id } },
     );
@@ -300,7 +304,7 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
-      'POST /v1/projects/:projectId/gateway/keys',
+      'POST /v1/workspaces/:projectId/gateway/keys',
       'POST /v1/audio/transcriptions',
       'POST /v1/audio/speech',
       'GET /v1/audio/voices',
@@ -329,7 +333,7 @@ flow(
 
     const project = await ctx.fixtures.project();
     const minted = await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/projects/:projectId/gateway/keys',
+      '/v1/workspaces/:projectId/gateway/keys',
       { name: 'ke2e audio' },
       { params: { projectId: project.id } },
     );
@@ -444,11 +448,11 @@ flow(
     domain: 'llm-gateway',
     requires: ['funded'],
     routes: [
-      'GET /v1/projects/:projectId/gateway/routing-policy',
-      'PUT /v1/projects/:projectId/gateway/routing-policy',
-      'DELETE /v1/projects/:projectId/gateway/routing-policy',
-      'POST /v1/projects/:projectId/gateway/routing-policy/preview',
-      'GET /v1/projects/:projectId/model-picker',
+      'GET /v1/workspaces/:projectId/gateway/routing-policy',
+      'PUT /v1/workspaces/:projectId/gateway/routing-policy',
+      'DELETE /v1/workspaces/:projectId/gateway/routing-policy',
+      'POST /v1/workspaces/:projectId/gateway/routing-policy/preview',
+      'GET /v1/workspaces/:projectId/model-picker',
     ],
   },
   async (ctx) => {
@@ -474,7 +478,7 @@ flow(
     await ctx.step('inherited routing policy is readable', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/workspaces/:projectId/gateway/routing-policy', { params });
       r.status(200)
         .body()
         .has('$.version', 1)
@@ -490,7 +494,7 @@ flow(
       async () => {
         const picker = await ctx.client
           .as(ctx.P.OWNER)
-          .get('/v1/projects/:projectId/model-picker', { params });
+          .get('/v1/workspaces/:projectId/model-picker', { params });
         picker.status(200).body().exists('$.models');
         const pickerModels = picker.json<{ models?: Record<string, unknown> }>().models ?? {};
         const pickerCount = Object.keys(pickerModels).length;
@@ -503,7 +507,7 @@ flow(
     await ctx.step('save and read back the complete project policy', async () => {
       const saved = await ctx.client
         .as(ctx.P.OWNER)
-        .put('/v1/projects/:projectId/gateway/routing-policy', policy, { params });
+        .put('/v1/workspaces/:projectId/gateway/routing-policy', policy, { params });
       saved
         .status(200)
         .body()
@@ -513,7 +517,7 @@ flow(
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/workspaces/:projectId/gateway/routing-policy', { params });
       read.status(200).body().has('$.project', savedProject);
     });
 
@@ -521,7 +525,7 @@ flow(
       const defaultRoute = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          '/v1/workspaces/:projectId/gateway/routing-policy/preview',
           { requestedModel: 'codex/gpt-5.6-sol', imageInput: false },
           { params },
         );
@@ -540,7 +544,7 @@ flow(
       const exact = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          '/v1/workspaces/:projectId/gateway/routing-policy/preview',
           { requestedModel: 'openai/gpt-5.5', imageInput: false },
           { params },
         );
@@ -557,7 +561,7 @@ flow(
       const other = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          '/v1/workspaces/:projectId/gateway/routing-policy/preview',
           { requestedModel: 'anthropic/claude-sonnet-4-6', imageInput: false },
           { params },
         );
@@ -572,7 +576,7 @@ flow(
 
     await ctx.step('invalid self-loop is rejected without replacing the saved policy', async () => {
       const invalid = await ctx.client.as(ctx.P.OWNER).put(
-        '/v1/projects/:projectId/gateway/routing-policy',
+        '/v1/workspaces/:projectId/gateway/routing-policy',
         {
           ...policy,
           defaultFallback: { models: ['codex/gpt-5.6-sol'], fallbackOn: 'any-error' },
@@ -583,29 +587,29 @@ flow(
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/workspaces/:projectId/gateway/routing-policy', { params });
       read.status(200).body().has('$.project', savedProject);
     });
 
     await ctx.step('project access boundaries are enforced', async () => {
       const nonmember = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/workspaces/:projectId/gateway/routing-policy', { params });
       nonmember.status([403, 404]);
       const anonymous = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .get('/v1/workspaces/:projectId/gateway/routing-policy', { params });
       anonymous.status(401);
       const anonymousPicker = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/model-picker', { params });
+        .get('/v1/workspaces/:projectId/model-picker', { params });
       anonymousPicker.status(401);
     });
 
     await ctx.step('reset removes every project override', async () => {
       const reset = await ctx.client
         .as(ctx.P.OWNER)
-        .del('/v1/projects/:projectId/gateway/routing-policy', { params });
+        .del('/v1/workspaces/:projectId/gateway/routing-policy', { params });
       reset
         .status(200)
         .body()
@@ -620,15 +624,15 @@ flow(
 flow('GW-ACCESS-1', {
   domain: 'llm-gateway',
   routes: [
-    'GET /v1/projects/:projectId',
-    'PATCH /v1/projects/:projectId/features',
-    'PATCH /v1/projects/:projectId/experimental',
-    'GET /v1/projects/:projectId/model-access',
-    'PUT /v1/projects/:projectId/model-access',
-    'PUT /v1/projects/:projectId/gateway/routing-policy',
-    'POST /v1/projects/:projectId/gateway/keys',
-    'GET /v1/projects/:projectId/gateway/keys',
-    'GET /v1/projects/:projectId/model-picker',
+    'GET /v1/workspaces/:projectId',
+    'PATCH /v1/workspaces/:projectId/features',
+    'PATCH /v1/workspaces/:projectId/experimental',
+    'GET /v1/workspaces/:projectId/model-access',
+    'PUT /v1/workspaces/:projectId/model-access',
+    'PUT /v1/workspaces/:projectId/gateway/routing-policy',
+    'POST /v1/workspaces/:projectId/gateway/keys',
+    'GET /v1/workspaces/:projectId/gateway/keys',
+    'GET /v1/workspaces/:projectId/model-picker',
     'POST /v1/llm/chat/completions',
   ],
 }, async (ctx) => {
@@ -637,7 +641,7 @@ flow('GW-ACCESS-1', {
   const project = await team.project();
   await team.grantProjectRole(project.id, member.userId!, 'user');
   const params = { projectId: project.id };
-  const path = '/v1/projects/:projectId/model-access';
+  const path = '/v1/workspaces/:projectId/model-access';
   const owner = ctx.client.as(ctx.P.OWNER);
   const gateway = new Client(ctx.env.gatewayUrl);
   let key = '';
@@ -651,7 +655,7 @@ flow('GW-ACCESS-1', {
       (await owner.patch(route, { feature: 'llm_gateway', enabled: false }, { params })).status(400)
         .body().has('$.error', "Unknown feature flag 'llm_gateway'");
     }
-    const read = await owner.get('/v1/projects/:projectId', { params });
+    const read = await owner.get('/v1/workspaces/:projectId', { params });
     // Old clients and CLIs read this value; the gateway serves every project.
     read.status(200).body().has('$.experimental.llm_gateway', true);
     const rows = read.json<{ experimental_features: Array<{ key: string }> }>().experimental_features;
@@ -661,18 +665,18 @@ flow('GW-ACCESS-1', {
   });
 
   await ctx.step('new project has no explicit restrictions and uses a non-managed default', async () => {
-    (await owner.put('/v1/projects/:projectId/gateway/routing-policy', {
+    (await owner.put('/v1/workspaces/:projectId/gateway/routing-policy', {
       defaultModel: 'codex/gpt-5.6-sol', visionModel: null, defaultFallback: null, rules: [],
     }, { params })).status(200);
     (await owner.get(path, { params })).status(200).body()
       .has('$.disabledProviders', []).has('$.disabledModels', []).has('$.enforced', true);
-    const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'model access verification' }, { params });
+    const minted = await owner.post('/v1/workspaces/:projectId/gateway/keys', { name: 'model access verification' }, { params });
     minted.status(200).body().exists('$.secret_key');
     // The mint response states the URL to use the key against (KRTX-1750) —
     // the standalone gateway's origin when one is configured, null when the
     // API serves the gateway itself (the client falls back to its own host).
     // Mint and list must agree on it, whatever the environment sets.
-    const keysList = await owner.get('/v1/projects/:projectId/gateway/keys', { params });
+    const keysList = await owner.get('/v1/workspaces/:projectId/gateway/keys', { params });
     keysList.status(200);
     minted.status(200).body().has('$.gateway_url', keysList.json<{ gateway_url: string | null }>().gateway_url);
     key = minted.json<{ secret_key: string }>().secret_key;
@@ -695,7 +699,7 @@ flow('GW-ACCESS-1', {
     (await set('provider', 'kortix', false)).status(200).body().has('$.disabledProviders', ['kortix']);
     (await owner.get(path, { params })).status(200).body().has('$.disabledProviders', ['kortix']);
     (await request('morph-dsv41flash')).status(400).body().has('$.error.code', 'provider_disabled');
-    const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
+    const picker = await owner.get('/v1/workspaces/:projectId/model-picker', { params });
     picker.status(200);
     for (const [id, model] of Object.entries(picker.json<any>().models)) {
       if (!id.includes('/') && (model as any).enabled !== false) throw new Error(`Disabled managed model remains enabled: ${id}`);
@@ -719,7 +723,7 @@ flow('GW-ACCESS-1', {
   await ctx.step('invalid changes and selecting a disabled default leave policy unchanged', async () => {
     (await owner.put(path, { target: 'provider', id: 'bad/provider', enabled: false }, { params })).status(400);
     (await set('model', 'auto', false)).status(400);
-    (await owner.put('/v1/projects/:projectId/gateway/routing-policy', {
+    (await owner.put('/v1/workspaces/:projectId/gateway/routing-policy', {
       defaultModel: 'openai/gpt-5.5', visionModel: null, defaultFallback: null, rules: [],
     }, { params })).status(409).body().has('$.code', 'model_disabled');
     (await owner.get(path, { params })).status(200).body().has('$.defaultModel', 'codex/gpt-5.6-sol');
@@ -740,9 +744,9 @@ flow('GW-ACCESS-1', {
 flow('GW-BUDGET-1', {
   domain: 'llm-gateway',
   routes: [
-    'GET /v1/projects/:projectId/gateway/budgets',
-    'PUT /v1/projects/:projectId/gateway/budgets',
-    'DELETE /v1/projects/:projectId/gateway/budgets/:budgetId',
+    'GET /v1/workspaces/:projectId/gateway/budgets',
+    'PUT /v1/workspaces/:projectId/gateway/budgets',
+    'DELETE /v1/workspaces/:projectId/gateway/budgets/:budgetId',
   ],
 }, async (ctx) => {
   type Period = 'day' | 'week' | 'month';
@@ -762,7 +766,7 @@ flow('GW-BUDGET-1', {
   const memberId = member.userId!;
   const project = await team.project();
   const params = { projectId: project.id };
-  const path = '/v1/projects/:projectId/gateway/budgets';
+  const path = '/v1/workspaces/:projectId/gateway/budgets';
   const owner = ctx.client.as(ctx.P.OWNER);
   const DAY = 86_400_000;
 
@@ -833,7 +837,7 @@ flow('GW-BUDGET-1', {
     memberBudgetId = own!.budget_id;
   });
   await ctx.step('removing the member budget removes its row and keeps the project budget', async () => {
-    (await owner.del('/v1/projects/:projectId/gateway/budgets/:budgetId', {
+    (await owner.del('/v1/workspaces/:projectId/gateway/budgets/:budgetId', {
       params: { ...params, budgetId: memberBudgetId },
     })).status(200);
     const budgets = (await read()).budgets;
@@ -859,8 +863,8 @@ flow('GW-MANAGED-1', {
   requires: ['stripe'],
   timeoutMs: 300_000,
   routes: [
-    'POST /v1/projects/:projectId/gateway/keys',
-    'GET /v1/projects/:projectId/model-picker',
+    'POST /v1/workspaces/:projectId/gateway/keys',
+    'GET /v1/workspaces/:projectId/model-picker',
     'POST /v1/llm/chat/completions',
   ],
 }, async (ctx) => {
@@ -873,14 +877,14 @@ flow('GW-MANAGED-1', {
   const params = { projectId: project.id };
   let key = '';
   await ctx.step('the project mints a gateway key', async () => {
-    const minted = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'managed lineup' }, { params });
+    const minted = await owner.post('/v1/workspaces/:projectId/gateway/keys', { name: 'managed lineup' }, { params });
     minted.status(200).body().exists('$.secret_key');
     key = minted.json<{ secret_key: string }>().secret_key;
   });
 
   let managed: string[] = [];
   await ctx.step('the picker offers DeepSeek V4.1 Flash and GLM 5.3 Flash as image-capable managed models, not the retired Kimi K3, and no OpenAI or Anthropic model', async () => {
-    const picker = await owner.get('/v1/projects/:projectId/model-picker', { params });
+    const picker = await owner.get('/v1/workspaces/:projectId/model-picker', { params });
     picker.status(200);
     const models = picker.json<{ models: Record<string, { name?: string; attachment?: boolean; enabled?: boolean }> }>()
       .models;

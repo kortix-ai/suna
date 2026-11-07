@@ -1,6 +1,7 @@
 'use client';
 
-import { listAccounts, listConnectors, provisionProject } from '@kortix/sdk';
+import { listConnectors } from '@kortix/sdk';
+import { provisionNewWorkspace } from '@kortix/ui/workspace/new/provision-new-workspace';
 import { qk } from '@kortix/sdk/react';
 import { SignInIcon as LogIn } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -165,13 +166,8 @@ export function TemplateSessionInstallDialog({
     try {
       let projectId = target;
       if (target === NEW_PROJECT) {
-        const accounts = await listAccounts();
-        // No `personal_account` flag on this API — the bootstrapped personal
-        // account is the one where the caller is the primary owner.
-        const account = accounts.find((a) => a.is_primary_owner) ?? accounts[0];
-        if (!account) throw new Error('No account available to create a project in');
-        const project = await provisionProject({
-          account_id: account.account_id,
+        // A whole new workspace: the server picks (or makes) the account.
+        const project = await provisionNewWorkspace({
           name: targetName,
           starter_template: 'general-knowledge-worker',
         });
@@ -198,7 +194,7 @@ export function TemplateSessionInstallDialog({
           actions: [
             {
               label: tI18nComplete.raw(sessionHref ? 'textb205bb47f81a' : 'texted077f3d8125'),
-              onClick: () => router.push(sessionHref ?? `/projects/${projectId}`),
+              onClick: () => router.push(sessionHref ?? `/workspaces/${projectId}`),
             },
           ],
         },

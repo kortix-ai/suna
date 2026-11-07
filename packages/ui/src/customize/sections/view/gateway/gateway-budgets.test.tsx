@@ -107,7 +107,7 @@ describe('GatewayBudgetSection', () => {
     expect(out).toMatch(
       new RegExp(`alice@example\\.test — over limit · ${resets('Oct 14').source}`),
     );
-    expect(out).toMatch(new RegExp(`Project — 85% used · ${resets('Oct 19').source}`));
+    expect(out).toMatch(new RegExp(`Workspace — 85% used · ${resets('Oct 19').source}`));
     expect(out).toContain('8,500 of 10,000 credits this week · Warns at the limit, never blocks');
     expect(out).toContain('alice@example.test 600 120% of 500 credits');
   });
@@ -145,7 +145,7 @@ describe('GatewayBudgetSection', () => {
       const out = text();
       expect(out).toContain('6,000 of 5,000 credits this month · Blocks requests at the limit');
       expect(out).toContain('Budget exceeded');
-      expect(out).toContain('Project — over limit');
+      expect(out).toContain('Workspace — over limit');
     });
 
     test("a monthly member cap reads the member's month-to-date spend", () => {

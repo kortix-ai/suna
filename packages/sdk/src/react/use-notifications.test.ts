@@ -32,7 +32,7 @@ function row(id: string, sessionId: string | null, read = false): InboxNotificat
     session_id: sessionId,
     trigger_slug: null,
     actor_user_id: null,
-    url: `/projects/P1/sessions/${sessionId}?notification=${id}`,
+    url: `/workspaces/P1/sessions/${sessionId}?notification=${id}`,
     read,
     created_at: '2026-10-09T10:00:00.000Z',
   };
@@ -288,7 +288,7 @@ describe('useSessionWatch', () => {
   test('reads the watch state under the user, project and session key', async () => {
     answer = () => ({ status: 200, body: { watching: true } });
     await mount(React.createElement(Watch, { userId: USER, projectId: 'P1', sessionId: 'S1' }));
-    expect(requests).toEqual([{ method: 'GET', path: '/projects/P1/sessions/S1/watch', body: undefined }]);
+    expect(requests).toEqual([{ method: 'GET', path: '/workspaces/P1/sessions/S1/watch', body: undefined }]);
     expect(watch!.data).toEqual({ watching: true });
     expect(client.getQueryData<{ watching: boolean }>(qk.notifications.sessionWatch(USER, 'P1', 'S1'))).toEqual({ watching: true });
   });
@@ -303,7 +303,7 @@ describe('useSessionWatch', () => {
     });
     await settle();
     expect(watch!.data).toEqual({ watching: false });
-    expect(held[0]).toMatchObject({ method: 'PUT', path: '/projects/P1/sessions/S1/watch', body: { watching: false } });
+    expect(held[0]).toMatchObject({ method: 'PUT', path: '/workspaces/P1/sessions/S1/watch', body: { watching: false } });
     await act(async () => {
       held[0]!.respond(200, { watching: false });
       await done;

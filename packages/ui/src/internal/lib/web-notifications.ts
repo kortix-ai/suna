@@ -191,13 +191,13 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
  * time they click, minutes later, the person may be anywhere, so reading the
  * path at click time would resolve the wrong project or none at all.
  *
- * An optional two-letter locale segment leads (`/de/projects/…`).
- * `/projects/new` and `/projects/start` are pages, not projects.
+ * An optional two-letter locale segment leads (`/de/workspaces/…`).
+ * `/workspaces/new` and `/workspaces/start` are pages, not projects.
  */
 function currentProjectId(): string | null {
   if (typeof window === 'undefined') return null;
   const path = normalizeAppPathname(window.location.pathname);
-  return projectIdFromPathname(path.replace(/^\/[a-z]{2}(?=\/projects(?:\/|$))/, ''));
+  return projectIdFromPathname(path.replace(/^\/[a-z]{2}(?=\/(?:workspaces|projects)(?:\/|$))/, ''));
 }
 
 /**
@@ -269,8 +269,8 @@ export function spacesThreadHref(
   session: { sessionId: string; projectId: string | null | undefined },
   cache: QueryClient,
 ): string | null {
-  // An optional two-letter locale segment leads (`/de/projects/…`).
-  const match = /^(?:\/[a-z]{2})?\/projects\/([^/]+)\/(c|dm)\/([^/]+)\/?$/.exec(
+  // An optional two-letter locale segment leads (`/de/workspaces/…`).
+  const match = /^(?:\/[a-z]{2})?\/(?:workspaces|projects)\/([^/]+)\/(c|dm)\/([^/]+)\/?$/.exec(
     normalizeAppPathname(location.pathname),
   );
   if (!match || match[1] !== session.projectId) return null;

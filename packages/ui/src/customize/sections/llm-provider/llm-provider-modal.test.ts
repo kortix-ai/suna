@@ -94,7 +94,7 @@ describe('LLM provider modal shell', () => {
 
   test('it shows the page’s heading, not a second wording of it', () => {
     expect(MODELS_PAGE_TITLE).toBe('Models');
-    expect(MODELS_PAGE_DESCRIPTION).toBe('Choose the providers and models this project can use.');
+    expect(MODELS_PAGE_DESCRIPTION).toBe('Choose the providers and models this workspace can use.');
     expect(modalSource).toContain(
       '<ModalTitle className="text-base leading-8 font-medium">{MODELS_PAGE_TITLE}</ModalTitle>',
     );

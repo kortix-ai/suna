@@ -32,7 +32,7 @@ export function tenantOfActivity(activity: TeamsActivity): string | null {
 /** The Teams tenants a project's install was proven for. */
 export async function provenTeamsTenants(projectId: string): Promise<string[]> {
   const rows = await db
-    .select({ workspaceId: chatInstalls.workspaceId })
+    .select({ workspaceId: chatInstalls.platformTeamId })
     .from(chatInstalls)
     .where(and(eq(chatInstalls.platform, 'teams'), eq(chatInstalls.projectId, projectId)));
   return rows.map((r) => r.workspaceId).filter(Boolean);
@@ -76,7 +76,7 @@ export async function conversationProjectFor(
     .where(
       and(
         eq(chatChannelBindings.platform, 'teams'),
-        eq(chatChannelBindings.workspaceId, tenantId),
+        eq(chatChannelBindings.platformTeamId, tenantId),
         eq(chatChannelBindings.channelId, conversationId),
       ),
     )

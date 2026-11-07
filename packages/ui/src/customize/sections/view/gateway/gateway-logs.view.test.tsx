@@ -210,7 +210,7 @@ describe('logSessionHref — from a request to the message it produced', () => {
       latency_ms: 4_000,
     }));
     const url = new URL(href!, 'https://x.test');
-    expect(url.pathname).toBe('/projects/p1/sessions/s1');
+    expect(url.pathname).toBe('/workspaces/p1/sessions/s1');
     expect(url.searchParams.get('m')).toBe('msg_reply');
     expect(url.searchParams.get('rs')).toBe('ses_child');
     // The log is written when the request ends: `at` is when it started.

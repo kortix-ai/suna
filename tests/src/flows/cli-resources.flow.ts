@@ -46,10 +46,11 @@ flow(
   {
     domain: 'cli',
     routes: [
-      'GET /v1/accounts/me',
-      'GET /v1/projects',
-      'GET /v1/projects/:projectId',
-      'DELETE /v1/projects/:projectId',
+      'GET /v1/me',
+      'GET /v1/workspaces',
+      'GET /v1/workspaces/:projectId',
+      'DELETE /v1/workspaces/:projectId',
+      'POST /v1/workspaces/:workspaceId/restore',
     ],
   },
   async (ctx) => {
@@ -91,27 +92,36 @@ flow(
       await ctx.step('kortix projects open prints the dashboard URL without changing state', async () => {
         const result = await sandbox.run(['projects', 'open', project.id]);
         requireExit(result, 0, 'kortix projects open');
-        if (!result.stdout.includes(`/projects/${project.id}`)) {
+        if (!result.stdout.includes(`/workspaces/${project.id}`)) {
           throw new Error(`projects open printed the wrong URL: ${result.stdout}`);
         }
       });
 
-      await ctx.step('kortix projects rm deletes the project through the real DELETE route and reports the BYO repo note', async () => {
+      await ctx.step('kortix projects rm deletes the workspace through the real DELETE route and says what happens next', async () => {
         const result = await sandbox.run(['projects', 'rm', project.id, '--yes']);
         requireExit(result, 0, 'kortix projects rm');
         if (!/Deleted/.test(result.stdout)) throw new Error(`projects rm output: ${result.stdout}`);
         if (/Archived/.test(result.stdout)) throw new Error(`projects rm output: ${result.stdout}`);
-        // A local-profile project is user-connected (a bare repository), so the
-        // API answers `repo_deleted: false` and the CLI explains it. Deleting
-        // a Kortix-managed repo end to end needs the managed git backend,
-        // which the local profile excludes.
+        const owner = ctx.client.as(ctx.P.OWNER);
+        const params = { projectId: project.id };
+        const restoreLine = new RegExp(
+          `an owner can restore it until \\d{4}-\\d{2}-\\d{2}T[^ ]+ \\(POST /v1/workspaces/${project.id}/restore\\)`,
+        );
+        if (restoreLine.test(result.stdout)) {
+          // The project was its account's only one: the delete closed the
+          // workspace (K2). Its owner still reads it as deleting and restores it
+          // (which also leaves the run's owner account usable for cleanup).
+          (await owner.get('/v1/workspaces/:projectId', { params })).status(200).body().has('$.state', 'deleting');
+          (await owner.post('/v1/workspaces/:projectId/restore', {}, { params })).status(200).body().has('$.state', 'active');
+          return;
+        }
+        // The run's owner account holds other projects (split_pending): the old
+        // delete. A local-profile project is user-connected (a bare repository),
+        // so the API answers `repo_deleted: false` and the CLI explains it.
         if (!/no managed repo to delete \(bring-your-own repos are left untouched\)/.test(result.stdout)) {
           throw new Error(`projects rm output: ${result.stdout}`);
         }
-        // The delete is still terminal: the detail route answers 404 after it.
-        (await ctx.client
-          .as(ctx.P.OWNER)
-          .get('/v1/projects/:projectId', { params: { projectId: project.id } })).status(404);
+        (await owner.get('/v1/workspaces/:projectId', { params })).status(404);
       });
     } finally {
       sandbox.dispose();
@@ -131,10 +141,10 @@ flow(
     // not the CLI. Match CLI-SESS.
     timeoutMs: 300_000,
     routes: [
-      'GET /v1/accounts/me',
-      'GET /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/secrets',
-      'DELETE /v1/projects/:projectId/secrets/:name',
+      'GET /v1/me',
+      'GET /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/secrets',
+      'DELETE /v1/workspaces/:projectId/secrets/:name',
     ],
   },
   async (ctx) => {
@@ -229,13 +239,13 @@ flow(
     timeoutMs: 300_000,
     requires: ['sandbox', 'funded'],
     routes: [
-      'GET /v1/accounts/me',
-      'GET /v1/projects/:projectId',
-      'GET /v1/projects/:projectId/sessions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/restart',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/me',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/sessions',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/restart',
+      'DELETE /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -322,11 +332,11 @@ flow(
     domain: 'cli',
     requires: ['database'],
     routes: [
-      'GET /v1/accounts/me',
-      'GET /v1/projects/:projectId/sessions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/pin',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/archive',
+      'GET /v1/me',
+      'GET /v1/workspaces/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/pin',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/archive',
     ],
   },
   async (ctx) => {
@@ -348,7 +358,7 @@ flow(
     const readBack = async () =>
       (await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId: project.id, sessionId } }))
+        .get('/v1/workspaces/:projectId/sessions/:sessionId', { params: { projectId: project.id, sessionId } }))
         .status(200)
         .json<Row>();
     try {
@@ -426,10 +436,10 @@ flow(
     domain: 'cli',
     requires: ['database'],
     routes: [
-      'GET /v1/accounts/me',
-      'GET /v1/projects',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/me',
+      'GET /v1/workspaces',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'DELETE /v1/workspaces/:projectId/sessions/:sessionId',
     ],
   },
   async (ctx) => {
@@ -446,7 +456,7 @@ flow(
     ctx.track('session', sibling, { projectId: project.id });
     ctx.track('session', teamSession, { projectId: teamProject.id });
     const status = async (projectId: string, sessionId: string) =>
-      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } })).statusCode;
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/workspaces/:projectId/sessions/:sessionId', { params: { projectId, sessionId } })).statusCode;
     const requireLive = async (label: string, projectId: string, sessionId: string) => {
       const code = await status(projectId, sessionId);
       if (code !== 200) throw new Error(`${label} ${sessionId} read back ${code}, expected 200`);
@@ -504,12 +514,12 @@ flow(
     domain: 'cli',
     requires: ['database'],
     routes: [
-      'GET /v1/accounts/me',
-      'GET /v1/projects/:projectId/sessions',
-      'GET /v1/projects/:projectId/sessions/:sessionId',
-      'POST /v1/projects/:projectId/sessions/:sessionId/recover',
+      'GET /v1/me',
+      'GET /v1/workspaces/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/recover',
       'POST /v1/accounts/tokens',
-      'POST /v1/projects/:projectId/sessions/:sessionId/log/journal',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/log/journal',
     ],
   },
   async (ctx) => {
@@ -576,17 +586,17 @@ flow(
     timeoutMs: 420_000,
     requires: ['sandbox', 'funded'],
     routes: [
-      'GET /v1/accounts/me',
-      'GET /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'GET /v1/me',
+      'GET /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project({ seed: true });
     const slug = `cli-trigger-${Date.now()}`;
     const created = await ctx.client.as(ctx.P.OWNER).post(
-      '/v1/projects/:projectId/triggers',
+      '/v1/workspaces/:projectId/triggers',
       {
         name: slug,
         slug,
@@ -707,7 +717,7 @@ flow(
 );
 
 flow('CLI-ROLE-CHANGE', { domain: 'cli', routes: [
-  'POST /v1/accounts/:accountId/iam/assignments', 'GET /v1/projects/:projectId/access',
+  'POST /v1/accounts/:accountId/iam/assignments', 'GET /v1/workspaces/:projectId/access',
 ] }, async (ctx) => {
   const team = await ctx.fixtures.team();
   const project = await team.project();
@@ -732,7 +742,7 @@ flow('CLI-ROLE-CHANGE', { domain: 'cli', routes: [
 
 flow('CLI-MODEL-CATALOG', {
   domain: 'cli',
-  routes: ['GET /v1/projects/:projectId/model-picker'],
+  routes: ['GET /v1/workspaces/:projectId/model-picker'],
 }, async (ctx) => {
   const project = await ctx.fixtures.project();
   const sandbox = await authenticatedCli(ctx, 'model-catalog');

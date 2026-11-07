@@ -1,6 +1,7 @@
 import { projectSessions } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { sessionTitleFromMetadata } from './session-title-placeholder';
 
 /** The session fields the asks routes read: who may decide, where it shows, what it is called. */
 export interface AskSessionRow {
@@ -27,10 +28,7 @@ export async function readAskSessions(projectId: string, sessionIds: readonly st
     .where(and(eq(projectSessions.projectId, projectId), inArray(projectSessions.sessionId, ids)));
   return new Map(
     rows.map(({ metadata, ...row }) => {
-      // `custom_name`, else the generated `name` (as the session lists read it).
-      const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
-      const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
-      return [row.sessionId, { ...row, title }];
+      return [row.sessionId, { ...row, title: sessionTitleFromMetadata(metadata) }];
     }),
   );
 }

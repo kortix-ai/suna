@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { listProjectSecrets } from '../core/rest/projects-client';
-import { refreshProjectProviderState } from './provider-refresh';
+import { listWorkspaceSecrets } from '../core/rest/projects-client';
+import { refreshWorkspaceProviderState } from './provider-refresh';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
@@ -17,7 +17,7 @@ export function useGatewayCatalogSync(projectId: string | null | undefined): voi
   const secretsQuery = useQuery({
     // Same entry every other `listProjectSecrets` reader shares.
     queryKey: qk.project.secrets(projectId ?? ''),
-    queryFn: () => listProjectSecrets(projectId as string),
+    queryFn: () => listWorkspaceSecrets(projectId as string),
     enabled: !!projectId && runtimeReady,
     ...contract('config'),
   });
@@ -41,7 +41,7 @@ export function useGatewayCatalogSync(projectId: string | null | undefined): voi
 
     const timers = REFETCH_DELAYS_MS.map((delay) =>
       setTimeout(() => {
-        refreshProjectProviderState(queryClient, projectId);
+        refreshWorkspaceProviderState(queryClient, projectId);
       }, delay),
     );
     return () => timers.forEach(clearTimeout);

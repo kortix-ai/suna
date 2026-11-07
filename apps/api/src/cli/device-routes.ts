@@ -3,7 +3,7 @@ import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { config } from '../config';
 import { supabaseAuth } from '../middleware/auth';
 import { actorOf } from '../iam/actor';
-import { resolveAccountId } from '../shared/resolve-account';
+import { resolveAccountId, scopedAccountIdFor } from '../shared/resolve-account';
 import { requestClientKey } from '../middleware/client-ip';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import type { AppEnv } from '../types';
@@ -38,14 +38,21 @@ export function createCliDeviceRouter() {
   router.use('/decide', supabaseAuth);
   router.openapi(createRoute({
     method: 'post', path: '/decide', tags: ['cli'], summary: 'Approve or deny CLI login', ...auth,
-    request: { body: { required: true, content: { 'application/json': { schema: z.object({ user_code: z.string().regex(/^[a-fA-F0-9-]{16,20}$/), approve: z.boolean() }) } } } },
-    responses: { 200: json(z.object({ ok: z.boolean() }), 'Grant decided'), ...errors(400, 401, 403, 404, 429) },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ user_code: z.string().regex(/^[a-fA-F0-9-]{16,20}$/), approve: z.boolean(), account_id: z.string().uuid().optional().openapi({ description: 'The workspace account the CLI key belongs to. Must be an account you are a member of and may mint a key in (else 403). Defaults to your earliest-joined account.' }) }) } } } },
+    responses: { 200: json(z.object({ ok: z.boolean() }), 'Grant decided'), ...errors(400, 401, 403, 404, 409, 429) },
   }), async c => {
     if (c.get('authType') !== 'supabase') return c.json({ error: 'Sign in with a browser session to approve CLI login.' }, 403);
     const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
-    const actor = await actorOf(c, accountId);
     const body = c.req.valid('json');
+    // The workspace the key belongs to: the one the device page chose
+    // (`account_id`, a membership is required: 403 otherwise), else the
+    // earliest-joined account. 409 `no_workspace` for a person with no
+    // account: a CLI login acts in a workspace, so there is nothing to
+    // approve it into yet. `decideCliGrant` asserts the key permission.
+    const accountId = body.account_id
+      ? await scopedAccountIdFor(userId, body.account_id)
+      : await resolveAccountId(userId, { allowAccountCredential: false });
+    const actor = await actorOf(c, accountId);
     if (!await decideCliGrant(body.user_code, actor, body.approve)) return c.json({ error: 'Login code expired or already used.' }, 404);
     return c.json({ ok: true }, 200);
   });

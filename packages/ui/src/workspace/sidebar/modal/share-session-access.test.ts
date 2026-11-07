@@ -77,7 +77,7 @@ describe('sessionAccessSummary', () => {
 
   test('project-wide', () => {
     expect(sessionAccessSummary(session({ visibility: 'project' }))).toBe(
-      'Every member of this project can open it.',
+      'Every member of this workspace can open it.',
     );
   });
 

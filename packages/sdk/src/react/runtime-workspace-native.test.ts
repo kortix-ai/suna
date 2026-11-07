@@ -15,7 +15,7 @@ mock.module('../core/http/auth', () => ({
     return Response.json({ error: `unexpected ${path}` }, { status: 404 });
   },
 }));
-const { getRuntimePathInfo, getRuntimeProjectInfo } = await import('./runtime-actions');
+const { getRuntimePathInfo, getRuntimeWorkspaceInfo } = await import('./runtime-actions');
 
 beforeEach(() => {
   paths.length = 0;
@@ -23,7 +23,7 @@ beforeEach(() => {
 
 describe('the checkout facts', () => {
   test('project info: the workspace route answers the worktree and the VCS', async () => {
-    expect(await getRuntimeProjectInfo()).toMatchObject({ worktree: '/workspace', vcs: 'git' });
+    expect(await getRuntimeWorkspaceInfo()).toMatchObject({ worktree: '/workspace', vcs: 'git' });
     expect(paths).toEqual(['/kortix/runtime/workspace']);
   });
 

@@ -72,7 +72,7 @@ Subcommands:
   release              Release the hold.
 
 Options:
-  --project <id>       Operate on this project id (default: linked).
+  --workspace <id>     Operate on this workspace id (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   --json               Machine-readable output.
   -h, --help           Show this help.
@@ -127,7 +127,7 @@ export async function queueSessionPrompt(
     };
   }
   return client.post<CreateSessionPromptResult>(
-    `/projects/${projectId}/sessions/${session.session_id}/prompts`,
+    `/workspaces/${projectId}/sessions/${session.session_id}/prompts`,
     body,
   );
 }
@@ -143,7 +143,7 @@ export async function runSessionsQueue(argv: string[]): Promise<number> {
   let hostArg: string | undefined;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
@@ -177,7 +177,7 @@ export async function runSessionsQueue(argv: string[]): Promise<number> {
   );
   if (!located) return 1;
   const { client, projectId, session } = located.located;
-  const base = `/projects/${projectId}/sessions/${session.session_id}/prompts`;
+  const base = `/workspaces/${projectId}/sessions/${session.session_id}/prompts`;
 
   try {
     switch (sub) {

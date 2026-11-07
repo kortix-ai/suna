@@ -3,16 +3,16 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ApiError } from '../core/http/api-client';
 import {
-  getProjectGoal,
-  getProjectGoalFiles,
-  listProjectGoalEvents,
-  listProjectGoals,
-  pauseProjectGoal,
-  ProjectGoalConflictError,
-  replyToProjectGoal,
-  restartProjectGoal,
-  resumeProjectGoal,
-  stopProjectGoal,
+  getWorkspaceGoal,
+  getWorkspaceGoalFiles,
+  listWorkspaceGoalEvents,
+  listWorkspaceGoals,
+  pauseWorkspaceGoal,
+  WorkspaceGoalConflictError,
+  replyToWorkspaceGoal,
+  restartWorkspaceGoal,
+  resumeWorkspaceGoal,
+  stopWorkspaceGoal,
   type ProjectGoal,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
@@ -34,25 +34,28 @@ const goalRefetch = {
  * with its capabilities and health. Pass `null` while the `goals` flag is
  * off: nothing loads. A mounted list re-reads every 60 seconds.
  */
-export function useProjectGoals(projectId: string | null | undefined) {
+export function useWorkspaceGoals(projectId: string | null | undefined) {
   return useQuery({
     queryKey: qk.project.goals(projectId ?? ''),
-    queryFn: () => listProjectGoals(projectId as string),
+    queryFn: () => listWorkspaceGoals(projectId as string),
     enabled: !!projectId,
     ...inventory,
     ...goalRefetch,
   });
 }
 
+/** @deprecated Use `useWorkspaceGoals`. Kept permanently. */
+export const useProjectGoals = useWorkspaceGoals;
+
 /**
  * One goal by its `goal_id` (`GET /projects/:id/goals/:goalId`). The error is
  * an `ApiError`: 404 when the goal does not exist, 403 when the caller may not
  * read it. Neither is retried. A mounted goal re-reads every 60 seconds.
  */
-export function useProjectGoal(projectId: string | null | undefined, goalId: string | null | undefined) {
+export function useWorkspaceGoal(projectId: string | null | undefined, goalId: string | null | undefined) {
   return useQuery({
     queryKey: qk.project.goal(projectId ?? '', goalId ?? ''),
-    queryFn: () => getProjectGoal(projectId as string, goalId as string),
+    queryFn: () => getWorkspaceGoal(projectId as string, goalId as string),
     enabled: !!projectId && !!goalId,
     ...inventory,
     ...goalRefetch,
@@ -60,25 +63,34 @@ export function useProjectGoal(projectId: string | null | undefined, goalId: str
   });
 }
 
+/** @deprecated Use `useWorkspaceGoal`. Kept permanently. */
+export const useProjectGoal = useWorkspaceGoal;
+
 /** The first page of one goal's audit trail (`GET …/goals/:goalId/events`), oldest first. */
-export function useProjectGoalEvents(projectId: string | null | undefined, goalId: string | null | undefined) {
+export function useWorkspaceGoalEvents(projectId: string | null | undefined, goalId: string | null | undefined) {
   return useQuery({
     queryKey: qk.project.goalEvents(projectId ?? '', goalId ?? ''),
-    queryFn: () => listProjectGoalEvents(projectId as string, goalId as string),
+    queryFn: () => listWorkspaceGoalEvents(projectId as string, goalId as string),
     enabled: !!projectId && !!goalId,
     ...inventory,
   });
 }
 
+/** @deprecated Use `useWorkspaceGoalEvents`. Kept permanently. */
+export const useProjectGoalEvents = useWorkspaceGoalEvents;
+
 /** One goal folder's `GOAL.md` brief, `log.md`, `notes.md` and verification. */
-export function useProjectGoalFiles(projectId: string | null | undefined, goal: Pick<ProjectGoal, 'driveId' | 'folder'> | null) {
+export function useWorkspaceGoalFiles(projectId: string | null | undefined, goal: Pick<ProjectGoal, 'driveId' | 'folder'> | null) {
   return useQuery({
     queryKey: qk.project.goalFiles(projectId ?? '', goal?.folder ?? ''),
-    queryFn: () => getProjectGoalFiles(goal!.driveId, goal!.folder),
+    queryFn: () => getWorkspaceGoalFiles(goal!.driveId, goal!.folder),
     enabled: !!projectId && !!goal,
     ...inventory,
   });
 }
+
+/** @deprecated Use `useWorkspaceGoalFiles`. Kept permanently. */
+export const useProjectGoalFiles = useWorkspaceGoalFiles;
 
 /**
  * The goal a session works on, and its role in it: the open goal it owns
@@ -86,7 +98,7 @@ export function useProjectGoalFiles(projectId: string | null | undefined, goal: 
  * session has no goal. Reads the same entry as `useProjectGoals`.
  */
 export function useSessionGoal(projectId: string | null | undefined, sessionId: string | null | undefined) {
-  const goals = useProjectGoals(sessionId ? projectId : null);
+  const goals = useWorkspaceGoals(sessionId ? projectId : null);
   const all = goals.data ?? [];
   const coordinated = all.filter((g) => g.coordinatorSessionId === sessionId);
   const match =
@@ -101,12 +113,19 @@ export function useSessionGoal(projectId: string | null | undefined, sessionId: 
   return { goal: match ?? null, role, isLoading: goals.isLoading };
 }
 
-/** A person's control on one goal. `answerId` is the answer's idempotency key: keep it across retries of one answer. */
+/**
+ * A person's control on one goal. `answerId` is the answer's idempotency key: keep it across retries of one answer.
+ *
+ * @deprecated Use `WorkspaceGoalControlInput`. Kept permanently.
+ */
 export type ProjectGoalControlInput = { goal: ProjectGoal } & (
   | { action: 'pause' | 'stop' | 'restart'; reason: string }
   | { action: 'resume' }
   | { action: 'answer'; text: string; answerId: string }
 );
+
+/** The workspace name of {@link ProjectGoalControlInput}: the same type. */
+export type WorkspaceGoalControlInput = ProjectGoalControlInput;
 
 /** The goal as the server returned it, into the goal entry and the list. */
 function storeGoal(queryClient: QueryClient, projectId: string, goal: ProjectGoal): void {
@@ -126,14 +145,14 @@ const inFlight = new Map<string, Promise<ProjectGoal | null>>();
  * it) and rethrows `ProjectGoalConflictError`. An answer resolves to null and
  * re-reads the goal. Exported for tests; hosts use `useProjectGoalControl`.
  */
-export function runProjectGoalControl(queryClient: QueryClient, projectId: string, input: ProjectGoalControlInput): Promise<ProjectGoal | null> {
+export function runWorkspaceGoalControl(queryClient: QueryClient, projectId: string, input: ProjectGoalControlInput): Promise<ProjectGoal | null> {
   const key = `${projectId}:${input.goal.goalId}:${input.action}:${input.action === 'answer' ? input.answerId : ''}`;
   const running = inFlight.get(key);
   if (running) return running;
   const run = (async () => {
     try {
       if (input.action === 'answer') {
-        await replyToProjectGoal(projectId, input.goal, input.text, { answerId: input.answerId });
+        await replyToWorkspaceGoal(projectId, input.goal, input.text, { answerId: input.answerId });
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: qk.project.goals(projectId) }),
           queryClient.invalidateQueries({ queryKey: qk.project.goalEvents(projectId, input.goal.goalId) }),
@@ -142,17 +161,17 @@ export function runProjectGoalControl(queryClient: QueryClient, projectId: strin
       }
       const result =
         input.action === 'pause'
-          ? await pauseProjectGoal(projectId, input.goal, input.reason)
+          ? await pauseWorkspaceGoal(projectId, input.goal, input.reason)
           : input.action === 'stop'
-            ? await stopProjectGoal(projectId, input.goal, input.reason)
+            ? await stopWorkspaceGoal(projectId, input.goal, input.reason)
             : input.action === 'restart'
-              ? await restartProjectGoal(projectId, input.goal, input.reason)
-              : await resumeProjectGoal(projectId, input.goal);
+              ? await restartWorkspaceGoal(projectId, input.goal, input.reason)
+              : await resumeWorkspaceGoal(projectId, input.goal);
       storeGoal(queryClient, projectId, result.projectGoal);
       void queryClient.invalidateQueries({ queryKey: qk.project.goalEvents(projectId, input.goal.goalId) });
       return result.projectGoal;
     } catch (error) {
-      if (error instanceof ProjectGoalConflictError) storeGoal(queryClient, projectId, error.goal);
+      if (error instanceof WorkspaceGoalConflictError) storeGoal(queryClient, projectId, error.goal);
       throw error;
     } finally {
       inFlight.delete(key);
@@ -162,6 +181,9 @@ export function runProjectGoalControl(queryClient: QueryClient, projectId: strin
   return run;
 }
 
+/** @deprecated Use `runWorkspaceGoalControl`. Kept permanently. */
+export const runProjectGoalControl = runWorkspaceGoalControl;
+
 /**
  * A person's goal controls (pause, resume, stop, restart, answer) as one
  * mutation. Show a control only when `goal.capabilities` allows it. Success
@@ -169,7 +191,10 @@ export function runProjectGoalControl(queryClient: QueryClient, projectId: strin
  * `ProjectGoalConflictError` tell the person the goal changed and let them
  * act again on what they now see.
  */
-export function useProjectGoalControl(projectId: string) {
+export function useWorkspaceGoalControl(projectId: string) {
   const queryClient = useQueryClient();
-  return useMutation({ mutationFn: (input: ProjectGoalControlInput) => runProjectGoalControl(queryClient, projectId, input) });
+  return useMutation({ mutationFn: (input: ProjectGoalControlInput) => runWorkspaceGoalControl(queryClient, projectId, input) });
 }
+
+/** @deprecated Use `useWorkspaceGoalControl`. Kept permanently. */
+export const useProjectGoalControl = useWorkspaceGoalControl;

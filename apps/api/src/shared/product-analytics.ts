@@ -30,7 +30,7 @@ import { logger } from '../lib/logger';
  */
 export type ProductEvent =
   // Acquisition and activation
-  /** A personal account was created for a new user. `method`: auth provider. */
+  /** A new person reached Kortix for the first time (accounts/core/signup-event.ts). `method`: auth provider. */
   | 'user_signed_up'
   /** A CLI or device login completed. `method`. */
   | 'user_logged_in'

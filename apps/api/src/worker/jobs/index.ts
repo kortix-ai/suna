@@ -50,6 +50,8 @@ import { startTeamsTurnGc, stopTeamsTurnGc } from './teams-turn-gc';
 import { startProjectTriggerScheduler, stopProjectTriggerScheduler, triggerSweepStalled } from './trigger-scheduler';
 import { startTunnelCleanup, stopTunnelCleanup } from './tunnel-cleanup';
 import { startTunnelForwardExpiry, stopTunnelForwardExpiry } from './tunnel-forward-expiry';
+import { startWorkspaceIdFillWorker, stopWorkspaceIdFillWorker } from './workspace-id-fill';
+import { startWorkspaceSplitWorker, stopWorkspaceSplitWorker } from './workspace-split';
 
 import { startSalesOutbox, stopSalesOutbox } from './sales-outbox';
 
@@ -141,4 +143,8 @@ export const JOBS: readonly Job[] = [
   // Database-wide tunnel sweeps; every API process ran them before the worker split.
   { ticks: { 'tunnel-cleanup': 20 * MIN }, start: startTunnelCleanup, stop: stopTunnelCleanup },
   { ticks: { 'tunnel-forward-expiry': 10 * MIN }, start: startTunnelForwardExpiry, stop: stopTunnelForwardExpiry },
+  // Legacy multi-project accounts → one workspace per project. Dry-run plans every 6 h.
+  { ticks: { 'workspace-split': 8 * HOUR }, start: startWorkspaceSplitWorker, stop: stopWorkspaceSplitWorker },
+  // The Release 1 workspace_id fill, batch by batch after the deploy (never the migrate job). Hourly while paused or done.
+  { ticks: { 'workspace-id-fill': 3 * HOUR }, start: startWorkspaceIdFillWorker, stop: stopWorkspaceIdFillWorker },
 ];

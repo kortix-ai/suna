@@ -70,7 +70,7 @@ export async function listSessionAsks(
   if (options.surfaceSessionId) query.set('surface_session_id', options.surfaceSessionId);
   if (options.limit) query.set('limit', String(options.limit));
   const suffix = query.size ? `?${query.toString()}` : '';
-  return unwrap(await backendApi.get<SessionAsksResponse>(`/projects/${projectId}/asks${suffix}`));
+  return unwrap(await backendApi.get<SessionAsksResponse>(`/workspaces/${projectId}/asks${suffix}`));
 }
 
 /** Answer a question or decide a permission ask. Throws on a refusal, including an ask already decided (409). */
@@ -80,6 +80,6 @@ export async function answerSessionAsk(
   answer: SessionAskAnswer,
 ): Promise<SessionAskAnswerResult> {
   return unwrap(
-    await backendApi.post<SessionAskAnswerResult>(`/projects/${projectId}/asks/${encodeURIComponent(askId)}/answer`, answer),
+    await backendApi.post<SessionAskAnswerResult>(`/workspaces/${projectId}/asks/${encodeURIComponent(askId)}/answer`, answer),
   );
 }

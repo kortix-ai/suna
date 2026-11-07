@@ -278,7 +278,7 @@ describe('a received email: stored before the ack, then run', () => {
   afterAll(async () => {
     resetChannelLifecycleForTest();
     for (const inbox of [INBOX, STRICT, GONE, READDED]) {
-      await db.delete(chatThreads).where(eq(chatThreads.workspaceId, inbox));
+      await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, inbox));
       await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `%${inbox}%`));
       await db.delete(jobQueue).where(like(jobQueue.jobKey, `email:${inbox}:%`));
       await releaseEmailInbox(project.project_id, inbox);
@@ -312,7 +312,7 @@ describe('a received email: stored before the ack, then run', () => {
     // The channel envelope: nothing before the header, and a first email is no revival.
     expect(created[0]!.postCreate[1].text).toStartWith(`${HEAD}\n\n── Email instructions\n`);
     expect(created[0]!.postCreate[1].text).not.toContain(REVIVED_NOTE);
-    const [thread] = await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, INBOX), eq(chatThreads.threadId, `${INBOX}-t1`)));
+    const [thread] = await db.select().from(chatThreads).where(and(eq(chatThreads.platformTeamId, INBOX), eq(chatThreads.threadId, `${INBOX}-t1`)));
     expect(thread?.projectId).toBe(project.project_id);
     expect(await db.select().from(chatEventDedup).where(eq(chatEventDedup.eventId, `email:threadcreate:${INBOX}:${INBOX}-t1`))).toHaveLength(0);
   });
@@ -449,7 +449,7 @@ describe('a received email: stored before the ack, then run', () => {
   async function threadWithSession(projectId: string, inbox: string, thread: string) {
     const sessionId = crypto.randomUUID();
     await db.insert(projectSessions).values({ sessionId, accountId: project.account_id, projectId, branchName: sessionId, createdBy: OWNER });
-    await db.insert(chatThreads).values({ projectId, platform: 'email', workspaceId: inbox, threadId: `${inbox}-${thread}`, sessionId });
+    await db.insert(chatThreads).values({ projectId, platform: 'email', platformTeamId: inbox, threadId: `${inbox}-${thread}`, sessionId });
     return sessionId;
   }
   /** A second project of the suite's account; `removeSeeded` would delete the account too. */
@@ -459,7 +459,7 @@ describe('a received email: stored before the ack, then run', () => {
     await db.delete(projects).where(eq(projects.projectId, projectId));
   }
   const threadOf = async (inbox: string, thread: string) =>
-    (await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, inbox), eq(chatThreads.threadId, `${inbox}-${thread}`))))[0];
+    (await db.select().from(chatThreads).where(and(eq(chatThreads.platformTeamId, inbox), eq(chatThreads.threadId, `${inbox}-${thread}`))))[0];
   const runEmail = (inbox: string, n: number, thread: string) =>
     handleEmailEvent(emailMessageEvent(project.project_id, email(inbox, n, thread))!, { finalAttempt: true });
 

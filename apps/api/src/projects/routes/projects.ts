@@ -12,10 +12,16 @@ import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager } from '../access';
 import { getBackend, hasBackend } from '../git-backends';
-import { runProvision, type ProvisionContext } from '../provision-core';
+import {
+  buildNewWorkspaceProvisionContext,
+  runProvision,
+  type ProvisionContext,
+  type ProvisionResult,
+} from '../provision-core';
+import { newWorkspaceCallerDenial, wantsNewWorkspace, type NewWorkspaceCaller } from '../new-workspace';
+import { isProjectSessionPrincipal } from '../../middleware/agent-scope';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { enforceProjectQuota, resolveProjectAccount } from '../lib/access';
 import { projectQuotaState } from '../lib/project-quota';
@@ -26,6 +32,7 @@ import {
   resolveGitHubImport,
 } from '../lib/git';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
+import { createByoWorkspaceAccount, resolveByoCreateScope, resolveByoCreateTarget } from './byo-new-workspace';
 import {
   deriveProjectName,
   normalizeRepoUrl,
@@ -34,6 +41,21 @@ import {
 } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { isNoWorkspaceError } from '../../shared/no-workspace';
+import { accountTakenForNewProject, workspaceHasProjectDenial } from '../../workspaces/one-project';
+import { projectsView } from '../../workspaces/rows';
+
+/** Who is asking, for the new-workspace caller rule (`new-workspace.ts`). */
+export function newWorkspaceCallerOf(c: Context): NewWorkspaceCaller {
+  return {
+    userId: c.get('userId') as string,
+    email: (c.get('userEmail') as string | undefined) || null,
+    authType: c.get('authType') as string | undefined,
+    // A browser JWT's `sessionId` is its Supabase login session, not a
+    // Kortix session (middleware/caller-session.ts): never a scoped credential.
+    scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
+  };
+}
 
 /**
  * Reads the request body and resolves the caller's account scope — the part
@@ -41,11 +63,58 @@ import { rethrowDatabaseError } from '../../shared/database-errors';
  * `PROJECT_CREATE` authorization check. Kept out of `runProvision` itself so
  * a caller (either route) can still 403 before any provisioning work starts.
  */
-async function buildProvisionContext(c: Context): Promise<ProvisionContext> {
-  const body = await readJsonObject(c);
-  const scope = await resolveProjectAccount(c, body);
-  return { body, scope };
+async function buildProvisionContext(c: Context): Promise<{ result: ProvisionResult } | { ctx: ProvisionContext }> {
+  let body = await readJsonObject(c);
+  const caller = newWorkspaceCallerOf(c);
+  const newWorkspace = async () => {
+    const built = await buildNewWorkspaceProvisionContext(body, caller);
+    if ('ctx' in built) c.set('accountId', built.ctx.scope.accountId);
+    return built;
+  };
+  // `new_workspace: true`: the server picks or creates the account
+  // (../new-workspace.ts). The caller sends no account_id.
+  if (wantsNewWorkspace(body)) return newWorkspace();
+
+  // Compatibility: every client before Workspaces 1:1 always created a project
+  // with this route, and it still does. A request that names no account (cached
+  // web and mobile bundles, the SDK's provisionProject) becomes a new workspace
+  // when the caller's active account already holds its one project, or when the
+  // caller has no workspace yet. A request that names an occupied account (the
+  // published CLI <= 0.14 sends `account_id` in the body and the query on
+  // `kortix projects create` and `kortix ship`) becomes a new workspace too,
+  // when the caller is a person who may create a project in that account. An
+  // API key, a scoped token or an impersonating operator keeps the 409
+  // workspace_has_project. POST /v1/workspaces never reaches this route.
+  const namesAccount = Boolean(
+    normalizeString(c.req.query('account_id') ?? c.req.query('accountId') ?? body.account_id ?? body.accountId),
+  );
+  const person = newWorkspaceCallerDenial(caller) === null;
+  let scope: Awaited<ReturnType<typeof resolveProjectAccount>>;
+  try {
+    scope = await resolveProjectAccount(c, body);
+  } catch (err) {
+    if (person && !namesAccount && isNoWorkspaceError(err)) return newWorkspace();
+    throw err;
+  }
+  if (!person) return { ctx: { body, scope } };
+  const idempotencyKey = normalizeString(body.idempotency_key ?? body.idempotencyKey) ?? null;
+  if (!(await accountTakenForNewProject(scope.accountId, idempotencyKey))) return { ctx: { body, scope } };
+  if (!namesAccount) return newWorkspace();
+  // The named account must be one the person may create in: without that the
+  // request keeps its old 403, and never turns into a workspace elsewhere.
+  if (!(await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+    return { ctx: { body, scope } };
+  }
+  const { account_id: _a, accountId: _b, ...rest } = body;
+  body = rest;
+  return newWorkspace();
 }
+
+/** `new_workspace` on the two provision routes. */
+const NEW_WORKSPACE_FIELD = z.boolean().optional().openapi({
+  description:
+    'Create a whole workspace: the server creates a new account named after the project (a retry with the same idempotency_key returns the first one), then provisions into it. Excludes account_id (400 new_workspace_with_account_id). 403 account_creation_restricted where the deployment restricts account creation.',
+});
 
 export function registerProjectsRoutes(): void {
   projectsApp.use('/*', supabaseAuth);
@@ -62,7 +131,15 @@ export function registerProjectsRoutes(): void {
       },
     }),
     async (c) => {
-    const scope = await resolveProjectAccount(c);
+    // A person with no workspace has no projects. The list is `[]`, like
+    // GET /v1/accounts, never a 409: the switcher reads it on every page.
+    let scope: Awaited<ReturnType<typeof resolveProjectAccount>>;
+    try {
+      scope = await resolveProjectAccount(c);
+    } catch (err) {
+      if (isNoWorkspaceError(err) && !c.req.query('account_id') && !c.req.query('accountId')) return c.json([]);
+      throw err;
+    }
     // Reach through `any` for non-typed context keys set by the auth
     // middleware (the AppEnv only types userId/userEmail).
     // Ask the engine which projects the caller can READ. It returns one of:
@@ -89,8 +166,8 @@ export function registerProjectsRoutes(): void {
     // verdict above came from. Neither this read nor the row read needs the
     // other, so they run together.
     const baseWhere = and(
-      eq(projects.accountId, scope.accountId),
-      eq(projects.status, 'active'),
+      eq(projectsView.accountId, scope.accountId),
+      eq(projectsView.status, 'active'),
     );
 
     // mode === 'allow_only' with nothing enumerated. The 'none' case was
@@ -100,13 +177,13 @@ export function registerProjectsRoutes(): void {
       projectRoleGrants({ accountId: scope.accountId, userId: scope.userId }),
       db
         .select()
-        .from(projects)
+        .from(projectsView)
         .where(
           accessible.mode === 'all'
             ? baseWhere
-            : and(baseWhere, inArray(projects.projectId, [...accessible.allowed])),
+            : and(baseWhere, inArray(projectsView.projectId, [...accessible.allowed])),
         )
-        .orderBy(desc(projects.updatedAt)),
+        .orderBy(desc(projectsView.updatedAt)),
     ]);
     const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole]));
 
@@ -156,10 +233,10 @@ export function registerProjectsRoutes(): void {
     }),
     async (c) => {
     const body = await readJsonObject(c);
-    const scope = await resolveProjectAccount(c, body);
-    // IAM-gated. Engine consults super-admin bypass, direct + group
-    // policies, and legacy owner/admin bridges (in non-strict mode).
-    await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
+    // IAM-gated (`project.create` in the named account). An occupied account
+    // turns an old client's request into a new workspace, created after the
+    // repository is validated (./byo-new-workspace.ts).
+    const byoScope = await resolveByoCreateScope(c, body, { tokenPath: false });
 
     let repoUrl: string | null;
     try {
@@ -171,8 +248,11 @@ export function registerProjectsRoutes(): void {
       return c.json({ error: 'repo_url is required' }, 400);
     }
 
-    const quota = await enforceProjectQuota(c, scope.accountId);
-    if (quota) return quota;
+    const placed = await resolveByoCreateTarget(c, byoScope, { tokenPath: false });
+    if ('response' in placed) return placed.response as never;
+    const { target } = placed;
+    // The App path always has a source account (rule 5 of byo-new-workspace.ts).
+    const sourceAccountId = target.kind === 'account' ? target.accountId : target.sourceAccountId!;
 
     const name = normalizeString(body.name) ?? deriveProjectName(repoUrl);
     const requestedBranch = normalizeString(body.default_branch ?? body.defaultBranch);
@@ -181,7 +261,7 @@ export function registerProjectsRoutes(): void {
     let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
     try {
       imported = await resolveGitHubImport({
-        accountId: scope.accountId,
+        accountId: sourceAccountId,
         repoUrl,
         installationId: normalizeString(body.installation_id ?? body.installationId),
         defaultBranch: requestedBranch,
@@ -190,18 +270,24 @@ export function registerProjectsRoutes(): void {
       if (error instanceof GitHubInstallationRequiredError) {
         return c.json({
           error: error.message,
-          install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+          install_url: await createGitHubInstallationInstallUrl(error.accountId, target.userId),
         }, 409);
       }
       rethrowDatabaseError(error);
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
 
+    const landed = target.kind === 'account'
+      ? { accountId: target.accountId }
+      : await createByoWorkspaceAccount(c, name);
+    if ('response' in landed) return landed.response as never;
     const row = await registerGitHubLinkedProject({
-      accountId: scope.accountId,
-      userId: scope.userId,
+      accountId: landed.accountId,
+      userId: target.userId,
       repo: imported.repo,
       installation: imported.installation,
+      // The installation stays linked to the source account: a grant for this repository only.
+      projectGrant: target.kind === 'new_workspace',
       name,
       defaultBranch: imported.defaultBranch,
       manifestPath,
@@ -216,7 +302,7 @@ export function registerProjectsRoutes(): void {
         manifestPath: row.manifestPath,
         gitAuthToken: imported.auth.token,
       },
-      { accountId: scope.accountId, source: 'project-create' },
+      { accountId: landed.accountId, source: 'project-create' },
     );
 
     return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
@@ -251,21 +337,19 @@ export function registerProjectsRoutes(): void {
     },
   );
 
-  // GET /v1/projects/quota
-  // Lets the frontend pre-check the account's project cap BEFORE the user hits
-  // the 403 a denied create answers, so the /new page can show the cap reason
-  // on load and keep Create disabled instead of teaching the cap through a
-  // failed submit (KRTX-2495). Same computation as the create gate's
-  // `enforceProjectQuota` — `projectQuotaState` — so the two can never
-  // disagree. Account-scoped like POST /provision: `account_id` resolves
-  // through `resolveProjectAccount`, and omitting it resolves the same default
-  // account an omitted `account_id` create would target.
+  // GET /v1/projects/quota (legacy name only; not under /v1/workspaces)
+  // The create pre-check: whether the account may create its project, from the
+  // create gate's own rule (`projectQuotaState`), so the two never disagree.
+  // `account_id` resolves through `resolveProjectAccount`; omitted, the default
+  // account an omitted-account create would target.
   projectsApp.openapi(
     createRoute({
       method: 'get',
       path: '/quota',
       tags: ['projects'],
-      summary: 'Get the project quota state for an account',
+      summary: 'Get whether an account may create its project',
+      description:
+        'The workspace rule of the create gate: `limit` is 1 on every plan; `capped` is true when the account already holds its project, and `message` is the create gate text. To make another workspace, use `POST /v1/workspaces`.',
       ...auth,
       responses: {
         200: json(
@@ -281,6 +365,11 @@ export function registerProjectsRoutes(): void {
     }),
     async (c) => {
       const scope = await resolveProjectAccount(c);
+      // Membership is a person's gate here. A service account has none, so it
+      // reads the create pre-check only when it may create.
+      if (c.get('authType') === 'service_account') {
+        await assertAuthorized(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE);
+      }
       return c.json(await projectQuotaState(scope.accountId));
     },
   );
@@ -319,6 +408,7 @@ export function registerProjectsRoutes(): void {
               seed_starter: z.boolean().optional().openapi({ description: 'Set false when the client makes the first commit itself.' }),
               marketplace_items: z.array(z.any()).optional().openapi({ description: 'Marketplace items to install into the new project.' }),
               account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+              new_workspace: NEW_WORKSPACE_FIELD,
             }) } } },
         },
       responses: {
@@ -327,7 +417,9 @@ export function registerProjectsRoutes(): void {
       },
     }),
     async (c) => {
-    const ctx = await buildProvisionContext(c);
+    const built = await buildProvisionContext(c);
+    if ('result' in built) return c.json(built.result.body, built.result.status, built.result.headers);
+    const { ctx } = built;
     if (!(await authorize(await actorOf(c, ctx.scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
       return c.json({ error: 'Owner or admin role required' }, 403);
     }
@@ -374,6 +466,7 @@ export function registerProjectsRoutes(): void {
               seed_starter: z.boolean().optional().openapi({ description: 'Set false when the client makes the first commit itself.' }),
               marketplace_items: z.array(z.any()).optional().openapi({ description: 'Marketplace items to install into the new project.' }),
               account_id: z.string().optional().openapi({ description: 'Account to create the project in. Defaults to the caller\'s account.' }),
+              new_workspace: NEW_WORKSPACE_FIELD,
             }) } } },
         },
       responses: {
@@ -383,11 +476,15 @@ export function registerProjectsRoutes(): void {
               '`done` or `error` frame — never a bare close.',
             content: { 'text/event-stream': { schema: z.any() } },
           },
-          ...errors(403),
+          ...errors(400, 403, 409, 503),
       },
     }),
     async (c) => {
-    const ctx = await buildProvisionContext(c);
+    const built = await buildProvisionContext(c);
+    // A refusal decided before the stream opens (a new workspace's request
+    // checks, its account choice) is a plain JSON response, never a 200 SSE.
+    if ('result' in built) return c.json(built.result.body, built.result.status as 400 | 403 | 503, built.result.headers);
+    const { ctx } = built;
     // Same gate as POST /provision, and it MUST run before the stream opens. An
     // unauthorized caller gets a normal JSON 403 — never a 200 SSE stream that
     // then carries an error frame; a 200 status has to mean "authorized", or
@@ -395,62 +492,84 @@ export function registerProjectsRoutes(): void {
     if (!(await authorize(await actorOf(c, ctx.scope.accountId), ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
       return c.json({ error: 'Owner or admin role required' }, 403);
     }
+    // Same reason: an account that already holds its one active project
+    // (Workspaces 1:1) is a plain JSON 409 `workspace_has_project`, never a 200
+    // stream with an error frame. A new workspace picked an empty account.
+    // `runProvision` checks again, after the idempotency replay.
+    if (!ctx.newWorkspace && !normalizeString(ctx.body.idempotency_key ?? ctx.body.idempotencyKey)) {
+      const occupied = await workspaceHasProjectDenial(ctx.scope.accountId);
+      if (occupied) return c.json(occupied, 409);
+    }
 
-    return new Response(
-      new ReadableStream({
-        async start(controller) {
-          const encoder = new TextEncoder();
-
-          // Data-only framing: `data: <json>\n\n`, no `event:` line. Every
-          // payload already carries a `type` field ('phase' | 'done' |
-          // 'error') — a discriminated union the SDK switches on. Adding an
-          // `event:` name would duplicate that discriminator in two places
-          // that can drift out of sync with each other. Do not "fix" this by
-          // adding one back.
-          const write = (data: unknown) => {
-            try {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-            } catch {
-              // The client disconnected. Provisioning has no AbortSignal (see
-              // ProvisionContext in ../provision-core.ts) and keeps running to
-              // completion regardless — cancelling between backend.createRepo
-              // and the DB insert is exactly how an upstream repo gets
-              // orphaned, so a lost reader must not cancel it.
-            }
-          };
-
-          try {
-            const result = await runProvision(ctx, (phase) => write({ type: 'phase', phase }));
-            if (result.status === 201) {
-              write({ type: 'done', project: result.body });
-            } else {
-              // `status` alongside the body's `error`/`code` — see
-              // `ProvisionStreamEvent`'s doc comment in the SDK
-              // (`packages/sdk/src/core/rest/projects-client/projects.ts`).
-              // Spread first, explicit field last: `result.body` never carries
-              // a `status` key today, but this ordering means it never could
-              // silently shadow the real one if that changed.
-              write({ type: 'error', ...(result.body as object), status: result.status });
-            }
-          } catch (error) {
-            // The stream must never end in a bare close — that would hand the
-            // client an undefined project id. This catch is what guarantees a
-            // terminal frame even when runProvision THROWS instead of
-            // returning an error result.
-            write({ type: 'error', error: (error as Error).message || 'Failed to provision project' });
-          } finally {
-            try { controller.close(); } catch {}
-          }
-        },
-      }),
-      {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
-      },
-    ) as any;
+    return provisionStreamResponse(ctx) as any;
   },
+  );
+}
+
+/**
+ * The provision SSE stream: `data: <json>` frames of `phase`, then one
+ * terminal `done` or `error`. `done` carries `project`; `done(project)` adds
+ * fields to that frame (`POST /v1/workspaces` adds `workspace`). Shared by
+ * `POST /v1/projects/provision-stream` and `POST /v1/workspaces` with
+ * `Accept: text/event-stream`: one implementation of the create.
+ */
+export function provisionStreamResponse(
+  ctx: ProvisionContext,
+  done?: (project: unknown) => Promise<Record<string, unknown>>,
+): Response {
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder();
+
+        // Data-only framing: `data: <json>\n\n`, no `event:` line. Every
+        // payload already carries a `type` field ('phase' | 'done' |
+        // 'error') — a discriminated union the SDK switches on. Adding an
+        // `event:` name would duplicate that discriminator in two places
+        // that can drift out of sync with each other. Do not "fix" this by
+        // adding one back.
+        const write = (data: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // The client disconnected. Provisioning has no AbortSignal (see
+            // ProvisionContext in ../provision-core.ts) and keeps running to
+            // completion regardless — cancelling between backend.createRepo
+            // and the DB insert is exactly how an upstream repo gets
+            // orphaned, so a lost reader must not cancel it.
+          }
+        };
+
+        try {
+          const result = await runProvision(ctx, (phase) => write({ type: 'phase', phase }));
+          if (result.status === 201) {
+            write({ type: 'done', project: result.body, ...(await done?.(result.body)) });
+          } else {
+            // `status` alongside the body's `error`/`code` — see
+            // `ProvisionStreamEvent`'s doc comment in the SDK
+            // (`packages/sdk/src/core/rest/projects-client/projects.ts`).
+            // Spread first, explicit field last: `result.body` never carries
+            // a `status` key today, but this ordering means it never could
+            // silently shadow the real one if that changed.
+            write({ type: 'error', ...(result.body as object), status: result.status });
+          }
+        } catch (error) {
+          // The stream must never end in a bare close — that would hand the
+          // client an undefined project id. This catch is what guarantees a
+          // terminal frame even when runProvision THROWS instead of
+          // returning an error result.
+          write({ type: 'error', error: (error as Error).message || 'Failed to provision project' });
+        } finally {
+          try { controller.close(); } catch {}
+        }
+      },
+    }),
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    },
   );
 }

@@ -48,9 +48,11 @@ beforeAll(async () => {
     await db.execute(sql`INSERT INTO auth.users (id, email, instance_id, aud, role, raw_user_meta_data) VALUES (${id}::uuid, ${`space-watch-${name}-${id.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', ${JSON.stringify({ full_name: name === 'ana' ? 'Ana Lima' : 'Bo Chen' })}::jsonb)`);
   }
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'space-watch' });
+  // Two projects in one account: a legacy (split_pending) account, as
+  // uq_projects_workspace_account requires.
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'space-watch', repoUrl: 'https://example.test/w.git', metadata: { experimental: { chat: true, spaces_proactive: true } } },
-    { projectId: OFF_PROJECT, accountId: ACCOUNT, name: 'space-watch-off', repoUrl: 'https://example.test/o.git', metadata: { experimental: { chat: true } } },
+    { projectId: PROJECT, accountId: ACCOUNT, name: 'space-watch', repoUrl: 'https://example.test/w.git', metadata: { experimental: { chat: true, spaces_proactive: true } }, splitPending: true },
+    { projectId: OFF_PROJECT, accountId: ACCOUNT, name: 'space-watch-off', repoUrl: 'https://example.test/o.git', metadata: { experimental: { chat: true } }, splitPending: true },
   ]);
   await db.insert(projectSpaces).values([
     { spaceId: LAUNCH, accountId: ACCOUNT, projectId: PROJECT, kind: 'channel', slug: 'launch', name: 'launch', createdBy: ANA },

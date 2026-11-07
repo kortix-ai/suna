@@ -52,14 +52,14 @@ flow(
       r.status([401, 403]);
       if (r.text().includes("X-Amz-")) throw new Error("refused descriptor leaked a presigned URL");
     });
-    await ctx.step("project snapshot descriptor with a malformed sha → 400", async () => {
+    await ctx.step("project snapshot descriptor with a malformed sha and no git auth → 401 (auth before validation)", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .get("/v1/git/:project/project-snapshot", {
           params: { project: p.id },
           query: { sha: "not-a-sha" },
         });
-      r.status(400);
+      r.status(401);
     });
     await ctx.step("info/refs without git auth header → 401", async () => {
       const r = await ctx.client
@@ -113,13 +113,13 @@ flow(
 
 flow(
   "GH-6",
-  { domain: "git", routes: ["PUT /v1/projects/:projectId/git-credential"] },
+  { domain: "git", routes: ["PUT /v1/workspaces/:projectId/git-credential"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .put("/v1/projects/:projectId/git-credential", { token: "ghp_x" }, { params: { projectId: p.id } });
+        .put("/v1/workspaces/:projectId/git-credential", { token: "ghp_x" }, { params: { projectId: p.id } });
       r.status(401);
     });
     await ctx.step("missing token (server-managed already) → 400/409", async () => {
@@ -127,19 +127,19 @@ flow(
       // with no token in the body 400s ("token is required").
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/git-credential", {}, { params: { projectId: p.id } });
+        .put("/v1/workspaces/:projectId/git-credential", {}, { params: { projectId: p.id } });
       r.status([400, 409]);
     });
     await ctx.step("set BYO credential → ok / managed conflict 409", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/git-credential", { token: "ghp_byo_token", provider: "gitlab" }, { params: { projectId: p.id } });
+        .put("/v1/workspaces/:projectId/git-credential", { token: "ghp_byo_token", provider: "gitlab" }, { params: { projectId: p.id } });
       r.status([200, 409]);
     });
     await ctx.step("NONMEMBER cannot set credential → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .put("/v1/projects/:projectId/git-credential", { token: "ghp_x" }, { params: { projectId: p.id } });
+        .put("/v1/workspaces/:projectId/git-credential", { token: "ghp_x" }, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -147,31 +147,31 @@ flow(
 
 flow(
   "GH-7",
-  { domain: "git", routes: ["POST /v1/projects/:projectId/git-token"] },
+  { domain: "git", routes: ["POST /v1/workspaces/:projectId/git-token"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/git-token", {}, { params: { projectId: p.id } });
       r.status(401);
     });
     await ctx.step("OWNER mints push token → 200 / 409 BYO / 503 unconfigured", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/git-token", {}, { params: { projectId: p.id } });
       r.status([200, 409, 503]);
     });
     await ctx.step("unknown project → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: UNKNOWN } });
+        .post("/v1/workspaces/:projectId/git-token", {}, { params: { projectId: UNKNOWN } });
       r.status(404);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/git-token", {}, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -179,19 +179,19 @@ flow(
 
 flow(
   "GH-12",
-  { domain: "git", routes: ["POST /v1/projects/:projectId/git/collaborators"] },
+  { domain: "git", routes: ["POST /v1/workspaces/:projectId/git/collaborators"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/git/collaborators", { github_username: "octocat" }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/git/collaborators", { github_username: "octocat" }, { params: { projectId: p.id } });
       r.status(401);
     });
     await ctx.step("missing github_username → 400 (or managed-only 409)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git/collaborators", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/git/collaborators", {}, { params: { projectId: p.id } });
       r.status([400, 409]);
     });
     await ctx.step("invite collaborator → managed-only 409 / 502 upstream / 200", async () => {
@@ -199,13 +199,13 @@ flow(
       // GitHub API call has no install locally → 502.
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/git/collaborators", { github_username: "octocat", permission: "write" }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/git/collaborators", { github_username: "octocat", permission: "write" }, { params: { projectId: p.id } });
       r.status([200, 400, 409, 502]);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/git/collaborators", { github_username: "octocat" }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/git/collaborators", { github_username: "octocat" }, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -218,23 +218,23 @@ flow(
   {
     domain: "git",
     routes: [
-      "GET /v1/projects/github/installation",
-      "GET /v1/projects/github/installations",
+      "GET /v1/workspaces/github/installation",
+      "GET /v1/workspaces/github/installations",
     ],
   },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/github/installation");
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces/github/installation");
       r.status(401);
     });
     await ctx.step("OWNER reads install state (none locally → install_url)", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/installation");
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/github/installation");
       r.status([200, 400, 409, 503]);
     });
     await ctx.step(
       "OWNER lists account git connections: real installations only, no synthetic instance-backend entry",
       async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/installations");
+        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/github/installations");
         r.status([200, 400, 409, 503]);
         if (r.statusCode !== 200) return;
         const body = r.json<any>();
@@ -267,22 +267,22 @@ flow(
 
 flow(
   "GH-2",
-  { domain: "git", routes: ["POST /v1/projects/github/installation"] },
+  { domain: "git", routes: ["POST /v1/workspaces/github/installation"] },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/github/installation", { state: "x", installation_id: "1" });
+        .post("/v1/workspaces/github/installation", { state: "x", installation_id: "1" });
       r.status(401);
     });
     await ctx.step("missing state → 400", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/github/installation", {});
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/github/installation", {});
       r.status(400);
     });
     await ctx.step("invalid HMAC state → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/github/installation", { state: "not-a-valid-signed-state", installation_id: "12345" });
+        .post("/v1/workspaces/github/installation", { state: "not-a-valid-signed-state", installation_id: "12345" });
       r.status(400);
     });
   },
@@ -292,16 +292,16 @@ flow(
 // GitHub. The local profile has no GitHub, so this flow pins the refusals.
 flow(
   "GH-20",
-  { domain: "git", routes: ["POST /v1/projects/github/user-token"] },
+  { domain: "git", routes: ["POST /v1/workspaces/github/user-token"] },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/github/user-token", { github_user_token: "ghu_x" });
+        .post("/v1/workspaces/github/user-token", { github_user_token: "ghu_x" });
       r.status(401);
     });
     await ctx.step("NONMEMBER cannot store a token on the OWNER account → 403/404", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/github/user-token", {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/workspaces/github/user-token", {
         account_id: ctx.P.OWNER.accountId,
         github_user_token: "ghu_x",
       });
@@ -310,7 +310,7 @@ flow(
     await ctx.step("OWNER without github_user_token → 400, and no token is echoed", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/github/user-token", { account_id: ctx.P.OWNER.accountId });
+        .post("/v1/workspaces/github/user-token", { account_id: ctx.P.OWNER.accountId });
       r.status(400);
       const body = r.json<any>();
       if (body.error !== "github_user_token is required") {
@@ -325,23 +325,23 @@ flow(
   {
     domain: "git",
     routes: [
-      "DELETE /v1/projects/github/installation",
-      "DELETE /v1/projects/github/installations/:installationId",
+      "DELETE /v1/workspaces/github/installation",
+      "DELETE /v1/workspaces/github/installations/:installationId",
     ],
   },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).del("/v1/projects/github/installation");
+      const r = await ctx.client.as(ctx.P.ANON).del("/v1/workspaces/github/installation");
       r.status(401);
     });
     await ctx.step("OWNER disconnect (idempotent, none present) → ok", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/github/installation");
+      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/workspaces/github/installation");
       r.status([200, 400, 409, 503]);
     });
     await ctx.step("OWNER delete a specific (absent) installation → ok / not-found", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/github/installations/:installationId", { params: { installationId: "999999999" } });
+        .del("/v1/workspaces/github/installations/:installationId", { params: { installationId: "999999999" } });
       r.status([200, 400, 404, 409, 503]);
     });
   },
@@ -349,19 +349,19 @@ flow(
 
 flow(
   "GH-13",
-  { domain: "git", routes: ["GET /v1/projects/github/repositories"] },
+  { domain: "git", routes: ["GET /v1/workspaces/github/repositories"] },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/github/repositories");
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces/github/repositories");
       r.status(401);
     });
     await ctx.step("OWNER lists repos (no install locally → 409 with install_url)", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/repositories");
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/github/repositories");
       r.status([200, 400, 409, 502, 503]);
     });
     await ctx.step("the retired `pat` selector is an unknown installation → 409 not connected to this account", async () => {
       const team = await ctx.fixtures.team();
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/repositories", {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/github/repositories", {
         query: { account_id: team.id, installation_id: "pat" },
       });
       r.status(409).body().has("$.error", "Selected GitHub installation is not connected to this account");
@@ -371,9 +371,9 @@ flow(
 
 flow(
   "GH-16",
-  { domain: "git", routes: ["GET /v1/projects/github/repository-branches"] },
+  { domain: "git", routes: ["GET /v1/workspaces/github/repository-branches"] },
   async (ctx) => {
-    const path = "/v1/projects/github/repository-branches";
+    const path = "/v1/workspaces/github/repository-branches";
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get(path);
       r.status(401);
@@ -463,9 +463,9 @@ flow(
       'GET /v1/git/:project/info/refs',
       'POST /v1/git/:project/git-upload-pack',
       'POST /v1/git/:project/git-receive-pack',
-      'POST /v1/projects/:projectId/change-requests',
-      'POST /v1/projects/:projectId/change-requests/:crId/merge',
-      'GET /v1/projects/:projectId/change-requests/:crId',
+      'POST /v1/workspaces/:projectId/change-requests',
+      'POST /v1/workspaces/:projectId/change-requests/:crId/merge',
+      'GET /v1/workspaces/:projectId/change-requests/:crId',
     ],
   },
   async (ctx) => {
@@ -681,20 +681,20 @@ flow(
   {
     domain: "git",
     routes: [
-      "GET /v1/projects/git/backend",
-      "GET /v1/projects/git/backend/repositories",
+      "GET /v1/workspaces/git/backend",
+      "GET /v1/workspaces/git/backend/repositories",
     ],
   },
   async (ctx) => {
     await ctx.step("ANON → 401 on GET /git/backend", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/git/backend");
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces/git/backend");
       r.status(401);
     });
 
     await ctx.step(
       "OWNER reads the instance backend: {configured, kind, owner} and never a credential",
       async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend");
+        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/git/backend");
         r.status(200);
         const body = r.json<any>();
         if (typeof body.configured !== "boolean") {
@@ -726,7 +726,7 @@ flow(
     );
 
     await ctx.step("ANON → 401 on GET /git/backend/repositories", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/git/backend/repositories");
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces/git/backend/repositories");
       r.status(401);
     });
 
@@ -739,7 +739,7 @@ flow(
         // allowlist, so the account OWNER is refused. A self-host target that
         // lists this user as its operator answers with the owner's
         // repositories (200) or, with no backend configured, 409.
-        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend/repositories");
+        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/git/backend/repositories");
         r.status([403, 200, 409]);
 
         // The flag and the gate must agree (KRTX-1892): the same caller reads
@@ -747,7 +747,7 @@ flow(
         // with anything but a 403 here would mean the client-side gate and
         // the server-side gate disagree — a silent 403 on one side or an
         // operator who can read but not import on the other.
-        const flag = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend");
+        const flag = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/git/backend");
         flag.status(200);
         if (flag.json<any>().operator === false && r.statusCode !== 403) {
           throw new Error(
@@ -800,9 +800,9 @@ flow(
     domain: "git",
     requires: ["database"],
     routes: [
-      "GET /v1/projects/github/installation",
-      "GET /v1/projects/github/installations",
-      "DELETE /v1/projects/github/installation",
+      "GET /v1/workspaces/github/installation",
+      "GET /v1/workspaces/github/installations",
+      "DELETE /v1/workspaces/github/installation",
     ],
   },
   async (ctx) => {
@@ -816,7 +816,7 @@ flow(
     };
     try {
       await ctx.step("a fresh team: installed false, installations []", async () => {
-        const r = await owner.get("/v1/projects/github/installations", { query });
+        const r = await owner.get("/v1/workspaces/github/installations", { query });
         r.status(200).body().has("$.account_id", team.id).has("$.installed", false).has("$.installations", []).has("$.installation_id", null);
       });
       await withDb(ctx, (db) =>
@@ -830,8 +830,8 @@ flow(
         ),
       );
       await ctx.step("OWNER: both GET paths list both connections with one identical payload", async () => {
-        const singular = await owner.get("/v1/projects/github/installation", { query });
-        const plural = await owner.get("/v1/projects/github/installations", { query });
+        const singular = await owner.get("/v1/workspaces/github/installation", { query });
+        const plural = await owner.get("/v1/workspaces/github/installations", { query });
         singular.status(200);
         plural.status(200).body().has("$.account_id", team.id).has("$.installed", true).has("$.requires_installation", false);
         const body = plural.json<any>();
@@ -854,15 +854,15 @@ flow(
         }
       });
       await ctx.step("MEMBER (no project.create): both GET paths → the same 403", async () => {
-        const singular = await ctx.client.as(member).get("/v1/projects/github/installation", { query });
-        const plural = await ctx.client.as(member).get("/v1/projects/github/installations", { query });
+        const singular = await ctx.client.as(member).get("/v1/workspaces/github/installation", { query });
+        const plural = await ctx.client.as(member).get("/v1/workspaces/github/installations", { query });
         singular.status(403).body().has("$.action", "project.create");
         plural.status(403);
         if (singular.text() !== plural.text()) throw new Error(`403 bodies differ:\n${singular.text()}\n${plural.text()}`);
       });
       await ctx.step("OWNER disconnects → {ok: true}; the account reads not connected and the rows are gone", async () => {
-        (await owner.del("/v1/projects/github/installation", { query })).status(200).body().has("$.ok", true);
-        const r = await owner.get("/v1/projects/github/installation", { query });
+        (await owner.del("/v1/workspaces/github/installation", { query })).status(200).body().has("$.ok", true);
+        const r = await owner.get("/v1/workspaces/github/installation", { query });
         r.status(200).body().has("$.installed", false).has("$.installations", []).has("$.installation_id", null);
         const left = await withDb(ctx, (db) =>
           db.query("SELECT count(*)::int AS n FROM kortix.account_github_installations WHERE account_id = $1", [team.id]),
@@ -884,12 +884,12 @@ flow(
   {
     domain: "git",
     requires: ["admin"],
-    routes: ["GET /v1/projects/git/backend/repositories", "POST /v1/projects/link-repository"],
+    routes: ["GET /v1/workspaces/git/backend/repositories", "POST /v1/projects/link-repository"],
   },
   async (ctx) => {
     const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
     await ctx.step("platform admin lists the instance backend → 403, no repository listing", async () => {
-      const r = await admin.get("/v1/projects/git/backend/repositories");
+      const r = await admin.get("/v1/workspaces/git/backend/repositories");
       r.status(403).body().has("$.error", "The instance git backend is only browsable by a self-host operator");
     });
     await ctx.step("platform admin imports a backend repository by name → 403", async () => {
@@ -911,9 +911,9 @@ flow(
     domain: "git",
     requires: ["database"],
     routes: [
-      "PUT /v1/projects/:projectId/git-credential",
-      "GET /v1/projects/:projectId/secrets",
-      "DELETE /v1/projects/:projectId/secrets/:name",
+      "PUT /v1/workspaces/:projectId/git-credential",
+      "GET /v1/workspaces/:projectId/secrets",
+      "DELETE /v1/workspaces/:projectId/secrets/:name",
     ],
   },
   async (ctx) => {
@@ -922,7 +922,7 @@ flow(
     const params = { projectId: project.id };
     const token = `glpat-ke2e-${crypto.randomUUID()}`;
     await ctx.step("a BYO GitLab token is stored as a platform git credential → 200, never echoed", async () => {
-      const r = await owner.put("/v1/projects/:projectId/git-credential", { token }, { params });
+      const r = await owner.put("/v1/workspaces/:projectId/git-credential", { token }, { params });
       r.status(200)
         .body()
         .has("$.configured", true)
@@ -933,14 +933,14 @@ flow(
       if (r.text().includes(token)) throw new Error("the git credential response echoed the token");
     });
     await ctx.step("the credential is not a runtime project secret: not listed, KORTIX_GIT_AUTH_TOKEN not deletable", async () => {
-      const listed = await owner.get("/v1/projects/:projectId/secrets", { params });
+      const listed = await owner.get("/v1/workspaces/:projectId/secrets", { params });
       listed.status(200);
       const items = listed.json<{ items: Array<{ name?: string; identifier?: string }> }>().items;
       if (items.some((i) => i.name === "KORTIX_GIT_AUTH_TOKEN" || i.identifier === "KORTIX_GIT_AUTH_TOKEN")) {
         throw new Error("the git credential is listed as a project secret");
       }
       if (listed.text().includes(token)) throw new Error("the secrets list leaked the token");
-      (await owner.del("/v1/projects/:projectId/secrets/:name", { params: { ...params, name: "KORTIX_GIT_AUTH_TOKEN" } })).status(403);
+      (await owner.del("/v1/workspaces/:projectId/secrets/:name", { params: { ...params, name: "KORTIX_GIT_AUTH_TOKEN" } })).status(403);
     });
     await ctx.step("storage: one encrypted gitlab credential row, zero project secret rows", async () => {
       const creds = await withDb(ctx, async (db) =>

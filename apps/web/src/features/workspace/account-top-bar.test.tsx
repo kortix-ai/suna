@@ -22,7 +22,7 @@ describe('AccountTopBar menu rows', () => {
   };
 
   /**
-   * `/projects` and `/new` mount no `SettingsPanel`, so a row that pokes
+   * `/workspaces` and `/workspaces/new` mount no `SettingsPanel`, so a row that pokes
    * `useSettingsPanelStore.openSettings()` would set state with no subscriber
    * and the click would be swallowed — the exact dead-store bug
    * `features/layout/user-menu.tsx` documents for its own rows. `/settings/<tab>`
@@ -66,7 +66,7 @@ describe('AccountTopBar menu rows', () => {
 
 /**
  * KRTX-1742: the Inbox button sits in the trailing group, before the account
- * menu, on `/projects` and `/new`, and opens the account-level `/inbox` page.
+ * menu, on `/workspaces` and `/workspaces/new`, and opens the account-level `/inbox` page.
  * It loads client-only, so the static renders of those pages
  * (project-selector.test.tsx) need no query client or auth provider.
  */

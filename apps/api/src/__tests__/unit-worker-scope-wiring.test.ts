@@ -59,6 +59,8 @@ const WORKERS: Record<string, string> = {
   'session-lifecycle': 'projects/session-lifecycle/drain.ts',
   'tunnel-cleanup': 'worker/jobs/tunnel-cleanup.ts',
   'tunnel-forward-expiry': 'worker/jobs/tunnel-forward-expiry.ts',
+  'workspace-split': 'worker/jobs/workspace-split.ts',
+  'workspace-id-fill': 'worker/jobs/workspace-id-fill.ts',
   'tunnel-rpc-forwarder': 'tunnel/core/cluster-forwarder.ts',
   'billing-trial-expiry': 'worker/jobs/billing-rotation.ts',
   'billing-yearly-rotation': 'worker/jobs/billing-rotation.ts',

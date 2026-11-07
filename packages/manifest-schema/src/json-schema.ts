@@ -39,6 +39,7 @@
  *     `enabledValueSchema` — not left to this warning-level exemption.
  */
 
+import { HUMAN_ONLY, toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { IMPORT_PATH_PATTERN } from './imports';
 import { AGENT_FILE_PATTERN, TOOL_FILE_PATTERN } from './layout';
 import {
@@ -52,6 +53,7 @@ import {
   ENV_NAME_RE,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
+  GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
   RETIRED_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
   PI_PACKAGE_NAME_RE,
@@ -182,13 +184,22 @@ function kortixPermissionsEnum(): readonly string[] {
   // `kortix validate`. They are absent from the grantable catalog, so nothing
   // presents them as a live choice.
   // The retired actions are in it for the same reason: `kortix validate` only warns on them.
-  return [...GRANTABLE_KORTIX_PERMISSIONS, ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES), ...RETIRED_KORTIX_PERMISSIONS, '*'];
+  // The workspace names are accepted everywhere the legacy names are.
+  return [
+    ...GRANTABLE_KORTIX_PERMISSIONS,
+    ...GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
+    ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES),
+    ...RETIRED_KORTIX_PERMISSIONS,
+    // HUMAN_ONLY validates with a warning (it grants nothing), so it is accepted here too.
+    ...[...HUMAN_ONLY].flatMap((action) => [action, toWorkspaceAction(action)]),
+    '*',
+  ];
 }
 
 function kortixPermissionsGrantSetSchema(): JsonSchemaFragment {
   return {
     ...grantSetSchema({ type: 'string', enum: [...kortixPermissionsEnum()] }),
-    description: 'Kortix permissions: the project.* IAM actions this agent may exercise, "*" (every one; alias `all`) or "none".',
+    description: 'Kortix permissions: the workspace.* IAM actions (or their legacy names) this agent may exercise, "*" (every one; alias `all`) or "none". Minting credentials and moving money are reserved for people.',
   };
 }
 

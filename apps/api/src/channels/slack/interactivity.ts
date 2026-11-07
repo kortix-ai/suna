@@ -1,6 +1,6 @@
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { and, eq } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, projectSessions, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
@@ -46,8 +46,9 @@ import {
   type SlackInbound,
 } from './inbound';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
+import { projectsView } from '../../workspaces/rows';
 
-const OTHER_PROJECT_NOTICE = 'This Slack app is tied to a different Kortix project.';
+const OTHER_PROJECT_NOTICE = 'This Slack app is tied to a different Kortix workspace.';
 
 /** spawnAgentTurn options for a request from `inbound`. */
 function turnScope(inbound: SlackInbound): { ownThreadsOnly: boolean } {
@@ -281,7 +282,7 @@ async function handleReviewAction(
       text:
         actor.reason === 'unlinked'
           ? 'Connect your Kortix account first (`/kortix login`) to act on reviews.'
-          : "You don't have access to act on this project's reviews.",
+          : "You don't have access to act on this Kortix workspace's reviews.",
     });
     return;
   }
@@ -366,7 +367,7 @@ async function handleSwitchProject(
       response_type: 'ephemeral',
       replace_original: true,
       text: result.reason === 'not_installed'
-        ? 'That project is no longer connected to this workspace.'
+        ? 'That Kortix workspace is no longer connected to this Slack workspace.'
         : settingsRefusalText(result.reason, '/kortix', ''),
     });
     return;
@@ -374,9 +375,9 @@ async function handleSwitchProject(
   await backfillSlackBindingLabel(teamId, channelId, projectId);
 
   const [p] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
 
   await respondViaUrl(payload.response_url, {
@@ -420,7 +421,7 @@ async function handleSetSelection(
   }
   const requested = value.a || null;
   const result = await changeChannelAgent(slackUserOf({ teamId, slackUserId }), slackSettingsChannel(ctx), requested);
-  const text = agentChangeText(result, requested ?? '', '/kortix', 'That channel is no longer bound to a project — run `/kortix switch` first.');
+  const text = agentChangeText(result, requested ?? '', '/kortix', 'That channel is no longer bound to a Kortix workspace — run `/kortix switch` first.');
   await reply(`${result.ok ? '✓' : '⚠️'} ${text}`);
 }
 
@@ -532,7 +533,7 @@ async function handleRequestAccess(
         : result.status === 'already-member'
           ? 'You already have access — mention me again and I’ll get on it.'
           : result.status === 'no-project'
-            ? 'That project isn’t connected to this Slack workspace.'
+            ? 'That Kortix workspace isn’t connected to this Slack workspace.'
             : 'I couldn’t request access — connect your Kortix account first, then try again.';
   await respondViaUrl(payload.response_url, { replace_original: true, text: message });
 
@@ -757,7 +758,7 @@ export async function handleViewSubmission(
     await notify(
       actor.reason === 'unlinked'
         ? 'Connect your Kortix account first (`/kortix login`) to act on reviews.'
-        : "You don't have access to act on this project's reviews.",
+        : "You don't have access to act on this Kortix workspace's reviews.",
     );
     return;
   }
@@ -924,7 +925,7 @@ export async function handleBlockAction(
     .where(
       and(
         eq(chatInstalls.platform, 'slack'),
-        eq(chatInstalls.workspaceId, teamId),
+        eq(chatInstalls.platformTeamId, teamId),
         eq(chatInstalls.projectId, projectId),
       ),
     )
@@ -935,7 +936,7 @@ export async function handleBlockAction(
         token,
         channelId,
         pickerTs,
-        'That project is no longer connected here — @mention me again to pick another.',
+        'That Kortix workspace is no longer connected here — @mention me again to pick another.',
       );
     }
     return;
@@ -947,15 +948,15 @@ export async function handleBlockAction(
     .where(
       and(
         eq(chatChannelBindings.platform, 'slack'),
-        eq(chatChannelBindings.workspaceId, teamId),
+        eq(chatChannelBindings.platformTeamId, teamId),
         eq(chatChannelBindings.channelId, channelId),
       ),
     );
 
   const [proj] = await db
-    .select({ name: projects.name })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ name: projectsView.name })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (token && pickerTs) {
     // DM channel ids start with 'D' — a <#D…> mention renders as a dead link

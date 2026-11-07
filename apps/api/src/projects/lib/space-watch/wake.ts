@@ -17,7 +17,7 @@
  * The scan reads only enabled watchers (a partial index); a project with none
  * costs this job nothing.
  */
-import { projects, projectSessions, type projectSpaces } from '@kortix/db';
+import { projectSessions, type projectSpaces } from '@kortix/db';
 import { spaceDriveFolders } from '@kortix/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../../../config';
@@ -45,6 +45,7 @@ import {
   type WatchCandidate,
   type WatcherRow,
 } from './store';
+import { projectsView } from '../../../workspaces/rows';
 
 type SpaceRow = typeof projectSpaces.$inferSelect;
 
@@ -183,7 +184,7 @@ export async function wakeSpaceWatcher(candidate: WatchCandidate, reason: WakeRe
 }
 
 async function loadProject(projectId: string): Promise<ProjectRow | null> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return row ?? null;
 }
 

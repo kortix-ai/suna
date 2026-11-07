@@ -18,20 +18,47 @@ export interface AccountToken {
   /** Set when this token was minted project-scoped (still visible from the
    *  account-wide list). */
   project_id: string | null;
+  /** The workspace the key is bound to: the same value as `project_id`. Absent on older APIs. */
+  workspace_id?: string | null;
   public_key: string;
   status: string;
   expires_at: string | null;
   last_used_at: string | null;
   created_at: string;
   revoked_at: string | null;
+  /** What the key may do inside its creator's role. Absent on older APIs (= `full`). */
+  scope?: WorkspaceKeyScopeLabel;
+  /** A `custom` scope: its permissions, legacy spelling. Null otherwise. */
+  permissions?: string[] | null;
+  /** A `custom` scope: its permissions, workspace spelling. Null otherwise. */
+  workspace_permissions?: string[] | null;
+  /** True when each use moves `expires_at` out again (the CLI login), so a key in use does not expire. */
+  expiry_renews?: boolean;
 }
+
+/**
+ * What a workspace key may do inside its creator's role:
+ *   - `full`: the creator's whole role (the default);
+ *   - `read`: every `*.read` permission; the key makes GET requests only;
+ *   - `custom`: exactly the listed permissions.
+ * The API checks the creator's CURRENT role on every request, so a key never
+ * exceeds it.
+ */
+export type WorkspaceKeyScopeLabel = 'full' | 'read' | 'custom';
+
+/** The `scopes` a mint request sends: a preset, or a list of permissions in either spelling. */
+export type WorkspaceKeyScopes = 'full' | 'read' | string[];
 
 export interface CreateAccountTokenInput {
   name: string;
   /** Defaults to the caller's resolved account when omitted. */
   accountId?: string;
-  /** ISO-8601. Omit for a non-expiring token. */
-  expiresAt?: string;
+  /** ISO-8601. Omitted: the API's default (90 days on current APIs). `null`:
+   *  no expiry, only where the workspace key policy allows it. */
+  expiresAt?: string | null;
+  /** A renewing expiry: each use moves `expires_at` out again. A personal key
+   *  minted from a browser session only (the CLI login). */
+  renews?: boolean;
   /** Scope the minted token to a single project (still a "kortix_pat_..." token,
    *  but the auth middleware rejects it outside this project). */
   projectId?: string;
@@ -47,6 +74,16 @@ export interface CreatedAccountToken {
   status: string;
   expires_at: string | null;
   created_at: string;
+  /** The workspace the key is bound to (= `project_id`). Absent on older APIs. */
+  workspace_id?: string | null;
+  /** What the key may do inside its creator's role. Absent on older APIs (= `full`). */
+  scope?: WorkspaceKeyScopeLabel;
+  /** A `custom` scope: its permissions, legacy spelling. */
+  permissions?: string[] | null;
+  /** A `custom` scope: its permissions, workspace spelling. */
+  workspace_permissions?: string[] | null;
+  /** True for a renewing expiry. */
+  expiry_renews?: boolean;
 }
 
 export interface ListAccountTokensOptions {
@@ -62,7 +99,10 @@ export interface ListAccountTokensOptions {
   mine?: boolean;
 }
 
-/** List CLI PATs for an account (defaults to the caller's resolved account). */
+/** List CLI PATs for an account (defaults to the caller's resolved account).
+ *
+ * @deprecated Use `listWorkspaceTokens(workspaceId, options)`. Kept permanently.
+ */
 export async function listAccountTokens(
   accountId?: string,
   options?: ListAccountTokensOptions,
@@ -77,23 +117,43 @@ export async function listAccountTokens(
 /** Approve a CLI device login (`kortix login` on a machine with no browser
  *  callback): the signed-in browser confirms the code the terminal shows. The
  *  API answers 404 for an expired or used code and 403 for a non-browser
- *  caller; both reject with the API's sentence. */
-export async function approveCliDevice(userCode: string) {
+ *  caller; both reject with the API's sentence. `accountId` names the
+ *  workspace's account the CLI key belongs to; omitted, the API picks the
+ *  person's default workspace. A person with no workspace gets the 409
+ *  `no_workspace` error (`isNoWorkspaceError`). */
+export async function approveCliDevice(userCode: string, options?: { accountId?: string }) {
   return unwrap(
-    await backendApi.post<{ ok: boolean }>('/cli/device/decide', { user_code: userCode, approve: true }),
+    await backendApi.post<{ ok: boolean }>('/cli/device/decide', {
+      user_code: userCode,
+      approve: true,
+      ...(options?.accountId ? { account_id: options.accountId } : {}),
+    }),
   );
 }
 
 /** Mint a new account-scoped CLI PAT. The `secret_key` is returned once — the
- *  caller must persist it immediately; subsequent reads only ever see `public_key`. */
+ *  caller must persist it immediately; subsequent reads only ever see `public_key`.
+ *
+ * A key minted here without `projectId` is a PERSONAL key: it acts as the
+ * person in every workspace of theirs (listed by `listPersonalTokens`). A key
+ * for one workspace only is `createWorkspaceToken(workspaceId, input)`.
+ *
+ * Use it for personal keys only: the CLI browser login (`renews: true`) and
+ * clients released before workspace keys. The API marks the route deprecated
+ * for any other use; every new key a person mints for automation is a
+ * workspace key, `createWorkspaceToken(workspaceId, input)`. Not tagged
+ * `@deprecated`: a personal key has a different reach than a workspace key,
+ * so the two functions are not equivalents.
+ */
 export async function createAccountToken(input: CreateAccountTokenInput) {
-  const { accountId, expiresAt, projectId, name } = input;
+  const { accountId, expiresAt, projectId, name, renews } = input;
   return unwrap(
     await backendApi.post<CreatedAccountToken>('/accounts/tokens', {
       name,
       ...(accountId ? { account_id: accountId } : {}),
-      ...(expiresAt ? { expires_at: expiresAt } : {}),
+      ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
       ...(projectId ? { project_id: projectId } : {}),
+      ...(renews ? { renews: true } : {}),
     }),
   );
 }
@@ -101,7 +161,10 @@ export async function createAccountToken(input: CreateAccountTokenInput) {
 /** Revoke an account-scoped CLI PAT. With `{ deleteRevoked: true }`, DELETE
  *  becomes "remove this dead row": the API only honors it for a personal key
  *  that is already revoked (the caller's own), and answers 404 otherwise —
- *  the settings page's Delete action for a revoked key rides on it. */
+ *  the settings page's Delete action for a revoked key rides on it.
+ *
+ * @deprecated Use `revokeWorkspaceToken(workspaceId, tokenId, options)`. Kept permanently.
+ */
 export async function revokeAccountToken(
   tokenId: string,
   accountId?: string,
@@ -183,17 +246,18 @@ export interface SignedInDevice {
 
 /** The caller's signed-in devices, most recently active first. */
 export async function listSignedInDevices(): Promise<SignedInDevice[]> {
-  return unwrap(await backendApi.get<{ devices: SignedInDevice[] }>('/accounts/me/devices'))
+  return unwrap(await backendApi.get<{ devices: SignedInDevice[] }>('/me/devices'))
     .devices;
 }
 
 /** Sign one other device out. The current device signs out with `auth.signOut()`. */
 export async function signOutDevice(sessionId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: true }>(`/accounts/me/devices/${encodeURIComponent(sessionId)}`),
+    await backendApi.delete<{ ok: true }>(`/me/devices/${encodeURIComponent(sessionId)}`),
   );
 }
 
+/** @deprecated Use `WorkspaceCliToken`. Kept permanently. */
 export interface ProjectCliToken {
   token_id: string;
   name: string;
@@ -205,6 +269,10 @@ export interface ProjectCliToken {
   revoked_at: string | null;
 }
 
+/** The workspace name of {@link ProjectCliToken}: the same type. */
+export type WorkspaceCliToken = ProjectCliToken;
+
+/** @deprecated Use `WorkspaceCliTokenListResponse`. Kept permanently. */
 export interface ProjectCliTokenListResponse {
   items: ProjectCliToken[];
   /** Session-bound tokens the list hides — the runtime mints one per session
@@ -214,7 +282,14 @@ export interface ProjectCliTokenListResponse {
   session_tokens: number;
 }
 
-/** The newly minted project-scoped token — `secret_key` is returned once. */
+/** The workspace name of {@link ProjectCliTokenListResponse}: the same type. */
+export type WorkspaceCliTokenListResponse = ProjectCliTokenListResponse;
+
+/**
+ * The newly minted project-scoped token — `secret_key` is returned once.
+ *
+ * @deprecated Use `CreatedWorkspaceCliToken`. Kept permanently.
+ */
 export interface CreatedProjectCliToken {
   token_id: string;
   name: string;
@@ -226,29 +301,41 @@ export interface CreatedProjectCliToken {
   created_at: string;
 }
 
-export async function listProjectCliTokens(projectId: string) {
+/** The workspace name of {@link CreatedProjectCliToken}: the same type. */
+export type CreatedWorkspaceCliToken = CreatedProjectCliToken;
+
+export async function listWorkspaceCliTokens(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectCliTokenListResponse>(`/projects/${projectId}/cli-token`),
+    await backendApi.get<ProjectCliTokenListResponse>(`/workspaces/${projectId}/cli-token`),
   );
 }
 
+/** @deprecated Use `listWorkspaceCliTokens`. Kept permanently. */
+export const listProjectCliTokens = listWorkspaceCliTokens;
+
 /** Mint a project-scoped CLI PAT. Defaults `name` to "cli · <project name>" server-side. */
-export async function createProjectCliToken(
+export async function createWorkspaceCliToken(
   projectId: string,
   input?: { name?: string },
 ) {
   return unwrap(
     await backendApi.post<CreatedProjectCliToken>(
-      `/projects/${projectId}/cli-token`,
+      `/workspaces/${projectId}/cli-token`,
       input ?? {},
     ),
   );
 }
 
-export async function revokeProjectCliToken(projectId: string, tokenId: string) {
+/** @deprecated Use `createWorkspaceCliToken`. Kept permanently. */
+export const createProjectCliToken = createWorkspaceCliToken;
+
+export async function revokeWorkspaceCliToken(projectId: string, tokenId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/cli-token/${tokenId}`,
+      `/workspaces/${projectId}/cli-token/${tokenId}`,
     ),
   );
 }
+
+/** @deprecated Use `revokeWorkspaceCliToken`. Kept permanently. */
+export const revokeProjectCliToken = revokeWorkspaceCliToken;

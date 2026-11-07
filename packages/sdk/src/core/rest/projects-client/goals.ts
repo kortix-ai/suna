@@ -3,7 +3,7 @@
  * done. An assigned agent works it in an owner session until an independent
  * verifier session passes every criterion.
  *
- * The API owns the lifecycle (`/v1/projects/:projectId/goals/*`): state,
+ * The API owns the lifecycle (`/v1/workspaces/:projectId/goals/*`): state,
  * pause, stop, owner, verifier, caps, wakes and verification live in the
  * goal record, and every write carries the `revision` it read (a stale one
  * throws `ProjectGoalConflictError` with the current goal). The goal's folder
@@ -26,6 +26,7 @@ import { createSessionPrompt } from './sessions';
 import type { ProjectReminder } from './session-reminders';
 import { unwrap } from './shared';
 
+/** @deprecated Use `WorkspaceGoalStatus`. Kept permanently. */
 export type ProjectGoalStatus =
   | 'draft'
   | 'active'
@@ -36,6 +37,10 @@ export type ProjectGoalStatus =
   | 'stopped'
   | 'abandoned';
 
+/** The workspace name of {@link ProjectGoalStatus}: the same type. */
+export type WorkspaceGoalStatus = ProjectGoalStatus;
+
+/** @deprecated Use `WorkspaceGoalCriterion`. Kept permanently. */
 export interface ProjectGoalCriterion {
   id: string;
   text: string;
@@ -44,6 +49,10 @@ export interface ProjectGoalCriterion {
   evidence: string | null;
 }
 
+/** The workspace name of {@link ProjectGoalCriterion}: the same type. */
+export type WorkspaceGoalCriterion = ProjectGoalCriterion;
+
+/** @deprecated Use `WorkspaceGoalItem`. Kept permanently. */
 export interface ProjectGoalItem {
   id: string;
   /** `task`: work. `ask`: something only a person can give. `wait`: an outside event. */
@@ -56,6 +65,10 @@ export interface ProjectGoalItem {
   due: string | null;
 }
 
+/** The workspace name of {@link ProjectGoalItem}: the same type. */
+export type WorkspaceGoalItem = ProjectGoalItem;
+
+/** @deprecated Use `WorkspaceGoalSessionRef`. Kept permanently. */
 export interface ProjectGoalSessionRef {
   id: string;
   /**
@@ -67,6 +80,10 @@ export interface ProjectGoalSessionRef {
   since: string;
 }
 
+/** The workspace name of {@link ProjectGoalSessionRef}: the same type. */
+export type WorkspaceGoalSessionRef = ProjectGoalSessionRef;
+
+/** @deprecated Use `WorkspaceGoalTransition`. Kept permanently. */
 export interface ProjectGoalTransition {
   from: ProjectGoalStatus | null;
   to: ProjectGoalStatus;
@@ -74,6 +91,9 @@ export interface ProjectGoalTransition {
   reason: string;
   by: string;
 }
+
+/** The workspace name of {@link ProjectGoalTransition}: the same type. */
+export type WorkspaceGoalTransition = ProjectGoalTransition;
 
 /**
  * A goal's definition and state in the shape GOAL.md front matter had
@@ -83,6 +103,8 @@ export interface ProjectGoalTransition {
  * `transitions` and `links` are empty (read `listProjectGoalEvents`), and
  * `body` is absent (read `getProjectGoalFiles(...).brief`). Lifecycle fields
  * written into a GOAL.md file change nothing: the API owns them.
+ *
+ * @deprecated Use `WorkspaceGoalDocument`. Kept permanently.
  */
 export interface ProjectGoalDocument {
   version: 1;
@@ -129,6 +151,9 @@ export interface ProjectGoalDocument {
   body?: string;
 }
 
+/** The workspace name of {@link ProjectGoalDocument}: the same type. */
+export type WorkspaceGoalDocument = ProjectGoalDocument;
+
 /**
  * Why a goal needs a person to look at it.
  *
@@ -141,6 +166,8 @@ export interface ProjectGoalDocument {
  * - `unreadable`: GOAL.md (or a legacy goal.json) is missing or has no goal.
  * - `blocked`: the server records why the goal cannot go on by itself
  *   (`ProjectGoal.blockedReason`: credits, a cap, a lost owner, storage, the flag, setup).
+ *
+ * @deprecated Use `WorkspaceGoalIssue`. Kept permanently.
  */
 export type ProjectGoalIssue =
   | 'no_heartbeat'
@@ -152,16 +179,25 @@ export type ProjectGoalIssue =
   | 'unreadable'
   | 'blocked';
 
+/** The workspace name of {@link ProjectGoalIssue}: the same type. */
+export type WorkspaceGoalIssue = ProjectGoalIssue;
+
+/** @deprecated Use `WorkspaceGoalHealth`. Kept permanently. */
 export interface ProjectGoalHealth {
   /** `closed`: done or abandoned. `attention`: at least one issue. */
   state: 'healthy' | 'attention' | 'closed';
   issues: ProjectGoalIssue[];
 }
 
+/** The workspace name of {@link ProjectGoalHealth}: the same type. */
+export type WorkspaceGoalHealth = ProjectGoalHealth;
+
 /**
  * One goal as the API holds it (`ProjectGoalRecord`), in the shape the SDK
  * has always returned plus the server fields. Use `goalId` to address it and
  * send `revision` back on every write.
+ *
+ * @deprecated Use `WorkspaceGoal`. Kept permanently.
  */
 export interface ProjectGoal {
   /** The folder name. Unique within the folder's parent. Use `goalId` to address a goal. */
@@ -183,7 +219,7 @@ export interface ProjectGoal {
   health: ProjectGoalHealth;
   /** The project the goal belongs to. */
   projectId: string;
-  /** The goal's stable id (`goal_id`): its page is `/projects/<projectId>/goals/<goalId>`. */
+  /** The goal's stable id (`goal_id`): its page is `/workspaces/<projectId>/goals/<goalId>`. */
   goalId: string;
   /** Compare-and-set token: every write sends the revision it read. A stale one throws `ProjectGoalConflictError`. */
   revision: number;
@@ -199,8 +235,18 @@ export interface ProjectGoal {
   record: ProjectGoalRecord;
 }
 
-/** States of the server record. */
+/** The workspace name of {@link ProjectGoal}: the same type. */
+export type WorkspaceGoal = ProjectGoal;
+
+/**
+ * States of the server record.
+ *
+ * @deprecated Use `WorkspaceGoalRecordState`. Kept permanently.
+ */
 export type ProjectGoalRecordState = 'draft' | 'active' | 'waiting_on_user' | 'verifying' | 'done' | 'stopped';
+
+/** The workspace name of {@link ProjectGoalRecordState}: the same type. */
+export type WorkspaceGoalRecordState = ProjectGoalRecordState;
 
 /**
  * Why a goal cannot make progress by itself right now.
@@ -211,10 +257,19 @@ export type ProjectGoalRecordState = 'draft' | 'active' | 'waiting_on_user' | 'v
  * - `storage`: the goal's folder in Files could not be read or written.
  * - `flag_off`: the project's `goals` flag is off; nothing runs until it is on and a person resumes.
  * - `setup`: create did not finish; the API finishes it by itself.
+ *
+ * @deprecated Use `WorkspaceGoalBlockedReason`. Kept permanently.
  */
 export type ProjectGoalBlockedReason = 'credits' | 'wake_cap' | 'session_cap' | 'owner_lost' | 'storage' | 'flag_off' | 'setup';
 
-/** What the caller may do on a goal now. A person who may not sees no control. */
+/** The workspace name of {@link ProjectGoalBlockedReason}: the same type. */
+export type WorkspaceGoalBlockedReason = ProjectGoalBlockedReason;
+
+/**
+ * What the caller may do on a goal now. A person who may not sees no control.
+ *
+ * @deprecated Use `WorkspaceGoalCapabilities`. Kept permanently.
+ */
 export interface ProjectGoalCapabilities {
   read: boolean;
   edit: boolean;
@@ -226,6 +281,10 @@ export interface ProjectGoalCapabilities {
   edit_criteria: boolean;
 }
 
+/** The workspace name of {@link ProjectGoalCapabilities}: the same type. */
+export type WorkspaceGoalCapabilities = ProjectGoalCapabilities;
+
+/** @deprecated Use `WorkspaceGoalCriterionStatus`. Kept permanently. */
 export interface ProjectGoalCriterionStatus {
   id: string;
   text: string;
@@ -237,6 +296,10 @@ export interface ProjectGoalCriterionStatus {
   verified: boolean;
 }
 
+/** The workspace name of {@link ProjectGoalCriterionStatus}: the same type. */
+export type WorkspaceGoalCriterionStatus = ProjectGoalCriterionStatus;
+
+/** @deprecated Use `WorkspaceGoalVerification`. Kept permanently. */
 export interface ProjectGoalVerification {
   attempt: number;
   verifier_session_id: string;
@@ -249,7 +312,14 @@ export interface ProjectGoalVerification {
   evidence_hashes: Record<string, string>;
 }
 
-/** A goal as `GET /projects/:projectId/goals` returns it (`packages/api-contract` `Goal`). */
+/** The workspace name of {@link ProjectGoalVerification}: the same type. */
+export type WorkspaceGoalVerification = ProjectGoalVerification;
+
+/**
+ * A goal as `GET /workspaces/:projectId/goals` returns it (`packages/api-contract` `Goal`).
+ *
+ * @deprecated Use `WorkspaceGoalRecord`. Kept permanently.
+ */
 export interface ProjectGoalRecord {
   goal_id: string;
   project_id: string;
@@ -295,7 +365,14 @@ export interface ProjectGoalRecord {
   capabilities: ProjectGoalCapabilities;
 }
 
-/** One line of a goal's audit trail (`GET …/goals/:goalId/events`). */
+/** The workspace name of {@link ProjectGoalRecord}: the same type. */
+export type WorkspaceGoalRecord = ProjectGoalRecord;
+
+/**
+ * One line of a goal's audit trail (`GET …/goals/:goalId/events`).
+ *
+ * @deprecated Use `WorkspaceGoalEvent`. Kept permanently.
+ */
 export interface ProjectGoalEvent {
   id: string;
   goal_id: string;
@@ -311,17 +388,27 @@ export interface ProjectGoalEvent {
   data: Record<string, unknown>;
 }
 
-/** A write's result: the document as before, plus the goal as the server holds it now (with its new `revision`). */
+/** The workspace name of {@link ProjectGoalEvent}: the same type. */
+export type WorkspaceGoalEvent = ProjectGoalEvent;
+
+/**
+ * A write's result: the document as before, plus the goal as the server holds it now (with its new `revision`).
+ *
+ * @deprecated Use `WorkspaceGoalWriteResult`. Kept permanently.
+ */
 export interface ProjectGoalWriteResult extends ProjectGoalDocument {
   projectGoal: ProjectGoal;
 }
+
+/** The workspace name of {@link ProjectGoalWriteResult}: the same type. */
+export type WorkspaceGoalWriteResult = ProjectGoalWriteResult;
 
 /**
  * A goal write sent a stale `revision` (`409 goal_conflict`): someone or
  * something changed the goal first. `goal` is the goal as it is now. Show it
  * and let the person decide again; never resend the write blindly.
  */
-export class ProjectGoalConflictError extends ApiError {
+export class WorkspaceGoalConflictError extends ApiError {
   goal: ProjectGoal;
   constructor(source: ApiError, goal: ProjectGoal) {
     super(source.message || 'The goal changed.', {
@@ -335,6 +422,11 @@ export class ProjectGoalConflictError extends ApiError {
     this.goal = goal;
   }
 }
+
+/** @deprecated Use `WorkspaceGoalConflictError`. Kept permanently. */
+export const ProjectGoalConflictError = WorkspaceGoalConflictError;
+/** @deprecated Use `WorkspaceGoalConflictError`. Kept permanently. */
+export type ProjectGoalConflictError = WorkspaceGoalConflictError;
 
 const CLOSED = new Set<ProjectGoalStatus>(['done', 'stopped', 'abandoned']);
 const MISSED_WAKE_MS = 15 * 60_000;
@@ -461,7 +553,7 @@ function conflict(error: unknown): unknown {
   if (!(error instanceof ApiError) || error.status !== 409) return error;
   const body = error.details as { error?: unknown; goal?: ProjectGoalRecord } | undefined;
   if (body?.error !== 'goal_conflict' || !body.goal || typeof body.goal.goal_id !== 'string') return error;
-  return new ProjectGoalConflictError(error, toProjectGoal(body.goal));
+  return new WorkspaceGoalConflictError(error, toProjectGoal(body.goal));
 }
 
 /** Send one goal write; a `409 goal_conflict` throws `ProjectGoalConflictError`. */
@@ -473,8 +565,12 @@ async function goalWrite(send: () => Promise<{ data?: { goal: ProjectGoalRecord 
   }
 }
 
-const goalsPath = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/goals`;
-const goalPath = (projectId: string, goalId: string) => `${goalsPath(projectId)}/${encodeURIComponent(goalId)}`;
+const goalsPath = (projectId: string) => `/workspaces/${encodeURIComponent(projectId)}/goals`;
+function goalPath(projectId: string, goalId: string): string {
+  // `encodeURIComponent` keeps "." and "..", and the URL parser resolves them: `goals/..` would reach `/workspaces/:projectId`.
+  if (goalId === '.' || goalId === '..') throw new Error(`Refused the request path ${goalsPath(projectId)}/${goalId}: a "." or ".." segment would send it to another endpoint. Pass ids exactly as Kortix prints them.`);
+  return `${goalsPath(projectId)}/${encodeURIComponent(goalId)}`;
+}
 
 /** The route is not there for this caller: no such project route (404) or the `goals` flag is off (403 `feature_disabled`). */
 function routeOff(error: unknown): boolean {
@@ -486,10 +582,10 @@ function routeOff(error: unknown): boolean {
  * the ones assigned to them, the ones in folders shared with them, and all
  * of them for a project admin. Empty when the `goals` flag is off.
  */
-export async function listProjectGoals(projectId: string, options?: { now?: number }): Promise<ProjectGoal[]> {
+export async function listWorkspaceGoals(projectId: string, options?: { now?: number }): Promise<ProjectGoal[]> {
   let records: ProjectGoalRecord[];
   try {
-    records = unwrap(await backendApi.get<{ goals: ProjectGoalRecord[] }>(goalsPath(projectId)), 'Goals request failed').goals;
+    records = await listWorkspaceGoalRecords(projectId);
   } catch (error) {
     if (routeOff(error)) return [];
     throw error;
@@ -498,14 +594,26 @@ export async function listProjectGoals(projectId: string, options?: { now?: numb
   return records.map((record) => toProjectGoal(record, now));
 }
 
+/** @deprecated Use `listWorkspaceGoals`. Kept permanently. */
+export const listProjectGoals = listWorkspaceGoals;
+
+/** The goal records the caller may read, as the API returns them; with `filter`, the goals that session owns or verifies. Unlike `listWorkspaceGoals` it throws when the route is off. */
+export async function listWorkspaceGoalRecords(projectId: string, filter?: { role: 'owner' | 'verifier'; sessionId: string }): Promise<ProjectGoalRecord[]> {
+  const query = filter ? `?${filter.role}_session_id=${encodeURIComponent(filter.sessionId)}` : '';
+  return unwrap(await backendApi.get<{ goals: ProjectGoalRecord[] }>(`${goalsPath(projectId)}${query}`), 'Goals request failed').goals;
+}
+
 /** One goal by its `goal_id`. Throws `ApiError` 404 (no such goal) or 403 (no access). */
-export async function getProjectGoal(projectId: string, goalId: string, options?: { now?: number }): Promise<ProjectGoal> {
+export async function getWorkspaceGoal(projectId: string, goalId: string, options?: { now?: number }): Promise<ProjectGoal> {
   const { goal } = unwrap(await backendApi.get<{ goal: ProjectGoalRecord }>(goalPath(projectId, goalId)), 'Goal request failed');
   return toProjectGoal(goal, options?.now);
 }
 
+/** @deprecated Use `getWorkspaceGoal`. Kept permanently. */
+export const getProjectGoal = getWorkspaceGoal;
+
 /** A page of a goal's audit trail, oldest first. Pass `nextCursor` back as `cursor` for the next page; null: no more. */
-export async function listProjectGoalEvents(
+export async function listWorkspaceGoalEvents(
   projectId: string,
   goalId: string,
   options?: { cursor?: string | null },
@@ -518,6 +626,9 @@ export async function listProjectGoalEvents(
   return { events: page.events, nextCursor: page.next_cursor };
 }
 
+/** @deprecated Use `listWorkspaceGoalEvents`. Kept permanently. */
+export const listProjectGoalEvents = listWorkspaceGoalEvents;
+
 /** The goal a write addresses: its id and the revision the caller read. Other `ProjectGoal` fields are accepted and ignored. */
 type GoalTarget = Pick<ProjectGoal, 'goalId' | 'revision'> & Partial<Omit<ProjectGoal, 'goalId' | 'revision'>>;
 
@@ -526,7 +637,7 @@ type GoalTarget = Pick<ProjectGoal, 'goalId' | 'revision'> & Partial<Omit<Projec
  * one, an absent key keeps it. Grouping only: it grants nothing. A stale
  * `revision` throws `ProjectGoalConflictError`.
  */
-export async function setProjectGoalBinding(
+export async function setWorkspaceGoalBinding(
   goal: GoalTarget,
   binding: ResourceBinding,
 ): Promise<ProjectGoalWriteResult> {
@@ -535,6 +646,10 @@ export async function setProjectGoalBinding(
   return written(await goalWrite(() => backendApi.patch<{ goal: ProjectGoalRecord }>(goalPath(projectId, goal.goalId), { revision: goal.revision, ...binding })));
 }
 
+/** @deprecated Use `setWorkspaceGoalBinding`. Kept permanently. */
+export const setProjectGoalBinding = setWorkspaceGoalBinding;
+
+/** @deprecated Use `WorkspaceGoalFiles`. Kept permanently. */
 export interface ProjectGoalFiles {
   /** `GOAL.md`: the brief (title, context, criteria as the agent reads them). */
   brief: string | null;
@@ -546,6 +661,9 @@ export interface ProjectGoalFiles {
   verification: string | null;
 }
 
+/** The workspace name of {@link ProjectGoalFiles}: the same type. */
+export type WorkspaceGoalFiles = ProjectGoalFiles;
+
 async function readText(driveId: string, path: string): Promise<string | null> {
   try {
     return await (await readDriveFile(driveId, path)).blob.text();
@@ -556,7 +674,7 @@ async function readText(driveId: string, path: string): Promise<string | null> {
 }
 
 /** A goal folder's text files. A missing file is null. */
-export async function getProjectGoalFiles(driveId: string, folder: string): Promise<ProjectGoalFiles> {
+export async function getWorkspaceGoalFiles(driveId: string, folder: string): Promise<ProjectGoalFiles> {
   const [brief, log, notes, verification] = await Promise.all([
     readText(driveId, `${folder}/GOAL.md`),
     readText(driveId, `${folder}/log.md`),
@@ -566,39 +684,70 @@ export async function getProjectGoalFiles(driveId: string, folder: string): Prom
   return { brief, log, notes, verification };
 }
 
+/** @deprecated Use `getWorkspaceGoalFiles`. Kept permanently. */
+export const getProjectGoalFiles = getWorkspaceGoalFiles;
+
 /**
  * A person stops a goal (`POST …/stop`): any open state → `stopped`. The API
  * removes the heartbeat and aborts the owner's running turn. A retry on a
  * goal that is already stopped finishes that cleanup and succeeds.
  */
-export async function stopProjectGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
+export async function stopWorkspaceGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
   return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/stop`, { revision: goal.revision, reason })));
 }
+
+/** @deprecated Use `stopWorkspaceGoal`. Kept permanently. */
+export const stopProjectGoal = stopWorkspaceGoal;
 
 /**
  * A person pauses a goal (`POST …/pause`). The state does not change; no new
  * turn starts until a person resumes it. A turn already running finishes,
  * and the API refuses its lifecycle writes.
  */
-export async function pauseProjectGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
+export async function pauseWorkspaceGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
   return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/pause`, { revision: goal.revision, reason })));
 }
 
+/** @deprecated Use `pauseWorkspaceGoal`. Kept permanently. */
+export const pauseProjectGoal = pauseWorkspaceGoal;
+
 /** A person resumes a paused goal (`POST …/resume`): the heartbeat runs again and the owner wakes once. */
-export async function resumeProjectGoal(projectId: string, goal: GoalTarget): Promise<ProjectGoalWriteResult> {
+export async function resumeWorkspaceGoal(projectId: string, goal: GoalTarget): Promise<ProjectGoalWriteResult> {
   return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/resume`, { revision: goal.revision })));
 }
+
+/** @deprecated Use `resumeWorkspaceGoal`. Kept permanently. */
+export const resumeProjectGoal = resumeWorkspaceGoal;
 
 /**
  * A person starts a stopped goal again (`POST …/restart`): `active` when it
  * has criteria, else `draft`. When the owner session is gone the API starts a
  * new one (within `max_sessions`).
  */
-export async function restartProjectGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
+export async function restartWorkspaceGoal(projectId: string, goal: GoalTarget, reason: string): Promise<ProjectGoalWriteResult> {
   return written(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goalId)}/restart`, { revision: goal.revision, reason })));
 }
 
-const MAX_GOAL_CRITERIA = 8;
+/** @deprecated Use `restartWorkspaceGoal`. Kept permanently. */
+export const restartProjectGoal = restartWorkspaceGoal;
+
+/** A record write addresses the goal by its id and the revision the caller read. */
+type RecordTarget = Pick<ProjectGoalRecord, 'goal_id' | 'revision'>;
+/** The owner's lifecycle moves, and the verifier's `verdict`. Who may send which is the server's call. */
+type GoalAction = 'activate' | 'wait' | 'progress' | 'request-verification' | 'handover' | 'verdict';
+
+/** A goal session's lifecycle write (`POST …/goals/:goalId/<action>`): the record as the server holds it now. A stale `revision` throws `WorkspaceGoalConflictError`. */
+export async function postWorkspaceGoalAction(projectId: string, goal: RecordTarget, action: GoalAction, body: Record<string, unknown>): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goal_id)}/${action}`, { revision: goal.revision, ...body }));
+}
+
+/** The owner sets a draft goal's done criteria (`PUT …/criteria`), sent as given. A stale `revision` throws `WorkspaceGoalConflictError`. */
+export async function setWorkspaceGoalCriteria(projectId: string, goal: RecordTarget, criteria: string[]): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.put<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goal_id)}/criteria`, { revision: goal.revision, criteria }));
+}
+
+/** The most done criteria a goal has (the API's limit). */
+export const MAX_GOAL_CRITERIA = 8;
 /** My Kortix's sandbox slugs (current and legacy): a session on one mounts no Files, so it cannot run `kortix goals`. */
 const NO_FILES_SANDBOXES = new Set(['mykortix', 'meta']);
 
@@ -634,6 +783,7 @@ export function defaultGoalAgent(config: GoalAgentConfig): string | null {
   return pick?.name ?? null;
 }
 
+/** @deprecated Use `CreateWorkspaceGoalInput`. Kept permanently. */
 export interface CreateProjectGoalInput {
   /** What should be true when the goal is done, in the person's words. The first line is the title; the rest is the context. */
   outcome: string;
@@ -658,6 +808,10 @@ export interface CreateProjectGoalInput {
   now?: string;
 }
 
+/** The workspace name of {@link CreateProjectGoalInput}: the same type. */
+export type CreateWorkspaceGoalInput = CreateProjectGoalInput;
+
+/** @deprecated Use `CreatedWorkspaceGoal`. Kept permanently. */
 export interface CreatedProjectGoal {
   slug: string;
   /** A goal a person creates from the app lives in their own folder. */
@@ -672,15 +826,25 @@ export interface CreatedProjectGoal {
   goal: ProjectGoal;
 }
 
+/** The workspace name of {@link CreatedProjectGoal}: the same type. */
+export type CreatedWorkspaceGoal = CreatedProjectGoal;
+
+type GoalCreateBody = { goal_id: string; brief: string; criteria?: string[]; agent?: string; assigned_user_id?: string };
+
+/** The create (`POST /workspaces/:projectId/goals`) sent as given, no trim or limit check: `createWorkspaceGoal` is the person flow on top. `goal_id` is the idempotency key. */
+export async function createWorkspaceGoalRecord(projectId: string, body: GoalCreateBody): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(goalsPath(projectId), body));
+}
+
 /**
- * A person creates a goal (`POST /projects/:projectId/goals`). The API puts
+ * A person creates a goal (`POST /workspaces/:projectId/goals`). The API puts
  * it in the caller's own folder, writes GOAL.md and log.md, starts the owner
  * session with its heartbeat, and sends the first wake. `goalId` is the
  * idempotency key: a retry with the same id returns the same goal and starts
  * nothing twice. Throws before any request on an empty outcome or more than
  * 8 criteria; the API refuses an agent without Files.
  */
-export async function createProjectGoal(projectId: string, input: CreateProjectGoalInput): Promise<CreatedProjectGoal> {
+export async function createWorkspaceGoal(projectId: string, input: CreateProjectGoalInput): Promise<CreatedProjectGoal> {
   const text = input.outcome.trim();
   if (!text) throw new Error('Describe the outcome.');
   const [firstLine = '', ...rest] = text.split('\n');
@@ -689,11 +853,11 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
   const criteria = (input.criteria ?? []).map((c) => c.trim()).filter(Boolean);
   if (criteria.length > MAX_GOAL_CRITERIA) throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} done criteria.`);
   const goalId = input.goalId ?? input.sessionId ?? generateSessionId();
-  const payload: Record<string, unknown> = { goal_id: goalId, brief };
+  const payload: GoalCreateBody = { goal_id: goalId, brief };
   if (criteria.length) payload.criteria = criteria;
   if (input.agent) payload.agent = input.agent;
   if (input.assignedUser) payload.assigned_user_id = input.assignedUser;
-  const goal = toProjectGoal(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(goalsPath(projectId), payload)));
+  const goal = toProjectGoal(await createWorkspaceGoalRecord(projectId, payload));
   return {
     slug: goal.slug,
     scope: 'personal',
@@ -704,6 +868,9 @@ export async function createProjectGoal(projectId: string, input: CreateProjectG
     goal,
   };
 }
+
+/** @deprecated Use `createWorkspaceGoal`. Kept permanently. */
+export const createProjectGoal = createWorkspaceGoal;
 
 /**
  * A brief's lines after its first, as Markdown that reads as written: a plain
@@ -728,7 +895,7 @@ function briefContext(lines: string[]): string {
  * same id to retry, and the owner gets the answer once. Omitted: a new id.
  * Resolves when the answer is durable, not when it is read.
  */
-export async function replyToProjectGoal(
+export async function replyToWorkspaceGoal(
   projectId: string,
   goal: Pick<ProjectGoal, 'goalId'> & Partial<Omit<ProjectGoal, 'goalId'>>,
   text: string,
@@ -741,6 +908,9 @@ export async function replyToProjectGoal(
   });
   if (!response.success) throw conflict(response.error ?? new Error('Goal request failed'));
 }
+
+/** @deprecated Use `replyToWorkspaceGoal`. Kept permanently. */
+export const replyToProjectGoal = replyToWorkspaceGoal;
 
 /** What a session reads when a person asks it to turn the conversation into a goal. */
 export const MAKE_GOAL_PROMPT =

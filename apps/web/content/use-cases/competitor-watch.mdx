@@ -51,14 +51,14 @@ filtered out; pricing moves, new features, and messaging changes are called out.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the competitor-diff skill and the daily
 trigger, and opens a change request for you to review. Prefer clicks? Choose
 **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a daily competitor watch agent in this project.
+  code={`Set up a daily competitor watch agent in this workspace.
 
 1. Create the agent agents/competitor-watch.md. Its job is to check competitor pages for real changes and post a daily summary. It may fetch public web pages and use the Slack connector.
 
@@ -80,7 +80,7 @@ trigger, and opens a change request for you to review. Prefer clicks? Choose
 <Step title="Connect your tools">
 
 The agent reads public pages with its built-in fetch, so the watch list needs
-no connector. Open **Connectors** in your project and connect Slack for the
+no connector. Open **Connectors** in your workspace and connect Slack for the
 summary. Credentials are brokered server-side and never enter the
 agent's machine.
 
@@ -116,7 +116,7 @@ second time to see a diff before you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every day at 06:00 and picks up from its ledger in `memory/`. To change the time, edit the cron line, or open
-**Triggers** in the project.
+**Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

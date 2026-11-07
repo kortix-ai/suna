@@ -26,7 +26,7 @@ const InboxButton = dynamic(
 
 /**
  * The top row of the account-level pages that sit outside a project —
- * `/projects` and `/new`.
+ * `/workspaces` and `/workspaces/new`.
  *
  * Left: an optional way back. Right: the Inbox button (KRTX-1742: the unread
  * count, opens `/inbox`), then who you are, as a button. Log out lives

@@ -97,7 +97,7 @@ function startServer(): string {
       const url = new URL(req.url);
       const body = req.method === 'GET' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
-      const base = `/v1/projects/${PROJECT}`;
+      const base = `/v1/workspaces/${PROJECT}`;
 
       if (forbidden) {
         return Response.json(
@@ -243,7 +243,7 @@ describe('kortix review', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'GET',
-      path: `/v1/projects/${PROJECT}/review/items?segment=needs_you&kind=output`,
+      path: `/v1/workspaces/${PROJECT}/review/items?segment=needs_you&kind=output`,
       body: null,
     });
     expect(r.stdout).toContain('rv_1');
@@ -273,7 +273,7 @@ describe('kortix review', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['show', 'rv_1', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls[0].path).toBe(`/v1/projects/${PROJECT}/review/items/rv_1`);
+    expect(calls[0].path).toBe(`/v1/workspaces/${PROJECT}/review/items/rv_1`);
     expect(r.stdout).toContain('Draft the Q3 pricing note');
     expect(r.stdout).toContain('sess_1');
   });
@@ -284,7 +284,7 @@ describe('kortix review', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['show', 'cr:cr_9', '--project', PROJECT, '--json'], config);
     expect(r.code).toBe(0);
-    expect(calls.map((c) => c.path)).toEqual([`/v1/projects/${PROJECT}/review/items/cr%3Acr_9`]);
+    expect(calls.map((c) => c.path)).toEqual([`/v1/workspaces/${PROJECT}/review/items/cr%3Acr_9`]);
     expect(JSON.parse(r.stdout).review_item_id).toBe('cr:cr_9');
   });
 
@@ -294,8 +294,8 @@ describe('kortix review', () => {
     const r = await runCli(['show', 'cr:cr_9', '--project', PROJECT, '--json'], config);
     expect(r.code).toBe(0);
     expect(calls.map((c) => c.path)).toEqual([
-      `/v1/projects/${PROJECT}/review/items/cr%3Acr_9`,
-      `/v1/projects/${PROJECT}/review/items`,
+      `/v1/workspaces/${PROJECT}/review/items/cr%3Acr_9`,
+      `/v1/workspaces/${PROJECT}/review/items`,
     ]);
     expect(JSON.parse(r.stdout).review_item_id).toBe('cr:cr_9');
   });
@@ -306,8 +306,8 @@ describe('kortix review', () => {
     const r = await runCli(['ls', '--segment', 'done', '--project', PROJECT, '--json'], config);
     expect(r.code).toBe(0);
     expect(calls.map((c) => c.path)).toEqual([
-      `/v1/projects/${PROJECT}/review/items?segment=done`,
-      `/v1/projects/${PROJECT}/review/items?segment=done&limit=200&cursor=c2`,
+      `/v1/workspaces/${PROJECT}/review/items?segment=done`,
+      `/v1/workspaces/${PROJECT}/review/items?segment=done&limit=200&cursor=c2`,
     ]);
     expect(JSON.parse(r.stdout).review_items).toHaveLength(4);
   });
@@ -337,7 +337,7 @@ describe('kortix review', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/review/items/rv_1/act`,
+      path: `/v1/workspaces/${PROJECT}/review/items/rv_1/act`,
       body: { verdict: 'approve', feedback: 'looks right' },
     });
     expect(r.stdout).toContain('rv_1 → approved');
@@ -347,13 +347,13 @@ describe('kortix review', () => {
     const config = writeConfig(startServer());
     const merged = await runCli(['act', 'cr:cr_9', 'approve', '--project', PROJECT], config);
     expect(merged.code).toBe(0);
-    expect(calls[0].path).toBe(`/v1/projects/${PROJECT}/change-requests/cr_9/merge`);
+    expect(calls[0].path).toBe(`/v1/workspaces/${PROJECT}/change-requests/cr_9/merge`);
     expect(merged.stdout).toContain('Shipped cr:cr_9');
 
     calls = [];
     const closed = await runCli(['act', 'cr:cr_9', 'reject', '--project', PROJECT], config);
     expect(closed.code).toBe(0);
-    expect(calls[0].path).toBe(`/v1/projects/${PROJECT}/change-requests/cr_9/close`);
+    expect(calls[0].path).toBe(`/v1/workspaces/${PROJECT}/change-requests/cr_9/close`);
 
     calls = [];
     const noNote = await runCli(['act', 'cr:cr_9', 'changes', '--project', PROJECT], config);
@@ -366,7 +366,7 @@ describe('kortix review', () => {
     expect(withNote.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/change-requests/cr_9/request-changes`,
+      path: `/v1/workspaces/${PROJECT}/change-requests/cr_9/request-changes`,
       body: { feedback: 'Rename it first' },
     });
     expect(withNote.stdout).toContain('Sent to the agent');
@@ -378,7 +378,7 @@ describe('kortix review', () => {
     expect(denied.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/approvals/ex_7`,
+      path: `/v1/workspaces/${PROJECT}/approvals/ex_7`,
       body: { decision: 'deny' },
     });
 
@@ -400,7 +400,7 @@ describe('kortix review', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/approvals/ex_7`,
+      path: `/v1/workspaces/${PROJECT}/approvals/ex_7`,
       body: { decision: 'deny', note: 'Reword the second paragraph' },
     });
   });
@@ -411,7 +411,7 @@ describe('kortix review', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/review/bulk`,
+      path: `/v1/workspaces/${PROJECT}/review/bulk`,
       body: { ids: ['rv_1', 'rv_2'], verdict: 'dismiss' },
     });
     expect(r.stdout).toContain('2 items → dismiss');
@@ -435,7 +435,7 @@ describe('kortix review', () => {
     expect(r.code).toBe(0);
     expect(calls[0]).toEqual({
       method: 'POST',
-      path: `/v1/projects/${PROJECT}/review/items`,
+      path: `/v1/workspaces/${PROJECT}/review/items`,
       body: {
         kind: 'decision',
         title: 'Ship v2 pricing',

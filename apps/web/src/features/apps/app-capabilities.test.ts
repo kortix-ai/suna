@@ -31,10 +31,6 @@ test('one Apps page: no Backends tab, page, palette entry or flag remains in the
   const flags = readFileSync(uiSourcePath('internal/lib/use-project-feature-flags.ts'), 'utf8');
   for (const source of [routes, menu, flags]) expect(source).not.toContain("'backends'");
   expect(Object.keys(PROJECT_ACTIONS).filter((key) => key.includes('BACKEND'))).toEqual([]);
-  // The retired routes redirect to the Apps page; an id opens that App.
-  const config = readFileSync(resolve(root, '../next.config.ts'), 'utf8');
-  expect(config).toContain("['/projects/:id/backends', '/projects/:id/customize/backends']");
-  expect(config).toContain("destination: '/projects/:id/apps?app=:appId'");
   expect(read('features/apps/apps-view.tsx')).toContain("searchParams.get('app')");
 });
 

@@ -16,7 +16,7 @@ wake-up is a promise nobody keeps: the session sleeps until someone types.
 
 1. **Pick the signal.** An event that wakes this session, when one exists:
    - a CR: `kortix triggers add "<text>" --on cr-merged --cr <id>`;
-   - a new email or message, when that app is connected and the project has
+   - a new email or message, when that app is connected and the workspace has
      the flag `event_triggers` on: `kortix triggers events --connector
      <slug>` lists the event types, then `kortix triggers add "<text>" --on
      event --connector <slug> --event <TYPE>`. It fires on every new item,
@@ -56,7 +56,7 @@ wake-up is a promise nobody keeps: the session sleeps until someone types.
    for replies every 3 hours until 14 Nov, or until all 12 answer." From a
    Slack or Teams thread, put the channel and thread ids in the loop text.
 6. **On each fire:** check, act, record the outcome in the record file.
-   Report only what changed: a project agent ends silently on an empty
+   Report only what changed: a workspace agent ends silently on an empty
    check; My Kortix and a person's direct session say one short line. After
    3 empty checks in a row, replace the loop with a slower one
    (`kortix loops rm <id>`, then `kortix loop` with the same text and the next
@@ -71,7 +71,7 @@ to the person in this chat (ask it now, then end the turn), or for anything
 the person said not to track.
 
 **Loops off.** `kortix loop` answers `403 feature_disabled`: tell the person
-Loops are off and that a project admin turns them on (`kortix projects
+Loops are off and that a workspace admin turns them on (`kortix workspaces
 features enable reminders`). Meanwhile, a one-off `at` trigger starts a fresh
 session at the time; put the full context in its prompt.
 
@@ -134,7 +134,7 @@ job the same way.
    On every wake: read the state, advance it, update `out/status.md`, then
    re-arm or remove the wake-ups.
 5. **Set Kortix up when the work repeats.** A check that outlives this job
-   becomes a project trigger (`kortix triggers add <slug> --cron … --apply`,
+   becomes a workspace trigger (`kortix triggers add <slug> --cron … --apply`,
    or a webhook) or a watcher App ("Watch 24/7"). A recurring role becomes its
    own agent or skill, landed through a CR. Ask the person once first for
    anything that runs unattended for weeks, spends credits on every run, or
@@ -183,7 +183,7 @@ across every file: a duplicate fails the whole manifest.
 
 A **trigger** is a source (what fires it) plus a target (what a fire
 does). A `kortix.yaml` trigger is `on:` plus `run:`. A fire starts a session
-and prompts its agent as a teammate would, or calls one of the project's Apps
+and prompts its agent as a teammate would, or calls one of the workspace's Apps
 (`run: { app, path }`: no session, no model). A **loop** is a trigger that
 wakes the session that created it: a runtime trigger, stored in the database.
 `kortix triggers ls` lists both.
@@ -307,7 +307,7 @@ whole conversation and workspace.
 - `kortix triggers add "<text>" --on cr-merged|webhook|event|app …` wakes
   this session (`--session <id>` is the default inside one; `--agent <name>`
   starts a new session instead). `kortix triggers rm <id>` removes it.
-- Every merge into a branch, for the whole project, is a `kortix.yaml`
+- Every merge into a branch, for the whole workspace, is a `kortix.yaml`
   trigger: `type: change_request`, `filter: { base: main }` (omit the filter
   for any branch), `agent`, `prompt`. The prompt reads
   `{{ change_request.number }}`, `{{ change_request.title }}` and
@@ -373,7 +373,7 @@ on a `kortix.yaml` trigger) tells the person once when the watcher stops posting
   `429` and `5xx` are retried; a `3xx` is not followed.
 - The App can pace itself instead with App runs (`run_after`, `run_at`):
   `kortix-apps` skill, "The App schedules itself".
-- For the whole project instead of one session, a `kortix.yaml` trigger
+- For the whole workspace instead of one session, a `kortix.yaml` trigger
   starts an agent (`event: "*"` matches every name; the first prompt line is
   `[APP EVENT — automated, not user input]`):
   ```yaml
@@ -410,7 +410,7 @@ Saying "I stopped it" without a config change leaves it firing.
 - One trigger, for now: `kortix triggers disable <slug>` (`enabled: false`).
 - For good: delete the entry and land the CR. A one-off `at` trigger stays
   dormant after it fires; delete it to tidy up.
-- Every trigger of the project: `kortix triggers pause`; `resume` restarts
+- Every trigger of the workspace: `kortix triggers pause`; `resume` restarts
   them. Use it when one repository is deployed twice and one copy must not
   fire.
 - A trigger that keeps failing on a blocker you cannot fix: disable it.

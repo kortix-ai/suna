@@ -1,20 +1,21 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, count, eq } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
-import { accountMemberships, accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import { actorOf } from '../../iam/actor';
-import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { countAccountMembers, countBillableAccountMembers, userAccountRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
+import { workspaceFactsOf } from '../../iam/workspace-facts';
 import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
 import { effectiveBranding } from '../branding';
 import { sortAccountsForListing } from "./account-order";
 import { accountNameError } from "./account-name";
-import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
+import { renameSoleProjectOfAccount } from "../../projects/surface";
+import { createOwnedAccount } from "./create-account";
+import { reportSignupWithoutWorkspace } from "./signup-event";
 import {
   AccountDetailSchema,
   AccountIdParam,
@@ -28,6 +29,9 @@ import {
   serializeAccount,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
+import { workspaceIdsForAccounts } from '../../shared/resolve-account';
+import { accountIdParam } from '../../shared/route-params';
+import { accountsView, projectsView, updateAccountRowsReturning } from '../../workspaces/rows';
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
@@ -59,13 +63,15 @@ export function registerAccountRoutes(): void {
       if (impersonated) {
         const [row] = await db
           .select()
-          .from(accounts)
-          .where(eq(accounts.accountId, impersonated))
+          .from(accountsView)
+          .where(eq(accountsView.accountId, impersonated))
           .limit(1);
         if (!row) return c.json([]);
+        const workspaceIds = await workspaceIdsForAccounts([row.accountId]);
         return c.json([
           {
             account_id: row.accountId,
+            workspace_id: workspaceIds.get(row.accountId) ?? null,
             name: accountDisplayName(row.name, null),
             slug: row.accountId.slice(0, 8),
             created_at: row.createdAt.toISOString(),
@@ -96,55 +102,18 @@ export function registerAccountRoutes(): void {
         }));
       };
 
-      // Bootstrap BEFORE claiming pending invites, not after (R3). The old
-      // order claimed invites first and only bootstrapped when the resulting
-      // membership count was still zero — so the moment ANY invite was
-      // pending, the claim alone made that count nonzero and the bootstrap
-      // never ran. An invite-first signup then had no personal account at
-      // all: its entire `GET /v1/accounts` was the inviter's org, and the
-      // web landing door (which takes the first account in this list) put a
-      // brand-new user straight into a stranger's workspace.
-      //
-      // `resolveAccountId` (shared/resolve-account.ts) never had this bug —
-      // it bootstraps unconditionally the moment a caller has NO membership,
-      // and never claims invites itself. Deciding on the PRE-claim
-      // membership set here (not the post-claim one) makes this route agree
-      // with that one: bootstrap fires exactly when the caller had no
-      // account at all, independent of whether an invite is waiting.
-      //
-      // GET /v1/accounts/me (accounts/core/tokens.ts) applies the identical
-      // pre-claim-decision ordering for the same reason — kept as a
-      // parallel implementation rather than a shared helper because its
-      // bootstrap primitive (`resolveAccountId`, best-effort, never fails
-      // the request), gating (`authType === 'supabase'`), and response
-      // shape all differ from this route's; forcing one function to cover
-      // both would trade a 10-line ordering discipline for a multi-parameter
-      // abstraction that hides the one real asymmetry that matters — this
-      // route's bootstrap failure is fatal (500 below), /me's is not.
-      //
-      // The decision needs only WHETHER a membership exists, so this read
-      // skips the roles. The list below reads both.
-      if ((await readMembershipRows()).length === 0) {
-        try {
-          await bootstrapPersonalAccount(userId, userEmail);
-        } catch (err) {
-          console.warn('[accounts] Failed to bootstrap personal account:', err);
-          return c.json({ error: 'Failed to initialize account' }, 500);
-        }
+      // No account is created here (Workspaces D3, 2026-11-05). A person
+      // with no membership gets `[]` and the client shows the create-or-join
+      // screen. The pre-claim read decides only whether this is a person
+      // without a workspace, for the `user_signed_up` event.
+      if ((await readMembershipRows()).length === 0 && c.get('authType') === 'supabase') {
+        reportSignupWithoutWorkspace(userId);
       }
 
-      // Claim AFTER the bootstrap decision above. `autoClaimPendingInvites`
-      // already swallows its own errors (best-effort, must never block
-      // listing) and is idempotent — a claimed invite is stamped
-      // `accepted_at` and re-running is a no-op — so a claim failure here
-      // leaves the user with exactly the personal account bootstrapped above
-      // and the invite still pending, to be retried on the next call. No
-      // shared transaction wraps the two steps: bootstrap failure is fatal
-      // (500, above) because without it the account list is meaningless,
-      // while invite-claiming is explicitly optional and self-healing, and
-      // wrapping both in one transaction would contradict the per-invite
-      // isolation `autoClaimPendingInvites` already does internally (one bad
-      // invite must not roll back the others, or the account just bootstrapped).
+      // `autoClaimPendingInvites` swallows its own errors (best-effort, must
+      // never block listing) and is idempotent — a claimed invite is stamped
+      // `accepted_at` and re-running is a no-op — so a claim failure leaves
+      // the invite pending, to be retried on the next call.
       await autoClaimPendingInvites(userId, userEmail);
 
       // Read unconditionally, after the claim. Reusing the pre-claim rows when
@@ -152,11 +121,12 @@ export function registerAccountRoutes(): void {
       // a fresh sign-in claims the invite between this call's first read and
       // its claim, so this call sees no pending invite, claims 0, and would
       // return the list without the workspace the user was just added to.
-      const memberships = await loadMemberships();
-      if (memberships.length === 0) {
-        console.warn(`[accounts] No memberships for ${userId} after bootstrap+claim`);
-        return c.json({ error: 'Failed to initialize account' }, 500);
-      }
+      const allMemberships = await loadMemberships();
+      // A workspace being deleted (K2) lists for its owners only, who can
+      // restore it; every other member lost it when the delete committed (C3).
+      const closing = await Promise.all(allMemberships.map(async (m) => (await workspaceFactsOf(m.accountId)).closing));
+      const memberships = allMemberships.filter((m, i) => !closing[i] || m.accountRole === 'owner');
+      if (memberships.length === 0) return c.json([]);
 
       const displayNames = await resolveAccountDisplayNames(memberships, {
         userId,
@@ -168,10 +138,12 @@ export function registerAccountRoutes(): void {
       // Branding is resolved per account — `effectiveBranding` only touches
       // billing for accounts that actually carry a record, so this stays a
       // no-op for the overwhelming majority of lists.
+      const workspaceIds = await workspaceIdsForAccounts(memberships.map((m) => m.accountId));
       return c.json(
         await Promise.all(
           sortAccountsForListing(memberships).map(async (m) => ({
             account_id: m.accountId,
+            workspace_id: workspaceIds.get(m.accountId) ?? null,
             name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
             slug: m.accountId.slice(0, 8),
             created_at: m.createdAt?.toISOString() ?? new Date().toISOString(),
@@ -212,9 +184,8 @@ export function registerAccountRoutes(): void {
       // ADDITIONAL/org accounts to platform admins only. This is NOT the
       // removed single-account mode — signups, teams, and SSO/JIT all keep
       // working unchanged; only this "spin up a brand-new organization" path
-      // is narrowed. The personal-account bootstrap (GET /v1/accounts →
-      // bootstrapPersonalAccount) never calls this route, so every user still
-      // lands in their own account regardless of this flag.
+      // is narrowed. A new workspace (`new_workspace: true` on provision) is
+      // gated by the same rule (projects/new-workspace.ts).
       if (config.KORTIX_RESTRICT_ACCOUNT_CREATION && !(await isPlatformAdmin(userId))) {
         return c.json(
           {
@@ -230,27 +201,17 @@ export function registerAccountRoutes(): void {
       const nameError = accountNameError(name);
       if (nameError || !name) return c.json({ error: nameError }, 400);
 
-      const [account] = await db.insert(accounts).values({ name }).returning();
-
-      // IDENTITY, then the OWNER role. `SYSTEM_ACTOR`: nobody holds a
-      // permission in an account that did not exist a statement ago, so there is
-      // no writer to authorize — creating it is the authorization.
-      await db.insert(accountMemberships).values({
+      const account = await createOwnedAccount({
         userId,
-        accountId: account.accountId,
-        isSuperAdmin: true,
-      });
-      await assignRole(SYSTEM_ACTOR, account.accountId, {
-        principal: { type: 'user', id: userId },
-        roleKey: 'owner',
-        scope: { type: 'account' },
-        source: 'system',
-        exclusive: true,
+        name,
+        email: c.get('userEmail') as string | undefined,
       });
 
       return c.json(
         {
           account_id: account.accountId,
+          // A new account has no project yet: it becomes a workspace when one is created.
+          workspace_id: null,
           name: account.name,
           slug: account.accountId.slice(0, 8),
           created_at: account.createdAt.toISOString(),
@@ -267,7 +228,7 @@ export function registerAccountRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}',
+      path: '/{workspaceId}',
       tags: ['accounts'],
       summary: 'Get account details',
       ...auth,
@@ -279,15 +240,15 @@ export function registerAccountRoutes(): void {
     }),
     async (c) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
       const [row] = await db
         .select()
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
+        .from(accountsView)
+        .where(eq(accountsView.accountId, accountId))
         .limit(1);
       if (!row) return c.json({ error: 'Not found' }, 404);
 
@@ -309,16 +270,18 @@ export function registerAccountRoutes(): void {
       }
       const [projectCountRow] = await db
         .select({ n: count() })
-        .from(projects)
-        .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')));
+        .from(projectsView)
+        .where(and(eq(projectsView.accountId, accountId), eq(projectsView.status, 'active')));
 
       const displayNames = await resolveAccountDisplayNames(
         [{ accountId: row.accountId, name: row.name }],
         { userId, email: c.get('userEmail') as string },
       );
 
+      const workspaceIds = await workspaceIdsForAccounts([row.accountId]);
       return c.json({
         account_id: row.accountId,
+        workspace_id: workspaceIds.get(row.accountId) ?? null,
         name: displayNames.get(row.accountId) ?? row.name,
         member_count: memberCount,
         project_count: Number(projectCountRow?.n ?? 0),
@@ -335,7 +298,7 @@ export function registerAccountRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}',
+      path: '/{workspaceId}',
       tags: ['accounts'],
       summary: 'Rename an account',
       ...auth,
@@ -349,12 +312,12 @@ export function registerAccountRoutes(): void {
       },
       responses: {
         200: json(AccountSummarySchema, 'The updated account'),
-        ...errors(400, 401, 403, 404),
+        ...errors(400, 401, 403, 404, 409),
       },
     }),
     async (c) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
 
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
@@ -365,14 +328,20 @@ export function registerAccountRoutes(): void {
       const nameError = accountNameError(name);
       if (nameError || !name) return c.json({ error: nameError }, 400);
 
-      const [row] = await db
-        .update(accounts)
-        .set({ name, updatedAt: new Date() })
-        .where(eq(accounts.accountId, accountId))
-        .returning();
+      // Workspace name = account name = project name: the account's only
+      // project is renamed first (its name lives in kortix.yaml), so a refused
+      // commit renames neither row.
+      const project = await renameSoleProjectOfAccount(accountId, name);
+      if (!project.ok) return c.json({ error: project.error, code: project.code }, project.status);
+
+      const [row] = await updateAccountRowsReturning(eq(accountsView.accountId, accountId), {
+        name,
+        updatedAt: new Date(),
+      });
       if (!row) return c.json({ error: 'Not found' }, 404);
 
-      return c.json(serializeAccount(row));
+      const workspaceIds = await workspaceIdsForAccounts([row.accountId]);
+      return c.json({ ...serializeAccount(row), workspace_id: workspaceIds.get(row.accountId) ?? null });
     },
   );
 }

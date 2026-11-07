@@ -328,7 +328,7 @@ export function useProjectSessionConnect(projectId: string, projectSessions: Pro
             if (health.bootError) {
               failConnect(sessionId, {
                 title: 'Session runtime is not ready',
-                message: 'The sandbox booted, but the project runtime did not become usable.',
+                message: 'The sandbox booted, but the session runtime did not become usable.',
                 detail: health.bootError,
               });
               return;

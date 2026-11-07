@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { createHash } from 'node:crypto';
 import { type Database, auditEvents } from '@kortix/db';
 import {
@@ -80,7 +81,9 @@ export interface AuditEventInput {
   metadata?: Record<string, unknown>;
 }
 
-function pathIds(path: string): { projectId: string | null; sessionId: string | null } {
+function pathIds(rawPath: string): { projectId: string | null; sessionId: string | null } {
+  // `/v1/workspaces/<id>/…` names the same workspace as `/v1/projects/<id>/…`.
+  const path = asLegacyWorkspaceRoute(rawPath);
   const projectMatch = path.match(/\/projects\/([^/]+)/);
   const sessionMatch = path.match(/\/projects\/[^/]+\/sessions\/([^/]+)/);
   const projectId = projectMatch?.[1] && isUuid(projectMatch[1]) ? projectMatch[1] : null;
@@ -95,7 +98,8 @@ function inferResource(path: string): { resourceType: string; resourceId: string
   if (ids.sessionId) return { resourceType: 'project_session', resourceId: ids.sessionId };
   if (ids.projectId) return { resourceType: 'project', resourceId: ids.projectId };
 
-  const parts = path.split('/').filter(Boolean);
+  // A canonical name records the resource its legacy twin always recorded.
+  const parts = asLegacyWorkspaceRoute(path).split('/').filter(Boolean);
   const v1Index = parts.indexOf('v1');
   const root = v1Index >= 0 ? parts[v1Index + 1] : parts[0];
   const id = v1Index >= 0 ? parts[v1Index + 2] : parts[1];
@@ -128,7 +132,8 @@ function actorTypeForSnapshot(
   actorUserId: string | null,
 ): AuditActorType | null {
   const { authType } = snapshot;
-  if (authType === 'service_account') return 'service_account';
+  // An agent key (a workspace key that acts as an agent's identity) is the agent.
+  if (authType === 'service_account') return snapshot.hasAgentGrant ? 'agent' : 'service_account';
   const hasProjectSession =
     authType !== 'supabase' && (snapshot.sessionIdVar != null || snapshot.hasAgentGrant);
   if (hasProjectSession || (authType === 'apiKey' && snapshot.apiKeyType === 'sandbox')) {
@@ -569,6 +574,9 @@ async function agentAttributionForSnapshot(
   const actor = snapshot.actor as Actor | undefined;
   const credential = actor?.credential;
   if (!credential || credential.kind !== 'agent_session') return null;
+  // A bot key acts as its service account and names no agent: it audits like
+  // the bot's own bearer (actor = the service account).
+  if (credential.serviceAccountKey && !credential.agentGrant) return null;
   try {
     return await resolveAgentAuditAttribution({
       sessionId: credential.sessionId ?? snapshot.sessionIdVar ?? null,

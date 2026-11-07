@@ -11,6 +11,7 @@
 import { gatewayRequestLogs, projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { sessionTitleFromMetadata } from './session-title-placeholder';
 import { kortixBilledSpendSql, providerBilledSpendSql, totalSpendSql } from '../../shared/llm-spend';
 
 /** Descendant levels read below the session. */
@@ -74,11 +75,6 @@ const ZERO: SessionUsageTotals = {
 
 /** Money at the 10-decimal precision the ledger stores it at. */
 const money = (value: number) => Number(value.toFixed(10));
-
-function sessionTitle(metadata: unknown): string | null {
-  const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
-  return [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string' && !!v.trim()) ?? null;
-}
 
 /**
  * The live descendants of a session in its project, nearest first. One
@@ -203,7 +199,7 @@ export async function sessionUsageTree(
     session_id: row.sessionId,
     parent_session_id: depth === 0 ? null : row.parentSessionId,
     depth,
-    title: sessionTitle(row.metadata),
+    title: sessionTitleFromMetadata(row.metadata),
     agent_name: row.agentName && row.agentName !== 'default' ? row.agentName : null,
     status: row.status,
     created_at: row.createdAt.toISOString(),

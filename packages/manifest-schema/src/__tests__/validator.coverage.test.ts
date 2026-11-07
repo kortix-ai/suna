@@ -116,8 +116,8 @@ describe('validateManifest — agents', () => {
     expect(validateManifest(agent('    kortix_permissions:\n      - "*"\n')).valid).toBe(true);
   });
 
-  test('kortix_permissions rejects a non-grantable account-scoped action', () => {
-    expect(errorPaths(agent('    kortix_permissions:\n      - billing.read\n'))).toContain('agents.w.kortix_permissions[0]');
+  test('kortix_permissions rejects an unknown action', () => {
+    expect(errorPaths(agent('    kortix_permissions:\n      - billing.not_an_action\n'))).toContain('agents.w.kortix_permissions[0]');
   });
 
   test('secrets accepts "all", "none", "" and an allowlist', () => {
@@ -435,11 +435,12 @@ describe('exported constants', () => {
     expect(ENV_NAME_RE.test('lower')).toBe(false);
   });
 
-  test('GRANTABLE_KORTIX_PERMISSIONS includes project actions but not billing or channel.*', () => {
+  test('GRANTABLE_KORTIX_PERMISSIONS includes workspace actions but not HUMAN_ONLY or channel.*', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.read');
     expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.connector.write');
     expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('project.usage.read');
-    expect(GRANTABLE_KORTIX_PERMISSIONS).not.toContain('billing.read');
+    expect(GRANTABLE_KORTIX_PERMISSIONS).toContain('billing.read');
+    expect(GRANTABLE_KORTIX_PERMISSIONS).not.toContain('billing.write');
     // channel.* was removed from the catalog — never wired to any route.
     expect(GRANTABLE_KORTIX_PERMISSIONS).not.toContain('channel.send');
   });

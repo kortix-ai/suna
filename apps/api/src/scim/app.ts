@@ -12,6 +12,7 @@ import { accountInvitations, accountScimUsers } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { scimAuth } from '../middleware/scim-auth';
+import { resolveWorkspaceAccount } from '../middleware/workspace-account';
 import { makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
@@ -21,6 +22,7 @@ import { withDirectoryTransaction } from '../iam/directory-transaction';
 import { emailTrustedSql } from '../iam/email-trust';
 import { getSupabase } from '../shared/supabase';
 import { isUuid } from '../shared/validate';
+import { accountIdParam } from '../shared/route-params';
 
 // SCIM payloads are large/dynamic — model permissively.
 export const ScimResource = z.record(z.string(), z.any());
@@ -30,13 +32,17 @@ export const scimRouter = makeOpenApiApp<any>();
 // Auth middleware in its original position: registered before any routes.
 // This module body runs when the first route module imports it, so this
 // `.use(...)` runs before registerScimRoutes() registers any route.
-scimRouter.use('/accounts/:accountId/*', scimAuth);
+// The path names the workspace by its account key (the URL every IdP has
+// registered) or by its public id (`/scim/v2/workspaces/:workspaceId`): map it
+// to the account key before the token check compares the two.
+scimRouter.use('/accounts/:workspaceId/*', resolveWorkspaceAccount());
+scimRouter.use('/accounts/:workspaceId/*', scimAuth);
 
 // A malformed :accountId must never reach a uuid-typed column: Postgres answers
 // 22P02 and the IdP's request dies as an opaque 500 (Better Stack pattern
 // 97669531, KRTX-211). One guard here covers every SCIM route's accountId.
-scimRouter.use('/accounts/:accountId/*', async (c, next) => {
-  const accountId = c.req.param('accountId');
+scimRouter.use('/accounts/:workspaceId/*', async (c, next) => {
+  const accountId = accountIdParam(c);
   if (accountId && !isUuid(accountId)) {
     return c.json(
       { error: `"${accountId}" is not a valid account id (an account id is a UUID)` },
@@ -48,10 +54,10 @@ scimRouter.use('/accounts/:accountId/*', async (c, next) => {
 
 class ScimRollback extends Error {}
 
-scimRouter.use('/accounts/:accountId/*', async (c, next) => {
+scimRouter.use('/accounts/:workspaceId/*', async (c, next) => {
   if (c.req.method === 'GET') return next();
   try {
-    await withDirectoryTransaction(c.req.param('accountId')!, async () => {
+    await withDirectoryTransaction(accountIdParam(c)!, async () => {
       await next();
       if (c.res.status >= 400) throw new ScimRollback();
     });

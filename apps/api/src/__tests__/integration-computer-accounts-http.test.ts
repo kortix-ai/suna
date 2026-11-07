@@ -91,6 +91,7 @@ beforeAll(async () => {
   await db.execute(sql`alter type kortix.connector_provider add value if not exists 'computer'`);
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'computer-accounts-http' });
   await db.insert(projects).values({
+    splitPending: true,
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'computer-accounts-http',
@@ -756,6 +757,7 @@ describe('v2: the computer follows its owner into every project', () => {
 
   beforeAll(async () => {
     await db.insert(projects).values({
+      splitPending: true,
       projectId: PROJECT_TWO,
       accountId: ACCOUNT,
       name: 'computer-accounts-http-two',

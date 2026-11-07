@@ -68,7 +68,7 @@ export async function loadArtifactForCaller(
   const row = await getArtifact(projectId, artifactId);
   if (!row || !canView(row, access.viewer)) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
   if (mode === 'manage' && !canManage(row, access.viewer)) {
-    return { ok: false as const, response: c.json({ error: 'Only its creator or a project manager can change how this artifact is shared', code: 'artifact_read_only' }, 403) };
+    return { ok: false as const, response: c.json({ error: 'Only its creator or a workspace manager can change how this artifact is shared', code: 'artifact_read_only' }, 403) };
   }
   if (mode === 'write' && !(await mayWrite(row, access.viewer))) {
     return { ok: false as const, response: c.json({ error: 'You can only view this artifact: its files are not writable for you in Files', code: 'artifact_read_only' }, 403) };

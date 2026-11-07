@@ -6,10 +6,12 @@
  * error contract. Routes are defined with `createRoute()` + zod; the spec is
  * served at /v1/openapi.json and rendered by Scalar at /v1/docs.
  */
+import { WORKSPACE_LEGACY_REPLACEMENTS, workspaceAliasOf } from '@kortix/shared/workspace-routes';
 import { OpenAPIHono, z, type RouteConfig } from '@hono/zod-openapi';
 import { ErrorEnvelopeSchema } from '@kortix/api-contract';
 import type { Env } from 'hono';
 import { Scalar } from '@scalar/hono-api-reference';
+import { PUBLIC_OPERATIONS } from '../shared/openapi-public-operations';
 import { computeEtag, etagMatches } from '../shared/http-cache';
 
 /** Permissive error envelope — matches the platform's `{error,message,status}` 404 shape. */
@@ -146,6 +148,25 @@ export function makeOpenApiApp<E extends Env = Env>() {
  */
 export const INTERNAL_SPEC_PREFIXES = ['/v1/admin', '/v1/ops'] as const;
 
+/** Give every listed public operation `security: []`, the OpenAPI "no auth" marker. */
+export function markPublicOperations<T extends { paths?: Record<string, unknown> }>(
+  doc: T,
+  publicOperations: ReadonlySet<string> = PUBLIC_OPERATIONS,
+): T {
+  if (!doc.paths) return doc;
+  const paths: Record<string, unknown> = {};
+  for (const [path, item] of Object.entries(doc.paths)) {
+    const marked: Record<string, unknown> = {};
+    for (const [method, operation] of Object.entries(item as Record<string, unknown>)) {
+      const op = operation as Record<string, unknown>;
+      marked[method] =
+        !op.security && publicOperations.has(`${method} ${path}`) ? { ...op, security: [] } : operation;
+    }
+    paths[path] = marked;
+  }
+  return { ...doc, paths };
+}
+
 /**
  * Drop any path whose key equals an internal prefix or sits under it
  * (`prefix + '/'`). Pure + exported for unit tests. The `+ '/'` boundary keeps
@@ -163,6 +184,124 @@ export function filterSpecPaths<T extends { paths?: Record<string, unknown> }>(
     if (!internal) kept[path] = item;
   }
   return { ...doc, paths: kept };
+}
+
+const OPENAPI_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
+
+/**
+ * Mark every legacy workspace name (`/v1/projects/{workspaceId}/…`,
+ * `/v1/accounts/{workspaceId}/iam/…`, `/v1/accounts/me`, …) whose canonical
+ * `/v1/workspaces/…` operation exists: `deprecated: true` and
+ * `x-kortix-alias-of: "<METHOD> <canonical path>"`. The legacy names stay
+ * served permanently; the spec points readers and generators at one name.
+ *
+ * A legacy route with its own meaning (`WORKSPACE_LEGACY_REPLACEMENTS`:
+ * `GET /v1/projects`, `/v1/accounts`, `/v1/accounts/tokens`, …) is no alias:
+ * it gets `deprecated: true` and `x-kortix-replaced-by: "<METHOD> <canonical
+ * path>"`, the route a client calls instead.
+ * Pure + exported for unit tests. Returns a shallow-cloned doc.
+ */
+export function markWorkspaceAliases<T extends { paths?: object }>(doc: T): T {
+  if (!doc.paths) return doc;
+  const all = doc.paths as Record<string, Record<string, unknown>>;
+  const has = (method: string, routing: string) => Boolean(all[routingToOpenApiPath(routing)]?.[method.toLowerCase()]);
+  const paths: Record<string, Record<string, unknown>> = {};
+  for (const [path, item] of Object.entries(all)) {
+    const routing = openApiToRoutingPath(path);
+    const marked: Record<string, unknown> = { ...item };
+    let changed = false;
+    for (const method of OPENAPI_METHODS) {
+      const op = item[method] as Record<string, unknown> | undefined;
+      if (!op) continue;
+      const canonicalRouting = workspaceAliasOf(method, routing, has);
+      const replacement = WORKSPACE_LEGACY_REPLACEMENTS[`${method.toUpperCase()} ${routing}`];
+      if (!canonicalRouting && replacement) {
+        const [rMethod, rRouting] = replacement.split(' ') as [string, string];
+        const replacedBy = `${rMethod} ${routingToOpenApiPath(rRouting)}`;
+        changed = true;
+        marked[method] = {
+          ...op,
+          deprecated: true,
+          'x-kortix-replaced-by': replacedBy,
+          description: `Legacy route with its own meaning, served permanently. Use \`${replacedBy}\`.${
+            typeof op.description === 'string' && op.description ? `\n\n${op.description}` : ''
+          }`,
+        };
+        continue;
+      }
+      if (!canonicalRouting) continue;
+      const canonical = routingToOpenApiPath(canonicalRouting);
+      changed = true;
+      marked[method] = {
+        ...op,
+        deprecated: true,
+        'x-kortix-alias-of': `${method.toUpperCase()} ${canonical}`,
+        description: `Legacy name of \`${method.toUpperCase()} ${canonical}\`, served permanently.${
+          typeof op.description === 'string' && op.description ? `\n\n${op.description}` : ''
+        }`,
+      };
+    }
+    paths[path] = changed ? marked : item;
+  }
+  return { ...doc, paths };
+}
+
+/** `{name}` → `:name`, whole segments only. */
+export function openApiToRoutingPath(path: string): string {
+  return path.replace(/(^|\/)\{([^}]+)\}/g, '$1:$2');
+}
+
+/** `:name` → `{name}`, whole segments only: `/policies:bulk-delete` is a custom verb, not a param. */
+export function routingToOpenApiPath(path: string): string {
+  return path.replace(/(^|\/):([A-Za-z0-9_]+)/g, '$1{$2}');
+}
+
+/** Canonical workspace prefixes: the only paths that publish `{workspaceId}`. */
+const CANONICAL_WORKSPACE_PATH = /^\/(v1\/workspaces|v1\/me|v1\/invites|v1\/connectors\/workspaces|v1\/webhooks\/workspaces|scim\/v2\/workspaces)(\/|$)/;
+
+/** The id name a legacy path published before Workspaces: account paths say `accountId`, every other `projectId`. */
+function legacyIdName(path: string): string {
+  return /^\/(v1|scim\/v2)\/accounts\//.test(path) ? 'accountId' : 'projectId';
+}
+
+function renamePathParams(params: unknown, to: string): unknown {
+  if (!Array.isArray(params)) return params;
+  return params.map((param) =>
+    param && typeof param === 'object' && (param as { in?: string }).in === 'path' && (param as { name?: string }).name === 'workspaceId'
+      ? { ...param, name: to }
+      : param,
+  );
+}
+
+/**
+ * Publish every legacy path with the parameter names it had before
+ * Workspaces: `/v1/projects/{projectId}/…`, `/v1/connectors/projects/{projectId}/…`,
+ * `/v1/webhooks/…/{projectId}`, `/v1/accounts/{accountId}/…`,
+ * `/scim/v2/accounts/{accountId}/…`. The route templates name the id
+ * `:workspaceId` everywhere, but a client generated from the older spec names
+ * its arguments after the published names, so they stay. Canonical paths keep
+ * `{workspaceId}`. Run after markWorkspaceAliases, which maps legacy keys to
+ * canonical ones by the template name. Pure + exported for unit tests.
+ */
+export function restoreLegacyParamNames<T extends { paths?: object }>(doc: T): T {
+  if (!doc.paths) return doc;
+  const paths: Record<string, Record<string, unknown>> = {};
+  for (const [path, item] of Object.entries(doc.paths as Record<string, Record<string, unknown>>)) {
+    if (CANONICAL_WORKSPACE_PATH.test(path) || !path.includes('{workspaceId}')) {
+      paths[path] = item;
+      continue;
+    }
+    const to = legacyIdName(path);
+    const renamed: Record<string, unknown> = { ...item };
+    if ('parameters' in item) renamed.parameters = renamePathParams(item.parameters, to);
+    for (const method of OPENAPI_METHODS) {
+      const op = item[method] as Record<string, unknown> | undefined;
+      if (op) renamed[method] = { ...op, parameters: renamePathParams(op.parameters, to) };
+      if (op && op.parameters === undefined) delete (renamed[method] as Record<string, unknown>).parameters;
+    }
+    paths[path.replaceAll('{workspaceId}', `{${to}}`)] = renamed;
+  }
+  return { ...doc, paths };
 }
 
 /** Register security + serve the spec (/v1/openapi.json) and Scalar UI (/v1/docs). */
@@ -186,7 +325,9 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
   let cachedSpec: { body: string; etag: string } | undefined;
   app.get('/v1/openapi.json', (c) => {
     if (!cachedSpec) {
-      const body = JSON.stringify(filterSpecPaths(buildSpec(version)));
+      const body = JSON.stringify(
+        markPublicOperations(restoreLegacyParamNames(markWorkspaceAliases(filterSpecPaths(buildSpec(version))))),
+      );
       cachedSpec = { body, etag: computeEtag(body) };
     }
     c.header('ETag', cachedSpec.etag);
@@ -214,6 +355,13 @@ export function mountOpenApiDocs(app: OpenAPIHono<any, any, any>, version: strin
       // from. The request origin the API sees behind the edge router is an
       // internal host, which the spec must not publish (KRTX-2949).
       servers: [{ url: '/' }],
+      tags: [
+        {
+          name: 'workspaces',
+          description:
+            'The canonical workspace API. A workspace is one company’s Kortix: its members, roles, billing, secrets, agents and sessions. Its id is `workspace_id` (equal to `project_id`). Canonical paths take the workspace id only; an account id, an unknown id or a workspace you cannot read answers 404 `workspace_not_found`. The legacy `/v1/projects` and `/v1/accounts/{accountId}` names stay served permanently and accept either id.',
+        },
+      ],
     });
   }
 

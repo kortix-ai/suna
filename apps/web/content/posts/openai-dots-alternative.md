@@ -47,7 +47,7 @@ Both answer one question: how a small team runs something like dots on its own h
 
 ## Open source has to mean a repo, not a download
 
-What a team keeps is the file that says what the agent may touch. In Kortix that file is `kortix.yaml` at the root of a project repository, and the starter template ships it deny-by-default:
+What a team keeps is the file that says what the agent may touch. In Kortix that file is `kortix.yaml` at the root of a workspace repository, and the starter template ships it deny-by-default:
 
 ```yaml
 # v2 is deny-by-default: an omitted connectors/secrets/kortix_permissions/
@@ -61,7 +61,7 @@ agents:
     skills: all
 ```
 
-The exception sits in the same file: the starter agent is granted everything so a fresh project works out of the box, and the comment says to narrow that once you know what the project needs. That is the first task on a new project, and it is a diff a colleague reads ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS), [agents and permissions](https://kortix.com/docs/project/agents)).
+The exception sits in the same file: the starter agent is granted everything so a fresh project works out of the box, and the comment says to narrow that once you know what the project needs. That is the first task on a new workspace, and it is a diff a colleague reads ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS), [agents and permissions](https://kortix.com/docs/project/agents)).
 
 An agent's behavior sits next to its grant, in `agents/<name>.md`. The starter file spells out what a session is:
 

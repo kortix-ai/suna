@@ -17,7 +17,7 @@ import { KORTIX_EXTENSION_ID } from '@kortix/ui/internal/chrome/extension';
 
 export const PANEL_MARKER_COOKIE = 'kortix_panel';
 export const PANEL_AUTH_PATH = '/auth/panel';
-const PANEL_DEFAULT_NEXT = '/projects';
+const PANEL_DEFAULT_NEXT = '/workspaces';
 const MARKER_MAX_AGE = 60 * 60 * 24 * 400;
 
 /** `chrome-extension://<id>`: the only origin the panel talks to. */
@@ -71,7 +71,7 @@ export function writePanelMarker(): void {
 
 /**
  * The page to open after the panel signs in: a same-origin relative path.
- * Anything else, and `/auth/*` (a redirect loop), becomes `/projects`.
+ * Anything else, and `/auth/*` (a redirect loop), becomes `/workspaces`.
  */
 export function safePanelNext(raw: string | null | undefined): string {
   if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return PANEL_DEFAULT_NEXT;

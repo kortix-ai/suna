@@ -7,9 +7,9 @@
  * audit resolves the owner here when the row is written. A project's account
  * never changes, so the answer is cached; only a found project is cached.
  */
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from './db';
+import { projectsView } from '../workspaces/rows';
 
 const TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, { accountId: string; expiresAt: number }>();
@@ -19,9 +19,9 @@ export async function resolveProjectAccountId(projectId: string): Promise<string
   const hit = cache.get(projectId);
   if (hit && hit.expiresAt > now) return hit.accountId;
   const [row] = await db
-    .select({ accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!row?.accountId) return null;
   cache.set(projectId, { accountId: row.accountId, expiresAt: now + TTL_MS });

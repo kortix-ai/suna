@@ -365,7 +365,7 @@ const SLACK_PANELS: Record<string, () => ReactNode> = {
         </span>
         <dl className="divide-y">
           {[
-            ['Project', 'Arcadia'],
+            ['Workspace', 'Arcadia'],
             ['Agent', 'kortix'],
             ['Model', tMarketing('text946410b30cd8')],
           ].map(([k, v]) => (

@@ -1275,7 +1275,7 @@ describe('handleSubscriptionDeleted: restore other active sub', () => {
     expect(machineRestore).toBeUndefined();
   });
 
-  test('falls through to revertToFree when Stripe list fails', async () => {
+  test('keeps the paid tier and rethrows when the Stripe list fails (redelivery)', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         stripeSubscriptionId: 'sub_machine',
@@ -1295,11 +1295,10 @@ describe('handleSubscriptionDeleted: restore other active sub', () => {
       throw new Error('Stripe API error');
     };
 
-    await processStripeWebhook(JSON.stringify(event), 'sig');
+    await expect(processStripeWebhook(JSON.stringify(event), 'sig')).rejects.toThrow('Stripe API error');
 
-    // Should fall through to revertToFree
-    const freeRevert = updateCreditAccountCalls.find((c: any) => c.data.tier === 'free');
-    expect(freeRevert).toBeDefined();
+    // The account must stay on its paid tier; Stripe redelivers the event.
+    expect(updateCreditAccountCalls.find((c: any) => c.data.tier === 'free')).toBeUndefined();
   });
 });
 

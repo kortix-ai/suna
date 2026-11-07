@@ -2,7 +2,7 @@
 
 An App reaches Gmail, a CRM or any connected system through Kortix
 connectors and `@kortix/sdk`. Prefer a connector over a raw provider API key:
-the connector gateway applies the project's policy, approvals and audit. The
+the connector gateway applies the workspace's policy, approvals and audit. The
 full recipes and error answers are in the `kortix-connectors` skill
 (`kortix system-skills get kortix-connectors`, `<from-apps-and-backends>`).
 
@@ -19,7 +19,7 @@ code. Ask the user to run:
 
 ```sh
 kortix tokens service-accounts new crm-sync --description "CRM sync"    # the bearer prints once
-kortix access grant --service-account <id> --role member --project <project-id>
+kortix access grant --service-account <id> --role member --workspace <workspace-id>
 ```
 
 An agent session cannot do this for them. They store the bearer with
@@ -28,7 +28,7 @@ wait. Then set, with `npx convex env set`:
 
 - `KORTIX_API_URL`: the Kortix API with `/v1` (`https://api.kortix.com/v1` on
   Kortix cloud).
-- `KORTIX_PROJECT_ID`: the project id.
+- `KORTIX_PROJECT_ID`: the workspace id.
 
 ```ts
 "use node";
@@ -53,7 +53,7 @@ Anyone with the backend's admin key reads the bearer from the Convex
 environment. To start an agent from a Convex backend App, post an App event
 from an action. Convex functions read the Convex environment, not the
 machine's: read `{token, url}` from
-`GET /v1/projects/<project_id>/apps/<app_id>/events/credentials` (a project
+`GET /v1/projects/<project_id>/apps/<app_id>/events/credentials` (a workspace
 admin), store them with `npx convex env set KORTIX_APP_TOKEN …` and
 `KORTIX_APP_EVENTS_URL …`, and declare `on: { event, app: backend }`
 (SKILL.md, "Start an agent from an App").

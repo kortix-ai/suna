@@ -6,10 +6,10 @@
  * Prefer {@link resolveFeatureFlag} directly whenever the project row is
  * already loaded — this helper costs one extra query.
  */
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { resolveFeatureFlag, type FeatureFlagKey } from './registry';
+import { projectsView } from '../workspaces/rows';
 
 /** Effective per-project state for one flag. Unknown project ⇒ false. */
 export async function projectFeatureFlagEnabled(
@@ -17,9 +17,9 @@ export async function projectFeatureFlagEnabled(
   key: FeatureFlagKey,
 ): Promise<boolean> {
   const [row] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   if (!row) return false;
   return resolveFeatureFlag(row.metadata, key);

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { WorkspaceGoalCriterionStatus } from '@kortix/sdk';
 import {
   briefCriteria,
   chaseViolations,
@@ -12,12 +13,11 @@ import {
   verdictResults,
   withLifecycleMirror,
   type Goal,
-  type GoalCriterion,
 } from './goals';
 
 // ── Pure rules ───────────────────────────────────────────────────────────────
 
-const crit = (id: string, over: Partial<GoalCriterion> = {}): GoalCriterion => ({ id, text: `criterion ${id}`, reported_met: false, evidence: null, verified: false, ...over });
+const crit = (id: string, over: Partial<WorkspaceGoalCriterionStatus> = {}): WorkspaceGoalCriterionStatus => ({ id, text: `criterion ${id}`, reported_met: false, evidence: null, verified: false, ...over });
 
 describe('verdict flags', () => {
   const criteria = [crit('c1'), crit('c2'), crit('c3')];
@@ -111,12 +111,17 @@ interface Req {
   body: Record<string, unknown>;
 }
 
+/** The fake's goal row: the record plus the row's current verifier, which the wire carries only in `verification`. */
+type FakeGoal = Goal & { verifier_session_id: string | null };
+
 interface Fake {
-  goal: Goal;
+  goal: FakeGoal;
   requests: Req[];
   sessionMeta: Record<string, Record<string, unknown>>;
   /** Bump the revision before the next write, as a concurrent person edit would. */
-  conflictNext: ((g: Goal) => void) | null;
+  conflictNext: ((g: FakeGoal) => void) | null;
+  /** Answer a request before the fake's own rules: a route that is off, or a stale revision on every write. */
+  respond: ((r: Req) => Response | null) | null;
   writes(): Req[];
   url: string;
   stop(): void;
@@ -124,7 +129,7 @@ interface Fake {
 
 const GOAL_ID = '00000000-0000-4000-8000-000000000001';
 
-function goalRecord(box: string, over: Partial<Goal> = {}): Goal {
+function goalRecord(box: string, over: Partial<FakeGoal> = {}): FakeGoal {
   return {
     goal_id: GOAL_ID,
     project_id: 'p1',
@@ -135,11 +140,14 @@ function goalRecord(box: string, over: Partial<Goal> = {}): Goal {
     chase_at: null,
     summary: '',
     paused_at: null,
+    paused_by_user_id: null,
     stopped_at: null,
     blocked_reason: null,
     assigned_user_id: 'u1',
+    created_by_user_id: 'u1',
     agent: 'billing',
     space: null,
+    drive_id: 'd1',
     folder: '/Users/u1/Goals/eu-billing',
     box_folder: box,
     slug: 'eu-billing',
@@ -151,16 +159,20 @@ function goalRecord(box: string, over: Partial<Goal> = {}): Goal {
     verification: null,
     heartbeat_every: '4h',
     next_wake_at: null,
+    last_wake_at: null,
     max_wakes_per_day: 12,
     wakes_today: 0,
     max_sessions: 10,
     provenance: 'api',
+    created_at: '2026-11-06T08:00:00Z',
+    updated_at: '2026-11-06T08:00:00Z',
+    capabilities: { read: true, edit: true, pause: true, resume: true, stop: true, restart: true, answer: true, edit_criteria: true },
     ...over,
   };
 }
 
-function fakeApi(start: Goal): Fake {
-  const fake = { goal: start, requests: [] as Req[], sessionMeta: {} as Record<string, Record<string, unknown>>, conflictNext: null as Fake['conflictNext'] };
+function fakeApi(start: FakeGoal): Fake {
+  const fake = { goal: start, requests: [] as Req[], sessionMeta: {} as Record<string, Record<string, unknown>>, conflictNext: null as Fake['conflictNext'], respond: null as Fake['respond'] };
   let n = 0;
   const err = (status: number, error: string, message: string, extra: Record<string, unknown> = {}) => Response.json({ error, message, ...extra }, { status });
   const server = Bun.serve({
@@ -170,27 +182,30 @@ function fakeApi(start: Goal): Fake {
       const actor = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/, '');
       const session = actor.startsWith('session:') ? actor.slice(8) : null;
       const body = req.method === 'GET' || req.method === 'DELETE' ? {} : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
-      fake.requests.push({ method: req.method, path: url.pathname, search: url.search, actor, body });
+      const recorded = { method: req.method, path: url.pathname, search: url.search, actor, body };
+      fake.requests.push(recorded);
+      const override = fake.respond?.(recorded);
+      if (override) return override;
       const g = fake.goal;
-      const ok = (next: Partial<Goal>) => {
+      const ok = (next: Partial<FakeGoal>) => {
         fake.goal = { ...fake.goal, ...next, revision: fake.goal.revision + 1 };
         return Response.json({ goal: fake.goal });
       };
 
-      const sessionPath = /^\/v1\/projects\/p1\/sessions\/([^/]+)$/.exec(url.pathname);
+      const sessionPath = /^\/v1\/workspaces\/p1\/sessions\/([^/]+)$/.exec(url.pathname);
       if (sessionPath && req.method === 'GET') return Response.json({ session_id: sessionPath[1], metadata: fake.sessionMeta[sessionPath[1]!] ?? {}, agent_name: 'billing' });
       if (/\/sessions\/[^/]+\/prompts$/.test(url.pathname)) return Response.json({ prompt_id: 'p', state: 'queued', message_id: 'm', deduped: false });
 
-      if (url.pathname === '/v1/projects/p1/goals' && req.method === 'GET') {
+      if (url.pathname === '/v1/workspaces/p1/goals' && req.method === 'GET') {
         const owner = url.searchParams.get('owner_session_id');
         const verifier = url.searchParams.get('verifier_session_id');
         const match = (owner === null || g.owner_session_id === owner) && (verifier === null || g.verifier_session_id === verifier);
         return Response.json({ goals: match ? [g] : [] });
       }
-      if (url.pathname === '/v1/projects/p1/goals' && req.method === 'POST') {
+      if (url.pathname === '/v1/workspaces/p1/goals' && req.method === 'POST') {
         return session ? err(403, 'goal_forbidden', 'A session cannot create a goal.') : Response.json({ goal: g }, { status: 201 });
       }
-      const m = /^\/v1\/projects\/p1\/goals\/([^/]+)(?:\/([a-z-]+))?$/.exec(url.pathname);
+      const m = /^\/v1\/workspaces\/p1\/goals\/([^/]+)(?:\/([a-z-]+))?$/.exec(url.pathname);
       if (!m || m[1] !== g.goal_id) return err(404, 'goal_not_found', 'No such goal.');
       const action = m[2] ?? '';
       if (req.method === 'GET' && !action) return Response.json({ goal: g });
@@ -201,6 +216,11 @@ function fakeApi(start: Goal): Fake {
       const isOwner = session !== null && session === g.owner_session_id;
       const forbidden = () => err(403, 'goal_forbidden', `Session ${session ?? '(person)'} may not ${action || 'edit'} this goal.`);
 
+      if (req.method === 'PATCH' && !action) {
+        if (session) return forbidden();
+        const { revision: _revision, ...binding } = body;
+        return ok(binding);
+      }
       if (req.method === 'PUT' && action === 'criteria') {
         if (!(isOwner && g.state === 'draft')) return forbidden();
         const texts = body.criteria as string[];
@@ -229,7 +249,8 @@ function fakeApi(start: Goal): Fake {
         if (missing.length) return err(422, 'goal_invalid', 'Not ready for verification.', { violations: missing });
         const id = `ver-${++n}`;
         const attempt = (g.verification?.attempt ?? 0) + 1;
-        return ok({ state: 'verifying', verifier_session_id: id, verification: { attempt, outcome: 'pending', verifier_session_id: id }, sessions: [...g.sessions, { id, role: 'verifier', since: 'x' }] });
+        const verification = { attempt, outcome: 'pending' as const, verifier_session_id: id, criteria_revision: g.criteria_revision, started_at: 'x', decided_at: null, results: [], evidence_hashes: {} };
+        return ok({ state: 'verifying', verifier_session_id: id, verification, sessions: [...g.sessions, { id, role: 'verifier', since: 'x' }] });
       }
       if (action === 'verdict') {
         if (session === null || session !== g.verifier_session_id) return forbidden();
@@ -300,8 +321,8 @@ test('the real CLI runs a goal end to end through the API: activate, progress, v
     expect(active.out).toContain('draft → active');
     expect(active.code).toBe(0);
     const [put, activate] = fake.writes();
-    expect(put).toMatchObject({ method: 'PUT', path: `/v1/projects/p1/goals/${GOAL_ID}/criteria`, actor: 'session:owner', body: { revision: 1, criteria: ['Invoice shows EUR and 19% VAT', 'Checkout charges EUR'] } });
-    expect(activate).toMatchObject({ method: 'POST', path: `/v1/projects/p1/goals/${GOAL_ID}/activate`, body: { revision: 2, reason: 'criteria written' } });
+    expect(put).toMatchObject({ method: 'PUT', path: `/v1/workspaces/p1/goals/${GOAL_ID}/criteria`, actor: 'session:owner', body: { revision: 1, criteria: ['Invoice shows EUR and 19% VAT', 'Checkout charges EUR'] } });
+    expect(activate).toMatchObject({ method: 'POST', path: `/v1/workspaces/p1/goals/${GOAL_ID}/activate`, body: { revision: 2, reason: 'criteria written' } });
     // The mirror after the write: read-only orientation, the brief untouched.
     const md = readFileSync(join(folder, 'GOAL.md'), 'utf8');
     expect(md).toContain('lifecycle_state: active');
@@ -378,7 +399,7 @@ test('wait sends the question and chase_at; stopped is refused without any reque
     const waited = await cli(fake, root, 'owner', ['transition', 'waiting_on_user', '--reason', 'Which VAT id do we invoice from?', '--chase-at', at]);
     expect(waited.code).toBe(0);
     expect(waited.out).toContain('No turn runs until the assigned user answers');
-    expect(fake.writes().at(-1)).toMatchObject({ path: `/v1/projects/p1/goals/${GOAL_ID}/wait`, body: { revision: 5, question: 'Which VAT id do we invoice from?', chase_at: at } });
+    expect(fake.writes().at(-1)).toMatchObject({ path: `/v1/workspaces/p1/goals/${GOAL_ID}/wait`, body: { revision: 5, question: 'Which VAT id do we invoice from?', chase_at: at } });
     // Found by owner_session_id: this session has no goal_id metadata.
     expect(fake.requests.some((r) => r.search === '?owner_session_id=owner')).toBe(true);
     // The answer came on the channel: the owner moves the goal back to active itself.
@@ -445,7 +466,7 @@ test('handover sends the note; new in a session surfaces the API refusal with th
   try {
     const out = await cli(fake, root, 'owner', ['handover', '--note', 'Invoices done; checkout next.']);
     expect(out.code).toBe(0);
-    expect(fake.writes().at(-1)).toMatchObject({ path: `/v1/projects/p1/goals/${GOAL_ID}/handover`, body: { revision: 2, note: 'Invoices done; checkout next.' } });
+    expect(fake.writes().at(-1)).toMatchObject({ path: `/v1/workspaces/p1/goals/${GOAL_ID}/handover`, body: { revision: 2, note: 'Invoices done; checkout next.' } });
     expect(fake.goal.owner_session_id).not.toBe('owner');
     // The former owner is no longer the owner: the API refuses its writes.
     const old = await cli(fake, root, 'owner', ['progress', '--goal', GOAL_ID, '--summary', 'x']);
@@ -456,7 +477,7 @@ test('handover sends the note; new in a session surfaces the API refusal with th
     expect(created.code).toBe(1);
     expect(created.out).toContain('A session cannot create a goal.');
     expect(created.out).toContain('from the Goals page');
-    expect(fake.requests.at(-1)).toMatchObject({ method: 'POST', path: '/v1/projects/p1/goals', body: { brief: 'EU billing live' } });
+    expect(fake.requests.at(-1)).toMatchObject({ method: 'POST', path: '/v1/workspaces/p1/goals', body: { brief: 'EU billing live' } });
   } finally {
     fake.stop();
     rmSync(root, { recursive: true, force: true });
@@ -521,8 +542,164 @@ test('the goals flag gates the real CLI in a box: off hides and refuses kortix g
   expect(out(run(['--help'], 'volumes,reminders'))).not.toMatch(/^\s+goals\s/m);
   const off = run(['goals', 'ls'], 'volumes,reminders');
   expect(off.exitCode).not.toBe(0);
-  expect(out(off)).toContain('kortix projects features enable goals');
+  expect(out(off)).toContain('kortix workspaces features enable goals');
   const on = run(['goals', '--help'], 'volumes,reminders,goals');
   expect(on.exitCode).toBe(0);
   expect(out(on)).toContain('Usage: kortix goals');
+});
+
+// ── Characterization: the Goals calls the CLI sends, pinned before they moved onto @kortix/sdk ──
+
+test('409 goal_conflict is re-read and retried once only: a second stale revision is printed, not retried', async () => {
+  const { root, boxFolder } = box();
+  const fake = fakeApi(goalRecord(boxFolder, { state: 'active', revision: 3, criteria: [crit('c1')] }));
+  try {
+    // A person moved the goal on (bind): the retry carries the revision of the re-read.
+    fake.conflictNext = (g) => Object.assign(g, { revision: g.revision + 1 });
+    const bound = await cli(fake, root, null, ['bind', 'eu-billing', '--space', 'finance']);
+    expect(bound.code).toBe(0);
+    expect(fake.writes().map((w) => [w.method, w.path, w.body])).toEqual([
+      ['PATCH', `/v1/workspaces/p1/goals/${GOAL_ID}`, { revision: 3, space: 'finance' }],
+      ['PATCH', `/v1/workspaces/p1/goals/${GOAL_ID}`, { revision: 4, space: 'finance' }],
+    ]);
+    expect(bound.out).toContain('is in finance');
+
+    // Every write is stale: one retry, then the API's message, exit 1.
+    fake.respond = (r) => (r.method === 'PATCH' ? Response.json({ error: 'goal_conflict', message: 'Still changing.', goal: { ...fake.goal, revision: fake.goal.revision + 1 } }, { status: 409 }) : null);
+    const stale = await cli(fake, root, null, ['bind', 'eu-billing', '--clear', '--json']);
+    expect(stale.code).toBe(1);
+    expect(fake.writes().slice(2).map((w) => w.body)).toEqual([
+      { revision: 5, space: null, agent: null },
+      { revision: 6, space: null, agent: null },
+    ]);
+    expect(JSON.parse(stale.stdout)).toEqual({ ok: false, error: 'goal_conflict', message: 'Still changing.', violations: [] });
+  } finally {
+    fake.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('409 goal_conflict: a re-read that makes the move invalid is refused with from/to and no second write', async () => {
+  const { root, boxFolder } = box();
+  const fake = fakeApi(goalRecord(boxFolder, { state: 'active', revision: 2, criteria: [crit('c1', { reported_met: true, evidence: 'evidence/a.md' })] }));
+  try {
+    fake.conflictNext = (g) => Object.assign(g, { revision: g.revision + 1, state: 'waiting_on_user' });
+    const out = await cli(fake, root, 'owner', ['verify', '--json']);
+    expect(out.code).toBe(1);
+    expect(JSON.parse(out.stdout)).toEqual({ ok: false, from: 'waiting_on_user', to: 'verifying', violations: ['The goal is waiting_on_user; verify runs on a goal that is active.'] });
+    expect(fake.writes()).toHaveLength(1);
+  } finally {
+    fake.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('resolveGoal: no goal_id metadata → ?owner_session_id=<session>, then a fresh GET of that goal; none owned → refused', async () => {
+  const { root, boxFolder } = box();
+  const fake = fakeApi(goalRecord(boxFolder, { state: 'active', revision: 6, criteria: [crit('c1')] }));
+  try {
+    expect((await cli(fake, root, 'owner', ['progress', '--summary', 'Halfway.'])).code).toBe(0);
+    expect(fake.requests.filter((r) => r.path.includes('/goals')).map((r) => `${r.method} ${r.path}${r.search}`)).toEqual([
+      'GET /v1/workspaces/p1/goals?owner_session_id=owner',
+      `GET /v1/workspaces/p1/goals/${GOAL_ID}`,
+      `POST /v1/workspaces/p1/goals/${GOAL_ID}/progress`,
+    ]);
+    expect(fake.writes().at(-1)).toMatchObject({ body: { revision: 6, summary: 'Halfway.' } });
+
+    const none = await cli(fake, root, 'worker', ['progress', '--summary', 'x']);
+    expect(none.code).toBe(1);
+    expect(none.out).toContain('This session is the owner of no goal.');
+    expect(fake.requests.at(-1)).toMatchObject({ method: 'GET', search: '?owner_session_id=worker' });
+  } finally {
+    fake.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('activate from a draft: PUT …/criteria only when GOAL.md differs; more than 8 criteria are refused before any write', async () => {
+  const { root, folder, boxFolder } = box();
+  const fake = fakeApi(goalRecord(boxFolder, { criteria: [crit('c1', { text: 'Invoice shows EUR' })] }));
+  try {
+    writeFileSync(join(folder, 'GOAL.md'), brief('EU billing live', Array.from({ length: 9 }, (_, i) => `Criterion ${i + 1}`)));
+    const tooMany = await cli(fake, root, 'owner', ['transition', 'active', '--reason', 'go']);
+    expect(tooMany.code).toBe(1);
+    expect(tooMany.out).toContain('GOAL.md lists 9 done criteria; the limit is 8.');
+    expect(fake.writes()).toHaveLength(0);
+
+    // The brief differs from the goal: PUT the brief's criteria with the revision read, then activate on the next revision.
+    writeFileSync(join(folder, 'GOAL.md'), brief('EU billing live', ['Invoice shows EUR', 'Checkout charges EUR']));
+    expect((await cli(fake, root, 'owner', ['transition', 'active', '--reason', 'go'])).code).toBe(0);
+    expect(fake.writes().map((w) => [w.method, w.path, w.body])).toEqual([
+      ['PUT', `/v1/workspaces/p1/goals/${GOAL_ID}/criteria`, { revision: 1, criteria: ['Invoice shows EUR', 'Checkout charges EUR'] }],
+      ['POST', `/v1/workspaces/p1/goals/${GOAL_ID}/activate`, { revision: 2, reason: 'go' }],
+    ]);
+
+    // The brief already matches the goal: no criteria write, straight to activate.
+    fake.goal = { ...fake.goal, state: 'draft' };
+    expect((await cli(fake, root, 'owner', ['transition', 'active', '--reason', 'again'])).code).toBe(0);
+    expect(fake.writes().slice(2).map((w) => [w.method, w.path, w.body])).toEqual([['POST', `/v1/workspaces/p1/goals/${GOAL_ID}/activate`, { revision: 3, reason: 'again' }]]);
+  } finally {
+    fake.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a person creates a goal: POST /goals with a new goal_id and the flags as given; verify --json names the verifier', async () => {
+  const { root, boxFolder } = box();
+  const fake = fakeApi(goalRecord(boxFolder, { state: 'active', revision: 2, criteria: [crit('c1', { reported_met: true, evidence: 'evidence/a.md' })] }));
+  try {
+    const created = await cli(fake, root, null, ['new', 'EU', 'billing', 'live', '--criterion', 'Invoice shows EUR', '--agent', 'billing', '--user', 'u1']);
+    expect(created.code).toBe(0);
+    expect(created.out).toContain('Goal created: ');
+    expect(fake.writes()).toEqual([
+      {
+        method: 'POST',
+        path: '/v1/workspaces/p1/goals',
+        search: '',
+        actor: 'person',
+        body: { goal_id: expect.stringMatching(/^[0-9a-f-]{36}$/), brief: 'EU billing live', criteria: ['Invoice shows EUR'], agent: 'billing', assigned_user_id: 'u1' },
+      },
+    ]);
+
+    const verify = await cli(fake, root, 'owner', ['verify', '--json']);
+    expect(verify.code).toBe(0);
+    expect(JSON.parse(verify.stdout)).toEqual({ ok: true, from: 'active', to: 'verifying', revision: 3, goal_id: GOAL_ID, verifier_session_id: 'ver-1' });
+    const status = await cli(fake, root, null, ['status', 'eu-billing']);
+    expect(status.out).toContain('ver-1 (attempt 1, pending)');
+  } finally {
+    fake.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a "." or ".." goal id is refused before any request leaves the CLI', async () => {
+  const { root, boxFolder } = box();
+  const fake = fakeApi(goalRecord(boxFolder, { state: 'active' }));
+  try {
+    const out = await cli(fake, root, 'owner', ['progress', '--goal', '..', '--summary', 'x']);
+    expect(out.code).toBe(1);
+    expect(out.out).toContain('".."');
+    expect(fake.requests).toEqual([]);
+  } finally {
+    fake.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('ls: a 403 feature_disabled is printed with its fix; a 404 falls back to the mounted folders', async () => {
+  const { root, boxFolder } = box();
+  const fake = fakeApi(goalRecord(boxFolder));
+  try {
+    fake.respond = () => Response.json({ error: 'Goals is not enabled for this project.', code: 'feature_disabled' }, { status: 403 });
+    const off = await cli(fake, root, null, ['ls']);
+    expect(off.code).toBe(1);
+    expect(off.out).toContain('Goals is not enabled for this project.');
+    fake.respond = () => Response.json({ error: 'Not found' }, { status: 404 });
+    const gone = await cli(fake, root, null, ['ls', '--json']);
+    expect(gone.code).toBe(0);
+    expect(JSON.parse(gone.stdout).source).toBe('unverified_local_copy');
+  } finally {
+    fake.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
 });

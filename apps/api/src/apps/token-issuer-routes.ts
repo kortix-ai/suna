@@ -17,7 +17,7 @@ import { existingProjectSigner, openIdConfiguration, projectExists, projectIssue
 
 export const tokenIssuerApp = makeOpenApiApp();
 
-const Params = z.object({ projectId: z.string().uuid() });
+const Params = z.object({ workspaceId: z.string().uuid() });
 // ponytail: an hour bounds a stale cache once key rotation exists; until then the key never changes.
 const CACHE = 'public, max-age=3600';
 
@@ -25,7 +25,7 @@ const notFound = { error: 'Not found' };
 
 tokenIssuerApp.openapi(
   createRoute({
-    method: 'get', path: '/{projectId}/.well-known/openid-configuration', tags: ['apps'],
+    method: 'get', path: '/{workspaceId}/.well-known/openid-configuration', tags: ['apps'],
     summary: "A project's token issuer metadata",
     description:
       "OpenID Provider metadata for the issuer of a project's Kortix sign-in tokens: `issuer` and `jwks_uri`. " +
@@ -47,7 +47,7 @@ tokenIssuerApp.openapi(
     },
   }),
   async (c) => {
-    const { projectId } = c.req.valid('param');
+    const { workspaceId: projectId } = c.req.valid('param');
     if (!(await projectExists(projectId))) return c.json(notFound, 404);
     c.header('Cache-Control', CACHE);
     return c.json(openIdConfiguration(projectIssuer(projectId)), 200);
@@ -56,7 +56,7 @@ tokenIssuerApp.openapi(
 
 tokenIssuerApp.openapi(
   createRoute({
-    method: 'get', path: '/{projectId}/jwks.json', tags: ['apps'],
+    method: 'get', path: '/{workspaceId}/jwks.json', tags: ['apps'],
     summary: "A project's token key set",
     description:
       "The public ES256 key that signs a project's Kortix sign-in tokens, as a JSON Web Key Set. Public. " +
@@ -68,7 +68,7 @@ tokenIssuerApp.openapi(
     },
   }),
   async (c) => {
-    const { projectId } = c.req.valid('param');
+    const { workspaceId: projectId } = c.req.valid('param');
     if (!(await projectExists(projectId))) return c.json(notFound, 404);
     const signer = await existingProjectSigner(projectId);
     // An empty set must not be cached for an hour: the first token adds the key.

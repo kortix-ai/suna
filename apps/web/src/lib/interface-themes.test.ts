@@ -174,7 +174,7 @@ describe('interface theme model', () => {
 function runInitScript(
   stored: string | null,
   throwOnRead = false,
-  pathname = '/projects',
+  pathname = '/workspaces',
 ): Record<string, string> {
   const attributes: Record<string, string> = {};
   const document = {
@@ -228,10 +228,10 @@ describe('INTERFACE_THEME_INIT_SCRIPT', () => {
     );
   });
 
-  test('themes only /new, /projects/** and /settings, before first paint', () => {
+  test('themes only /new, /workspaces/** and /settings, before first paint', () => {
     const stored = blob({ lightTheme: 'light', darkTheme: 'dracula-default' });
     const themed = { 'data-light-theme': 'light', 'data-dark-theme': 'dracula-default' };
-    for (const path of ['/new', '/projects', '/projects/p1/sessions/s1', '/settings/appearance']) {
+    for (const path of ['/workspaces/new', '/workspaces', '/workspaces/p1/sessions/s1', '/settings/appearance']) {
       expect(runInitScript(stored, false, path)).toEqual(themed);
     }
     for (const path of [
@@ -241,7 +241,7 @@ describe('INTERFACE_THEME_INIT_SCRIPT', () => {
       '/checkout',
       '/invites/x',
       '/newsroom',
-      '/projectsx',
+      '/workspacesx',
     ]) {
       expect(runInitScript(stored, false, path)).toEqual({});
     }
@@ -316,7 +316,7 @@ describe('themed surface', () => {
   });
 
   test('the decision is the URL: themed routes in, everything else out', () => {
-    for (const path of ['/new', '/projects', '/projects/p1', '/settings', '/de/projects/p1']) {
+    for (const path of ['/workspaces/new', '/workspaces', '/workspaces/p1', '/settings', '/de/workspaces/p1']) {
       expect(isThemedPath(path)).toBe(true);
     }
     for (const path of ['/', '/auth', '/pricing', '/checkout', '/connections', '/invites/x']) {
@@ -329,7 +329,7 @@ describe('themed surface', () => {
   test('syncing themes a themed route and clears any other page', () => {
     const { attrs, element } = fakeRoot({ class: 'dark' });
     const choice = { light: 'iceberg-light', dark: 'dracula-default' };
-    syncInterfaceThemes(element, '/projects/p1', choice);
+    syncInterfaceThemes(element, '/workspaces/p1', choice);
     expect(Object.fromEntries(attrs)).toEqual({
       class: 'dark',
       'data-light-theme': 'iceberg-light',

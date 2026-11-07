@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 const CONNECTION_ID = '11111111-1111-4111-8111-111111111111';
-const BASE = '/v1/projects/project-1/connections';
+const BASE = '/v1/workspaces/project-1/connections';
 
 // Exercise the real CLI and SDK transport; only the remote API is a fixture.
 // An HTTP 200 acknowledgement alone must never certify a persisted revoke.
@@ -80,7 +80,7 @@ test.each([
       expect(stdout).toBe('');
       expect(stderr.length).toBeGreaterThan(0);
     }
-    expect(requests.filter((request) => request !== 'GET /v1/accounts/me')).toEqual([
+    expect(requests.filter((request) => request !== 'GET /v1/me')).toEqual([
       `PUT ${BASE}/${CONNECTION_ID}/revoke`,
       ...(!mutationStatus && ack?.ok === true ? [`GET ${BASE}`] : []),
     ]);

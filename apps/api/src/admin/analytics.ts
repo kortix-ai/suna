@@ -22,7 +22,7 @@
  * TIMEZONE: every bucket is a UTC calendar day. See analytics-series.ts.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { accounts, creditLedger, projectSessions, projects } from '@kortix/db';
+import { creditLedger, projectSessions } from '@kortix/db';
 import { and, gte, lt, sql } from 'drizzle-orm';
 
 import { classifyLedgerKind } from '../billing/services/usage-breakdown';
@@ -42,6 +42,7 @@ import {
   type LedgerDayRow,
   type SpendCategory,
 } from './analytics-series';
+import { accountsView, projectsView } from '../workspaces/rows';
 
 export const analyticsApp = makeOpenApiApp<AppEnv>();
 
@@ -210,7 +211,7 @@ analyticsApp.openapi(
       const summarySince = since < d30 ? since : d30;
 
       const sessionDayBucket = utcDayBucket(projectSessions.createdAt);
-      const accountDayBucket = utcDayBucket(accounts.createdAt);
+      const accountDayBucket = utcDayBucket(accountsView.createdAt);
 
       const [sessionRows, accountRows, [summaryRow], [totalsRow]] = await Promise.all([
         // Daily session activity. One bounded range scan on created_at.
@@ -232,8 +233,8 @@ analyticsApp.openapi(
             date: accountDayBucket,
             newAccounts: sql<number>`count(*)::int`,
           })
-          .from(accounts)
-          .where(gte(accounts.createdAt, since))
+          .from(accountsView)
+          .where(gte(accountsView.createdAt, since))
           .groupBy(accountDayBucket),
 
         // Summary windows in a single pass with FILTER clauses.
@@ -251,8 +252,8 @@ analyticsApp.openapi(
         // Platform totals. Two index-only counts, no time predicate.
         db
           .select({
-            totalAccounts: sql<number>`(select count(*) from ${accounts})::int`,
-            totalProjects: sql<number>`(select count(*) from ${projects})::int`,
+            totalAccounts: sql<number>`(select count(*) from ${accountsView})::int`,
+            totalProjects: sql<number>`(select count(*) from ${projectsView})::int`,
           })
           .from(sql`(select 1) as one`),
       ]);

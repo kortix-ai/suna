@@ -8,14 +8,14 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
     'text1c81f8a26f00',
   'A change request is a diff. An agent rewriting its own prompt is reviewed the same way a code change is — because it is one. A change request whose manifest does not validate cannot merge at all.':
     'textd4edcc30c8f6',
-  'A clone of the project repo on a branch named after the session': 'textb12138e47064',
+  'A clone of the workspace repo on a branch named after the session': 'textb12138e47064',
   'A domain you point at the box, or a Cloudflare tunnel for evaluation. Sessions run on a remote sandbox and have to call back, so this is the first real decision.':
     'text022755798da5',
   'A fresh RSA keypair for SAML, so SSO has a key the day you turn it on': 'textd68363e3fe3f',
   'A key is granted to a session, not pasted into a prompt.': 'text9181ff5dca36',
   'A laptop': 'text5c65777abb06',
   'A laptop, a VPS, or your own network.': 'texteccba86b787c',
-  'A person or a group can be narrowed to named agents and skills inside a project: marketing may use this agent and that skill, and nothing else. Anything you leave unscoped stays project-wide, so narrowing is something you opt into rather than something you have to undo.':
+  'A person or a group can be narrowed to named agents and skills inside a workspace: marketing may use this agent and that skill, and nothing else. Anything you leave unscoped stays workspace-wide, so narrowing is something you opt into rather than something you have to undo.':
     'text3c86ce6ea087',
   'A person reads the diff': 'texta6e5f1bdfb1f',
   'A record for the domain and for api.<domain>': 'text6251a79326de',
@@ -23,9 +23,9 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
     'text36f80c38222d',
   'A self-hosted instance has no managed model lineup and does not want one. You connect the providers you already pay for, and every model call routes through the gateway running on your own box.':
     'text45ba74fd89a9',
-  'A self-hosted instance runs its own gateway for its own model routing. It never sees or routes to Kortix credentials, and there is no platform fee on a self-hosted account.':
+  'A self-hosted instance runs its own gateway for its own model routing. It never sees or routes to Kortix credentials, and there is no platform fee on a self-hosted workspace.':
     'text2c9254d4dcde',
-  'A service account is a first-class machine identity the account owns, not a human token wearing a hat. Policies attach to it directly, and a request it makes is evaluated purely against its own policies — it never inherits the reach of whoever created it.':
+  'A service account is a first-class machine identity the workspace owns, not a human token wearing a hat. Policies attach to it directly, and a request it makes is evaluated purely against its own policies — it never inherits from the person who created it.':
     'text93cf8ed6d1fd',
   'A session gets exactly one machine, enforced in the database rather than by convention. Sessions never share a filesystem with each other, and the machine has a bounded lifetime rather than living forever.':
     'text2f689fee14ca',
@@ -38,12 +38,12 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
     'textf680871347c5',
   'A VPS or cloud VM': 'text756d9ae136b6',
   account: 'text9af211329b2f',
-  'Account audit log': 'textc82a704b501b',
-  'Accounts, roles, policies, triggers, channels and the audit record': 'text7546560467b7',
+  'Workspace audit log': 'textc82a704b501b',
+  'Workspaces, roles, policies, triggers, channels and the audit record': 'text7546560467b7',
   Acknowledgement: 'textb0eafdef30da',
   Admin: 'textc1c224b03cd9',
   'Admin-only by default. People still join by invite or SSO either way.': 'text0084d5dc5abc',
-  'AES-256-GCM, key per project': 'text7b1eb4d58456',
+  'AES-256-GCM, key per workspace': 'text7b1eb4d58456',
   'Agent sandboxes, which run on the provider you configure': 'text1a42d28bc87a',
   'Agreed with you, 90 days by default': 'texte3da85f3f963',
   'always_run, require_approval, block. A rule matches a glob over fully-qualified tool paths, so one line can cover a single call or a whole connector.':
@@ -56,7 +56,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'An agent is a principal, not a loophole.': 'textbc346bfb5269',
   'An agent that can install anything, call anything and write anywhere is only safe if the walls are real. In Kortix they sit below the agent, in the platform, where a prompt cannot talk its way past them.':
     'textb9c1352c8c67',
-  'Another session — same project, same team, or another customer': 'text0686a22fbf7d',
+  'Another session — same workspace, same team, or another customer': 'text0686a22fbf7d',
   'Anthropic, OpenAI, Google, Groq, xAI, DeepSeek, Mistral, Bedrock and OpenRouter, or the ChatGPT and Copilot subscription you already hold.':
     'text60a7b3de1d65',
   'Any provider. Your keys. Your bill.': 'text7e9fee157731',
@@ -67,7 +67,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Automatic TLS. Rendered only when you set a domain': 'text870770429ab2',
   'Available on Enterprise, and on a self-hosted instance with an Enterprise licence. The built-in roles above are free on every plan.':
     'text7ea4733fb624',
-  'Baseline account membership.': 'textb90eab55d0d5',
+  'Baseline workspace membership.': 'textb90eab55d0d5',
   'bring the stack up': 'text0e8cb88f5b30',
   'Bring us your security review.': 'text4d91ca15b501',
   'Built to survive a security review.': 'text231d895f30dd',
@@ -93,7 +93,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'A Platinum API key. This is the one credential the stack genuinely cannot start without.':
     'texta4df7a062ff9',
   'Decide what needs a human before it happens.': 'text77ad70aefdce',
-  'default_mode: risk makes reads run and sends writes and destructive calls to a person. A project with no policy block keeps the permissive legacy default, so set this explicitly.':
+  'default_mode: risk makes reads run and sends writes and destructive calls to a person. A workspace with no policy block keeps the permissive legacy default, so set this explicitly.':
     'text221bf49bd2bb',
   Delivered: 'text906115657390',
   'Deployment & posture': 'texte030ac604b81',
@@ -105,12 +105,12 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Each call an agent makes through a connector is a row: the action, the actor, the session, the risk class, whether it ran, was denied, or waited for a person, and who resolved it. Arguments are stored as a preview built by subtraction, so a credential cannot end up in the record.':
     'text500b4d333c4e',
   'edge — only what you chose': 'text97cf9dbf46ed',
-  'Encrypted per project': 'text8de993d52a11',
-  'Encrypted with AES-256-GCM under a key derived per project.': 'text0c8a43b9f730',
+  'Encrypted per workspace': 'text8de993d52a11',
+  'Encrypted with AES-256-GCM under a key derived per workspace.': 'text0c8a43b9f730',
   Enterprise: 'text3fbe5ed156f1',
   'Evaluation, through a Cloudflare tunnel with no domain. The tunnel URL changes on every restart, so use it to try the product, not to run on it.':
     'text1bf917debaf4',
-  'Every account action and every agent action is captured on every plan. The plan decides who may read, export, or stream that record — not whether it exists.':
+  'Every workspace action and every agent action is captured on every plan. The plan decides who may read, export, or stream that record — not whether it exists.':
     'textaca2f2064afe',
   'Every edit lands on the branch cut for that session. Nothing the agent does is visible to any other session, or to main.':
     'textf3b80d5fea1d',
@@ -119,7 +119,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Every gated tool call': 'text328130e3456a',
   'Every host port, reassigned automatically if one is already taken': 'text469bcc02c9f9',
   'Every internal URL the services use to find each other': 'text8545f075422b',
-  'Every project repo and every secret the platform holds': 'textf8ef2de56f6b',
+  'Every workspace repo and every secret the platform holds': 'textf8ef2de56f6b',
   'Everything the CLI generates is rotatable later with kortix self-host env rotate, and every value is visible with kortix self-host env ls, masked unless you ask for --show.':
     'textbebd0ee2eb17',
   'Export it or stream it': 'textce3a4968d879',
@@ -128,8 +128,8 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'First run': 'text4f35f7ed49ec',
   'Found something? Tell us privately.': 'textc181324d303e',
   frontend: 'text1cf387c012cd',
-  'Full account control.': 'text51f5cf72f382',
-  'Full project control, including members and delete.': 'textf58830babafb',
+  'Full workspace control.': 'text51f5cf72f382',
+  'Full workspace control, including members and delete.': 'textf58830babafb',
   'Gate the target, not just the tool': 'texte161fc2a83d8',
   GDPR: 'text803ac20b0345',
   'GitHub and your model key are not asked here on purpose. Both are set in the dashboard after the stack is up — GitHub at Settings → Git, the model key in the model picker.':
@@ -220,15 +220,15 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Ports 80 and 443, with a domain': 'text3dcb8e2cd245',
   'Postgres, on a directory you control': 'texte43446f5e790',
   Principals: 'text5f31515299e5',
-  project: 'text244210e48437',
-  'Projects, sessions on their own cloud computers, agents, skills, connectors, channels, triggers, secrets, change requests and the audit record. Nothing on that list is cloud-only.':
+  workspace: 'text244210e48437',
+  'Workspaces, sessions on their own cloud computers, agents, skills, connectors, channels, triggers, secrets, change requests and the audit record. Nothing on that list is cloud-only.':
     'textf1adb34f55b3',
-  'Provider config, just-in-time provisioning, and group-claim mapping. One identity provider per account today.':
+  'Provider config, just-in-time provisioning, and group-claim mapping. One identity provider per workspace today.':
     'textaef3f9db6a2e',
   'Pull the log as CSV or JSONL, or have every event posted to your own SIEM over a webhook signed with HMAC-SHA256. Read, export and streaming are Enterprise entitlements.':
     'texteb001458b495',
   'Read the docs': 'text559b1cc46027',
-  'Read, run sessions and fire triggers. The project floor role.': 'text3330cf80040f',
+  'Read, run sessions and fire triggers. The workspace floor role.': 'text3330cf80040f',
   'Recording is never the thing you pay for.': 'text7387eb9a3a98',
   'Responsible disclosure': 'text404238e6cf20',
   'Run it where your policy says it has to run.': 'text7bc05befca96',
@@ -251,7 +251,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Self-hosted': 'textbeafec79ffdd',
   'Self-hosting is free and always will be. Kortix Cloud is the same product with the box, the upgrades and the sandbox tier taken off your hands.':
     'text2461783e77d5',
-  'Self-hosting is not a smaller Kortix with the interesting parts removed. It is the whole control plane — accounts, projects, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.':
+  'Self-hosting is not a smaller Kortix with the interesting parts removed. It is the whole control plane — workspaces, repos, secrets, connectors, policies, audit — running inside your network, on storage you back up yourself.':
     'text4e1407fe77a8',
   'Send the questionnaire, the architecture questions, the deployment constraints. We would rather answer them properly than have you guess from a marketing page.':
     'text5b643170d839',
@@ -312,7 +312,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'The session works on its branch': 'text1a03a36926fe',
   'The stack': 'text757d4af22a81',
   'The tool reads it from the environment. It is not written into the prompt.': 'textee94df8de364',
-  'The tools, dependencies and runtime the project declares': 'text490f4c702830',
+  'The tools, dependencies and runtime the workspace declares': 'text490f4c702830',
   'The tunnel. Rendered only in tunnel mode': 'textb509788b5f62',
   'The updater checks once a day at a time you set, runs the migration, then starts the new services before it stops the old ones. Track the curated stable channel, ride latest, or pin an exact version and never move.':
     'text931f3ba125af',
@@ -323,7 +323,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'This is not a stripped build with the good parts held back for the paid tier. Self-hosted instances run the same images the managed cloud runs, produced by the same pipeline, on the same release train.':
     'textc01240eae6d5',
   'Three actions': 'text4b39312e24c1',
-  'Tokens are stored per host, so switching hosts switches the account and the default project with it.':
+  'Tokens are stored per host, so switching hosts switches the account and the default workspace with it.':
     'textd7e9af636757',
   'Triage & severity': 'text33d40875a99d',
   trigger: 'text683259feabbf',
@@ -335,7 +335,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   Updates: 'text22e2bada8f1c',
   'Use Kortix Cloud': 'textb627f853304f',
   Used: 'textae7d8dfac9ff',
-  'Values are sealed with AES-256-GCM. The key is derived per project with HKDF-SHA256, so one project’s ciphertext cannot be opened with another project’s key. The envelope is versioned, so the scheme can move forward without a flag day.':
+  'Values are sealed with AES-256-GCM. The key is derived per workspace with HKDF-SHA256, so one workspace’s ciphertext cannot be opened with another workspace’s key. The envelope is versioned, so the scheme can move forward without a flag day.':
     'text1ece34602eea',
   'We credit reporters who want it, once a fix has shipped.': 'text8c1273431a31',
   'We do not hold ISO 27001 or HIPAA, and we do not imply that we do. When a report lands, this line changes that day and not before.':
@@ -350,7 +350,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Where it runs': 'text6cc00d310273',
   'Where we actually stand': 'textf1b1c08625c2',
   'Whether you hold an Enterprise licence': 'texte18c2658b71a',
-  'Who may create organizations': 'text009846255787',
+  'Who may create workspaces': 'text009846255787',
   'Within 3 business days': 'text72b1166237fb',
   'Within 5 business days': 'text91ce3d37da84',
   'Write access to main; a session can only propose': 'text64028cdac85e',

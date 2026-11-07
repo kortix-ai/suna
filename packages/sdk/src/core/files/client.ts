@@ -883,9 +883,12 @@ async function moveFile(from: string, to: string, base: string, overwrite: boole
 }
 
 // ── project / health (via opencode client) ────────────────────────────────────
-export async function getCurrentProject(): Promise<RuntimeProjectInfo> {
+export async function getCurrentWorkspace(): Promise<RuntimeProjectInfo> {
   return unwrap(await getClient().project.current()) as RuntimeProjectInfo;
 }
+
+/** @deprecated Use `getCurrentWorkspace`. Kept permanently. */
+export const getCurrentProject = getCurrentWorkspace;
 
 export async function getServerHealth(): Promise<ServerHealth> {
   return unwrap(await getClient().global.health()) as ServerHealth;
@@ -915,7 +918,7 @@ export const files = {
   remove: deleteFile,
   mkdir,
   rename: renameFile,
-  currentProject: getCurrentProject,
+  currentProject: getCurrentWorkspace,
   health: getServerHealth,
   isReachable: isServerReachable,
   toDaemonPath,

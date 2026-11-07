@@ -715,7 +715,7 @@ function LocalSetup({ projectId }: { projectId: string }) {
         </Step>
         <Step index={2} title={tI18nComplete.raw('text7114f5d2fafa')} hint={tGit('cloneHint')}>
           <CommandLine
-            value={`kortix projects clone ${projectId}`}
+            value={`kortix workspaces clone ${projectId}`}
             label={tI18nComplete.raw('text6264f3bfdd91')}
           />
         </Step>

@@ -212,7 +212,7 @@ describe('<AuditView/> through the OpenTUI test renderer', () => {
     await flush();
     await act(async () => mockInput.pressKey('a'));
     await flush();
-    expect(captureCharFrame()).toContain('Only project managers can decide this action.');
+    expect(captureCharFrame()).toContain('Only people who manage this workspace can decide this action.');
     renderer.destroy();
   });
 

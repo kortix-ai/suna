@@ -18,7 +18,6 @@
  * Importing ./session also registers the `discord.` event consumer.
  */
 import { createPublicKey, verify } from 'node:crypto';
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -32,6 +31,7 @@ import { discordGuildProjects } from './installs';
 import { type DiscordRoute, projectsAllowing, resolveDiscordRoute } from './routing';
 import { interactionPressData } from './session';
 import { DISCORD_INTERACTION_EVENT, type DiscordConversation, type DiscordStoredInteraction } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 /** A signature older or newer than this is refused: a replayed request. */
 const SIGNATURE_WINDOW_S = 10 * 60;
@@ -83,11 +83,11 @@ const ephemeral = (content: string): InboundReply => ({ status: 200, body: { typ
 
 const NOT_CONNECTED: Record<Exclude<DiscordRoute['kind'], 'project'>, (direct: boolean) => string> = {
   ambiguous: (direct) =>
-    `More than one Kortix project can answer ${direct ? 'you here' : 'in this channel'}. Use /connect to pick one.`,
+    `More than one Kortix workspace can answer ${direct ? 'you here' : 'in this channel'}. Use /connect to pick one.`,
   none: (direct) =>
     direct
-      ? 'No Kortix project allows your Discord account yet. Ask a project admin to allow your Discord user id under Customize → Connectors → Channels → Discord.'
-      : 'This server is not connected to a Kortix project. A project admin connects it under Customize → Connectors → Channels → Discord.',
+      ? 'No Kortix workspace allows your Discord account yet. Ask a workspace admin to allow your Discord user id under Customize → Connectors → Channels → Discord.'
+      : 'This server is not connected to a Kortix workspace. A workspace admin connects it under Customize → Connectors → Channels → Discord.',
 };
 
 const VIEW_CHANNEL = 1n << 10n;
@@ -112,7 +112,7 @@ export function missingPermission(interaction: Pick<Interaction, 'guild_id' | 'a
 
 /** The project's Discord allow-list holds the user. */
 async function projectAllows(projectId: string, userId: string): Promise<boolean> {
-  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select({ metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return readChannelAccess(row?.metadata, 'discord').allowedUserIds.includes(userId);
 }
 
@@ -214,7 +214,7 @@ export const discordInbound: ChannelAppInbound<true> = {
     const ack: InboundReply = { status: 200, body: { type: interaction.type === 2 ? 5 : 6 } };
     if (pressData !== undefined && isProjectPress(pressData)) {
       const picked = await pickedProject(interaction, user, parseProjectPress(pressData));
-      if (!picked) return { events: [], reply: ephemeral('This project button is out of date. Use /connect again.') };
+      if (!picked) return { events: [], reply: ephemeral('This workspace button is out of date. Use /connect again.') };
       return { events: [interactionEvent(interaction, user, picked.projectId, conversationOf(interaction, picked.guildId), pressData)], reply: ack };
     }
     const route = await routeOf(interaction, user);

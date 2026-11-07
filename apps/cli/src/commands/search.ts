@@ -14,7 +14,7 @@ import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix search <query> [options]
 
-Search the project's Files (/Company, /Users/<name>, team and channel
+Search the workspace's Files (/Company, /Users/<name>, team and channel
 folders) by file name and by text: Markdown, text, CSV, JSON, YAML, HTML
 and code, the first 256 KiB of each file. Every word must match, as the
 start of a word. Name matches come first.
@@ -30,7 +30,7 @@ Options:
   --limit <n>        Hits per page, 1-100 (default 20).
   --cursor <c>       The next page: the cursor the previous page printed.
   --json             Emit the API payload as JSON.
-  --project <id>     Search this project id (default: linked).
+  --workspace <id>   Search this workspace id (default: linked).
   --host <name>      Search on a non-default Kortix host.
   -h, --help         Show this help.
 
@@ -61,7 +61,7 @@ export function parseSearchInvocation(argv: string[]): ParsedSearchInvocation | 
     path = takeFlagValue(rest, ['--path']);
     limitRaw = takeFlagValue(rest, ['--limit', '-n']);
     cursor = takeFlagValue(rest, ['--cursor']);
-    project = takeFlagValue(rest, ['--project']);
+    project = takeFlagValue(rest, ['--project', '--workspace']);
     host = takeFlagValue(rest, ['--host']);
   } catch (err) {
     return fail((err as Error).message);

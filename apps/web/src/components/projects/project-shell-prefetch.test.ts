@@ -56,10 +56,10 @@ describe('prefetchProjectShellReads', () => {
     prefetchProjectShellReads(client, 'P1');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(urls.filter((u) => u.includes('/projects/P1/detail'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('/workspaces/P1/detail'))).toHaveLength(1);
     expect(urls.filter((u) => u.includes('/model-picker'))).toHaveLength(1);
-    expect(urls.filter((u) => u.includes('/projects/P1/sandbox-health'))).toHaveLength(1);
-    expect(urls.filter((u) => u.includes('/projects/P1/sessions'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('/workspaces/P1/sandbox-health'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('/workspaces/P1/sessions'))).toHaveLength(1);
     client.clear();
   });
 
@@ -95,7 +95,7 @@ describe('prefetchProjectShellReads', () => {
   });
 
   /**
-   * KRTX-2436: the prefetch runs on EVERY navigation to `/projects/<id>`, and
+   * KRTX-2436: the prefetch runs on EVERY navigation to `/workspaces/<id>`, and
    * its prefetch refetches an entry that already settled as error without
    * data — so returning to the gone screen re-asked its final 404 even after
    * the mounted hooks stood down. The contract owns retry policy: the prefetch
@@ -122,10 +122,10 @@ describe('prefetchProjectShellReads', () => {
     prefetchProjectShellReads(client, 'P1');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(urls.filter((u) => u.includes('/projects/P1/detail'))).toHaveLength(0);
+    expect(urls.filter((u) => u.includes('/workspaces/P1/detail'))).toHaveLength(0);
     expect(urls.filter((u) => u.includes('/model-picker'))).toHaveLength(0);
-    expect(urls.filter((u) => u.includes('/projects/P1/sessions'))).toHaveLength(1);
-    expect(urls.filter((u) => u.includes('/projects/P1/sandbox-health'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('/workspaces/P1/sessions'))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes('/workspaces/P1/sandbox-health'))).toHaveLength(1);
     client.clear();
   });
 });

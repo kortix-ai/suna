@@ -86,7 +86,7 @@ function privateChannelTrigger(): { error: TriggerSpaceError } {
     error: {
       status: 400,
       body: {
-        error: 'A trigger cannot post into a private channel: the project config it lives in is editable by people outside the channel.',
+        error: 'A trigger cannot post into a private channel: the workspace config it lives in is editable by people outside the channel.',
         code: 'private_channel_trigger',
       },
     },

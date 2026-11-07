@@ -1368,7 +1368,7 @@ flow(
   "ADM-25",
   {
     domain: "admin",
-    routes: ["GET /v1/admin/api/impersonate/active", "GET /v1/projects/git/backend/repositories"],
+    routes: ["GET /v1/admin/api/impersonate/active", "GET /v1/workspaces/git/backend/repositories"],
   },
   async (ctx) => {
     await ctx.step("ANON → 401", async () => {
@@ -1395,7 +1395,7 @@ flow(
       const admin = await ctx.client.as(operator).get("/v1/admin/api/impersonate/active");
       admin.status(200).body().exists("$.grants");
       // Past the operator gate: no git backend (409) or the backend's own answer, never 403.
-      const backend = await ctx.client.as(operator).get("/v1/projects/git/backend/repositories");
+      const backend = await ctx.client.as(operator).get("/v1/workspaces/git/backend/repositories");
       if (backend.statusCode === 403) {
         throw new Error(`the allowlisted password identity is not the operator: ${backend.text()}`);
       }
@@ -1407,7 +1407,7 @@ flow(
         "SSO-ALLOWLISTED",
       );
       (await sso.get("/v1/admin/api/impersonate/active")).status(403);
-      (await sso.get("/v1/projects/git/backend/repositories"))
+      (await sso.get("/v1/workspaces/git/backend/repositories"))
         .status(403)
         .body()
         .has("$.error", "The instance git backend is only browsable by a self-host operator");
@@ -1426,10 +1426,10 @@ flow(
     routes: [
       "POST /v1/admin/api/impersonate",
       "DELETE /v1/admin/api/impersonate/:grantId",
-      "GET /v1/projects/:projectId",
-      "GET /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId",
-      "GET /v1/projects/:projectId/apps",
+      "GET /v1/workspaces/:projectId",
+      "GET /v1/workspaces/:projectId/sessions",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId",
+      "GET /v1/workspaces/:projectId/apps",
       "GET /v1/accounts/:accountId",
     ],
   },
@@ -1447,16 +1447,16 @@ flow(
     });
     let grantId = "";
 
-    await ctx.step("without a grant the admin cannot read the project → 403", async () => {
-      const r = await admin.get("/v1/projects/:projectId", { params: { projectId } });
-      r.status(403);
+    await ctx.step("without a grant the admin cannot read the workspace → 404 workspace_not_found", async () => {
+      const r = await admin.get("/v1/workspaces/:projectId", { params: { projectId } });
+      r.status(404).body().has("$.code", "workspace_not_found");
     });
-    await ctx.step("the retired x-kortix-admin-bypass header opens nothing → 403", async () => {
-      const r = await admin.get("/v1/projects/:projectId", {
+    await ctx.step("the retired x-kortix-admin-bypass header opens nothing → 404 workspace_not_found", async () => {
+      const r = await admin.get("/v1/workspaces/:projectId", {
         params: { projectId },
         headers: { "x-kortix-admin-bypass": "1" },
       });
-      r.status(403);
+      r.status(404).body().has("$.code", "workspace_not_found");
     });
     await ctx.step("a malformed project id → 400, an unknown one → 404", async () => {
       (await admin.post("/v1/admin/api/impersonate", { project_id: "not-a-uuid" })).status(400);
@@ -1471,14 +1471,14 @@ flow(
     const asActing = () => ({ headers: { "x-kortix-impersonate": grantId } });
 
     await ctx.step("acting-as, the project, its apps and its account read → 200", async () => {
-      (await admin.get("/v1/projects/:projectId", { params: { projectId }, ...asActing() })).status(200);
-      (await admin.get("/v1/projects/:projectId/apps", { params: { projectId }, ...asActing() })).status(200);
+      (await admin.get("/v1/workspaces/:projectId", { params: { projectId }, ...asActing() })).status(200);
+      (await admin.get("/v1/workspaces/:projectId/apps", { params: { projectId }, ...asActing() })).status(200);
       (await admin.get("/v1/accounts/:accountId", { params: { accountId: victim.id }, ...asActing() })).status(200);
     });
     // `scope=project` is the manager inventory the Sessions page reads; an
     // owner with session oversight sees members' private sessions there too.
     await ctx.step("acting-as, the project session inventory includes the owner's PRIVATE session", async () => {
-      const r = await admin.get("/v1/projects/:projectId/sessions", {
+      const r = await admin.get("/v1/workspaces/:projectId/sessions", {
         params: { projectId },
         query: { scope: "project" },
         ...asActing(),
@@ -1488,18 +1488,18 @@ flow(
       if (!ids.includes(sessionId)) throw new Error(`private session ${sessionId} missing from ${JSON.stringify(ids)}`);
     });
     await ctx.step("acting-as, the private session opens by id → 200", async () => {
-      const r = await admin.get("/v1/projects/:projectId/sessions/:sessionId", {
+      const r = await admin.get("/v1/workspaces/:projectId/sessions/:sessionId", {
         params: { projectId, sessionId },
         ...asActing(),
       });
       r.status(200).body().has("$.session_id", sessionId);
     });
-    await ctx.step("without the header, the same admin still sees nothing → 403", async () => {
-      (await admin.get("/v1/projects/:projectId/sessions", { params: { projectId } })).status(403);
+    await ctx.step("without the header, the same admin still sees nothing → 404 workspace_not_found", async () => {
+      (await admin.get("/v1/workspaces/:projectId/sessions", { params: { projectId } })).status(404).body().has("$.code", "workspace_not_found");
     });
     await ctx.step("revoked, the grant opens nothing on the next request → 403", async () => {
       (await admin.del("/v1/admin/api/impersonate/:grantId", { params: { grantId } })).status(200);
-      const r = await admin.get("/v1/projects/:projectId", { params: { projectId }, ...asActing() });
+      const r = await admin.get("/v1/workspaces/:projectId", { params: { projectId }, ...asActing() });
       r.status(403).body().has("$.code", "impersonation_invalid");
     });
   },

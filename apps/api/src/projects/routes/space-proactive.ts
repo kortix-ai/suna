@@ -15,6 +15,7 @@ import { projectsApp } from '../lib/app';
 import { findLiveSpace } from '../lib/project-spaces';
 import { isTimeZone } from '../lib/space-watch/policy';
 import { readWatcher, writeWatcher, type WatcherRow } from '../lib/space-watch/store';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const SPACE_NOT_FOUND = { error: 'Space not found', code: 'space_not_found' } as const;
 
@@ -34,7 +35,7 @@ const ProactiveInputSchema = z.object({
   /** An IANA zone, such as `Europe/Berlin`. The web app sends the browser's. */
   brief_timezone: z.string().trim().min(1).max(64).optional(),
 });
-const params = z.object({ projectId: z.string(), spaceId: z.string() });
+const params = z.object({ workspaceId: z.string(), spaceId: z.string() });
 
 function serialize(spaceId: string, row: WatcherRow | null, canEdit: boolean) {
   return {
@@ -48,7 +49,7 @@ function serialize(spaceId: string, row: WatcherRow | null, canEdit: boolean) {
 
 /** The project, both flags, the space the caller may see, and whether they may edit it. */
 async function loadSpace(c: Context<AppEnv>) {
-  const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
+  const loaded = await loadProjectForUser(c, workspaceIdParam(c)!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const gate = requireFeatureFlag(c, loaded.row.metadata, 'chat') ?? requireFeatureFlag(c, loaded.row.metadata, 'spaces_proactive');
   if (gate) return gate;
@@ -71,7 +72,7 @@ export function registerSpaceProactiveRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/spaces/{spaceId}/proactive',
+      path: '/{workspaceId}/spaces/{spaceId}/proactive',
       tags: ['spaces'],
       summary: 'Read a space’s Proactive settings',
       description:
@@ -91,7 +92,7 @@ export function registerSpaceProactiveRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/spaces/{spaceId}/proactive',
+      path: '/{workspaceId}/spaces/{spaceId}/proactive',
       tags: ['spaces'],
       summary: 'Change a space’s Proactive settings',
       description:
@@ -109,7 +110,7 @@ export function registerSpaceProactiveRoutes(): void {
       if (found instanceof Response) return found;
       const { loaded, space, canEdit } = found;
       if (!canEdit) {
-        return c.json({ error: 'Only the space’s creator, a project manager or the DM’s owner can change Proactive.', code: 'forbidden' }, 403);
+        return c.json({ error: 'Only the space’s creator, a workspace manager or the DM’s owner can change Proactive.', code: 'forbidden' }, 403);
       }
       const input = c.req.valid('json');
       if (input.brief_timezone !== undefined && !isTimeZone(input.brief_timezone)) {

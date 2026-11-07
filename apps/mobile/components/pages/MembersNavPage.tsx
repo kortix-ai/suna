@@ -48,13 +48,13 @@ import {
   useProject,
   useProjectAccess,
   usePendingProjectInvites,
-  useInviteProjectMember,
+  useInviteWorkspaceMember,
   useUpdateProjectAccess,
   useRevokeProjectAccess,
   useResendProjectInvite,
   useRevokeProjectInvite,
+  type InviteRole,
 } from '@/lib/projects/hooks';
-import { isInviteSent } from '@/lib/projects/projects-client';
 import type {
   ProjectAccessMember,
   ProjectRole,
@@ -98,7 +98,9 @@ function accountRoleRank(role: string): number {
 
 /** The role a member holds here, as a row's value. */
 function memberRoleLabel(m: ProjectAccessMember): string {
-  if (m.has_implicit_access) return ROLE_LABEL.manager;
+  // One role per workspace (owner > admin > manager > member): an owner or
+  // admin reaches the workspace through that role, so it is the label.
+  if (m.has_implicit_access) return m.account_role === 'owner' ? 'Owner' : 'Admin';
   return m.effective_project_role ? roleLabel(m.effective_project_role) : 'No access';
 }
 
@@ -169,11 +171,17 @@ function SheetBody({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** The roles an invite can carry: one rung of the workspace ladder (Owner is a transfer). */
+const INVITE_ROLES: InviteRole[] = ['member', 'manager', 'admin'];
+const INVITE_ROLE_LABEL: Record<InviteRole, string> = { member: 'Member', manager: 'Manager', admin: 'Admin' };
+
 function InviteSheet({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const toast = useToast();
-  const invite = useInviteProjectMember(projectId);
+  // `POST /v1/workspaces/:id/members {email, role}`: the server writes what
+  // the role needs, as on web (design.md C3).
+  const invite = useInviteWorkspaceMember(projectId);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<ProjectRole>('member');
+  const [role, setRole] = useState<InviteRole>('member');
 
   const canSubmit = email.trim().length > 0 && !invite.isPending;
   const submit = () => {
@@ -182,7 +190,7 @@ function InviteSheet({ projectId, onClose }: { projectId: string; onClose: () =>
     invite.mutate({ email: email.trim(), role }, {
       onSuccess: (result) => {
         haptics.success();
-        toast.success(isInviteSent(result) ? `Invitation sent to ${result.email}` : 'Member added');
+        toast.success(result.status === 'pending' ? `Invitation sent to ${result.email}` : 'Member added');
         onClose();
       },
       onError: (e: any) => toast.error('Unable to invite', { description: e?.message || 'Try again.' }),
@@ -204,7 +212,17 @@ function InviteSheet({ projectId, onClose }: { projectId: string; onClose: () =>
         onSubmitEditing={submit}
         editable={!invite.isPending}
       />
-      <RolePicker title="Role" value={role} onChange={setRole} disabled={invite.isPending} />
+      <SettingsGroup title="Role">
+        {INVITE_ROLES.map((r) => (
+          <SettingsRow
+            key={r}
+            label={INVITE_ROLE_LABEL[r]}
+            checked={role === r}
+            right={null}
+            onPress={invite.isPending ? undefined : () => { haptics.selection(); setRole(r); }}
+          />
+        ))}
+      </SettingsGroup>
       <Button size="lg" onPress={submit} disabled={!canSubmit} className="rounded-full">
         <Text>{invite.isPending ? 'Inviting…' : 'Invite'}</Text>
       </Button>
@@ -296,7 +314,7 @@ function MemberSheet({
   const doRevoke = () =>
     confirm({
       title: 'Revoke access',
-      description: `${userLabel(member)} loses direct access to this project.`,
+      description: `${userLabel(member)} loses direct access to this workspace.`,
       confirmLabel: 'Revoke',
       destructive: true,
       onConfirm: () => {
@@ -310,7 +328,7 @@ function MemberSheet({
 
   return (
     <SheetBody>
-      <RolePicker title="Project role" value={member.project_role ?? 'member'} onChange={changeRole} disabled={busy} />
+      <RolePicker title="Workspace role" value={member.project_role ?? 'member'} onChange={changeRole} disabled={busy} />
       <SettingsGroup>
         <SettingsRow
           icon={Trash2}

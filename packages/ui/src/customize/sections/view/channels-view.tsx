@@ -11,7 +11,7 @@ import { useLocalizedUiCatalog } from '../../../i18n/ui-catalog/use-localized-ui
  *
  * This exports `ChannelsSection`: the channels CONTENT and nothing else — no
  * heading, no column, no scroll container. Its one mount is the Channels scope
- * of `/projects/<id>/connectors` (`connectors-page.tsx`), which owns the
+ * of `/workspaces/<id>/connectors` (`connectors-page.tsx`), which owns the
  * `CapabilityPageShell` around it.
  *
  * Channels was briefly its own top-level Customize tab and rendered its own
@@ -20,8 +20,8 @@ import { useLocalizedUiCatalog } from '../../../i18n/ui-catalog/use-localized-ui
  * same job as a person wiring up any other outside tool, and asking them to
  * know that one lives under "Channels" and the other under "Connectors" is
  * asking them to know our table layout. The two are still different backend
- * resources — `/projects/{id}/channels/*` (inbound: installations, chat
- * identity, per-channel bindings) versus `/projects/{id}/connectors/*`
+ * resources — `/workspaces/{id}/channels/*` (inbound: installations, chat
+ * identity, per-channel bindings) versus `/workspaces/{id}/connectors/*`
  * (outbound: tool and OAuth access) — and nothing here merges them. Only the
  * navigation merged.
  *
@@ -594,7 +594,7 @@ const BINDING_SEARCH_MIN = 7;
 
 const CONVERSATION_POLICIES: Array<{ value: ChannelBinding['conversationPolicy']; label: string }> =
   [
-    { value: 'project_open', label: 'Project members can join' },
+    { value: 'project_open', label: 'Workspace members can join' },
     { value: 'owner_only', label: 'Owner only' },
     { value: 'owner_approval', label: 'Owner approval' },
   ];
@@ -611,7 +611,7 @@ function policyDescription(
 
 /** Label for the synthetic agent-picker entry meaning "inherit the project's default agent". */
 function agentDefaultLabel(projectDefaultAgent: string | null): string {
-  return projectDefaultAgent ? `Project default (${projectDefaultAgent})` : 'Project default';
+  return projectDefaultAgent ? `Project default (${projectDefaultAgent})` : 'Workspace default';
 }
 
 /** Bare model id → the compact form callers below already assume (`kortix/x` → `x`). */
@@ -633,7 +633,7 @@ function describeEffectiveModel(binding: ChannelBinding): string {
       : `${label} (unavailable — using default)`;
   }
   const resolved = binding.effectiveModel.model;
-  return resolved ? `Project default (${stripGatewayNamespace(resolved)})` : 'Project default';
+  return resolved ? `Project default (${stripGatewayNamespace(resolved)})` : 'Workspace default';
 }
 
 function BindingBrandMark({ platform }: { platform: string }) {

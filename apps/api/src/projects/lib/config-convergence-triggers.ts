@@ -26,7 +26,7 @@
  *   while it runs re-runs it once afterwards.
  */
 
-import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
@@ -36,6 +36,7 @@ import { invalidateProjectMirror, noteSessionBranchPushed } from '../git/mirror'
 import { expireBaseTips } from '../../config-releases/base-tip';
 import { schedulePublish } from '../../config-releases/publish';
 import { isUuid } from '../../shared/validate';
+import { projectsView } from '../../workspaces/rows';
 
 export const BASE_MOVE_WINDOW_MS = 30_000;
 export const MAX_SESSIONS_PER_BASE_MOVE = 200;
@@ -172,7 +173,7 @@ export async function listRunningSessionsOnBase(projectId: string, branch: strin
   const rows = await db
     .select({ sessionId: projectSessions.sessionId })
     .from(projectSessions)
-    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
     .innerJoin(
       sessionSandboxes,
       and(eq(sessionSandboxes.sessionId, projectSessions.sessionId), eq(sessionSandboxes.status, 'active')),
@@ -183,7 +184,7 @@ export async function listRunningSessionsOnBase(projectId: string, branch: strin
         eq(projectSessions.status, 'running'),
         or(
           inArray(projectSessions.baseRef, [branch, `refs/heads/${branch}`]),
-          and(sql`${projectSessions.baseRef} IS NULL`, eq(projects.defaultBranch, branch)),
+          and(sql`${projectSessions.baseRef} IS NULL`, eq(projectsView.defaultBranch, branch)),
         ),
       ),
     )

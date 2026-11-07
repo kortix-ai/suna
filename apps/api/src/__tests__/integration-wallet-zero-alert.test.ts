@@ -63,7 +63,7 @@ describe('a wallet at $0', () => {
     expect(sent[0]!.subject).toBe('wallet-zero-paid-account is out of credits');
     expect(sent[0]!.text).toContain('The balance of wallet-zero-paid-account reached -50 credits.');
     expect(sent[0]!.text).toContain('Agents pause, and triggers stop starting sessions, until credits are added.');
-    expect(sent[0]!.text).toContain(`/projects?accountId=${paid.account_id}&accountTab=billing`);
+    expect(sent[0]!.text).toContain(`/workspaces?accountId=${paid.account_id}&accountTab=billing`);
     expect(sent[0]!.category).toBe('billing-wallet-zero');
   });
 

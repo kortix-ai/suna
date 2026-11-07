@@ -32,7 +32,7 @@ function startApi(user: { user_id: string; email: string }, log: string[]) {
     async fetch(req) {
       const url = new URL(req.url);
       log.push(`${req.method} ${url.pathname}`);
-      if (url.pathname === '/v1/accounts/me') {
+      if (url.pathname === '/v1/me') {
         return Response.json({
           user_id: user.user_id,
           email: user.email,

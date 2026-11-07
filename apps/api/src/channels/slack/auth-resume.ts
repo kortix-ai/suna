@@ -26,7 +26,7 @@ export async function createPendingSlackAuthMessage(input: {
     return await persistPendingSlackMessage(() => ({
         projectId: input.projectId,
         platform: 'slack',
-        workspaceId: input.teamId,
+        platformTeamId: input.teamId,
         platformUserId: input.slackUserId,
         envelope: input.envelope as unknown as Record<string, unknown>,
         event: input.event as unknown as Record<string, unknown>,
@@ -55,7 +55,7 @@ export async function consumePendingSlackAuthMessage(input: {
       .from(chatPendingAuthMessages)
       .where(and(
         eq(chatPendingAuthMessages.pendingId, input.pendingId),
-        eq(chatPendingAuthMessages.workspaceId, input.teamId),
+        eq(chatPendingAuthMessages.platformTeamId, input.teamId),
         eq(chatPendingAuthMessages.platformUserId, input.slackUserId),
         gt(chatPendingAuthMessages.expiresAt, new Date()),
         isNotNull(chatPendingAuthMessages.projectId),
@@ -91,7 +91,7 @@ export async function createPendingSlackPickerMessage(input: {
     return await persistPendingSlackMessage(() => ({
         projectId: null,
         platform: 'slack',
-        workspaceId: input.teamId,
+        platformTeamId: input.teamId,
         platformUserId: event.user ?? '',
         envelope: input.envelope as unknown as Record<string, unknown>,
         event: event as unknown as Record<string, unknown>,
@@ -117,7 +117,7 @@ export async function consumePendingSlackPickerMessage(input: {
       .where(and(
         eq(chatPendingAuthMessages.pendingId, input.pendingId),
         eq(chatPendingAuthMessages.platform, 'slack'),
-        eq(chatPendingAuthMessages.workspaceId, input.teamId),
+        eq(chatPendingAuthMessages.platformTeamId, input.teamId),
         isNull(chatPendingAuthMessages.projectId),
         gt(chatPendingAuthMessages.expiresAt, new Date()),
         sql`${chatPendingAuthMessages.event}->>'channel' = ${input.channelId}`,
@@ -143,7 +143,7 @@ export async function attachPendingSlackAuthResponseUrl(input: {
       .set({ slackResponseUrl: input.responseUrl })
       .where(and(
         eq(chatPendingAuthMessages.pendingId, input.pendingId),
-        eq(chatPendingAuthMessages.workspaceId, input.teamId),
+        eq(chatPendingAuthMessages.platformTeamId, input.teamId),
         eq(chatPendingAuthMessages.platformUserId, input.slackUserId),
         gt(chatPendingAuthMessages.expiresAt, new Date()),
         isNotNull(chatPendingAuthMessages.projectId),
@@ -163,13 +163,13 @@ export async function replaceSlackAuthPromptConnected(
   const hasAccess = opts?.hasAccess !== false;
   const text = hasAccess
     ? '*Slack connected.*\nKortix is picking up your message now.'
-    : '*Slack connected.*\nYour Kortix account still needs access to this project. Head back to Slack and request access to continue.';
+    : '*Slack connected.*\nYour Kortix account still needs access to this Kortix workspace. Head back to Slack and request access to continue.';
   await respondViaUrl(responseUrl ?? undefined, {
     response_type: 'ephemeral',
     replace_original: true,
     text: hasAccess
       ? 'Slack connected. Kortix is picking up your message now.'
-      : 'Slack connected. Request project access in Slack to continue.',
+      : 'Slack connected. Request workspace access in Slack to continue.',
     blocks: [
       {
         type: 'section',

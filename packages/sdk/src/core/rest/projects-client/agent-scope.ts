@@ -38,6 +38,6 @@ export async function setAgentScope(
       connectors_required: string[];
       /** Connector slug → policy set name after the write. Absent on older servers. */
       policy_sets?: Record<string, string>;
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/scope`, canonicalScope),
+    }>(`/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/scope`, canonicalScope),
   );
 }

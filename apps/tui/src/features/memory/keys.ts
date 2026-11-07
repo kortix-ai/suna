@@ -31,7 +31,7 @@ export const MEMORY_KEYS: readonly MemoryBinding[] = [
   bind('pageDown', [{ key: 'pagedown' }, { key: 'space' }], 'Scroll a page down.'),
   bind('pageUp', [{ key: 'pageup' }], 'Scroll a page up.'),
   bind('read', [{ key: 'return' }], 'Read the selected page.'),
-  bind('search', [{ key: '/' }], 'Search all pages the project lets you read.'),
+  bind('search', [{ key: '/' }], 'Search all pages the workspace lets you read.'),
   bind('type', [{ key: 't' }], 'Cycle the page-type filter.'),
   bind('open', [{ key: 'o' }], 'Open Memory in the browser.'),
   bind('refresh', [{ key: 'r' }], 'Reload the page list.'),

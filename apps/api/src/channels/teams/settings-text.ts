@@ -15,10 +15,10 @@ export function teamsSettingsRefusal(reason: SettingsRefusal, noBinding: string)
   switch (reason) {
     case 'unlinked':
       return config.TEAMS_REQUIRE_USER_IDENTITY
-        ? 'Connect your Kortix account first — run `/login`. Settings change only for a linked project manager.'
+        ? 'Connect your Kortix account first — run `/login`. Settings change only for a linked workspace manager.'
         : "Change this conversation's settings in Kortix: Teams account linking is off on this server.";
     case 'forbidden':
-      return "Only a project manager, or an account owner or admin, can change this conversation's settings.";
+      return "Only a workspace manager, or a workspace owner or admin, can change this conversation's settings.";
     case 'no_binding':
       return noBinding;
   }
@@ -26,9 +26,9 @@ export function teamsSettingsRefusal(reason: SettingsRefusal, noBinding: string)
 
 /** The reply for an agent change, shared by `/agent` and the agent picker card. */
 export function teamsAgentChangeText(result: Awaited<ReturnType<typeof changeChannelAgent>>, requested: string): string {
-  if (result.ok) return result.agent ? `Agent set to ${result.agent}. New sessions will use it.` : 'Agent reset to the project default.';
-  if (result.reason === 'unknown_agent') return `\`${requested}\` isn't a declared agent in this project. Try /agents.`;
-  return teamsSettingsRefusal(result.reason, 'Connect a project to this conversation first.');
+  if (result.ok) return result.agent ? `Agent set to ${result.agent}. New sessions will use it.` : 'Agent reset to the workspace default.';
+  if (result.reason === 'unknown_agent') return `\`${requested}\` isn't a declared agent in this Kortix workspace. Try /agents.`;
+  return teamsSettingsRefusal(result.reason, 'Connect a Kortix workspace to this conversation first.');
 }
 
 /** A Teams conversation for settings: a personal chat with the bot is one-to-one. */

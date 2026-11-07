@@ -7,12 +7,12 @@ import type { ProjectSessionGroup } from '../core/rest/projects-client/session-g
 import type { ProjectSession } from '../core/rest/projects-client/sessions';
 import { qk } from './query-keys';
 import {
-  useCreateProjectSessionGroup,
-  useDeleteProjectSessionGroup,
-  useProjectSessionGroups,
-  useRenameProjectSessionGroup,
-  useReorderProjectSessionGroups,
-  useSetProjectSessionGroup,
+  useCreateWorkspaceSessionGroup,
+  useDeleteWorkspaceSessionGroup,
+  useWorkspaceSessionGroups,
+  useRenameWorkspaceSessionGroup,
+  useReorderWorkspaceSessionGroups,
+  useSetWorkspaceSessionGroup,
 } from './use-session-groups';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -53,12 +53,12 @@ beforeEach(() => {
 let renderer: ReactTestRenderer | null = null;
 let client: QueryClient;
 let api: {
-  groups: ReturnType<typeof useProjectSessionGroups>;
-  create: ReturnType<typeof useCreateProjectSessionGroup>;
-  rename: ReturnType<typeof useRenameProjectSessionGroup>;
-  remove: ReturnType<typeof useDeleteProjectSessionGroup>;
-  reorder: ReturnType<typeof useReorderProjectSessionGroups>;
-  file: ReturnType<typeof useSetProjectSessionGroup>;
+  groups: ReturnType<typeof useWorkspaceSessionGroups>;
+  create: ReturnType<typeof useCreateWorkspaceSessionGroup>;
+  rename: ReturnType<typeof useRenameWorkspaceSessionGroup>;
+  remove: ReturnType<typeof useDeleteWorkspaceSessionGroup>;
+  reorder: ReturnType<typeof useReorderWorkspaceSessionGroups>;
+  file: ReturnType<typeof useSetWorkspaceSessionGroup>;
 };
 
 afterEach(async () => {
@@ -69,12 +69,12 @@ afterEach(async () => {
 
 function Probe({ enabled }: { enabled: boolean }) {
   api = {
-    groups: useProjectSessionGroups('P1', { enabled }),
-    create: useCreateProjectSessionGroup('P1'),
-    rename: useRenameProjectSessionGroup('P1'),
-    remove: useDeleteProjectSessionGroup('P1'),
-    reorder: useReorderProjectSessionGroups('P1'),
-    file: useSetProjectSessionGroup('P1'),
+    groups: useWorkspaceSessionGroups('P1', { enabled }),
+    create: useCreateWorkspaceSessionGroup('P1'),
+    rename: useRenameWorkspaceSessionGroup('P1'),
+    remove: useDeleteWorkspaceSessionGroup('P1'),
+    reorder: useReorderWorkspaceSessionGroups('P1'),
+    file: useSetWorkspaceSessionGroup('P1'),
   };
   return null;
 }
@@ -118,7 +118,7 @@ test('useProjectSessionGroups reads nothing while disabled (the flag is off) and
   expect(held).toEqual([]);
   await act(async () => renderer!.update(React.createElement(QueryClientProvider, { client }, React.createElement(Probe, { enabled: true }))));
   await settle();
-  expect(requests()).toEqual(['GET /projects/P1/session-groups']);
+  expect(requests()).toEqual(['GET /workspaces/P1/session-groups']);
   await act(async () => held[0]!.respond(200, { groups: [group('A', 0)] }));
   await settle();
   expect(api.groups.data?.map((g) => g.group_id)).toEqual(['A']);
@@ -131,7 +131,7 @@ test('reorder shows the new order at once, then keeps the server answer', async 
     done = api.reorder.mutateAsync(['C', 'A', 'B']);
   });
   await settle();
-  expect(requests()).toEqual(['PUT /projects/P1/session-groups/order']);
+  expect(requests()).toEqual(['PUT /workspaces/P1/session-groups/order']);
   expect(held[0]!.body).toEqual({ group_ids: ['C', 'A', 'B'] });
   expect(cachedOrder()).toEqual(['C', 'A', 'B']);
   await act(async () => {
@@ -154,7 +154,7 @@ test('a refused reorder (409 group_order_stale) puts the old order back and read
   });
   await settle();
   expect(cachedOrder()).toEqual(['A', 'B', 'C']);
-  expect(requests()).toContain('GET /projects/P1/session-groups');
+  expect(requests()).toContain('GET /workspaces/P1/session-groups');
 });
 
 test('filing shows the new group_id at once and takes the row out of the no-group list, then refetches the session lists', async () => {
@@ -166,7 +166,7 @@ test('filing shows the new group_id at once and takes the row out of the no-grou
     done = api.file.mutateAsync({ sessionId: 'S1', groupId: 'A' });
   });
   await settle();
-  expect(requests()).toEqual(['PUT /projects/P1/sessions/S1/group']);
+  expect(requests()).toEqual(['PUT /workspaces/P1/sessions/S1/group']);
   expect(held[0]!.body).toEqual({ group_id: 'A' });
   expect(client.getQueryData<ProjectSession>(own)!.group_id).toBe('A');
   expect(cachedRow('S1')).toBeUndefined();
@@ -220,17 +220,17 @@ async function answer(start: () => Promise<unknown>, status: number, body: unkno
 test('create, rename and delete each read the groups again; delete also marks the session lists stale', async () => {
   await mount();
   await answer(() => api.create.mutateAsync({ name: 'Store D' }), 201, group('D', 3));
-  expect(requests()).toEqual(['POST /projects/P1/session-groups', 'GET /projects/P1/session-groups']);
+  expect(requests()).toEqual(['POST /workspaces/P1/session-groups', 'GET /workspaces/P1/session-groups']);
   expect(held[0]!.body).toEqual({ name: 'Store D' });
   held.length = 0;
 
   await answer(() => api.rename.mutateAsync({ groupId: 'A', name: 'Store A (EU)' }), 200, { ...group('A', 0), name: 'Store A (EU)' });
-  expect(requests()).toEqual(['PATCH /projects/P1/session-groups/A', 'GET /projects/P1/session-groups']);
+  expect(requests()).toEqual(['PATCH /workspaces/P1/session-groups/A', 'GET /workspaces/P1/session-groups']);
   expect(held[0]!.body).toEqual({ name: 'Store A (EU)' });
   held.length = 0;
 
   await answer(() => api.remove.mutateAsync('A'), 200, { ok: true });
-  expect(requests()).toEqual(['DELETE /projects/P1/session-groups/A', 'GET /projects/P1/session-groups']);
+  expect(requests()).toEqual(['DELETE /workspaces/P1/session-groups/A', 'GET /workspaces/P1/session-groups']);
   expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);
 });
 
@@ -298,5 +298,5 @@ test('a move refused with group_not_found (someone deleted the group) reads the 
   await settle();
   await act(async () => held[0]!.respond(404, { error: 'No such session group in this project.', code: 'group_not_found' }));
   await settle();
-  expect(requests()).toContain('GET /projects/P1/session-groups');
+  expect(requests()).toContain('GET /workspaces/P1/session-groups');
 });

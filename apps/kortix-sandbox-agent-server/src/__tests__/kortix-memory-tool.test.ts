@@ -25,7 +25,7 @@ let pages: Map<string, Page>
 let requests: Array<{ method: string; path: string; auth: string | null; body: unknown }>
 let filesOff = false
 
-const PREFIX = '/v1/projects/proj_1/memory/me/agent/mykortix'
+const PREFIX = '/v1/workspaces/proj_1/memory/me/agent/mykortix'
 const entry = ({ body: _body, ...rest }: Page) => rest
 
 beforeAll(() => {
@@ -191,12 +191,12 @@ describe('kortix_memory', () => {
     expect((await run({ action: 'view', name: 'likes-short-replies.md' })).ok).toBe(true)
   })
 
-  test('Files off: a plain refusal that says to ask a project admin', async () => {
+  test('Files off: a plain refusal that says to ask a workspace admin', async () => {
     filesOff = true
     for (const args of [{ action: 'list' }, { action: 'save', name: 'x', ...SHORT }, { action: 'delete', name: 'x' }]) {
       const result = await run(args)
-      expect(result).toMatchObject({ ok: false, card: { title: 'Memory is off in this project', status: 'error' }, error: { kind: 'failed' } })
-      expect(result.card.subtitle).toBe('Memory lives in Files, and Files is off in this project. Ask a project admin to turn Files on.')
+      expect(result).toMatchObject({ ok: false, card: { title: 'Memory is off in this workspace', status: 'error' }, error: { kind: 'failed' } })
+      expect(result.card.subtitle).toBe('Memory lives in Files, and Files is off in this workspace. Ask a workspace admin to turn Files on.')
     }
   })
 

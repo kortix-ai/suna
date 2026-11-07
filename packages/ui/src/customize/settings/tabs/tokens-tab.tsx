@@ -40,14 +40,14 @@
 import { type ReactNode, useRef, useState } from 'react';
 
 import {
-  NEVER_EXPIRES,
-  defaultExpiryOption,
-  expiresAtIso,
-  expiryOptions,
+  defaultKeyExpiryOption,
+  keyExpiresAt,
+  keyExpiryOptions,
 } from '../../../access/iam/api-key-expiry';
 import { type ApiKeyRow, type ApiKeyStatus, buildApiKeyRows } from '../../../access/iam/api-key-rows';
 import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
+import { Checkbox } from '../../../primitives/checkbox';
 import { ConfirmDialog } from '../../../primitives/confirm-dialog';
 import { InfoBanner } from '../../../primitives/info-banner';
 import { Input } from '../../../primitives/input';
@@ -86,15 +86,24 @@ import { usePermission } from '../../../internal/lib/use-permission';
 import { hubTarget } from '../../../internal/stores/account-panel-store';
 import {
   createAccountToken,
+  createWorkspaceToken,
   listAccountTokens,
+  listPersonalTokens,
   listProjectsForAccount,
+  listPermissions,
+  listWorkspaceTokens,
   revokeAccountToken,
+  revokePersonalToken,
+  revokeWorkspaceToken,
+  type AccountToken,
+  type Permission,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { KeyIcon, PlusIcon, ProhibitIcon, TrashIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsSubsectionHeader } from '../../../primitives/settings-subsection-header';
 import { ConnectedApps } from './connected-apps';
 
 /** Sentinel Select value for "not scoped to one project". */
@@ -107,6 +116,8 @@ const WHOLE_WORKSPACE = '__workspace__';
  * key would serve each other's rows.
  */
 const MY_TOKENS_KEY = (accountId: string) => ['account-tokens', accountId, 'mine'];
+/** The caller's personal keys (`GET /v1/me/tokens`). */
+const PERSONAL_TOKENS_KEY = ['me-tokens'];
 
 /**
  * How each state reads on a row. Same three states, same colours, and the same
@@ -132,6 +143,10 @@ function isMfaRequired(error: unknown): boolean {
 export interface ApiKeyMetaCopy {
   neverUsed: string;
   neverExpires: string;
+  /** The access label of a key row (`Full access`, `Read only`, `Custom · 3`); null hides it. */
+  access?: (row: ApiKeyRow) => string | null;
+  /** Shown instead of the expiry for a key whose expiry moves out on every use. */
+  renewsOnUse?: string;
   lastUsed: (time: string) => string;
   expired: (time: string) => string;
   expires: (time: string) => string;
@@ -154,8 +169,12 @@ export function apiKeyMetaParts(
 ): string[] {
   const parts = [row.hint];
   if (row.scopeLabel) parts.push(row.scopeLabel);
+  const access = copy.access?.(row);
+  if (access) parts.push(access);
   parts.push(row.lastUsedAt ? copy.lastUsed(copy.relativeTime(row.lastUsedAt)) : copy.neverUsed);
-  if (row.expiresAt) {
+  if (row.expiryRenews && copy.renewsOnUse && row.status === 'active') {
+    parts.push(copy.renewsOnUse);
+  } else if (row.expiresAt) {
     const ms = new Date(row.expiresAt).getTime();
     if (Number.isFinite(ms)) {
       const time = copy.relativeTime(row.expiresAt);
@@ -175,7 +194,37 @@ export function localizedRelativeTime(
   return relativeTime(input, locale, now, { zero: 'minute' });
 }
 
-export function TokensTab({ accountId }: { accountId: string | undefined }) {
+/**
+ * Which keys the list shows (design.md §3.2 C4):
+ *
+ *  - `workspace`: Workspace settings › API keys. The caller's keys bound to
+ *    this workspace (`/v1/workspaces/:id/tokens?mine=true`). A new key acts as
+ *    the caller in this workspace only, so the scope reads "This workspace".
+ *  - `personal`: Preferences › Personal keys. The caller's keys bound to no
+ *    workspace (the CLI login, older account-wide keys): they act as the
+ *    person in every workspace of theirs. They are listed and revoked here,
+ *    never minted (`/v1/me/tokens`).
+ *  - `account`: the older account-scoped list, for a host without a workspace.
+ */
+type KeyMode = 'workspace' | 'personal' | 'account';
+
+export function TokensTab({
+  accountId,
+  workspaceId,
+  embedded = false,
+  personal = false,
+}: {
+  accountId: string | undefined;
+  /** Set: list and mint keys bound to this workspace. */
+  workspaceId?: string;
+  /** Inside Workspace settings › API keys: a subsection under the page's own
+   *  title, and no pointer to the service-account keys below it. */
+  embedded?: boolean;
+  /** Preferences › Personal keys: the caller's keys bound to no workspace. */
+  personal?: boolean;
+}) {
+  const mode: KeyMode = personal ? 'personal' : workspaceId ? 'workspace' : 'account';
+  const tWorkspaces = useTranslations('workspaces.settings');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.tokens');
   const locale = useLocale();
@@ -194,6 +243,8 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
     expired: (time) => t('expiredAt', { time }),
     expires: (time) => t('expiresAt', { time }),
     relativeTime: (input) => localizedRelativeTime(input, locale, renderedAt),
+    access: (row) => accessLabel(row, tWorkspaces),
+    renewsOnUse: tWorkspaces('keyExpiryRenews'),
   };
 
   // Every row here is the caller's OWN hand-minted key (`mine: true`), so the
@@ -201,13 +252,26 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   // member can mint and revoke their own keys. An account that denies
   // `token.personal.*` by policy gets the read-only view instead of a button
   // the API answers 403 to.
-  const canCreate = usePermission(accountId, 'token.personal.create').allowed === true;
-  const canRevoke = usePermission(accountId, 'token.personal.revoke').allowed === true;
+  // A personal key is the caller's own everywhere: no account policy gates
+  // listing or revoking it, and it is never minted here.
+  const canCreatePersonal = usePermission(accountId, 'token.personal.create').allowed === true;
+  const canRevokePersonal = usePermission(accountId, 'token.personal.revoke').allowed === true;
+  // The UI mints workspace keys only (design.md §3.2 C4a): a key acts in one
+  // workspace. A personal key comes from `kortix login`; the older account
+  // list (no workspace) lists and revokes, never mints.
+  const canCreate = mode === 'workspace' && canCreatePersonal;
+  const canRevoke = mode === 'personal' || canRevokePersonal;
+  const listKey = mode === 'personal' ? PERSONAL_TOKENS_KEY : MY_TOKENS_KEY(workspaceId ?? accountId ?? '');
 
-  const tokensQuery = useQuery({
-    queryKey: MY_TOKENS_KEY(accountId ?? ''),
-    queryFn: () => listAccountTokens(accountId, { mine: true }),
-    enabled: !!accountId,
+  const tokensQuery = useQuery<AccountToken[]>({
+    queryKey: listKey,
+    queryFn: () =>
+      mode === 'personal'
+        ? listPersonalTokens()
+        : mode === 'workspace'
+          ? listWorkspaceTokens(workspaceId!, { mine: true })
+          : listAccountTokens(accountId, { mine: true }),
+    enabled: mode === 'personal' || !!accountId,
     staleTime: 30_000,
   });
 
@@ -225,15 +289,20 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   const projectsQuery = useQuery({
     queryKey: qk.projects.list(accountId ?? ''),
     queryFn: () => listProjectsForAccount(accountId!),
-    enabled: !!accountId,
+    enabled: mode === 'account' && !!accountId,
     ...contract('inventory'),
   });
 
   const revokeMutation = useMutation({
-    mutationFn: (row: ApiKeyRow) => revokeAccountToken(row.id, accountId),
+    mutationFn: (row: ApiKeyRow) =>
+      mode === 'personal'
+        ? revokePersonalToken(row.id)
+        : mode === 'workspace'
+          ? revokeWorkspaceToken(workspaceId!, row.id)
+          : revokeAccountToken(row.id, accountId),
     onSuccess: () => {
       successToast(t('keyRevoked'));
-      queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId ?? '') });
+      queryClient.invalidateQueries({ queryKey: listKey });
       setConfirmTarget(null);
     },
     onError: (err: Error) => errorToast(err.message || t('revokeFailed')),
@@ -246,29 +315,41 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
   // members' keys, service accounts and session tokens stay untouchable.
   const deleteMutation = useMutation({
     mutationFn: (row: ApiKeyRow) =>
-      revokeAccountToken(row.id, accountId, { deleteRevoked: true }),
+      mode === 'workspace'
+        ? revokeWorkspaceToken(workspaceId!, row.id, { deleteRevoked: true })
+        : revokeAccountToken(row.id, accountId, { deleteRevoked: true }),
     onSuccess: () => {
       successToast(t('keyDeleted'));
-      queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId ?? '') });
+      queryClient.invalidateQueries({ queryKey: listKey });
       setDetailRow(null);
       setConfirmTarget(null);
     },
     onError: (err: Error) => errorToast(err.message || t('deleteFailed')),
   });
 
+  // A workspace key acts on this workspace only; a personal key acts as the
+  // person in every workspace of theirs. The row says which, never "Whole workspace".
+  const scopeLabel =
+    mode === 'workspace' ? tWorkspaces('keyScopeWorkspace') : mode === 'personal' ? tWorkspaces('keyScopePersonal') : undefined;
   const rows = buildApiKeyRows({
     tokens: tokensQuery.data,
     projects: projectsQuery.data,
-  });
+  }).map((row) => (scopeLabel ? { ...row, scopeLabel } : row));
 
   return (
     // `max-w-2xl` — the form tier every person-scoped pane in this dialog
     // uses (`tab-content-width.test.ts`). The list is one card of flat rows, not a
     // table, so nothing here needs the wide tier.
     <div className="mx-auto w-full max-w-2xl space-y-5">
-      <SettingsTabHeader tab="tokens" hideDescription />
+      {mode === 'personal' ? (
+        <SettingsTabHeader tab="personal-keys" />
+      ) : embedded ? (
+        <SettingsSubsectionHeader title={tWorkspaces('personalKeysTitle')} description={tWorkspaces('personalKeysDescription')} />
+      ) : (
+        <SettingsTabHeader tab="tokens" hideDescription />
+      )}
 
-      {!accountId ? (
+      {mode !== 'personal' && !accountId ? (
         <div className="space-y-2">
           <Skeleton className="h-14 rounded-md" />
           <Skeleton className="h-14 rounded-md" />
@@ -312,7 +393,9 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
           icon={KeyIcon}
           size="sm"
           title={t('emptyTitle')}
-          description={canCreate ? t('emptyCanCreate') : t('emptyNoPermission')}
+          description={
+            mode === 'personal' ? tWorkspaces('personalKeysEmpty') : canCreate ? t('emptyCanCreate') : t('emptyNoPermission')
+          }
           action={
             canCreate ? (
               <Button
@@ -367,7 +450,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
                         onSelect: () => setConfirmTarget({ row, action: 'revoke' }),
                       },
                     ]
-                  : canRevoke && row.status === 'revoked'
+                  : canRevoke && row.status === 'revoked' && mode !== 'personal'
                     ? [
                         {
                           label: t('deleteKey'),
@@ -426,6 +509,7 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
       {/* Where the OTHER kind of key lives. One line, because a person who
           came here for a CI credential has to be able to find it without
           reading the account hub's whole rail. */}
+      {embedded || mode === 'personal' ? null : (
       <p className="text-muted-foreground text-xs">
         {t.rich('serviceAccountTokens', {
           link: (chunks) =>
@@ -441,15 +525,20 @@ export function TokensTab({ accountId }: { accountId: string | undefined }) {
             ),
         })}
       </p>
+      )}
 
-      <ConnectedApps relativeTime={(iso) => localizedRelativeTime(iso, locale, renderedAt)} />
+      {/* Apps you signed in to with Kortix act as you: the person's own list. */}
+      {mode === 'workspace' ? null : (
+        <ConnectedApps relativeTime={(iso) => localizedRelativeTime(iso, locale, renderedAt)} />
+      )}
 
-      {accountId ? (
+      {accountId && mode !== 'personal' ? (
         <CreateApiKeyDialog
           accountId={accountId}
+          workspaceId={mode === 'workspace' ? workspaceId : undefined}
           open={createOpen}
           onOpenChange={setCreateOpen}
-          onCreated={() => queryClient.invalidateQueries({ queryKey: MY_TOKENS_KEY(accountId) })}
+          onCreated={() => queryClient.invalidateQueries({ queryKey: listKey })}
         />
       ) : null}
 
@@ -528,11 +617,29 @@ function ApiKeyDetailModal({
   onConfirm: (row: ApiKeyRow, action: 'revoke' | 'delete') => void;
 }) {
   const t = useTranslations('settings.tokens');
+  const tWorkspaces = useTranslations('workspaces.settings');
   const fields: Array<{ label: string; value: ReactNode }> = row
     ? [
         { label: t('keyName'), value: row.name },
         { label: t('keyPrefix'), value: <span className="font-mono">{row.hint}</span> },
         { label: t('scope'), value: row.scopeLabel ?? t('wholeWorkspace') },
+        ...(row.access
+          ? [{ label: tWorkspaces('keyAccess'), value: accessLabel(row, tWorkspaces) ?? tWorkspaces('keyAccessFull') }]
+          : []),
+        ...(row.permissions && row.permissions.length > 0
+          ? [
+              {
+                label: tWorkspaces('keyPermissions'),
+                value: (
+                  <span className="flex flex-col gap-0.5 font-mono text-xs">
+                    {row.permissions.map((permission) => (
+                      <span key={permission}>{permission}</span>
+                    ))}
+                  </span>
+                ),
+              },
+            ]
+          : []),
         {
           label: t('statusLabel'),
           value: (
@@ -547,7 +654,11 @@ function ApiKeyDetailModal({
         },
         {
           label: t('expires'),
-          value: row.expiresAt ? formatLongDate(row.expiresAt, locale) : metaCopy.neverExpires,
+          value: row.expiresAt
+            ? row.expiryRenews && metaCopy.renewsOnUse
+              ? `${formatLongDate(row.expiresAt, locale)} · ${metaCopy.renewsOnUse}`
+              : formatLongDate(row.expiresAt, locale)
+            : metaCopy.neverExpires,
         },
       ]
     : [];
@@ -616,29 +727,45 @@ function ApiKeyDetailModal({
  */
 export function CreateApiKeyDialog({
   accountId,
+  workspaceId,
   open,
   onOpenChange,
   onCreated,
 }: {
   accountId: string;
+  /** Set: mint a workspace key (`POST /v1/workspaces/:id/tokens`), which acts on this workspace only. */
+  workspaceId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.tokens');
+  const tWorkspaces = useTranslations('workspaces.settings');
   const common = useTranslations('common');
   const [name, setName] = useState('');
   const [scope, setScope] = useState<string>(WHOLE_WORKSPACE);
-  const [expiry, setExpiry] = useState<string>(NEVER_EXPIRES);
+  const [expiry, setExpiry] = useState<string>('');
+  const [access, setAccess] = useState<KeyAccess>('full');
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const [created, setCreated] = useState<{ name: string; secret: string } | null>(null);
+
+  // The permission catalog, for a custom key only. The API refuses a permission
+  // the creator's role lacks (`key_scope_exceeds_role`) and names it.
+  const permissionsQuery = useQuery({
+    queryKey: ['iam-permissions', workspaceId ?? accountId],
+    queryFn: () => listPermissions(workspaceId ?? accountId),
+    enabled: open && !!workspaceId && access === 'custom',
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   // Both queries are dialog-scoped: nothing fetches until someone opens the form.
   const projectsQuery = useQuery({
     queryKey: qk.projects.list(accountId),
     queryFn: () => listProjectsForAccount(accountId),
     ...contract('inventory'),
-    enabled: open,
+    enabled: open && !workspaceId,
   });
   const projects = projectsQuery.data ?? [];
 
@@ -653,10 +780,12 @@ export function CreateApiKeyDialog({
     retry: false,
   });
   const policy = policyQuery.data ?? null;
-  const expiryChoices = expiryOptions(policy, tI18nComplete).map((choice) => ({
+  // A key always expires (90 days preselected, 365 at most) unless the
+  // workspace key policy allows no expiry (`allow_no_expiry`).
+  const expiryChoices = keyExpiryOptions(policy, tI18nComplete).map((choice) => ({
     ...choice,
     label:
-      choice.value === NEVER_EXPIRES
+      Number.isNaN(Number(choice.value))
         ? t('expiryNever')
         : Number(choice.value) === 365
           ? t('expiryOneYear')
@@ -667,15 +796,24 @@ export function CreateApiKeyDialog({
   // rather than submitting one the backend will reject.
   const selectedExpiry = expiryChoices.some((o) => o.value === expiry)
     ? expiry
-    : defaultExpiryOption(policy, tI18nComplete);
+    : defaultKeyExpiryOption(policy, tI18nComplete);
+  const customEmpty = !!workspaceId && access === 'custom' && picked.size === 0;
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const expiresAt = expiresAtIso(selectedExpiry);
+      const expiresAt = keyExpiresAt(selectedExpiry);
+      if (workspaceId) {
+        const token = await createWorkspaceToken(workspaceId, {
+          name: name.trim(),
+          expiresAt,
+          scopes: access === 'custom' ? [...picked] : access,
+        });
+        return { name: token.name, secret: token.secret_key };
+      }
       const token = await createAccountToken({
         name: name.trim(),
         accountId,
-        ...(expiresAt ? { expiresAt } : {}),
+        expiresAt,
         ...(scope === WHOLE_WORKSPACE ? {} : { projectId: scope }),
       });
       return { name: token.name, secret: token.secret_key };
@@ -703,7 +841,9 @@ export function CreateApiKeyDialog({
     setTimeout(() => {
       setName('');
       setScope(WHOLE_WORKSPACE);
-      setExpiry(NEVER_EXPIRES);
+      setExpiry('');
+      setAccess('full');
+      setPicked(new Set());
       setCreated(null);
     }, 200);
   }
@@ -747,7 +887,7 @@ export function CreateApiKeyDialog({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                if (!name.trim() || mutation.isPending || submitInFlight.current) return;
+                if (!name.trim() || customEmpty || mutation.isPending || submitInFlight.current) return;
                 submitInFlight.current = true;
                 mutation.mutate();
               }}
@@ -768,6 +908,50 @@ export function CreateApiKeyDialog({
                   <p className="text-muted-foreground text-xs">{t('nameHint')}</p>
                 </div>
 
+                {workspaceId ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="workspace-api-key-access">{tWorkspaces('keyAccess')}</Label>
+                    <Select
+                      value={access}
+                      onValueChange={(value) => setAccess(value as KeyAccess)}
+                      disabled={mutation.isPending}
+                    >
+                      <SelectTrigger id="workspace-api-key-access" size="md" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">{tWorkspaces('keyAccessFull')}</SelectItem>
+                        <SelectItem value="read">{tWorkspaces('keyAccessRead')}</SelectItem>
+                        <SelectItem value="custom">{tWorkspaces('keyAccessCustom')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-muted-foreground text-xs">
+                      {tWorkspaces(
+                        access === 'read'
+                          ? 'keyAccessReadHint'
+                          : access === 'custom'
+                            ? 'keyAccessCustomHint'
+                            : 'keyAccessFullHint',
+                      )}{' '}
+                      {tWorkspaces('keyScopeWorkspaceHint')}
+                    </p>
+                    {access === 'custom' ? (
+                      <PermissionPicker
+                        query={permissionsQuery}
+                        picked={picked}
+                        onToggle={(action, on) =>
+                          setPicked((prev) => {
+                            const next = new Set(prev);
+                            if (on) next.add(action);
+                            else next.delete(action);
+                            return next;
+                          })
+                        }
+                        disabled={mutation.isPending}
+                      />
+                    ) : null}
+                  </div>
+                ) : (
                 <div className="space-y-1.5">
                   <Label htmlFor="personal-api-key-scope">{t('scope')}</Label>
                   <Select value={scope} onValueChange={setScope} disabled={mutation.isPending}>
@@ -790,6 +974,7 @@ export function CreateApiKeyDialog({
                   </Select>
                   <p className="text-muted-foreground text-xs">{t('scopeHint')}</p>
                 </div>
+                )}
 
                 <div className="space-y-1.5">
                   <Label htmlFor="personal-api-key-expiry">{t('expires')}</Label>
@@ -827,7 +1012,7 @@ export function CreateApiKeyDialog({
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={!name.trim() || mutation.isPending}
+                  disabled={!name.trim() || customEmpty || mutation.isPending}
                   className="gap-1.5"
                 >
                   {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
@@ -840,4 +1025,97 @@ export function CreateApiKeyDialog({
       </ModalContent>
     </Modal>
   );
+}
+
+/** What a new workspace key may do inside its creator's role. */
+type KeyAccess = 'full' | 'read' | 'custom';
+
+/** The access label of a key row; null for a row without one (a service account). */
+function accessLabel(row: ApiKeyRow, tWorkspaces: ReturnType<typeof useTranslations>): string | null {
+  if (!row.access) return null;
+  if (row.access === 'read') return tWorkspaces('keyAccessRead');
+  if (row.access === 'custom') return tWorkspaces('keyAccessCustomCount', { count: row.permissions?.length ?? 0 });
+  return tWorkspaces('keyAccessFull');
+}
+
+/**
+ * The permissions of a custom key: the catalog grouped by area, one checkbox
+ * per permission, the workspace name in mono. Only what the creator's role
+ * holds can be minted; the API names any other.
+ */
+export function PermissionPicker({
+  query,
+  picked,
+  onToggle,
+  disabled,
+}: {
+  query: { data?: Permission[]; isLoading: boolean; isError: boolean; refetch: () => unknown };
+  picked: ReadonlySet<string>;
+  onToggle: (action: string, on: boolean) => void;
+  disabled: boolean;
+}) {
+  const tWorkspaces = useTranslations('workspaces.settings');
+  if (query.isLoading) {
+    return (
+      <div className="space-y-1">
+        <Skeleton className="h-7 rounded-md" />
+        <Skeleton className="h-7 rounded-md" />
+        <Skeleton className="h-7 rounded-md" />
+      </div>
+    );
+  }
+  if (query.isError || !query.data) {
+    return (
+      <ErrorState
+        size="sm"
+        title={tWorkspaces('keyPermissionsLoadFailed')}
+        action={
+          <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+            {tWorkspaces('keyPermissionsRetry')}
+          </Button>
+        }
+      />
+    );
+  }
+  const byArea = new Map<string, Permission[]>();
+  for (const permission of query.data) {
+    const list = byArea.get(permission.area) ?? [];
+    list.push(permission);
+    byArea.set(permission.area, list);
+  }
+  return (
+    <div className="bg-popover max-h-64 space-y-4 overflow-y-auto rounded-md border px-4 py-3">
+      {[...byArea.entries()].map(([area, permissions]) => (
+        <div key={area} className="space-y-2">
+          <p className="text-muted-foreground text-xs font-medium">{area}</p>
+          {permissions.map((permission) => {
+            const action = workspacePermissionName(permission);
+            return (
+              <Checkbox
+                key={permission.action}
+                id={`key-permission-${permission.action}`}
+                checked={picked.has(action)}
+                disabled={disabled}
+                onCheckedChange={(state) => onToggle(action, state === true)}
+                label={
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-foreground text-sm">{permission.description || action}</span>
+                    <span className="text-muted-foreground font-mono text-xs">{action}</span>
+                  </span>
+                }
+              />
+            );
+          })}
+        </div>
+      ))}
+      {picked.size === 0 ? (
+        <p className="text-muted-foreground text-xs">{tWorkspaces('keyAccessPickOne')}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** The workspace spelling of a catalog row (`workspace_action`), else its stored name. */
+function workspacePermissionName(permission: Permission): string {
+  return (permission as Permission & { workspace_action?: string }).workspace_action ?? permission.action;
 }

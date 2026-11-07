@@ -3,6 +3,7 @@ import type { AppAccessMode } from '@kortix/sdk';
 import { emitJson, fail, takeFlagValue } from '../command-helpers.ts';
 import { C } from '../style.ts';
 import { APP_ACCESS_MODES, type ContextOptions, context, csv, resolveApp, scoped } from './apps-deploy.ts';
+import { fromWorkspaceAlias, toWorkspaceAlias } from '../command-argv.ts';
 
 // `kortix apps access` and `access-link` — who may open an App, and the
 // short-lived browser URL that bypasses the check.
@@ -15,9 +16,9 @@ export async function accessCommand(
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('access needs an App id or slug');
   rest.splice(rest.indexOf(target), 1);
-  const mode = takeFlagValue(rest, ['--mode']) as AppAccessMode | undefined;
+  const mode = fromWorkspaceAlias(takeFlagValue(rest, ['--mode'])) as AppAccessMode | undefined;
   if (mode && !APP_ACCESS_MODES.includes(mode)) {
-    throw new Error('--mode must be private, project, restricted, public, or password');
+    throw new Error('--mode must be private, workspace, restricted, public, or password');
   }
   const password = takeFlagValue(rest, ['--password']);
   const memberIds = csv(takeFlagValue(rest, ['--members']));
@@ -57,7 +58,7 @@ export async function accessCommand(
   if (json) emitJson(result);
   else {
     process.stdout.write(
-      `\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${result.access.mode}\n  viewer  ${result.access.viewer_token_scope}\n`,
+      `\n  ${C.bold}${result.app.name}${C.reset}\n  access  ${toWorkspaceAlias(result.access.mode)}\n  viewer  ${result.access.viewer_token_scope}\n`,
     );
     if (result.access.member_ids.length)
       process.stdout.write(`  members ${result.access.member_ids.join(', ')}\n`);

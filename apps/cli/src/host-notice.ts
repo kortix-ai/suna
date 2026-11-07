@@ -1,15 +1,13 @@
 import {
-  activeAccount,
   activeHostEntry,
   defaultProject,
   getHost,
   hasEnvTokenHost,
   type Host,
 } from './api/config.ts';
-import { sandboxEnvValue } from './api/sandbox-env.ts';
 import { cachedTokenIdentity } from './api/token-identity.ts';
 import { resolveProjectAuth } from './command-helpers.ts';
-import { loadLink } from './project-link.ts';
+import { envWorkspaceId, loadLink } from './project-link.ts';
 import { C, pad, visibleWidth } from './style.ts';
 
 export interface HostNotice {
@@ -25,7 +23,7 @@ function hostAuthState(host: Host, mode: 'env' | 'stored'): string {
   if (mode === 'env') {
     return process.env.KORTIX_SESSION_ID
       ? 'authenticated (session token)'
-      : 'authenticated (project token)';
+      : 'authenticated (workspace token)';
   }
   if (host.user_email || host.user_id) return `${host.user_email || host.user_id} (user)`;
   return 'authenticated';
@@ -47,6 +45,21 @@ export function findHostArg(argv: readonly string[]): string | undefined {
     const arg = argv[i];
     if (arg === '--host') return argv[i + 1];
     if (arg.startsWith('--host=')) return arg.slice('--host='.length);
+  }
+  return undefined;
+}
+
+/**
+ * The workspace `--workspace` / `--project` names on the command line, so the
+ * notice names the workspace the command acts on. A value with a role suffix
+ * (`<id>:<role>`, the older `members invite` grant spelling) selects nothing.
+ */
+export function findWorkspaceArg(argv: readonly string[]): string | undefined {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    const eq = /^--(?:workspace|project)=(.*)$/.exec(arg);
+    const value = eq ? eq[1] : arg === '--workspace' || arg === '--project' ? argv[i + 1] : undefined;
+    if (value && !value.startsWith('-') && !value.includes(':')) return value;
   }
   return undefined;
 }
@@ -78,8 +91,6 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   const command = commandArgv[0];
   if (!command || ['help', '--help', '-h', 'version'].includes(command)) return null;
   const hostArg = findHostArg(commandArgv.slice(1));
-  const directoryLink = loadLink();
-  const linkedHost = !hostArg ? directoryLink?.host : undefined;
   // Host resolution mirrors resolveProjectContext (resolveProjectAuth):
   // --host wins, then the cwd link's stored credentials, then the
   // platform-injected env token. Reading the LINK host while it has no
@@ -93,18 +104,13 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   // to. Printed next to the host because it is a property of the credential,
   // not of the account/project it happens to address.
   if (notice.agent) line += `${C.dim} · agent ${C.reset}${notice.agent}`;
-  // Append account + project for the active host only. With an explicit
-  // `--host`, the active-config account/project may belong to a different
-  // host, so we don't claim them.
+  // Append the workspace for the active host only. With an explicit
+  // `--host`, the active-config workspace may belong to a different host, so
+  // we don't claim it.
   if (!hostArg) {
-    const acct = linkedHost
-      ? directoryLink?.account_id
-        ? idPrefix(directoryLink.account_id)
-        : null
-      : activeAccountLabel();
-    if (acct) line += `${C.dim} · account ${C.reset}${acct}`;
-    const proj = activeProjectLabel();
-    if (proj) line += `${C.dim} · project ${C.reset}${proj.label}${C.dim} (${proj.source})${C.reset}`;
+    const flagged = findWorkspaceArg(commandArgv.slice(1));
+    const proj = flagged ? { label: idPrefix(flagged), source: 'flag' as const } : activeProjectLabel();
+    if (proj) line += `${C.dim} · workspace ${C.reset}${proj.label}${C.dim} (${proj.source})${C.reset}`;
     // Session is the leaf: shown only when we're actually inside one (a
     // sandbox run injects KORTIX_SESSION_ID), never as a persisted pointer.
     const session = activeSessionLabel();
@@ -121,13 +127,6 @@ function activeSessionLabel(): string | null {
   return sid ? idPrefix(sid) : null;
 }
 
-/** Active account as a short display string, or null when none/sandbox. */
-function activeAccountLabel(): string | null {
-  const acct = activeAccount();
-  if (!acct) return null;
-  return acct.name || acct.slug;
-}
-
 /** Active project: the cwd's directory link wins over the global default. */
 function activeProjectLabel(): { label: string; source: 'linked' | 'default' | 'session' } | null {
   const link = loadLink();
@@ -135,7 +134,7 @@ function activeProjectLabel(): { label: string; source: 'linked' | 'default' | '
     return { label: idPrefix(link.project_id), source: 'linked' };
   }
   // A session box without the repository has no link file; its project is injected.
-  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  const envProjectId = envWorkspaceId();
   if (envProjectId) return { label: idPrefix(envProjectId), source: 'session' };
   const def = defaultProject();
   if (def) return { label: def.name || idPrefix(def.project_id), source: 'default' };
@@ -149,7 +148,7 @@ function idPrefix(id: string): string {
 
 /**
  * The bare-`kortix` landing breadcrumb: a top-down render of WHERE YOU ARE
- * in the Host → Account → Project → Session hierarchy, marking auth state
+ * in the Host → Workspace → Session hierarchy, marking auth state
  * and making each gap actionable (a "→ kortix … " next step). All local
  * reads (config + cwd link + env) — no network, no latency.
  *
@@ -157,19 +156,16 @@ function idPrefix(id: string): string {
  * never hand-roll their own header (the per-command one-liner
  * `renderHostNotice` reads the same resolvers). Layout:
  *
- *   ● host      cloud  (https://api.kortix.com, signed in as …)   ▸ kortix hosts use
- *     account   Acme Capital  (acme)                              ▸ kortix accounts use
- *     project   veyris  (linked)
- *     session   —                              open one: kortix chat · kortix sessions new
+ *   ● host        cloud  (https://api.kortix.com, signed in as …)   ▸ kortix hosts use
+ *     workspace   veyris  (linked)
+ *     session     —                              open one: kortix chat · kortix sessions new
  *
  * Signed OUT of the active host, the lower levels are hidden (you can't
- * have an account without a host) and the host row points at `hosts login`.
+ * have a workspace without a host) and the host row points at `hosts login`.
  */
 export function renderContext(): string {
-  // A cwd directory link (`loadLink`) can pin the host — and, with it, the
-  // account — for this directory, overriding the globally-active host.
-  const directoryLink = loadLink();
-  // Same precedence as renderHostNotice / resolveProjectContext
+  // A cwd directory link can pin the host for this directory, overriding the
+  // globally-active host. Same precedence as renderHostNotice / resolveProjectContext
   // (resolveProjectAuth): the cwd link's stored credentials, then the
   // platform-injected env token (a named link host has none in a sandbox),
   // then the globally-active host. The link pins the row when its host is
@@ -187,7 +183,7 @@ export function renderContext(): string {
     linkedHost ? 'stored' : envWins ? 'env' : 'stored',
   );
   const agent = tokenAgent(host);
-  const labelW = 7; // "account".length / "project".length / "session".length
+  const labelW = 9; // "workspace".length
 
   const rows: ContextRow[] = [];
 
@@ -210,65 +206,35 @@ export function renderContext(): string {
     });
   }
 
-  // You can't have an account/project/session without a signed-in host.
+  // You can't have a workspace or a session without a signed-in host.
   if (!signedIn) return renderRows(rows, labelW);
 
-  // 2. Account — a workspace within the active host. A linked directory pins
-  // its account via the cwd link (rendered "(linked)"); otherwise the
-  // globally-active account applies.
-  const acct = linkedHost ? null : activeAccount();
-  rows.push(
-    acct
-      ? {
-          glyph: ' ',
-          label: 'account',
-          value: acct.name
-            ? `${C.bold}${acct.name}${C.reset}  ${C.faded}(${acct.slug})${C.reset}`
-            : `${C.bold}${acct.slug}${C.reset}`,
-          hint: navHint('kortix accounts use'),
-        }
-      : // No globally-active account: fall back to the one the cwd link pins.
-        // This is the ONLY account a sandbox has — its env host carries none —
-        // so without it a linked session renders "account — none".
-        directoryLink?.account_id
-        ? {
-            glyph: ' ',
-            label: 'account',
-            value: `${C.bold}${idPrefix(directoryLink.account_id)}${C.reset}  ${C.faded}(linked)${C.reset}`,
-            hint: navHint('kortix accounts use'),
-          }
-        : {
-            glyph: `${C.yellow}⚠${C.reset}`,
-            label: 'account',
-            value: `${C.faded}— none${C.reset}`,
-            hint: gapHint('kortix accounts use'),
-          },
-  );
-
-  // 3. Project — a project within the active account.
+  // 2. Workspace — one workspace is one project and the account that owns it
+  // (the Workspaces model), so the hierarchy is host › workspace › session and
+  // the account has no row of its own.
   const proj = activeProjectLabel();
   rows.push(
     proj
       ? {
           glyph: ' ',
-          label: 'project',
+          label: 'workspace',
           value: `${C.bold}${proj.label}${C.reset}  ${C.faded}(${proj.source})${C.reset}`,
-          // A linked cwd wins and can't be swapped with `projects use`, so
+          // A linked cwd wins and can't be swapped with `workspaces use`, so
           // only point at the switch verb for a global default.
           hint:
             proj.source === 'default'
-              ? `${C.faded}switch with \`kortix projects use\`${C.reset}`
+              ? `${C.faded}switch with \`kortix workspaces use\`${C.reset}`
               : undefined,
         }
       : {
           glyph: `${C.yellow}⚠${C.reset}`,
-          label: 'project',
+          label: 'workspace',
           value: `${C.faded}— none${C.reset}`,
-          hint: gapHint('kortix projects use'),
+          hint: gapHint('kortix workspaces use'),
         },
   );
 
-  // 4. Session — the ephemeral leaf; addressed by id, no persisted pointer.
+  // 3. Session — the ephemeral leaf; addressed by id, no persisted pointer.
   const session = activeSessionLabel();
   rows.push({
     glyph: ' ',

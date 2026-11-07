@@ -16,6 +16,7 @@ let promptRows: Array<Record<string, unknown>> = [];
 let reads: string[] = [];
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     select: () => ({

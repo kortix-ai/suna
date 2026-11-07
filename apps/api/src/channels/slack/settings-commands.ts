@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { lookupEmailsByUserIds } from '../../accounts/core/app';
@@ -17,6 +17,7 @@ import { currentChannelSelection } from './selection';
 import { dashboardBase, escapeMrkdwn, respondViaUrl } from './util';
 import { SLACK_PREVIEW_WAIT_MS, isKortixHostedRepo, repoDisplayLabel, repoPreviewImages } from '../repo-preview';
 import type { SlashCtx, SlashResponse } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 // The Slack rendering of channel settings: the `/kortix` panel, the project,
 // agent and model pickers, and the setters behind `/kortix switch|unbind|agent|
@@ -35,10 +36,10 @@ export function agentChangeText(
   if (result.ok) {
     return result.agent
       ? `Agent for this channel set to *${escapeMrkdwn(result.agent)}*. New sessions will use it.`
-      : 'Agent reset to the project default.';
+      : 'Agent reset to the workspace default.';
   }
   if (result.reason === 'unknown_agent') {
-    return `"${escapeMrkdwn(requested)}" is not a declared agent in this project's manifest. Run \`${command} agents\` to pick one.`;
+    return `"${escapeMrkdwn(requested)}" is not a declared agent in this Kortix workspace's manifest. Run \`${command} agents\` to pick one.`;
   }
   return settingsRefusalText(result.reason, command, noBinding);
 }
@@ -70,8 +71,8 @@ async function projectPicker(ctx: SlashCtx, mode: 'list' | 'switch'): Promise<Sl
           text: {
             type: 'mrkdwn',
             text: mode === 'list'
-              ? '*No Kortix projects connected yet.*\nHead to your Kortix dashboard to link one to this workspace.'
-              : '*No projects to switch to.*\nLink a project to this workspace from your Kortix dashboard first.',
+              ? '*No Kortix workspaces connected yet.*\nHead to your Kortix dashboard to link one to this Slack workspace.'
+              : '*No other Kortix workspace to switch to.*\nLink a Kortix workspace to this Slack workspace from your Kortix dashboard first.',
           },
           accessory: {
             type: 'button',
@@ -85,7 +86,7 @@ async function projectPicker(ctx: SlashCtx, mode: 'list' | 'switch'): Promise<Sl
     };
   }
   const current = await currentChannelProjectId(ctx);
-  const header = mode === 'list' ? `Connected projects · ${rows.length}` : 'Switch this channel to…';
+  const header = mode === 'list' ? `Connected workspaces · ${rows.length}` : 'Switch this channel to…';
   const blocks: Array<Record<string, unknown>> = [
     { type: 'header', text: { type: 'plain_text', text: header, emoji: true } },
   ];
@@ -97,7 +98,7 @@ async function projectPicker(ctx: SlashCtx, mode: 'list' | 'switch'): Promise<Sl
   const isBound = p.projectId === current;
   const repo = repoLine(p.repoUrl);
   if (mode === 'switch') {
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `Only one project connected: *${escapeMrkdwn(p.name)}*\n${repo}` } });
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `Only one Kortix workspace connected: *${escapeMrkdwn(p.name)}*\n${repo}` } });
     return { response_type: 'ephemeral', blocks };
   }
   const og = (await repoPreviewImages([p.repoUrl], { waitMs: SLACK_PREVIEW_WAIT_MS })).get(p.repoUrl);
@@ -111,9 +112,9 @@ async function projectPicker(ctx: SlashCtx, mode: 'list' | 'switch'): Promise<Sl
     elements: [
       {
         type: 'button',
-        text: { type: 'plain_text', text: 'Open project', emoji: true },
+        text: { type: 'plain_text', text: 'Open workspace', emoji: true },
         style: 'primary',
-        url: `${dashboard}/projects/${p.projectId}`,
+        url: `${dashboard}/workspaces/${p.projectId}`,
         action_id: `projects_open_${p.projectId}`,
       },
     ],
@@ -131,7 +132,7 @@ function projectCard(p: WorkspaceProject, isBound: boolean, channelId: string, m
       block_id: `switch_${p.projectId}`,
       title,
       subtitle,
-      body: { type: 'mrkdwn', text: isBound ? 'Currently bound to this channel.' : 'Pick this to route `@`-mentions here to this project.' },
+      body: { type: 'mrkdwn', text: isBound ? 'Currently bound to this channel.' : 'Pick this to route `@`-mentions here to this Kortix workspace.' },
       actions: [
         {
           type: 'button',
@@ -150,14 +151,14 @@ function projectCard(p: WorkspaceProject, isBound: boolean, channelId: string, m
     subtitle,
     body: {
       type: 'mrkdwn',
-      text: isBound ? '🟢  Bound to this channel — `@`-mentions here go to this project.' : '🟢  Connected to this workspace.',
+      text: isBound ? '🟢  Bound to this channel — `@`-mentions here go to this Kortix workspace.' : '🟢  Connected to this Slack workspace.',
     },
     actions: [
       {
         type: 'button',
         text: { type: 'plain_text', text: 'Open', emoji: true },
         style: 'primary',
-        url: `${dashboardBase(config.FRONTEND_URL)}/projects/${p.projectId}`,
+        url: `${dashboardBase(config.FRONTEND_URL)}/workspaces/${p.projectId}`,
         action_id: `projects_open_${p.projectId}`,
       },
       ...(!isBound
@@ -179,7 +180,7 @@ export async function slashUnbind(ctx: SlashCtx): Promise<SlashResponse> {
     blocks: [
       {
         type: 'section',
-        text: { type: 'mrkdwn', text: '*Unbound.*\nThe next `@`-mention will show the project picker again.' },
+        text: { type: 'mrkdwn', text: '*Unbound.*\nThe next `@`-mention will show the workspace picker again.' },
       },
     ],
   };
@@ -212,7 +213,7 @@ function sourceLabel(source: string): string {
     case 'agent':
       return 'agent default';
     case 'project':
-      return 'project default';
+      return 'workspace default';
     case 'account':
       return 'account default';
     default:
@@ -239,7 +240,7 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*No project is connected to this channel yet.*\nConnect one to start working here.`,
+            text: `*No Kortix workspace is connected to this channel yet.*\nConnect one to start working here.`,
           },
         },
         {
@@ -247,7 +248,7 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
           elements: [
             {
               type: 'button',
-              text: { type: 'plain_text', text: 'Connect a project', emoji: true },
+              text: { type: 'plain_text', text: 'Connect a Kortix workspace', emoji: true },
               style: 'primary',
               action_id: 'cfg_open_projects',
               value: JSON.stringify({ c: ctx.channelId }),
@@ -258,9 +259,9 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
     };
   }
   const [p] = await db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl, metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, currentId))
+    .select({ projectId: projectsView.projectId, name: projectsView.name, repoUrl: projectsView.repoUrl, metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, currentId))
     .limit(1);
   if (!p) {
     return {
@@ -268,14 +269,14 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
       blocks: [
         {
           type: 'section',
-          text: { type: 'mrkdwn', text: `*This channel's connected project no longer exists.*\nReconnect one below.` },
+          text: { type: 'mrkdwn', text: `*This channel's connected Kortix workspace no longer exists.*\nReconnect one below.` },
         },
         {
           type: 'actions',
           elements: [
             {
               type: 'button',
-              text: { type: 'plain_text', text: 'Connect a project', emoji: true },
+              text: { type: 'plain_text', text: 'Connect a Kortix workspace', emoji: true },
               style: 'primary',
               action_id: 'cfg_open_projects',
               value: JSON.stringify({ c: ctx.channelId }),
@@ -349,7 +350,7 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
           },
           {
             type: 'button',
-            text: { type: 'plain_text', text: 'Change project', emoji: true },
+            text: { type: 'plain_text', text: 'Change workspace', emoji: true },
             action_id: 'cfg_open_projects',
             value: JSON.stringify({ c: ctx.channelId }),
           },
@@ -357,7 +358,7 @@ export async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
             type: 'button',
             text: { type: 'plain_text', text: 'Open in Kortix ↗', emoji: true },
             style: 'primary',
-            url: `${dashboardBase(config.FRONTEND_URL)}/projects/${p.projectId}`,
+            url: `${dashboardBase(config.FRONTEND_URL)}/workspaces/${p.projectId}`,
             action_id: `panel_open_${p.projectId}`,
           },
         ],
@@ -382,7 +383,7 @@ export async function slashPolicy(ctx: SlashCtx, arg: string): Promise<SlashResp
   if (!selection) {
     return {
       response_type: 'ephemeral',
-      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` first.` } }],
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No Kortix workspace bound to this channel.*\nRun \`${ctx.command} switch\` first.` } }],
     };
   }
 
@@ -404,7 +405,7 @@ export async function slashPolicy(ctx: SlashCtx, arg: string): Promise<SlashResp
           elements: [
             {
               type: 'mrkdwn',
-              text: `Default is \`project_open\`: linked project members can join Slack-started sessions. Use \`owner_approval\` for private threads with owner approval, or \`owner_only\` to block everyone else.`,
+              text: `Default is \`project_open\`: linked workspace members can join Slack-started sessions. Use \`owner_approval\` for private threads with owner approval, or \`owner_only\` to block everyone else.`,
             },
           ],
         },
@@ -418,7 +419,7 @@ export async function slashPolicy(ctx: SlashCtx, arg: string): Promise<SlashResp
   }
   const result = await changeChannelPolicy(slackUserOf(ctx), slackSettingsChannel(ctx), next);
   if (!result.ok) {
-    return ephemeral(settingsRefusalText(result.reason, ctx.command, 'That channel is no longer bound to a project.'));
+    return ephemeral(settingsRefusalText(result.reason, ctx.command, 'That channel is no longer bound to a Kortix workspace.'));
   }
   return ephemeral(
     `Slack session policy set to ${conversationPolicyLabel(next)} for this channel. Existing threads keep their original policy.`,
@@ -435,7 +436,7 @@ export async function slashAgents(ctx: SlashCtx, arg: string): Promise<SlashResp
   if (!selection) {
     return {
       response_type: 'ephemeral',
-      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` first, then pick an agent.` } }],
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No Kortix workspace bound to this channel.*\nRun \`${ctx.command} switch\` first, then pick an agent.` } }],
     };
   }
   // Listing agents touches git — too slow for the synchronous 3s window. Ack
@@ -463,7 +464,7 @@ export async function slashSetAgent(ctx: SlashCtx, arg: string): Promise<SlashRe
     return ephemeral(`Usage: \`${ctx.command} agent <name>\` (or \`${ctx.command} agents\` to pick).`);
   }
   const result = await changeChannelAgent(slackUserOf(ctx), slackSettingsChannel(ctx), name);
-  return ephemeral(agentChangeText(result, name, ctx.command, `Bind a project first with \`${ctx.command} switch\`.`));
+  return ephemeral(agentChangeText(result, name, ctx.command, `Bind a Kortix workspace first with \`${ctx.command} switch\`.`));
 }
 
 // ── Models ───────────────────────────────────────────────────────────────────
@@ -481,13 +482,13 @@ export async function listWorkspaceProjects(teamId: string): Promise<WorkspacePr
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.platformTeamId, teamId)));
   if (installs.length === 0) return [];
   const ids = installs.map((i) => i.projectId);
   return db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
-    .from(projects)
-    .where(inArray(projects.projectId, ids));
+    .select({ projectId: projectsView.projectId, name: projectsView.name, repoUrl: projectsView.repoUrl })
+    .from(projectsView)
+    .where(inArray(projectsView.projectId, ids));
 }
 
 export async function currentChannelProjectId(ctx: { teamId: string; channelId: string }): Promise<string | null> {
@@ -497,7 +498,7 @@ export async function currentChannelProjectId(ctx: { teamId: string; channelId: 
     .from(chatChannelBindings)
     .where(and(
       eq(chatChannelBindings.platform, 'slack'),
-      eq(chatChannelBindings.workspaceId, ctx.teamId),
+      eq(chatChannelBindings.platformTeamId, ctx.teamId),
       eq(chatChannelBindings.channelId, ctx.channelId),
     ))
     .limit(1);

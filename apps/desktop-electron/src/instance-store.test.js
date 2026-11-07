@@ -4,8 +4,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { createInstanceStore, OVERRIDE_FILE, SETUP_PENDING_FILE } = require('./instance-store');
 
-const DEFAULT_URL = 'https://kortix.com/projects';
-const CUSTOM_URL = 'https://kortix.acme.com/projects';
+const DEFAULT_URL = 'https://kortix.com/workspaces';
+const CUSTOM_URL = 'https://kortix.acme.com/workspaces';
 
 let root;
 beforeEach(() => {
@@ -59,7 +59,7 @@ describe('needsSetup', () => {
   it('does not ask when KORTIX_DESKTOP_URL or a saved URL already chose', () => {
     const dir = profile();
     store(dir).markIfNewProfile();
-    expect(store(dir, 'http://localhost:3000/projects').needsSetup()).toBe(false);
+    expect(store(dir, 'http://localhost:3000/workspaces').needsSetup()).toBe(false);
 
     fs.writeFileSync(path.join(dir, OVERRIDE_FILE), CUSTOM_URL);
     expect(store(dir).needsSetup()).toBe(false);
@@ -71,13 +71,13 @@ describe('URL precedence', () => {
     const dir = profile();
     fs.mkdirSync(dir);
     expect(store(dir).appUrl()).toBe(DEFAULT_URL);
-    expect(store(dir, 'http://localhost:3000/projects').appUrl()).toBe('http://localhost:3000/projects');
+    expect(store(dir, 'http://localhost:3000/workspaces').appUrl()).toBe('http://localhost:3000/workspaces');
 
     fs.writeFileSync(path.join(dir, OVERRIDE_FILE), ` ${CUSTOM_URL}\n`);
-    const s = store(dir, 'http://localhost:3000/projects');
+    const s = store(dir, 'http://localhost:3000/workspaces');
     expect(s.override()).toBe(CUSTOM_URL);
     expect(s.appUrl()).toBe(CUSTOM_URL);
-    expect(s.baseUrl()).toBe('http://localhost:3000/projects');
+    expect(s.baseUrl()).toBe('http://localhost:3000/workspaces');
   });
 
   it('ignores an empty frontend_url', () => {
@@ -90,11 +90,13 @@ describe('URL precedence', () => {
 });
 
 describe('homeUrl', () => {
-  it('opens the site root for a /projects instance URL, so the web lands in the last project', () => {
+  it('opens the site root for a /workspaces (or old /projects) instance URL, so the web lands in the last project', () => {
     const dir = profile();
     fs.mkdirSync(dir);
     expect(store(dir).homeUrl()).toBe('https://kortix.com/');
-    expect(store(dir, 'http://localhost:3000/projects/').homeUrl()).toBe('http://localhost:3000/');
+    expect(store(dir, 'http://localhost:3000/workspaces/').homeUrl()).toBe('http://localhost:3000/');
+    // A URL saved by a build before 2026-11-06.
+    expect(store(dir, 'http://localhost:3000/projects').homeUrl()).toBe('http://localhost:3000/');
     fs.writeFileSync(path.join(dir, OVERRIDE_FILE), CUSTOM_URL);
     expect(store(dir).homeUrl()).toBe('https://kortix.acme.com/');
   });
@@ -102,8 +104,8 @@ describe('homeUrl', () => {
   it('keeps any other path the user saved', () => {
     const dir = profile();
     fs.mkdirSync(dir);
-    fs.writeFileSync(path.join(dir, OVERRIDE_FILE), 'https://kortix.acme.com/projects/abc');
-    expect(store(dir).homeUrl()).toBe('https://kortix.acme.com/projects/abc');
+    fs.writeFileSync(path.join(dir, OVERRIDE_FILE), 'https://kortix.acme.com/workspaces/abc');
+    expect(store(dir).homeUrl()).toBe('https://kortix.acme.com/workspaces/abc');
   });
 });
 

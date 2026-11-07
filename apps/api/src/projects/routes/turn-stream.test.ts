@@ -462,7 +462,7 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
     sandboxRow = null;
     const response = await post({ session_id: SESSION_ID, kind: 'step', text: 'hi' }, sandboxCtx);
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: 'sandbox token is not scoped to this project' });
+    expect(await response.json()).toEqual({ error: 'sandbox token is not scoped to this workspace' });
   });
 
   test('a sandbox credential not scoped to the session is refused', async () => {

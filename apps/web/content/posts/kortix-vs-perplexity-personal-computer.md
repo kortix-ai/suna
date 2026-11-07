@@ -61,7 +61,7 @@ Perplexity's plans are $17 a month for Pro and $167 a month for Max, billed annu
 
 ## What owning the system looks like
 
-A Kortix project is a git repository. Open source. Read it, fork it, audit it. The manifest is short enough to read in a review:
+A Kortix workspace is backed by a git repository. Open source. Read it, fork it, audit it. The manifest is short enough to read in a review:
 
 ```yaml
 kortix_version: 2

@@ -69,7 +69,7 @@ const SLACK_NEW_APP_URL = 'https://api.slack.com/apps?new_app=1';
 /** Ordered so `step` doubles as the `Stepper` value (1-indexed). */
 const STEPS = [
   { step: 1, title: 'Create the app in Slack' },
-  { step: 2, title: 'Install it to your workspace' },
+  { step: 2, title: 'Install it to your Slack workspace' },
   { step: 3, title: 'Paste two values back here' },
 ] as const;
 

@@ -60,7 +60,7 @@ export function stateForCaller<T extends { projectId: string; userId: string }>(
     return {
       ok: false,
       status: 403,
-      error: 'This install was started by another Kortix account or for another project. Start it again from the project.',
+      error: 'This install was started by another Kortix account or for another workspace. Start it again from the workspace.',
       code: INSTALL_STATE_MISMATCH,
     };
   }

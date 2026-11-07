@@ -524,11 +524,11 @@ describe('ApprovalDecisionPanel decisions', () => {
     expect(html).not.toContain('Approve and merge');
     expect(html).not.toContain('Add a note');
     expect(html).toContain(
-      'Waiting for the person who started this session or anyone who manages this project to approve or deny it.',
+      'Waiting for the person who started this session or anyone who manages this workspace to approve or deny it.',
     );
     expect(panel({ onDecision: undefined, outcome: 'approve' })).not.toContain('Waiting for');
     expect(panel({ onDecision: undefined, resolvers: 'managers' })).toContain(
-      'Waiting for anyone who manages this project to approve or deny it.',
+      'Waiting for anyone who manages this workspace to approve or deny it.',
     );
   });
 

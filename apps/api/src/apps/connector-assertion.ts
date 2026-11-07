@@ -9,11 +9,12 @@
  * foreign server. The value is a ≤ 60 s assertion (`createAppAgentAssertion`)
  * that the App gate verifies and resolves back to the session token.
  */
-import { apps, projects } from '@kortix/db';
+import { apps } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { createAppAgentAssertion } from './access';
 import { appsLocalMode, resolveAppHost } from './hostnames';
+import { projectsView } from '../workspaces/rows';
 
 export interface AppAssertionLookup {
   /** The App behind a route key. `agentPrincipal` is always true now. */
@@ -29,7 +30,7 @@ const DEFAULT_LOOKUP: AppAssertionLookup = {
     const [row] = await db
       .select({ appId: apps.appId, projectId: apps.projectId })
       .from(apps)
-      .innerJoin(projects, eq(projects.projectId, apps.projectId))
+      .innerJoin(projectsView, eq(projectsView.projectId, apps.projectId))
       .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt)))
       .limit(1);
     return row

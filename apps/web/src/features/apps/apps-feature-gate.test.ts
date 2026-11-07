@@ -33,14 +33,14 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 const projectId = 'project-apps-ga';
 mock.module('next/navigation', () => ({
   useParams: () => ({ id: projectId }),
-  usePathname: () => `/projects/${projectId}/apps`,
+  usePathname: () => `/workspaces/${projectId}/apps`,
   useSearchParams: () => new URLSearchParams(),
 }));
 const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
 mock.module('@kortix/ui/providers/ui-provider', () => ({
   ...realUiProvider,
   useUiParams: () => ({ id: projectId }),
-  useUiPathname: () => `/projects/${projectId}/apps`,
+  useUiPathname: () => `/workspaces/${projectId}/apps`,
   useUiSearchParams: () => new URLSearchParams(),
 }));
 mock.module('next/link', () => ({
@@ -102,7 +102,7 @@ for (const [name, experimental] of [
       ));
     });
     const link = host.querySelector('[data-testid="sidebar"] a');
-    expect(link?.getAttribute('href')).toBe(`/projects/${projectId}/apps`);
+    expect(link?.getAttribute('href')).toBe(`/workspaces/${projectId}/apps`);
     expect(link?.textContent).toBe('Apps');
     expect(host.querySelector('h1')?.textContent).toBe('Apps');
     expect(host.textContent).toContain('Apps you publish will show up here');

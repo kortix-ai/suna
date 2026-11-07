@@ -33,7 +33,7 @@ describe('projectRows', () => {
       ['Private', 'acme/private-app', null, false],
       ['No repo', null, null, false],
     ]);
-    expect(rows[1]!.url).toBe('https://app.example.test/projects/p2');
+    expect(rows[1]!.url).toBe('https://app.example.test/workspaces/p2');
     // One check for the whole card, not one per row.
     expect(calls).toHaveLength(1);
   });

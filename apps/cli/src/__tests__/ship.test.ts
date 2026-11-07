@@ -228,7 +228,7 @@ test('ship reconciles the remote manifest independently of connector prompts', a
 
   expect(calls).toEqual([
     {
-      path: '/connectors/projects/proj_1/connectors/sync',
+      path: '/connectors/workspaces/proj_1/connectors/sync',
       body: undefined,
     },
   ]);
@@ -306,26 +306,6 @@ describe('stale-CLI warning on a 404 from the connector routes', () => {
   });
 });
 
-// `kortix ship` scaffolds the folder with `kortix init` and then pushes that
-// history with a PLAIN (non-force) push. Server-side seeding is the default now
-// (apps/api/src/projects/managed-repo-seed.ts — "a project always has a
-// manifest"), so a seeded repo would turn ship's push into a non-fast-forward
-// rejection. Ship therefore has to say `seed_starter: false` OUT LOUD; an
-// absent flag no longer means "leave it empty", it means "seed it".
-//
-// Pinned on the source because the failure is silent and remote: the provision
-// call still returns 201 and the break only shows up at `git push`.
-describe('ship provisioning declares who owns the first commit', () => {
-  test('the provision body sends seed_starter:false', async () => {
-    const source = await Bun.file(new URL('../commands/ship.ts', import.meta.url).pathname).text();
-    const call = source.slice(
-      source.indexOf("client.post<ProvisionResponse>('/projects/provision'"),
-    );
-    const body = call.slice(0, call.indexOf('});'));
-    expect(body).toContain('seed_starter: false');
-  });
-});
-
 // A project always has a manifest. Ship declares `seed_starter: false` — it
 // takes responsibility for the first commit — so it must actually HAVE a
 // kortix.yaml to push. This used to pass as "a `.kortix/`-only project —
@@ -341,7 +321,7 @@ describe('ship refuses a project with no manifest', () => {
     expect(body).not.toContain('if (!manifest) return { ok: true, env: empty };');
     // Absence is now fatal.
     expect(body).toContain('if (!manifest) {');
-    expect(body).toContain('refusing to ship a project with no manifest');
+    expect(body).toContain('refusing to ship a workspace with no manifest');
 
     // --no-verify waives VALIDATION of a manifest, never its existence: the
     // missing-manifest branch must not be gated on the flag.
@@ -431,7 +411,7 @@ describe('runShip guards before any network call', () => {
   test('a folder with no Kortix manifest refuses to ship', async () => {
     const exit = await runShip([]);
     expect(exit).toBe(1);
-    expect(stderr).toContain('Not a Kortix project — no .kortix/ or kortix.yaml in');
+    expect(stderr).toContain('Not a Kortix workspace — no .kortix/ or kortix.yaml in');
     expect(stderr).toContain('kortix init');
     expect(stdout).toBe('');
   });

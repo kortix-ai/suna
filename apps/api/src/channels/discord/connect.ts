@@ -6,7 +6,7 @@
  * (`chat_channel_bindings`). Re-pointing a channel bound to another project
  * also needs that project to allow the presser.
  */
-import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads } from '@kortix/db';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
@@ -15,6 +15,7 @@ import { clip } from './render';
 import { discordGuildProjects } from './installs';
 import { projectNames, projectsAllowing } from './routing';
 import type { DiscordConversation } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 /** `kd:<project id>`: 39 bytes. The press binds the channel it is in; the token names no channel. */
 export const isProjectPress = (data: string) => data.startsWith('kd:');
@@ -39,14 +40,14 @@ export async function connectReply(place: { guildId: string | null; userId: stri
   const named = (await projectNames(ids)).slice(0, 25);
   if (!named.length) {
     return {
-      content: `No Kortix project here allows your Discord account yet. Ask a project admin to allow your Discord user ID ${place.userId} under Customize → Connectors → Channels → Discord.`,
+      content: `No Kortix workspace here allows your Discord account yet. Ask a workspace admin to allow your Discord user ID ${place.userId} under Customize → Connectors → Channels → Discord.`,
       components: [],
     };
   }
   const buttons = named.map((p) => ({ type: 2, style: 2, label: clip(p.name, 80), custom_id: projectPressData(p.projectId) }));
   const rows = [];
   for (let i = 0; i < buttons.length; i += 5) rows.push({ type: 1, components: buttons.slice(i, i + 5) });
-  return { content: `Which Kortix project should this ${place.guildId ? 'channel' : 'conversation'} use?`, components: rows };
+  return { content: `Which Kortix workspace should this ${place.guildId ? 'channel' : 'conversation'} use?`, components: rows };
 }
 
 /**
@@ -61,16 +62,16 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
   const held = conversation.direct
     ? []
     : await db
-        .select({ projectId: chatChannelBindings.projectId, metadata: projects.metadata })
+        .select({ projectId: chatChannelBindings.projectId, metadata: projectsView.metadata })
         .from(chatChannelBindings)
-        .innerJoin(projects, and(eq(projects.projectId, chatChannelBindings.projectId), eq(projects.status, 'active')))
+        .innerJoin(projectsView, and(eq(projectsView.projectId, chatChannelBindings.projectId), eq(projectsView.status, 'active')))
         .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, channelId), ne(chatChannelBindings.projectId, projectId)));
   if (held.some((row) => !readChannelAccess(row.metadata, 'discord').allowedUserIds.includes(userId))) return false;
   return db.transaction(async (tx) => {
     const [install] = await tx
       .select({ id: chatInstalls.installId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, conversation.guildId), eq(chatInstalls.projectId, projectId)))
+      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.platformTeamId, conversation.guildId), eq(chatInstalls.projectId, projectId)))
       .limit(1);
     if (!install) return false;
     // A DM has one row whatever guild it sits under; a guild channel has one in its guild.
@@ -81,7 +82,7 @@ export async function bindDiscordChannel(conversation: DiscordConversation, proj
       .where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.threadId, channelId), ne(chatThreads.projectId, projectId)));
     await tx.insert(chatChannelBindings).values({
       platform: 'discord',
-      workspaceId: conversation.guildId,
+      platformTeamId: conversation.guildId,
       channelId,
       projectId,
       channelName: conversation.direct ? 'direct message' : conversation.channelName ? `#${conversation.channelName}` : null,
@@ -102,9 +103,9 @@ export async function claimDiscordChannel(conversation: DiscordConversation, pro
   if (conversation.direct) {
     // A DM's row may sit under any guild: one row at most.
     const rows = await db
-      .select({ id: chatChannelBindings.bindingId, projectId: chatChannelBindings.projectId, metadata: projects.metadata })
+      .select({ id: chatChannelBindings.bindingId, projectId: chatChannelBindings.projectId, metadata: projectsView.metadata })
       .from(chatChannelBindings)
-      .leftJoin(projects, eq(projects.projectId, chatChannelBindings.projectId))
+      .leftJoin(projectsView, eq(projectsView.projectId, chatChannelBindings.projectId))
       .where(and(eq(chatChannelBindings.platform, 'discord'), eq(chatChannelBindings.channelId, conversation.settingsId)));
     const stale = rows.filter((r) => r.projectId !== projectId && !readChannelAccess(r.metadata, 'discord').allowedUserIds.includes(senderId));
     if (stale.length) await db.delete(chatChannelBindings).where(inArray(chatChannelBindings.bindingId, stale.map((r) => r.id)));
@@ -114,11 +115,11 @@ export async function claimDiscordChannel(conversation: DiscordConversation, pro
     .insert(chatChannelBindings)
     .values({
       platform: 'discord',
-      workspaceId: conversation.guildId,
+      platformTeamId: conversation.guildId,
       channelId: conversation.settingsId,
       projectId,
       channelName: conversation.direct ? clip(senderName || 'direct message', 100) : conversation.channelName ? `#${conversation.channelName}` : null,
       channelType: conversation.direct ? 'dm' : 'channel',
     })
-    .onConflictDoNothing({ target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId] });
+    .onConflictDoNothing({ target: [chatChannelBindings.platform, chatChannelBindings.platformTeamId, chatChannelBindings.channelId] });
 }

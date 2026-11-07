@@ -115,7 +115,7 @@ export function InboxPage() {
                 right={null}
                 onPress={() => open(row)}
                 accessibilityLabel={inboxRowLabel(row, now)}
-                accessibilityHint={row.session_id ? 'Opens the session' : 'Opens the project'}
+                accessibilityHint={row.session_id ? 'Opens the session' : 'Opens the workspace'}
               />
             ))}
           </SettingsGroup>

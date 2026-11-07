@@ -95,7 +95,7 @@ A server App is a release + machines (apps-model.md). Beyond one process:
 - **Migrations:** `deploy: { release_command: "node migrate.js" }` runs once
   before machines change; a failure leaves the live release serving.
 - **Debug:** `kortix apps machines <slug>`, then `kortix apps exec <slug> --
-  <command>` (project admins).
+  <command>` (workspace admins).
 
 ## Verify
 
@@ -144,9 +144,9 @@ printing a deployment id, record the last visible phase and inspect
 
 ## An agent calls the App's API
 
-Register the App's API as a project connector whose base URL is the App URL
+Register the App's API as a workspace connector whose base URL is the App URL
 (kortix-connectors, `<adding-connectors>`), and call it with
-`kortix connectors call`. For an App of the same project on `https`, the
+`kortix connectors call`. For an App of the same workspace on `https`, the
 connector gateway adds a 60-second App assertion. The App gate verifies it,
 resolves it to the session's own token, and applies the App's access policy
 to that session. Neither the agent nor the App handles a Kortix credential.

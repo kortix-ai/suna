@@ -5,7 +5,7 @@ import { ApiError, type ApiClient } from '../api/client.ts';
 export async function requireConnectedModel(client: ApiClient, projectId: string): Promise<void> {
   let catalog: { models: Record<string, unknown> };
   try {
-    catalog = await client.get(`/projects/${projectId}/model-picker`);
+    catalog = await client.get(`/workspaces/${projectId}/model-picker`);
   } catch (error) {
     // Native-provider projects and older self-hosted APIs have no gateway picker.
     if (error instanceof ApiError && error.status === 404) return;

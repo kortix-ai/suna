@@ -835,7 +835,13 @@ async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string 
   if (e.branch) {
     const del = sh(['git', '-C', root, 'branch', '-d', e.branch]);
     if (del.ok) sub(`deleted branch "${e.branch}"`);
-    else if (flags.force) { sh(['git', '-C', root, 'branch', '-D', e.branch]); sub(`force-deleted branch "${e.branch}" (had unmerged commits)`); }
+    // --force drops a branch only when every commit on it also exists on a remote.
+    // A branch with unpushed commits is the only copy of that work: 2026-11-05 a
+    // `nuke --force` deleted a 60-commit branch that had never been pushed.
+    else if (flags.force && sh(['git', '-C', root, 'rev-list', '--count', e.branch, '--not', '--remotes']).stdout.trim() === '0') {
+      sh(['git', '-C', root, 'branch', '-D', e.branch]); sub(`force-deleted branch "${e.branch}" (had unmerged commits, all pushed)`);
+    }
+    else if (flags.force) sub(`kept branch "${e.branch}": it has commits on no remote. Push it, or run \`git branch -D ${e.branch}\` to drop them`);
     else sub(`kept branch "${e.branch}" (unmerged commits) — \`git branch -D ${e.branch}\` or \`nuke --force\` to drop it`);
   }
   try { rmSync(slotDir(name), { recursive: true, force: true }); } catch {}

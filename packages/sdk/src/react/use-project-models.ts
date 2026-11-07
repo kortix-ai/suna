@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getProjectModelPicker } from '../core/rest/projects-client';
+import { getWorkspaceModelPicker } from '../core/rest/projects-client';
 import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
 import { type FlatModel, flattenModels } from './model-flatten';
 import { projectLlmCatalogToProviderList } from './provider-selection';
@@ -23,12 +23,12 @@ import { qk } from './query-keys';
  * Same query key + fetcher as `useProjectModels`, so both read one cache
  * entry and one invalidation reaches both.
  */
-export function useProjectModelPickerCatalog(
+export function useWorkspaceModelPickerCatalog(
   projectId: string | null | undefined,
 ): ProjectLlmCatalogResponse | undefined {
   const { data } = useQuery({
     queryKey: qk.project.modelPicker(projectId ?? ''),
-    queryFn: () => getProjectModelPicker(projectId as string),
+    queryFn: () => getWorkspaceModelPicker(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
     retry: false,
@@ -36,17 +36,23 @@ export function useProjectModelPickerCatalog(
   return data;
 }
 
-export function useProjectModels(projectId: string | null | undefined): FlatModel[] {
+/** @deprecated Use `useWorkspaceModelPickerCatalog`. Kept permanently. */
+export const useProjectModelPickerCatalog = useWorkspaceModelPickerCatalog;
+
+export function useWorkspaceModels(projectId: string | null | undefined): FlatModel[] {
   const { data } = useQuery({
     // Shared with `useModelEnablement` (same fetcher) and the routing-policy
     // save's invalidation (`gateway-routing.tsx`) — all three must key on the
     // same `qk.project.modelPicker(id)` entry, or a toggle/save silently
     // fails to reach this reader (see that member's doc comment).
     queryKey: qk.project.modelPicker(projectId ?? ''),
-    queryFn: () => getProjectModelPicker(projectId as string),
+    queryFn: () => getWorkspaceModelPicker(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
     retry: false,
   });
   return useMemo(() => (data ? flattenModels(projectLlmCatalogToProviderList(data)) : []), [data]);
 }
+
+/** @deprecated Use `useWorkspaceModels`. Kept permanently. */
+export const useProjectModels = useWorkspaceModels;

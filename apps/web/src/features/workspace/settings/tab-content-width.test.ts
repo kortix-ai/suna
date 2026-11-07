@@ -35,9 +35,7 @@
  * slot child. Counts below are `TABLE_MARKUP` matches / `<TableHead>` columns,
  * re-measured 2026-08-12: Audit's table is in `components/iam/audit-tab.tsx`
  * (17 / 5 — Event, Scope, Principal, Result, Time), Roles' in
- * `components/iam/roles-tab.tsx` (15 / 5), Api-keys' in
- * `components/iam/api-keys-card.tsx` (17 / 6; rewritten 2026-08-12, the table
- * used to live in the deleted `service-accounts-card.tsx`), Usage's in
+ * `components/iam/roles-tab.tsx` (15 / 5), Usage's in
  * `features/billing/transactions-table.tsx` (17 / 6), which
  * `features/billing/credit-transactions.tsx` mounts — see `CHILD_SUBTREE`.
  * Grepping only `settings/tabs/*.tsx` found a table in `members-tab.tsx` alone
@@ -102,7 +100,7 @@ const FORM_TABS = [
  * that page's column then, so the tab declared no width at all. Members has
  * since graduated a FOURTH time, off the project entirely and onto the
  * account hub's Access tab (`/accounts/[id]?tab=access-projects`);
- * `/projects/[id]/members` is a bare redirect now and `members-tab.tsx` is
+ * `/workspaces/[id]/members` is a bare redirect now and `members-tab.tsx` is
  * deleted, so nothing stands in for it in either tier or `DELEGATING_TABS`
  * below. A new rail tab that renders a real table belongs here, at
  * `max-w-4xl`.
@@ -115,7 +113,7 @@ const TABLE_TABS: string[] = [];
  * Empty since #10547 and kept rather than deleted: the rule still holds for
  * the next tab whose outermost element is a shell that owns the column.
  * `models-tab.tsx` was the last entry: a pass-through that rendered the
- * Customize Models page (`/projects/[id]/admin/models`) inside
+ * Customize Models page (`/workspaces/[id]/admin/models`) inside
  * `CapabilityPageShell`. #10547 deleted it; that page's chrome is pinned in
  * `settings/tabs/models-tab.test.tsx`. `members-tab.tsx` left earlier, when
  * Members graduated a FOURTH time (see the `TABLE_TABS` comment above).
@@ -284,7 +282,7 @@ describe('settings tab content width', () => {
  *
  * `gateway-routing.tsx` was its last member and left the same way Secrets and
  * Channels did — it stopped being panel content. Routing is a tab of
- * `/projects/[id]/admin/models` now, whose column is `CapabilityPageShell`'s
+ * `/workspaces/[id]/admin/models` now, whose column is `CapabilityPageShell`'s
  * `max-w-5xl`, so the wrapper's `max-w-2xl` was not "the panel column" for it
  * any more but 320px narrower than the six tabs beside it, plus a second
  * scroll container inside the page's one. It writes its own section heading
@@ -327,13 +325,13 @@ const PANEL_SECTIONS_OWN_CONTAINER: string[] = [
   // not govern it — the capability page that mounts it does.
   //
   // `secrets-view.tsx` left for the same reason and by the same route: it is
-  // the body of `/projects/[id]/admin/secrets`, it renders `CapabilityPageShell`,
+  // the body of `/workspaces/[id]/admin/secrets`, it renders `CapabilityPageShell`,
   // and its column is that shell's `max-w-5xl` — pinned by
   // `customize/sections/view/secrets-view.chrome.test.ts`, not here.
   //
   // `channels-view.tsx` left on 2026-08-17 by a different door. It is not a
   // pane and not a page: it is `ChannelsSection`, the body of the Channels
-  // scope of `/projects/[id]/admin/connectors`, and the shell, the heading and the
+  // scope of `/workspaces/[id]/admin/connectors`, and the shell, the heading and the
   // scroll container all belong to `connectors-page.tsx` one level up. Its own
   // column is pinned by `customize/sections/view/channels-view.chrome.test.ts`
   // beside the file.
@@ -348,7 +346,7 @@ const PANEL_SECTIONS_OWN_CONTAINER: string[] = [
  * it — silently, because nothing throws.
  *
  * Secrets shipped exactly that way. It graduated onto its own top-level
- * Customize tab and left both registries, so `/projects/[id]/admin/secrets` rendered
+ * Customize tab and left both registries, so `/workspaces/[id]/admin/secrets` rendered
  * no title, no description and no Add button. It writes its own heading now —
  * `CapabilityPageShell`'s `title`/`description` props, the same shell its four
  * sibling tabs use — and `secrets-view.chrome.test.ts` pins that it cannot

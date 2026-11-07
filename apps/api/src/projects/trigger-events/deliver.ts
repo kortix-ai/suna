@@ -1,5 +1,5 @@
 /** Fans one provider delivery or notice out to the event triggers subscribed to it. */
-import { connectorConnections, connectors, projectTriggerRuntime, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import {
@@ -21,6 +21,7 @@ import { eventTriggersEnabled } from './flag';
 import { connectorEventApp } from './mcp-source';
 import { reconcileEventSubscriptionsFromCatalog } from './subscriptions';
 import type { EventDelivery, ProviderNotice } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 export interface DeliveryTally {
   fired: number;
@@ -123,7 +124,7 @@ async function deliverToRow(
   // Only a live subscription fires: an errored or parked row (revoked or narrowed
   // account) must not feed sessions while its provider instance winds down.
   if (row.status !== 'active') return 'skipped';
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, row.projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, row.projectId)).limit(1);
   if (!project || project.status !== 'active') return 'skipped';
   // The project's pause, or the account's Pause all triggers (KRTX-1721).
   if (await automaticFirePauseReason(project)) return 'skipped';

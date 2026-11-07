@@ -10,10 +10,10 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
  * entirely inside an emailed sign-in link.
  */
 
-const A_PROJECT = '/projects/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
+const A_PROJECT = '/workspaces/319395c1-9c3f-41b4-ac6c-9539a12dbb7c';
 const USER_A = '11111111-1111-1111-1111-111111111111';
 const USER_B = '22222222-2222-2222-2222-222222222222';
-const LANDING = '/projects/start';
+const LANDING = '/workspaces/start';
 
 const jar = new Map<string, string>();
 let signedInUserId = USER_B;

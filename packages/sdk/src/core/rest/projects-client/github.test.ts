@@ -7,7 +7,7 @@ import {
   type LinkableGitHubInstallationsResponse,
   linkGitHubInstallation,
   linkRepository,
-  replaceProjectRepository,
+  replaceWorkspaceRepository,
   listGitHubRepositories,
   listGitHubRepositoryBranches,
   listLinkableGitHubInstallations,
@@ -26,14 +26,14 @@ test('replaces one project repository with a credential and an expected old URL'
     return Response.json({ project: { project_id: 'proj-1', repo_url: 'https://github.com/acme/new.git' }, git_connection: null });
   }) as unknown as typeof fetch;
 
-  const result = await replaceProjectRepository({
+  const result = await replaceWorkspaceRepository({
     project_id: 'proj-1',
     repo_url: 'https://github.com/acme/new.git',
     expected_repo_url: 'https://github.com/acme/old.git',
     github_token: 'repo-scoped-token',
   });
 
-  expect(url).toEndWith('/projects/proj-1/git/repository');
+  expect(url).toEndWith('/workspaces/proj-1/git/repository');
   expect(method).toBe('PUT');
   expect(body).toEqual({
     repo_url: 'https://github.com/acme/new.git',
@@ -49,7 +49,7 @@ test('sends a repository-scoped App grant and shared secret copy without a store
     body = JSON.parse(String(init?.body));
     return Response.json({ project: { project_id: 'proj-1' }, git_connection: null });
   }) as unknown as typeof fetch;
-  await replaceProjectRepository({
+  await replaceWorkspaceRepository({
     project_id: 'proj-1', repo_url: 'https://github.com/acme/new.git',
     expected_repo_url: 'https://github.com/acme/old.git',
     installation_id: '123', github_user_token: 'temporary-user-token',
@@ -118,9 +118,11 @@ test('sends the GitHub user proof when saving an installation', async () => {
   });
 });
 
-test('sends the icon in the request body when linking a repository', async () => {
+test('sends the icon in the request body when linking a repository, to the canonical workspace route', async () => {
   let requestBody: unknown;
-  globalThis.fetch = mock(async (_input: string | URL | Request, init?: RequestInit) => {
+  let requestUrl = '';
+  globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+    requestUrl = input instanceof Request ? input.url : String(input);
     requestBody = JSON.parse(String(init?.body));
     return Response.json({
       project: { project_id: 'proj-1', name: 'Iconic', icon: '🚀' },
@@ -139,6 +141,7 @@ test('sends the icon in the request body when linking a repository', async () =>
     repo_url: 'https://github.com/acme/repo',
     icon: '🚀',
   });
+  expect(new URL(requestUrl).pathname).toEndWith('/v1/workspaces/link-repository');
 });
 
 test('sends the icon_glyph in the request body when linking a repository', async () => {
@@ -251,7 +254,7 @@ test('lists repository branches through the typed account-scoped GitHub surface'
   const result = await listGitHubRepositoryBranches('account 1', '84', 'acme/portal');
 
   expect(calls).toEqual([
-    'http://test.local/v1/projects/github/repository-branches?' +
+    'http://test.local/v1/workspaces/github/repository-branches?' +
       'account_id=account+1&installation_id=84&repo_full_name=acme%2Fportal',
   ]);
   expect(result.default_branch).toBe('trunk');
@@ -278,7 +281,7 @@ test('passes bounded repository search options through the typed GitHub surface'
   });
 
   expect(calls).toEqual([
-    'http://test.local/v1/projects/github/repositories?' +
+    'http://test.local/v1/workspaces/github/repositories?' +
       'account_id=account+1&installation_id=84&search=customer+portal&limit=25',
   ]);
 });
@@ -331,7 +334,7 @@ test('stores a GitHub user token for one account, and returns only the login', a
     expires_in: 28800,
   });
 
-  expect(url).toEndWith('/projects/github/user-token');
+  expect(url).toEndWith('/workspaces/github/user-token');
   expect(method).toBe('POST');
   expect(body).toEqual({
     account_id: 'acc-1',

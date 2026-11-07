@@ -52,14 +52,14 @@ proposed as a reviewed change, never applied automatically.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the compliance-sweep skill and the daily
 trigger, and opens a change request for you to review. Prefer clicks? Choose
 **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a daily compliance monitoring agent in this project.
+  code={`Set up a daily compliance monitoring agent in this workspace.
 
 1. Create the agent agents/compliance-monitoring.md. Its job is to check AWS against our compliance policy and propose fixes as change requests. It may use the AWS and Slack connectors. It only reads AWS.
 
@@ -80,7 +80,7 @@ trigger, and opens a change request for you to review. Prefer clicks? Choose
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect AWS with read-only access and
+Open **Connectors** in your workspace and connect AWS with read-only access and
 Slack. Credentials are brokered server-side and never enter the
 agent's machine.
 
@@ -119,7 +119,7 @@ requests it opens before you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every day at 06:00 UTC, each run in a new session on its own cloud computer. To change the time, edit the cron line, or open
-**Triggers** in the project.
+**Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

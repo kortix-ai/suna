@@ -24,11 +24,12 @@
  *
  *   preview-subscribe.ts <origin> <access_token> <account_id> [tier_key]
  *
- * `access_token` is the signed-in account's Supabase JWT. Its personal
- * account id equals its user id (apps/api/src/accounts/core/
- * bootstrap-personal-account.ts: "Personal accounts use `accountId ===
- * userId`"). preview-subscribe.sh extracts both from the agent-browser
- * session's auth cookie and calls this.
+ * `access_token` is the signed-in person's Supabase JWT. preview-subscribe.sh
+ * extracts it and the user id from the agent-browser session's auth cookie.
+ * The user id names an account only for a legacy personal account; since
+ * Workspaces (no account at sign-up) the script subscribes the newest
+ * workspace the person owns instead (`GET /v1/accounts`), and refuses when
+ * they have none yet.
  *
  * Reads STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET from the environment — the
  * same test-mode Stripe secret already used to test every preview
@@ -73,8 +74,18 @@ async function main(): Promise<void> {
   const env = { apiUrl, stripeSecretKey, stripeWebhookSecret } as Env;
   const client = new Client(apiUrl).withBearer(accessToken, 'preview-demo');
 
-  await subscribe(env, client, accountId, tierKey);
-  console.log(`subscribed ${accountId} to ${tierKey} on ${origin} — managed models are live`);
+  const accounts = (await client.get('/v1/accounts')).json<Array<{ account_id: string; account_role: string; created_at: string }>>() ?? [];
+  const owned = accounts.filter((a) => a.account_role === 'owner');
+  const target =
+    owned.find((a) => a.account_id === accountId)?.account_id ??
+    [...owned].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]?.account_id;
+  if (!target) {
+    console.error('The signed-in person owns no workspace yet. Create one on the preview first.');
+    process.exit(2);
+  }
+
+  await subscribe(env, client, target, tierKey);
+  console.log(`subscribed ${target} to ${tierKey} on ${origin} — managed models are live`);
 }
 
 main().catch((err) => {

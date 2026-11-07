@@ -50,7 +50,7 @@ function startApi() {
         path: url.pathname,
         authorization: req.headers.get('authorization'),
       });
-      if (url.pathname === `/v1/projects/${TARGET_PROJECT_ID}`) {
+      if (url.pathname === `/v1/workspaces/${TARGET_PROJECT_ID}`) {
         if (req.headers.get('authorization') === `Bearer ${HOST_TOKEN}`) {
           return Response.json({
             project_id: TARGET_PROJECT_ID,
@@ -136,7 +136,7 @@ test('projects link --host authenticates with the named host key, not the sessio
   const run = await runCli(['projects', 'link', TARGET_PROJECT_ID, '--host', HOST_NAME]);
 
   const linkGet = requests.find(
-    (r) => r.method === 'GET' && r.path === `/v1/projects/${TARGET_PROJECT_ID}`,
+    (r) => r.method === 'GET' && r.path === `/v1/workspaces/${TARGET_PROJECT_ID}`,
   );
   expect(linkGet, 'the project lookup must reach the API').toBeDefined();
   // The named host's stored key serves the request — never the ambient

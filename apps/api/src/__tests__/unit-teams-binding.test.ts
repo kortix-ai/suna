@@ -70,7 +70,7 @@ describe('Teams conversation binding', () => {
     expect(switched).toBe(true);
     expect(dbWrites.find((w) => w.op === 'insert.values')?.payload).toMatchObject({
       platform: 'teams',
-      workspaceId: 'tenant-1',
+      platformTeamId: 'tenant-1',
       channelId: 'conv-1',
       projectId: 'proj-1',
     });

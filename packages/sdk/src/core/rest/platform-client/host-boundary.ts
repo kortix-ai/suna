@@ -12,6 +12,7 @@ import type { AccountBranding } from '../projects-client/accounts';
 import { auditFilterQuery } from '../projects-client/audit-filter';
 import { platformApiBase } from './shared';
 import { getBackendUrl } from '../../session/server-store/url-helpers';
+import { withWorkspaceRouteFallback } from '../../http/workspace-routes';
 
 export interface HostRequestOptions {
   /** Kortix API base URL. Both `https://host` and `https://host/v1` are valid. */
@@ -72,7 +73,7 @@ async function requestJson<T>(
   init?: { method?: string; body?: unknown },
 ): Promise<T> {
   const json = init?.body !== undefined;
-  const response = await fetch(`${platformApiBase(options.backendUrl)}${path}`, {
+  const response = await withWorkspaceRouteFallback(fetch)(`${platformApiBase(options.backendUrl)}${path}`, {
     method: init?.method ?? 'GET',
     headers: requestHeaders(options, json),
     ...(json ? { body: JSON.stringify(init.body) } : {}),
@@ -197,6 +198,8 @@ export interface OAuthConsentRequest {
   self_registered?: boolean;
   /** Where approval sends the browser: the redirect host, or a native app's scheme (`cursor:`). */
   redirect_to?: string;
+  /** True when the consent names the workspace the app gets (`workspaceId` on submit). Absent on older APIs. */
+  asks_workspace?: boolean;
 }
 
 export function getOAuthConsentRequest(
@@ -206,13 +209,22 @@ export function getOAuthConsentRequest(
   return requestJson(`/oauth/authorize/consent/${encodeURIComponent(requestId)}`, options);
 }
 
+/**
+ * Approve or deny a pending OAuth request. `workspaceId` binds the grant: the
+ * issued token reaches that workspace only, like a workspace key. Without it
+ * the token acts as the person in every workspace (older consent screens).
+ */
 export function submitOAuthConsent(
-  input: { requestId: string; approved: boolean },
+  input: { requestId: string; approved: boolean; workspaceId?: string },
   options: HostRequestOptions,
 ): Promise<{ redirect_uri?: string }> {
   return requestJson('/oauth/authorize/consent', options, {
     method: 'POST',
-    body: { request_id: input.requestId, approved: input.approved },
+    body: {
+      request_id: input.requestId,
+      approved: input.approved,
+      ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
+    },
   });
 }
 
@@ -486,7 +498,7 @@ export function startSessionWithToken(
   options: HostRequestOptions,
 ): Promise<unknown> {
   return requestJson(
-    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
+    `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
     options,
     { method: 'POST', body: {} },
   );
@@ -533,7 +545,7 @@ export async function downloadAccountAudit(
   query: Parameters<typeof auditFilterQuery>[0] & { format: 'csv' | 'jsonl' },
   options: HostRequestOptions,
 ): Promise<AccountAuditExport> {
-  const response = await fetch(
+  const response = await withWorkspaceRouteFallback(fetch)(
     `${platformApiBase(options.backendUrl)}/accounts/${encodeURIComponent(accountId)}/audit/export?${auditFilterQuery(query)}`,
     {
       headers: requestHeaders(options, false),
