@@ -82,6 +82,11 @@ export type Credential =
        *  run or once another human prompted it (spec §2.3). Decides personal
        *  resources only, never shared authority. */
       onBehalfOfUserId?: string | null;
+      /** A workspace key that acts as this service account (an agent key or
+       *  a bot key, design.md §3.2 C4b): no session. It always authorizes AS
+       *  the service account, never as the person who minted it, whether or
+       *  not a role is bound. Optional so an older literal reads as a session. */
+      serviceAccountKey?: boolean;
     }
   /** A direct `kortix_sa_` bearer. Fail-closed: no membership baseline, no
    *  built-in role, authority is exactly its own assignments. */
@@ -137,7 +142,7 @@ export interface PrincipalRef {
  */
 export function actingPrincipal(actor: Actor): PrincipalRef {
   const c = actor.credential;
-  if (c.kind === 'agent_session' && (c.activated || c.agentPrincipal)) {
+  if (c.kind === 'agent_session' && (c.activated || c.agentPrincipal || c.serviceAccountKey)) {
     return { type: 'service_account', id: c.serviceAccountId };
   }
   if (c.kind === 'service_account') {
@@ -356,11 +361,15 @@ export async function tokenCredential(
       accountId ? loadServiceAccountActivation(serviceAccountId, accountId) : Promise.resolve(false),
       agentPrincipalModeFor(binding?.projectId ?? null, binding?.agentGrant ?? null),
     ]);
+    // A key that names a service account and no session (`sessionId` read from
+    // the row; the request's own value when the seeded binding lacks it).
+    const tokenSessionId = binding?.sessionId !== undefined ? binding.sessionId : sessionId;
     return {
       kind: 'agent_session',
       tokenId,
       projectId: binding?.projectId ?? null,
       sessionId,
+      serviceAccountKey: tokenSessionId == null,
       agentGrant: binding?.agentGrant ?? null,
       serviceAccountId,
       activated,

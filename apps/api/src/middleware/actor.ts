@@ -31,7 +31,12 @@ export async function buildActor(c: Context, accountIdOverride?: string): Promis
 
   const authType = c.get('authType') as string | undefined;
 
-  if (authType === 'service_account') {
+  const tokenId = c.get('iamTokenId') as string | undefined;
+  // A `kortix_sa_` bearer carries its own id as the token id
+  // (`serviceAccountPrincipal`). A workspace key that acts as a service
+  // account carries the key's row id: that one is classified from its row.
+  const serviceAccountKey = authType === 'service_account' && !!tokenId && tokenId !== userId;
+  if (authType === 'service_account' && !serviceAccountKey) {
     return { userId, accountId, credential: { kind: 'service_account', serviceAccountId: userId }, ctx };
   }
 
@@ -41,8 +46,9 @@ export async function buildActor(c: Context, accountIdOverride?: string): Promis
     return { userId, accountId, credential: { kind: 'sandbox' }, ctx };
   }
 
-  const tokenId = c.get('iamTokenId') as string | undefined;
-  if (authType === 'pat' && tokenId) {
+  // A PAT, or a workspace key that acts as a service account (an agent or bot
+  // key: `authType` service_account with a token id).
+  if ((authType === 'pat' || serviceAccountKey) && tokenId) {
     // The PAT branch of auth already read this token's row to validate it
     // (`patPrincipal` stores its binding fields). Same row, same request and
     // fresher than the memo, so a second `account_tokens` read is pure

@@ -46,7 +46,11 @@ export function patPrincipal(c: Context, result: Awaited<ReturnType<typeof impor
   const userId = result.userId!;
   c.set('userId', userId);
   c.set('userEmail', '');
-  c.set('authType', 'pat');
+  // A workspace key that acts as an agent or a bot (`service_account_id` set,
+  // no session, design.md §3.2 C4b): `user_id` is that service account, and
+  // the request is a service account's in every gate that asks, while the
+  // token row keeps its workspace binding and scope (`iamTokenId` below).
+  c.set('authType', result.serviceAccountId && !result.sessionId ? 'service_account' : 'pat');
   if (result.accountId) c.set('accountId', result.accountId);
   if (result.projectId) c.set('tokenProjectId', result.projectId);
   if (preview || result.tokenId) c.set('iamTokenId', result.tokenId);
@@ -68,6 +72,7 @@ export function patPrincipal(c: Context, result: Awaited<ReturnType<typeof impor
       projectId: result.projectId ?? null,
       agentGrant: result.agentGrant ?? null,
       serviceAccountId: result.serviceAccountId,
+      sessionId: result.sessionId ?? null,
       onBehalfOfUserId: result.onBehalfOfUserId ?? null,
       scopes: result.scopes ?? null,
     });
@@ -76,7 +81,7 @@ export function patPrincipal(c: Context, result: Awaited<ReturnType<typeof impor
   setContextField('userId', userId);
   if (result.accountId) setContextField('accountId', result.accountId);
   if (preview?.enabled) setPreviewSessionCookie(c, preview.token);
-  auditLoginSuccess({ c, userId, accountId: result.accountId ?? null, authType: 'pat',
+  auditLoginSuccess({ c, userId, accountId: result.accountId ?? null, authType: c.get('authType') === 'service_account' ? 'service_account' : 'pat',
     metadata: preview ? undefined : result.projectId ? { project_id: result.projectId } : undefined });
 }
 

@@ -132,7 +132,8 @@ function actorTypeForSnapshot(
   actorUserId: string | null,
 ): AuditActorType | null {
   const { authType } = snapshot;
-  if (authType === 'service_account') return 'service_account';
+  // An agent key (a workspace key that acts as an agent's identity) is the agent.
+  if (authType === 'service_account') return snapshot.hasAgentGrant ? 'agent' : 'service_account';
   const hasProjectSession =
     authType !== 'supabase' && (snapshot.sessionIdVar != null || snapshot.hasAgentGrant);
   if (hasProjectSession || (authType === 'apiKey' && snapshot.apiKeyType === 'sandbox')) {
@@ -573,6 +574,9 @@ async function agentAttributionForSnapshot(
   const actor = snapshot.actor as Actor | undefined;
   const credential = actor?.credential;
   if (!credential || credential.kind !== 'agent_session') return null;
+  // A bot key acts as its service account and names no agent: it audits like
+  // the bot's own bearer (actor = the service account).
+  if (credential.serviceAccountKey && !credential.agentGrant) return null;
   try {
     return await resolveAgentAuditAttribution({
       sessionId: credential.sessionId ?? snapshot.sessionIdVar ?? null,
