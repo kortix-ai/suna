@@ -31,12 +31,14 @@ file="$STORE/\${region}__\${id}.json"
 echo "$op" >> "$STORE/ops.log"
 case "$op" in
   describe-secret) [ -f "$file" ] ;;
+  get-secret-value) cat "$file" ;;
+  put-secret-value|create-secret) [ "\${FAIL_WRITE:-}" != 1 ] || exit 254 ;;&
   put-secret-value) cat > "$file" ;;
   create-secret) cat > "$file"; printf '%s' "$description" > "$file.description" ;;
 esac
 `;
 
-function run(existing: boolean) {
+function run(existing: boolean, failWrite = false) {
   const dir = mkdtempSync(join(tmpdir(), "aws-secret-lib-"));
   writeFileSync(join(dir, "aws"), fakeAws);
   chmodSync(join(dir, "aws"), 0o755);
@@ -50,7 +52,7 @@ function run(existing: boolean) {
     ],
     {
       encoding: "utf8",
-      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STORE: dir },
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STORE: dir, FAIL_WRITE: failWrite ? "1" : "" },
     },
   );
   const read = (path: string) =>
@@ -84,5 +86,34 @@ describe("put_or_create_secret", () => {
     expect(description).toBe("Synthetic description");
     expect(ops).toEqual(["describe-secret", "create-secret"]);
     expect(result.stdout + result.stderr).not.toContain("synthetic-value");
+  });
+
+  it.each([true, false])(
+    "fails without reporting success when the write fails (existing=%s)",
+    (existing) => {
+      const { result } = run(existing, true);
+
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).not.toMatch(/updated|created/);
+    },
+  );
+
+  it("keeps the failure visible inside a command substitution (copy-env-secret.sh)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aws-secret-copy-"));
+    writeFileSync(join(dir, "aws"), fakeAws);
+    chmodSync(join(dir, "aws"), 0o755);
+    writeFileSync(join(dir, "us-east-2__src.json"), '{"A":"b"}');
+    writeFileSync(join(dir, "eu-west-2__dst.json"), '{"A":"c"}');
+    const result = spawnSync(
+      "bash",
+      [resolve(root, "infra/scripts/copy-env-secret.sh"), "src", "us-east-2", "eu-west-2", "--to-name", "dst"],
+      {
+        encoding: "utf8",
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, STORE: dir, FAIL_WRITE: "1" },
+      },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).not.toMatch(/updated|created/);
   });
 });

@@ -6,12 +6,12 @@
 put_or_create_secret() {
   if aws secretsmanager describe-secret --region "$1" --secret-id "$2" >/dev/null 2>&1 </dev/null; then
     aws secretsmanager put-secret-value --region "$1" \
-      --secret-id "$2" --secret-string file:///dev/stdin >/dev/null
+      --secret-id "$2" --secret-string file:///dev/stdin >/dev/null || return
     echo updated
   else
     aws secretsmanager create-secret --region "$1" \
       --name "$2" --secret-string file:///dev/stdin \
-      --description "$3" >/dev/null
+      --description "$3" >/dev/null || return
     echo created
   fi
 }
