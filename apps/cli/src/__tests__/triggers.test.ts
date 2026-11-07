@@ -270,6 +270,8 @@ describe('kortix triggers fire — reports the run outcome', () => {
     /** Flip the trigger row to failed this long after the fire POST. */
     failAfterMs: number | null;
     deletedSessions: string[];
+    /** Fire POSTs the server received. */
+    fires: number;
   }
 
   let state: FireState;
@@ -314,6 +316,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
           return Response.json({ error: 'database unavailable' }, { status: 503 });
         }
         if (url.pathname === `${base}/dogfood-cron/fire` && req.method === 'POST') {
+          state.fires++;
           const now = new Date().toISOString();
           // The fire route's own write: last_status fired, last_attempt_at set.
           state.triggers = state.triggers.map((t) =>
@@ -383,6 +386,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
       },
       failAfterMs: null,
       deletedSessions: [],
+      fires: 0,
     };
   });
 
@@ -419,6 +423,17 @@ describe('kortix triggers fire — reports the run outcome', () => {
     expect(result.stdout).toContain(`Fired dogfood-cron → run ${FIRE_RUN_ID} → session ${SESSION_ID}`);
     expect(result.stdout).toContain('no failure');
     expect(state.deletedSessions).toEqual([]);
+  });
+
+  test('a malformed --wait exits 2 and starts no run', async () => {
+    const apiConfig = writeConfig(startFireServer());
+    const result = await runCli(
+      ['triggers', 'fire', 'dogfood-cron', '--wait', '300', '--project', PROJECT],
+      apiConfig,
+    );
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('--wait must be a duration');
+    expect(state.fires).toBe(0);
   });
 
   test('--wait 0 keeps the old fire-and-return behavior', async () => {

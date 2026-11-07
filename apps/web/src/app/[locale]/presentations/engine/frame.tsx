@@ -222,8 +222,9 @@ export function Rows({
 
 /**
  * Literal text: a file excerpt or a terminal. `title` names the file or the
- * shell. A line that is only `…` marks a cut. A line that starts with `$ ` is
- * a command; the prompt is set in the muted colour.
+ * shell. A line that is only `…` marks a cut, and a line that starts with `# `
+ * is a comment: both are muted. A line that starts with `$ ` is a command;
+ * the prompt is set in the muted colour.
  */
 export function Code({
   title,
@@ -243,7 +244,7 @@ export function Code({
       </p>
       <pre className={cn('overflow-hidden px-5 py-4 font-mono leading-relaxed', textClassName)}>
         {lines.map((line, i) => {
-          if (line.trim() === '…')
+          if (line.trim() === '…' || line.startsWith('# '))
             return (
               <span key={i} className="text-muted-foreground block">
                 {line}

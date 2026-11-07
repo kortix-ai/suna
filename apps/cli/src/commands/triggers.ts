@@ -538,6 +538,16 @@ async function triggersFire(
   payload?: Record<string, unknown>,
 ): Promise<number> {
   if (!slug) return missing('a trigger slug');
+  // Every flag is checked before the fire: a typo must never start a run.
+  const waitSeconds =
+    waitFlag === undefined
+      ? FIRE_DEFAULT_WAIT_SECONDS
+      : waitFlag === '0'
+        ? 0
+        : parseDurationSeconds(waitFlag);
+  if (waitSeconds === null) {
+    return fail(`--wait must be a duration like 30s or 5m (got "${waitFlag}")`);
+  }
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -568,16 +578,6 @@ async function triggersFire(
       );
       return 1;
     }
-  }
-
-  const waitSeconds =
-    waitFlag === undefined
-      ? FIRE_DEFAULT_WAIT_SECONDS
-      : waitFlag === '0'
-        ? 0
-        : parseDurationSeconds(waitFlag);
-  if (waitSeconds === null) {
-    return fail(`--wait must be a duration like 30s or 5m (got "${waitFlag}")`);
   }
 
   const watch = waitSeconds > 0 ? await triggerRunOutcome(ctx, slug, waitSeconds) : null;

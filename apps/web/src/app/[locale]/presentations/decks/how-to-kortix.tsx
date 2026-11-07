@@ -16,8 +16,14 @@
  * One machine per chapter. A fifth idea goes on the docs page, not here.
  *
  * ── SOURCE OF TRUTH ──────────────────────────────────────────────────────
- * Every YAML line on a slide is cropped from one project (four agents, four
- * triggers, one connector) that `kortix validate` accepts with exit 0. A line
+ * The cover and the start slide are the path a person runs, verified end to
+ * end on 2026-11-07 against a local stack with a real Platinum sandbox:
+ * `kortix init` (agent `worker`), the cover trigger pasted into kortix.yaml,
+ * one task in backlog/, `kortix ship`, `kortix triggers fire build`. The
+ * session did the task, wrote memory and opened a change request; after the
+ * merge the next fire read that memory. The other YAML crops come from one
+ * project (four agents, four triggers, one connector) that `kortix validate`
+ * accepts with exit 0. A line
  * that is only `…` marks a cut. The catalog line is real output of
  * `kortix connectors catalog x` against kortix.com. Keys and behavior:
  * apps/web/content/docs/developers.mdx ("Quickstart", "triggers keys",
@@ -64,7 +70,7 @@ const TRIGGER_YAML = [
   '  - slug: build',
   '    on: { every: 1h }',
   '    run:',
-  '      agent: builder',
+  '      agent: worker',
   '      prompt: Take the next task in backlog/ and ship it.',
 ] as const;
 
@@ -193,8 +199,11 @@ const LOOPS: readonly Loop[] = [
 const START_SHELL = [
   '$ curl -fsSL https://kortix.com/install | bash',
   '$ kortix login',
-  '$ kortix init my-company',
-  '$ cd my-company && kortix ship',
+  '$ kortix init my-company && cd my-company',
+  '# paste the trigger into kortix.yaml',
+  '$ mkdir backlog && echo "Add a CHANGELOG" > backlog/0001.md',
+  '$ kortix ship',
+  '$ kortix triggers fire build',
 ] as const;
 
 export function useSlides(): SlideDef[] {
@@ -204,7 +213,7 @@ export function useSlides(): SlideDef[] {
       id: 'title',
       label: 'How to Kortix',
       notes:
-        'Hi, we are Kortix. In the next five minutes I will show you how to put agents in a loop.\n\nThe whole idea fits on this screen. These six lines live in a file called kortix.yaml. Every hour, Kortix starts a fresh session of an agent called builder and tells it to take the next task and ship it.\n\nKortix is an open-source CompanyOS. Your company is a git repository, and agents work inside it. Four parts. Let me show you.',
+        'Hi, we are Kortix. In the next five minutes I will show you how to put agents in a loop.\n\nThe whole idea fits on this screen. These six lines live in a file called kortix.yaml. Every hour, Kortix starts a fresh session of worker, the agent every new project starts with, and tells it to take the next task and ship it.\n\nKortix is an open-source CompanyOS. Your company is a git repository, and agents work inside it. Four parts. Let me show you.',
       node: (
         <Slide
           size="cover"
@@ -362,7 +371,7 @@ export function useSlides(): SlideDef[] {
       id: 'start',
       label: 'Start',
       notes:
-        'So: start with one loop. Install the CLI, log in, kortix init, kortix ship. On the free plan, connect your own model key or your ChatGPT subscription first.\n\nAnd inside a session, kortix loop prompts that same session again on a schedule. It never starts a new one. Use it for things like: is CI green yet.\n\nEverything I showed you is open source. Read it, fork it, audit it.\n\nKortix. Your CompanyOS.',
+        'So: start with one loop. Install the CLI and log in. kortix init, paste the trigger into kortix.yaml, put one task in a backlog folder, and kortix ship. Then kortix triggers fire build runs it now instead of in an hour. On the free plan, connect your own model key or your ChatGPT subscription first.\n\nAnd inside a session, kortix loop prompts that same session again on a schedule. It never starts a new one. Use it for things like: is CI green yet.\n\nEverything I showed you is open source. Read it, fork it, audit it.\n\nKortix. Your CompanyOS.',
       node: (
         <Slide
           title="Start with one loop."
