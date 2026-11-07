@@ -1345,7 +1345,7 @@ account exits non-zero with the manage-connections reason (the API's `403`).
 `IAM-19` `GET/PATCH …/iam/session-policy` → 200; >10080m → 400; null clears.
 `IAM-20` `GET …/iam/sessions` · `POST …/sessions/:sid/revoke` → unknown → 404; NONMEMBER → 403.
 `IAM-21` `GET/POST …/iam/scim/tokens` · `DELETE …/:tid` → mint 201 secret-once; missing name → 400; double-revoke → 404.
-`IAM-22` `GET/POST …/iam/service-accounts` (`token.create`) · `POST …/:saId/disable` · `DELETE …/:saId` (`token.revoke`) → 201 secret-once; double-disable → 409; unknown → 404.
+`IAM-22` `GET/POST …/iam/service-accounts` (`token.create`) · `POST …/:saId/disable` · `DELETE …/:saId` (`token.revoke`) → 201 secret-once; double-disable → 409; unknown → 404; the service account's own bearer reads `GET /v1/accounts` → `[]` and `/accounts/me` → `accounts: []`, before and after a project grant (its granted project → 200), and creates no `accounts` or `account_members` row; disabled → 401.
 `IAM-23` `GET/PUT/DELETE …/iam/sso/provider` → none={provider:null}; bad UUID/domain → 400; double-delete → 404.
 `IAM-24` `GET/POST …/iam/sso/mappings` · `DELETE …/:mid` → no-provider → 409; bad group → 400; unknown delete → 404.
 `CHN-10` `GET /projects/:id/channels/slack/mode` → read → 200; non-member 403/404.
