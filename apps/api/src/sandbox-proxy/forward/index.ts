@@ -3,6 +3,7 @@
 export {
   bindSandboxRequestContext,
   isProxiedBaseReset,
+  isSessionLogRead,
 } from './access';
 export { forwardToSandbox } from './forward-to-sandbox';
 export { forwardsClientEncoding } from './upstream';
