@@ -87,3 +87,117 @@ export function canRenderCachedTranscriptWhileSandboxDown(
   const sandboxIsDown = state.sandboxStatus === 'stopped' || state.sandboxStatus === 'error';
   return sandboxIsDown && state.hasCachedContent;
 }
+
+/**
+ * Which surface the session route paints, decided in ONE place.
+ *
+ * The route used to decide this with an ordered `if` chain over a dozen
+ * booleans, and the order was the only transition table. This function is
+ * that table. Every input is a fact the route already derives; the output
+ * names a full-screen surface (`screen`), a terminal notice in the composer's
+ * slot over a readable transcript (`notice`), or neither (the chat).
+ *
+ * Precedence, first match wins:
+ * 1. switch-loading · 2. billing-gated · 3. missing (404) · 4. archived (the
+ * session was deleted and its computer removed) · 5. repository-disconnected
+ * · 6. waking (the wake ladder still has rungs) or start-failure · 7. dormant
+ * (stopped, no sandbox row) · 8. runtime-lost · 9. stopped (`fatal`): the
+ * auto-resume boot loader or the Restart card · 10. chat.
+ *
+ * A readable transcript turns 5, 6 (failure), 7 (legacy) and 8 into notices,
+ * and a notice blocks the lower terminal checks (7, 8), as before. Step 9
+ * still replaces the chat when no cached transcript may render.
+ */
+export type SessionRouteScreen =
+  | 'switch-loading'
+  | 'billing-gated'
+  | 'missing'
+  | 'archived'
+  | 'repository-disconnected'
+  | 'waking'
+  | 'start-failure'
+  | 'legacy-dormant'
+  | 'stopped-dormant'
+  | 'runtime-lost'
+  | 'auto-resuming'
+  | 'stopped';
+
+export type SessionRouteNotice =
+  | 'archived'
+  | 'repository-disconnected'
+  | 'start-failure'
+  | 'legacy-dormant'
+  | 'runtime-lost';
+
+export interface SessionRouteSurfaceInput {
+  sessionSwitchLoading: boolean;
+  gated: boolean;
+  sessionMissing: boolean;
+  /** `sandbox.status === 'archived'`. */
+  sandboxArchived: boolean;
+  repositoryDisconnected: boolean;
+  wakeLadderHolding: boolean;
+  /** `recoverableFailure !== null`. */
+  hasRecoverableFailure: boolean;
+  dormantWithoutRuntime: boolean;
+  legacyMigrated: boolean;
+  runtimeIdentityUnavailable: boolean;
+  previousRepositoryHistoryAvailable: boolean;
+  /** `sandbox.status` is `stopped|error` and `shouldPaintFatalCard` says paint. */
+  fatal: boolean;
+  autoResuming: boolean;
+  hasTranscript: boolean;
+  showCachedTranscriptWhileDown: boolean;
+}
+
+export interface SessionRouteSurface {
+  screen: SessionRouteScreen | null;
+  notice: SessionRouteNotice | null;
+}
+
+export function resolveSessionRouteSurface(input: SessionRouteSurfaceInput): SessionRouteSurface {
+  const screen = (kind: SessionRouteScreen): SessionRouteSurface => ({ screen: kind, notice: null });
+  if (input.sessionSwitchLoading) return screen('switch-loading');
+  if (input.gated) return screen('billing-gated');
+  if (input.sessionMissing) return screen('missing');
+
+  let notice: SessionRouteNotice | null = null;
+  const screenOrNotice = (kind: SessionRouteScreen & SessionRouteNotice): SessionRouteSurface | null => {
+    if (!input.hasTranscript) return screen(kind);
+    notice = kind;
+    return null;
+  };
+
+  if (input.sandboxArchived) {
+    const surface = screenOrNotice('archived');
+    if (surface) return surface;
+  }
+  if (!notice && input.repositoryDisconnected) {
+    const surface = screenOrNotice('repository-disconnected');
+    if (surface) return surface;
+  }
+  if (input.wakeLadderHolding) {
+    if (!input.showCachedTranscriptWhileDown) return screen('waking');
+  } else if (input.hasRecoverableFailure && !notice) {
+    const surface = screenOrNotice('start-failure');
+    if (surface) return surface;
+  }
+  if (!notice && input.dormantWithoutRuntime) {
+    if (input.legacyMigrated) {
+      const surface = screenOrNotice('legacy-dormant');
+      if (surface) return surface;
+    } else if (!input.hasTranscript) {
+      // A deliberate stop with a readable transcript is not a dead end: the
+      // conversation and a live composer stay (a send wakes the box).
+      return screen('stopped-dormant');
+    }
+  }
+  if (!notice && input.runtimeIdentityUnavailable && !input.previousRepositoryHistoryAvailable) {
+    const surface = screenOrNotice('runtime-lost');
+    if (surface) return surface;
+  }
+  if (input.fatal && !input.showCachedTranscriptWhileDown) {
+    return screen(input.autoResuming ? 'auto-resuming' : 'stopped');
+  }
+  return { screen: null, notice };
+}

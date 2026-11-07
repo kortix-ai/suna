@@ -368,7 +368,7 @@ describe('emission', () => {
 
 describe('the runtime control snapshot', () => {
   test('the mirror is not read and no mirror frame is sent (P8.2)', async () => {
-    mirrorRow = { capturedAt: new Date('2026-08-27T00:00:00Z'), headComplete: true, opencodeSessionId: 'synthetic-session' };
+    mirrorRow = { capturedAt: new Date('2026-08-27T00:00:00Z'), headComplete: true, runtimeSessionId: 'synthetic-session' };
     const handle = acquireControlReconciler(`${SESSION}-log`);
     await handle.ready();
     const types = handle.snapshot().map((event) => event.type);
@@ -687,7 +687,6 @@ describe('R5.2: the server owns session state', () => {
     state: 'active',
     message_id: null,
     runtime_session_id: 'ses_root',
-    opencode_session_id: 'ses_root',
     started_at: '2026-10-06T10:00:00.000Z',
     accepted_at: null,
   };

@@ -14,7 +14,6 @@
 
 import { db } from './db';
 import { isPlatformAdmin } from './platform-roles';
-import { resolveAccountId } from './resolve-account';
 import {
   isProjectSessionVisibleTo,
   isTriggerRunSession,
@@ -37,14 +36,14 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 // caller who sends random sandbox ids must not grow it without bound.
 const PREVIEW_CONTEXT_MAX = 20_000;
 
-// ─── Session-visibility gate for the daemon/opencode port ────────────────────
+// ─── Session-visibility gate for the session-data ports ──────────────────────
 // canAccessPreviewSandbox above authorizes on ACCOUNT MEMBERSHIP only. That is
-// correct for preview web ports, but the daemon port (8000) reverse-proxies a
-// session's OpenCode conversation + its owner's synced secrets — which is
+// correct for preview web ports, but the daemon port (8000) serves a
+// session's conversation + its owner's synced secrets — which is
 // governed by SESSION VISIBILITY (private | project | restricted), enforced on
 // the REST routes via loadVisibleSession but historically NOT on this data
 // path. Without this, a same-account member who once had access to a session
-// (so their client captured the sandbox + opencode ids) could keep reading /
+// (so their client captured the sandbox + runtime session ids) could keep reading /
 // posting to it via /v1/p/<ext>/8000/session/... after the owner made it
 // private or revoked their grant. Mirror the REST check here. Short TTL keeps
 // the hot path cheap; revocation lags at most one window (matches the existing
@@ -59,6 +58,17 @@ onSpaceAccessBust(() => sessionVisibilityCache.clear());
 // entry dies with its promise, so there is no state to share, and another
 // replica re-reading is one redundant query, never a different verdict.
 const sessionVisibilityInFlight = new Map<string, Promise<boolean>>();
+
+/** One verdict per caller/target/read-ness: the cache and the refusal context share this key. */
+function sessionAccessKey(input: {
+  sessionId: string;
+  userId: string;
+  callerSessionId: string | null;
+  boundCredentialSessionId: string | null;
+  spawnAncestorRead?: unknown;
+}): string {
+  return `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}|${input.spawnAncestorRead ? 'r' : '-'}`;
+}
 
 /**
  * Whether `userId` may reach the SESSION behind a sandbox (daemon-port traffic).
@@ -77,6 +87,10 @@ export async function canAccessSandboxSession(input: {
   /** The caller's AGENT/SANDBOX token binding (`callerKortixSessionId(c)`).
    *  Only the trigger-session manager override reads it — see share.ts. */
   boundCredentialSessionId: string | null;
+  /** Set when the request only reads the session's log: a session token may then also read
+   *  the sessions that spawned it, as on the REST read path (`SessionReadOptions`). Answers
+   *  whether the target spawned the caller's session; injected, as `shared/` cannot reach `projects/`. */
+  spawnAncestorRead?: () => Promise<boolean>;
 }): Promise<boolean> {
   // callerSessionId MUST be in the key. In Kortix-as-a-Backend every end-user
   // shares one `userId` (the wrapper credential), so without it end-user A and
@@ -86,7 +100,7 @@ export async function canAccessSandboxSession(input: {
   // boundCredentialSessionId is in the key for the same reason callerSessionId
   // is: it changes the verdict (it gates the manager override), so two callers
   // that differ only in it must not share one entry.
-  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
+  const key = sessionAccessKey(input);
   const cached = sessionVisibilityCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.allowed;
 
@@ -184,6 +198,13 @@ async function readSandboxSessionAccess(
       canManageProject: managerVerdict.allowed,
       spaceVisible,
     });
+    // A subagent reads the conversation of the sessions that spawned it
+    // (`kortix sessions log <parent>`): the REST route allows it, so the box's
+    // own log read through this gate must too, for a read only and never
+    // across a hidden channel.
+    if (!allowed && input.spawnAncestorRead && spaceVisible) {
+      allowed = await input.spawnAncestorRead();
+    }
     // Account session oversight — the same rule `loadVisibleSession` applies,
     // so an admin who may open a session's transcript may also reach its
     // runtime. Human credentials only.
@@ -250,8 +271,9 @@ export function takeSessionAccessRefusal(input: {
   userId: string;
   callerSessionId: string | null;
   boundCredentialSessionId: string | null;
+  spawnAncestorRead?: unknown;
 }): SessionAccessRefusal | null {
-  const key = `${input.sessionId}|${input.userId}|${input.callerSessionId ?? '-'}|${input.boundCredentialSessionId ?? '-'}`;
+  const key = sessionAccessKey(input);
   const found = refusalContexts.get(key) ?? null;
   if (refusalContexts.size > REFUSAL_CONTEXT_MAX) refusalContexts.clear();
   return found;
@@ -446,7 +468,9 @@ async function computeEntry(
   // A caller that just read the sandbox row (the proxy) passes it, and the
   // membership read then starts with the admin read: one round trip, not two.
   const refRead = known ? Promise.resolve(known) : resolveSandboxRef(previewSandboxId);
-  const adminRead = resolveAccountId(userId).then(isPlatformAdmin);
+  // Platform roles are keyed by the person's id (`platform_user_roles`), not
+  // by any account: a person with no workspace can still be staff.
+  const adminRead = isPlatformAdmin(userId);
   adminRead.catch(() => undefined);
   const ref = await refRead;
   const memberRead = ref ? isAccountMember(userId, ref.accountId) : null;

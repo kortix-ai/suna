@@ -25,6 +25,7 @@ function projectRow(
     accountId: ACCOUNT_ID,
     name: 'Demo Project',
     sandboxProviderGeneration: 0,
+    splitPending: false,
     secretDefaultStrategy: 'runtime' as const,
     repoUrl: 'https://github.com/acme/demo',
     defaultBranch: 'main',
@@ -209,7 +210,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       sessionRow({
         metadata: {
           name: 'Fix the login bug on the dashboard',
-          opencode_sessions: [
+          runtime_sessions: [
             { id: 'ses_child', title: 'Sub-agent work', parent_id: 'ses_abc' },
             { id: 'ses_abc', title: 'Dashboard Login Repair', parent_id: null },
           ],
@@ -227,7 +228,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         runtimeSessionId: 'ses_root',
         metadata: {
           name: 'Auto title',
-          opencode_sessions: [
+          runtime_sessions: [
             { id: 'ses_other', title: 'Wrong Tree Root', parent_id: null },
             { id: 'ses_root', title: 'Pinned Root Title', parent_id: null },
           ],
@@ -243,7 +244,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         runtimeSessionId: null,
         metadata: {
           name: 'Auto title',
-          opencode_sessions: [
+          runtime_sessions: [
             { id: 'ses_child', title: 'Child', parent_id: 'ses_root' },
             { id: 'ses_root', title: 'Tree Root Title', parent_id: null },
           ],
@@ -258,7 +259,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       sessionRow({
         metadata: {
           name: 'Real Kortix Title',
-          opencode_sessions: [
+          runtime_sessions: [
             { id: 'ses_abc', title: 'New session - 2026-08-09T10:00:00.000Z', parent_id: null },
           ],
         },
@@ -270,7 +271,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       sessionRow({
         metadata: {
           name: 'Real Kortix Title',
-          opencode_sessions: [{ id: 'ses_abc', title: '   ', parent_id: null }],
+          runtime_sessions: [{ id: 'ses_abc', title: '   ', parent_id: null }],
         },
       }),
     );
@@ -283,7 +284,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
         metadata: {
           name: 'auto',
           custom_name: 'Mine',
-          opencode_sessions: [{ id: 'ses_abc', title: 'Runtime Title', parent_id: null }],
+          runtime_sessions: [{ id: 'ses_abc', title: 'Runtime Title', parent_id: null }],
         },
       }),
     );
@@ -295,14 +296,14 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       sessionRow({
         metadata: {
           name: 'auto',
-          opencode_sessions: [{ id: 'ses_abc', title: 'Runtime Title', parent_id: null }],
+          runtime_sessions: [{ id: 'ses_abc', title: 'Runtime Title', parent_id: null }],
         },
       }),
       { viewerId: 'someone-else', canAccess: false },
     );
     const parsed = ProjectSessionSchema.strict().parse(out);
     expect(parsed.name).toBeNull();
-    expect(parsed.opencode_sessions).toEqual([]);
+    expect(parsed.runtime_sessions).toEqual([]);
   });
 
   test("opencode's frozen placeholder reads as untitled, a real title does not", () => {
@@ -337,7 +338,7 @@ describe('serializeSandboxRow ⇄ ProjectSessionSandboxSchema', () => {
       agent_name: 'default',
       retriable: false,
       sandbox: serializeSandboxRow(sandboxRow()),
-      opencode_session_id: 'ses_abc',
+      runtime_session_id: 'ses_abc',
       runtime_transport: 'rest' as const,
       runtime_url: '/p/sbx-123/8000',
       reason: 'pinned',

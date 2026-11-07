@@ -39,7 +39,7 @@ Permission has three parts, and a system that documents one is guessing. Reach i
 
 ## Four questions the permission file has to answer
 
-A new Kortix project starts from a public starter manifest, `packages/starter/templates/base/kortix.yaml` in the repository ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)). It is a `kortix_version: 2` manifest, and its header marks the `agents:` map "GOVERNANCE ONLY": the block carries the connectors, secrets, permissions, skills and workspace grants, plus the agent's `.md` path. Behavior lives in markdown; reach lives here.
+A new Kortix workspace starts from a public starter manifest, `packages/starter/templates/base/kortix.yaml` in the repository ([Kortix on GitHub](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml)). It is a `kortix_version: 2` manifest, and its header marks the `agents:` map "GOVERNANCE ONLY": the block carries the connectors, secrets, permissions, skills and workspace grants, plus the agent's `.md` path. Behavior lives in markdown; reach lives here.
 
 The schema is deny-by-default: an omitted grant resolves to none, so a scoped specialist starts locked down. The starter's own agent is granted "all" so a fresh project runs, and a comment says to narrow it once you know what the project needs.
 

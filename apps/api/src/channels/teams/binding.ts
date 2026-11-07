@@ -1,14 +1,15 @@
 import { BoundedMap } from '../../shared/bounded-map';
-import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads, projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import type { ChannelCtx } from '../slack/selection';
 import { findChatThread } from '../core/threads';
 import { stripTeamsMentions } from './util';
+import { projectsView } from '../../workspaces/rows';
 
 const PLATFORM = 'teams';
 /** A deleted project's install is no install: its tombstone keeps the row. */
-const liveProject = and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active'));
+const liveProject = and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active'));
 
 export function teamsChannelCtx(tenantId: string, conversationId: string): ChannelCtx {
   return { teamId: tenantId, channelId: conversationId, platform: PLATFORM };
@@ -21,15 +22,15 @@ export async function listTenantProjects(
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)));
+    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.platformTeamId, tenantId)));
   if (installs.length === 0) return [];
   const ids = installs.map((i) => i.projectId);
   // Only the installed projects. This read had no `where`, so every `/status`,
   // `/projects` and `/use` loaded the whole projects table to keep a handful.
   const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
-    .from(projects)
-    .where(and(inArray(projects.projectId, ids), eq(projects.status, 'active')));
+    .select({ projectId: projectsView.projectId, name: projectsView.name, repoUrl: projectsView.repoUrl })
+    .from(projectsView)
+    .where(and(inArray(projectsView.projectId, ids), eq(projectsView.status, 'active')));
   const byId = new Map(rows.map((r) => [r.projectId, r]));
   return ids.flatMap((id) => {
     const row = byId.get(id);
@@ -47,7 +48,7 @@ export async function resolveConversationProject(
     .where(
       and(
         eq(chatChannelBindings.platform, PLATFORM),
-        eq(chatChannelBindings.workspaceId, tenantId),
+        eq(chatChannelBindings.platformTeamId, tenantId),
         eq(chatChannelBindings.channelId, conversationId),
       ),
     )
@@ -56,11 +57,11 @@ export async function resolveConversationProject(
     const [installed] = await db
       .select({ projectId: chatInstalls.projectId })
       .from(chatInstalls)
-      .innerJoin(projects, liveProject)
+      .innerJoin(projectsView, liveProject)
       .where(
         and(
           eq(chatInstalls.platform, PLATFORM),
-          eq(chatInstalls.workspaceId, tenantId),
+          eq(chatInstalls.platformTeamId, tenantId),
           eq(chatInstalls.projectId, binding.projectId),
         ),
       )
@@ -71,8 +72,8 @@ export async function resolveConversationProject(
   const [install] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .innerJoin(projects, liveProject)
-    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.workspaceId, tenantId)))
+    .innerJoin(projectsView, liveProject)
+    .where(and(eq(chatInstalls.platform, PLATFORM), eq(chatInstalls.platformTeamId, tenantId)))
     .limit(1);
   return install?.projectId ?? null;
 }
@@ -109,7 +110,7 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
     .where(
       and(
         eq(chatChannelBindings.platform, PLATFORM),
-        eq(chatChannelBindings.workspaceId, tenantId),
+        eq(chatChannelBindings.platformTeamId, tenantId),
         eq(chatChannelBindings.channelId, conversationId),
       ),
     )
@@ -118,11 +119,11 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
   const [installed] = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .innerJoin(projects, liveProject)
+    .innerJoin(projectsView, liveProject)
     .where(
       and(
         eq(chatInstalls.platform, PLATFORM),
-        eq(chatInstalls.workspaceId, tenantId),
+        eq(chatInstalls.platformTeamId, tenantId),
         eq(chatInstalls.projectId, binding.projectId),
       ),
     )
@@ -181,7 +182,7 @@ export async function ensureTeamsConversationBinding(input: {
     .where(
       and(
         eq(chatInstalls.platform, PLATFORM),
-        eq(chatInstalls.workspaceId, input.tenantId),
+        eq(chatInstalls.platformTeamId, input.tenantId),
         eq(chatInstalls.projectId, input.projectId),
       ),
     )
@@ -192,7 +193,7 @@ export async function ensureTeamsConversationBinding(input: {
     .insert(chatChannelBindings)
     .values({
       platform: PLATFORM,
-      workspaceId: input.tenantId,
+      platformTeamId: input.tenantId,
       channelId: input.conversationId,
       projectId: input.projectId,
       channelName: input.channelName ?? null,
@@ -201,7 +202,7 @@ export async function ensureTeamsConversationBinding(input: {
     .onConflictDoUpdate({
       target: [
         chatChannelBindings.platform,
-        chatChannelBindings.workspaceId,
+        chatChannelBindings.platformTeamId,
         chatChannelBindings.channelId,
       ],
       set: {
@@ -246,8 +247,8 @@ export interface TeamsConversationSession {
   createdAt: Date | null;
   /** The session's creator: the user its turns run as. */
   createdBy: string | null;
-  /** The model the session was pinned to at start (`metadata.opencode_model`). */
-  opencodeModel: string | null;
+  /** The model the session was pinned to at start (`metadata.model`). */
+  sessionModel: string | null;
   /** The join policy frozen on the session at start (`metadata.teams.conversation_policy`). */
   conversationPolicy: string | null;
 }
@@ -275,7 +276,7 @@ export async function conversationSession(
       agentName: projectSessions.agentName,
       createdAt: projectSessions.createdAt,
       createdBy: projectSessions.createdBy,
-      opencodeModel: sql<string | null>`${projectSessions.metadata}->>'opencode_model'`,
+      sessionModel: sql<string | null>`${projectSessions.metadata}->>'model'`,
       conversationPolicy: sql<string | null>`${projectSessions.metadata}->'teams'->>'conversation_policy'`,
     })
     .from(projectSessions)
@@ -287,7 +288,7 @@ export async function conversationSession(
     agentName: row?.agentName ?? null,
     createdAt: row?.createdAt ?? null,
     createdBy: row?.createdBy ?? null,
-    opencodeModel: row?.opencodeModel?.trim() || null,
+    sessionModel: row?.sessionModel?.trim() || null,
     conversationPolicy: row?.conversationPolicy ?? null,
   };
 }

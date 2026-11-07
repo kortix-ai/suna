@@ -1,5 +1,5 @@
-import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { WORKSPACE, runtimeServesActions, runtimeVerbPaths, sessionRuntimeFetch } from './runtime-fetch';
+import { resolveSessionRuntimeEndpoint } from './runtime-client';
+import { runtimeVerbPaths, sessionRuntimeFetch } from './runtime-fetch';
 
 export type ReleaseOutcome = 'released' | 'already_answered' | 'unreachable';
 
@@ -26,9 +26,9 @@ export type ReleaseOutcome = 'released' | 'already_answered' | 'unreachable';
  * A second release is harmless: the first reply answers the question and
  * removes it, and any later reply returns `404`. So when a new-image daemon
  * releases too, whichever lands second is a no-op — reported here as
- * `already_answered`, which callers treat as success. A box with the
- * session-log actions (`runtime.actions.v1`) takes the reply on its question
- * route; an older one on the compatibility route.
+ * `already_answered`, which callers treat as success. The reply goes to the
+ * question route of the session-log actions (`runtime.actions.v1`), which
+ * every box past the runtime floor serves.
  */
 export async function releaseRuntimeQuestion(
   sessionId: string,
@@ -37,13 +37,9 @@ export async function releaseRuntimeQuestion(
 ): Promise<ReleaseOutcome> {
   if (!sessionId || !requestId) return 'unreachable';
   try {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+    const resolved = await resolveSessionRuntimeEndpoint(sessionId);
     if (!resolved) return 'unreachable';
-    const native = await runtimeServesActions(resolved.externalId, async () => resolved.endpoint);
-    const path = native
-      ? runtimeVerbPaths.questionReply(requestId)
-      : `/question/${encodeURIComponent(requestId)}/reply?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', path, {
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.questionReply(requestId), {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ answers }),
     });

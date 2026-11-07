@@ -69,14 +69,14 @@ describe('kortix validate — tools', () => {
     const result = kortix(cwd, 'validate');
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('kortix.yaml:7:3  error  tools.web_search  must be a repository path to a .ts or .js module (for example tools/web_search.ts).');
-    expect(result.stderr).not.toContain('does not exist in the project files');
+    expect(result.stderr).not.toContain('does not exist in the workspace files');
   }, SPAWN_TEST_MS);
 
   test('a module that does not exist is an error', () => {
     const cwd = project({ 'kortix.yaml': HEAD + TOOLS, 'tools/show.ts': LOOKUP });
     expect(kortix(cwd, 'validate').code).toBe(1);
     expect(issues(cwd)).toEqual([
-      expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup_order.ts" does not exist in the project files.', severity: 'error', line: 8, column: 3 }),
+      expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup_order.ts" does not exist in the workspace files.', severity: 'error', line: 8, column: 3 }),
     ]);
   }, SPAWN_TEST_MS);
 });
@@ -104,7 +104,7 @@ describe('kortix tools ls', () => {
         'image_gen       kortix               kortix:image_gen',
         'scrape_webpage  kortix               kortix:scrape_webpage',
         'show            kortix (overridden)  tools/show.ts',
-        'lookup_order    project              team/tools/lookup_order.ts',
+        'lookup_order    workspace            team/tools/lookup_order.ts',
       ].join('\n'),
     );
     const json = kortix(cwd, 'tools', 'ls', '--json');

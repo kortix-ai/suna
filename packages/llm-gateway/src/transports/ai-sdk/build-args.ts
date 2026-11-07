@@ -110,7 +110,7 @@ export interface NormalizedRequest {
   toolChoice: ToolChoice<ToolSet> | undefined;
   // Accepts both the chat/completions field (`reasoning_effort: string`) and
   // the Responses-style nested shape (`reasoning: { effort: string }`) some
-  // callers (opencode) send directly, folded with the caller's own default
+  // callers send directly, folded with the caller's own default
   // (Codex always sends a reasoning effort — see buildAiSdkArgs's opts doc).
   // Dropped when a resolved model publishes no matching effort tier (gating).
   reasoningEffort: string | undefined;
@@ -222,7 +222,7 @@ export function buildAiSdkArgs(
   // the error-detail path). @ai-sdk/openai's `.responses()` serializes
   // `maxOutputTokens` → wire `max_output_tokens`, so any turn that carries a
   // token cap dies. Requests with NO cap (a bare "hi") slip through, which is
-  // why simple probes passed while every real opencode turn — which always
+  // why simple probes passed while every real session turn — which always
   // sends one — 400'd. The backend manages its own output budget, so dropping
   // the cap for Codex is the correct behaviour, not a workaround. Codex-only:
   // the real OpenAI platform API DOES accept max_output_tokens, so plain

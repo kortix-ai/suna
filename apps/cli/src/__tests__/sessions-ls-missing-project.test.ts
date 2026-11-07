@@ -17,9 +17,9 @@ for (const json of [false, true]) {
     const result = await run(404, json);
     expect(result.code).toBe(1);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain(`Default project "${projectId}" was not found`);
-    expect(result.stderr).toContain('kortix projects use <id>');
-    expect(result.stderr).toContain('kortix projects ls');
+    expect(result.stderr).toContain(`Default workspace "${projectId}" was not found`);
+    expect(result.stderr).toContain('kortix workspaces use <id>');
+    expect(result.stderr).toContain('kortix workspaces ls');
   });
 }
 
@@ -34,8 +34,8 @@ async function run(status: number, json = false) {
   server = Bun.serve({
     port: 0,
     fetch(request) {
-      if (new URL(request.url).pathname === '/v1/accounts/me') return Response.json({ accounts: [] });
-      expect(new URL(request.url).pathname).toBe(`/v1/projects/${projectId}/sessions`);
+      if (new URL(request.url).pathname === '/v1/me') return Response.json({ accounts: [] });
+      expect(new URL(request.url).pathname).toBe(`/v1/workspaces/${projectId}/sessions`);
       return Response.json({ error: status === 404 ? 'Not found' : 'Permission denied' }, { status });
     },
   });

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /projects/[id]/customize/agents: the Agents index, where the sidebar's
+ * /workspaces/[id]/customize/agents: the Agents index, where the sidebar's
  * Customize row lands.
  *
  * Customize is agent-first. My Kortix is not listed: the project home starts
@@ -116,7 +116,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
   });
   const triggerCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    const fallback = config?.default_agent ?? config?.open_code_default_agent ?? null;
+    const fallback = config?.default_agent ?? null;
     for (const trigger of triggersQuery.data?.triggers ?? []) {
       const owner = trigger.agent === 'default' && fallback ? fallback : trigger.agent;
       counts.set(owner, (counts.get(owner) ?? 0) + 1);
@@ -142,7 +142,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
 
   const agents = useMemo(() => toArray(config?.agents), [config]);
   const filtered = useMemo(() => filterAgents(agents, { mode: null, query }), [agents, query]);
-  const defaultAgent = config?.default_agent ?? config?.open_code_default_agent ?? null;
+  const defaultAgent = config?.default_agent ?? null;
   // The agents a person starts first (the default leading), subagents after.
   const work = useMemo(
     () =>
@@ -156,7 +156,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         ),
     [filtered, defaultAgent],
   );
-  // Spaces are Work in progress: with `project_channels` off, no space filter and no Space column.
+  // Spaces are Work in progress: with `chat` off, no space filter and no Space column.
   const spacesOn = useSpacesEnabled(projectId);
   const groups = useMemo(() => (spacesOn ? groupBySpace(work, config?.spaces) : []), [spacesOn, work, config?.spaces]);
   const [activeSpace, setActiveSpace] = useActiveSpace(projectId);
@@ -365,7 +365,7 @@ function DefaultAgentSelector({
   const availableAgents = toArray(config.agents).filter(
     (agent) => agent.enabled !== false && agentInMode(agent, 'primary'),
   );
-  const current = config.default_agent ?? config.open_code_default_agent;
+  const current = config.default_agent;
   const mutation = useMutation({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {

@@ -17,17 +17,17 @@
  *  1. The server writes the mirror BECAUSE a turn ended (the `turn-stream`
  *     `end`/`turn_end` relay), so freshness is a property of the write. There
  *     is no client-side freshness test left to get wrong.
- *  2. The payload carries OpenCode's `info` envelope VERBATIM, so
+ *  2. The payload carries the runtime's `info` envelope VERBATIM, so
  *     `time.completed` and `error` travel with the message and every existing
  *     turn predicate reads the truth.
- *  3. The envelope names the OpenCode ROOT it was captured from, so a mirror
+ *  3. The envelope names the runtime ROOT it was captured from, so a mirror
  *     belonging to a re-pinned box is REFUSED rather than painted as ghosts.
  *     The disk cache was keyed by a scope string and could not make this check.
  *
  * Painted messages are hydrated with `source: 'cache'`, so the store's existing
  * settle rule owns reconciliation: the first runtime read confirms every id it
  * contains and drops any it covers but lacks. That rule is unchanged — the
- * mirror simply gives it real OpenCode ids to settle, which is what the old
+ * mirror simply gives it real runtime ids to settle, which is what the old
  * cache could not guarantee (it also held optimistic stubs that never existed
  * on the runtime).
  */
@@ -37,7 +37,7 @@ import type { SessionTranscriptSyncEnvelope } from "../../core/rest/projects-cli
 
 export interface MirrorHydrateDecision {
 	envelope: SessionTranscriptSyncEnvelope | null;
-	/** The OpenCode root this hook is about to sync. */
+	/** The runtime root this hook is about to sync. */
 	runtimeSessionId: string;
 	/** The store already holds messages for that root. */
 	hasMessages: boolean;
@@ -60,9 +60,9 @@ export function shouldHydrateFromMirror(input: MirrorHydrateDecision): boolean {
 	// `source` is the claim. An empty array is not one.
 	if (envelope.source !== "mirror") return false;
 	if (envelope.messages.length === 0) return false;
-	// THE IDENTITY GUARD: ids from another OpenCode root can never be settled by
+	// THE IDENTITY GUARD: ids from another runtime root can never be settled by
 	// this root's runtime read.
-	if ((envelope.runtime_session_id ?? envelope.opencode_session_id) !== runtimeSessionId) return false;
+	if (envelope.runtime_session_id !== runtimeSessionId) return false;
 	return true;
 }
 

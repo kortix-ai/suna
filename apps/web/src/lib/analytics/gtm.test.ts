@@ -59,11 +59,11 @@ afterEach(() => {
 
 describe('GTM page_location never carries auth query strings', () => {
   test('an expired-link redirect keeps no email, return URL or other parameter', () => {
-    visit('/auth', 'expired=true&email=person%40example.com&returnUrl=%2Fprojects%2Fp1');
+    visit('/auth', 'expired=true&email=person%40example.com&returnUrl=%2Fworkspaces%2Fp1');
 
     const event = g.window!.dataLayer.find((entry) => entry.event === 'routeChange')!;
     expect(event.page_location).toBe('https://app.example.com/auth');
-    expect(JSON.stringify(g.window!.dataLayer)).not.toContain('example.com/projects');
+    expect(JSON.stringify(g.window!.dataLayer)).not.toContain('example.com/workspaces');
     expect(JSON.stringify(g.window!.dataLayer)).not.toContain('person');
   });
 
@@ -88,8 +88,8 @@ describe('GTM page_location never carries auth query strings', () => {
 describe('isAnalyticsExcludedPath', () => {
   test('excludes signed-in and capability-token pages, with or without a locale', () => {
     for (const path of [
-      '/projects',
-      '/projects/p1/sessions/s1',
+      '/workspaces',
+      '/workspaces/p1/sessions/s1',
       '/admin',
       '/admin/accounts',
       '/secret-intake/tok',
@@ -104,7 +104,7 @@ describe('isAnalyticsExcludedPath', () => {
   });
 
   test('keeps marketing, auth and checkout pages', () => {
-    for (const path of ['/', '/pricing', '/de/pricing', '/auth', '/checkout', '/projectsx']) {
+    for (const path of ['/', '/pricing', '/de/pricing', '/auth', '/checkout', '/workspacesx']) {
       expect(isAnalyticsExcludedPath(path), path).toBe(false);
     }
   });

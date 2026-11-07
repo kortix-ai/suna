@@ -52,14 +52,14 @@ before it sends.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the follow-up skill and the 15-minute trigger, and
 opens a change request for you to review. Prefer clicks? Choose **Use this
 template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a lead follow-up agent in this project.
+  code={`Set up a lead follow-up agent in this workspace.
 
 1. Create the agent agents/lead-follow-up.md. Its job is to turn each new HubSpot lead into a researched follow-up draft with one proposed call slot. It may use the HubSpot and Google Calendar connectors.
 
@@ -80,7 +80,7 @@ template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect your CRM and your calendar.
+Open **Connectors** in your workspace and connect your CRM and your calendar.
 Connect the email account that holds the drafts under **Settings → Channels**.
 Credentials are brokered server-side and never enter the agent's machine.
 
@@ -119,7 +119,7 @@ schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every 15 minutes, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

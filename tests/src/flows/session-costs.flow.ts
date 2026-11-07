@@ -217,7 +217,7 @@ flow(
     domain: 'billing',
     requires: ['funded', 'sandbox', 'database'],
     timeoutMs: 300_000,
-    routes: ['POST /v1/projects/:projectId/sessions'],
+    routes: ['POST /v1/workspaces/:projectId/sessions'],
   },
   async (ctx) => {
     const { Client } = await import('pg');

@@ -1,9 +1,8 @@
 /** Activation for provider-migration transitions (red-team #1/#2): generation
  *  CAS + lease fence + atomic pin writes, split out of
  *  provider-transition-store.ts (CAS contract on activateWithCas). */
-import { and, eq, inArray, lt, ne } from 'drizzle-orm';
-import { providerTransitions, projects, type Database } from '@kortix/db';
-import { metadataMerge } from '../lib/metadata-merge';
+import { and, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { providerTransitions, type Database } from '@kortix/db';
 import { auditProviderTransition, type ProviderTransitionAuditRow } from './provider-transition-audit';
 import { LIVE_TRANSITION_STATUSES } from './provider-transition-core';
 import {
@@ -11,6 +10,7 @@ import {
   PIN_META_KEY, TRANSITION_META_KEY,
 } from './provider-transition-routing';
 import { TRANSITION_AUDIT_COLUMNS, type Queryable } from './provider-transition-store';
+import { metadataMerge, projectsView, updateProjectRows } from '../../workspaces/rows';
 
 type ActivationArgs = {
   projectId: string;
@@ -68,10 +68,7 @@ async function writeActivationPin(tx: Queryable, args: ActivationArgs): Promise<
       activated_at: args.now.toISOString(),
     },
   };
-  await tx
-    .update(projects)
-    .set({ metadata: metadataMerge(activationPatch), updatedAt: args.now })
-    .where(eq(projects.projectId, args.projectId));
+  await updateProjectRows(eq(projectsView.projectId, args.projectId), { metadata: metadataMerge(activationPatch), updatedAt: args.now }, tx);
 }
 
 /**
@@ -84,12 +81,12 @@ async function activateInTransaction(
 ): Promise<ActivationResult & { row?: ProviderTransitionAuditRow }> {
   const [project] = await tx
     .select({
-      metadata: projects.metadata,
-      generation: projects.sandboxProviderGeneration,
-      status: projects.status,
+      metadata: projectsView.metadata,
+      generation: projectsView.sandboxProviderGeneration,
+      status: projectsView.status,
     })
-    .from(projects)
-    .where(eq(projects.projectId, args.projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, args.projectId))
     .for('update')
     .limit(1);
   if (!project) return { activated: false, reason: 'project_missing' as const };
@@ -120,10 +117,16 @@ async function activateInTransaction(
     .where(eq(providerTransitions.transitionId, args.transitionId))
     .returning(TRANSITION_AUDIT_COLUMNS);
 
-  // Any lower-generation live transition can never win now.
+  // Any lower-generation live transition can never win now. The epoch bump
+  // fences the runners still driving them.
   await tx
     .update(providerTransitions)
-    .set({ status: 'superseded', heartbeatAt: null, updatedAt: args.now })
+    .set({
+      status: 'superseded',
+      heartbeatAt: null,
+      leaseEpoch: sql`COALESCE(${providerTransitions.leaseEpoch}, 0) + 1`,
+      updatedAt: args.now,
+    })
     .where(
       and(
         eq(providerTransitions.projectId, args.projectId),
@@ -178,9 +181,9 @@ export async function setPinWithGenerationBump(
 ): Promise<{ generation: number }> {
   return db.transaction(async (tx) => {
     const [project] = await tx
-      .select({ metadata: projects.metadata, generation: projects.sandboxProviderGeneration })
-      .from(projects)
-      .where(eq(projects.projectId, args.projectId))
+      .select({ metadata: projectsView.metadata, generation: projectsView.sandboxProviderGeneration })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, args.projectId))
       .for('update')
       .limit(1);
     if (!project) return { generation: 0 };
@@ -201,13 +204,17 @@ export async function setPinWithGenerationBump(
     const deleteKeys = [ACTIVE_EXTERNAL_ID_META_KEY, ACTIVE_SNAPSHOT_NAME_META_KEY];
     if (args.pin === null) deleteKeys.push(PIN_META_KEY);
     else patch[PIN_META_KEY] = args.pin;
-    await tx
-      .update(projects)
-      .set({ metadata: metadataMerge(patch, deleteKeys), sandboxProviderGeneration: newGen, updatedAt: args.now })
-      .where(eq(projects.projectId, args.projectId));
+    await updateProjectRows(eq(projectsView.projectId, args.projectId), { metadata: metadataMerge(patch, deleteKeys), sandboxProviderGeneration: newGen, updatedAt: args.now }, tx);
+    // The epoch bump fences any runner still driving a cancelled row (see
+    // reserveSwitchTransition's supersede).
     await tx
       .update(providerTransitions)
-      .set({ status: 'cancelled', heartbeatAt: null, updatedAt: args.now })
+      .set({
+        status: 'cancelled',
+        heartbeatAt: null,
+        leaseEpoch: sql`COALESCE(${providerTransitions.leaseEpoch}, 0) + 1`,
+        updatedAt: args.now,
+      })
       .where(and(eq(providerTransitions.projectId, args.projectId), inArray(providerTransitions.status, LIVE_TRANSITION_STATUSES)));
     return { generation: newGen };
   });
@@ -221,9 +228,6 @@ export async function writeTransitionMarker(
 ): Promise<void> {
   // FIX-J: one atomic SQL merge of ONLY the marker key — no read-modify-write, so
   // no FOR UPDATE round-trip and no chance of reverting a concurrent pin write.
-  await db
-    .update(projects)
-    .set({ metadata: metadataMerge({ [TRANSITION_META_KEY]: marker }), updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId));
+  await updateProjectRows(eq(projectsView.projectId, projectId), { metadata: metadataMerge({ [TRANSITION_META_KEY]: marker }), updatedAt: new Date() });
 }
 

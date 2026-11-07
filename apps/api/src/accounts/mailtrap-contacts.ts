@@ -10,8 +10,9 @@
 //   MAILTRAP_SIGNUPS_LIST_ID          — every signup
 //   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID — signups on a work-email domain
 //
-// Fire-and-forget from bootstrapPersonalAccount: a failed sync must never
-// affect signup, so failures are logged and dropped after a few retries.
+// Fire-and-forget from createOwnedAccount (accounts/core/create-account.ts):
+// a failed sync must never affect account creation, so failures are logged
+// and dropped after a few retries.
 
 import { config } from '../config';
 import { classifyEmailKind } from './personal-email';

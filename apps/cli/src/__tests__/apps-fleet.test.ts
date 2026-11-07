@@ -42,11 +42,11 @@ function startServer(): string {
       const path = url.pathname;
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path, search: url.search, body });
-      const appBase = `/v1/projects/${PROJECT}/apps/${APP_ID}`;
-      if (path === `/v1/projects/${PROJECT}`) {
+      const appBase = `/v1/workspaces/${PROJECT}/apps/${APP_ID}`;
+      if (path === `/v1/workspaces/${PROJECT}`) {
         return Response.json({ project_id: PROJECT, account_id: 'account_1', name: 'Atlas', repo_url: 'https://example.test/r.git', default_branch: 'main', manifest_path: 'kortix.yaml', status: 'active', metadata: {}, experimental: { apps: true }, created_at: 't', updated_at: 't' });
       }
-      if (path === `/v1/projects/${PROJECT}/apps`) {
+      if (path === `/v1/workspaces/${PROJECT}/apps`) {
         return Response.json({ apps: [{ app_id: APP_ID, slug: 'db', name: 'db', url: 'https://db.example.test', scale: { app: 1 }, labels: ['backend'], capabilities: ['machines', 'volumes'] }] });
       }
       if (path === appBase && req.method === 'PATCH') return Response.json({ app_id: APP_ID, slug: 'db', labels: (body as { labels: string[] }).labels });
@@ -103,7 +103,7 @@ describe('kortix apps machines | scale | exec | volumes | labels', () => {
     expect(ls.stdout).toMatch(/aaaaaaaa\s+app\s+started\s+v3\s+1 vCPU · 1 GB\s+data/);
     const stop = await runCli(['apps', 'machines', 'stop', 'db', 'aaaaaaaa', '--project', PROJECT], config);
     expect(stop.code).toBe(0);
-    expect(last('POST')?.path).toBe(`/v1/projects/${PROJECT}/apps/${APP_ID}/machines/${MACHINE}/stop`);
+    expect(last('POST')?.path).toBe(`/v1/workspaces/${PROJECT}/apps/${APP_ID}/machines/${MACHINE}/stop`);
     expect(stop.stdout).toContain('stopped');
   });
 

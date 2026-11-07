@@ -59,7 +59,19 @@ export const CLI_CONNECTOR_RUNTIME_FILES = [
   'src/tui-select.ts',
   'src/api/types.ts',
   'src/project-link.ts',
+  // Workspaces: the no-workspace answer (`api/sdk.ts`, `command-helpers.ts`,
+  // `project-bind.ts`) and the `--workspace`/`--account` alias reader
+  // (`commands/connector-gateway.ts`).
+  'src/api/no-workspace.ts',
+  'src/command-argv.ts',
 ] as const;
+
+/**
+ * `packages/shared` sources the connector imports through `@kortix/shared/*`
+ * (`api/client.ts` reads the account families, `token-denial.ts` the
+ * workspace action names), relative to `packages/shared`.
+ */
+export const CLI_CONNECTOR_SHARED_FILES = ['src/workspace-routes.ts', 'src/workspace-actions.ts'] as const;
 
 const CLI_RUNTIME_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'] as const;
 
@@ -86,6 +98,14 @@ export function cliConnectorRuntimeArtifacts(
       label: 'kortix-host-config',
       path: resolve(cliRoot, '../../packages/shared/src/host-config'),
       excludeNames: CLI_RUNTIME_EXCLUDES,
+    },
+    ...CLI_CONNECTOR_SHARED_FILES.map((relativePath) => ({
+      label: `kortix-shared-${relativePath.replace(/^src\//, '')}`,
+      path: resolve(cliRoot, '../../packages/shared', relativePath),
+    })),
+    {
+      label: 'kortix-shared-utils-string',
+      path: resolve(cliRoot, '../../packages/shared/src/utils/string.ts'),
     },
     { label: 'kortix-shared-pkg', path: resolve(cliRoot, '../../packages/shared/package.json') },
   ];

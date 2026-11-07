@@ -1,7 +1,7 @@
 /**
  * The session-log restore (P6.1): `POST .../log/restore`. The daemon of a fresh box
  * calls it once, before its harness starts, and writes the answer into the harness's
- * native store (P6.2 pi, P6.3 OpenCode). Wire: `SessionLogRestore` in
+ * native store (pi, P6.2; the OpenCode store of P6.3 went with the OpenCode harness). Wire: `SessionLogRestore` in
  * `@kortix/api-contract/session-log` (`wire.ts`).
  *
  * One transaction under the session's advisory lock, the lock every journal and

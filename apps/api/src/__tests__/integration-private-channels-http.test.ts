@@ -103,7 +103,7 @@ beforeAll(async () => {
     accountId: ACCOUNT,
     name: 'Northwind',
     repoUrl: 'https://example.test/n.git',
-    metadata: { experimental: { project_channels: true } },
+    metadata: { experimental: { chat: true } },
   });
   for (const id of USERS) {
     await db.execute(sql`
@@ -273,21 +273,18 @@ describe('the channel and its tabs', () => {
     }
   });
 
-  test('a session token cannot create, rename, archive, convert, join or change members of any channel', async () => {
-    const attempts: Array<[string, string, unknown?]> = [
-      ['PATCH', `/spaces/${P}`, { name: 'renamed-by-agent' }],
-      ['PATCH', `/spaces/${P}`, { archived: true }],
-      ['PATCH', `/spaces/${PUBLIC_C}`, { visibility: 'private' }],
-      ['POST', `/spaces/${P}/members`, { user_ids: [BOB] }],
-      ['DELETE', `/spaces/${P}/members/${ALICE}`],
-      ['POST', `/spaces/${PUBLIC_C}/join`],
-      ['POST', `/spaces/${PUBLIC_C}/members`, { user_ids: [BOB] }],
-      // nor create one.
-      ['POST', '/spaces', { name: `agent-made-${P.slice(0, 6)}` }],
+  test('a session token cannot create, convert or join a channel, nor change one its person is not in; P stays as it was', async () => {
+    const attempts: Array<[string, string, unknown, number, string]> = [
+      ['PATCH', `/spaces/${PUBLIC_C}`, { visibility: 'private' }, 403, 'session_bound_caller'],
+      ['POST', `/spaces/${PUBLIC_C}/join`, undefined, 403, 'session_bound_caller'],
+      ['POST', '/spaces', { name: `agent-made-${P.slice(0, 6)}` }, 403, 'session_bound_caller'],
+      // Alice's P thread works for no one in ops: the change is not hers to make there.
+      ['PATCH', `/spaces/${PUBLIC_C}`, { name: 'renamed-by-agent' }, 403, 'forbidden'],
+      ['POST', `/spaces/${PUBLIC_C}/members`, { user_ids: [BOB] }, 403, 'forbidden'],
     ];
-    for (const [method, path, body] of attempts) {
+    for (const [method, path, body, status, code] of attempts) {
       const res = await req(method, path, keys.pToken, body);
-      expect({ method, path, status: res.status, code: res.body.code }).toEqual({ method, path, status: 403, code: 'session_bound_caller' });
+      expect({ method, path, status: res.status, code: res.body.code }).toEqual({ method, path, status, code });
     }
     const [row] = await db.select().from(projectSpaces).where(eq(projectSpaces.spaceId, P));
     expect(row!.name).toBe(P_SLUG);
@@ -440,13 +437,13 @@ describe('threads of P', () => {
       projectId: PROJECT,
       sessionId: THREAD,
       actorType: 'agent',
-      action: 'opencode.tool.bash',
-      resourceType: 'opencode_event',
+      action: 'agent.tool.bash',
+      resourceType: 'agent_event',
       resourceId: crypto.randomUUID(),
       inputSummary: { command: `cat ${WORD}-secret.md` },
     } as any);
     await flushAuditEvents({ waitMs: 2_000 });
-    const ofP = (events: any[]) => events.filter((e) => e.session_id === THREAD && e.action === 'opencode.tool.bash');
+    const ofP = (events: any[]) => events.filter((e) => e.session_id === THREAD && e.action === 'agent.tool.bash');
     const project = await req('GET', '/audit?limit=200', keys.manager);
     expect(project.status).toBe(200);
     expect(ofP(project.body.events).length).toBe(1);
@@ -479,7 +476,7 @@ describe('notifications, triggers, removal', () => {
     expect((await maySeeSessions(ALICE, rows)).has(THREAD)).toBe(true);
   });
 
-  test('the oversight owner reads a P thread but may not prompt it through a room', async () => {
+  test('the oversight owner reads a P thread but may not prompt it', async () => {
     const rows = [...(await loadSessionAccessRows([THREAD])).values()];
     expect((await maySeeSessions(OWNER, rows)).has(THREAD)).toBe(true);
     expect((await mayPromptSessions(OWNER, ACCOUNT, [THREAD])).has(THREAD)).toBe(false);
@@ -545,7 +542,8 @@ describe('notifications, triggers, removal', () => {
     expect((await req('GET', `/spaces/${P}/links`, keys.pToken)).status).toBe(404);
     expect((await req('GET', '/spaces', keys.pToken)).body.spaces.map((s: any) => s.space_id)).not.toContain(P);
     expect((await req('POST', `/spaces/${P}/join`, keys.pToken)).status).toBe(403);
-    expect((await req('POST', `/spaces/${P}/members`, keys.pToken, { user_ids: [ALICE] })).status).toBe(403);
+    // Removed, she no longer sees P: her thread's add is a 404, as her own would be.
+    expect((await req('POST', `/spaces/${P}/members`, keys.pToken, { user_ids: [ALICE] })).status).toBe(404);
     const rows = await db.select().from(projectSpaceMembers).where(and(eq(projectSpaceMembers.spaceId, P), eq(projectSpaceMembers.userId, ALICE)));
     expect(rows).toEqual([]);
   });

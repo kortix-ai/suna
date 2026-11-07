@@ -19,7 +19,7 @@ function storeFlow(id: string, meta: FlowMeta, fn: (ctx: FlowContext) => Promise
         ...(meta.routes ?? []),
         "POST /v1/accounts/tokens",
         "DELETE /v1/accounts/tokens/:tokenId",
-        "POST /v1/projects/:projectId/sessions/:sessionId/log/journal",
+        "POST /v1/workspaces/:projectId/sessions/:sessionId/log/journal",
       ],
     },
     fn,
@@ -39,18 +39,18 @@ storeFlow(
     domain: "sessions",
     requires: ["database"],
     routes: [
-      "GET /v1/projects/:projectId/sessions/:sessionId/transcript",
-      "PATCH /v1/projects/:projectId/features",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId/transcript",
+      "PATCH /v1/workspaces/:projectId/features",
       // `kortix sessions digest` lists, then digests each session.
-      "GET /v1/projects/:projectId/sessions",
-      "GET /v1/accounts/me",
+      "GET /v1/workspaces/:projectId/sessions",
+      "GET /v1/me",
       // `kortix sessions log` locates the session, asks for its stored session
       // log (404: none), then reads its saved copy.
-      "GET /v1/projects/:projectId/sessions/:sessionId",
-      "GET /v1/projects/:projectId/sessions/:sessionId/log",
-      "GET /v1/projects/:projectId/sessions/:sessionId/snapshot",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId/log",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId/snapshot",
       // The CLI reads the `session_log` flag: on, the stored log is the only saved copy.
-      "GET /v1/projects/:projectId/detail",
+      "GET /v1/workspaces/:projectId/detail",
     ],
   },
   async (ctx) => {
@@ -87,7 +87,7 @@ storeFlow(
       ],
       bearer: await ownerBearer(ctx.P.OWNER),
     });
-    const route = "/v1/projects/:projectId/sessions/:sessionId/transcript";
+    const route = "/v1/workspaces/:projectId/sessions/:sessionId/transcript";
     const options = {
       params: { projectId: project.id, sessionId },
       query: { shape: "sync", history: "true" },
@@ -109,7 +109,7 @@ storeFlow(
       "the session snapshot answers the same saved window in one read, every leg in the contract shape",
       async () => {
         (
-          await owner.get("/v1/projects/:projectId/sessions/:sessionId/snapshot", {
+          await owner.get("/v1/workspaces/:projectId/sessions/:sessionId/snapshot", {
             params: { projectId: project.id, sessionId },
           })
         )
@@ -128,7 +128,7 @@ storeFlow(
       async () => {
         (
           await owner.patch(
-            "/v1/projects/:projectId/features",
+            "/v1/workspaces/:projectId/features",
             { feature: "session_transcript_history", enabled: false },
             { params: { projectId: project.id } },
           )
@@ -155,7 +155,7 @@ storeFlow(
           .has("$.source", "mirror")
           .has("$.available", true)
           .has("$.message_count", 2)
-          .has("$.opencode_session_id", fixture.root)
+          .has("$.runtime_session_id", fixture.root)
           .has(
             "$.messages[1].info.time.completed",
             fixture.messages[1].info.time.completed,
@@ -178,7 +178,7 @@ storeFlow(
           .status(200)
           .body()
           .has("$.available", true)
-          .has("$.opencode_session_id", child)
+          .has("$.runtime_session_id", child)
           .has("$.message_count", 1)
           .has("$.messages[0].parts[0].text", "List the files.");
         (
@@ -211,7 +211,7 @@ storeFlow(
         await db.connect();
         try {
           await db.query(
-            "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
+            "UPDATE kortix.project_sessions SET runtime_session_id = $2 WHERE session_id = $1",
             [sessionId, "ses_replacement"],
           );
         } finally {
@@ -222,7 +222,7 @@ storeFlow(
           .body()
           .has("$.available", false)
           .has("$.message_count", 0)
-          .has("$.opencode_session_id", "ses_replacement");
+          .has("$.runtime_session_id", "ses_replacement");
       },
     );
     await ctx.step(
@@ -239,7 +239,7 @@ storeFlow(
         await restore.connect();
         try {
           await restore.query(
-            "UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1",
+            "UPDATE kortix.project_sessions SET runtime_session_id = $2 WHERE session_id = $1",
             [sessionId, fixture.root],
           );
         } finally {
@@ -353,7 +353,7 @@ storeFlow(
           throwIfCliInfraFailure(old, "kortix sessions log --schema v1");
           if (old.exitCode !== 2 || !old.stderr.includes('Invalid --schema "v1"'))
             throw new Error(`--schema v1: expected exit 2 naming the invalid schema, got ${old.exitCode}: ${old.all}`);
-          const status = (await owner.get("/v1/projects/:projectId/sessions/:sessionId", {
+          const status = (await owner.get("/v1/workspaces/:projectId/sessions/:sessionId", {
             params: { projectId: project.id, sessionId },
           })).status(200).json<{ status: string }>();
           if (status.status !== "stopped")
@@ -411,18 +411,18 @@ storeFlow(
     tags: ["deployed"],
     requires: ["database"],
     routes: [
-      "POST /v1/projects/:projectId/sessions/:sessionId/attachments",
-      "GET /v1/projects/:projectId/sessions/:sessionId/attachments/:attachmentId",
-      "POST /v1/projects/:projectId/sessions/:sessionId/prompts",
-      "DELETE /v1/projects/:projectId/sessions/:sessionId",
+      "POST /v1/workspaces/:projectId/sessions/:sessionId/attachments",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId/attachments/:attachmentId",
+      "POST /v1/workspaces/:projectId/sessions/:sessionId/prompts",
+      "DELETE /v1/workspaces/:projectId/sessions/:sessionId",
       // `kortix sessions attachments` logs in, locates the session, reads its
       // saved transcript as the index, then fetches the bytes.
-      "GET /v1/accounts/me",
-      "GET /v1/projects/:projectId/sessions/:sessionId",
-      "GET /v1/projects/:projectId/sessions/:sessionId/transcript",
+      "GET /v1/me",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId/transcript",
       // The `session_log` flag decides which saved copy the index is: the stored log or the v1 transcript.
-      "GET /v1/projects/:projectId/detail",
-      "GET /v1/projects/:projectId/sessions/:sessionId/log",
+      "GET /v1/workspaces/:projectId/detail",
+      "GET /v1/workspaces/:projectId/sessions/:sessionId/log",
     ],
   },
   async (ctx) => {
@@ -442,7 +442,7 @@ storeFlow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const attachmentId = crypto.randomUUID();
     const params = { projectId: project.id, sessionId, attachmentId };
-    const upload = "/v1/projects/:projectId/sessions/:sessionId/attachments";
+    const upload = "/v1/workspaces/:projectId/sessions/:sessionId/attachments";
     const download = `${upload}/:attachmentId`;
     const ref = `kortix-attachment://${project.id}/${sessionId}/${attachmentId}`;
     const contents = "Files remain readable while the computer is stopped.";
@@ -531,7 +531,7 @@ storeFlow(
         ).status(404);
         (
           await owner.post(
-            "/v1/projects/:projectId/sessions/:sessionId/prompts",
+            "/v1/workspaces/:projectId/sessions/:sessionId/prompts",
             {
               client_message_id: crypto.randomUUID(),
               message_id: "msg_0123456789abAbCdEfGhIjKlMn",
@@ -642,7 +642,7 @@ storeFlow(
           if (unknown.exitCode !== 1 || !unknown.stderr.includes("No stored file"))
             throw new Error(`unknown id was not refused: ${unknown.exitCode} ${unknown.all}`);
 
-          const session = (await owner.get("/v1/projects/:projectId/sessions/:sessionId", { params }))
+          const session = (await owner.get("/v1/workspaces/:projectId/sessions/:sessionId", { params }))
             .status(200)
             .json<{ status: string }>();
           if (session.status !== "stopped")
@@ -658,7 +658,7 @@ storeFlow(
         (
           await owner.request(
             "DELETE",
-            "/v1/projects/:projectId/sessions/:sessionId",
+            "/v1/workspaces/:projectId/sessions/:sessionId",
             { params },
           )
         ).status(200);

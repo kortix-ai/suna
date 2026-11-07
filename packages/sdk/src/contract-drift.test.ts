@@ -20,6 +20,9 @@ import type * as C from '../../api-contract/src/index';
 import type * as SL from '../../api-contract/src/session-log';
 import type * as MA from '../../api-contract/src/multi-agent';
 import type * as TC from '../../api-contract/src/kortix-tool-card';
+import type * as RR from '../../api-contract/src/runtime-relay';
+import type { RuntimeCapability, RuntimeThreadStatus } from './index';
+import type { SessionWorkingVerdict } from './core/session/working-server';
 import type {
   PeerMessage,
   PeerMessageSendBody,
@@ -102,6 +105,15 @@ export function contractDrift(): void {
   fits<KortixProject>(wire<C.Project>());
   // `warm_pool*` are read by older hosts only; the API stopped sending them.
   noPhantom<NoPhantom<KortixProject, C.Project, 'warm_pool' | 'warm_pool_available'>>();
+
+  // The runtime value sets, both ways: the SDK's copy is the contract's (`core/wire-values`).
+  fits<RuntimeCapability>(wire<RR.RuntimeCapability>());
+  fits<RR.RuntimeCapability>(wire<RuntimeCapability>());
+  fits<RuntimeThreadStatus>(wire<RR.RuntimeThreadStatus>());
+  fits<RR.RuntimeThreadStatus>(wire<RuntimeThreadStatus>());
+  // The turn verdict `kortix.control.turn` carries.
+  fits<SessionWorkingVerdict>(wire<C.SessionWorking>());
+  noPhantom<NoPhantom<SessionWorkingVerdict, C.SessionWorking>>();
 
   fits<ProjectSession>(wire<C.ProjectSession>());
   noPhantom<NoPhantom<ProjectSession, C.ProjectSession>>();

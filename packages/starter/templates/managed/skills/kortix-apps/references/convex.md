@@ -10,7 +10,7 @@ Kortix App runs one image. The Apps page shows them as one: the dashboard is
 the backend's Dashboard tab. The backend runs 24/7 with its volume; the
 dashboard sleeps when idle.
 
-It gives the project a transactional database, TypeScript server functions,
+It gives the workspace a transactional database, TypeScript server functions,
 realtime queries, file storage, schedules and search, with Kortix sign-in.
 
 ## Launch
@@ -23,7 +23,7 @@ It writes two blocks into `kortix.yaml` and two files, then:
 
 1. deploys `backend`;
 2. runs `./generate_admin_key.sh` on the `backend` machine and writes the key to
-   the project secret `BACKEND_ADMIN_KEY` (the slug in capitals, `-` → `_`). The
+   the workspace secret `BACKEND_ADMIN_KEY` (the slug in capitals, `-` → `_`). The
    key belongs to the backend just launched, so every launch rewrites it: a
    value left by an earlier App of the same name is stale. Convex derives it
    from the backend's instance secret, so it stays the same while the volume
@@ -59,10 +59,10 @@ The files `launch` writes (a file that already exists is yours: kept):
 | `apps/backend/dashboard/start.js` | Runs Convex's dashboard on port 6792. On the App's port 6791 it serves `/` as a page that frames the dashboard and answers its `dashboard-credentials-request` (Convex's embedding protocol) with the admin key; every other path goes to the dashboard. If the dashboard exits, the machine exits and Kortix restarts it. |
 
 Both services of `backend` are `public` on purpose: Convex enforces sign-in in its
-functions (`requireMember`, sign-in.md). The dashboard is project admins only,
+functions (`requireMember`, sign-in.md). The dashboard is workspace admins only,
 so its page may carry the key.
 
-To open the dashboard: Apps → `backend` → Dashboard. A project admin lands in it
+To open the dashboard: Apps → `backend` → Dashboard. A workspace admin lands in it
 signed in, with no click.
 
 ### An App launched before the dashboard was a Dockerfile App
@@ -72,7 +72,7 @@ key and shows as its own card). Bring it up to date:
 
 1. Get the two files: run
    `kortix apps launch --template convex --no-deploy` in a scratch
-   directory and copy `apps/backend/dashboard/` into the project, or copy them
+   directory and copy `apps/backend/dashboard/` into the workspace, or copy them
    from this skill's template source.
 2. Replace the `backend-dashboard` block with the block above, and add
    `display: { preview: none }` to the `backend` block if it is missing.
@@ -90,7 +90,7 @@ server code in the UI App.
 
 ## Where the code lives
 
-The project repo, one directory per App, named after its slug:
+The workspace repo, one directory per App, named after its slug:
 `apps/backend/package.json` + `apps/backend/convex/`. Versioned, reviewed, available to
 every session.
 
@@ -99,7 +99,7 @@ every session.
 Every task on the backend runs these six steps in order. Skip none: step 3
 keeps you from breaking what exists, and step 5 is the proof.
 
-If the App's URL is on `*.apps.localhost`, the project runs on a developer's
+If the App's URL is on `*.apps.localhost`, the workspace runs on a developer's
 local Kortix stack, which this sandbox cannot reach. Write the change, say the
 App is unreachable from here, and give the user the commands to run.
 
@@ -116,7 +116,7 @@ Read `convex/_generated/ai/guidelines.md` before your first change. Keep
 `convex` at the version the template pins (1.46.0): a newer CLI can need
 server APIs this backend lacks.
 
-**2. Connect.** `launch` stored the admin key as the project secret
+**2. Connect.** `launch` stored the admin key as the workspace secret
 `BACKEND_ADMIN_KEY`, and a session has it in its environment. Load it into the
 shell only:
 
@@ -172,7 +172,7 @@ curl -s "$CONVEX_SELF_HOSTED_URL/api/query" -H "Authorization: Bearer $TOKEN" -H
 
 A UI that uses the backend is verified in the browser (SKILL.md, Verify).
 
-**6. Hand over.** The dashboard (project admins, signed in): Apps → `backend` →
+**6. Hand over.** The dashboard (workspace admins, signed in): Apps → `backend` →
 Dashboard, or a direct link:
 
 ```sh

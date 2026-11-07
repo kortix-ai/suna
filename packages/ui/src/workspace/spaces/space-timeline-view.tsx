@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
-import { type UseProjectSessionsOptions, useProjectSessions } from '@kortix/sdk/react';
+import { type UseProjectSessionsOptions, useFeatureFlag, useProjectSessions, useSessionNeedsYou } from '@kortix/sdk/react';
 import {
   CaretRightIcon,
   ChatTeardropTextIcon,
@@ -12,7 +12,8 @@ import {
   TimerIcon,
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { SpaceMentionContext } from '../../session/composer/menus/space-mentions';
 
 import { useLocale, useTranslations } from '../../i18n';
 import { AgentMark } from '../../internal/components/agent-mark';
@@ -28,10 +29,13 @@ import Loading from '../../primitives/loading';
 import { UserAvatar } from '../../primitives/user-avatar';
 import { sessionDisplayLabel, sessionDisplayStatus } from '../../session/actions/session-label';
 import { participantLabel } from '../../session/participants/session-participants';
+import { MentionChip } from '../../session/thread/mention-chip';
+import { TypingIndicator, useElapsedLabel } from '../../session/thread/typing-indicator';
+import { formatDuration } from '../../internal/session-types';
 import { MESSAGE_TEXT_CLASS, MessageRow } from '../../session/turn/message-row';
 import { SolidCheckIcon } from '../../internal/icons/solid-check-icon';
 import { RememberThisButton } from '../memory/remember-this';
-import { SessionStatusMark } from '../sidebar/session-status-mark';
+import { SessionStatusMark } from '../../session/list/session-status-mark';
 import {
   agentLabel,
   buildSpaceTimeline,
@@ -40,11 +44,20 @@ import {
   firstPromptTruncated,
   gutterTime,
   lastReplyLabel,
+  messageMentionSegments,
+  type MentionCandidate,
+  kortixRootText,
+  postSegments,
+  rootPostAuthor,
   threadIsWorking,
   threadMessageText,
   threadStatus,
   type TimelineDay,
 } from './space-timeline';
+import { oneLineWithoutEmails, spaceDisplayName } from './space-identity';
+import { useMentionNames } from './space-people';
+import { type Principal, PrincipalHover, useMemberIdByName } from './principal-card';
+import { usePersonalSpaceName } from './use-personal-space-name';
 
 /** What a thread waits on the viewer for: none, an answer (question or approval), or a review. */
 type NeedsYou = 'answer' | 'review' | null;
@@ -84,7 +97,8 @@ export function useSpaceThreads(
     spaceId,
     parent: 'root',
     enabled: !!spaceId,
-    refetchInterval: (sessions) => (sessions.some(threadIsWorking) ? 5_000 : 15_000),
+    // A thread whose hidden worker runs (`active_child_agent`) polls like a working one.
+    refetchInterval: (sessions) => (sessions.some((session) => threadIsWorking(session) || !!session.active_child_agent) ? 5_000 : 15_000),
     pollFirstPageOnly: true,
   });
 }
@@ -147,6 +161,8 @@ export function SpaceTimeline({
   const days = useMemo(() => buildSpaceTimeline(threads.sessions), [threads.sessions]);
   const loading = threads.isLoading || threads.isScanning;
   const needsYou = useThreadNeedsYou(projectId);
+  // Chat (`chat`): Kortix's newest reply shows under each message.
+  const oneChat = useFeatureFlag(projectId, 'chat').enabled;
   const now = new Date();
 
   const dayLabel = (day: TimelineDay) => {
@@ -187,9 +203,11 @@ export function SpaceTimeline({
                 {day.threads.map((session) => (
                   <ThreadRow
                     key={session.session_id}
+                    projectId={projectId}
                     session={session}
                     space={space}
                     needsYou={needsYou(session)}
+                    latestReply={oneChat}
                     selected={session.session_id === selectedId}
                     onOpen={() => onOpenThread(session.session_id)}
                   />
@@ -206,13 +224,15 @@ export function SpaceTimeline({
 /** The top of the history: "Welcome to #name" for a channel, the DM's agent for a DM. */
 function SpaceWelcome({ space, empty }: { space: ProjectSpace; empty: boolean }) {
   const t = useTranslations('spaces.view');
+  const personalName = usePersonalSpaceName();
   if (space.kind === 'dm' && space.dm_agent_name) {
+    // A private space with one agent: the space's name over who sees it.
     const agent = agentLabel(space.dm_agent_name);
     return (
       <div className="space-y-3 px-5 pt-16 pb-6">
         <AgentMark slug={space.dm_agent_name} size={42} label={agent} />
         <div className="space-y-1.5">
-          <h2 className="text-2xl font-semibold tracking-tight text-balance">{agent}</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-balance">{spaceDisplayName(space, personalName)}</h2>
           <p className="text-muted-foreground text-sm text-pretty">{t('dmIntro', { agent })}</p>
         </div>
       </div>
@@ -268,15 +288,20 @@ function triggerAuthor(session: ProjectSession): { name: string; icon: Icon } | 
  * its author: a new thread is a new top-level message.
  */
 function ThreadRow({
+  projectId,
   session,
   space,
   needsYou,
+  latestReply = false,
   selected,
   onOpen,
 }: {
+  projectId: string;
   session: ProjectSession;
   space: ProjectSpace;
   needsYou: NeedsYou;
+  /** Chat (`chat`): the agent's newest reply shows under the message. */
+  latestReply?: boolean;
   selected: boolean;
   onOpen: () => void;
 }) {
@@ -285,26 +310,53 @@ function ThreadRow({
   const created = new Date(session.created_at);
   // A trigger's run reads as the trigger: its name and its type's glyph.
   const trigger = triggerAuthor(session);
+  // A thread Kortix started (Chat) reads as Kortix's own message.
+  const byKortix = kortixRootText(session) !== null;
   // A trigger or an API key starts a thread as a service account: an agent tile, not a person.
-  const machine = trigger !== null || session.owner_type === 'service_account';
+  const machine = trigger !== null || byKortix || session.owner_type === 'service_account';
   // The profile name, never a raw email (`participantLabel`).
   const name = trigger
     ? trigger.name
-    : machine
+    : byKortix
+      ? agentLabel(rootPostAuthor(session) ?? session.agent_name ?? space.dm_agent_name ?? t('agentFallback'))
+      : machine
       ? agentLabel(session.owner_name || t('agentFallback'))
       : participantLabel({ name: session.owner_name ?? null, email: session.owner_email ?? null }) ||
         t('authorFallback');
 
+  // Who the avatar and the name open: the agent of a Kortix post, the person who wrote it; a trigger or an API key has no card.
+  const agentSlug = byKortix ? (rootPostAuthor(session) ?? session.agent_name ?? space.dm_agent_name) : null;
+  const principal: Principal | null = byKortix
+    ? agentSlug
+      ? { kind: 'agent', name: agentSlug }
+      : null
+    : machine
+      ? null
+      : {
+          kind: 'person',
+          userId: session.created_by ?? null,
+          name,
+          email: session.owner_email ?? null,
+          avatarUrl: session.owner_avatar_url ?? null,
+        };
+  const card = (node: ReactNode, focusable = true) =>
+    principal ? (
+      <PrincipalHover projectId={projectId} principal={principal} focusable={focusable}>
+        {node}
+      </PrincipalHover>
+    ) : (
+      node
+    );
   return (
     <MessageRow
       selected={selected}
-      avatar={
+      avatar={card(
         machine ? (
           trigger ? (
             <EntityAvatar icon={trigger.icon} label={name} size="lg" />
           ) : (
             <AgentMark
-              slug={session.agent_name ?? space.dm_agent_name ?? DEFAULT_AGENT_SLUG}
+              slug={(byKortix ? rootPostAuthor(session) : null) ?? session.agent_name ?? space.dm_agent_name ?? DEFAULT_AGENT_SLUG}
               size={28}
               // 36px, the `lg` avatar column (`w-10`): the 40px tile would overflow it.
               tile={36}
@@ -312,10 +364,11 @@ function ThreadRow({
             />
           )
         ) : (
-          <UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} size="lg" />
-        )
-      }
-      name={name}
+          <UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} colorKey={session.created_by} size="lg" />
+        ),
+        false,
+      )}
+      name={card(<span className="truncate hover:underline">{name}</span>)}
       time={{
         iso: session.created_at,
         label: created.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' }),
@@ -329,9 +382,181 @@ function ThreadRow({
         </>
       }
     >
-      <ThreadPrompt session={session} onOpen={onOpen} />
-      <ThreadSummary session={session} space={space} needsYou={needsYou} onOpen={onOpen} />
+      <ThreadPrompt projectId={projectId} session={session} onOpen={onOpen} />
+      {latestReply ? (
+        <ThreadReplyLine projectId={projectId} session={session} space={space} needsYou={needsYou} showReply={!byKortix} onOpen={onOpen} />
+      ) : (
+        <ThreadSummary session={session} space={space} needsYou={needsYou} onOpen={onOpen} />
+      )}
     </MessageRow>
+  );
+}
+
+/**
+ * Chat (`chat`): every message is a thread, and its ONE reply line sits under
+ * it: the agent's tile, then three dots while it works, a "Needs you" mark
+ * while it waits on the viewer, else its newest reply on one line
+ * (`result_excerpt`, stamped at turn end); the reply count and the last
+ * activity at the end. The whole line opens the thread.
+ */
+function ThreadReplyLine({
+  projectId,
+  session,
+  space,
+  needsYou,
+  showReply,
+  onOpen,
+}: {
+  projectId: string;
+  session: ProjectSession;
+  space: ProjectSpace;
+  needsYou: NeedsYou;
+  /** False for a thread Kortix started: its top message is already the agent's. */
+  showReply: boolean;
+  onOpen: () => void;
+}) {
+  const t = useTranslations('spaces.view');
+  const tf = useTranslations('spaces.view.threadFilter');
+  const locale = useLocale();
+  const agentName = session.agent_name ?? space.dm_agent_name;
+  const agent = agentName ? agentLabel(agentName) : t('agentFallback');
+  const working = threadIsWorking(session);
+  const replies = session.reply_count ?? 0;
+  const names = useMentionNames(projectId);
+  const tTurn = useTranslations('sessionUi.turn');
+  // An ask that waits on the person (its hidden workers' included): the line says so and opens the thread.
+  const asks = useSessionNeedsYou(projectId, session.session_id);
+  const firstAsk = asks.asks[0];
+  const askHeader = firstAsk ? (firstAsk.question?.questions[0]?.header || firstAsk.title) : null;
+  // The wait, said: "Starting…" while the thread's computer comes up, else "Working · 0:42".
+  // A stopped thread that works again is waking its computer: a start too.
+  const booting = session.status === 'provisioning' || session.status === 'queued' || session.status === 'branching' || (working && session.status === 'stopped');
+  const elapsed = useElapsedLabel(working ? (session.working?.since ?? session.updated_at) : null, formatDuration);
+  const waitDetail = booting ? tTurn('starting') : elapsed ? tTurn('workingFor', { time: elapsed }) : null;
+  // An agent's own post: its reply line starts with the first reply. Mentions read as names; no address shows.
+  const reply = showReply || replies > 0 ? oneLineWithoutEmails(names(session.result_excerpt ?? '')) || null : null;
+  // The thread's own turn ended ("On it."), its hidden worker still runs: say who works.
+  const childAgent = !working && !needsYou && !asks.needsYou ? (session.active_child_agent ?? null) : null;
+  // Nothing to say yet (no reply, no work, nothing waiting): no line, as in Slack.
+  if (!needsYou && !asks.needsYou && !working && !childAgent && !reply && replies === 0) return null;
+  const time = <time dateTime={session.updated_at}>{relativeTime(session.updated_at, locale)}</time>;
+  if (childAgent) {
+    return (
+      <div className="-mx-1 mt-1 flex w-full max-w-2xl min-w-0 items-center gap-1 rounded-md pl-1">
+        <PrincipalHover projectId={projectId} principal={{ kind: 'agent', name: childAgent }} className="shrink-0">
+          <AgentMark slug={childAgent} size={14} label={agentLabel(childAgent)} />
+        </PrincipalHover>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="hover:bg-hover focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-left outline-none focus-visible:ring-2"
+        >
+          <TypingIndicator name={agentLabel(childAgent)} className="h-5" detail={tTurn('agentIsWorking', { agent: agentLabel(childAgent) })} />
+          <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs tabular-nums">
+            {replies > 0 ? `${t('replies', { count: replies })} · ` : ''}
+            {time}
+          </span>
+        </button>
+      </div>
+    );
+  }
+  // Replies without a text to show: the count and the time alone, no empty face.
+  if (!needsYou && !asks.needsYou && !working && !reply) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="hover:bg-hover focus-visible:ring-ring text-muted-foreground -mx-1 mt-1 flex w-fit items-center gap-1 rounded-md px-1 py-1 text-xs tabular-nums outline-none focus-visible:ring-2"
+      >
+        <span className="text-foreground font-medium">{t('replies', { count: replies })}</span>
+        <span aria-hidden>·</span>
+        {time}
+      </button>
+    );
+  }
+  return (
+    // The agent's tile opens its card; the rest of the line opens the thread (two controls, never one inside the other).
+    <div className="-mx-1 mt-1 flex w-full max-w-2xl min-w-0 items-center gap-1 rounded-md pl-1">
+      <PrincipalHover projectId={projectId} principal={{ kind: 'agent', name: agentName ?? DEFAULT_AGENT_SLUG }} className="shrink-0">
+        <AgentMark slug={agentName ?? DEFAULT_AGENT_SLUG} size={14} label={agent} />
+      </PrincipalHover>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="hover:bg-hover focus-visible:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 pr-1.5 pl-1 text-left outline-none focus-visible:ring-2"
+      >
+        {asks.needsYou ? (
+          <span className="text-foreground flex min-w-0 items-center gap-1 text-xs font-medium">
+            <SessionStatusMark status="needs-you" waitingOn="answer" />
+            <span className="truncate" title={askHeader ?? undefined}>
+              {askHeader ? tTurn('needsYouOn', { header: askHeader }) : tf('statusValue.needsYou')}
+            </span>
+          </span>
+        ) : needsYou ? (
+          <span className="text-foreground flex shrink-0 items-center gap-1 text-xs font-medium">
+            <SessionStatusMark status="needs-you" waitingOn={needsYou} />
+            {tf('statusValue.needsYou')}
+          </span>
+        ) : working ? (
+          <TypingIndicator name={agent} className="h-5" detail={waitDetail} detailDelayMs={2000} />
+        ) : reply ? (
+          <span className="text-foreground min-w-0 truncate text-sm" title={reply}>
+            {reply}
+          </span>
+        ) : null}
+        <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs tabular-nums">
+          {replies > 0 ? `${t('replies', { count: replies })} · ` : ''}
+          {time}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+/** A person's message text, its `@` mentions of the space's people and agents drawn as chips with cards. */
+function MessageText({ projectId, text }: { projectId: string; text: string }) {
+  const source = useContext(SpaceMentionContext);
+  const candidates = useMemo<MentionCandidate[]>(
+    () =>
+      source
+        ? [
+            ...source.people.flatMap((p) =>
+              [p.token, p.name].map((token) => ({ token, mention: { kind: 'person' as const, label: p.name, userId: p.userId } })),
+            ),
+            ...source.agents.flatMap((a) =>
+              [a.name, a.label].map((token) => ({ token, mention: { kind: 'agent' as const, label: a.label, agent: a.name } })),
+            ),
+          ]
+        : [],
+    [source],
+  );
+  const segments = useMemo(() => messageMentionSegments(text, candidates), [text, candidates]);
+  return (
+    <>
+      {segments.map((segment, i) =>
+        segment.mention ? <MentionCard key={i} projectId={projectId} mention={segment.mention} /> : <span key={i}>{segment.text}</span>,
+      )}
+    </>
+  );
+}
+
+/** A resolved @mention: its chip opens the person's or agent's card. An unresolved one stays a plain chip. */
+function MentionCard({ projectId, mention }: { projectId: string; mention: NonNullable<ReturnType<typeof postSegments>[number]['mention']> }) {
+  const chip = <MentionChip kind={mention.kind === 'person' ? 'person' : 'agent'} label={mention.label} />;
+  // A post stored before mentions carried ids: the member with that display name.
+  const byName = useMemberIdByName(projectId, mention.kind === 'person' && !mention.userId ? mention.label : null);
+  const userId = mention.userId ?? byName;
+  const principal: Principal | null =
+    mention.kind === 'agent' && mention.agent
+      ? { kind: 'agent', name: mention.agent }
+      : mention.kind === 'person' && userId
+        ? { kind: 'person', userId, name: mention.label }
+        : null;
+  if (!principal) return chip;
+  return (
+    <PrincipalHover projectId={projectId} principal={principal} className="align-baseline">
+      {chip}
+    </PrincipalHover>
   );
 }
 
@@ -341,7 +566,7 @@ function ThreadRow({
  * prompt the server cut (`firstPromptTruncated`) ends in "…", and its "Show
  * more" opens the thread, whose transcript holds the whole message.
  */
-function ThreadPrompt({ session, onOpen }: { session: ProjectSession; onOpen: () => void }) {
+function ThreadPrompt({ projectId, session, onOpen }: { projectId: string; session: ProjectSession; onOpen: () => void }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const truncated = firstPromptTruncated(session);
   const text = threadMessageText(session);
@@ -367,7 +592,19 @@ function ThreadPrompt({ session, onOpen }: { session: ProjectSession; onOpen: ()
           !expanded && 'line-clamp-6',
         )}
       >
-        {truncated ? `${text}…` : text}
+        {kortixRootText(session) !== null ? (
+          // A space post: its resolved mentions as chips.
+          postSegments(text, session.metadata?.chat_root_mentions).map((segment, i) =>
+            segment.mention ? (
+              <MentionCard key={i} projectId={projectId} mention={segment.mention} />
+            ) : (
+              <span key={i}>{segment.text}</span>
+            ),
+          )
+        ) : (
+          // A person's message: its `@` mentions of the space's people and agents as chips.
+          <MessageText projectId={projectId} text={truncated ? `${text}…` : text} />
+        )}
       </p>
       {truncated || overflows || expanded ? (
         <button

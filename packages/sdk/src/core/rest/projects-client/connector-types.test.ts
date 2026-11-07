@@ -67,9 +67,9 @@ test('catalog asks for output schemas only when includeOutputSchemas is set', as
   await getConnectorCatalog('p1', { slug: 'ke2e-typed', includeOutputSchemas: true });
   await getConnectorCatalog('p1', { slug: 'ke2e-typed' });
   expect(urls[0]).toBe(
-    'http://test.local/v1/connectors/projects/p1/catalog?slug=ke2e-typed&include_output_schemas=true',
+    'http://test.local/v1/connectors/workspaces/p1/catalog?slug=ke2e-typed&include_output_schemas=true',
   );
-  expect(urls[1]).toBe('http://test.local/v1/connectors/projects/p1/catalog?slug=ke2e-typed');
+  expect(urls[1]).toBe('http://test.local/v1/connectors/workspaces/p1/catalog?slug=ke2e-typed');
 });
 
 test('describe returns the action output schema', async () => {

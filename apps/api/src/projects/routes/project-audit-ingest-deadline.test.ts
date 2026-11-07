@@ -45,7 +45,7 @@ let failStatementFrom: { index: number; error: unknown } | null = null;
 
 const sandboxScope = {
   sessionId: SESSION_ID,
-  opencodeSessionId: 'ses_server_owned',
+  runtimeSessionId: 'ses_server_owned',
   agentName: 'trusted-agent',
   createdBy: HUMAN_ID,
 };
@@ -75,6 +75,7 @@ async function waitUntilFinalized(): Promise<void> {
 }
 
 mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: () => true,
   db: {
     select: () => ({
@@ -124,7 +125,7 @@ const requestDeadline: RequestDeadlineModule['requestDeadline'] = (
 const isRequestDeadlineHTTPException: RequestDeadlineModule['isRequestDeadlineHTTPException'] = (
   await import('../../middleware/request-deadline')
 ).isRequestDeadlineHTTPException;
-const { __resetAuditRateGuardForTest } = await import('../../shared/opencode-audit-rate-guard');
+const { __resetAuditRateGuardForTest } = await import('../../shared/runtime-audit-rate-guard');
 
 // The deadline guard is the outermost middleware, exactly as the production
 // app mounts it: its 1 ms race finalizes the context while the handler below

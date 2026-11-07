@@ -6,19 +6,21 @@
 // catalog (`@kortix/shared/audit-labels`: one per route and per event) and
 // the named-action and path-pattern titles still written in
 // audit-display-helpers.ts. A title enters the map only when English has its
-// key; a title without one renders in English.
+// key; a title without one renders in English. The key stays the hash of the
+// source title, and the English value may differ from it: copy edits change
+// the value and keep the key, like every other `i18nComplete` string
+// (2026-11-05: "project" became "workspace" in the values only).
 //
 //   node apps/web/scripts/generate-audit-title-keys.mjs
 //   node apps/web/scripts/generate-audit-title-keys.mjs --check
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { repositoryRoot, runFileGenerator } from './docs-generated-region.mjs';
 
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const webRoot = resolve(scriptDirectory, '..');
-const repositoryRoot = resolve(webRoot, '../..');
+const webRoot = resolve(repositoryRoot, 'apps/web');
 const outputPath = resolve(webRoot, 'src/components/iam/audit-title-translation-keys.generated.ts');
 const helpersPath = resolve(webRoot, 'src/components/iam/audit-display-helpers.ts');
 
@@ -74,7 +76,7 @@ export function auditTitleTranslationKeys() {
     .hardcodedUi.i18nComplete;
   const entries = [...auditTitles()]
     .map((title) => [title, translationKey(title)])
-    .filter(([title, key]) => english[key] === title)
+    .filter(([, key]) => typeof english[key] === 'string')
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return Object.fromEntries(entries);
 }
@@ -90,15 +92,11 @@ export function renderAuditTitleTranslationKeys() {
   );
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const rendered = renderAuditTitleTranslationKeys();
-  if (process.argv.includes('--check')) {
-    if (readFileSync(outputPath, 'utf8') !== rendered) {
-      console.error(`${outputPath} is stale. Run: node apps/web/scripts/generate-audit-title-keys.mjs`);
-      process.exit(1);
-    }
-  } else {
-    writeFileSync(outputPath, rendered);
-    console.log(`Wrote ${rendered.split('\n').length - 4} audit titles to ${outputPath}`);
-  }
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await runFileGenerator(
+    'the audit title translation keys',
+    'node apps/web/scripts/generate-audit-title-keys.mjs',
+    renderAuditTitleTranslationKeys,
+    outputPath,
+  );
 }

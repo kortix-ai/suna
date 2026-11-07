@@ -1,6 +1,6 @@
 ---
 name: kortix-ui
-description: "Build React UI with @kortix/ui, the Kortix component library and the whole Kortix session experience as modules (session workspace, thread, composer, side panel, files, file viewer, terminal, project sidebar and home, customize pages): Kortix Apps, white-label hosts, custom dashboards on @kortix/sdk and apps/web. Load before you write a component, a page, a chat or session view, a custom dashboard or App, or a className in a React host that renders Kortix UI, or when you theme Kortix components for another brand. Covers setup, the module map, which component to compose, banned primitives, tokens, the dashboard guide, white-label theming and the verify steps."
+description: "Build React UI with @kortix/ui, the Kortix component library and the whole Kortix session experience as modules (session workspace, thread, composer, side panel, files, file viewer, terminal, workspace sidebar and home, customize pages): Kortix Apps, white-label hosts, custom dashboards on @kortix/sdk and apps/web. Load before you write a component, a page, a chat or session view, a custom dashboard or App, or a className in a React host that renders Kortix UI, or when you theme Kortix components for another brand. Covers setup, the module map, which component to compose, banned primitives, tokens, the dashboard guide, white-label theming and the verify steps."
 ---
 
 # @kortix/ui
@@ -23,7 +23,7 @@ Module entries and `@kortix/ui/theme` need 0.14.4+. Inside `kortix-ai/CompanyOS`
    marks; `i18n`, `strings`, `image`, `useViewerId`: without it no sender name or "Stopped by" shows), `IconProvider` (`@kortix/ui/icon-provider`), one `<Toaster />`
    (`@kortix/ui/toast`). `setUiTelemetry` (`@kortix/ui`) once at module load. Dark mode is `dark` on `<html>`. SDK `billingEnabled` stays off (Kortix's app only).
 4. Ids, never route params. `SessionThread`, `SessionWorkspace` and `ProjectHome` mount `SessionIdsProvider` and the
-   SDK project scope themselves. A block outside them: `KortixProjectProvider` (`@kortix/sdk/react`) and
+   SDK workspace scope themselves. A block outside them: `KortixProjectProvider` (`@kortix/sdk/react`) and
    `SessionIdsProvider` (`projectId`, `sessionId`) around it. Links follow `setUiRoutes` (`@kortix/ui`): map each page you do not serve to `null`.
 5. Import by subpath: `import { Modal } from '@kortix/ui/modal'`. The root `@kortix/ui` (section 7) needs no `@kortix/sdk`.
 
@@ -91,7 +91,7 @@ Theme with `@kortix/ui/theme`, never by forking a component: `themeToCss(theme)`
 | `@kortix/ui` (primitives, not for feature code: section 3) | `Dialog`, `DialogClose`, `DialogContent`, `DialogDescription`, `DialogFooter`, `DialogHeader`, `DialogOverlay`, `DialogPortal`, `DialogTitle`, `DialogTrigger`, `Tooltip`, `TooltipContent`, `TooltipProvider`, `TooltipTrigger` |
 | `@kortix/ui` (navigation) | `FilterBar`, `FilterBarItem`, `Tabs`, `TabsContent`, `TabsList`, `TabsListCompact`, `TabsTrigger`, `TabsTriggerCompact`, `tabsTriggerHeightVariants`, `tabsTriggerPaddingVariants`, `tabsTriggerTextVariants`, `TabsListType`, `TabsSize`, `TabsTriggerSize`, `TabsTriggerVariant`, `TabsUnderlineSize` |
 | `@kortix/ui` (conversation) | `Bubble`, `BubbleContent`, `BubbleGroup`, `BubbleReactions`, `bubbleVariants`, `Message`, `MessageAvatar`, `MessageContent`, `MessageFooter`, `MessageGroup`, `MessageHeader`, `Marker`, `MarkerContent`, `MarkerIcon`, `markerVariants` |
-| `@kortix/ui` (hooks, helpers) | `UiLink`, `UiImage`, `useUiViewer`, `UiViewer`, `UiHostComponents`, `UiPreviewUrlResolver`, `UiPreviewRequest`, `useDebounce`, `useIsMobile`, `useMediaQuery`, `useSlashFocus`, `lazyClient`, `spring`, `floatingZ`, `dialogContentZ`, `dialogOverlayZ`, `useDialogDepth`, `hasOpenFloatingLayer`, `hasOpenNestedDialog`, `DEFAULT_ICON_WEIGHT`, `ICON_WEIGHTS`, `SHIPPED_ICON_WEIGHTS`, `faviconUrlForHostname`, `setUiTelemetry`, `setUiHostEnv`, `setUiRoutes`, `uiRoutes`, `defaultUiRoutes`, `decodeSpaceSegment`, `UiRoutes` |
+| `@kortix/ui` (hooks, helpers) | `UiLink`, `UiImage`, `useUiViewer`, `UiViewer`, `UiHostComponents`, `UiPreviewUrlResolver`, `UiPreviewRequest`, `useDebounce`, `useIsMobile`, `useMediaQuery`, `useSlashFocus`, `lazyClient`, `spring`, `floatingZ`, `dialogContentZ`, `dialogOverlayZ`, `useDialogDepth`, `hasOpenFloatingLayer`, `hasOpenNestedDialog`, `DEFAULT_ICON_WEIGHT`, `ICON_WEIGHTS`, `SHIPPED_ICON_WEIGHTS`, `faviconUrlForHostname`, `setUiTelemetry`, `setUiHostEnv`, `setUiRoutes`, `uiRoutes`, `newSessionHref`, `isNewSessionRequested`, `defaultUiRoutes`, `decodeSpaceSegment`, `UiRoutes` |
 | `@kortix/ui/theme` | `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`, `ThemeScopeProps`, `THEME_COLOR_VARS`, `ThemeColor`, `ThemeColors`, `ThemeCssVars`, `ThemeTextStep`, `ThemeShadowStep`, `ThemeDurationStep`, `ThemeEasing`, `WALLPAPERS`, `DEFAULT_WALLPAPER_ID`, `getWallpaperById`, `Wallpaper` |
 | `@kortix/ui/session` (whole thread) | `SessionThread`, `SessionThreadProps` |
 | `@kortix/ui/session` (blocks) | `UserMessage`, `ThrottledMarkdown`, `UnifiedMarkdown`, `UnifiedMarkdownProps`, `ToolPartRenderer`, `SessionChatInput`, `SessionChatInputProps`, `AgentSelector`, `ModelSelector`, `ModelSelectorProps`, `SessionPermissionPrompt`, `QuestionPrompt`, `QuestionPromptHandle`, `TurnErrorDisplay`, `SessionBusyIndicator`, `SessionStartingLoader` |
@@ -107,17 +107,17 @@ One entry per module. Its curated names are the public API (semver). Every name,
 
 | Entry | What it is | Minimal mount |
 | --- | --- | --- |
-| `@kortix/ui/workspace` | Project screens: `SessionWorkspace` (thread + side panel), `ProjectHome`, `ProjectSessionList`, `ProjectFilesView` | `<SessionWorkspace session={useSession(p, s)} />`; the list inside `SidebarProvider` |
+| `@kortix/ui/workspace` | Workspace screens: `SessionWorkspace` (thread + side panel), `ProjectHome`, `ProjectSessionList`, `ProjectFilesView` | `<SessionWorkspace session={useSession(p, s)} />`; the list inside `SidebarProvider` |
 | `@kortix/ui/session` | The conversation: `SessionThread`, turns, `ToolRegistry`, prompts, pickers | `<SessionThread session={useSession(p, s)} />` |
-| `@kortix/ui/composer` | The composer, its chrome, the send pipeline | `<ComposerChatInput projectId onSend />` in the project scope |
+| `@kortix/ui/composer` | The composer, its chrome, the send pipeline | `<ComposerChatInput projectId onSend />` in the workspace scope |
 | `@kortix/ui/session-panel` | The side panel: `ActionPanel`, `SessionFiles`, `SessionChanges`, `SessionAudit` | `SessionPanelProvider` (runtime `sessionId`, `projectId`, `projectSessionId`) |
-| `@kortix/ui/files` | Project files (git repo), sandbox files, `FilePreviewHost` | `ProjectFilesView` (workspace); `<FilePreviewHost />` once on a page without a side panel |
+| `@kortix/ui/files` | Workspace files (git repo), sandbox files, `FilePreviewHost` | `ProjectFilesView` (workspace); `<FilePreviewHost />` once on a page without a side panel |
 | `@kortix/ui/file-viewer` | Any file kind: pdf, docx, xlsx, csv, pptx, zip, images, code | `<FileViewer content fileName />`; `FileContentRenderer` in `FileSourceProvider` |
 | `@kortix/ui/terminal`, `@kortix/ui/browser` | The session shell; the sandbox browser | the runtime ids of a mounted `useSession` |
 | `@kortix/ui/markdown`, `@kortix/ui/genui` | Markdown with code, math, links; GenUI blocks | `<UnifiedMarkdown content trust="agent" />`; `genui` renders GenUI fences |
 | `@kortix/ui/diff`, `@kortix/ui/changes` | One diff; a change list | `<DiffView before after />` |
 | `@kortix/ui/apps`, `@kortix/ui/artifacts` | App frames, the frame pool, the App view model; artifact frames and session cards | none |
-| `@kortix/ui/access`, `@kortix/ui/customize` | Sharing and roles; project configuration pages | `<ConnectorsPage projectId />` |
+| `@kortix/ui/access`, `@kortix/ui/customize` | Sharing and roles; workspace configuration pages | `<ConnectorsPage projectId />` |
 | `@kortix/ui/theme`, `@kortix/ui/i18n`, `@kortix/ui/icons` | Theme; `useTranslations`, `useLocale` (next-intl signatures); glyphs | none |
 
 Deep paths (`@kortix/ui/internal/*`, `@kortix/ui/<module>/<path>`) have no semver: only Kortix's own apps import them (`scripts/deep-exports.json`).
@@ -135,7 +135,7 @@ export function Session({ projectId, sessionId }: { projectId: string; sessionId
 - The parent sets the height (also of `ProjectFilesView`). Install `@tanstack/react-query`, `@openuidev/lang-core@0.3.1` and `zod` with it.
   `SessionThread` (`@kortix/ui/session`) is the thread alone; with no side panel, file and preview opens show in a dialog.
 - A custom tool row: `ToolRegistry.register('<tool name>', Row)`; `Row` gets `ToolProps`, draws `BasicTool`.
-- A whole dashboard or App (client, router adapters, sidebar, project home, session, files, theme, tool row, App
+- A whole dashboard or App (client, router adapters, sidebar, workspace home, session, files, theme, tool row, App
   sign-in): `references/custom-dashboard.md`. Never a raw `fetch`: the SDK has the call, or gets it.
 
 ## 10. Verify

@@ -21,7 +21,7 @@
  * the bot token never enters the sandbox.
  */
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
-import { chatThreads, projects } from '@kortix/db';
+import { chatThreads } from '@kortix/db';
 import type { ChannelEnvelope } from '@kortix/shared';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq, like, or } from 'drizzle-orm';
@@ -57,6 +57,7 @@ import { telegramAccessPort } from './access';
 import { TELEGRAM_UPDATES, telegramCall, telegramFile } from './api';
 import { loadTelegramBotToken, loadTelegramInstall, loadTelegramWebhookSecret } from './installs';
 import { repairTelegramMenu } from './menu';
+import { projectsView } from '../../workspaces/rows';
 
 export const TELEGRAM_MESSAGE_EVENT = 'telegram.message.created';
 
@@ -347,10 +348,10 @@ const telegramQuestions: QuestionPort = {
 /** Plain-text next step per `classifyTurnError` title (slack/errors.ts). Another title ('Run failed') gets the fallback. */
 const RUN_ERROR_ADVICE: Partial<Record<string, string>> = {
   'Out of credits': 'A workspace admin can top up credits in Kortix. Then send your message again.',
-  'Usage limit reached': 'Wait, then send your message again. A project admin can also pick another model in Kortix.',
+  'Usage limit reached': 'Wait, then send your message again. A workspace admin can also pick another model in Kortix.',
   'Response too long': 'Ask the agent to continue, or narrow the request.',
   'Conversation too long': 'Send /new to start a new conversation.',
-  'Agent unavailable': 'Send /agent to pick another agent, then /new and your message again. A project admin can also fix the agent in Kortix.',
+  'Agent unavailable': 'Send /agent to pick another agent, then /new and your message again. A workspace admin can also fix the agent in Kortix.',
   'Model unavailable': 'Send /model to pick another model, then send your message again.',
   'ChatGPT login needs reconnection': 'Whoever connected the ChatGPT account must reconnect it in Kortix. Then send your message again.',
   'Provider rejected the request': 'A workspace admin can check the model provider settings in Kortix. Then send your message again.',
@@ -431,7 +432,7 @@ export function telegramNotice(target: ChannelTarget, notice: ChannelNotice): st
     case 'start_failed':
       return [
         `Kortix could not start this chat's session, so the agent did not run.${notice.reason ? ` ${notice.reason}` : ''}`,
-        'Send /new, then send your message again. If it fails again, a project admin can check the session in Kortix.',
+        'Send /new, then send your message again. If it fails again, a workspace admin can check the session in Kortix.',
         `Details: ${sessionWebUrl(config.FRONTEND_URL, target.projectId, notice.sessionId)}`,
       ].join('\n');
   }
@@ -442,7 +443,7 @@ export async function handleTelegramEvent(
   run: { finalAttempt: boolean } = { finalAttempt: false },
 ): Promise<void> {
   const message = event.data.message as unknown as TelegramMessage;
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, event.projectId)).limit(1);
   if (!project) return;
   const [install, token] = await Promise.all([
     loadTelegramInstall(event.projectId),
@@ -546,7 +547,7 @@ export async function handleTelegramEvent(
           visibility: 'project',
           body: {
             agent_name: start.agentName,
-            ...(start.model ? { opencode_model: start.model } : {}),
+            ...(start.model ? { model: start.model } : {}),
             ...(start.pools ? { provider_secret_pools: start.pools } : {}),
             title_source: text || null,
           },
@@ -642,7 +643,7 @@ async function handleTelegramCommandPress(
   press: TelegramCallbackQuery,
   message: NonNullable<TelegramCallbackQuery['message']>,
 ): Promise<void> {
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, event.projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, event.projectId)).limit(1);
   if (!project) return void (await answerPress(token, press.id));
   const target: ChannelTarget = {
     platform: 'telegram',
@@ -690,7 +691,7 @@ async function telegramThreadOfSession(sessionId: string, botId: string, chatId:
     .where(
       and(
         eq(chatThreads.platform, 'telegram'),
-        eq(chatThreads.workspaceId, botId),
+        eq(chatThreads.platformTeamId, botId),
         eq(chatThreads.sessionId, sessionId),
         or(eq(chatThreads.threadId, chatId), like(chatThreads.threadId, `${chatId}:%`)),
       ),

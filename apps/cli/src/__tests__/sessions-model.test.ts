@@ -25,7 +25,7 @@ const row = (id: string, over: Record<string, unknown> = {}) => ({
   sandbox_provider: "daytona",
   sandbox_id: id,
   sandbox_url: null,
-  opencode_session_id: null,
+  runtime_session_id: null,
   name: `Session ${id.slice(0, 8)}`,
   agent_name: "default",
   status: "completed",
@@ -40,11 +40,11 @@ const row = (id: string, over: Record<string, unknown> = {}) => ({
 
 const PINNED = row(PINNED_ID, {
   status: "running",
-  metadata: { opencode_model: "kortix/deepseek-v4.1-flash", opencode_model_source: "platform" },
+  metadata: { model: "kortix/deepseek-v4.1-flash", model_source: "platform" },
   model: "kortix/glm-5.3-flash",
 });
-const UNPINNED = row(UNPINNED_ID, { model: null, metadata: { opencode_model: "kortix/old-pin" } });
-const BYOK = row(BYOK_ID, { metadata: { opencode_model: "openai/gpt-4o" } });
+const UNPINNED = row(UNPINNED_ID, { model: null, metadata: { model: "kortix/old-pin" } });
+const BYOK = row(BYOK_ID, { metadata: { model: "openai/gpt-4o" } });
 
 async function runCli(args: string[]) {
   const env: Record<string, string | undefined> = {
@@ -76,7 +76,7 @@ beforeEach(() => {
     port: 0,
     fetch: (request) => {
       const url = new URL(request.url);
-      if (url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions`) {
         return Response.json([PINNED, UNPINNED, BYOK]);
       }
       // `sessions status` wakes each running session before it reads activity;

@@ -128,7 +128,7 @@ beforeAll(() => {
     port: 0,
     fetch(req) {
       const url = new URL(req.url);
-      if (url.pathname !== `/v1/connectors/projects/${PROJECT_ID}/catalog`) {
+      if (url.pathname !== `/v1/connectors/workspaces/${PROJECT_ID}/catalog`) {
         return new Response('not found', { status: 404 });
       }
       searches.push(url.search);

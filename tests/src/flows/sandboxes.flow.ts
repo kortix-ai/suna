@@ -26,14 +26,14 @@ flow(
   {
     domain: "sandboxes",
     tags: ["smoke"],
-    routes: ["GET /v1/projects/:projectId/snapshots"],
+    routes: ["GET /v1/workspaces/:projectId/snapshots"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("OWNER lists snapshots → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/snapshots", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/snapshots", { params: { projectId: p.id } });
       // `status` is the derived "can a session start" verdict every UI alert
       // reads. Without it the panel falls back to showing nothing, so it is
       // part of the contract, not an optional extra.
@@ -42,13 +42,13 @@ flow(
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/snapshots", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/snapshots", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/snapshots", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/snapshots", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -62,7 +62,7 @@ flow(
     // This deletes the content-addressed default image shared by other projects.
     global: true,
     requires: ["sandbox"],
-    routes: ["POST /v1/projects/:projectId/snapshots/rebuild"],
+    routes: ["POST /v1/workspaces/:projectId/snapshots/rebuild"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -71,7 +71,7 @@ flow(
       async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post("/v1/projects/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
+          .post("/v1/workspaces/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
         // 202: every enabled provider dropped the image and a rebuild started.
         // 409 SNAPSHOT_IN_USE: the provider refuses to delete an image that
         // running sandboxes still use. Platinum does this (`template_in_use`);
@@ -94,13 +94,13 @@ flow(
     await ctx.step("NONMEMBER cannot rebuild → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/snapshots/rebuild", {}, { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -111,7 +111,7 @@ flow(
   "SNAP-3",
   {
     domain: "sandboxes",
-    routes: ["POST /v1/projects/:projectId/snapshots/fix-with-agent"],
+    routes: ["POST /v1/workspaces/:projectId/snapshots/fix-with-agent"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -120,7 +120,7 @@ flow(
       async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post("/v1/projects/:projectId/snapshots/fix-with-agent", {}, { params: { projectId: p.id } });
+          .post("/v1/workspaces/:projectId/snapshots/fix-with-agent", {}, { params: { projectId: p.id } });
         // Fresh project has no failed build → 409 ('No failed snapshot build to
         // fix.'); if a failure + ready host exist it creates a session → 201;
         // 400/404 cover session-create rejection paths. Never wait on the build.
@@ -130,13 +130,13 @@ flow(
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/snapshots/fix-with-agent", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/snapshots/fix-with-agent", {}, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/snapshots/fix-with-agent", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/snapshots/fix-with-agent", {}, { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -149,9 +149,9 @@ flow(
     domain: "sandboxes",
     tags: ["smoke"],
     routes: [
-      "GET /v1/projects/:projectId/sandbox-health",
-      "GET /v1/projects/:projectId/sandbox-templates",
-      "PATCH /v1/projects/:projectId/sandbox-templates/:templateId",
+      "GET /v1/workspaces/:projectId/sandbox-health",
+      "GET /v1/workspaces/:projectId/sandbox-templates",
+      "PATCH /v1/workspaces/:projectId/sandbox-templates/:templateId",
     ],
   },
   async (ctx) => {
@@ -159,13 +159,13 @@ flow(
     await ctx.step("GET sandbox-health → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/sandbox-health", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/sandbox-health", { params: { projectId: p.id } });
       r.status(200).body().exists("$.ready").exists("$.building");
     });
     await ctx.step("GET sandbox-templates → 200 with items", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/sandbox-templates", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/sandbox-templates", { params: { projectId: p.id } });
       r.status(200).body().exists("$.items");
     });
     await ctx.step("PATCH unknown template with a scalar body → 404, not a 500", async () => {
@@ -174,7 +174,7 @@ flow(
       for (const body of ['"x"', "42"]) {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .patch("/v1/projects/:projectId/sandbox-templates/:templateId", body, {
+          .patch("/v1/workspaces/:projectId/sandbox-templates/:templateId", body, {
             params: { projectId: p.id, templateId: RANDOM_UUID },
             raw: true,
           });
@@ -184,7 +184,7 @@ flow(
     await ctx.step("ANON sandbox-health → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/sandbox-health", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/sandbox-health", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -197,10 +197,10 @@ flow(
     domain: "sandboxes",
     requires: ["sandbox"],
     routes: [
-      "POST /v1/projects/:projectId/sandbox-templates",
-      "PATCH /v1/projects/:projectId/sandbox-templates/:templateId",
-      "DELETE /v1/projects/:projectId/sandbox-templates/:templateId",
-      "POST /v1/projects/:projectId/sandbox-templates/:templateId/build",
+      "POST /v1/workspaces/:projectId/sandbox-templates",
+      "PATCH /v1/workspaces/:projectId/sandbox-templates/:templateId",
+      "DELETE /v1/workspaces/:projectId/sandbox-templates/:templateId",
+      "POST /v1/workspaces/:projectId/sandbox-templates/:templateId/build",
     ],
   },
   async (ctx) => {
@@ -213,7 +213,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/sandbox-templates",
+          "/v1/workspaces/:projectId/sandbox-templates",
           { slug, name: "e2e template", image: "ubuntu:22.04" },
           { params: { projectId: p.id } },
         );
@@ -232,7 +232,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/sandbox-templates",
+          "/v1/workspaces/:projectId/sandbox-templates",
           { slug, name: "e2e template", image: "ubuntu:22.04" },
           { params: { projectId: p.id } },
         );
@@ -246,7 +246,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/sandbox-templates",
+          "/v1/workspaces/:projectId/sandbox-templates",
           { slug: "Bad Slug!", image: "ubuntu:22.04" },
           { params: { projectId: p.id } },
         );
@@ -257,7 +257,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/sandbox-templates",
+          "/v1/workspaces/:projectId/sandbox-templates",
           { slug: `${slug}2`, image: "ubuntu:22.04", dockerfile_path: "Dockerfile" },
           { params: { projectId: p.id } },
         );
@@ -268,7 +268,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/sandbox-templates/:templateId",
+          "/v1/workspaces/:projectId/sandbox-templates/:templateId",
           { name: "renamed" },
           { params: { projectId: p.id, templateId: RANDOM_UUID } },
         );
@@ -278,7 +278,7 @@ flow(
     await ctx.step("DELETE unknown templateId → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/sandbox-templates/:templateId", {
+        .del("/v1/workspaces/:projectId/sandbox-templates/:templateId", {
           params: { projectId: p.id, templateId: RANDOM_UUID },
         });
       r.status(404);
@@ -288,7 +288,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/sandbox-templates/:templateId/build",
+          "/v1/workspaces/:projectId/sandbox-templates/:templateId/build",
           {},
           { params: { projectId: p.id, templateId: RANDOM_UUID } },
         );
@@ -303,7 +303,7 @@ flow(
         const patched = await ctx.client
           .as(ctx.P.OWNER)
           .patch(
-            "/v1/projects/:projectId/sandbox-templates/:templateId",
+            "/v1/workspaces/:projectId/sandbox-templates/:templateId",
             { name: "e2e renamed" },
             { params: { projectId: p.id, templateId: createdTemplateId } },
           );
@@ -312,7 +312,7 @@ flow(
         const built = await ctx.client
           .as(ctx.P.OWNER)
           .post(
-            "/v1/projects/:projectId/sandbox-templates/:templateId/build",
+            "/v1/workspaces/:projectId/sandbox-templates/:templateId/build",
             {},
             { params: { projectId: p.id, templateId: createdTemplateId } },
           );
@@ -324,7 +324,7 @@ flow(
       if (!templateId) return;
       const del = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/sandbox-templates/:templateId", {
+        .del("/v1/workspaces/:projectId/sandbox-templates/:templateId", {
           params: { projectId: p.id, templateId },
         });
       del.status([200, 204, 400, 404, 409]);
@@ -334,7 +334,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          "/v1/projects/:projectId/sandbox-templates",
+          "/v1/workspaces/:projectId/sandbox-templates",
           { slug: "nope", image: "ubuntu:22.04" },
           { params: { projectId: p.id } },
         );
@@ -344,7 +344,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          "/v1/projects/:projectId/sandbox-templates",
+          "/v1/workspaces/:projectId/sandbox-templates",
           { slug: "nope", image: "ubuntu:22.04" },
           { params: { projectId: p.id } },
         );
@@ -362,26 +362,26 @@ flow(
   "SBX-5",
   {
     domain: "sandboxes",
-    routes: ["GET /v1/projects/:projectId/sandboxes"],
+    routes: ["GET /v1/workspaces/:projectId/sandboxes"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("OWNER lists sandboxes → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/sandboxes", { params: { projectId: p.id } });
       r.status(200).body().exists("$.items").exists("$.provider_mode");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/sandboxes", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/sandboxes", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/sandboxes", { params: { projectId: p.id } });
       r.status(401);
     });
   },

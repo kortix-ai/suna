@@ -10,17 +10,17 @@ import type {
   UpdateProjectTriggerInput,
 } from './triggers';
 import {
-  createProjectTrigger,
+  createWorkspaceTrigger,
   getAccountAutomations,
   setAccountAutomationsPaused,
-  fireProjectTrigger,
-  listProjectTriggerRuns,
+  fireWorkspaceTrigger,
+  listWorkspaceTriggerRuns,
   listTriggerRuns,
   replayTriggerRun,
-  listProjectTriggerEventApps,
-  listProjectTriggerEventTypes,
-  listProjectTriggers,
-  updateProjectTrigger,
+  listWorkspaceTriggerEventApps,
+  listWorkspaceTriggerEventTypes,
+  listWorkspaceTriggers,
+  updateWorkspaceTrigger,
 } from './triggers';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -83,9 +83,9 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
     body: { triggers: [MONITOR_WIRE_ENTRY], errors: [], triggers_paused: false },
   };
 
-  const listing = await listProjectTriggers('P1');
+  const listing = await listWorkspaceTriggers('P1');
 
-  expect(last().url).toContain('/projects/P1/triggers');
+  expect(last().url).toContain('/workspaces/P1/triggers');
   expect(last().method).toBe('GET');
   const monitor = listing.triggers[0]!;
   expect(monitor.type).toBe('monitor');
@@ -105,11 +105,11 @@ test('listProjectTriggers reads a monitor entry off the wire without losing its 
 // KRTX-1721: overlap — skip holds a fire while the previous run is active.
 test('createProjectTrigger and updateProjectTrigger send overlap; the listing reads it', async () => {
   nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, overlap: 'allow' }], errors: [] } };
-  await createProjectTrigger('P1', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', prompt_template: 'Go', overlap: 'skip' });
+  await createWorkspaceTrigger('P1', { name: 'Nightly', type: 'cron', cron: '0 0 3 * * *', prompt_template: 'Go', overlap: 'skip' });
   expect(last().body).toMatchObject({ overlap: 'skip' });
-  await updateProjectTrigger('P1', 'nightly', { overlap: null });
+  await updateWorkspaceTrigger('P1', 'nightly', { overlap: null });
   expect(last().body).toEqual({ overlap: null });
-  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const [trigger] = (await listWorkspaceTriggers('P1')).triggers;
   const overlap: 'skip' | 'allow' | null | undefined = trigger!.overlap;
   // @ts-expect-error overlap is skip or allow
   const bad: CreateProjectTriggerInput['overlap'] = 'queue';
@@ -125,7 +125,7 @@ test('listProjectTriggers keeps the auto-pause the API reports', async () => {
     body: { triggers: [{ ...MONITOR_WIRE_ENTRY, auto_paused_at: '2026-10-19T12:00:00.000Z', auto_paused_reason: reason }], errors: [] },
   };
 
-  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const [trigger] = (await listWorkspaceTriggers('P1')).triggers;
   const pausedAt: string | null | undefined = trigger!.auto_paused_at;
   const why: string | null | undefined = trigger!.auto_paused_reason;
 
@@ -149,7 +149,7 @@ test('listProjectTriggers keeps the last run outcome the API reports', async () 
     },
   };
 
-  const [trigger] = (await listProjectTriggers('P1')).triggers;
+  const [trigger] = (await listWorkspaceTriggers('P1')).triggers;
 
   expect(trigger!.last_status).toBe('failed');
   expect(trigger!.last_error).toBe('Out of credits: Payment Required: Insufficient credits.');
@@ -178,7 +178,7 @@ test('a cron entry still parses with the monitor fields serialized as null', asy
     },
   };
 
-  const listing = await listProjectTriggers('P1');
+  const listing = await listWorkspaceTriggers('P1');
   const cron = listing.triggers[0]!;
   expect(cron.type).toBe('cron');
   expect(cron.cron).toBe('0 0 9 * * 1-5');
@@ -191,7 +191,7 @@ test('a cron entry still parses with the monitor fields serialized as null', asy
 test('createProjectTrigger POSTs the monitor draft fields the API parser accepts', async () => {
   nextResponse = { status: 200, body: { triggers: [], errors: [], triggers_paused: false } };
 
-  await createProjectTrigger('P1', {
+  await createWorkspaceTrigger('P1', {
     name: 'Checkout errors',
     slug: 'checkout-errors',
     type: 'monitor',
@@ -210,7 +210,7 @@ test('createProjectTrigger POSTs the monitor draft fields the API parser accepts
     },
   });
 
-  expect(last().url).toContain('/projects/P1/triggers');
+  expect(last().url).toContain('/workspaces/P1/triggers');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({
     name: 'Checkout errors',
@@ -233,7 +233,7 @@ test('createProjectTrigger POSTs the monitor draft fields the API parser accepts
 test('updateProjectTrigger PATCHes monitor fields, and null clears the silence watchdog', async () => {
   nextResponse = { status: 200, body: { triggers: [], errors: [], triggers_paused: false } };
 
-  await updateProjectTrigger('P1', 'checkout-errors', {
+  await updateWorkspaceTrigger('P1', 'checkout-errors', {
     mode: 'stream',
     interval: null,
     expect_event_within: null,
@@ -241,7 +241,7 @@ test('updateProjectTrigger PATCHes monitor fields, and null clears the silence w
     session_access: { mode: 'project', memberIds: [], groupIds: [] },
   });
 
-  expect(last().url).toContain('/projects/P1/triggers/checkout-errors');
+  expect(last().url).toContain('/workspaces/P1/triggers/checkout-errors');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({
     mode: 'stream',
@@ -255,7 +255,7 @@ test('updateProjectTrigger PATCHes monitor fields, and null clears the silence w
 test('updateProjectTrigger can restore private trigger-created sessions', async () => {
   nextResponse = { status: 200, body: { triggers: [], errors: [], triggers_paused: false } };
 
-  await updateProjectTrigger('P1', 'checkout-errors', {
+  await updateWorkspaceTrigger('P1', 'checkout-errors', {
     session_access: { mode: 'private', memberIds: [], groupIds: [] },
   });
 
@@ -315,9 +315,9 @@ test('createProjectTrigger and updateProjectTrigger send filter operators unchan
     'body.pull_request': { exists: true },
   };
 
-  await createProjectTrigger('P1', { name: 'On push', slug: 'on-push', type: 'webhook', prompt_template: 'Lint {{ body.ref }}', filter });
+  await createWorkspaceTrigger('P1', { name: 'On push', slug: 'on-push', type: 'webhook', prompt_template: 'Lint {{ body.ref }}', filter });
   expect(last().body).toMatchObject({ filter });
-  await updateProjectTrigger('P1', 'on-push', { filter: { 'body.base': { prefix: ['release/'] } } });
+  await updateWorkspaceTrigger('P1', 'on-push', { filter: { 'body.base': { prefix: ['release/'] } } });
   expect(last().body).toEqual({ filter: { 'body.base': { prefix: ['release/'] } } });
 
   const read: ProjectTrigger['filter'] = filter;
@@ -346,10 +346,10 @@ test('listProjectTriggerEventTypes GETs event-types with the connector query and
     },
   };
 
-  const catalog = await listProjectTriggerEventTypes('P1', { connector: 'my github' });
+  const catalog = await listWorkspaceTriggerEventTypes('P1', { connector: 'my github' });
 
   expect(last().method).toBe('GET');
-  expect(last().url).toContain('/projects/P1/triggers/event-types?connector=my%20github');
+  expect(last().url).toContain('/workspaces/P1/triggers/event-types?connector=my%20github');
   expect(catalog.provider).toBe('composio');
   expect(catalog.event_types[0]!.delivery).toBe('push');
 });
@@ -357,12 +357,12 @@ test('listProjectTriggerEventTypes GETs event-types with the connector query and
 test('listProjectTriggerEventTypes with { app, source } GETs event-types?app= and needs no connector', async () => {
   nextResponse = { status: 200, body: { source: 'composio', provider: 'composio', app: 'github', event_types: [] } };
 
-  await listProjectTriggerEventTypes('P1', { app: 'git hub' });
-  expect(last().url).toContain('/projects/P1/triggers/event-types?app=git%20hub');
+  await listWorkspaceTriggerEventTypes('P1', { app: 'git hub' });
+  expect(last().url).toContain('/workspaces/P1/triggers/event-types?app=git%20hub');
   expect(last().url).not.toContain('connector');
 
-  await listProjectTriggerEventTypes('P1', { app: 'github', source: 'composio' });
-  expect(last().url).toContain('/projects/P1/triggers/event-types?app=github&source=composio');
+  await listWorkspaceTriggerEventTypes('P1', { app: 'github', source: 'composio' });
+  expect(last().url).toContain('/workspaces/P1/triggers/event-types?app=github&source=composio');
 });
 
 test('listProjectTriggerEventApps GETs event-apps and returns connector and connection state', async () => {
@@ -376,10 +376,10 @@ test('listProjectTriggerEventApps GETs event-apps and returns connector and conn
     },
   };
 
-  const { apps } = await listProjectTriggerEventApps('P1');
+  const { apps } = await listWorkspaceTriggerEventApps('P1');
 
   expect(last().method).toBe('GET');
-  expect(last().url).toContain('/projects/P1/triggers/event-apps');
+  expect(last().url).toContain('/workspaces/P1/triggers/event-apps');
   expect(apps[0]!.connected).toBe(true);
   expect(apps[1]!.connector).toBeNull();
 });
@@ -403,7 +403,7 @@ test('listProjectTriggerEventApps returns each connector profile with its shared
     },
   };
 
-  const { apps } = await listProjectTriggerEventApps('P1');
+  const { apps } = await listWorkspaceTriggerEventApps('P1');
 
   const [work, oss] = apps[0]!.connectors!;
   expect(work!.accounts.map((a) => [a.label, a.is_default])).toEqual([['ops-bot', true], ['acme-bot', false]]);
@@ -412,40 +412,40 @@ test('listProjectTriggerEventApps returns each connector profile with its shared
 
 test('createProjectTrigger sends event_account and updateProjectTrigger clears it with null', async () => {
   nextResponse = { status: 200, body: { triggers: [], errors: [] } };
-  await createProjectTrigger('P1', {
+  await createWorkspaceTrigger('P1', {
     name: 'PR opened', type: 'event', prompt_template: 'x', connector: 'github-work',
     event_account: 'acme-bot', event: 'GITHUB_PULL_REQUEST_EVENT',
   });
   expect(last().body).toMatchObject({ connector: 'github-work', event_account: 'acme-bot' });
 
   nextResponse = { status: 200, body: { triggers: [], errors: [] } };
-  await updateProjectTrigger('P1', 'pr-review', { event_account: null });
+  await updateWorkspaceTrigger('P1', 'pr-review', { event_account: null });
   expect(last().body).toEqual({ event_account: null });
 });
 
 test('event_source is sent on create, cleared with null on update, and read back as event.source', async () => {
   nextResponse = { status: 200, body: { triggers: [], errors: [] } };
-  await createProjectTrigger('P1', {
+  await createWorkspaceTrigger('P1', {
     name: 'PR opened', type: 'event', prompt_template: 'x', connector: 'github-work',
     event_source: 'composio', event: 'GITHUB_PULL_REQUEST_CREATED',
   });
   expect(last().body).toMatchObject({ connector: 'github-work', event_source: 'composio' });
 
   nextResponse = { status: 200, body: { triggers: [], errors: [] } };
-  await updateProjectTrigger('P1', 'pr-review', { event_source: null });
+  await updateWorkspaceTrigger('P1', 'pr-review', { event_source: null });
   expect(last().body).toEqual({ event_source: null });
 
   nextResponse = { status: 200, body: { triggers: [{ slug: 'pr-review', type: 'event', event: { connector: 'github-work', type: 'X', config: {}, source: 'composio', provider: 'composio', app: 'github', status: 'active', error: null, last_event_at: null } }], errors: [] } };
-  const listed = await listProjectTriggers('P1');
+  const listed = await listWorkspaceTriggers('P1');
   expect(listed.triggers[0]!.event?.source).toBe('composio');
 });
 
 test('listProjectTriggerEventTypes and EventApps expose source next to the deprecated provider', async () => {
   nextResponse = { status: 200, body: { source: 'composio', provider: 'composio', app: 'github', event_types: [] } };
-  const catalog = await listProjectTriggerEventTypes('P1', { connector: 'github-work' });
+  const catalog = await listWorkspaceTriggerEventTypes('P1', { connector: 'github-work' });
   expect(catalog.source).toBe('composio');
   nextResponse = { status: 200, body: { apps: [{ source: 'composio', provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 1, connector: null, connected: false }] } };
-  expect((await listProjectTriggerEventApps('P1')).apps[0]!.source).toBe('composio');
+  expect((await listWorkspaceTriggerEventApps('P1')).apps[0]!.source).toBe('composio');
 });
 
 test('listProjectTriggerEventApps reads mcp_url: the catalogue server for source mcp, null otherwise, absent from an older API', async () => {
@@ -461,7 +461,7 @@ test('listProjectTriggerEventApps reads mcp_url: the catalogue server for source
     },
   };
 
-  const { apps } = await listProjectTriggerEventApps('P1');
+  const { apps } = await listWorkspaceTriggerEventApps('P1');
 
   const urls: ProjectTriggerEventApp['mcp_url'][] = apps.map((a) => a.mcp_url);
   expect(urls).toEqual(['https://mcp.linear.app/mcp', null, null, undefined]);
@@ -491,7 +491,7 @@ test('createProjectTrigger sends an event trigger body and the listing reads eve
     body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'event', event }], errors: [] },
   };
 
-  const listing = await createProjectTrigger('P1', input);
+  const listing = await createWorkspaceTrigger('P1', input);
 
   expect(last().body).toEqual(input);
   const type: ProjectTriggerType = listing.triggers[0]!.type;
@@ -515,7 +515,7 @@ test('the listing reads when a Kortix-polled trigger checked its app and checks 
   };
   nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'event', event }], errors: [] } };
 
-  const listing = await listProjectTriggers('P1');
+  const listing = await listWorkspaceTriggers('P1');
 
   expect(listing.triggers[0]!.event?.checked_at).toBe('2026-10-19T04:00:00.000Z');
   expect(listing.triggers[0]!.event?.next_check_at).toBe('2026-10-19T04:05:00.000Z');
@@ -523,7 +523,7 @@ test('the listing reads when a Kortix-polled trigger checked its app and checks 
 
 test('updateProjectTrigger accepts event_config', async () => {
   const input: UpdateProjectTriggerInput = { event_config: { repo: 'acme/other' } };
-  await updateProjectTrigger('P1', 's', input);
+  await updateWorkspaceTrigger('P1', 's', input);
   expect(last().body).toEqual(input);
 });
 
@@ -557,7 +557,7 @@ test('listTriggerRuns GETs one trigger\'s runs with cursor and limit, and return
   const page = await listTriggerRuns('P1', 'nightly', { cursor: 'c 1/=', limit: 10 });
 
   expect(last().method).toBe('GET');
-  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs?limit=10&cursor=c+1%2F%3D');
+  expect(last().url).toBe('http://test.local/workspaces/P1/triggers/nightly/runs?limit=10&cursor=c+1%2F%3D');
   expect(page.next_cursor).toBe('c2');
   expect(page.runs[0]).toEqual(RUN_WIRE_ENTRY as never);
 });
@@ -565,18 +565,18 @@ test('listTriggerRuns GETs one trigger\'s runs with cursor and limit, and return
 test('listTriggerRuns without options sends no query string', async () => {
   nextResponse = { status: 200, body: { runs: [], next_cursor: null } };
   await listTriggerRuns('P1', 'nightly');
-  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs');
+  expect(last().url).toBe('http://test.local/workspaces/P1/triggers/nightly/runs');
 });
 
 test('listProjectTriggerRuns GETs every run of the project, filtered by status', async () => {
   nextResponse = { status: 200, body: { runs: [], next_cursor: null } };
 
-  await listProjectTriggerRuns('P1', { status: 'failed', cursor: 'c1', limit: 25 });
+  await listWorkspaceTriggerRuns('P1', { status: 'failed', cursor: 'c1', limit: 25 });
   expect(last().method).toBe('GET');
-  expect(last().url).toBe('http://test.local/projects/P1/trigger-runs?status=failed&limit=25&cursor=c1');
+  expect(last().url).toBe('http://test.local/workspaces/P1/trigger-runs?status=failed&limit=25&cursor=c1');
 
-  await listProjectTriggerRuns('P1');
-  expect(last().url).toBe('http://test.local/projects/P1/trigger-runs');
+  await listWorkspaceTriggerRuns('P1');
+  expect(last().url).toBe('http://test.local/workspaces/P1/trigger-runs');
 });
 
 test('fireProjectTrigger without options still POSTs an empty body (plain manual fire)', async () => {
@@ -585,10 +585,10 @@ test('fireProjectTrigger without options still POSTs an empty body (plain manual
     body: { status: 'deduped', command_id: 'cmd-1', session_id: null, deduped: true, run_id: 'run-1' },
   };
 
-  const result = await fireProjectTrigger('P1', 'nightly');
+  const result = await fireWorkspaceTrigger('P1', 'nightly');
 
   expect(last().method).toBe('POST');
-  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/fire');
+  expect(last().url).toBe('http://test.local/workspaces/P1/triggers/nightly/fire');
   expect(last().body).toEqual({});
   expect(result.status).toBe('deduped');
   expect(result.deduped).toBe(true);
@@ -606,7 +606,7 @@ test('fireProjectTrigger sends payload and dry_run, and returns the dry-run resu
   };
   nextResponse = { status: 200, body: dry };
 
-  const result = await fireProjectTrigger('P1', 'tickets', {
+  const result = await fireWorkspaceTrigger('P1', 'tickets', {
     payload: { body: { ticket: 'T-1' } },
     dryRun: true,
   });
@@ -620,7 +620,7 @@ test('fireProjectTrigger sends payload and dry_run, and returns the dry-run resu
 
 test('fireProjectTrigger with a payload alone sends no dry_run key', async () => {
   nextResponse = { status: 202, body: { status: 'fired', command_id: null, session_id: 's', deduped: false, run_id: 'r' } };
-  await fireProjectTrigger('P1', 'tickets', { payload: { body: { ticket: 'T-2' } } });
+  await fireWorkspaceTrigger('P1', 'tickets', { payload: { body: { ticket: 'T-2' } } });
   expect(last().body).toEqual({ payload: { body: { ticket: 'T-2' } } });
 });
 
@@ -629,7 +629,7 @@ test('replayTriggerRun POSTs the replay route, with confirm_unverified only when
 
   const result = await replayTriggerRun('P1', 'nightly', 'run-1');
   expect(last().method).toBe('POST');
-  expect(last().url).toBe('http://test.local/projects/P1/triggers/nightly/runs/run-1/replay');
+  expect(last().url).toBe('http://test.local/workspaces/P1/triggers/nightly/runs/run-1/replay');
   expect(last().body).toEqual({});
   expect(result.run_id).toBe('run-2');
 
@@ -645,7 +645,7 @@ test('replayTriggerRun throws on 409 payload_unverified', async () => {
 // KRTX-1721: run caps are typed on create, update (null removes one) and the listing.
 test('createProjectTrigger sends the run caps, updateProjectTrigger removes one with null, and the listing reads them', async () => {
   nextResponse = { status: 200, body: { triggers: [], errors: [] } };
-  await createProjectTrigger('P1', {
+  await createWorkspaceTrigger('P1', {
     name: 'Hook', type: 'webhook', prompt_template: 'x', secret_env: 'HOOK_SECRET',
     max_runs_per_hour: 5, max_runs_per_day: 40,
   });
@@ -655,7 +655,7 @@ test('createProjectTrigger sends the run caps, updateProjectTrigger removes one 
     status: 200,
     body: { triggers: [{ slug: 'hook', max_runs_per_hour: 5, max_runs_per_day: null }], errors: [] },
   };
-  const listing = await updateProjectTrigger('P1', 'hook', { max_runs_per_day: null });
+  const listing = await updateWorkspaceTrigger('P1', 'hook', { max_runs_per_day: null });
   expect(last().body).toEqual({ max_runs_per_day: null });
   const caps: Array<number | null | undefined> = [listing.triggers[0]!.max_runs_per_hour, listing.triggers[0]!.max_runs_per_day];
   expect(caps).toEqual([5, null]);
@@ -681,18 +681,18 @@ test('list preserves the exact cron occurrence separately from scheduled executi
     ...MONITOR_WIRE_ENTRY, type: 'cron', cron: '0 0 9 * * *',
     next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
   }], errors: [] } };
-  const result = await listProjectTriggers('project-test');
+  const result = await listWorkspaceTriggers('project-test');
   expect(result.triggers[0]?.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
   expect(result.triggers[0]?.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
 });
 
 test('createProjectTrigger sends a type app trigger; the listing reads its app', async () => {
   const input: CreateProjectTriggerInput = { name: 'Bank reply', type: 'app', app: 'bank-replies', prompt_template: 'Reply: {{ event.data.subject }}' };
-  await createProjectTrigger('P1', input);
-  expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/triggers', method: 'POST', body: { type: 'app', app: 'bank-replies' } });
+  await createWorkspaceTrigger('P1', input);
+  expect(last()).toMatchObject({ url: 'http://test.local/workspaces/P1/triggers', method: 'POST', body: { type: 'app', app: 'bank-replies' } });
 
   nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'app', run: null, mode: null, app: 'bank-replies' }], errors: [] } };
-  const listing = await listProjectTriggers('P1');
+  const listing = await listWorkspaceTriggers('P1');
   const trigger: ProjectTrigger = listing.triggers[0]!;
   const type: ProjectTriggerType = trigger.type;
   expect([type, trigger.app]).toEqual(['app', 'bank-replies']);
@@ -700,24 +700,35 @@ test('createProjectTrigger sends a type app trigger; the listing reads its app',
 
 test('a trigger may call an App: create sends target, the listing reads it, update clears it with null', async () => {
   const input: CreateProjectTriggerInput = { name: 'Poll bank', type: 'cron', cron: '0 */5 * * * *', target: { app: 'bank-watcher', path: '/tick' } };
-  await createProjectTrigger('P1', input);
+  await createWorkspaceTrigger('P1', input);
   expect(last()!.body).toMatchObject({ type: 'cron', target: { app: 'bank-watcher', path: '/tick' } });
   expect((last()!.body as Record<string, unknown>).prompt_template).toBeUndefined();
 
   nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'cron', run: null, mode: null, target: { app: 'bank-watcher', path: '/tick', method: 'POST' } }], errors: [] } };
-  const trigger: ProjectTrigger = (await listProjectTriggers('P1')).triggers[0]!;
+  const trigger: ProjectTrigger = (await listWorkspaceTriggers('P1')).triggers[0]!;
   expect(trigger.target).toEqual({ app: 'bank-watcher', path: '/tick', method: 'POST' });
 
   const clear: UpdateProjectTriggerInput = { target: null };
-  await updateProjectTrigger('P1', 'poll-bank', clear);
+  await updateWorkspaceTrigger('P1', 'poll-bank', clear);
   expect(last()!.body).toEqual({ target: null });
 });
 
 test('an every schedule with an App target payload: create sends every and payload, the listing reads every_seconds', async () => {
   const input: CreateProjectTriggerInput = { name: 'Poll', type: 'cron', every: '5m', target: { app: 'w', path: '/tick', payload: { source: 'bank' } } };
-  await createProjectTrigger('P1', input);
+  await createWorkspaceTrigger('P1', input);
   expect(last()!.body).toMatchObject({ every: '5m', target: { payload: { source: 'bank' } } });
   nextResponse = { status: 200, body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'cron', run: null, mode: null, every_seconds: 300 }], errors: [] } };
-  const trigger: ProjectTrigger = (await listProjectTriggers('P1')).triggers[0]!;
+  const trigger: ProjectTrigger = (await listWorkspaceTriggers('P1')).triggers[0]!;
   expect(trigger.every_seconds).toBe(300);
+});
+
+test('an App trigger reads when its App was heard, and since when it is silent or crashed', async () => {
+  nextResponse = {
+    status: 200,
+    body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'app', app: 'status-watch', last_event_at: '2026-11-06T09:00:00.000Z', silent_since: null, crashed_since: '2026-11-06T09:30:00.000Z' }], errors: [] },
+  };
+  const trigger: ProjectTrigger = (await listWorkspaceTriggers('P1')).triggers[0]!;
+  const crashed: string | null | undefined = trigger.crashed_since;
+  expect(crashed).toBe('2026-11-06T09:30:00.000Z');
+  expect(trigger.silent_since).toBeNull();
 });

@@ -442,8 +442,9 @@ session fixture checks every session create the same way.
 
 A flow that runs a session turn registers with `harnessFlow` (`src/core/flow.ts`)
 instead of `flow`. `harnessFlow('RUN-1', meta, fn)` registers `RUN-1` and calls
-the body with `harness` = `pi`: every new session runs pi since 2026-10-23
-(OpenCode is sunset). The body proves the harness from `/kortix/health`.
+the body with `harness` = `pi`: every new session runs pi since 2026-10-23,
+and kortixd has no OpenCode adapter since 2026-10-30. The body proves the
+harness from `/kortix/health`.
 
 Drive these flows through `src/fixtures/session-run.ts`, which speaks only the
 Kortix session routes: `bootSession` (boot, prove the harness from
@@ -764,6 +765,14 @@ package command documented in the **sdk** skill.
 3. Keep the flow `meta.routes` list exact.
 4. Regenerate `tests/spec/routes.generated.json` after route changes with
    `bun run apps/api/scripts/dump-routes.ts`.
+   Workspace routes have two names: the canonical `/v1/workspaces/…` and a
+   permanent legacy alias (`/v1/projects/…`, `/v1/accounts/:workspaceId/<family>/…`,
+   `/v1/accounts/me`, …; map in `packages/shared/src/workspace-routes.ts`).
+   The manifest marks each alias row with `aliasOf`, and coverage counts a
+   route as covered when its twin is. Write new flows against the canonical
+   name. `bun scripts/codemods/workspace-flow-routes.ts` moves flow strings
+   to it; `accounts`, `connectors`, `secrets` and `retired` flows keep the
+   legacy names on purpose (spec §4a, `WS-ROUTE-*`).
 5. Run the narrow flow first.
 6. Run `pnpm test` before handoff.
 7. Run `pnpm test -- --full` for broad refactors or release work.

@@ -70,7 +70,7 @@ function startServer(): string {
       const body = req.method === 'PATCH' ? await req.json().catch(() => null) : null;
       calls.push({ method: req.method, path, body });
 
-      if (path === `/v1/projects/${PROJECT}` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}` && req.method === 'GET') {
         return Response.json({
           project_id: PROJECT,
           account_id: 'account_1',
@@ -85,10 +85,10 @@ function startServer(): string {
           updated_at: '2026-01-01T00:00:00.000Z',
         });
       }
-      if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}/apps` && req.method === 'GET') {
         return Response.json({ apps: [app(appOverrides)] });
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
         const patch = body as Record<string, unknown>;
         if (typeof patch.idle_timeout_seconds === 'number' && patch.idle_timeout_seconds < 120) {
           return Response.json({ error: 'idle_timeout_seconds must be >= 120' }, { status: 400 });
@@ -107,7 +107,7 @@ function startServer(): string {
           }),
         );
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'GET') {
         return Response.json({
           deployments: [
             { deployment_id: 'dep-v2', version: 2, status: 'ready' },
@@ -115,7 +115,7 @@ function startServer(): string {
           ],
         });
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/rollback` && req.method === 'POST') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}/rollback` && req.method === 'POST') {
         rollbackBody = await req.json().catch(() => null);
         return Response.json(app({ active_deployment_id: 'dep-v1' }));
       }
@@ -207,8 +207,9 @@ describe('kortix apps set', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain(`access        ${mode}`);
-    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --project ${PROJECT}`);
+    // The wire's `project` prints as the user-facing `workspace`.
+    expect(r.stdout).toContain(`access        ${mode === 'project' ? 'workspace' : mode}`);
+    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --workspace ${PROJECT}`);
     expect(calls.every((call) => call.method === 'GET')).toBe(true);
   });
 
@@ -227,7 +228,7 @@ describe('kortix apps set', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT, '--host', 'test'], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --project ${PROJECT} --host test`);
+    expect(r.stdout).toContain(`kortix apps access-link ${APP_ID} --workspace ${PROJECT} --host test`);
   });
 
   test('show --json remains a credential-free read', async () => {
@@ -297,7 +298,7 @@ describe('kortix apps set', () => {
     expect(r.code).toBe(0);
     expect(patchCall()).toEqual({
       method: 'PATCH',
-      path: `/v1/projects/${PROJECT}/apps/${APP_ID}`,
+      path: `/v1/workspaces/${PROJECT}/apps/${APP_ID}`,
       body: { cpu: 2, memory_gb: 4 },
     });
     expect(r.stdout).toContain('updated storefront');

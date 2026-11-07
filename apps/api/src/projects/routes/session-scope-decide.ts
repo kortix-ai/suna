@@ -80,7 +80,7 @@ export async function authorizeScopeRescope({
     return {
       ok: false,
       status: 403,
-      body: { error: 'Only the session owner or a project manager can re-scope this session' },
+      body: { error: 'Only the session owner or a workspace manager can re-scope this session' },
     };
   }
   return { ok: true, loaded, visible };
@@ -512,11 +512,11 @@ function scopeResponseDetail({
   if (scopeSecretsChanged) {
     if (narrowedSecrets) {
       return scopeAppliedLive
-        ? 'Dropped secrets are cleared from the running sandbox now; new shells and the OpenCode process no longer see them. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.'
+        ? 'Dropped secrets are cleared from the running sandbox now; new shells and the agent runtime no longer see them. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.'
         : 'Dropped secrets stop being delivered from the next prompt. Values the agent already read remain in its context and in shells it already started — rotate them if that matters.';
     }
     return scopeAppliedLive
-      ? 'Applied to the running sandbox now — the OpenCode process and new shells see the new scope.'
+      ? 'Applied to the running sandbox now — the agent runtime and new shells see the new scope.'
       : 'Applies from the next prompt.';
   }
   return clearsBindings

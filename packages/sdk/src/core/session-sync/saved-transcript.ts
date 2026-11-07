@@ -10,7 +10,7 @@
  * hook already tracks:
  *
  *   `loading` — a saved copy may still paint: a read is in flight, or the
- *               OpenCode root it is keyed by is still resolving.
+ *               runtime root it is keyed by is still resolving.
  *   `shown`   — the store holds messages for this session (saved or live).
  *   `none`    — nothing can paint before the runtime answers: the saved copy
  *               is absent or was refused, or no root is known and no
@@ -117,7 +117,7 @@ export interface SavedTranscriptInput {
    */
   mirror: 'idle' | 'loading' | 'painted' | 'absent';
   /**
-   * The OpenCode root the transcript is keyed by: `known`, `pending` while a
+   * The runtime root the transcript is keyed by: `known`, `pending` while a
    * control-plane read that can supply it is outstanding, or `unknown` when
    * none is left (only the runtime can name it now).
    */
@@ -143,7 +143,7 @@ export function resolveSavedTranscript(input: SavedTranscriptInput): SavedTransc
 }
 
 /**
- * The OpenCode root a saved window proves EMPTY, or null.
+ * The runtime root a saved window proves EMPTY, or null.
  *
  * The proof is the server's: a complete read of the runtime that found no
  * messages, served as an available, complete window that counts zero. `total`
@@ -158,17 +158,17 @@ export function savedCopyEmptyRoot(
     envelope.complete &&
     envelope.total === 0 &&
     envelope.messages.length === 0
-    ? (envelope.runtime_session_id ?? envelope.opencode_session_id ?? null)
+    ? (envelope.runtime_session_id ?? null)
     : null;
 }
 
 export interface EmptyConversationInput {
   /**
-   * The OpenCode root the server's saved copy proves empty: a complete read of
+   * The runtime root the server's saved copy proves empty: a complete read of
    * the runtime found no messages (`total: 0`). Null when no copy proves it.
    */
   savedEmptyRoot: string | null;
-  /** The OpenCode root this session's transcript is keyed by, or `''`. */
+  /** The runtime root this session's transcript is keyed by, or `''`. */
   rootSessionId: string;
   /** The server's turn record (`GET …/turn`) has answered. */
   turnRead: boolean;

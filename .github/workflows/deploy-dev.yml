@@ -32,8 +32,10 @@ name: Deploy Dev
 on:
   # DEV deploys only on an explicit dispatch (since 2026-10-03: Actions minutes).
   # A push to `dev` does NOT deploy. Run `gh workflow run deploy-dev.yml -f
-  # surface=changed` (or `all`) to deploy dev HEAD. `changed` diffs against
-  # dev-api's live SHA, so one dispatch ships every merge since the last deploy.
+  # surface=changed` (or `all`) to deploy dev HEAD. `changed` diffs each surface
+  # against the commit that surface serves (its /health commit; the CLI's
+  # `dev-latest` tag), so one dispatch ships every merge since the last deploy
+  # and re-tries a surface whose last roll failed.
   # A dispatch that lands while a deploy runs waits for it; see `concurrency:`.
   workflow_dispatch:
     inputs:
@@ -55,8 +57,8 @@ on:
 # QUEUE, never cancel. GitHub keeps at most one running and one pending run in
 # this group, and a newer pending run replaces the older pending one. So the
 # in-flight deploy finishes, then the NEWEST waiting commit deploys. detect-
-# changes diffs against dev's LIVE SHA, so that run carries every surface the
-# replaced pending runs would have built. Worst case for a merge: the remainder
+# changes diffs each surface against the commit it serves, so that run carries
+# every surface the replaced pending runs would have built. Worst case for a merge: the remainder
 # of one deploy plus its own deploy (~2 x ~8 min).
 #
 # HISTORY: `true` from 2026-08-20 (d8847d39ba) to 2026-09-26. Measured
@@ -88,7 +90,7 @@ jobs:
       sha8: ${{ steps.version.outputs.sha8 }}
       # The SHA dev ran before this run; announce-live names every pull request
       # merged since. Empty when unknown (fail-safe build of every surface).
-      base: ${{ steps.base.outputs.base }}
+      base: ${{ steps.announce.outputs.base }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -119,101 +121,138 @@ jobs:
           echo "version=${NEXT}-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
           echo "sha8=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
           echo "Latest release: ${LATEST:-none} → dev ${NEXT}-dev.${GITHUB_SHA::8}"
-      - name: Resolve deploy base (what dev is actually running)
+      - name: Resolve deploy base per surface (what each surface serves)
         id: base
         # Runs for the change-diffing path: a dispatch with surface=changed. surface=all / surface=frontend force
         # their own set below and skip this.
         if: inputs.surface == 'changed'
         run: |
-          # THE FLAKY-SKIP FIX. The old filter diffed `github.event.before..sha`
-          # — the commits in THIS push only. But a superseded/cancelled deploy
-          # meant a surface changed by an earlier commit was never built, and its
-          # push's diff was gone — so it stranded on dev. Diff against the sha dev
-          # is actually running instead: every surface stale relative to the live
-          # deployment rebuilds, and a cancelled deploy is simply re-picked-up by
-          # the next run (which is what makes cancel-in-progress safe here).
-          set +e
-          deployed=$(curl -sf --max-time 8 https://dev-api.kortix.com/v1/health \
-            | python3 -c "import sys,json;print(json.load(sys.stdin).get('commit',''))" 2>/dev/null)
-          set -e
-          if [ -n "$deployed" ] && [ "$deployed" != "unknown" ] && git cat-file -e "${deployed}^{commit}" 2>/dev/null; then
-            echo "base=$deployed" >> "$GITHUB_OUTPUT"
-            echo "force_all=false" >> "$GITHUB_OUTPUT"
-            echo "Comparing changed surfaces against deployed dev SHA ${deployed}"
-          else
-            # Health down, or the deployed sha is not in history (force-push,
-            # shallow, first deploy). Fail SAFE: build every surface rather than
-            # risk skipping a stale one. A redundant build is cheap; a stranded
-            # surface is the bug this fix exists to kill.
-            echo "base=" >> "$GITHUB_OUTPUT"
-            echo "force_all=true" >> "$GITHUB_OUTPUT"
-            echo "Deployed SHA unavailable ('${deployed}') — building ALL surfaces (fail-safe)"
-          fi
-      - name: Path filter
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+          # Each surface diffs against the commit IT serves. Before 2026-11-06
+          # every surface diffed against the API's /health commit: when the API
+          # rolled and the web, gateway or CLI roll failed in the same run, the
+          # next run's base was already past that commit and the failed surface
+          # stayed stale until a later commit touched its paths again. A surface
+          # whose commit is unknown (health down, not in history) builds
+          # (fail-safe, scripts/ci/deploy-dev-changes.sh).
+          set -euo pipefail
+          read_commit() {
+            curl -sf --max-time 8 "$1" 2>/dev/null \
+              | python3 -c "import sys,json;print(json.load(sys.stdin).get('commit',''))" 2>/dev/null || true
+          }
+          api="$(read_commit https://dev-api.kortix.com/v1/health)"
+          gateway="$(read_commit https://gateway-dev.kortix.com/health/live)"
+          frontend="$(read_commit https://dev.kortix.com/api/health)"
+          # The CLI channel is the `dev-latest` tag (publish-dev-release), fetched
+          # with the tags in the version step.
+          cli="$(git rev-parse -q --verify 'refs/tags/dev-latest^{commit}' || true)"
+          {
+            echo "api=$api"
+            echo "gateway=$gateway"
+            echo "frontend=$frontend"
+            echo "cli=$cli"
+          } >> "$GITHUB_OUTPUT"
+          echo "Served commits: api=${api:-?} gateway=${gateway:-?} web=${frontend:-?} cli=${cli:-?}"
+      - name: Path filter (per-surface base)
         id: filter
-        with:
-          # For `changed`, compare against what dev runs (empty = action's default).
-          base: ${{ steps.base.outputs.base }}
-          filters: |
-            api:
-              - 'apps/api/**'
-              - 'apps/kortix-app-runtime/**'
-              - 'apps/kortix-sandbox-agent-server/**'
-              - 'apps/sandbox/**'
-              - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
-              - 'packages/**'
-              - 'scripts/ci/cosign-sign-attest.sh'
-              - 'infra/scripts/ecs-deploy.sh'
-              - '.github/workflows/deploy-dev.yml'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'VERSION'
-            gateway:
-              - 'apps/llm-gateway/**'
-              - 'packages/llm-gateway/**'
-              - 'packages/shared/**'
-              - 'infra/scripts/ecs-deploy.sh'
-              - '.github/workflows/deploy-dev.yml'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-            frontend:
-              - 'apps/web/**'
-              - 'packages/**'
-              - 'infra/scripts/ecs-deploy.sh'
-              - 'infra/scripts/carry-web-static.sh'
-              - 'infra/scripts/render-web-env.mjs'
-              - 'infra/scripts/sync-web-env.sh'
-              - 'infra/scripts/sync-web-dns.mjs'
-              - 'infra/terraform/environments/dev-us-east-2/**'
-              - 'infra/terraform/environments/dev-web-us-east-2/**'
-              - 'infra/terraform/modules/ecs-api/**'
-              - 'infra/terraform/security-baseline/iam-gha-ecs-deploy.tf'
-              - '.github/workflows/deploy-dev.yml'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'VERSION'
-            cli:
-              - 'apps/cli/**'
-              # `kortix tui` downloads kortix-tui from this same release, so the
-              # TUI binaries are built and published by the CLI job.
-              - 'apps/tui/**'
-              - 'packages/starter/**'
-              - 'scripts/install.sh'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'package.json'
-              - 'VERSION'
-            apps_router:
-              - 'infra/cloudflare/workers/apps-router/**'
-              - '.github/workflows/deploy-dev.yml'
-            # Every dev root this pipeline applies (see terraform-apply.yml).
-            terraform:
-              - 'infra/terraform/environments/dev-us-east-2/**'
-              - 'infra/terraform/environments/dev-web-us-east-2/**'
-              - 'infra/terraform/modules/**'
-              - '.github/workflows/terraform-apply.yml'
-              - '.github/workflows/deploy-dev.yml'
+        if: inputs.surface == 'changed'
+        env:
+          BASE_API: ${{ steps.base.outputs.api }}
+          BASE_GATEWAY: ${{ steps.base.outputs.gateway }}
+          BASE_FRONTEND: ${{ steps.base.outputs.frontend }}
+          BASE_CLI: ${{ steps.base.outputs.cli }}
+          # No /health of their own: they follow the API's commit, as before.
+          BASE_APPS_ROUTER: ${{ steps.base.outputs.api }}
+          BASE_TERRAFORM: ${{ steps.base.outputs.api }}
+          FILTERS: |
+              api:
+                - 'apps/api/**'
+                - 'apps/kortix-app-runtime/**'
+                - 'apps/kortix-sandbox-agent-server/**'
+                - 'apps/sandbox/**'
+                - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
+                - 'packages/**'
+                - 'scripts/ci/cosign-sign-attest.sh'
+                - 'scripts/ci/lib/cosign-retry.sh'
+                - 'infra/scripts/ecs-deploy.sh'
+                - '.github/workflows/deploy-dev.yml'
+                - 'scripts/ci/deploy-dev-changes.sh'
+                - 'pnpm-lock.yaml'
+                - 'pnpm-workspace.yaml'
+                - 'VERSION'
+              gateway:
+                - 'apps/llm-gateway/**'
+                - 'packages/llm-gateway/**'
+                - 'packages/shared/**'
+                - 'infra/scripts/ecs-deploy.sh'
+                - '.github/workflows/deploy-dev.yml'
+                - 'scripts/ci/deploy-dev-changes.sh'
+                - 'pnpm-lock.yaml'
+                - 'pnpm-workspace.yaml'
+              frontend:
+                - 'apps/web/**'
+                - 'packages/**'
+                - 'infra/scripts/ecs-deploy.sh'
+                - 'infra/scripts/carry-web-static.sh'
+                - 'infra/scripts/render-web-env.mjs'
+                - 'infra/scripts/sync-web-env.sh'
+                - 'infra/scripts/lib/aws-secret.sh'
+                - 'infra/scripts/sync-web-dns.mjs'
+                - 'infra/terraform/environments/dev-us-east-2/**'
+                - 'infra/terraform/environments/dev-web-us-east-2/**'
+                - 'infra/terraform/modules/ecs-api/**'
+                - 'infra/terraform/security-baseline/iam-gha-ecs-deploy.tf'
+                - '.github/workflows/deploy-dev.yml'
+                - 'scripts/ci/deploy-dev-changes.sh'
+                - 'pnpm-lock.yaml'
+                - 'pnpm-workspace.yaml'
+                - 'VERSION'
+              cli:
+                - 'apps/cli/**'
+                # `kortix tui` downloads kortix-tui from this same release, so the
+                # TUI binaries are built and published by the CLI job.
+                - 'apps/tui/**'
+                - 'packages/starter/**'
+                - 'scripts/install.sh'
+                - 'pnpm-lock.yaml'
+                - 'pnpm-workspace.yaml'
+                - 'package.json'
+                - 'VERSION'
+              apps_router:
+                - 'infra/cloudflare/workers/apps-router/**'
+                - '.github/workflows/deploy-dev.yml'
+                - 'scripts/ci/deploy-dev-changes.sh'
+              # Every dev root this pipeline applies (see terraform-apply.yml).
+              terraform:
+                - 'infra/terraform/environments/dev-us-east-2/**'
+                - 'infra/terraform/environments/dev-web-us-east-2/**'
+                - 'infra/terraform/modules/**'
+                - '.github/workflows/terraform-apply.yml'
+                - '.github/workflows/deploy-dev.yml'
+                - 'scripts/ci/deploy-dev-changes.sh'
+        run: |
+          set -euo pipefail
+          bash scripts/ci/deploy-dev-changes.sh | tee -a "$GITHUB_OUTPUT"
+      - name: Announce base (oldest commit among the surfaces this run builds)
+        id: announce
+        if: inputs.surface == 'changed'
+        env:
+          API: ${{ steps.filter.outputs.api == 'true' && steps.base.outputs.api || '' }}
+          GATEWAY: ${{ steps.filter.outputs.gateway == 'true' && steps.base.outputs.gateway || '' }}
+          FRONTEND: ${{ steps.filter.outputs.frontend == 'true' && steps.base.outputs.frontend || '' }}
+        run: |
+          # announce-live names every pull request merged since this commit.
+          # After a failed web roll the web still serves the older commit, so
+          # the pull request whose comment said "Not live on dev yet" is in
+          # this run's range again and gets its comment corrected. A surface
+          # this run does not build is not part of the range.
+          set -euo pipefail
+          oldest=""
+          for c in "$API" "$GATEWAY" "$FRONTEND"; do
+            [ -n "$c" ] && [ "$c" != unknown ] && git cat-file -e "${c}^{commit}" 2>/dev/null || continue
+            if [ -z "$oldest" ] || git merge-base --is-ancestor "$c" "$oldest"; then oldest="$c"; fi
+          done
+          echo "base=$oldest" >> "$GITHUB_OUTPUT"
+          echo "Announce base: ${oldest:-unknown (announce the head commit only)}"
       - name: Normalize outputs
         id: outputs
         run: |
@@ -223,11 +262,6 @@ jobs:
           frontend="${{ steps.filter.outputs.frontend }}"
           cli="${{ steps.filter.outputs.cli }}"
           terraform="${{ steps.filter.outputs.terraform }}"
-          if [ "${{ steps.base.outputs.force_all }}" = "true" ]; then
-            # Fail-safe from the base resolver: dev's running SHA was unknown, so
-            # build everything rather than skip a possibly-stale surface.
-            api=true; apps_router=true; gateway=true; frontend=true; cli=true; terraform=true
-          fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             case "${{ inputs.surface }}" in
               frontend)
@@ -237,9 +271,8 @@ jobs:
                 api=true; apps_router=true; gateway=true
                 frontend=true; cli=true; terraform=true ;;
               changed)
-                # Keep the path-filter outputs — they were diffed against the sha
-                # dev actually runs (the base step above), so only stale surfaces
-                # build. force_all already covered the "deployed sha unknown" case.
+                # Keep the path-filter outputs: each surface was diffed against
+                # the commit it serves, and an unknown commit already set it true.
                 : ;;
             esac
           fi
@@ -275,8 +308,9 @@ jobs:
   # The `github.ref` condition keeps the documented "manual branch run" of this
   # workflow working: terraform-apply.yml refuses any commit that is not on
   # `dev`, so on a branch dispatch these jobs would fail and block the image
-  # deploys. Skipping is the correct outcome there — a branch run deploys
-  # images, never infrastructure.
+  # deploys. Skipping is the correct outcome there — a branch run never applies
+  # infrastructure, never migrates the dev database and never rolls the dev
+  # API (migrate-db, deploy-api-ecs).
 
   # environments/dev-us-east-2 is the API root. It plans `api_image`, so it waits for
   # build-api: the value must be an image that exists, and the freshly pushed
@@ -487,10 +521,16 @@ jobs:
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
 
+  # Dev's database and dev's API run only what is on `dev`. A dispatch from a
+  # branch (`--ref <branch>`) would apply the branch's migrations to the dev
+  # database: the next `dev` deploy rolls the code back, but the ledger keeps
+  # rows no `dev` file explains (drift), and checkOrder can then refuse every
+  # later deploy. So both jobs require ref `dev`; a branch run builds images
+  # and rolls only what has no database state.
   migrate-db:
     name: Apply DB migrations to dev
     needs: detect-changes
-    if: needs.detect-changes.outputs.api == 'true'
+    if: needs.detect-changes.outputs.api == 'true' && github.ref == 'refs/heads/dev'
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 45
     # deploy-dev.yml has no workflow-level permissions (repo default: read).
@@ -533,6 +573,7 @@ jobs:
     # deploy-web-ecs awaits it.
     if: >-
       ${{ always()
+        && github.ref == 'refs/heads/dev'
         && needs.detect-changes.outputs.api == 'true'
         && needs.build-api.result == 'success'
         && needs.migrate-db.result == 'success'

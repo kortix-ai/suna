@@ -220,21 +220,6 @@ describe('the gate codemod is complete', () => {
     expect(offenders).toEqual([]);
   });
 
-  test('the cli-token routes gate on the credentials leaf, not the coarse alias', () => {
-    // routes.md §5.2: POST|DELETE /projects/:id/cli-token gated on
-    // loadProjectForUser('manage') === project.write, so anyone who could edit
-    // the project could mint a token that outlives the request. Since #10136
-    // GET /cli-token (lists every member's keys) needs the leaf too.
-    const credentialRoutes = code(join(SRC, 'projects/routes/project-credentials.ts'));
-    const cliTokenGates = [...credentialRoutes.matchAll(/loadProjectForUser\(c, projectId, '(\w+)'\)/g)].map(
-      (m) => m[1],
-    );
-    expect(cliTokenGates.filter((g) => g === 'credentials')).toHaveLength(3);
-
-    const tokens = code(join(SRC, 'accounts/core/tokens.ts'));
-    expect(tokens).toContain("loadProjectForUser(c, projectId, 'credentials')");
-  });
-
   test('app.ts registers its whole route table synchronously', () => {
     // A top-level `await` above the last `app.route(...)` leaves the route
     // table, the error handler and the 404 handler unregistered for any

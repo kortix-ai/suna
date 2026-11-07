@@ -9,7 +9,7 @@
  * renders as the raw source in the muted colour, like KaTeX's `errorColor`
  * on web.
  */
-import React, { memo, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Text as RNText, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { SvgXml } from 'react-native-svg';

@@ -62,11 +62,11 @@ const LIST = {
     title: '3 agents',
     status: 'done',
     rows: [
-      { title: 'Researcher', detail: 'Finds sources', badge: 'active', href: '/projects/p-1/customize/agents/researcher' },
+      { title: 'Researcher', detail: 'Finds sources', badge: 'active', href: '/workspaces/p-1/customize/agents/researcher' },
       { title: 'Writer', detail: 'Drafts posts' },
       { title: 'Unsafe', href: 'javascript:alert(1)' },
     ],
-    links: [{ label: 'Agents', href: '/projects/p-1/customize/agents' }],
+    links: [{ label: 'Agents', href: '/workspaces/p-1/customize/agents' }],
   },
   data: { internal_marker: 'model-only-field' },
 };
@@ -79,7 +79,7 @@ const DENIED = {
     title: 'Could not invite the person',
     subtitle: 'Sam, Alex can grant it.',
     status: 'denied',
-    links: [{ label: 'Members', href: '/projects/p-1/members' }],
+    links: [{ label: 'Members', href: '/workspaces/p-1/members' }],
   },
   error: {
     kind: 'denied',
@@ -141,14 +141,14 @@ describe('KortixActionTool — done', () => {
   test('open, its rows link in-app, its badge shows, and nothing unsafe or model-only renders', () => {
     const html = render(<KortixActionTool call={done('kortix_agents', LIST)} defaultOpen />);
     const text = textOf(html);
-    expect(html).toContain('href="/projects/p-1/customize/agents/researcher"');
+    expect(html).toContain('href="/workspaces/p-1/customize/agents/researcher"');
     expect(text).toContain('Finds sources');
     expect(text).toContain('active');
     expect(text).toContain('Writer');
     // A row href that is not an in-app path is dropped; the row stays.
     expect(text).toContain('Unsafe');
     expect(html).not.toContain('javascript:');
-    expect(html).toContain('href="/projects/p-1/customize/agents"');
+    expect(html).toContain('href="/workspaces/p-1/customize/agents"');
     // The raw result sits folded under "Show details": the label shows, the JSON does not.
     expect(text).toContain('Show details');
     expect(text).not.toContain('model-only-field');
@@ -201,7 +201,7 @@ describe('KortixActionTool — done', () => {
               subtitle: 'Open the link to connect it.',
               status: 'needs_you',
               links: [
-                { label: 'Connectors', href: '/projects/p-1/admin/connectors' },
+                { label: 'Connectors', href: '/workspaces/p-1/admin/connectors' },
                 { label: 'Sign in', href: 'https://auth.example.test/connect?state=abc' },
                 { label: 'Plain http', href: 'http://auth.example.test/insecure' },
               ],
@@ -217,8 +217,8 @@ describe('KortixActionTool — done', () => {
     // `&amp;`-free URL, so the attribute matches as written.
     expect(html).toMatch(/<a [^>]*href="https:\/\/auth\.example\.test\/connect\?state=abc"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
     // The external link renders before the in-app one: it is the action.
-    expect(html.indexOf('auth.example.test/connect')).toBeLessThan(html.indexOf('/projects/p-1/admin/connectors'));
-    expect(html).not.toMatch(/href="\/projects\/p-1\/admin\/connectors"[^>]*target=/);
+    expect(html.indexOf('auth.example.test/connect')).toBeLessThan(html.indexOf('/workspaces/p-1/admin/connectors'));
+    expect(html).not.toMatch(/href="\/(?:workspaces|projects)\/p-1\/admin\/connectors"[^>]*target=/);
     expect(html).not.toContain('insecure');
   });
 });
@@ -233,7 +233,7 @@ describe('KortixActionTool — denied', () => {
     expect(text).toContain('Sam');
     expect(text).toContain('admin');
     expect(text).toContain('Alex');
-    expect(html).toContain('href="/projects/p-1/members"');
+    expect(html).toContain('href="/workspaces/p-1/members"');
     expect(html).toContain('aria-expanded="true"');
     // Open, the body names the grantors; the trigger does not repeat them.
     expect(text).not.toContain('Sam, Alex can grant it.');
@@ -245,7 +245,7 @@ describe('KortixActionTool — denied', () => {
     const html = render(
       <KortixActionTool call={done('kortix_people', { ...DENIED, error: { kind: 'denied', message: 'refused' } }, { action: 'invite' })} />,
     );
-    expect(textOf(html)).toContain('Anyone who manages this project can grant it.');
+    expect(textOf(html)).toContain('Anyone who manages this workspace can grant it.');
   });
 
   test('a call that threw its result still draws the card, not the generic error row', () => {

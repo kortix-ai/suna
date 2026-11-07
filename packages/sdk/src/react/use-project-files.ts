@@ -31,7 +31,7 @@ import {
   getFolderAccess,
   listAgentMounts,
   listProjectMounts,
-  getProjectDrive,
+  getWorkspaceDrive,
   getSessionDrives,
   listDriveConflicts,
   listDriveFolder,
@@ -48,14 +48,17 @@ const pollUnlessFailing = (interval: number) => (query: { state: { status: strin
   query.state.status === 'error' ? false : interval;
 
 /** The project's drive and the caller's own folder in it: keyed by user, since it carries their access. */
-export function projectDriveQueryOptions(projectId: string | undefined, userId: string | null | undefined, enabled = true) {
+export function workspaceDriveQueryOptions(projectId: string | undefined, userId: string | null | undefined, enabled = true) {
   return {
     queryKey: qk.drives.list(userId, { projectId }),
-    queryFn: (): Promise<Drive> => getProjectDrive(projectId!),
+    queryFn: (): Promise<Drive> => getWorkspaceDrive(projectId!),
     enabled: enabled && !!projectId && !!userId,
     staleTime: 15_000,
   };
 }
+
+/** @deprecated Use `workspaceDriveQueryOptions`. Kept permanently. */
+export const projectDriveQueryOptions = workspaceDriveQueryOptions;
 
 /** One folder: what the caller may see in it, and their access to it. */
 export function driveFolderQueryOptions(driveId: string | null, path: string) {
@@ -95,9 +98,12 @@ export function projectMountsQueryOptions(driveId: string | null, enabled = true
   };
 }
 
-export function useProjectMounts(driveId: string | null, enabled = true) {
+export function useWorkspaceMounts(driveId: string | null, enabled = true) {
   return useQuery(projectMountsQueryOptions(driveId, enabled));
 }
+
+/** @deprecated Use `useWorkspaceMounts`. Kept permanently. */
+export const useProjectMounts = useWorkspaceMounts;
 
 /** The folders a new session of an agent mounts. Under the drive's key, so a share or unshare refreshes it. */
 export function agentMountsQueryOptions(driveId: string | null, agentName: string, enabled = true) {
@@ -149,9 +155,12 @@ export function useDriveAvailability(projectId: string | undefined) {
   return { enabled: flag.enabled, isLoading: flag.isLoading };
 }
 
-export function useProjectDrive(projectId: string | undefined, userId: string | null | undefined, enabled = true) {
-  return useQuery(projectDriveQueryOptions(projectId, userId, enabled));
+export function useWorkspaceDrive(projectId: string | undefined, userId: string | null | undefined, enabled = true) {
+  return useQuery(workspaceDriveQueryOptions(projectId, userId, enabled));
 }
+
+/** @deprecated Use `useWorkspaceDrive`. Kept permanently. */
+export const useProjectDrive = useWorkspaceDrive;
 
 export function useDriveFolder(driveId: string | null, path: string) {
   return useQuery(driveFolderQueryOptions(driveId, path));

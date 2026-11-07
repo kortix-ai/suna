@@ -122,7 +122,7 @@ describe('kortix agents command', () => {
     expect(r.stdout).toContain('glm-5.3-flash');
     expect(calls.at(-1)).toMatchObject({
       method: 'PUT',
-      path: `/v1/projects/${PROJECT}/model-defaults`,
+      path: `/v1/workspaces/${PROJECT}/model-defaults`,
       body: { scope: 'agent', agentName: 'reviewer', model: 'glm-5.3-flash' },
     });
 
@@ -134,7 +134,7 @@ describe('kortix agents command', () => {
     expect(cleared.stdout).toContain('follows the default model again');
     expect(calls.at(-1)).toMatchObject({
       method: 'DELETE',
-      path: `/v1/projects/${PROJECT}/model-defaults?scope=agent&agentName=reviewer`,
+      path: `/v1/workspaces/${PROJECT}/model-defaults?scope=agent&agentName=reviewer`,
     });
 
     const bare = await runCli(['agents', 'model', '--project', PROJECT], config);

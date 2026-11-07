@@ -23,8 +23,7 @@ import type {
   WriteFileResult,
 } from './types';
 
-// Re-export the file types from the `@kortix/sdk/files` subpath too, so hosts can
-// import both the ops and the types from one place.
+// Re-export the file types too, so hosts import the ops and the types from one place.
 export type * from './types';
 
 function unwrap<T>(result: { data?: T; error?: unknown }): T {
@@ -210,7 +209,7 @@ async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl?: st
 // A host transcript can show hundreds of binary file cards, and the live event
 // stream refetches every mounted card at once — `binaryBlobKeys.all` is
 // invalidated on each `file.edited` event and at turn end
-// (`use-opencode-events/handle-event.ts`). Unbounded, that fan-out saturates a
+// (`use-runtime-events/handle-event.ts`). Unbounded, that fan-out saturates a
 // box's dial path: on 2026-10-10 one web client fired 649 `GET /file/raw` in one
 // minute at a single box and the route's p95 reached 20 s (Linear KRTX-471).
 // Eight concurrent reads keep every request fast and still drain a 700-card
@@ -884,9 +883,12 @@ async function moveFile(from: string, to: string, base: string, overwrite: boole
 }
 
 // ── project / health (via opencode client) ────────────────────────────────────
-export async function getCurrentProject(): Promise<RuntimeProjectInfo> {
+export async function getCurrentWorkspace(): Promise<RuntimeProjectInfo> {
   return unwrap(await getClient().project.current()) as RuntimeProjectInfo;
 }
+
+/** @deprecated Use `getCurrentWorkspace`. Kept permanently. */
+export const getCurrentProject = getCurrentWorkspace;
 
 export async function getServerHealth(): Promise<ServerHealth> {
   return unwrap(await getClient().global.health()) as ServerHealth;
@@ -916,7 +918,7 @@ export const files = {
   remove: deleteFile,
   mkdir,
   rename: renameFile,
-  currentProject: getCurrentProject,
+  currentProject: getCurrentWorkspace,
   health: getServerHealth,
   isReachable: isServerReachable,
   toDaemonPath,

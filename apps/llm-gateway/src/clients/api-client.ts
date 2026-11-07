@@ -12,6 +12,7 @@ import {
   type ModelCatalog,
   type ModelRouteInput,
   type ModelRoutePlan,
+  type SubscriptionUsage,
   type UpstreamDescriptor,
   type UsageEvent,
 } from '@kortix/llm-gateway';
@@ -61,6 +62,7 @@ export interface ApiClient {
   ) => Promise<ModelRoutePlan | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit: (principal: AuthedPrincipal, secretId: string, seconds: number) => Promise<void>;
+  notePoolUsage: (principal: AuthedPrincipal, secretId: string, usage: SubscriptionUsage) => Promise<void>;
   refreshCredential: (principal: AuthedPrincipal, descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
   claudeCredentials: NonNullable<ClaudeCodeHooks['claudeCredentials']>;
   claudeRefused: NonNullable<ClaudeCodeHooks['claudeRefused']>;
@@ -294,6 +296,10 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     },
     notePoolRateLimit: async (principal, secretId, seconds) => {
       await post<{ ok: boolean }>('/internal/gateway/pool-rate-limit', { principal, secretId, seconds });
+    },
+    // Only the account id crosses: the API keys the snapshot by account and secret.
+    notePoolUsage: async (principal, secretId, usage) => {
+      await post<{ ok: boolean }>('/internal/gateway/pool-usage', { principal: { accountId: principal.accountId }, secretId, usage });
     },
     // The token itself never crosses back: the API compares a digest to tell
     // a login another request already refreshed from the one that failed.

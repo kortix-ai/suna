@@ -14,7 +14,7 @@ import type { SettingsTab } from './settings-tabs';
  *
  * It used to consult a second registry, the config page's
  * `project-settings-sections.ts`, for the panes that lived at
- * `/projects/[id]/config`. That page was retired on 2026-09-02 and its panes
+ * `/workspaces/[id]/config`. That page was retired on 2026-09-02 and its panes
  * are rail rows now, so one lookup answers for every pane.
  */
 /**

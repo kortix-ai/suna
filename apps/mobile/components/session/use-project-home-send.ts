@@ -122,7 +122,7 @@ export function useProjectHomeSend(
         freshSessionIdRef.current = sessionId;
         setConnectingProjectSessionId(sessionId);
         // The session holds the prompt now: drop the home's saved draft
-        // (COR-143). Cancel hands the text back through `takeInitialDraft`.
+        // (COR-143). Cancel hands the text back through `initialDraft`.
         // The saved draft is the typed text only: compare it without the paste tiles.
         clearComposerDraftIfSent(draftKey({ kind: 'project', projectId }), splitPastedContent(text).text);
         // The first send asks for notification permission, once per install.

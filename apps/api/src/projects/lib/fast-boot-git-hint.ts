@@ -1,4 +1,3 @@
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { resolveRemoteBranchTip } from '../git/branches';
@@ -6,7 +5,7 @@ import { provenMirrorTip } from '../git/mirror';
 import type { FastBootGitHint } from '../git/fast-boot-bundle';
 import { MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES, resolveFastBootGitHint } from '../git/fast-boot-bundle';
 import type { GitBackedProject } from '../git/types';
-import { metadataMergeSubtree } from './metadata-merge';
+import { metadataMergeSubtree, projectsView, updateProjectRows } from '../../workspaces/rows';
 
 // v3: a delta may be REMOTE (parent known, bundle downloaded by the daemon) and
 // the entry carries the OpenCode config dir at the tip. v2 entries are
@@ -100,13 +99,10 @@ export async function persistFastBootGitHint(
 ): Promise<CachedFastBootGitHint | null> {
   const cached = buildCachedFastBootGitHint(ref, hint);
   if (!cached) return null;
-  await db
-    .update(projects)
-    .set({
-      metadata: metadataMergeSubtree('git', { fast_boot: cached }),
-      updatedAt: new Date(),
-    })
-    .where(eq(projects.projectId, projectId));
+  await updateProjectRows(eq(projectsView.projectId, projectId), {
+    metadata: metadataMergeSubtree('git', { fast_boot: cached }),
+    updatedAt: new Date(),
+  });
   return cached;
 }
 
@@ -133,7 +129,7 @@ const defaultDependencies: FastBootGitHintDependencies = {
  * A cached hint is reused when the remote tip still equals its `base_sha`
  * (one `ls-remote`, no mirror refresh). Otherwise the mirror is refreshed and
  * the hint rebuilt; every buildable hint is persisted — even a bare
- * `{ baseSha, opencodeConfigDir }` — so the next create pays only the tip check.
+ * `{ baseSha }` — so the next create pays only the tip check.
  */
 export async function resolveFastBootGitHintWithCache(
   project: GitBackedProject,

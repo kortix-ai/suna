@@ -7,6 +7,7 @@ import {
   GitBranchIcon,
   KanbanIcon,
   SquaresFourIcon,
+  TicketIcon,
   UsersIcon,
   WrenchIcon,
   type Icon,
@@ -42,7 +43,8 @@ interface AdminNavItem {
 const NAV_ITEMS: AdminNavItem[] = [
   { href: '/admin', label: 'Overview', icon: SquaresFourIcon },
   { href: '/admin/accounts', label: 'Accounts', icon: UsersIcon },
-  { href: '/admin/projects', label: 'Projects', icon: KanbanIcon },
+  { href: '/admin/credit-codes', label: 'Credit codes', icon: TicketIcon },
+  { href: '/admin/workspaces', label: 'Workspaces', icon: KanbanIcon },
   { href: '/admin/analytics', label: 'Analytics', icon: ChartLineUpIcon },
   { href: '/admin/sandboxes', label: 'Sandboxes', icon: CubeIcon },
   // The instance's ONE managed-git identity. It sits here, not on an account

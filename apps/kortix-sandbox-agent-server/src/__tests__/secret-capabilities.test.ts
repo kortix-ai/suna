@@ -52,8 +52,8 @@ describe('secret capability instructions', () => {
 })
 
 /**
- * The rendered file is injected as an OpenCode `instructions` file, so it is the
- * channel the model actually reads. An egress-enforced capability used to be
+ * pi adds the rendered file to the system prompt, so it is the channel the
+ * model actually reads. An egress-enforced capability used to be
  * dropped here entirely — the renderer allow-listed three delivery values — and
  * the result was an agent that hit the boundary's echo cut, concluded the host
  * was broken, and invented a reason.

@@ -32,9 +32,10 @@ describe('agents — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('56 grantable project actions (all of PROJECT_ACTIONS)', () => {
-    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(56);
-    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.artifact.comment')).toBe(true);
+  test('77 grantable actions: all 84 workspace actions minus the 7 HUMAN_ONLY', () => {
+    // 54 → 53: artifact comments (project.artifact.comment) were removed (2026-11-06).
+    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(77);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.artifact.comment')).toBe(false);
   });
 
   // The git ref leaves are grantable on purpose: a project that WANTS an agent
@@ -46,16 +47,16 @@ describe('agents — grantable enum drift guard', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.gitops.ref.delete')).toBe(true);
   });
 
-  // The three manager-tier project leaves are reachable via a project's
-  // `manager` role, so they're grantable to an agent too.
-  test('the three manager-tier project leaves are included in the grantable set', () => {
-    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.delete')).toBe(true);
+  // Managing members is an ordinary grant; deleting the workspace and minting
+  // gateway keys are HUMAN_ONLY (moving money, minting credentials).
+  test('members.manage is grantable; delete and gateway keys are HUMAN_ONLY', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.members.manage')).toBe(true);
-    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.gateway.keys.manage')).toBe(true);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.delete')).toBe(false);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.gateway.keys.manage')).toBe(false);
   });
 });
 
-describe('agents — the 3 manager-tier project leaves are grantable, not rejected', () => {
+describe('agents — the 3 manager-tier project leaves parse (HUMAN_ONLY ones grant nothing at the engine)', () => {
   for (const action of ['project.delete', 'project.members.manage', 'project.gateway.keys.manage']) {
     test(`kortix_permissions: [${action}] is accepted`, () => {
       const { specs, errors } = parseAgents(`  a:\n    kortix_permissions: [${action}]\n`);
@@ -82,10 +83,19 @@ describe('agents — kortix_permissions enum enforcement', () => {
     expect(specs[0].connectors).toBe('all');
   });
 
-  test('account-scoped actions (member.invite, project.create) are dropped, never granted', () => {
+  test('former account actions (member.invite, project.create) are ordinary workspace grants', () => {
     const { specs, errors } = parseAgents('  a:\n    kortix_permissions: [member.invite, project.create]\n');
     expect(errors).toEqual([]);
-    expect(specs[0].permissions).toEqual([]);
+    expect(specs[0].permissions).toEqual(['member.invite', 'project.create']);
+  });
+
+  // Workspaces: every grantable action has a workspace.* name, accepted forever.
+  test('a workspace name is grantable, an administration one included', () => {
+    const { specs, errors } = parseAgents(
+      '  a:\n    kortix_permissions: [workspace.session.start, workspace.billing.read, project.file.read]\n',
+    );
+    expect(errors).toEqual([]);
+    expect(specs[0].permissions).toEqual(['workspace.session.start', 'workspace.billing.read', 'project.file.read']);
   });
 
   test('unknown action is dropped, the rest of the list stays', () => {
@@ -108,10 +118,11 @@ describe('agents — kortix_permissions enum enforcement', () => {
     expect(specs[0]!.permissions).toEqual(['project.gitops.push', 'project.trigger.create']);
   });
 
-  test('account actions are NOT in the grantable set', () => {
-    expect(GRANTABLE_KORTIX_PERMISSIONS.has('member.invite')).toBe(false);
+  test('administration actions are grantable; HUMAN_ONLY ones are not', () => {
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('member.invite')).toBe(true);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.create')).toBe(true);
     expect(GRANTABLE_KORTIX_PERMISSIONS.has('billing.write')).toBe(false);
-    expect(GRANTABLE_KORTIX_PERMISSIONS.has('project.create')).toBe(false);
+    expect(GRANTABLE_KORTIX_PERMISSIONS.has('token.create')).toBe(false);
   });
 });
 
@@ -183,10 +194,10 @@ describe('agents — `agents:` map', () => {
     expect(specs.find((s) => s.name === 'other')!.enabled).toBe(true);
   });
 
-  test('an ungrantable kortix_permissions action drops out; the other grants stay', () => {
+  test('an unknown kortix_permissions action drops out; the other grants stay', () => {
     const { specs, errors } = parseAgents(`
   support:
-    kortix_permissions: [member.invite, project.file.read]
+    kortix_permissions: [project.not_an_action, project.file.read]
     connectors: all
     secrets: all
 `);

@@ -18,7 +18,7 @@
 // resolveSessionPlacement): a box mounts only a volume of its own region.
 
 import { logger } from '../lib/logger';
-import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces, projects, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, projectSpaceLinks, projectSpaceMembers, projectSpaces, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { spaceDriveFolders } from '@kortix/shared';
 import { privateChannelAccess } from '../shared/space-access';
 import { and, asc, count, desc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
@@ -72,6 +72,7 @@ import {
 } from './volumes';
 import { isDriveSyncBox } from './sync';
 import { moveFolderGrants } from './queries';
+import { projectsView } from '../workspaces/rows';
 
 export type DriveRow = typeof drives.$inferSelect;
 
@@ -206,7 +207,7 @@ export async function ensureProjectDrive(accountId: string, projectId: string): 
   const existing = await findProjectDrive(projectId);
   if (existing) return existing;
   const driveId = crypto.randomUUID();
-  const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [project] = await db.select({ metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   const [created] = await db
     .insert(drives)
     .values({
@@ -610,6 +611,45 @@ export async function sessionPrivateChannelFolder(sessionId: string): Promise<st
   return privateFolderOfSpace(row.spaceId);
 }
 
+/**
+ * With `chat` on, the files folder of the public channel or DM the session is
+ * filed in: `/Company/Channels/<slug>`, or the DM owner's `<person>/Agents/<agent>`
+ * (only in a session the DM's owner started). The thread's sessions share
+ * their thread files there (`memory/thread-files.ts`). Null for a private
+ * channel (`sessionPrivateChannelFolder` mounts it), no space, or `chat` off.
+ */
+export async function sessionSpaceFolder(projectId: string, sessionId: string, grants: readonly FolderGrant[]): Promise<string | null> {
+  const [row] = await db
+    .select({
+      kind: projectSpaces.kind,
+      slug: projectSpaces.slug,
+      visibility: projectSpaces.visibility,
+      dmUserId: projectSpaces.dmUserId,
+      dmAgentName: projectSpaces.dmAgentName,
+      createdBy: projectSessions.createdBy,
+    })
+    .from(projectSessions)
+    .innerJoin(projectSpaces, and(eq(projectSpaces.spaceId, projectSessions.spaceId), eq(projectSpaces.projectId, projectSessions.projectId)))
+    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+    .limit(1);
+  if (!row || (row.kind === 'channel' && row.visibility === 'private')) return null;
+  if (!(await projectFeatureFlagEnabled(projectId, 'chat'))) return null;
+  if (row.kind === 'channel') return row.slug ? (spaceDriveFolders('channel', row.slug, null)?.files ?? null) : null;
+  if (!row.dmUserId || !row.dmAgentName || row.createdBy !== row.dmUserId) return null;
+  const personal = personalFolderFor(grants, row.dmUserId);
+  return personal ? (spaceDriveFolders('dm', row.dmAgentName, personal)?.files ?? null) : null;
+}
+
+/** With `chat` on, the session is filed in a space, so its box mounts that space's files (`sessionSpaceFolder`). */
+export async function sessionMountsSpaceFiles(projectId: string, sessionId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ spaceId: projectSessions.spaceId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+    .limit(1);
+  return !!row?.spaceId && (await projectFeatureFlagEnabled(projectId, 'chat'));
+}
+
 /** The project's `shared_drives` flag: off, nothing but people's own folders (and private channels') reaches anyone. */
 export function sharedDrivesOn(projectId: string): Promise<boolean> {
   return projectFeatureFlagEnabled(projectId, 'shared_drives');
@@ -847,16 +887,19 @@ export async function planSessionDrives(input: {
     grants = await listFolderGrants(drive);
   }
   // `shared_drives` off: no folder mounts through the agent, only the person's own (and a private channel's).
-  const [agentId, groupIds, channelFolder, privateChannelFolders] = await Promise.all([
+  const [agentId, groupIds, channelFolder, privateChannelFolders, spaceFolder] = await Promise.all([
     sharedDrivesOn(projectId).then((on) => (on ? agentServiceAccountId(accountId, projectId, agentName) : null)),
     owner ? groupIdsOf(owner, accountId) : Promise.resolve(new Set<string>()),
     sessionPrivateChannelFolder(sessionId),
     projectPrivateChannelFolders(projectId),
+    sessionSpaceFolder(projectId, sessionId, grants),
   ]);
   const own = owner ? personalFolderFor(grants, owner) : null;
   // A private channel's folder mounts only in that channel's threads (and
   // their subagents, which inherit the channel), never through a member's grant.
-  const candidates = sessionMountCandidates(grants, { agentId, owner, groupIds, own, channelFolder, privateChannelFolders });
+  // With `chat` on, a public channel's or a DM's folder mounts in its threads
+  // and their workers the same way (`spaceFolder`).
+  const candidates = sessionMountCandidates(grants, { agentId, owner, groupIds, own, channelFolder, privateChannelFolders, spaceFolder });
   const plan = planFolderMounts(candidates, input.slots ?? (await sandboxMountLimit()), privateChannelFolders);
   return { drive, mounts: plan.mounts, skipped: plan.skipped };
 }
@@ -994,6 +1037,8 @@ export interface SessionDriveView extends RecordedDriveMount {
   /** The folder's name, for people. */
   name: string;
   openConflicts: number;
+  /** When the newest of `openConflicts` was detected (ISO 8601), or null with none. */
+  latestConflictAt: string | null;
 }
 
 /** The folders the session's current sandbox mounts, with their open conflicts. */
@@ -1003,14 +1048,19 @@ export async function readSessionDriveMounts(sessionId: string): Promise<Session
   if (!mounts.length) return [];
   const driveIds = [...new Set(mounts.map((m) => m.driveId))];
   const open = await db
-    .select({ driveId: driveConflicts.driveId, path: driveConflicts.path })
+    .select({ driveId: driveConflicts.driveId, path: driveConflicts.path, detectedAt: driveConflicts.detectedAt })
     .from(driveConflicts)
     .where(and(inArray(driveConflicts.driveId, driveIds), isNull(driveConflicts.resolvedAt), isNull(driveConflicts.dismissedAt)));
-  return mounts.map((m) => ({
-    ...m,
-    name: m.subdir && m.subdir !== '/' ? m.subdir.split('/').filter(Boolean).join(' / ') : PROJECT_DRIVE_NAME,
-    openConflicts: open.filter((c) => c.driveId === m.driveId && pathWithinFolder(c.path, m.subdir || '/')).length,
-  }));
+  return mounts.map((m) => {
+    const mine = open.filter((c) => c.driveId === m.driveId && pathWithinFolder(c.path, m.subdir || '/'));
+    const latest = mine.reduce<Date | null>((at, c) => (!at || c.detectedAt > at ? c.detectedAt : at), null);
+    return {
+      ...m,
+      name: m.subdir && m.subdir !== '/' ? m.subdir.split('/').filter(Boolean).join(' / ') : PROJECT_DRIVE_NAME,
+      openConflicts: mine.length,
+      latestConflictAt: latest ? latest.toISOString() : null,
+    };
+  });
 }
 
 /** Folders the session's current sandbox should have but does not mount, and the message for them. */
@@ -1034,10 +1084,10 @@ export async function readSkippedSessionDrives(
     return { skipped, message: `These folders are not mounted yet: ${named('unavailable')}. File storage could not mount them when the session started. The session runs without them, and they mount as soon as storage can.` };
   }
   if (skipped.some((d) => d.reason === 'region')) {
-    return { skipped, message: 'This session runs in another region than the project’s files, so its folders are not mounted. A new session mounts them.' };
+    return { skipped, message: 'This session runs in another region than the workspace’s files, so its folders are not mounted. A new session mounts them.' };
   }
   if (skipped.some((d) => d.reason === 'moving')) {
-    return { skipped, message: 'The project’s files were moving to another region when this session started, so its folders are not mounted. A new session mounts them.' };
+    return { skipped, message: 'The workspace’s files were moving to another region when this session started, so its folders are not mounted. A new session mounts them.' };
   }
   const slots = Number(md?.[DRIVE_SLOTS_METADATA_KEY]);
   return {
@@ -1365,7 +1415,7 @@ export function renderDriveNotes(
   const lines = [
     '# Files in this session',
     '',
-    'Folders of this project’s Files, synced both ways within seconds with the Kortix web app and every other session that mounts them.',
+    'Folders of this workspace’s Files, synced both ways within seconds with the Kortix web app and every other session that mounts them.',
     'Files here outlive this sandbox. Generated by Kortix; do not edit.',
     '',
     '| Path | Folder | Access |',
@@ -1397,7 +1447,7 @@ export function renderDriveNotes(
   }
   lines.push(...spaceLines);
   lines.push(
-    'A folder that is not listed here is not available to this session. A project admin can grant a folder to this agent in Files.',
+    'A folder that is not listed here is not available to this session. A workspace admin can grant a folder to this agent in Files.',
     '',
     'When two writers change the same file at the same time, both versions are kept: the other one is saved beside it as',
     '"<name> (conflict <date> <time>)<ext>". Nothing is lost. Tell the user about a conflict copy you see; do not delete it on your own.',
@@ -1440,7 +1490,7 @@ export async function sessionDriveNotes(sessionId: string): Promise<{ mounts: Se
   return { mounts, text: renderDriveNotes(mounts, conflicts, skippedMessage, space ? spaceNotesLines(space, mounts) : [], { privateChannel }) };
 }
 
-/** The channel or DM a session is a thread of (a channel with its newest pinned links), with `project_channels` on; else null. */
+/** The channel or DM a session is a thread of (a channel with its newest pinned links), with `chat` on; else null. */
 async function sessionNotesSpace(
   sessionId: string,
 ): Promise<{ kind: 'channel' | 'dm'; name: string; links: SpaceNotesLink[]; visibility: 'public' | 'private'; spaceId: string } | null> {
@@ -1458,7 +1508,7 @@ async function sessionNotesSpace(
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   const name = row?.kind === 'channel' ? row.slug : row?.agent;
-  if (!row || !name || !(await projectFeatureFlagEnabled(row.projectId, 'project_channels'))) return null;
+  if (!row || !name || !(await projectFeatureFlagEnabled(row.projectId, 'chat'))) return null;
   const links =
     row.kind === 'channel'
       ? await db

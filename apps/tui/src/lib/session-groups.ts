@@ -27,8 +27,6 @@ export interface SessionLike {
   status?: string;
   metadata?: ProjectSessionMetadata | null;
   runtime_sessions?: readonly { updated_at?: number | null }[] | null;
-  /** Pre-W4 name of `runtime_sessions`; an older API answers only this. */
-  opencode_sessions?: readonly { updated_at?: number | null }[] | null;
   updated_at?: string;
   created_at?: string;
 }
@@ -76,7 +74,7 @@ function timestampMs(value: unknown): number | null {
  * When this session was last really used, newest evidence first.
  *
  * Same precedence `apps/web` uses (`sessionLastActivityAt`), for the same
- * reasons: the API's prompt stamp lands before the turn runs, the OpenCode
+ * reasons: the API's prompt stamp lands before the turn runs, the runtime
  * conversation snapshot keeps advancing while the agent replies, and row
  * bookkeeping (`updated_at`) is only a fallback because a runtime stop or a
  * title sync advances it without anyone having used the session.
@@ -84,7 +82,7 @@ function timestampMs(value: unknown): number | null {
 export function sessionActivityMs(session: SessionLike): number {
   const prompt = timestampMs(session.metadata?.last_activity_at);
   let conversation: number | null = null;
-  for (const snapshot of session.runtime_sessions ?? session.opencode_sessions ?? []) {
+  for (const snapshot of session.runtime_sessions ?? []) {
     const parsed = timestampMs(snapshot?.updated_at);
     if (parsed === null) continue;
     conversation = conversation === null ? parsed : Math.max(conversation, parsed);

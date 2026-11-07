@@ -36,7 +36,7 @@ export const LLM_PROVIDER_CREDENTIALS: Array<{
   authRequirement: providerAuthRequirement(provider),
 }));
 
-// OpenCode must see Kortix as the single LLM provider: the LLM gateway is the
+// The runtime must see Kortix as the single LLM provider: the LLM gateway is the
 // only model path.
 export const GATEWAY_PROVIDER_IDS = new Set(['kortix']);
 
@@ -147,7 +147,7 @@ export function filterToNativeProviders(providers: ProviderListResponse): Provid
   };
 }
 
-export function mergeProjectSecretConnectedProviders(
+export function mergeWorkspaceSecretConnectedProviders(
   providers: ProviderListResponse,
   secretNames: Set<string>,
   providerCredentials: Array<{ id: string; authRequirement: ProviderAuthRequirement }>,
@@ -175,6 +175,9 @@ export function mergeProjectSecretConnectedProviders(
 
   return { ...normalized, connected: [...connected] };
 }
+
+/** @deprecated Use `mergeWorkspaceSecretConnectedProviders`. Kept permanently. */
+export const mergeProjectSecretConnectedProviders = mergeWorkspaceSecretConnectedProviders;
 
 export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<string>): Set<string> {
   const ids = new Set<string>();

@@ -6,6 +6,7 @@ import * as realRequestContext from '../lib/request-context';
 import * as realAuthAudit from './auth-audit';
 import * as realSentry from '../lib/sentry';
 import * as realSsoSync from '../iam/sso-sync';
+import * as realActor from '../iam/actor';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 // Two projects under the same account, each with its own sandbox — this is
@@ -175,6 +176,10 @@ mock.module('./auth-audit', () => ({
 mock.module('../lib/sentry', () => ({ ...realSentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...realRequestContext, setContextField: () => {} }));
 mock.module('../iam/sso-sync', () => ({ ...realSsoSync, syncSsoMembership: async () => {} }));
+// No test here reads the IAM actor. Built for real it reads `account_tokens`
+// from the unreachable test database (127.0.0.1:1); each read waits on the
+// refused connect, so a request through it ran past the 5 s test timeout.
+mock.module('../iam/actor', () => ({ ...realActor, buildActor: async () => null }));
 
 const { combinedAuth, supabaseAuth, deadCredential401 } = await import('./auth');
 
@@ -195,6 +200,8 @@ function appWithProbe() {
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
   app.get('/v1/drives/:driveId/files', (c) => c.json({ ok: true }));
+  app.post('/v1/feedback', (c) => c.json({ ok: true }, 201));
+  app.get('/v1/feedback', (c) => c.json({ ok: true }));
   app.get('/v1/usage/cost-summary', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
   app.get('/v1/usage/cost-by-project', (c) => c.json({ projectId: c.get('tokenProjectId' as never) }));
   app.post('/v1/usage/cost-summary', (c) => c.json({ ok: true }));
@@ -274,7 +281,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
 
     expect(res.status).toBe(403);
     expect(await res.text()).toContain(
-      'Project-scoped token cannot access a sandbox outside its project',
+      'This workspace key cannot access a sandbox outside its workspace',
     );
   });
 
@@ -286,13 +293,16 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(res.status).toBe(403);
   });
 
-  test('project-scoped PAT still cannot call unrelated account-level surfaces', async () => {
+  test("project-scoped PAT still cannot call the person's own surfaces (the workspace list of /v1/accounts)", async () => {
     const res = await appWithProbe().request('/v1/accounts', {
       headers: { Authorization: 'Bearer kortix_pat_project_a' },
     });
 
     expect(res.status).toBe(403);
-    expect(await res.text()).toContain('Project-scoped token cannot call account-level routes');
+    const body = await res.json();
+    expect(body.code).toBe('credential_fence_refused');
+    expect(body.check).toBe('person-route');
+    expect(body.message).toContain("This workspace key cannot call a person's own routes");
   });
 
   test('project-scoped PAT still works unchanged on its own /v1/projects/:id/* REST routes', async () => {
@@ -320,7 +330,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(await res.text()).toContain('Project-scoped token cannot access a different project');
+    expect(await res.text()).toContain('This workspace key cannot access another workspace');
   });
 
   // The in-sandbox `KORTIX_TOKEN` IS a project+session-scoped PAT, and
@@ -360,6 +370,30 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(files.status).toBe(200);
 
     const lookalike = await appWithProbe().request('/v1/drivesx', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+    expect(lookalike.status).toBe(403);
+  });
+
+  // `kortix feedback` inside a session holds the session PAT. The route was
+  // default-denied, so an agent that hit a Kortix bug could not report it
+  // (2026-11-05: "Project-scoped token cannot call this surface ... path=/v1/feedback").
+  test('session-BOUND and plain project PATs CAN file feedback (POST /v1/feedback only)', async () => {
+    for (const token of ['kortix_pat_session_bound_a', 'kortix_pat_project_a']) {
+      const res = await appWithProbe().request('/v1/feedback', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(201);
+    }
+
+    const read = await appWithProbe().request('/v1/feedback', {
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+    expect(read.status).toBe(403);
+
+    const lookalike = await appWithProbe().request('/v1/feedbackx', {
+      method: 'POST',
       headers: { Authorization: 'Bearer kortix_pat_project_a' },
     });
     expect(lookalike.status).toBe(403);
@@ -410,7 +444,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(await res.text()).toContain('Project-scoped token cannot call this surface');
+    expect(await res.text()).toContain('This workspace key cannot call platform routes');
   });
 
   // Same defect as runtime-projection above, one route over, and it reached
@@ -440,7 +474,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     });
 
     expect(res.status).toBe(403);
-    expect(await res.text()).toContain('Project-scoped token cannot call this surface');
+    expect(await res.text()).toContain('This workspace key cannot call platform routes');
   });
 
   // The denial must name WHY: which check rejected, and which principal it
@@ -454,7 +488,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     });
     const text = await res.text();
 
-    expect(text).toContain('check=token-project-scope:default-deny');
+    expect(text).toContain('check=token-project-scope:platform-route');
     expect(text).toContain('principal=project-scoped-pat');
     expect(text).toContain(`project=${PROJECT_A}`);
     expect(text).toContain('path=/v1/platform/boot-timeline');
@@ -467,7 +501,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     const text = await res.text();
 
     expect(res.status).toBe(403);
-    expect(text).toContain('check=token-project-scope:cross-project');
+    expect(text).toContain('check=token-project-scope:cross-workspace');
     expect(text).not.toContain('default-deny');
   });
 });

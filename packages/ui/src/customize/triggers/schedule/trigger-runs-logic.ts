@@ -131,3 +131,15 @@ export function isDefaultSource(
 ): boolean {
   return source === triggerType;
 }
+
+/** The App event a run fired on (an App event trigger), from its payload: name, the App's own id, the App. Null for any other run. */
+export function appEventOf(payload: Record<string, unknown>): { name: string; id: string | null; app: string } | null {
+  const event = payload.event;
+  const app = payload.app;
+  if (!event || typeof event !== 'object' || !app || typeof app !== 'object') return null;
+  const name = (event as { name?: unknown }).name;
+  const slug = (app as { slug?: unknown }).slug;
+  if (typeof name !== 'string' || !name || typeof slug !== 'string' || !slug) return null;
+  const id = (event as { id?: unknown }).id;
+  return { name, id: typeof id === 'string' && id ? id : null, app: slug };
+}

@@ -9,13 +9,13 @@ import {
 describe('projectChildSessionHref', () => {
   test('deep-links from a project session route to a child runtime session', () => {
     expect(projectChildSessionHref({ projectId: 'proj-1', sessionId: 'route-session-1' }, 'ses_child1')).toBe(
-      '/projects/proj-1/sessions/route-session-1?rs=ses_child1',
+      '/workspaces/proj-1/sessions/route-session-1?rs=ses_child1',
     );
   });
 
   test('encodes the child session id query value', () => {
     expect(projectChildSessionHref({ projectId: 'p', sessionId: 's' }, 'ses_child/one')).toBe(
-      '/projects/p/sessions/s?rs=ses_child%2Fone',
+      '/workspaces/p/sessions/s?rs=ses_child%2Fone',
     );
   });
 
@@ -38,8 +38,8 @@ describe('projectChildSessionHref', () => {
 
 describe('the runtime session query parameter', () => {
   test('a link names the child as `rs`', () => {
-    expect(childSessionHref('/projects/p/sessions/s', 'ses_child/one')).toBe(
-      '/projects/p/sessions/s?rs=ses_child%2Fone',
+    expect(childSessionHref('/workspaces/p/sessions/s', 'ses_child/one')).toBe(
+      '/workspaces/p/sessions/s?rs=ses_child%2Fone',
     );
   });
 

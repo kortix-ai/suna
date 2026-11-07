@@ -1,8 +1,9 @@
 import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
-// Post-auth landing goes to a project, never to the projects list. The landing
-// door paints immediately and resolves (or provisions) the project behind the
-// UI, so no auth path has to block on the backend to build this redirect.
+// Post-auth landing goes to the door, never to the chooser directly. The door
+// paints immediately and opens the one obvious workspace or the create-or-join
+// chooser, so no auth path has to block on the backend to build this redirect.
+// Nothing is created at sign-up (Workspaces D3).
 const DEFAULT_AUTH_RETURN_URL = PROJECT_LANDING_PATH;
 const LEGACY_AUTH_RETURN_PREFIXES = [
   // Not legacy — but the same rule applies: a sign-in must never RETURN here.
@@ -39,6 +40,9 @@ const SIGNUP_SAFE_RETURN_PREFIXES = [
   '/github/setup',
   '/marketplace',
   '/use-cases',
+  // A credit-code link (`/redeem?code=…`): the code is redeemed for the
+  // signed-in account itself, so a seconds-old account can act on it.
+  '/redeem',
 ] as const;
 
 /** Prefix match on path segment boundaries, so `/marketplace` never matches `/marketplace-evil`. */
@@ -77,8 +81,8 @@ export function sanitizeAuthReturnUrl(
   // password flow to attach auth_event, the callback to prepend the origin —
   // and that collapses dot segments. So a prefix test against the raw string
   // is testing a path the browser will never visit:
-  // `/marketplace/../projects/<id>` passes a `/marketplace` check and then
-  // lands on `/projects/<id>`, which is exactly the foreign-project bug the
+  // `/marketplace/../workspaces/<id>` passes a `/marketplace` check and then
+  // lands on `/workspaces/<id>`, which is exactly the foreign-project bug the
   // signup rule below exists to prevent (and would equally slip a
   // `/x/../dashboard` past LEGACY_AUTH_RETURN_PREFIXES). Normalizing here
   // means every downstream rule sees the path that will actually be opened.
@@ -92,10 +96,10 @@ export function sanitizeAuthReturnUrl(
   }
 
   // Middleware preserves an unauthenticated request as the post-auth return
-  // path. A request for the bare list must still enter through the landing
-  // door. Otherwise a new account renders /projects while its first project is
-  // being provisioned.
-  if (normalizedValue === '/projects') return PROJECT_LANDING_PATH;
+  // path. A request for the bare chooser still enters through the landing
+  // door, so a returning user with one workspace opens it instead of a list
+  // of one.
+  if (normalizedValue === '/workspaces') return PROJECT_LANDING_PATH;
 
   if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => matchesReturnPrefix(normalizedValue, prefix))) {
     return fallback;
@@ -178,8 +182,8 @@ export function shouldDemoteReturnUrl({
 /**
  * True when a (already-sanitized) return URL points at an invite acceptance
  * page. Invited users must land here verbatim after sign-up so they see the
- * accept/decline dialog — they must NOT be bounced to a freshly-provisioned
- * first project, which would skip the dialog and leave the invite unaccepted.
+ * accept/decline dialog — they must NOT be bounced to the door, which would
+ * skip the dialog and leave the invite unaccepted.
  */
 export function isInviteReturnUrl(returnUrl: string | null | undefined): boolean {
   return typeof returnUrl === 'string' && returnUrl.startsWith('/invites/');
@@ -197,7 +201,7 @@ export function isInviteReturnUrl(returnUrl: string | null | undefined): boolean
  * resolves to the internal wildcard BIND address `https://0.0.0.0:3000` instead
  * of the public host. Redirecting there drops the user on a dead address right
  * after they authenticate (observed live: SSO on a self-host landing on
- * `https://0.0.0.0:3000/projects?auth_event=signup&auth_method=sso:...`).
+ * `https://0.0.0.0:3000/workspaces?auth_event=signup&auth_method=sso:...`).
  *
  * A wildcard bind address (0.0.0.0 / [::]) and an AWS private compute hostname
  * are never client-facing origins. ECS can expose the latter as

@@ -26,6 +26,7 @@ export interface PolicyArgCondition {
   negate?: boolean;
 }
 
+/** @deprecated Use `WorkspacePolicy`. Kept permanently. */
 export interface ProjectPolicy {
   match: string;
   action: PolicyAction;
@@ -33,27 +34,40 @@ export interface ProjectPolicy {
   conditions?: PolicyArgCondition[] | null;
 }
 
+/** The workspace name of {@link ProjectPolicy}: the same type. */
+export type WorkspacePolicy = ProjectPolicy;
+
+/** @deprecated Use `WorkspacePoliciesResponse`. Kept permanently. */
 export interface ProjectPoliciesResponse {
   policies: ProjectPolicy[];
   defaultMode: PolicyDefaultMode;
   errors: Array<{ path: string; error: string }>;
 }
 
-export async function listProjectPolicies(projectId: string) {
+/** The workspace name of {@link ProjectPoliciesResponse}: the same type. */
+export type WorkspacePoliciesResponse = ProjectPoliciesResponse;
+
+export async function listWorkspacePolicies(projectId: string) {
   return unwrap(
-    await backendApi.get<ProjectPoliciesResponse>(`/connectors/projects/${projectId}/policies`),
+    await backendApi.get<ProjectPoliciesResponse>(`/connectors/workspaces/${projectId}/policies`),
   );
 }
 
-export async function setProjectPolicies(
+/** @deprecated Use `listWorkspacePolicies`. Kept permanently. */
+export const listProjectPolicies = listWorkspacePolicies;
+
+export async function setWorkspacePolicies(
   projectId: string,
   policies: ProjectPolicy[],
   defaultMode: PolicyDefaultMode,
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
-      `/connectors/projects/${projectId}/policies`,
+      `/connectors/workspaces/${projectId}/policies`,
       { policies, defaultMode },
     ),
   );
 }
+
+/** @deprecated Use `setWorkspacePolicies`. Kept permanently. */
+export const setProjectPolicies = setWorkspacePolicies;

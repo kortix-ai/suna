@@ -1,6 +1,6 @@
 import type { Auth } from '../api/auth.ts';
 import { sdkBackendUrl } from '../api/sdk.ts';
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -23,7 +23,7 @@ import { C, creditAmount, credits, help, money, pad, status } from '../style.ts'
 
 const HELP = help`Usage: kortix gateway <subcommand> [options]
 
-Configure and inspect the LLM gateway for the linked Kortix project — the
+Configure and inspect the LLM gateway for the linked Kortix workspace — the
 layer that routes every model request, meters spend, and exposes an
 OpenAI-compatible endpoint. (Connect provider credentials with
 \`kortix providers\`; pick per-agent models with \`kortix agents\`.)
@@ -32,14 +32,14 @@ Routing:
   routing [get]                     Show the effective default model, fallback
                                     chain, and vision fallback (+ where each
                                     resolves from). --json.
-  routing set [flags]               Update the project routing policy:
+  routing set [flags]               Update the workspace routing policy:
     --default-model <id>              Default model ("" to clear).
     --vision-model <id>               Vision fallback for image requests that
                                       use a text-only default model.
     --fallback <id,id,…>              Fallback chain ("" to clear).
     --fallback-on transient|any-error
     --file <path|->                   Full policy JSON (stdin with -).
-  routing reset                     Drop the project policy (fall back to
+  routing reset                     Drop the workspace policy (fall back to
                                     account/platform defaults).
   routing preview <model> [--image] Resolve what a request would route to.
 
@@ -49,7 +49,7 @@ Spend:
   budget set --limit <usd> [flags]  Upsert a budget. Shown in credits; --limit
                                     takes USD (1 credit = $0.01): --limit 20
                                     = 2,000 credits.
-    --scope project|member  --user <id>  --period day|week|month
+    --scope workspace|member  --user <id>  --period day|week|month
     --action block|warn
   budget rm <budgetId>              Remove a budget.
 
@@ -66,7 +66,7 @@ Observability:
   test <model…> [--prompt <text>]   Run a prompt through one or more models.
 
 Global options:
-  --project <id>     Operate on this project id (default: linked or \$KORTIX_PROJECT_ID).
+  --workspace <id>   Operate on this workspace id (default: linked or \$KORTIX_PROJECT_ID).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output (read subcommands).
   -h, --help         Show this help.
@@ -85,7 +85,7 @@ export async function runGateway(argv: string[]): Promise<number> {
   let hostFlag: string | undefined;
   try {
     json = takeFlagBool(rest, ['--json']);
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
     return fail((err as Error).message);
@@ -166,7 +166,7 @@ async function gatewayRouting(rest: string[], opts: CtxOpts, json: boolean): Pro
   const action = takeAction(rest, 'get');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/routing-policy`;
+  const base = `/workspaces/${ctx.projectId}/gateway/routing-policy`;
 
   try {
     if (action === 'get' || action === 'show') {
@@ -277,7 +277,7 @@ function renderRouting(doc: RoutingPolicyDoc): number {
   }
   if (!doc.capabilities.write) {
     process.stdout.write(
-      `\n  ${C.dim}(read-only — you lack customize-write on this project)${C.reset}\n`,
+      `\n  ${C.dim}(read-only — you lack customize-write on this workspace)${C.reset}\n`,
     );
   }
   process.stdout.write('\n');
@@ -290,14 +290,14 @@ async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Prom
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/budgets`;
+  const base = `/workspaces/${ctx.projectId}/gateway/budgets`;
 
   try {
     if (action === 'ls' || action === 'list') {
       const data = await ctx.client.get<any>(base);
       if (json) return outJson(data);
       process.stdout.write(
-        `\n  ${C.dim}PROJECT SPEND (this month)${C.reset}  ${spend(data.project_spend?.cost)} · ${data.project_spend?.requests ?? 0} req\n`,
+        `\n  ${C.dim}WORKSPACE SPEND (this month)${C.reset}  ${spend(data.project_spend?.cost)} · ${data.project_spend?.requests ?? 0} req\n`,
       );
       if (data.budgets?.length) {
         process.stdout.write(`\n  ${C.dim}BUDGETS${C.reset}\n`);
@@ -323,7 +323,7 @@ async function gatewayBudget(rest: string[], opts: CtxOpts, json: boolean): Prom
       let period: string | undefined;
       let actionFlag: string | undefined;
       try {
-        scope = takeFlagValue(rest, ['--scope']);
+        scope = fromWorkspaceAlias(takeFlagValue(rest, ['--scope']));
         user = takeFlagValue(rest, ['--user']);
         limit = takeFlagValue(rest, ['--limit']);
         period = takeFlagValue(rest, ['--period']);
@@ -377,7 +377,7 @@ async function gatewayKeys(rest: string[], opts: CtxOpts, json: boolean): Promis
   const action = takeAction(rest, 'ls');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/gateway/keys`;
+  const base = `/workspaces/${ctx.projectId}/gateway/keys`;
 
   try {
     if (action === 'ls' || action === 'list') {
@@ -443,8 +443,8 @@ async function gatewayUsage(rest: string[], opts: CtxOpts, json: boolean): Promi
   const q = days ? `?days=${encodeURIComponent(days)}` : '';
   try {
     const [overview, breakdown] = await Promise.all([
-      ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/overview${q}`),
-      ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/breakdown${q}`),
+      ctx.client.get<any>(`/workspaces/${ctx.projectId}/gateway/overview${q}`),
+      ctx.client.get<any>(`/workspaces/${ctx.projectId}/gateway/breakdown${q}`),
     ]);
     if (json) return outJson({ overview, breakdown });
     process.stdout.write(
@@ -480,7 +480,7 @@ async function gatewaySources(rest: string[], opts: CtxOpts, json: boolean): Pro
   if (!ctx) return 1;
   const q = hours ? `?hours=${encodeURIComponent(hours)}` : '';
   try {
-    const data = await ctx.client.get<any>(`/projects/${ctx.projectId}/gateway/sources${q}`);
+    const data = await ctx.client.get<any>(`/workspaces/${ctx.projectId}/gateway/sources${q}`);
     if (json) return outJson(data);
     const t = data.total ?? {};
     process.stdout.write(
@@ -523,7 +523,7 @@ async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promis
   try {
     if (id) {
       const row = await ctx.client.get<any>(
-        `/projects/${ctx.projectId}/gateway/logs/${encodeURIComponent(id)}`,
+        `/workspaces/${ctx.projectId}/gateway/logs/${encodeURIComponent(id)}`,
       );
       return outJson(row);
     }
@@ -532,7 +532,7 @@ async function gatewayLogs(rest: string[], opts: CtxOpts, json: boolean): Promis
     if (failed) params.set('ok', 'false');
     const qs = params.toString();
     const data = await ctx.client.get<any>(
-      `/projects/${ctx.projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
+      `/workspaces/${ctx.projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
     );
     if (json) return outJson(data);
     if (!data.logs?.length) {
@@ -570,7 +570,7 @@ async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promis
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   try {
-    const data = await ctx.client.post<any>(`/projects/${ctx.projectId}/gateway/playground`, {
+    const data = await ctx.client.post<any>(`/workspaces/${ctx.projectId}/gateway/playground`, {
       prompt: prompt ?? 'Reply with exactly: pong',
       models,
     });

@@ -35,7 +35,7 @@ export interface ServableProjectCatalog {
  * stamped with per-project enablement. Served to the web picker
  * (`GET /projects/:id/model-picker`, routes/models.ts) AND to the sandbox at boot
  * (`GET /v1/llm/models?scope=picker` → internal `/models` with
- * `scope:'picker'`), so the list OpenCode registers on the `kortix` provider
+ * `scope:'picker'`), so the list the runtime registers on the `kortix` provider
  * is exactly the list the composer offers. Before this the sandbox learned
  * only the managed subset and kept the image-baked org catalog for the rest:
  * a BYOK model added to models.dev after the image was built showed in the

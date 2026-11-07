@@ -472,8 +472,14 @@ flow(
         if (r.json<{ hits: Hit[] }>().hits.length === 0) throw new Error('no hits for the agent');
       });
 
-      await ctx.step('the agent cannot reach the account routes (its token is project-scoped); a shared or trigger session has no person → 403', async () => {
-        (await own.client.get(path(R.search), { params: { accountId: team.id }, query: { q: marker } })).status(403);
+      await ctx.step('the account route answers the agent exactly as /capture/me does: its own person only; a shared or trigger session has no person → 403', async () => {
+        // A workspace-bound credential reaches its own workspace's routes (design.md §3.2 K1). The
+        // route still reads only the person the private session acts for, never the whole account.
+        const viaAccount = await own.client.get(path(R.search), { params: { accountId: team.id }, query: { q: marker } });
+        viaAccount.status(200).body().has('$.user_id', member.userId!);
+        const foreign = viaAccount.json<{ hits: Hit[] }>().hits.filter((h) => (h as { user_id?: string }).user_id !== member.userId);
+        if (foreign.length > 0) throw new Error(`the account route returned ${foreign.length} hit(s) of another person`);
+        (await shared.client.get(path(R.search), { params: { accountId: team.id }, query: { q: marker } })).status(403).body().has('$.code', 'capture_no_human');
         (await shared.client.get(path(R.meSearch), { query: { q: marker } })).status(403).body().has('$.code', 'capture_no_human');
         (await trigger.client.get(path(R.meTimeline), { query: { day: '2026-10-01' } })).status(403).body().has('$.code', 'capture_no_human');
       });
@@ -1028,6 +1034,29 @@ flow(
         const ownerId = ctx.P.OWNER.userId!;
         await report('stalled', statusDoc(Date.now(), { lastFrameMs: Date.now() - 35 * MIN, host: { awakeSinceMs: Date.now() - 3_600_000 } }));
         if ((await stored('capture_device_down', ownerId)) !== 3) throw new Error(`second spell ${await stored('capture_device_down', ownerId)}`);
+      });
+
+      await ctx.step('a computer whose self-update rolled back needs attention (update_failed) and its diagnostics name the reason, the skipped version and the OS (Windows 11, build 26100); reporting current clears it', async () => {
+        const now = Date.now();
+        const detail = '0.1.1 did not report healthy in 900 s: session 2: no_new_frame (state recording, last frame 41 s before the install)';
+        const update = {
+          status: 'failed', installed: '0.1.0', channel: 'stable', latest: '0.1.1', lastCheckMs: now - 60_000,
+          lastCheck: 'no update: 0.1.1 is marked bad on this computer', updatingTo: null,
+          lastResult: { at_ms: now - 600_000, from: '0.1.0', to: '0.1.1', outcome: 'rolled_back', detail },
+          badVersions: ['0.1.1'], skipped: [{ version: '0.1.1', failedAtMs: now - 600_000, retryAtMs: now - 600_000 + 7 * 86_400_000 }],
+        };
+        await report('recording', statusDoc(now, { update }));
+        const r = (await owner.get(path(R.devices), { params, query: { scope: 'account' } })).status(200).json<{ devices: Array<{ device_id: string; health: { state: string; reasons: string[] }; diagnostics: any }> }>();
+        const row = r.devices.find((d) => d.device_id === computers.get('recording')!.device_id)!;
+        if (row.health.state !== 'attention' || JSON.stringify(row.health.reasons) !== JSON.stringify(['update_failed'])) throw new Error(`health ${JSON.stringify(row.health)}`);
+        const u = row.diagnostics?.update;
+        if (u?.status !== 'failed' || u.last_result?.outcome !== 'rolled_back' || u.last_result?.detail !== detail) throw new Error(`update ${JSON.stringify(u)}`);
+        if (JSON.stringify(u.skipped.map((x: any) => x.version)) !== '["0.1.1"]' || !u.skipped[0].retry_at) throw new Error(`skipped ${JSON.stringify(u.skipped)}`);
+        const os = row.diagnostics.os;
+        if (os.family !== 'windows' || os.name !== 'Windows 11' || os.build !== '26100' || os.arch !== 'x86_64') throw new Error(`os ${JSON.stringify(os)}`);
+        if (row.diagnostics.managed !== true || row.diagnostics.machine !== null) throw new Error(`diagnostics ${JSON.stringify(row.diagnostics)}`);
+        await report('recording', statusDoc(Date.now(), { update: { ...update, status: 'current', latest: '0.1.0', lastResult: null, badVersions: [], skipped: [] } }));
+        if (healthOf(await fleet(), 'recording').state !== 'healthy') throw new Error('a current update still needs attention');
       });
     } finally {
       await db.end();

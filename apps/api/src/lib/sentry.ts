@@ -10,12 +10,15 @@
  */
 
 import * as Sentry from '@sentry/bun';
+import { redactSentryRequestSecrets } from './redact-url-secrets';
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 const SENTRY_DSN = process.env.BETTERSTACK_API_SENTRY_DSN;
 const ENV = process.env.INTERNAL_KORTIX_ENV || 'dev';
-const VERSION = process.env.SANDBOX_VERSION || 'dev';
+// The release, as /health reports it. Deploys stamp KORTIX_VERSION on the task
+// definition; SANDBOX_VERSION is set nowhere, so every error read `kortix-api@dev`.
+const VERSION = process.env.KORTIX_VERSION || 'dev';
 
 // ─── Noise filter (ignoreErrors) ────────────────────────────────────────────
 //
@@ -137,7 +140,8 @@ if (SENTRY_DSN) {
       if (event.transaction?.includes('/health')) return null;
       // Don't trace CORS preflights
       if (event.contexts?.trace?.op === 'http' && event.request?.method === 'OPTIONS') return null;
-      return event;
+      // An Artifact live socket's `?ticket=` never leaves the process.
+      return redactSentryRequestSecrets(event);
     },
 
     // Enrich error events with extra context
@@ -151,7 +155,8 @@ if (SENTRY_DSN) {
           }
         }
       }
-      return event;
+      // An Artifact live socket's `?ticket=` never leaves the process.
+      return redactSentryRequestSecrets(event);
     },
   });
 

@@ -13,7 +13,7 @@ import { MCP_SOURCE_ID, connectorEventApp } from '../trigger-events/mcp-source';
 import { streamSchedules } from '../trigger-events/poll-store';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { nextTriggerScheduleSlot, validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, readManifest, triggerSpecToFlatEntry, MONITOR_REMOVED } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseExpectEventWithin, parseMaxLateness, parseOverlap, parseRunCaps, parseAppField, parseEventFields, parseEvery, parseTargetField, readManifest, triggerSpecToFlatEntry, MONITOR_REMOVED } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -22,9 +22,14 @@ import { readAccountAutomationPause } from '../../accounts/automation-pause';
 
 // GET /v1/projects
 
+/**
+ * The URL Kortix shows for a webhook trigger: the canonical workspace path.
+ * `/v1/webhooks/projects/<id>/<slug>` answers the same, permanently, so a
+ * sender configured with the old URL needs no change.
+ */
 export function buildPublicWebhookUrl(projectId: string, slug: string): string {
   const root = deriveKortixApiRoot(config.KORTIX_URL);
-  return `${root}/v1/webhooks/projects/${projectId}/${slug}`;
+  return `${root}/v1/webhooks/workspaces/${projectId}/${slug}`;
 }
 
 // ── Git-backed trigger CRUD helpers ─────────────────────────────────────────
@@ -98,7 +103,7 @@ export async function loadTriggersForResponse(
     [...subscriptionBySlug.values()].flatMap((r) => (r.provider === MCP_SOURCE_ID && r.externalId ? [r.externalId] : [])),
   );
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
-  const channels = resolveFeatureFlag(project.metadata, 'project_channels');
+  const channels = resolveFeatureFlag(project.metadata, 'chat');
   // A channel, or the caller's own DM: a DM's existence is never disclosed to anyone else.
   const spaceIds = [...new Set(runtimeRows.flatMap((row) => (row.spaceId ? [row.spaceId] : [])))];
   const hidden = channels && spaceIds.length && viewer ? await hiddenSpaceIds(projectId, viewer.userId, viewer.bound) : null;
@@ -149,7 +154,19 @@ export async function loadTriggersForResponse(
       run: null,
       mode: null,
       interval_seconds: null,
-      expect_event_within_seconds: null,
+      // An app trigger's silence alert (`expect_event_within`); null on every other type.
+      expect_event_within_seconds: spec.expectEventWithinSeconds ?? null,
+      // An app trigger: when its App last posted to it (a deduplicated post and
+      // a heartbeat count), and since when it has been silent past
+      // `expect_event_within` (the open silence alert). Null on other types.
+      last_event_at: spec.type === 'app' ? (runtimeBySlug.get(spec.slug)?.lastEventAt?.toISOString() ?? null) : null,
+      silent_since: runtimeBySlug.get(spec.slug)?.alertSource === 'silence'
+        ? (runtimeBySlug.get(spec.slug)?.alertFailingSince?.toISOString() ?? null)
+        : null,
+      // The always-on App it names is down past its restart budget (app-health-alerts.ts).
+      crashed_since: runtimeBySlug.get(spec.slug)?.alertSource === 'crash'
+        ? (runtimeBySlug.get(spec.slug)?.alertFailingSince?.toISOString() ?? null)
+        : null,
       app: spec.app ?? null,
       target: spec.target ?? null,
       event: spec.event
@@ -180,7 +197,7 @@ export async function loadTriggersForResponse(
       // Overlap (KRTX-1721); null = unset (`skip` for cron, `allow` otherwise).
       overlap: spec.overlap ?? null,
       session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
-      // The channel or DM its runs post to; omitted while `project_channels` is off.
+      // The channel or DM its runs post to; omitted while `chat` is off.
       ...(channels ? { space_id: listedSpaceId(spec.slug) } : {}),
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
@@ -283,6 +300,8 @@ export interface TriggerDraft {
   secretEnv: string | null;
   /** For type=cron only — the misfire bound (`max_lateness`), in whole seconds. */
   maxLatenessSeconds?: number;
+  /** For type=app only — the silence alert (`expect_event_within`), in whole seconds. */
+  expectEventWithinSeconds?: number;
   /** Any type — the run caps (`max_runs_per_hour`, `max_runs_per_day`, KRTX-1721). Omitted when unset. */
   maxRunsPerHour?: number;
   maxRunsPerDay?: number;
@@ -365,6 +384,8 @@ export function parseTriggerDraft(
   const common = { slug, name, agent, model, enabled, promptTemplate, sessionMode, pinnedSessionId, sessionKey, filter };
   const lateness = parseMaxLateness(body, type);
   if ('error' in lateness) return lateness;
+  const silence = parseExpectEventWithin(body, type);
+  if ('error' in silence) return silence;
   const caps = parseRunCaps(body);
   if ('error' in caps) return caps;
   const overlap = parseOverlap(body);
@@ -380,7 +401,7 @@ export function parseTriggerDraft(
             ? { ...common, type, cron: null, runAt: null, timezone: 'UTC', secretEnv: null, changeRequest: { crId: null, base: 'base' in parsedFilter ? (parsedFilter.base as string | null) : null } }
             : parseWebhookDraft(body, common);
   if ('error' in draft) return draft;
-  return { ...draft, ...(type === 'cron' ? lateness : {}), ...caps, ...overlap, ...parsedTarget };
+  return { ...draft, ...(type === 'cron' ? lateness : {}), ...(type === 'app' ? silence : {}), ...caps, ...overlap, ...parsedTarget };
 }
 
 function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
@@ -538,6 +559,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     timezone: noCronWiring ? null : spec.timezone,
     secret_env: spec.secretEnv,
     max_lateness: spec.maxLatenessSeconds ? formatDurationSeconds(spec.maxLatenessSeconds) : null,
+    expect_event_within: spec.expectEventWithinSeconds ? formatDurationSeconds(spec.expectEventWithinSeconds) : null,
     // Kept on PATCH, like max_lateness: an edit of any other field keeps the caps.
     max_runs_per_hour: spec.maxRunsPerHour ?? null,
     max_runs_per_day: spec.maxRunsPerDay ?? null,
@@ -586,6 +608,7 @@ export function draftToSpec(
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
     ...(draft.maxLatenessSeconds ? { maxLatenessSeconds: draft.maxLatenessSeconds } : {}),
+    ...(draft.expectEventWithinSeconds ? { expectEventWithinSeconds: draft.expectEventWithinSeconds } : {}),
     ...(draft.maxRunsPerHour ? { maxRunsPerHour: draft.maxRunsPerHour } : {}),
     ...(draft.maxRunsPerDay ? { maxRunsPerDay: draft.maxRunsPerDay } : {}),
     ...(draft.overlap ? { overlap: draft.overlap } : {}),

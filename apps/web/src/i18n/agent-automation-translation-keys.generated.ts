@@ -13,11 +13,11 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'A fresh branch is cut': 'text8ba5fa59166b',
   'A fresh fire boots its own isolated machine on its own branch, the same as a session you start by hand. Nothing it installs or breaks touches another session.':
     'text7e814a7424ef',
-  'A Linux machine boots from the sandbox image your project declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.':
+  'A Linux machine boots from the sandbox image your workspace declares. It is its own isolated machine: its own filesystem, its own process table, its own network. Nothing is shared with another session.':
     'text1459df2e344c',
-  'A project runs 3 triggered sessions provisioning at once by default. A fire past that limit comes back queued and runs when a slot frees, rather than failing.':
+  'A workspace runs 3 triggered sessions provisioning at once by default. A fire past that limit comes back queued and runs when a slot frees, rather than failing.':
     'textaa4a0d0b5235',
-  'A project-level pause stops every trigger at once, on top of each trigger’s own enabled flag. Use it when the same repo runs on two control planes so nothing fires twice.':
+  'A workspace-level pause stops every trigger at once, on top of each trigger’s own enabled flag. Use it when the same repo runs on two control planes so nothing fires twice.':
     'text16f1f6b56a4a',
   'A prompt renders {{ token.dotted.path }} against the payload that fired it. A webhook fire gets {{ body.* }} and the request headers; a cron fire gets {{ cron.schedule }}, {{ cron.timezone }} and {{ cron.scheduled_for }}. A value that is not there renders as nothing — no error, no leftover braces in the message your agent reads.':
     'text73a37f05730d',
@@ -35,7 +35,7 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'text78c0df311db5',
   'A trigger stores an IANA timezone name, not an offset, and defaults to UTC. Set America/Los_Angeles and it stays at 09:00 local across a daylight-saving change. An abbreviation like PST is rejected rather than guessed at.':
     'text0602544ab665',
-  'A triggered session is visible to the whole project, not private to whoever configured the trigger. It stops itself after 5 minutes idle, so an automation that runs at 3am is not a machine billing until morning.':
+  'A triggered session is visible to the whole workspace, not private to whoever configured the trigger. It stops itself after 5 minutes idle, so an automation that runs at 3am is not a machine billing until morning.':
     'text42be5a22d7c8',
   'Agent computer': 'texta62359767c2b',
   'Agent harness': 'textb6a85bd3fbfe',
@@ -74,9 +74,9 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Each agent works separately, so one session cannot interfere with another.': 'text0445efc0310d',
   'Every change has a diff': 'text69b668998c22',
   'Every session gets its own computer.': 'textb711e0ff2f4f',
-  'Every trigger in a project is one row: what it is called, when it fires, in whose timezone, as which agent, and which session that fire lands in. Nothing about it is hidden state you have to click into.':
+  'Every trigger in a workspace is one row: what it is called, when it fires, in whose timezone, as which agent, and which session that fire lands in. Nothing about it is hidden state you have to click into.':
     'texteb85b20ae0b0',
-  'Every webhook trigger names a project secret that signs it. A trigger without one is rejected at validation — there is no unauthenticated webhook to forget to lock down later.':
+  'Every webhook trigger names a workspace secret that signs it. A trigger without one is rejected at validation — there is no unauthenticated webhook to forget to lock down later.':
     'textbeb1d90456ab',
   'Everything is files': 'text81c55672efb4',
   finance: 'texteab762a03fd9',
@@ -115,19 +115,14 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Nothing on the machine is precious. A bad install, a wrong migration, a wiped directory — the machine goes away and takes it with it. Only what the agent commits survives.':
     'text59f4422556e6',
   'oncall-handoff': 'text224f87a75a67',
-  'One image per project, or a named image per agent.': 'text0dc3abbcb173',
+  'One image per workspace, or a named image per agent.': 'text0dc3abbcb173',
   'One machine per session': 'text6590dfdb580e',
   'One machine per session · Pre-configured · Nothing runs on your laptop': 'text7a04f383ef22',
-  'one OpenCode agent per file': 'text18a59ffd5fa8',
   'One switch pauses everything': 'textfb2ab460e464',
   'Open source and self-hostable. Any model, your keys. Kortix Cloud, your own VPC, or fully on-prem.':
     'text1d9a8dde5629',
   'Open source, with support for any AI model. Use Kortix Cloud or run it on your own systems.':
     'text5b6a9e140d4b',
-  OpenCode: 'text3af0e55ccc96',
-  'OpenCode runs inside the machine as the agent harness, with your models, your tools and your secrets injected at runtime. The machine is ready. The agent begins.':
-    'textc72f8df372cb',
-  'OpenCode starts': 'textf3d82cf5fcc9',
   Overnight: 'texta6b86e26c48d',
   Parallelism: 'text69585fb8aa14',
   pinned: 'text3fab5c181bd2',
@@ -145,7 +140,7 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'reviewed by a person, then merged': 'text2e3571a5c710',
   'rewrite the pricing page': 'text998685db4b68',
   'roadmap-review': 'text91919987e58f',
-  'Run many agents at once without mixing up their work. You review every result before it joins your main project.':
+  'Run many agents at once without mixing up their work. You review every result before it joins your main workspace.':
     'textf68480496a83',
   running: 'textc071cf5f5ed6',
   'Runs as': 'textdc98511e6b34',
@@ -167,12 +162,12 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'The company is clonable': 'textc4a32a06810b',
   'The cron surface': 'text5eae34fc9718',
   'The default image already carries the Kortix runtime layer.': 'text09761bceefe9',
-  'The machine clones the project repo into /workspace. Your agents, skills, memory, connectors and triggers arrive with it, because all of them are files in that repo.':
+  'The machine clones the workspace repo into /workspace. Your agents, skills, memory, connectors and triggers arrive with it, because all of them are files in that repo.':
     'texte26a38466159',
   'The machine comes up': 'textaf4350fd72f4',
   'The machine cuts a branch named after the session. Every edit, commit and stray file the session produces lives on that branch and nowhere else.':
     'textacacd9b479c4',
-  'The machine is a file in your project.': 'text9c550d2fd742',
+  'The machine is a file in your workspace.': 'text9c550d2fd742',
   'The prompt is a template': 'textcb729fc03088',
   'The repo clones': 'textb67535ab165d',
   'The repo is cloned, the tools are installed and the dependencies are resolved before the agent starts. There is no setup step, and no local machine is involved at any point.':
@@ -197,7 +192,7 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
   'Two types · Declared in kortix.yaml · Reviewed like everything else': 'text138e22ba8f29',
   'Two types. There is no third.': 'text4ac65dfbfd14',
   Types: 'texta5fc918683bf',
-  'Valid, and deliberately skipped — the project is paused, or the payload did not match the trigger’s filter.':
+  'Valid, and deliberately skipped — the workspace is paused, or the payload did not match the trigger’s filter.':
     'textb35b814c0d1f',
   'Walled off by default.': 'textb34cf5ffb75b',
   'Webhook auth': 'textd938438f232e',
@@ -217,8 +212,8 @@ export const AGENT_AUTOMATION_TRANSLATION_KEYS: Readonly<Record<string, string>>
     'texte5b104783abd',
   'Your agents, instructions, and shared knowledge stay in files you can read, change, and track.':
     'textdc5c5b516771',
-  'Your project and tools are ready from the start, so the agent can work without using your laptop.':
+  'Your workspace and tools are ready from the start, so the agent can work without using your laptop.':
     'text4c07fb41dc84',
-  'Your project, tools, and setup are ready before the agent begins.': 'text3242681b6564',
+  'Your workspace, tools, and setup are ready before the agent begins.': 'text3242681b6564',
   'Your repo, tools, dependencies': 'text6e4b1d4137f6',
 };

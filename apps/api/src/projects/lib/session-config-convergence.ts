@@ -1,8 +1,9 @@
-import { projects, projectSessions } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { reloadSessionConfig, type SessionReloadResult } from './session-reload';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * Bring a session that just came back up onto its base branch's CURRENT config.
@@ -16,25 +17,26 @@ import { reloadSessionConfig, type SessionReloadResult } from './session-reload'
  *
  * `scheduleSandboxRuntimeRefresh` already does this for the platform's half (the
  * `kortix` CLI, the daemon, the managed-skill overlay). This is the project's
- * half: the OpenCode config dir and root `skills/` from the base ref, plus the
+ * half: the session's config release from the base ref (on a daemon without
+ * config releases, the OpenCode config dir and root `skills/`), plus the
  * compiled agent config.
  *
  * WHAT IT RUNS. `reloadSessionConfig` — the same operation as the reload button,
  * so there is one definition of "converged" — with two differences:
  *
- *   - `onlyIfStale`. A reload restarts opencode. A box that is already current
- *     must not pay that on every wake, so the push is skipped unless the file
- *     sync replaced something or the compiled etag moved.
+ *   - `onlyIfStale`. A reload can restart the runtime. A box that is already
+ *     current must not pay that on every wake, so the push is skipped unless
+ *     the file sync replaced something or the compiled etag moved.
  *   - never `force`. An automatic path has no standing to end a turn. A busy
  *     session is retried later, and a session that stays busy keeps its config
  *     until the next wake.
  *
  * WHY IT RETRIES ON TWO CLOCKS. "Not reachable yet" and "cannot tell whether a
  * turn is running" clear in seconds: the provider reports `running` before the
- * guest daemon binds its port, and opencode answers a few seconds after that.
+ * guest daemon binds its port, and the runtime answers a few seconds after that.
  * They escalate to the slow clock only if they persist. "Mid-turn" and
  * "refused the file sync" clear in minutes: a turn has to end, and a box whose
- * daemon predates the platform-ownership fix (git.ts, `OPENCODE_PLUGIN_PACKAGE`)
+ * daemon predates the platform-ownership fix (the OpenCode daemon's git.ts)
  * refuses with `local changes` until its staged replacement swaps in, which the
  * supervisor allows only after ~5 min of idle uptime.
  *
@@ -79,15 +81,15 @@ export interface SessionConfigConvergenceDeps {
 async function loadTarget(sessionId: string): Promise<SessionConfigConvergenceTarget | null> {
   const [row] = await db
     .select({
-      projectId: projects.projectId,
-      accountId: projects.accountId,
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      manifestPath: projects.manifestPath,
+      projectId: projectsView.projectId,
+      accountId: projectsView.accountId,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      manifestPath: projectsView.manifestPath,
       baseRef: projectSessions.baseRef,
     })
     .from(projectSessions)
-    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   if (!row) return null;
@@ -131,7 +133,7 @@ type Attempt =
 
 function classify(result: SessionReloadResult): Attempt {
   if (result.reason === 'no reachable sandbox') return { retry: 'transient', as: 'unreachable' };
-  // Right after a wake opencode is not answering yet, so the reload cannot tell
+  // Right after a wake the runtime is not answering yet, so the reload cannot tell
   // whether a turn is running. Measured on the #7403 preview: unanswerable at
   // +1 s, idle at +9 s. It is NOT evidence of a turn — treating it as one cost
   // a 6-minute wait and 371 s of stale config on a session nobody was using.

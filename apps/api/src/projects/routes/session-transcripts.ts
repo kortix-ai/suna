@@ -19,6 +19,7 @@ import { UnknownTranscriptCursorError } from '../lib/session-transcript-mirror';
 import { sessionMessageAuthors } from '../lib/session-message-authors';
 import { sessionModelUsage } from '../lib/session-model-usage';
 import { sessionUsageTree } from '../lib/session-usage';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const SessionUsageTotalsSchema = z.object({
   cost: z.number(),
@@ -60,7 +61,7 @@ export function registerSessionTranscriptsRoutes(): void {
   //
   // Two shapes, one route. `shape=compact` (the default, unchanged for every
   // existing caller) returns the digest rows, without tool inputs/outputs.
-  // `shape=sync` returns OpenCode message envelopes with every part 1:1 except
+  // `shape=sync` returns OpenCode-shaped message envelopes with every part 1:1 except
   // attachment bytes — the shape the SDK sync store hydrates from — and is
   // served from the durable mirror only, in windows bounded by count and size.
   //
@@ -79,12 +80,12 @@ export function registerSessionTranscriptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/transcript',
+      path: '/{workspaceId}/sessions/{sessionId}/transcript',
       tags: ['sessions'],
       summary: 'Read the transcript of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         query: z.object({
           limit: z.string().optional(),
           chars: z.string().optional(),
@@ -101,7 +102,7 @@ export function registerSessionTranscriptsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -130,7 +131,7 @@ export function registerSessionTranscriptsRoutes(): void {
       if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // The saved-history read: it serves the mirror only for the session's
-      // current OpenCode root.
+      // current runtime root.
       const history = c.req.query('history') === 'true';
 
       if (c.req.query('shape') === 'sync') {
@@ -141,7 +142,7 @@ export function registerSessionTranscriptsRoutes(): void {
         if (before !== undefined && (before.length === 0 || before.length > 128)) {
           return c.json({ error: 'Invalid cursor' }, 400);
         }
-        // A sub-agent's own saved transcript, by its OpenCode session id. Only
+        // A sub-agent's own saved transcript, by its runtime session id. Only
         // rows stored under THIS session can answer, so an id from anywhere
         // else reads as nothing saved.
         const child = c.req.query('child');
@@ -182,17 +183,17 @@ export function registerSessionTranscriptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/message-authors',
+      path: '/{workspaceId}/sessions/{sessionId}/message-authors',
       tags: ['sessions'],
       summary: 'Read who wrote each message of a session',
       description:
         'Returns `authors`, keyed by runtime message id: `{kind:"member", user_id, name, email}` or `{kind:"session", session_id, name, agent?}` (`agent` is the agent the sending session runs). `initial_author` is the parent session for a spawned session\'s first message, else null. `stops` is keyed by the runtime message id that started a turn a member stopped: the `{kind:"member", …}` who stopped it. Always present, `{}` when none.',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(AnyObject, 'Message authors'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
@@ -211,17 +212,17 @@ export function registerSessionTranscriptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/model-usage',
+      path: '/{workspaceId}/sessions/{sessionId}/model-usage',
       tags: ['sessions'],
       summary: 'Read which model a session\'s requests were served by and what they cost',
       description:
         'Returns `latest`, the newest model request of any outcome: `{served_model, fallback_from, at, outcome}`. `outcome` is `answered`, `client_aborted` (the caller canceled it) or `error`; a cancel is not a model failure. `served_model` is the route id recorded for the request — the model that answered it, or on an unanswered request the model it was being served by. `fallback_from` is the routed model when the gateway rerouted after a failed attempt, whether or not the fallback answered, else null. `billed_cost` is what Kortix debited for the session\'s model calls, in USD. `turns` is keyed by the runtime message id of the prompt that started each turn: `{served_models, fallback_from, billed_cost}`.',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(AnyObject, 'Session model usage'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');
@@ -241,17 +242,17 @@ export function registerSessionTranscriptsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/usage',
+      path: '/{workspaceId}/sessions/{sessionId}/usage',
       tags: ['sessions'],
       summary: 'Read what a session and the sessions it started cost',
       description:
         'Returns the model usage of the session and of every descendant session (`parent_session_id`, up to 10 levels and 500 sessions) the caller may open, from the gateway request ledger. Each entry of `sessions` carries `cost` in USD (`kortix_cost`, debited from the Kortix wallet, plus `provider_cost`, paid to the account\'s own provider key), request and token counts. `sessions` lists the session first, then its descendants depth-first, oldest child first. `total` is the sum over `sessions`. `hidden_sessions` counts descendants the caller may not open; a hidden session hides its subtree, and none of it is in `total`. `truncated` is true when the walk stopped at a limit. A sub-agent inside the session\'s sandbox bills under the session\'s own id, so its cost is in the session\'s entry.',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(SessionUsageTreeSchema, 'Session usage'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const binding = await resolveSessionBinding(c, projectId, sessionId, 'read');

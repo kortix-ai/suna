@@ -8,7 +8,7 @@
  * (`secret.consumer.used`, `iam.assignment.expired`, `llm.usage`).
  *
  * A key ending in `.*` titles a family whose last segments are open-ended
- * (OpenCode event types). An exact key wins over a family; a longer family
+ * (runtime event types). An exact key wins over a family; a longer family
  * wins over a shorter one.
  *
  * Title: what happened, past tense, sentence case, 2 to 7 words. An event a
@@ -20,6 +20,7 @@
 // biome-ignore format: one action per line, so a diff names exactly the action that changed
 export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'api.rate_limit.exceeded': 'Hit API rate limit',
+  'project.artifact.doc.edit': 'Edited a live artifact doc',
   'drive.folder.admin_access': "Admin opened a person's own folder",
   'audit.anonymous.suppressed': 'Suppressed anonymous audit rows',
   'audit.reconciliation.completed': 'Completed audit reconciliation',
@@ -35,12 +36,18 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'auth.session.first_sight': 'Started authenticated session',
   'admin.impersonate.action': 'Acted while impersonating account',
   'billing.trial.converted': 'Converted trial to paid plan',
+  'billing.split_off.free': 'Gave a split-off workspace free credits',
+  'billing.split_off.comp': "Comped a split-off workspace's plan",
+  'billing.split_off.comp_ended': 'Ended a split-off workspace plan comp',
+  'billing.split_off.reverse': 'Reversed split-off workspace billing',
   'admin.account.trial.extend': 'Extended account trial',
+  'account.closed': 'Closed account: plan reset to Free',
   'enterprise.contract.activate': 'Activated Enterprise contract',
   'enterprise.contract.end.*': 'Enterprise contract ended',
   'enterprise.contract.end.operator': 'Enterprise contract ended by an operator',
   'enterprise.contract.end.term_over': 'Enterprise contract ended at its term',
   'enterprise.contract.end.stripe_subscription_deleted': 'Enterprise contract ended: subscription cancelled',
+  'enterprise.contract.end.account_closed': 'Enterprise contract ended: account closed',
   'legal.subprocessor_notice.sent': 'Sent subprocessor change notice',
   'legal.terms_notice.sent': 'Sent terms of service change notice',
   'admin.account.temporary_access.grant': 'Granted temporary account access',
@@ -48,6 +55,9 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'enterprise_demo.enable': 'Turned the Enterprise demo on',
   'enterprise_demo.disable': 'Turned the Enterprise demo off',
   'space.visibility.changed': 'Made a channel private',
+  'space.updated': 'Agent changed a space for its person',
+  'space.members.added': 'Agent added people to a space',
+  'space.members.removed': 'Agent removed a person from a space',
   'iam.assignment.granted': 'Granted a role',
   'iam.assignment.revoked': 'Revoked a role assignment',
   'iam.assignment.expired': 'Expired a role',
@@ -73,9 +83,13 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'session.lifecycle.continue_session': 'Queued session continuation',
   'session.event_rate_limited': 'Rate-limited session audit events',
   'sandbox.runtime.legacy_bootstrap': 'Bootstrapped legacy sandbox runtime',
-  'opencode.*': 'Recorded agent runtime event',
-  'opencode.tool.updated': 'Updated agent tool call',
-  'opencode.message.part.*': 'Updated agent message',
+  'agent.*': 'Recorded agent runtime event',
+  'agent.tool.updated': 'Updated agent tool call',
+  'agent.message.part.*': 'Updated agent message',
+  // The same events, as rows written before the rename to `agent.*` name them.
+  'opencode.*': 'Recorded agent runtime event (older rows)',
+  'opencode.tool.updated': 'Updated agent tool call (older rows)',
+  'opencode.message.part.*': 'Updated agent message (older rows)',
   'secret.created': 'Created secret',
   'secret.deleted': 'Removed shared secret',
   'secret.strategy.changed': 'Updated secret delivery strategy',

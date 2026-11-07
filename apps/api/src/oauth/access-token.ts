@@ -6,10 +6,13 @@
  * route (`/v1/oauth/userinfo`); every other middleware saw the `kortix_`
  * prefix, ran it through the API-key table and 401'd. Now both auth
  * middlewares resolve it here and the token acts as the user who granted it —
- * no agent grant, no project binding — provided the client was granted the
- * `kortix` scope. Without that scope the token stays an identity credential
- * and reaches only the two identity probes.
+ * no agent grant — provided the client was granted the `kortix` scope.
+ * Without that scope the token stays an identity credential and reaches only
+ * the two identity probes. A token whose consent named a workspace
+ * (`bound_workspace_id`, 2026-11-06) is fenced to that workspace like a
+ * workspace key (`middleware/auth-oauth.ts`); an older token is unbound.
  */
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { and, eq, isNull } from 'drizzle-orm';
 import { oauthAccessTokens, oauthClients } from '@kortix/db';
 import { db } from '../shared/db';
@@ -61,7 +64,8 @@ const DELEGATED_WRITE_DENIED: readonly RegExp[] = [
 ];
 
 export function oauthScopeAllowsPath(scopes: readonly string[], path: string, method = 'GET'): boolean {
-  const p = path.replace(/\/+$/, '');
+  // `/v1/me`, `/v1/workspaces/…`: judged as their legacy names.
+  const p = asLegacyWorkspaceRoute(path.replace(/\/+$/, ''));
   if (scopes.includes(OAUTH_SCOPE_KORTIX)) {
     return method === 'GET' || method === 'HEAD' || !DELEGATED_WRITE_DENIED.some((re) => re.test(p));
   }
@@ -75,7 +79,27 @@ export interface OAuthAccessTokenValidation {
   accountId?: string;
   clientId?: string;
   scopes?: string[];
+  /** The workspace the consent bound the token to (the fence judges it like a
+   *  workspace key). Null = unbound: it acts as the person everywhere. */
+  boundWorkspaceId?: string | null;
   error?: string;
+}
+
+/**
+ * One OAuth access token's state by its row id, for a holder that kept the id
+ * but not the secret: an Artifact live socket re-checks it every 60 s. Null
+ * when the row is gone. Throws when the read fails.
+ */
+export async function readOAuthAccessTokenState(
+  tokenId: string,
+): Promise<{ revokedAt: Date | null; expiresAt: Date; clientActive: boolean } | null> {
+  const [row] = await db
+    .select({ revokedAt: oauthAccessTokens.revokedAt, expiresAt: oauthAccessTokens.expiresAt, clientActive: oauthClients.active })
+    .from(oauthAccessTokens)
+    .innerJoin(oauthClients, eq(oauthClients.clientId, oauthAccessTokens.clientId))
+    .where(eq(oauthAccessTokens.id, tokenId))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function validateOAuthAccessToken(token: string): Promise<OAuthAccessTokenValidation> {
@@ -90,6 +114,7 @@ export async function validateOAuthAccessToken(token: string): Promise<OAuthAcce
       scopes: oauthAccessTokens.scopes,
       expiresAt: oauthAccessTokens.expiresAt,
       clientActive: oauthClients.active,
+      boundWorkspaceId: oauthAccessTokens.boundWorkspaceId,
     })
     .from(oauthAccessTokens)
     .innerJoin(oauthClients, eq(oauthClients.clientId, oauthAccessTokens.clientId))
@@ -106,5 +131,6 @@ export async function validateOAuthAccessToken(token: string): Promise<OAuthAcce
     accountId: row.accountId,
     clientId: row.clientId,
     scopes: (row.scopes as string[] | null) ?? [],
+    boundWorkspaceId: row.boundWorkspaceId ?? null,
   };
 }

@@ -28,7 +28,7 @@ export interface ModelDefaultsResponse {
 
 export async function getModelDefaults(projectId: string) {
   return unwrap(
-    await backendApi.get<ModelDefaultsResponse>(`/projects/${projectId}/model-defaults`),
+    await backendApi.get<ModelDefaultsResponse>(`/workspaces/${projectId}/model-defaults`),
   );
 }
 
@@ -38,7 +38,7 @@ export async function setModelDefault(
 ) {
   return unwrap(
     await backendApi.put<{ ok: boolean; scope: string; agentName?: string; model: string }>(
-      `/projects/${projectId}/model-defaults`,
+      `/workspaces/${projectId}/model-defaults`,
       input,
     ),
   );
@@ -54,7 +54,7 @@ export async function clearModelDefault(
   }).toString();
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/model-defaults?${qs}`,
+      `/workspaces/${projectId}/model-defaults?${qs}`,
     ),
   );
 }

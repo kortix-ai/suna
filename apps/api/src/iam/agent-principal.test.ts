@@ -87,27 +87,63 @@ describe('agentPrincipalDecision', () => {
     );
   });
 
-  test('an account-scoped action is never an agent session\'s', () => {
-    expect(
-      agentPrincipalDecision({
-        action: 'member.read',
-        scope: 'account',
-        targetProjectId: null,
-        tokenProjectId: PROJECT,
-        grant: grant('all'),
-        ceilingAllows: () => true,
-      }),
-    ).toEqual({ allowed: false, reason: 'token_out_of_scope' });
+  // One workspace scope: the workspace's own account surface (members, roles,
+  // billing reads) is an ordinary grant ∩ ceiling decision for its own agents.
+  const account = (action: string, opts: { accountInScope: boolean; grant?: AgentGrant; ceiling?: ReadonlySet<string> }) =>
+    agentPrincipalDecision({
+      action,
+      scope: 'account',
+      targetProjectId: null,
+      tokenProjectId: PROJECT,
+      accountInScope: opts.accountInScope,
+      grant: opts.grant ?? grant('all'),
+      ceilingAllows: (a) => (opts.ceiling ?? AGENT_DEFAULT_CEILING).has(a),
+    });
+
+  test('an account-scope action of the own workspace is decided by grant ∩ ceiling', () => {
+    expect(account('member.invite', { accountInScope: true })).toEqual({ allowed: true, reason: 'role' });
+    expect(account('member.read', { accountInScope: true, grant: grant(['workspace.member.read']) }).allowed).toBe(true);
+    expect(account('member.invite', { accountInScope: true, grant: grant(['project.read']) })).toEqual({
+      allowed: false,
+      reason: 'agent_scope_insufficient',
+    });
+    expect(account('member.invite', { accountInScope: true, ceiling: new Set(['member.read']) })).toEqual({
+      allowed: false,
+      reason: 'agent_ceiling_insufficient',
+    });
+  });
+
+  test('an account-scope action outside the own workspace (another account, a split_pending one) is out of scope', () => {
+    expect(account('member.read', { accountInScope: false })).toEqual({ allowed: false, reason: 'token_out_of_scope' });
+  });
+
+  test('HUMAN_ONLY account actions stay refused in the own workspace', () => {
+    for (const action of ['token.create', 'billing.write', 'account.delete']) {
+      expect(account(action, { accountInScope: true })).toEqual({ allowed: false, reason: 'agent_human_only_action' });
+    }
   });
 });
 
 describe('AGENT_DEFAULT_CEILING', () => {
-  test('holds every grantable project permission except HUMAN_ONLY', () => {
+  test('holds every grantable action (administration included) and no HUMAN_ONLY action', () => {
     expect(AGENT_DEFAULT_CEILING.has('project.file.read')).toBe(true);
-    expect(AGENT_DEFAULT_CEILING.has('project.secret.read')).toBe(true);
-    expect(AGENT_DEFAULT_CEILING.has('project.write')).toBe(true);
+    expect(AGENT_DEFAULT_CEILING.has('project.members.manage')).toBe(true);
+    expect(AGENT_DEFAULT_CEILING.has('member.invite')).toBe(true);
+    expect(AGENT_DEFAULT_CEILING.has('billing.read')).toBe(true);
     for (const action of HUMAN_ONLY_ACTIONS) expect(AGENT_DEFAULT_CEILING.has(action)).toBe(false);
-    expect(AGENT_DEFAULT_CEILING.size).toBe(GRANTABLE_KORTIX_PERMISSIONS.length - HUMAN_ONLY_ACTIONS.size);
+    expect([...AGENT_DEFAULT_CEILING].sort()).toEqual([...GRANTABLE_KORTIX_PERMISSIONS].sort());
+  });
+
+  test('HUMAN_ONLY is minting credentials and moving money, nothing else', () => {
+    expect([...HUMAN_ONLY_ACTIONS].sort()).toEqual([
+      'account.delete',
+      'billing.write',
+      'project.credentials.issue',
+      'project.delete',
+      'project.gateway.keys.manage',
+      'token.create',
+      'token.personal.create',
+    ]);
   });
 });
 

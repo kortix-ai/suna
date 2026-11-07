@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp, requestClientKey } from './client-ip';
-import { shareIdFromPublicRef } from '../shared/public-share-ref';
+import { existsPublicShare } from '../shared/session-public-shares';
 import { recordAuditEvent } from '../shared/audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { TokenBucketRateLimiter, type RateLimitPolicy, type RateLimitResult } from '../shared/rate-limit';
+import { workspaceIdParam } from '../shared/route-params';
 
 interface AuditContext {
   accountId?: string | null;
@@ -92,6 +93,7 @@ const artifactContentLimiter = new TokenBucketRateLimiter('artifact_content');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
+const appEventLimiter = new TokenBucketRateLimiter('app_event');
 const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
   'project_webhook_manifest_refresh',
 );
@@ -120,7 +122,7 @@ export function createProjectSecretWriteRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
     const method = c.req.method.toUpperCase();
     if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
-    const projectId = c.req.param('projectId') || 'unknown';
+    const projectId = workspaceIdParam(c) || 'unknown';
     const result = projectSecretWriteLimiter.check(projectId, {
       limit: positiveInt((config as any).KORTIX_PROJECT_SECRET_WRITES_PER_HOUR, 100),
       windowMs: 60 * 60_000,
@@ -207,19 +209,28 @@ function quietRateLimited(c: Context, result: RateLimitResult): Response {
 }
 
 /**
- * Guards the anonymous `GET /v1/public/responses/:token`: one bucket per share
- * (`KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN`, 3000), shared by every visitor of the
- * link (the web page reads with no-store, so every view arrives), so it is a
- * flood cap sized for a popular link. A token that names no
- * share falls back to the client IP BEFORE it can key a bucket, so unique
- * garbage tokens cannot grow the bucket Map without bound. No audit row (a
- * flood must not become a DB-write amplifier), and the token or share id is
- * never logged: the token is the share id, a bearer secret.
+ * Guards the anonymous `GET /v1/public/responses/:token` with one bucket per
+ * share (`KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN`, 3000), shared by every visitor
+ * of the link (the web page reads with no-store, so every view arrives), so it
+ * is a flood cap sized for a popular link.
+ *
+ * The bucket key must name a share the caller cannot invent (KRTX-4105). It
+ * is the SHARE ID of a row that exists (`existsPublicShare`), never the token's
+ * shape: a shape-valid token of an invented share would key a fresh bucket on
+ * a pass that writes nothing, so a flood of them never met a cap in front of
+ * the database. The store is an LRU cache of verified token hashes, so a
+ * rotating flood adds one keyed query and no bucket. Anything else — a garbage
+ * token, a flood of unique ones, a store error — falls back to the client IP
+ * bucket. No audit row (a flood must not become a DB-write amplifier), and the
+ * token or share id is never logged: the token is the share id, a bearer
+ * secret.
  */
-export function createPublicResponseRateLimitMiddleware() {
+export function createPublicResponseRateLimitMiddleware(
+  resolveShareId: (token: string) => Promise<string | null> = existsPublicShare,
+) {
   return async (c: Context, next: Next) => {
-    // No per-IP bucket: tokens carry 122 random bits, so enumeration is infeasible, and the IP seen here is the web tier's, shared by every visitor.
-    const shareKey = shareIdFromPublicRef(c.req.param('token') ?? '') ?? `ip:${requestClientKey(c)}`;
+    const token = c.req.param('token') ?? '';
+    const shareKey = (await resolveShareId(token).catch(() => null)) ?? `ip:${requestClientKey(c)}`;
     const share = publicResponseLimiter.check(shareKey, {
       limit: positiveInt(config.KORTIX_PUBLIC_RESPONSE_REQS_PER_MIN, 3000),
       windowMs: 60_000,
@@ -332,7 +343,7 @@ export function createCheckEmailRateLimitMiddleware() {
  */
 export function createProjectWebhookRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
-    const projectId = c.req.param('projectId') || 'unknown';
+    const projectId = workspaceIdParam(c) || 'unknown';
     const result = projectWebhookLimiter.check(`${projectId}:${requestClientKey(c)}`, {
       limit: positiveInt((config as any).KORTIX_PROJECT_WEBHOOK_REQS_PER_MIN, 120),
       windowMs: 60_000,
@@ -350,6 +361,23 @@ export function createProjectWebhookRateLimitMiddleware() {
     }
     await next();
   };
+}
+
+/**
+ * The per-App request limit on the routes an App calls with its own token
+ * (`POST …/apps/:appId/events`, `POST …/runs`, `DELETE …/runs/:runId`).
+ * An App in a tight loop would otherwise write up to 50 event-log rows per
+ * request without bound. Call it AFTER the token is verified: a limiter in
+ * front of auth would let anyone who knows an App id spend its budget and
+ * block its real events. Sets the rate headers; returns the wait when the App is over.
+ */
+export function appEventRateLimited(c: Context, projectId: string, appId: string): { retryAfterSeconds: number } | null {
+  const result = appEventLimiter.check(`${projectId}:${appId}`, {
+    limit: positiveInt((config as any).KORTIX_APP_EVENT_REQS_PER_MIN, 120),
+    windowMs: 60_000,
+  });
+  setHeaders(c, result);
+  return result.allowed ? null : { retryAfterSeconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000) };
 }
 
 /**
@@ -451,6 +479,7 @@ export function resetRateLimiters() {
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
+  appEventLimiter.reset();
   projectWebhookManifestRefreshLimiter.reset();
   projectWebhookRejectedRunLimiter.reset();
   projectSecretWriteLimiter.reset();

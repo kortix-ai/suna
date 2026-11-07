@@ -7,7 +7,7 @@
  * "needs you" rule, so one goal reads the same in both clients.
  */
 
-import type { ProjectGoal, ProjectGoalIssue, ProjectGoalStatus } from '@kortix/sdk';
+import type { ProjectGoal, ProjectGoalBlockedReason, ProjectGoalIssue, ProjectGoalStatus } from '@kortix/sdk';
 
 import { relativeAge } from '../../lib/relative-time.ts';
 import { glyph as GLYPH } from '../../theme.ts';
@@ -43,7 +43,23 @@ export const ISSUE_TEXT: Record<ProjectGoalIssue, string> = {
   ask_overdue: 'An ask is past its due time.',
   verification_stalled: 'Verification has run for over a day.',
   unreadable: 'GOAL.md is missing or unreadable.',
+  blocked: 'It cannot go on by itself.',
 };
+
+/** Why a goal is blocked (the API's `blocked_reason`) and the next step, one line each. */
+export const BLOCKED_TEXT: Record<ProjectGoalBlockedReason, string> = {
+  credits: 'Out of credits: no wake can start. Add credits, then resume it (p).',
+  wake_cap: 'All wakes for today are used. It goes on by itself after midnight UTC.',
+  session_cap: 'All sessions it may start are used. Stop it, or ask a project admin to raise its limit.',
+  owner_lost: 'Its agent session failed and none took over. Start it again (R).',
+  storage: 'Its folder in Files could not be read or written. Check the folder, then resume it (p).',
+  flag_off: 'Goals is off for this project. Turn it on, then resume it (p).',
+  setup: 'Kortix is still setting it up. This finishes by itself.',
+};
+
+function issueText(goal: ProjectGoal, issue: ProjectGoalIssue): string {
+  return issue === 'blocked' && goal.blockedReason ? BLOCKED_TEXT[goal.blockedReason] : ISSUE_TEXT[issue];
+}
 
 /** Open asks for a person: what the goal waits on someone for. */
 export function openAsks(goal: ProjectGoal): Array<{ title: string; due: string | null }> {
@@ -72,6 +88,7 @@ export function progress(goal: ProjectGoal): { met: number; total: number } {
 
 export function statusWord(goal: ProjectGoal): string {
   const status = goal.goal?.status;
+  if (goal.record?.paused_at && goal.health.state !== 'closed') return 'Paused';
   return status ? (STATUS_WORD[status] ?? status) : 'Unreadable';
 }
 
@@ -89,7 +106,7 @@ export function goalTitle(goal: ProjectGoal): string {
 /** The one line under a row's title: the first problem, else what it waits on, else its state. */
 export function detailLine(goal: ProjectGoal): string {
   const issue = goal.health.issues[0];
-  if (issue) return ISSUE_TEXT[issue];
+  if (issue) return issueText(goal, issue);
   const doc = goal.goal;
   if (doc?.status === 'waiting_on_user' && doc.waiting_on) return `Waiting for: ${doc.waiting_on}`;
   const ask = openAsks(goal)[0];
@@ -99,7 +116,7 @@ export function detailLine(goal: ProjectGoal): string {
 }
 
 export interface GoalRow {
-  /** `<scope>/<slug>`: unique within the project. */
+  /** The goal's `goal_id` (`<scope>/<slug>` for an object without one). */
   id: string;
   title: string;
   group: GoalGroup;
@@ -112,8 +129,8 @@ export interface GoalRow {
   agent: string | null;
 }
 
-export function goalId(goal: Pick<ProjectGoal, 'scope' | 'slug'>): string {
-  return `${goal.scope}/${goal.slug}`;
+export function goalId(goal: Pick<ProjectGoal, 'scope' | 'slug'> & Partial<Pick<ProjectGoal, 'goalId'>>): string {
+  return goal.goalId ?? `${goal.scope}/${goal.slug}`;
 }
 
 export function toGoalRow(goal: ProjectGoal): GoalRow {
@@ -148,15 +165,20 @@ export interface GoalDetail {
   issues: string[];
   /** ISO time of the next wake, or null. */
   nextWake: string | null;
-  criteria: Array<{ text: string; met: boolean; evidence: string | null }>;
+  /** `3/12 wakes today`, or null without a server record. */
+  wakes: string | null;
+  /** `met`: the agent reports it met. `verified`: the independent check passed it. */
+  criteria: Array<{ text: string; met: boolean; verified: boolean; evidence: string | null }>;
   asks: Array<{ title: string; due: string | null }>;
   sessions: Array<{ id: string; role: string; since: string }>;
   links: string[];
   folder: string;
-  /** Whether `a` can reach an owner session. */
+  /** The API's capabilities for the caller: a control shows only when it is true. */
   canReply: boolean;
-  /** Whether `s` can stop the goal. */
   canStop: boolean;
+  canPause: boolean;
+  canResume: boolean;
+  canRestart: boolean;
   files: { loading: boolean; verification: string | null; log: string | null };
 }
 
@@ -174,13 +196,12 @@ export function toGoalDetail(
     summary: doc?.summary ?? '',
     agent: doc?.agent ?? null,
     waitingOn: doc?.waiting_on ?? null,
-    issues: goal.health.issues.map((issue) => ISSUE_TEXT[issue]),
-    nextWake: goal.heartbeat?.next_fire_at ?? doc?.next_wake_at ?? null,
-    criteria: (doc?.success_criteria ?? []).map((c) => ({
-      text: c.text,
-      met: c.met,
-      evidence: c.evidence,
-    })),
+    issues: goal.health.issues.map((issue) => issueText(goal, issue)),
+    nextWake: goal.record ? goal.record.next_wake_at : (goal.heartbeat?.next_fire_at ?? doc?.next_wake_at ?? null),
+    wakes: goal.record ? `${goal.record.wakes_today}/${goal.record.max_wakes_per_day} wakes today` : null,
+    criteria: goal.criteria
+      ? goal.criteria.map((c) => ({ text: c.text, met: c.reported_met, verified: c.verified, evidence: c.evidence }))
+      : (doc?.success_criteria ?? []).map((c) => ({ text: c.text, met: c.met, verified: false, evidence: c.evidence })),
     asks: openAsks(goal),
     // Newest first: the last `owner` is the session that works the goal now.
     sessions: [...(doc?.sessions ?? [])].reverse().map((s) => ({
@@ -190,9 +211,12 @@ export function toGoalDetail(
     })),
     links: doc?.links ?? [],
     folder: goal.folder,
-    canReply: open && goal.coordinatorSessionId !== null,
-    // `stopProjectGoal` throws on a closed goal and on a legacy goal.json folder.
-    canStop: open && doc?.format !== 'goal.json' && doc !== null,
+    // The API decides who may do what, per goal and per caller.
+    canReply: open && !!goal.capabilities?.answer,
+    canStop: open && !!goal.capabilities?.stop,
+    canPause: open && !!goal.capabilities?.pause,
+    canResume: open && !!goal.capabilities?.resume,
+    canRestart: !!goal.capabilities?.restart,
     files,
   };
 }
@@ -244,9 +268,10 @@ export function headLines(text: string | null, count: number): string[] {
 export function webGoalUrl(
   webBaseUrl: string,
   projectId: string,
-  goal: { scope: string; slug: string },
+  goal: { goalId?: string; scope: string; slug: string },
 ): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/goals/${goal.scope}/${encodeURIComponent(goal.slug)}`;
+  const base = `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/goals`;
+  return goal.goalId ? `${base}/${encodeURIComponent(goal.goalId)}` : `${base}/${goal.scope}/${encodeURIComponent(goal.slug)}`;
 }
 
 export interface DetailLine {
@@ -287,6 +312,7 @@ export function detailLines(detail: GoalDetail, width: number, now: number): Det
   for (const issue of detail.issues) push(`! ${issue}`, 'danger');
   if (detail.waitingOn)
     for (const text of wrap(`Waiting for: ${detail.waitingOn}`, room)) push(text);
+  if (detail.wakes) push(detail.wakes, 'dim');
   if (detail.nextWake) {
     const at = Date.parse(detail.nextWake);
     push(
@@ -299,13 +325,15 @@ export function detailLines(detail: GoalDetail, width: number, now: number): Det
     for (const text of wrap(detail.summary, room)) push(text);
   }
   if (detail.criteria.length > 0) {
-    const met = detail.criteria.filter((c) => c.met).length;
-    section(`Done when · ${met}/${detail.criteria.length}`);
+    // [x] verified by the independent check, [~] only reported met by the agent, [ ] open.
+    const verified = detail.criteria.filter((c) => c.verified).length;
+    const reported = detail.criteria.filter((c) => c.met).length;
+    push('');
+    for (const text of wrap(`Done when · ${verified}/${detail.criteria.length} verified${reported > verified ? ` · ${reported} reported` : ''}`, room)) push(text, 'heading');
     for (const c of detail.criteria) {
       const wrapped = wrap(c.text, room - 4);
-      wrapped.forEach((text, index) =>
-        push(`${index === 0 ? (c.met ? '[x]' : '[ ]') : '   '} ${text}`),
-      );
+      const mark = c.verified ? '[x]' : c.met ? '[~]' : '[ ]';
+      wrapped.forEach((text, index) => push(`${index === 0 ? mark : '   '} ${text}`));
       if (c.evidence) push(`    evidence: ${c.evidence}`, 'faint');
     }
   }

@@ -114,7 +114,7 @@ function InsufficientCreditsCard({ errorText, style }: { errorText: string; styl
         <ItemTitle>You ran out of credits</ItemTitle>
         {/* The balance is the one number the user needs; without one, the raw server text. */}
         <ItemDescription tabular={canPurchase}>
-          {canPurchase ? (balance ? `Balance ${balance}` : errorText) : 'An account owner can add credits.'}
+          {canPurchase ? (balance ? `Balance ${balance}` : errorText) : 'A workspace owner can add credits.'}
         </ItemDescription>
       </ItemContent>
       {BILLING_ACTIONS_ENABLED && canPurchase ? (

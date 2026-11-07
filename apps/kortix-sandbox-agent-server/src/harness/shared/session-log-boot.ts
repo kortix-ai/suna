@@ -9,12 +9,11 @@
  * next healthy boot would restore over that boot's turns. A throw fails the boot, and no
  * journal starts without the cursors `restore` returned.
  *
- * - The flag. apps/api sets `KORTIX_SESSION_LOG_RESTORE=1` when the project flag
- *   `session_log_restore` is on; `loadConfig` sets it on a box OpenCode booted before the sunset, which
- *   boots pi on an empty store. Off: no manifest read, no restore; the box keeps its native
- *   state and journals at its persisted generation (0 when it never restored) with its persisted
- *   seq offsets (a box that lost its store numbers above the log after the first 422:
- *   `session-log-journal.ts`).
+ * - Every boot. The restore graduated on 2026-11-05: every box reads the manifest, whatever
+ *   `KORTIX_SESSION_LOG_RESTORE` says (an API before then sent no key while the project flag was off,
+ *   and a box OpenCode booted never had one). apps/api still sends `=1` for daemons older than this
+ *   file, which read the key. The off switch is the API's `SESSION_LOG_RESTORE_ENABLED`: its restore
+ *   answers 503, which claims nothing, and the box keeps its native state.
  * - Behind. `GET …/log/manifest` lists every stored message (`deleted` for a tombstone) and the
  *   session generation. The native store is behind the log when the log holds a live message
  *   and (1) the adapter's `held()` is null (no store, no pinned root, a lost seq map), or (2) the
@@ -82,6 +81,7 @@ import { sandboxRelayContext, type SandboxRelayContext } from '@/lib/kortix-api/
 import { logger } from '@/lib/log/logger'
 import type { SessionLogPort } from '../contract/session-log'
 import { apiBytesReader, apiTextReader, attachmentBytes, sessionLogFromRestore, type TruncatedText } from './session-log-restore'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 const ATTEMPTS = 3
 
@@ -153,7 +153,6 @@ export async function reconcileSessionLog(port: SessionLogPort, { retryMs = 1_00
   const ctx = sandboxRelayContext()
   if (!ctx) return null
   const state = readState()
-  if (process.env.KORTIX_SESSION_LOG_RESTORE?.trim() !== '1') return kept(state)
   const held = await port.held()
   let manifest: Awaited<ReturnType<typeof readManifest>>
   try {
@@ -202,7 +201,7 @@ async function attempts<T>(what: string, retryMs: number, run: () => Promise<T>)
   }
 }
 
-const url = (ctx: SandboxRelayContext, path: string) => `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/${path}`
+const url = (ctx: SandboxRelayContext, path: string) => `${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/${path}`
 
 /**
  * A 401 at a wake is the box racing its session lease: the API refuses a session credential until the
@@ -217,7 +216,7 @@ const LEASE_ATTEMPTS = 15
 /** The response, or null for an answer that says "no reconcile here" (403, 404, 503, another 4xx); throws on what a retry may fix. */
 async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POST', retryMs: number): Promise<Response | null> {
   const send = () =>
-    fetch(url(ctx, path), {
+    kortixApiFetch(url(ctx, path), {
       method,
       headers: { Authorization: `Bearer ${(sandboxRelayContext() ?? ctx).token}`, 'Accept-Encoding': 'gzip' },
       signal: AbortSignal.timeout(path === 'restore' ? 120_000 : 15_000),

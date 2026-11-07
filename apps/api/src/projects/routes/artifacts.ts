@@ -1,4 +1,4 @@
-// Artifacts (flag `artifacts`): paths in the project's Files volume shared as
+// Artifacts: paths in the project's Files volume shared as
 // a doc (Markdown) or a page (HTML). Logic lives in `artifacts/service.ts`;
 // the bytes are served by `artifacts/content-routes.ts`.
 //
@@ -12,35 +12,30 @@
 // On top, per artifact: view needs `canView`; saving and restoring need write
 // access to its folder in Files. A private artifact the caller may not view
 // answers 404, never 403.
-// Every route answers 403 `feature_disabled` while the project has the flag off.
+// A Kortix that stores no Drive answers 403 `feature_disabled` on every route.
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { auth, errors, json } from '../../openapi';
 import { config } from '../../config';
 import { PROJECT_ACTIONS } from '../../iam';
-import { agentMayPerform, assertAgentScope, getAgentGrant } from '../../iam/agent-scope';
-import { requireFeatureFlag } from '../../feature-flags/gate';
 import { callerKortixSessionId } from '../../middleware/caller-session';
-import { assertProjectCapability, loadProjectForUser, projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
+import { projectCapabilityAllowed, resolveUserIdentities } from '../lib/access';
+import { authorizeArtifactCaller as authorize, loadArtifactForCaller as loadArtifact } from '../lib/artifact-access';
 import { projectsApp } from '../lib/app';
 import { loadProjectRosterIds } from '../lib/project-access-view';
 import { buildSessionParticipants, sessionAudienceIds } from '../lib/session-audience';
 import { DriveStorageError, legacyDriveStatus } from '../../drives/volumes';
-import { privateChannelFoldersFor, sessionPrivateChannelFolder } from '../../drives/service';
 import { ARTIFACT_TYPES, ARTIFACT_TYPE_KEYS } from '../../artifacts/formats';
 import { BINDING_AGENT_RE, SPACE_SLUG_RE } from '@kortix/shared/app-config';
 import {
-  ARTIFACTS_FLAG,
   ARTIFACT_VISIBILITIES,
   ArtifactError,
   artifactPublicContentUrl,
   artifactViewUrl,
   canManage,
-  canView,
   contentTypeFor,
   entryVersion,
-  getArtifact,
   isTextType,
   listArtifacts,
   listFiles,
@@ -60,7 +55,7 @@ import {
   type Viewer,
 } from '../../artifacts/service';
 
-const ProjectParams = z.object({ projectId: z.string().uuid() });
+const ProjectParams = z.object({ workspaceId: z.string().uuid() });
 const ArtifactParams = ProjectParams.extend({ artifactId: z.string().uuid() });
 const TypeEnum = z.enum(ARTIFACT_TYPE_KEYS);
 const VisibilityEnum = z.enum(ARTIFACT_VISIBILITIES);
@@ -189,7 +184,7 @@ async function serialize(rows: ArtifactRow[], viewer: Viewer) {
       created_by_session_id: row.createdBySessionId,
       can_manage: canManage(row, viewer),
       view_url: artifactViewUrl(row.artifactId, null),
-      web_url: `${frontendBase()}/projects/${row.projectId}/artifacts/${row.artifactId}`,
+      web_url: `${frontendBase()}/workspaces/${row.projectId}/artifacts/${row.artifactId}`,
       public_url: isPublic ? `${frontendBase()}/share/artifact/${row.artifactId}` : null,
       public_content_url: isPublic ? artifactPublicContentUrl(row.artifactId) : null,
       space: row.space,
@@ -200,61 +195,10 @@ async function serialize(rows: ArtifactRow[], viewer: Viewer) {
   });
 }
 
-/** Load the project, require the flag, and assert the read or write leaf. */
-async function authorize(c: Context, projectId: string, mode: 'read' | 'write') {
-  // Loaded for read: the leaves below are the gate ('session' would assert
-  // project.session.start, which artifacts do not use).
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return { ok: false as const, response: c.json({ error: 'Not found' }, 404) };
-  const disabled = requireFeatureFlag(c, loaded.row.metadata, ARTIFACTS_FLAG);
-  if (disabled) return { ok: false as const, response: disabled };
-  const can = async (leaf: string) => agentMayPerform(getAgentGrant(c), leaf) && projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, leaf);
-  let action: string = mode === 'read' ? PROJECT_ACTIONS.PROJECT_ARTIFACT_READ : PROJECT_ACTIONS.PROJECT_ARTIFACT_WRITE;
-  if (mode === 'read' && !(await can(action)) && await can(PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT)) {
-    action = PROJECT_ACTIONS.PROJECT_ARTIFACT_COMMENT;
-  }
-  assertAgentScope(c, action);
-  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
-  const [projectWrite, manageAny] = await Promise.all([can(PROJECT_ACTIONS.PROJECT_WRITE), can(PROJECT_ACTIONS.PROJECT_ARTIFACT_MANAGE)]);
-  // A private channel's files: only its members, and a session token only from its own thread (the one Drive rule).
-  const bound = callerKortixSessionId(c);
-  const [folders, channelFolder] = await Promise.all([
-    privateChannelFoldersFor(projectId, loaded.userId as string, bound),
-    bound ? sessionPrivateChannelFolder(bound) : Promise.resolve(null),
-  ]);
-  const viewer: Viewer = {
-    userId: loaded.userId as string,
-    projectWrite,
-    manageAny,
-    privateFolders: folders.visible,
-    allPrivateFolders: folders.all,
-    channelFolder,
-  };
-  return { ok: true as const, loaded, viewer, can };
-}
-
 /** A public link needs project.artifact.public (the role and an agent's grant): 403 otherwise. */
 async function refusePublic(c: Context, access: { can: (leaf: string) => Promise<boolean> | boolean }, visibility: string | undefined) {
   if (visibility !== 'public' || (await access.can(PROJECT_ACTIONS.PROJECT_ARTIFACT_PUBLIC))) return null;
   return c.json({ error: 'You cannot give an artifact a public link (project.artifact.public)', code: 'public_link_forbidden' }, 403);
-}
-
-/**
- * The artifact the caller may view (404 otherwise). `write` also needs write
- * access to its path in Files; `manage` needs the creator or project.artifact.manage.
- */
-async function loadArtifact(c: Context, projectId: string, artifactId: string, mode: 'read' | 'pin' | 'write' | 'manage') {
-  const access = await authorize(c, projectId, mode === 'read' || mode === 'pin' ? 'read' : 'write');
-  if (!access.ok) return access;
-  const row = await getArtifact(projectId, artifactId);
-  if (!row || !canView(row, access.viewer)) return { ok: false as const, response: c.json({ error: 'Artifact not found' }, 404) };
-  if (mode === 'manage' && !canManage(row, access.viewer)) {
-    return { ok: false as const, response: c.json({ error: 'Only its creator or a project manager can change how this artifact is shared', code: 'artifact_read_only' }, 403) };
-  }
-  if (mode === 'write' && !(await mayWrite(row, access.viewer))) {
-    return { ok: false as const, response: c.json({ error: 'You can only view this artifact: its files are not writable for you in Files', code: 'artifact_read_only' }, 403) };
-  }
-  return { ...access, row };
 }
 
 function author(c: Context, userId: string) {
@@ -304,7 +248,7 @@ const PUBLISH_LIMIT = bodyLimit({ maxSize: 48 * 1024 * 1024, onError: (c) => c.j
 
 export function registerArtifactRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/types', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/types', tags: ['artifacts'],
     summary: 'The artifact types, their format and a starter',
     ...auth,
     request: { params: ProjectParams },
@@ -313,13 +257,13 @@ export function registerArtifactRoutes(): void {
       ...errors(403, 404),
     },
   }), async (c) => {
-    const access = await authorize(c, c.req.valid('param').projectId, 'read');
+    const access = await authorize(c, c.req.valid('param').workspaceId, 'read');
     if (!access.ok) return access.response;
     return c.json({ types: ARTIFACT_TYPES.map(({ type, name, description, format, starter }) => ({ type, name, description, format, starter })) }, 200);
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts', tags: ['artifacts'],
     summary: "List the project's artifacts you may view",
     description:
       '`scope`: all (default), mine (you shared), shared (others shared), pinned (you pinned). Newest change first. ' +
@@ -340,7 +284,7 @@ export function registerArtifactRoutes(): void {
     },
     responses: { 200: json(z.object({ artifacts: z.array(ArtifactSchema) }), 'The artifacts'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId } = c.req.valid('param');
+    const { workspaceId: projectId } = c.req.valid('param');
     const q = c.req.valid('query');
     const access = await authorize(c, projectId, 'read');
     if (!access.ok) return access.response;
@@ -353,15 +297,15 @@ export function registerArtifactRoutes(): void {
     return c.json({ artifacts: await serialize(rows, access.viewer) }, 200);
   });
 
-  projectsApp.use('/:projectId/artifacts', PUBLISH_LIMIT);
+  projectsApp.use('/:workspaceId/artifacts', PUBLISH_LIMIT);
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts', tags: ['artifacts'],
     summary: 'Publish new files as an artifact (into your folder in Files)',
     ...auth,
     request: { params: ProjectParams, body: { required: true, content: { 'application/json': { schema: PublishBody } } } },
     responses: { 201: json(ArtifactDetailSchema, 'The artifact'), ...errors(400, 403, 404, 409, 413, 503) },
   }), async (c) => {
-    const { projectId } = c.req.valid('param');
+    const { workspaceId: projectId } = c.req.valid('param');
     const access = await authorize(c, projectId, 'write');
     if (!access.ok) return access.response;
     const refused = await refusePublic(c, access, c.req.valid('json').visibility);
@@ -380,14 +324,14 @@ export function registerArtifactRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/share', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/share', tags: ['artifacts'],
     summary: 'Share a path that is already in Files as an artifact',
     description: 'A .md file (doc), a .html file (page), or a folder with index.md or index.html. You must be able to read it in Files. 409 already_shared when the path already is an artifact.',
     ...auth,
     request: { params: ProjectParams, body: { required: true, content: { 'application/json': { schema: ShareBody } } } },
     responses: { 201: json(ArtifactDetailSchema, 'The artifact'), ...errors(400, 403, 404, 409, 413, 503) },
   }), async (c) => {
-    const { projectId } = c.req.valid('param');
+    const { workspaceId: projectId } = c.req.valid('param');
     const access = await authorize(c, projectId, 'write');
     if (!access.ok) return access.response;
     const refused = await refusePublic(c, access, c.req.valid('json').visibility);
@@ -401,13 +345,13 @@ export function registerArtifactRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}', tags: ['artifacts'],
     summary: 'Read an artifact: its metadata, its files now or at a version, and a signed URL',
     ...auth,
     request: { params: ArtifactParams, query: z.object({ version: CommitId.optional() }) },
     responses: { 200: json(ArtifactDetailSchema, 'The artifact'), ...errors(400, 403, 404, 409, 413, 503) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const loaded = await loadArtifact(c, projectId, artifactId, 'read');
     if (!loaded.ok) return loaded.response;
     try {
@@ -418,20 +362,20 @@ export function registerArtifactRoutes(): void {
     }
   });
 
-  projectsApp.use('/:projectId/artifacts/:artifactId', PUBLISH_LIMIT);
+  projectsApp.use('/:workspaceId/artifacts/:artifactId', PUBLISH_LIMIT);
   projectsApp.openapi(createRoute({
-    method: 'put', path: '/{projectId}/artifacts/{artifactId}', tags: ['artifacts'],
+    method: 'put', path: '/{workspaceId}/artifacts/{artifactId}', tags: ['artifacts'],
     summary: 'Save files into the artifact in Files',
     description: 'Each file is written to its path in Files (a save, a commit of the volume). Pass base_version to refuse a stale save (409 version_conflict).',
     ...auth,
     request: { params: ArtifactParams, body: { required: true, content: { 'application/json': { schema: SaveBody } } } },
     responses: { 200: json(ArtifactDetailSchema, 'The artifact now'), ...errors(400, 403, 404, 409, 413, 503) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const loaded = await loadArtifact(c, projectId, artifactId, 'write');
     if (!loaded.ok) return loaded.response;
     try {
-      const row = await publishChanges(loaded.row, c.req.valid('json'), author(c, loaded.viewer.userId));
+      const row = await publishChanges(loaded.row, c.req.valid('json'));
       return c.json(await detail(row, loaded.viewer), 200);
     } catch (err) {
       return failure(c, err);
@@ -439,21 +383,21 @@ export function registerArtifactRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'patch', path: '/{projectId}/artifacts/{artifactId}', tags: ['artifacts'],
+    method: 'patch', path: '/{workspaceId}/artifacts/{artifactId}', tags: ['artifacts'],
     summary: 'Rename or share an artifact',
     description: 'visibility: private (you and shared_with_user_ids), project (every project member), public (anyone with the link).',
     ...auth,
     request: { params: ArtifactParams, body: { required: true, content: { 'application/json': { schema: PatchBody } } } },
     responses: { 200: json(ArtifactSchema, 'The artifact'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const loaded = await loadArtifact(c, projectId, artifactId, 'manage');
     if (!loaded.ok) return loaded.response;
     const refused = await refusePublic(c, loaded, c.req.valid('json').visibility);
     if (refused) return refused;
     let updated: ArtifactRow;
     try {
-      updated = await updateArtifactMeta(loaded.row, c.req.valid('json'), author(c, loaded.viewer.userId));
+      updated = await updateArtifactMeta(loaded.row, c.req.valid('json'));
     } catch (err) {
       // 403 `private_channel`: a private channel's artifact stays private.
       if (err instanceof ArtifactError && err.status === 403) return c.json({ error: err.message, code: err.code }, 403);
@@ -464,13 +408,13 @@ export function registerArtifactRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'delete', path: '/{projectId}/artifacts/{artifactId}', tags: ['artifacts'],
+    method: 'delete', path: '/{workspaceId}/artifacts/{artifactId}', tags: ['artifacts'],
     summary: 'Stop sharing: remove it from Artifacts (its files stay in Files)',
     ...auth,
     request: { params: ArtifactParams },
     responses: { 200: json(z.object({ deleted: z.literal(true) }), 'Removed'), ...errors(403, 404) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const loaded = await loadArtifact(c, projectId, artifactId, 'manage');
     if (!loaded.ok) return loaded.response;
     await unshare(loaded.row);
@@ -479,13 +423,13 @@ export function registerArtifactRoutes(): void {
 
   for (const method of ['put', 'delete'] as const) {
     projectsApp.openapi(createRoute({
-      method, path: '/{projectId}/artifacts/{artifactId}/pin', tags: ['artifacts'],
+      method, path: '/{workspaceId}/artifacts/{artifactId}/pin', tags: ['artifacts'],
       summary: method === 'put' ? 'Pin an artifact for yourself' : 'Unpin an artifact',
       ...auth,
       request: { params: ArtifactParams },
       responses: { 200: json(ArtifactSchema, 'The artifact'), ...errors(403, 404) },
     }), async (c) => {
-      const { projectId, artifactId } = c.req.valid('param');
+      const { workspaceId: projectId, artifactId } = c.req.valid('param');
       // Pinning is personal: viewing is enough.
       const loaded = await loadArtifact(c, projectId, artifactId, 'pin');
       if (!loaded.ok) return loaded.response;
@@ -496,14 +440,14 @@ export function registerArtifactRoutes(): void {
   }
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}/versions', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}/versions', tags: ['artifacts'],
     summary: "An artifact's history from the Files volume, newest first",
     description: 'Every save of its entry file, read from the Files commit log (the last 200 commits of Files).',
     ...auth,
     request: { params: ArtifactParams },
     responses: { 200: json(z.object({ versions: z.array(VersionSchema) }), 'The versions'), ...errors(400, 403, 404, 409, 413, 503) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const loaded = await loadArtifact(c, projectId, artifactId, 'read');
     if (!loaded.ok) return loaded.response;
     try {
@@ -514,17 +458,17 @@ export function registerArtifactRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/artifacts/{artifactId}/restore', tags: ['artifacts'],
+    method: 'post', path: '/{workspaceId}/artifacts/{artifactId}/restore', tags: ['artifacts'],
     summary: 'Restore an old version: its files are written back to Files, as a new save',
     ...auth,
     request: { params: ArtifactParams, body: { required: true, content: { 'application/json': { schema: z.object({ version: CommitId }) } } } },
     responses: { 200: json(ArtifactDetailSchema, 'The artifact now'), ...errors(400, 403, 404, 409, 413, 503) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const loaded = await loadArtifact(c, projectId, artifactId, 'write');
     if (!loaded.ok) return loaded.response;
     try {
-      const row = await restoreVersion(loaded.row, c.req.valid('json').version, author(c, loaded.viewer.userId));
+      const row = await restoreVersion(loaded.row, c.req.valid('json').version);
       return c.json(await detail(row, loaded.viewer), 200);
     } catch (err) {
       return failure(c, err);
@@ -532,7 +476,7 @@ export function registerArtifactRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/artifacts/{artifactId}/content', tags: ['artifacts'],
+    method: 'get', path: '/{workspaceId}/artifacts/{artifactId}/content', tags: ['artifacts'],
     summary: "One file's source, as stored in Files",
     description: 'Text files answer text/plain; binary files answer application/octet-stream. Default the entry file, default version now.',
     ...auth,
@@ -542,7 +486,7 @@ export function registerArtifactRoutes(): void {
     },
     responses: { 200: { description: 'The file bytes' }, ...errors(400, 403, 404, 409, 413, 503) },
   }), async (c) => {
-    const { projectId, artifactId } = c.req.valid('param');
+    const { workspaceId: projectId, artifactId } = c.req.valid('param');
     const q = c.req.valid('query');
     const loaded = await loadArtifact(c, projectId, artifactId, 'read');
     if (!loaded.ok) return loaded.response;

@@ -42,13 +42,13 @@ describe('file read retry policy', () => {
     );
   });
 
-  test('does not retry a directory read (400 "Path is a directory") — the .opencode loop', () => {
-    // Reading a directory like `.opencode` as a file returns 400; it must fail
+  test('does not retry a directory read (400 "Path is a directory")', () => {
+    // Reading a directory like `.kortix` as a file returns 400; it must fail
     // fast, not retry on a loop.
-    expect(shouldRetryFileRead('.opencode', 0, new Error('Path is a directory'))).toBe(false);
-    expect(shouldRetryFileRead('.opencode', 0, new Error('HTTP 400: Bad Request'))).toBe(false);
+    expect(shouldRetryFileRead('.kortix', 0, new Error('Path is a directory'))).toBe(false);
+    expect(shouldRetryFileRead('.kortix', 0, new Error('HTTP 400: Bad Request'))).toBe(false);
     const eisdir = new Error('EISDIR: illegal operation on a directory');
-    expect(shouldRetryFileRead('.opencode', 0, eisdir)).toBe(false);
+    expect(shouldRetryFileRead('.kortix', 0, eisdir)).toBe(false);
   });
 
   test('does not retry when the error carries a 4xx HTTP status', () => {

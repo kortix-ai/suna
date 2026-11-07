@@ -56,6 +56,7 @@ function makeChain(): any {
   return chain;
 }
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: { select: () => makeChain(), insert: () => makeChain(), update: () => makeChain(), delete: () => makeChain() },
   hasDatabase: () => true,
 }));
@@ -277,7 +278,7 @@ describe('Slack authorization matrix — project access and session visibility',
     expect(ephemerals[0]).toMatchObject({
       channel: 'C1',
       user: 'Uoutsider',
-      text: "You're connected, but don't have access to this project yet.",
+      text: "You're connected, but don't have access to this Kortix workspace yet.",
     });
   });
 
@@ -352,7 +353,7 @@ describe('Slack authorization matrix — project access and session visibility',
       [project], // createOrJoinThreadSession project lookup
       [{ eventId: 'claim' }], // claimThreadCreate won
       [], // re-check chat_threads -> none
-      [{ projectId: 'proj-1', agentName: null, opencodeModel: null, conversationPolicy: 'owner_approval' }],
+      [{ projectId: 'proj-1', agentName: null, sessionModel: null, conversationPolicy: 'owner_approval' }],
       [], // remember owner participant
     ];
 
@@ -500,7 +501,7 @@ describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second sess
     followUpPlans.length = 0;
     dbResults = [
       [project],
-      [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: { opencode_model: 'kortix/codex/gpt-6-astra' }, agentName: 'reviewer' }],
+      [{ sessionId: 'sess-1', createdBy: 'user-1', metadata: { model: 'kortix/codex/gpt-6-astra' }, agentName: 'reviewer' }],
       [],
     ];
     await spawnAgentTurn('proj-1', envelope, event);
@@ -806,7 +807,7 @@ describe('spawnAgentTurn — a thread owned by another project', () => {
     expect(deliverCalls).toBe(0);
     expect(createSessionCalls).toBe(0);
     expect(ephemerals).toHaveLength(1);
-    expect(ephemerals[0].text).toBe("You're connected, but don't have access to this project yet.");
+    expect(ephemerals[0].text).toBe("You're connected, but don't have access to this Kortix workspace yet.");
   });
 
   test('a per-project app refuses a thread its project does not own, with a notice and no delivery', async () => {
@@ -823,7 +824,7 @@ describe('spawnAgentTurn — a thread owned by another project', () => {
     expect(deliverCalls).toBe(0);
     expect(createSessionCalls).toBe(0);
     expect(messages).toHaveLength(1);
-    expect(messages[0].text).toContain('belongs to a different Kortix project');
+    expect(messages[0].text).toContain('belongs to a different Kortix workspace');
   });
 });
 

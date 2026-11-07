@@ -603,7 +603,7 @@ describe('readSessionMessagePage — error classification', () => {
   });
 
   test('a not-ready body classifies as SandboxNotReadyError even without a 503 status', async () => {
-    const client = failingClient({ error: { message: 'opencode session is not ready' } });
+    const client = failingClient({ error: { message: 'sandbox runtime not ready' } });
     await expect(
       readSessionMessagePage(client, 'session-1', { limit: 50 }),
     ).rejects.toBeInstanceOf(SandboxNotReadyError);

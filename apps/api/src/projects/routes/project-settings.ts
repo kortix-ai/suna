@@ -1,8 +1,8 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { releaseProjectEventSubscriptions } from '../trigger-events/subscriptions';
 import { releaseProjectChannels } from '../../channels/install-store';
-import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, authorize } from '../../iam';
-import { actorFor } from '../../iam/actor';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize } from '../../iam';
+import { actorFor, actorOf } from '../../iam/actor';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { isUuid } from '../../shared/validate';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -10,14 +10,14 @@ import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
-import { accounts, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import {
   ProjectTransferError,
   transferProjectOwnership,
 } from '../lib/project-transfer';
-import { projectQuotaDenial } from '../lib/project-quota';
+import { projectCreationDenial } from '../lib/project-quota';
+import { isWorkspaceOnePerAccountConflict, workspaceHasProjectBody } from '../../workspaces/one-project';
 import {
   AnyObject,
   SandboxProviderPatchResultSchema,
@@ -27,7 +27,6 @@ import {
 import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
-import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
 import {
   DEFAULT_REASONING_EFFORT_METADATA_KEY,
   normalizeDefaultReasoningEffort,
@@ -42,12 +41,39 @@ import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
 import type { AppEnv } from '../../types';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import { archiveProjectAndRevokeTokens, deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
+import { deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
+import { accountRolesForUser } from '../../iam/read-models';
+import { newWorkspaceCallerDenial } from '../new-workspace';
+import {
+  asWorkspaceId,
+  closeWorkspace,
+  getWorkspace,
+  isWorkspaceLifecycleError,
+  prepareWorkspaceSetup,
+  restoreWorkspace,
+  type WorkspaceRecord,
+} from '../../workspaces/surface';
 import {
   requestProviderTransition,
   readPublicProjectTransitionState,
   ProviderTransitionError,
 } from '../provider-transition/provider-transition-service';
+import { capturePersonEvent } from './product-events';
+import { workspaceIdParam } from '../../shared/route-params';
+import { accountsView, metadataMerge, metadataMergeSubtree, projectsView, updateProjectRowsReturning } from '../../workspaces/rows';
+
+/** The body of a restore: the workspace's ids, name, lifecycle and deletion date. */
+function workspaceLifecycleBody(record: WorkspaceRecord) {
+  return {
+    workspace_id: record.workspaceId,
+    project_id: record.projectId,
+    account_id: record.accountId,
+    name: record.name,
+    lifecycle: record.lifecycle,
+    state: record.lifecycle === 'active' ? 'active' : record.lifecycle === 'closing' ? 'deleting' : 'setup_required',
+    deletion_scheduled_for: record.deletionScheduledFor ? record.deletionScheduledFor.toISOString() : null,
+  };
+}
 
 // PATCH /v1/projects/:projectId/onboarding
 // Persist whether the project's guided onboarding wizard has been completed
@@ -108,7 +134,7 @@ function pickOnboardingProfile(input: unknown): Record<string, string> | null {
 // validate the body — so the body schema stays permissive (AnyObject) and the
 // handler returns the precise 400/403/404.
 const patchFeatureFlagHandler = async (c: any) => {
-  const projectId = c.req.param('projectId');
+  const projectId = workspaceIdParam(c);
   // Strict body: malformed JSON is a client error, not an empty object —
   // readJsonObject() would swallow the parse failure and mis-report "unknown flag".
   let body: unknown;
@@ -120,7 +146,9 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (!isPlainObject(body)) {
     return c.json({ error: 'Request body must be a JSON object' }, 400);
   }
-  const feature = body.feature;
+  // `project_channels` merged into `chat` (2026-11): released TUI, mobile and
+  // CLI builds still toggle Channels by the old key, so it writes `chat`.
+  const feature = body.feature === 'project_channels' ? 'chat' : body.feature;
   const enabled = body.enabled;
   // Floor 'read' (membership); project.settings.write is the gate below.
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -138,7 +166,7 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // An internal-only flag (`session_log_restore`) changes what
+  // An internal-only flag (`workspace_volume`) changes what
   // the platform records, so Kortix decides it: only a platform operator
   // writes it, never a project admin and never an agent session. An operator
   // acting in a customer project through impersonation passes (`userId`
@@ -158,6 +186,10 @@ const patchFeatureFlagHandler = async (c: any) => {
   }
   const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);
+  capturePersonEvent(c, loaded, projectId, 'feature_flag_toggled', {
+    key: String(feature),
+    enabled: enabled === null ? 'default' : enabled,
+  });
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 };
 
@@ -165,12 +197,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/onboarding',
+      path: '/{workspaceId}/onboarding',
       tags: ['projects'],
       summary: 'Update project onboarding state',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               completed: z.boolean().optional().openapi({ description: 'true marks onboarding complete; false clears it.' }),
               profile: z.record(z.string(), z.any()).optional().openapi({ description: 'Onboarding answers to merge.' }),
@@ -182,7 +214,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const body = await readJsonObject(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -220,11 +252,7 @@ export function registerProjectSettingsRoutes(): void {
       );
     }
 
-    const [row] = await db
-      .update(projects)
-      .set({ metadata: metadataExpr, updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
+    const [row] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), { metadata: metadataExpr, updatedAt: new Date() });
 
     if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
     return c.json(serializeProject(row, {
@@ -234,27 +262,38 @@ export function registerProjectSettingsRoutes(): void {
   },
   );
 
-  // DELETE /v1/projects/:projectId
+  // DELETE /v1/workspaces/:workspaceId (and the legacy /v1/projects/:projectId)
+  //
+  // K2 (design.md §3.1): deleting a workspace closes its account. One
+  // transaction opens the account's deletion request (14-day grace), archives
+  // the project row, revokes every credential of the account and pauses its
+  // automations (`closeWorkspace`, workspaces/lifecycle.ts). The repository,
+  // the connectors, the sandboxes and the money go with the account-deletion
+  // sweep at `deletion_scheduled_for`; until then an owner can restore it. A
+  // `split_pending` workspace (a legacy account that still holds other
+  // projects) is deleted the old way: its repository, connectors and channels
+  // go now, and only its project row is archived.
 
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}',
+      path: '/{workspaceId}',
       tags: ['projects'],
-      summary: 'Delete a project',
+      summary: 'Delete a workspace',
       description:
-        'Permanent: there is no restore. Deletes the project, its Kortix-managed repository (a connected repository is never touched), its connectors and its tokens. Afterwards the project answers 404.',
+        'Deletes the workspace: members lose it at once, and its credentials are revoked. An owner can restore it for 14 days (`POST /v1/workspaces/:id/restore`); after `deletion_scheduled_for` its Kortix-managed repository (a connected repository is never touched), connectors, sessions, subscription and credits are deleted. A legacy project of an account that still holds other projects is deleted at once instead (`deletion_scheduled_for: null`).',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(
             z.object({
               ok: z.literal(true),
-              deleted: z.literal(true).openapi({ description: 'Always true. The project cannot be restored.' }),
+              deleted: z.literal(true).openapi({ description: 'Always true.' }),
               archived: z.literal(true).openapi({ description: 'Deprecated: the same as `deleted`. Kept for older clients.' }),
-              repo_deleted: z.boolean().openapi({ description: 'The Kortix-managed repository was deleted with the project.' }),
+              repo_deleted: z.boolean().openapi({ description: 'The Kortix-managed repository was deleted now. False for a workspace close: the sweep deletes it at `deletion_scheduled_for`.' }),
+              deletion_scheduled_for: z.string().nullable().openapi({ description: 'When the workspace is erased; it can be restored until then. Null for a legacy project deleted at once.' }),
             }),
             'Deleted',
           ),
@@ -262,22 +301,35 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // project.delete is the gate; the load above only proves membership.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
-    // Release prompt attachments first. After the repository deletion below, a
-    // failed release would leave an active project without its repository; after
-    // the archive, the project answers 404, so a release could never be retried.
+    if (!loaded.row.splitPending) {
+      // Deleting a workspace closes its account: billing, members, keys. That is
+      // the owner's alone (account.delete), like Slack; an admin or a manager
+      // holds project.delete but not this.
+      await assertAuthorized(await actorOf(c, loaded.row.accountId), ACCOUNT_ACTIONS.ACCOUNT_DELETE);
+      const closed = await closeWorkspace({ workspaceId: asWorkspaceId(projectId), actorUserId: loaded.userId });
+      return c.json({
+        ok: true,
+        deleted: true,
+        archived: true,
+        repo_deleted: false,
+        deletion_scheduled_for: closed.mode === 'closed' ? closed.deletionScheduledFor.toISOString() : null,
+      });
+    }
+
+    // A legacy project of a split_pending account: the pre-K2 delete. Release
+    // prompt attachments first. After the repository deletion below, a failed
+    // release would leave an active project without its repository; after the
+    // archive, the project answers 404, so a release could never be retried.
     const { releasePromptAttachmentsForProject } = await import('../prompt-attachments');
     await releasePromptAttachmentsForProject(projectId);
-    const { releaseArtifactCommentScreenshotsForProject } = await import('../../artifacts/comment-screenshot-objects');
-    await releaseArtifactCommentScreenshotsForProject(projectId);
 
-    // Deleting the project deletes the Kortix-managed upstream with it; the
-    // helper no-ops for user-connected/BYO repositories and never touches
+    // The helper no-ops for user-connected/BYO repositories and never touches
     // them. Delete before hiding the project so provider failures remain
     // visible and retryable.
     let repoDeleted: boolean;
@@ -289,28 +341,117 @@ export function registerProjectSettingsRoutes(): void {
     }
 
     // Purge the project's connector rows before the archive: after it the
-    // project answers 404, so a failed purge could never be retried.
-    // The row survives its archive as a tombstone, so the database's
-    // connectors FK cascade never fires and the rows would outlive the
-    // purged project (KRTX-1907). Same visibility rule as the repo delete:
-    // a failure leaves the project active and the deletion retryable.
+    // project answers 404, so a failed purge could never be retried. The row
+    // survives its archive as a tombstone, so the connectors FK cascade never
+    // fires (KRTX-1907).
     try {
       await purgeProjectConnectors(projectId);
-      // The tombstone keeps its chat installs, bindings and secrets too:
-      // release them, or the channels keep delivering to a deleted project.
       await releaseProjectChannels(projectId);
     } catch (error) {
       logger.error('[projects] failed to purge the project connectors', { projectId, error: String(error) });
       return c.json({ error: 'Failed to purge project connectors' }, 500);
     }
 
-    const row = await archiveProjectAndRevokeTokens(projectId, loaded.row.accountId);
-    if (!row) return c.json({ error: 'Not found' }, 404);
-    // An archived project fires nothing: release its app-event provider instances.
+    // closeWorkspace archives the row, revokes its tokens and refills the
+    // account's workspace ids when it is one workspace again.
+    await closeWorkspace({ workspaceId: asWorkspaceId(projectId), actorUserId: loaded.userId });
     await releaseProjectEventSubscriptions(projectId);
     // `archived` stays for clients that read it; `deleted` says what happened (KRTX-3384).
-    return c.json({ ok: true, deleted: true, archived: true, repo_deleted: repoDeleted });
+    return c.json({ ok: true, deleted: true, archived: true, repo_deleted: repoDeleted, deletion_scheduled_for: null });
   },
+  );
+
+  // POST /v1/workspaces/:workspaceId/restore — owners, while the workspace is deleting.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{workspaceId}/restore',
+      tags: ['projects'],
+      summary: 'Restore a deleted workspace',
+      description:
+        'Owners only, until `deletion_scheduled_for`: cancels the deletion, brings the workspace back with the same id, resumes the automations the deletion paused and reactivates the subscription the deletion set to cancel. Keys revoked by the deletion stay revoked. 404 `workspace_not_found` for anyone who is not an owner, 409 `workspace_not_deleting` when the workspace is not being deleted.',
+      ...auth,
+      request: { params: z.object({ workspaceId: z.string() }) },
+      responses: {
+        200: json(AnyObject, 'Restored'),
+        ...errors(404, 409),
+      },
+    }),
+    async (c: Context<AppEnv>) => {
+      const workspaceId = workspaceIdParam(c);
+      const userId = c.get('userId') as string;
+      const record = await getWorkspace(workspaceId);
+      const ownerOf = record ? (await accountRolesForUser(userId)).get(record.accountId) === 'owner' : false;
+      if (!record || !ownerOf) {
+        return c.json({ error: 'Workspace not found', code: 'workspace_not_found' }, 404);
+      }
+      try {
+        const restored = await restoreWorkspace({ workspaceId: record.workspaceId, actorUserId: userId });
+        return c.json(workspaceLifecycleBody(restored), 200);
+      } catch (error) {
+        if (isWorkspaceLifecycleError(error)) {
+          return c.json({ error: error.message, code: error.code, workspace_id: error.workspaceId }, error.status);
+        }
+        throw error;
+      }
+    },
+  );
+
+  // POST /v1/workspaces/:workspaceId/setup — a project-less workspace that pays gets its project.
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{workspaceId}/setup',
+      tags: ['projects'],
+      summary: 'Set up a workspace',
+      description:
+        'For a workspace in state `setup_required` (it pays and has no config repository yet): provisions its Kortix-managed repository and project, with project_id = workspace_id. Takes the same repository fields as `POST /v1/workspaces`. Owners and admins, signed in as themselves. 409 `workspace_setup_not_required` for any other workspace.',
+      ...auth,
+      request: { params: z.object({ workspaceId: z.string() }), body: { required: false, content: { 'application/json': { schema: AnyObject } } } },
+      responses: {
+        201: json(AnyObject, 'Set up'),
+        ...errors(400, 403, 404, 409, 502, 503),
+      },
+    }),
+    async (c: Context<AppEnv>) => {
+      const workspaceId = workspaceIdParam(c);
+      const userId = c.get('userId') as string;
+      const record = await getWorkspace(workspaceId);
+      const role = record ? (await accountRolesForUser(userId)).get(record.accountId) : undefined;
+      if (!record || !role) return c.json({ error: 'Workspace not found', code: 'workspace_not_found' }, 404);
+      const denial = newWorkspaceCallerDenial({
+        userId,
+        email: (c.get('userEmail') as string | undefined) || null,
+        authType: c.get('authType') as string | undefined,
+        scopedCredential: Boolean(c.get('tokenProjectId')) || isProjectSessionPrincipal(c),
+      });
+      if (denial) return c.json(denial.body as never, denial.status as 403);
+      if (role !== 'owner' && role !== 'admin') return c.json({ error: 'Owner or admin role required' }, 403);
+      let target: Awaited<ReturnType<typeof prepareWorkspaceSetup>>;
+      try {
+        target = await prepareWorkspaceSetup(record.workspaceId);
+      } catch (error) {
+        if (isWorkspaceLifecycleError(error)) {
+          return c.json({ error: error.message, code: error.code, workspace_id: error.workspaceId }, error.status as 409);
+        }
+        throw error;
+      }
+      const body = await readJsonObject(c);
+      const { account_id: _accountId, accountId: _accountIdCamel, new_workspace: _nw, newWorkspace: _nwCamel, ...rest } = body as Record<string, unknown>;
+      const { runProvision } = await import('../provision-core');
+      const result = await runProvision(
+        {
+          body: { name: record.name, ...rest },
+          scope: { userId, accountId: target.accountId, accountRole: role },
+          projectId: target.projectId,
+        },
+        () => {},
+      );
+      const out = result.status === 201 && result.body && typeof result.body === 'object'
+        ? { ...(result.body as Record<string, unknown>), workspace_id: target.projectId }
+        : result.body;
+      return c.json(out as never, result.status as 201, result.headers);
+    },
   );
 
   // POST /v1/projects/:projectId/transfer
@@ -332,12 +473,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/transfer',
+      path: '/{workspaceId}/transfer',
       tags: ['projects'],
       summary: 'Transfer the project to another account',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: { 'application/json': { schema: z.object({ account_id: z.string().min(1) }) } },
         },
@@ -355,7 +496,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const targetAccountId = typeof body.account_id === 'string' ? body.account_id : '';
       if (!isUuid(targetAccountId)) {
@@ -371,9 +512,9 @@ export function registerProjectSettingsRoutes(): void {
         return c.json({ error: 'Project is already in that account' }, 400);
       }
       const [target] = await db
-        .select({ accountId: accounts.accountId })
-        .from(accounts)
-        .where(eq(accounts.accountId, targetAccountId));
+        .select({ accountId: accountsView.accountId })
+        .from(accountsView)
+        .where(eq(accountsView.accountId, targetAccountId));
       if (!target) return c.json({ error: 'Target account not found' }, 404);
       // Gate 2 — the caller must be a member of the TARGET account with the
       // right to create projects there. Resolved inside the target, so a
@@ -391,10 +532,11 @@ export function registerProjectSettingsRoutes(): void {
           403,
         );
       }
-      // Target entitlements: the same per-account project cap a fresh
-      // project would hit (free tier = 1 project).
-      const denial = await projectQuotaDenial(targetAccountId);
-      if (denial) return c.json(denial, 403);
+      // The target must be able to take one more project, exactly as a fresh
+      // create there: 409 `workspace_has_project` when it already holds its one
+      // active project (Workspaces 1:1), else 403 at the plan's project cap.
+      const denial = await projectCreationDenial(targetAccountId);
+      if (denial) return c.json(denial.body as never, denial.status as 403);
 
       try {
         const result = await transferProjectOwnership({
@@ -404,13 +546,18 @@ export function registerProjectSettingsRoutes(): void {
         });
         return c.json({ ok: true, project_id: result.projectId, account_id: result.accountId });
       } catch (error) {
+        // A create in the target won the race past the check above.
+        if (isWorkspaceOnePerAccountConflict(error)) {
+          return c.json(workspaceHasProjectBody(targetAccountId, null), 409);
+        }
+        if (error instanceof ProjectTransferError && error.code === 'workspace_has_project') {
+          return c.json(workspaceHasProjectBody(targetAccountId, null), 409);
+        }
         if (error instanceof ProjectTransferError) {
           const status =
             error.code === 'project_missing' || error.code === 'target_missing'
               ? 404
-              : error.code === 'project_limit_reached'
-                ? 403
-                : error.code === 'same_account'
+              : error.code === 'same_account'
                 ? 400
                 : 409; // not_active, concurrent_move
           logger.warn('[projects] transfer refused', { projectId, code: error.code });
@@ -421,19 +568,19 @@ export function registerProjectSettingsRoutes(): void {
     },
   );
 
-  for (const path of ['/{projectId}/features', '/{projectId}/experimental'] as const) {
+  for (const path of ['/{workspaceId}/features', '/{workspaceId}/experimental'] as const) {
     projectsApp.openapi(
       createRoute({
         method: 'patch',
         path,
         tags: ['projects'],
         summary:
-          path === '/{projectId}/features'
+          path === '/{workspaceId}/features'
             ? 'Set or clear a per-project feature-flag override'
             : 'Set or clear a per-project feature-flag override (deprecated alias of /features)',
         ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: AnyObject } } },
         },
         responses: {
@@ -456,12 +603,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/sandbox-provider',
+      path: '/{workspaceId}/sandbox-provider',
       tags: ['projects'],
       summary: 'Set or clear the per-project sandbox provider override',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -473,7 +620,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const raw = body.provider ?? body.sandbox_provider;
       // Floor 'read'; project.settings.write is the gate below.
@@ -487,7 +634,7 @@ export function registerProjectSettingsRoutes(): void {
       if (isProjectSessionPrincipal(c)) {
         return c.json(
           {
-            error: 'Agent sessions cannot change the project sandbox provider — ask a person to change it in Customize → Settings → Sandbox',
+            error: 'Agent sessions cannot change the workspace sandbox provider — ask a person to change it in Customize → Settings → Sandbox',
             code: 'agent_session_forbidden',
           },
           403,
@@ -542,12 +689,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sandbox-provider/transition',
+      path: '/{workspaceId}/sandbox-provider/transition',
       tags: ['projects'],
       summary: 'Poll the per-project sandbox-provider migration transition',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
       },
       responses: {
         200: json(SandboxProviderTransitionStateSchema, 'Public provider-transition state'),
@@ -555,7 +702,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       return c.json(await readPublicProjectTransitionState(projectId));
@@ -573,12 +720,12 @@ export function registerProjectSettingsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/default-reasoning-effort',
+      path: '/{workspaceId}/default-reasoning-effort',
       tags: ['projects'],
       summary: 'Set or clear the project default reasoning effort',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: {
@@ -587,7 +734,7 @@ export function registerProjectSettingsRoutes(): void {
       },
     }),
     async (c: Context<AppEnv>) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       if (!projectId) return c.json({ error: 'Not found' }, 404);
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -598,7 +745,7 @@ export function registerProjectSettingsRoutes(): void {
       if (isProjectSessionPrincipal(c)) {
         return c.json(
           {
-            error: 'Agent sessions cannot change the project default reasoning effort — ask a person to change it in Settings',
+            error: 'Agent sessions cannot change the workspace default reasoning effort — ask a person to change it in Settings',
             code: 'agent_session_forbidden',
           },
           403,
@@ -632,11 +779,7 @@ export function registerProjectSettingsRoutes(): void {
       const metadataExpr = effort
         ? metadataMerge({ [DEFAULT_REASONING_EFFORT_METADATA_KEY]: effort })
         : metadataMerge({}, [DEFAULT_REASONING_EFFORT_METADATA_KEY]);
-      const [row] = await db
-        .update(projects)
-        .set({ metadata: metadataExpr, updatedAt: new Date() })
-        .where(eq(projects.projectId, projectId))
-        .returning();
+      const [row] = await updateProjectRowsReturning(eq(projectsView.projectId, projectId), { metadata: metadataExpr, updatedAt: new Date() });
 
       if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
       return c.json(serializeProject(row, {

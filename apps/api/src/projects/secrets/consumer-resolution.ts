@@ -1,4 +1,4 @@
-import { projectSecrets, projects } from '@kortix/db';
+import { projectSecrets } from '@kortix/db';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { SecretConsumer, SecretStrategy } from '../../secrets/strategy';
 import { recordAuditEvent } from '../../shared/audit';
@@ -8,6 +8,7 @@ import { filterSecretRowsByAudience, secretAudienceSubject } from '../lib/secret
 import { SecretUndecryptableError } from '../../secrets/undecryptable';
 import { decryptProjectSecret } from './envelope';
 import { secretAudienceRank } from './grant-policy';
+import { projectsView } from '../../workspaces/rows';
 
 export interface ProjectSecretConsumerRead {
   projectId: string;
@@ -202,9 +203,9 @@ async function loadProjectSecretConsumerRows(
     input.accountId ??
     (
       await db
-        .select({ accountId: projects.accountId })
-        .from(projects)
-        .where(eq(projects.projectId, input.projectId))
+        .select({ accountId: projectsView.accountId })
+        .from(projectsView)
+        .where(eq(projectsView.projectId, input.projectId))
         .limit(1)
     )[0]?.accountId;
   if (!accountId) return null;

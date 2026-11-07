@@ -2,223 +2,863 @@
  * `kortix goals` — what a person wants plus a definition of done, worked by an
  * assigned agent until an independent verifier session confirms it.
  *
- * A goal is a folder in Files, `Goals/<slug>/` in the user's own folder by
- * default (the `kortix-goals` skill): `GOAL.md` (front matter = definition and
- * state, `@kortix/sdk` parseGoalFile/formatGoalFile), `log.md` (append-only),
- * `evidence/`. The folder is the source of truth; sessions are replaceable.
- * These commands run inside a session, where Files is mounted at /drives.
+ * The Goals API is the authority (`/v1/workspaces/:projectId/goals/*`, wire
+ * contract `packages/api-contract/src/goals.ts`). The `project_goals` row
+ * holds state, pause, stop, owner, verifier, caps and counters. The API
+ * derives who calls from the credential: inside a session that is the session
+ * itself, so the API decides whether it is the goal's owner or verifier. This
+ * CLI never writes a lifecycle field into the folder and never reads one back.
  *
- * The rules are code, not prose (live runs: written rules failed 4 of 7):
- * - one owner session at a time moves the goal; `handover` starts the next one;
- * - only `verify` enters `verifying`, and it starts the verifier itself;
- * - only the current verifier, which did none of the work, sets `done` or
- *   sends the goal back to `active` (`verdict`);
- * - wakes per UTC day and sessions per goal are capped (`check --enforce`,
- *   `verify`, `handover`). kortixd runs `check --enforce` after every turn of
- *   an owner session (harness/shared/on-idle-hook.ts) and it repairs what it
- *   can by itself: the heartbeat, the cap, a closed goal's heartbeat.
+ * The goal's folder in Files holds the brief (`GOAL.md`: the request and the
+ * done criteria the owner writes while the goal is a draft), `log.md` and
+ * `evidence/`. After each accepted write the CLI rewrites a read-only
+ * lifecycle mirror block in GOAL.md's front matter for orientation only.
+ *
+ * Every write carries the `revision` of a fresh read. On `409 goal_conflict`
+ * the CLI re-reads once and retries only when the move is still valid.
  */
-import { appendFileSync, closeSync, constants, fstatSync, openSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, mkdirSync, openSync, readFileSync, readdirSync, writeFileSync, writeSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { formatGoalFile, parseGoalFile, type ProjectGoalDocument, type ProjectGoalStatus } from '@kortix/sdk';
-import type { ApiClient } from '../api/client.ts';
+import { createWorkspaceGoalRecord, getWorkspaceGoal, listWorkspaceGoalRecords, MAX_GOAL_CRITERIA, parseGoalFile, postWorkspaceGoalAction, setWorkspaceGoalBinding, setWorkspaceGoalCriteria, WorkspaceGoalConflictError } from '@kortix/sdk';
+import type { WorkspaceGoalCriterionStatus, WorkspaceGoalRecord, WorkspaceGoalRecordState, WorkspaceGoalVerification } from '@kortix/sdk';
+import type { Auth } from '../api/auth.ts';
+import { ApiError, type ApiClient, withCliErrors } from '../api/client.ts';
 import type { ProjectSession } from '../api/types.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { boxFeatureFlags } from '../feature-flags.ts';
+import { emitJson, fail, missing, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue, takeFlagValues } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { queueSessionPrompt } from './sessions-queue.ts';
 
 const HELP = help`Usage: kortix goals <subcommand> [options]
 
 A goal is what someone wants plus a definition of done. The assigned agent
-works it, wake after wake, until an independent verifier session confirms it.
-It is a folder in Files: Goals/<slug>/ with GOAL.md (definition and state),
-log.md (append-only) and evidence/. Run these inside a session (Files is
-mounted at /drives). The kortix-goals skill describes the whole loop.
+works it in an owner session until an independent verifier session passes
+every criterion. The Goals API is the authority for state, pause, stop, owner,
+verifier and caps. The folder in Files (Goals/<slug>/: GOAL.md brief, log.md,
+evidence/) holds the brief and the artifacts. Lifecycle fields written into
+GOAL.md change nothing. The kortix-goals skill describes the whole loop.
 
-Lifecycle: draft → active ⇄ waiting_on_user; active → verifying (verify) →
-done (verifier PASS) or back to active (verifier FAIL); any → stopped.
+Lifecycle: draft → active ⇄ waiting_on_user; active → verifying →
+done (every criterion passed) or active (any failed). A person pauses, resumes,
+stops and restarts a goal from the Goals page; a session cannot.
 
-Subcommands:
-  new "<goal>"        Create Goals/<slug>/ in your own folder, make this
-                      session its owner, mark it unattended and arm the
-                      heartbeat. State: draft.
-  transition <to> --reason "<why>" [<folder>]
-                      Owner only. active (from draft: 1-8 done criteria),
-                      waiting_on_user (the reason is the question for the
-                      assigned user), active again, or stopped (a person said
-                      stop). verifying and done are not reachable here.
-  verify [<folder>]   Owner only. Every criterion met with an existing
-                      evidence file: starts a fresh verifier session (no
-                      memory of the work) and moves the goal to verifying.
-  verdict pass|fail --reason "<why>" [<folder>]
-                      Verifier only, after writing evidence/verification.md.
-                      pass → done (the heartbeat goes); fail → active with
-                      the findings in log.md. Wakes the owner.
-  handover --note "<state of play>" [<folder>]
-                      Owner only, when its context is full: writes the note
-                      to log.md and starts a fresh owner session.
-  check [<folder>]    Check the goals this session owns. With --enforce
-                      (kortixd runs it after every owner turn): count the wake,
-                      re-arm a missing heartbeat, hold the heartbeat until the
-                      next UTC day at the wake cap, drop a closed goal's
-                      heartbeat, and prompt the owner for what code cannot fix.
-  bind [<slug>]       Group the goal under a space or an agent (--space,
-                      --agent, --clear). Grouping only: it grants nothing.
-  ls                  List every goal in the mounted folders.
-  status [<slug>]     One goal: state, criteria, what it waits on, next wake.
+Owner session:
+  transition active --reason "<why>"
+                      draft → active. Sends the done criteria listed under
+                      "## Done criteria" in GOAL.md (1-8), then activates.
+                      waiting_on_user → active: the answer reached you
+                      another way (a channel reply); an answer from the
+                      Goals page does this by itself.
+  transition waiting_on_user --reason "<question>" [--chase-at <iso>]
+                      Ask the assigned user. No turn runs until they answer,
+                      or until --chase-at (60 min to 14 days ahead).
+  progress [--met c1,c2] [--unmet c3] [--evidence c1=evidence/x.md]
+           [--summary "<state of play>"]
+                      Report criteria and the summary. Reports only: a
+                      criterion is verified only by the verifier.
+  verify              Every criterion reported met with an evidence file under
+                      evidence/: the API starts a verifier session.
+  handover --note "<state of play>"
+                      Context nearly full: the API starts a fresh owner session
+                      with the note.
+  check [--enforce] [--quiet] [--turn <id>]
+                      Report problems on the goals this session owns. With
+                      --enforce (kortixd runs it after every turn): prompt the
+                      owner when its goal is a draft or reported nothing for
+                      3 wakes, at most 3 prompts per goal per 6 hours. One
+                      check per turn id (default $KORTIX_TURN_MESSAGE_ID).
+
+Verifier session:
+  verdict --pass <ids> [--fail <ids>] [--inconclusive <ids>]
+          [--note <id>="<why>"]... [--reason "<default note>"]
+                      After writing evidence/verification.md. Exactly one
+                      result per current criterion; a fail or inconclusive
+                      needs a note. All pass → done; else → active.
+
+Anyone:
+  ls                  The goals you can read.
+  status [<slug|goal_id>]
+                      One goal: state, criteria (reported and verified), what
+                      it waits on, owner, verifier, next wake, caps.
+  new "<goal>" [--criterion "<text>"]... [--user <user_id>] [--agent <name>]
+                      Create a goal. A person only: inside a session the API
+                      refuses it; ask the person to create it on the Goals page.
+  bind [<slug|goal_id>] --space <slug> | --agent <name> | --clear
+                      Group the goal under a space or an agent. A person only.
+
+Not here: stop, pause, resume, restart, raising caps. A person does those
+from the Goals page.
 
 Options:
-  --slug <slug>       new: the folder name (default: from the goal).
-  --folder <dir>      new: put Goals/<slug>/ under this folder of /drives
-                      instead of /drives/me (for example this agent's Drive,
-                      /drives/<agent>, which everyone who uses it sees).
-  --user <user_id>    new: the assigned user (default: this session's creator).
-  --agent <name>      new: the assigned agent (default: $KORTIX_AGENT_NAME);
-                      bind: the agent the goal is grouped under.
-  --every <duration>  new: the heartbeat interval (default 4h, minimum 5m).
-  --space <slug>      new, bind: the space the goal is grouped in.
-  --clear             bind: remove the space and the agent.
-  --enforce           check: repair and prompt (see check).
-  --quiet             check: print nothing when every goal passes.
+  --goal <goal_id>    The goal (default: this session's goal_id, else the goal
+                      this session owns or verifies).
   --json              Machine-readable output.
   -h, --help          Show this help.
-
-Limits (GOAL.md front matter, defaults in brackets): heartbeat [4h],
-max_wakes_per_day [12], max_sessions [10].
 `;
 
-export const HEARTBEAT_EVERY = '4h';
-export const MAX_WAKES_PER_DAY = 12;
-export const MAX_SESSIONS = 10;
-const OPEN = new Set<string>(['draft', 'active', 'waiting_on_user', 'verifying']);
-/** The moves `transition` makes. verifying and done belong to verify and verdict. */
-const TRANSITIONS: Record<string, readonly ProjectGoalStatus[]> = {
-  draft: ['active'],
-  active: ['waiting_on_user'],
-  waiting_on_user: ['active'],
-};
+/** A goal as the Goals API returns it: `@kortix/sdk` owns the wire type. */
+export type Goal = WorkspaceGoalRecord;
+
+/** The codes of a Goals route's own refusal body; any other error is worded by `surfaceApiError`. */
+const GOAL_ERRORS = new Set(['goal_conflict', 'goal_forbidden', 'goal_invalid', 'goal_not_found', 'goal_flag_off']);
+const CHASE_MIN_MS = 60 * 60_000;
+const CHASE_MAX_MS = 14 * 24 * 60 * 60_000;
+const NOTE_MAX = 2_000;
+/** Wakes with no new report before `check --enforce` prompts the owner. */
+export const STALL_WAKES = 3;
+const OPEN = new Set<WorkspaceGoalRecordState>(['draft', 'active', 'waiting_on_user', 'verifying']);
 const SPACE_SLUG = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 const AGENT_NAME = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+const CRITERION_ID = /^c[1-9]\d*$/;
 
-/** The session that works the goal now: the last owner (a legacy goal.json says coordinator). */
-export function ownerOf(g: Pick<ProjectGoalDocument, 'sessions'> | null): string | null {
-  return [...(g?.sessions ?? [])].reverse().find((s) => s.role === 'owner' || s.role === 'coordinator')?.id ?? null;
+/** A move refused before any write: the reasons are printed as violations. */
+class Refusal extends Error {
+  constructor(
+    readonly violations: string[],
+    readonly from: string = '',
+    readonly to: string = '',
+  ) {
+    super(violations.join(' '));
+  }
 }
 
-const owners = (g: ProjectGoalDocument) => g.sessions.filter((s) => s.role === 'owner' || s.role === 'coordinator').map((s) => s.id);
-const passes = (report: string | null) => report !== null && /\bPASS\b/.test(report) && !/\bFAIL\b/.test(report);
-const sessionCap = (g: ProjectGoalDocument) => g.max_sessions ?? MAX_SESSIONS;
-
-/** Why `transition <to>` is refused now. Empty: allowed. */
-export function transitionViolations(
-  g: ProjectGoalDocument,
-  to: string,
-  reason: string,
-  facts: { activeHeartbeats: string[]; unattended: boolean; sessionId: string },
-): string[] {
-  if (to === 'verifying') return ['Run kortix goals verify: it checks the evidence and starts the verifier.'];
-  if (to === 'done') return ['Only the verifier ends a goal: kortix goals verdict pass, run in the verifier session.'];
-  if (!reason.trim()) return ['Pass --reason "<why>": every move is logged.'];
-  if (ownerOf(g) !== facts.sessionId) return [`Only the owner session ${ownerOf(g) ?? '(none)'} moves this goal.`];
-  if (!OPEN.has(g.status)) return [`The goal is ${g.status} (closed): it has no moves.`];
-  if (to === 'stopped') return [];
-  if (!(TRANSITIONS[g.status] ?? []).includes(to as ProjectGoalStatus)) {
-    return [`${g.status} → ${to} is not a move. From ${g.status}: ${[...(TRANSITIONS[g.status] ?? []), 'stopped'].join(', ')}.`];
-  }
-  const out: string[] = [];
-  if (g.status === 'draft') {
-    const n = g.success_criteria.length;
-    if (n < 1 || n > 8) out.push(`Write 1 to 8 done_criteria in GOAL.md (now ${n}).`);
-    if (facts.activeHeartbeats.length !== 1) out.push(`Exactly one heartbeat must be active (now ${facts.activeHeartbeats.length}).`);
-    if (!facts.unattended) out.push('Mark the session unattended: kortix sessions update --meta unattended=true.');
-  }
-  return out;
+function goalErrorBody(err: unknown): { error: string; message: string; violations?: string[] } | null {
+  if (!(err instanceof ApiError)) return null;
+  const body = err.details;
+  return body && typeof body === 'object' && typeof body.error === 'string' && GOAL_ERRORS.has(body.error) ? body : null;
 }
 
-/** Why `verify` is refused now. Empty: start the verifier. */
-export function verifyViolations(g: ProjectGoalDocument, facts: { existingEvidence: Set<string>; sessionId: string }): string[] {
-  if (ownerOf(g) !== facts.sessionId) return [`Only the owner session ${ownerOf(g) ?? '(none)'} asks for verification.`];
-  if (g.status !== 'active') return [`The goal is ${g.status}; verify runs on an active goal.`];
-  const out: string[] = [];
-  if (g.success_criteria.length === 0) out.push('GOAL.md has no done_criteria.');
-  for (const c of g.success_criteria) {
-    if (!c.met) out.push(`Criterion ${c.id} is not met.`);
-    else if (!c.evidence || !facts.existingEvidence.has(c.evidence)) out.push(`Criterion ${c.id} has no existing evidence file.`);
-  }
-  if (g.sessions.length >= sessionCap(g)) {
-    out.push(`The goal used ${g.sessions.length} of max_sessions ${sessionCap(g)}: ask the assigned user to raise max_sessions in GOAL.md.`);
-  }
-  return out;
+// ── GOAL.md: the brief, and the read-only lifecycle mirror ───────────────────
+
+const drivesRoot = () => process.env.KORTIX_DRIVES_ROOT ?? '/drives';
+
+/** The goal folder as this box sees it: `box_folder` with /drives mapped to the mounted root. */
+export function localFolder(g: Pick<Goal, 'box_folder'>, root = drivesRoot()): string {
+  return g.box_folder.replace(/^\/drives(?=\/|$)/, root);
 }
 
-/** Why `verdict <pass|fail>` is refused now. Empty: record it. */
-export function verdictViolations(
-  g: ProjectGoalDocument,
-  verdict: string,
-  reason: string,
-  facts: { sessionId: string; verification: string | null },
-): string[] {
-  if (verdict !== 'pass' && verdict !== 'fail') return ['The verdict is pass or fail.'];
-  if (!reason.trim()) return ['Pass --reason "<why>": the owner reads it in log.md.'];
-  if (g.status !== 'verifying') return [`The goal is ${g.status}, not verifying.`];
-  const verifier = [...g.sessions].reverse().find((s) => s.role === 'verifier')?.id;
-  if (verifier !== facts.sessionId) return [`Only the current verifier session ${verifier ?? '(none)'} gives the verdict.`];
-  if (owners(g).includes(facts.sessionId)) return ['This session owned the goal: a session that did the work cannot verify it.'];
-  if (facts.verification === null) return ['Write your report to evidence/verification.md first: PASS or FAIL per criterion, with the reason.'];
-  if (verdict === 'pass' && !passes(facts.verification)) return ['evidence/verification.md must say PASS on every criterion and FAIL on none.'];
+const CRITERIA_HEADING = /^#{2,3}\s+(done criteria|definition of done|success criteria|criteria)\s*(\([^)]*\))?\s*:?\s*$/i;
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.*\S)\s*$/;
+const ID_PREFIX = /^(?:\*\*)?c\d+(?:\*\*)?\s*[:.)\-–]\s*/i;
+
+/**
+ * The done criteria the owner wrote in GOAL.md: the list items under a
+ * `## Done criteria` heading (a leading `c1:` is dropped). A legacy GOAL.md
+ * with `done_criteria:` front matter reads too. Lifecycle keys are not read.
+ */
+export function briefCriteria(text: string): string[] {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const start = lines.findIndex((l) => CRITERIA_HEADING.test(l.trim()));
+  if (start >= 0) {
+    const out: string[] = [];
+    for (const line of lines.slice(start + 1)) {
+      if (/^#{1,3}\s/.test(line)) break;
+      const item = LIST_ITEM.exec(line);
+      const textOnly = item?.[1]?.replace(ID_PREFIX, '').trim();
+      if (textOnly) out.push(textOnly);
+    }
+    if (out.length) return out;
+  }
+  return (parseGoalFile(text)?.success_criteria ?? []).map((c) => String(c.text ?? '').trim()).filter(Boolean);
+}
+
+const MIRROR_START = '# kortix-lifecycle: read-only mirror. The Goals API is the authority; edits here are ignored.';
+const MIRROR_END = '# end kortix-lifecycle';
+
+/** GOAL.md text with the lifecycle mirror block (re)written at the end of its front matter. */
+export function withLifecycleMirror(text: string, g: Pick<Goal, 'state' | 'revision' | 'owner_session_id' | 'paused_at'>): string {
+  const block = [
+    MIRROR_START,
+    `lifecycle_state: ${g.state}`,
+    `lifecycle_revision: ${g.revision}`,
+    `lifecycle_owner_session_id: ${g.owner_session_id ?? 'null'}`,
+    `lifecycle_paused_at: ${g.paused_at ? JSON.stringify(g.paused_at) : 'null'}`,
+    MIRROR_END,
+  ];
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const end = lines[0]?.trim() === '---' ? lines.findIndex((l, i) => i > 0 && l.trim() === '---') : -1;
+  if (end < 0) return ['---', ...block, '---', ...lines].join('\n');
+  const front = lines.slice(1, end);
+  const s = front.indexOf(MIRROR_START);
+  const e = front.indexOf(MIRROR_END);
+  const kept = s >= 0 && e >= s ? [...front.slice(0, s), ...front.slice(e + 1)] : front;
+  return ['---', ...kept, ...block, ...lines.slice(end)].join('\n');
+}
+
+/** Best effort: the mirror is orientation only, so a missing or odd GOAL.md is left alone. */
+function writeMirror(g: Goal): void {
+  const path = join(localFolder(g), 'GOAL.md');
+  let fd: number | undefined;
+  try {
+    // One descriptor, opened without following a symlink, for the check, the read and the write.
+    fd = openSync(path, constants.O_RDWR | constants.O_NOFOLLOW);
+    if (!fstatSync(fd).isFile()) return;
+    const next = withLifecycleMirror(readFileSync(fd, 'utf8'), g);
+    ftruncateSync(fd, 0);
+    writeSync(fd, next, 0);
+  } catch {
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/** The verifier's report, read without following a symlink. Null: not a regular, non-empty file. */
+function readVerificationReport(g: Goal): string | null {
+  const path = join(localFolder(g), 'evidence', 'verification.md');
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    if (!fstatSync(fd).isFile()) return null;
+    const text = readFileSync(fd, 'utf8');
+    return text.trim() ? text : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+// ── Flags ────────────────────────────────────────────────────────────────────
+
+interface Flags {
+  goal?: string;
+  reason: string;
+  chaseAt?: string;
+  summary?: string;
+  met: string[];
+  unmet: string[];
+  evidence: string[];
+  pass: string[];
+  fail: string[];
+  inconclusive: string[];
+  notes: string[];
+  criterion: string[];
+  user?: string;
+  agent?: string;
+  space?: string;
+  turn?: string;
+  clear: boolean;
+  enforce: boolean;
+  quiet: boolean;
+  json: boolean;
+}
+
+const ids = (values: string[]) => values.flatMap((v) => v.split(',')).map((v) => v.trim()).filter(Boolean);
+
+function parseFlags(rest: string[]): Flags {
+  return {
+    goal: takeFlagValue(rest, ['--goal']),
+    reason: takeFlagValue(rest, ['--reason']) ?? '',
+    chaseAt: takeFlagValue(rest, ['--chase-at']),
+    summary: takeFlagValue(rest, ['--summary']),
+    met: ids(takeFlagValues(rest, ['--met'])),
+    unmet: ids(takeFlagValues(rest, ['--unmet'])),
+    evidence: takeFlagValues(rest, ['--evidence']),
+    pass: ids(takeFlagValues(rest, ['--pass'])),
+    fail: ids(takeFlagValues(rest, ['--fail'])),
+    inconclusive: ids(takeFlagValues(rest, ['--inconclusive'])),
+    notes: takeFlagValues(rest, ['--note']),
+    criterion: takeFlagValues(rest, ['--criterion']),
+    user: takeFlagValue(rest, ['--user']),
+    agent: takeFlagValue(rest, ['--agent']),
+    space: takeFlagValue(rest, ['--space']),
+    turn: takeFlagValue(rest, ['--turn']),
+    clear: takeFlagBool(rest, ['--clear']),
+    enforce: takeFlagBool(rest, ['--enforce']),
+    quiet: takeFlagBool(rest, ['--quiet']),
+    json: takeFlagBool(rest, ['--json']),
+  };
+}
+
+const SUBCOMMANDS = ['new', 'transition', 'progress', 'verify', 'verdict', 'handover', 'check', 'bind', 'ls', 'list', 'status'];
+
+interface Ctx {
+  client: ApiClient;
+  auth: Auth;
+  projectId: string;
+  sessionId: string | null;
+}
+
+export async function runGoals(argv: string[]): Promise<number> {
+  const helpExit = splitHelp(argv, HELP);
+  if (helpExit !== null) return helpExit;
+  const rest = [...argv];
+  const sub = rest.shift();
+  if (!sub || !SUBCOMMANDS.includes(sub)) return fail(`Unknown subcommand "${sub ?? ''}". Run \`kortix goals --help\`.`);
+  let flags: Flags;
+  try {
+    flags = parseFlags(rest);
+  } catch (err) {
+    return fail((err as Error).message);
+  }
+  if (flags.space !== undefined && !SPACE_SLUG.test(flags.space)) return fail(`--space "${flags.space}" is not a space slug.`);
+  if (flags.agent !== undefined && !AGENT_NAME.test(flags.agent)) return fail(`--agent "${flags.agent}" is not an agent name.`);
+
+  const resolved = await resolveProjectContext({});
+  if (!resolved) return sub === 'ls' || sub === 'list' || sub === 'status' ? listLocal(rest[0], flags.json) : 1;
+  const ctx: Ctx = {
+    client: resolved.client,
+    auth: resolved.auth,
+    projectId: resolved.projectId,
+    sessionId: process.env.KORTIX_SESSION_ID || null,
+  };
+  const inSession = ['transition', 'progress', 'verify', 'verdict', 'handover', 'check'];
+  if (inSession.includes(sub) && !ctx.sessionId) return fail(`No $KORTIX_SESSION_ID: kortix goals ${sub} runs inside the goal's session.`);
+  try {
+    switch (sub) {
+      case 'new':
+        return await newGoal(ctx, rest.join(' ').trim(), flags);
+      case 'transition':
+        return await transitionGoal(ctx, rest[0] ?? '', flags);
+      case 'progress':
+        return await progressGoal(ctx, flags);
+      case 'verify':
+        return await verifyGoal(ctx, flags);
+      case 'verdict':
+        return await verdictGoal(ctx, rest[0], flags);
+      case 'handover':
+        return await handoverGoal(ctx, flags);
+      case 'check':
+        return await checkGoals(ctx, flags);
+      case 'bind':
+        return await bindGoal(ctx, rest[0], flags);
+      case 'status':
+        return await goalStatus(ctx, rest[0], flags);
+      default:
+        return await listGoals(ctx, flags);
+    }
+  } catch (err) {
+    return failure(err, flags.json);
+  }
+}
+
+// ── API access ───────────────────────────────────────────────────────────────
+
+/** A Goals SDK call as this CLI's credential. A failure is the CLI's `ApiError`, as an `ApiClient` request's is. */
+const api = <T>(ctx: Ctx, fn: () => Promise<T>): Promise<T> => withCliErrors(ctx.auth, fn);
+
+const getGoal = async (ctx: Ctx, id: string): Promise<Goal> => (await api(ctx, () => getWorkspaceGoal(ctx.projectId, id))).record;
+const listByRole = (ctx: Ctx, role: 'owner' | 'verifier'): Promise<Goal[]> => api(ctx, () => listWorkspaceGoalRecords(ctx.projectId, { role, sessionId: ctx.sessionId! }));
+
+/**
+ * This session's goal, freshly read: `--goal`, else the session's `goal_id`
+ * metadata, else the one open goal it owns (or verifies). Never a folder name.
+ */
+async function resolveGoal(ctx: Ctx, role: 'owner' | 'verifier', explicit?: string): Promise<Goal> {
+  if (explicit) return getGoal(ctx, explicit);
+  const session = await ctx.client
+    .get<{ metadata?: Record<string, unknown> }>(`/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`)
+    .catch(() => null);
+  const fromMeta = session?.metadata?.goal_id;
+  if (typeof fromMeta === 'string' && fromMeta) return getGoal(ctx, fromMeta);
+  const goals = await listByRole(ctx, role);
+  const open = goals.filter((g) => OPEN.has(g.state));
+  const pick = open.length === 1 ? open[0] : goals.length === 1 ? goals[0] : undefined;
+  if (!pick) {
+    throw new Refusal([
+      goals.length
+        ? `This session is the ${role} of ${goals.length} goals: pass --goal <goal_id> (kortix goals ls lists them).`
+        : `This session is the ${role} of no goal. A goal's own ${role} session runs this command.`,
+    ]);
+  }
+  return getGoal(ctx, pick.goal_id);
+}
+
+interface Move {
+  to: string;
+  /** Why the move is not valid on `g` now. Empty: send it. */
+  valid(g: Goal): string[];
+  send(g: Goal): Promise<Goal>;
+}
+
+/** Send `move` with `g.revision`. On `409 goal_conflict`: re-read once, and retry only when the move is still valid. */
+async function commit(ctx: Ctx, start: Goal, move: Move): Promise<Goal> {
+  let g = start;
+  for (let attempt = 0; ; attempt++) {
+    const violations = move.valid(g);
+    if (violations.length) throw new Refusal(violations, g.state, move.to);
+    // The conflict comes back as a value so the CLI's ApiError still wraps every other failure.
+    const sent = await api(ctx, () => move.send(g).catch((err: unknown) => (attempt === 0 && err instanceof WorkspaceGoalConflictError ? err : Promise.reject(err))));
+    if (!(sent instanceof WorkspaceGoalConflictError)) {
+      writeMirror(sent);
+      return sent;
+    }
+    g = sent.goal.record;
+  }
+}
+
+const inState = (g: Goal, states: WorkspaceGoalRecordState[], what: string): string[] =>
+  states.includes(g.state) ? [] : [`The goal is ${g.state}; ${what} runs on a goal that is ${states.join(' or ')}.`];
+const notPaused = (g: Goal): string[] => (g.paused_at ? ['A person paused this goal from the Goals page. Do no work on it: end the turn.'] : []);
+
+function failure(err: unknown, json: boolean): number {
+  if (err instanceof Refusal) return refuse(json, err.from, err.to, err.violations);
+  const body = goalErrorBody(err);
+  if (body) {
+    const violations = body.violations?.length ? body.violations : [];
+    if (json) emitJson({ ok: false, error: body.error, message: body.message, violations });
+    else process.stderr.write(`${status.err(body.message)}\n${violations.map((v) => `  - ${v}`).join('\n')}${violations.length ? '\n' : ''}`);
+    return 1;
+  }
+  return surfaceApiError(err);
+}
+
+function refuse(json: boolean, from: string, to: string, violations: string[]): number {
+  if (json) emitJson({ ok: false, from, to, violations });
+  else process.stderr.write(`${status.err(from && to ? `${from} → ${to} refused` : 'Refused')}\n${violations.map((v) => `  - ${v}`).join('\n')}\n`);
+  return 1;
+}
+
+function done(json: boolean, from: string, g: Goal, extra: Record<string, unknown> = {}): number {
+  if (json) emitJson({ ok: true, from, to: g.state, revision: g.revision, goal_id: g.goal_id, ...extra });
+  else process.stdout.write(`${status.ok(from === g.state ? `${g.title}: ${g.state} (revision ${g.revision})` : `${from} → ${g.state}`)}\n`);
+  return 0;
+}
+
+// ── Owner commands ───────────────────────────────────────────────────────────
+
+async function transitionGoal(ctx: Ctx, to: string, flags: Flags): Promise<number> {
+  if (!to) return missing('the target state: kortix goals transition active|waiting_on_user --reason "…"');
+  if (to === 'stopped') {
+    return refuse(flags.json, '', 'stopped', ['Only a person stops a goal, from the Goals page. If the person asked you to stop, tell them to press Stop there.']);
+  }
+  if (to === 'verifying') return refuse(flags.json, '', to, ['Run kortix goals verify: the API checks the evidence and starts the verifier.']);
+  if (to === 'done') return refuse(flags.json, '', to, ['Only the verifier ends a goal: kortix goals verdict, run in the verifier session.']);
+  if (to !== 'active' && to !== 'waiting_on_user') return refuse(flags.json, '', to, [`"${to}" is not a move. Moves: active, waiting_on_user.`]);
+  if (!flags.reason.trim()) return refuse(flags.json, '', to, [to === 'waiting_on_user' ? 'Pass --reason "<the question for the assigned user>".' : 'Pass --reason "<why>": every move is logged.']);
+  const g = await resolveGoal(ctx, 'owner', flags.goal);
+  return to === 'active' ? activate(ctx, g, flags) : wait(ctx, g, flags);
+}
+
+async function activate(ctx: Ctx, start: Goal, flags: Flags): Promise<number> {
+  // waiting_on_user → active: the answer reached this session another way (a channel reply, email).
+  // An answer from the Goals page moves it back by itself.
+  let g = start;
+  if (g.state === 'draft') {
+    const path = join(localFolder(g), 'GOAL.md');
+    const written = existsSync(path) ? briefCriteria(readFileSync(path, 'utf8')) : [];
+    const current = g.criteria.map((c) => c.text);
+    if (written.length > MAX_GOAL_CRITERIA) return refuse(flags.json, g.state, 'active', [`GOAL.md lists ${written.length} done criteria; the limit is ${MAX_GOAL_CRITERIA}.`]);
+    if (written.length === 0 && current.length === 0) {
+      return refuse(flags.json, g.state, 'active', [`Write 1 to ${MAX_GOAL_CRITERIA} done criteria as a list under "## Done criteria" in ${path}, each checkable by someone else.`]);
+    }
+    if (written.length && JSON.stringify(written) !== JSON.stringify(current)) {
+      g = await commit(ctx, g, {
+        to: 'draft',
+        valid: (x) => inState(x, ['draft'], 'setting criteria from a session'),
+        send: (x) => setWorkspaceGoalCriteria(ctx.projectId, x, written),
+      });
+    }
+  }
+  const next = await commit(ctx, g, {
+    to: 'active',
+    valid: (x) => [...inState(x, ['draft', 'waiting_on_user'], 'activate'), ...notPaused(x), ...(x.criteria.length ? [] : ['The goal has no done criteria.'])],
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'activate', { reason: flags.reason }),
+  });
+  return done(flags.json, start.state, next);
+}
+
+/** Why `--chase-at` is refused. Empty: allowed. */
+export function chaseViolations(chaseAt: string | undefined, now: number): string[] {
+  if (chaseAt === undefined) return [];
+  const at = Date.parse(chaseAt);
+  if (!Number.isFinite(at) || !/^\d{4}-\d{2}-\d{2}T/.test(chaseAt)) return [`--chase-at "${chaseAt}" is not an ISO 8601 time, for example 2026-11-10T09:00:00Z.`];
+  if (at - now < CHASE_MIN_MS || at - now > CHASE_MAX_MS) return ['--chase-at must be 60 minutes to 14 days from now.'];
   return [];
 }
 
-/** Count one wake on `now`'s UTC day. `capped`: this wake reached max_wakes_per_day. */
-export function recordWake(g: ProjectGoalDocument, now: Date): { doc: ProjectGoalDocument; capped: boolean } {
-  const day = now.toISOString().slice(0, 10);
-  const count = g.wake_day === day ? (g.wake_count ?? 0) + 1 : 1;
-  return { doc: { ...g, wake_day: day, wake_count: count, last_wake_at: now.toISOString() }, capped: count >= (g.max_wakes_per_day ?? MAX_WAKES_PER_DAY) };
+async function wait(ctx: Ctx, g: Goal, flags: Flags): Promise<number> {
+  const chase = chaseViolations(flags.chaseAt, Date.now());
+  if (chase.length) return refuse(flags.json, g.state, 'waiting_on_user', chase);
+  const next = await commit(ctx, g, {
+    to: 'waiting_on_user',
+    valid: (x) => [...inState(x, ['active'], 'wait'), ...notPaused(x)],
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'wait', { question: flags.reason, ...(flags.chaseAt ? { chase_at: flags.chaseAt } : {}) }),
+  });
+  if (!flags.json) {
+    process.stdout.write(`${status.ok(`${g.state} → ${next.state}`)}\n`);
+    process.stdout.write(`  ${C.dim}No turn runs until the assigned user answers${flags.chaseAt ? ` or ${flags.chaseAt}` : ''}. End the turn now.${C.reset}\n`);
+    return 0;
+  }
+  return done(true, g.state, next);
 }
 
-const nextUtcDay = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
-
-/** What the owner must fix by hand. Repairs `check --enforce` makes itself are not listed. */
-export function goalViolations(g: ProjectGoalDocument | null, facts: { verification: string | null }): string[] {
-  if (!g) return ['GOAL.md is missing or has no front matter with a "goal:" line.'];
-  const out: string[] = [];
-  const states = [...OPEN, 'done', 'stopped'];
-  if (!states.includes(g.status)) out.push(`GOAL.md "state" must be one of ${states.join(', ')}.`);
-  const last = g.transitions.at(-1);
-  if (last && last.to !== g.status) {
-    out.push(`"state" is ${g.status} but the last transition went to ${last.to}: it was edited by hand. Set it back to ${last.to}.`);
-  }
-  if (g.status === 'done') {
-    if (!passes(facts.verification)) out.push('"state" is done but evidence/verification.md is not PASS on every criterion.');
-    if (!g.verified_by || owners(g).includes(g.verified_by)) out.push('"verified_by" must be a verifier session, not an owner.');
-  }
-  if (g.space != null && !SPACE_SLUG.test(String(g.space))) out.push('"space" must be a space slug or null.');
-  if (g.agent != null && !AGENT_NAME.test(String(g.agent))) out.push('"assigned_agent" must be an agent name or null.');
-  return out;
+/** A path the API accepts as evidence: relative, under evidence/, no `..`. */
+export function evidencePathOk(path: string): boolean {
+  return /^evidence\/[^\0]+$/.test(path) && !path.split('/').some((s) => s === '..' || s === '.' || s === '') && !path.includes('\\');
 }
 
-/** The goal flags that are off. In a box they come from KORTIX_FEATURE_FLAGS; off there, the API's answer wins. */
-async function goalFlagsOff(client: ApiClient, projectId: string): Promise<string[]> {
-  const box = boxFeatureFlags();
-  const fromBox = box ? missingGoalFlags(Object.fromEntries([...box].map((f) => [f, true]))) : null;
-  if (fromBox?.length === 0) return [];
+/** The criteria part of a `progress` request, or the reasons it is refused. */
+export function progressCriteria(
+  criteria: Pick<WorkspaceGoalCriterionStatus, 'id' | 'reported_met' | 'evidence'>[],
+  f: Pick<Flags, 'met' | 'unmet' | 'evidence'>,
+): { criteria: Array<{ id: string; reported_met: boolean; evidence?: string | null }>; violations: string[] } {
+  const known = new Map(criteria.map((c) => [c.id, c]));
+  const violations: string[] = [];
+  const evidence = new Map<string, string>();
+  for (const pair of f.evidence) {
+    const eq = pair.indexOf('=');
+    const [id, path] = eq > 0 ? [pair.slice(0, eq).trim(), pair.slice(eq + 1).trim()] : ['', ''];
+    if (!id || !path) violations.push(`--evidence takes <id>=evidence/<file>, got "${pair}".`);
+    else if (!evidencePathOk(path)) violations.push(`--evidence ${id}: "${path}" must be a relative path under evidence/, without "..".`);
+    else evidence.set(id, path);
+  }
+  const touched = new Set([...f.met, ...f.unmet, ...evidence.keys()]);
+  for (const id of touched) if (!known.has(id)) violations.push(`No criterion ${id}. Criteria: ${[...known.keys()].join(', ') || '(none)'}.`);
+  for (const id of f.met) if (f.unmet.includes(id)) violations.push(`${id} is in both --met and --unmet.`);
+  if (violations.length) return { criteria: [], violations };
+  return {
+    criteria: [...touched].map((id) => ({
+      id,
+      reported_met: f.met.includes(id) ? true : f.unmet.includes(id) ? false : known.get(id)!.reported_met,
+      ...(evidence.has(id) ? { evidence: evidence.get(id)! } : {}),
+    })),
+    violations: [],
+  };
+}
+
+async function progressGoal(ctx: Ctx, flags: Flags): Promise<number> {
+  if (!flags.met.length && !flags.unmet.length && !flags.evidence.length && flags.summary === undefined) {
+    return missing('--met <ids>, --unmet <ids>, --evidence <id>=evidence/<file> or --summary "…"');
+  }
+  const g = await resolveGoal(ctx, 'owner', flags.goal);
+  const next = await commit(ctx, g, {
+    to: g.state,
+    valid: (x) => {
+      const { violations } = progressCriteria(x.criteria, flags);
+      return [...inState(x, ['draft', 'active', 'waiting_on_user'], 'progress'), ...notPaused(x), ...violations];
+    },
+    send: (x) => {
+      const { criteria } = progressCriteria(x.criteria, flags);
+      return postWorkspaceGoalAction(ctx.projectId, x, 'progress', { ...(flags.summary !== undefined ? { summary: flags.summary } : {}), ...(criteria.length ? { criteria } : {}) });
+    },
+  });
+  if (flags.json) return done(true, g.state, next);
+  const met = next.criteria.filter((c) => c.reported_met).length;
+  process.stdout.write(`${status.ok(`Progress recorded: ${met}/${next.criteria.length} criteria reported met (revision ${next.revision})`)}\n`);
+  return 0;
+}
+
+async function verifyGoal(ctx: Ctx, flags: Flags): Promise<number> {
+  const g = await resolveGoal(ctx, 'owner', flags.goal);
+  const next = await commit(ctx, g, {
+    to: 'verifying',
+    valid: (x) => [...inState(x, ['active'], 'verify'), ...notPaused(x)],
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'request-verification', {}),
+  });
+  if (flags.json) return done(true, g.state, next, { verifier_session_id: next.verification?.verifier_session_id ?? null });
+  process.stdout.write(`${status.ok(`${g.state} → ${next.state}: verifier ${next.verification?.verifier_session_id ?? '(starting)'}`)}\n`);
+  process.stdout.write(`  ${C.dim}End the turn. The verdict wakes this goal's owner.${C.reset}\n`);
+  return 0;
+}
+
+async function handoverGoal(ctx: Ctx, flags: Flags): Promise<number> {
+  const note = flags.notes.join('\n\n').trim();
+  if (!note) return missing('--note "<the state of play>": the next owner starts from it');
+  const g = await resolveGoal(ctx, 'owner', flags.goal);
+  const next = await commit(ctx, g, {
+    to: g.state,
+    valid: (x) => [...(OPEN.has(x.state) ? [] : [`The goal is ${x.state} (closed).`]), ...notPaused(x)],
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'handover', { note }),
+  });
+  if (flags.json) return done(true, g.state, next, { owner_session_id: next.owner_session_id });
+  process.stdout.write(`${status.ok(`Handed over to ${next.owner_session_id ?? '(new owner)'}`)}\n`);
+  process.stdout.write(`  ${C.dim}Stop working this goal now.${C.reset}\n`);
+  return 0;
+}
+
+// ── Verifier ─────────────────────────────────────────────────────────────────
+
+/** One result per current criterion from `--pass/--fail/--inconclusive/--note`, or the reasons it is refused. */
+export function verdictResults(
+  criteria: Pick<WorkspaceGoalCriterionStatus, 'id'>[],
+  f: Pick<Flags, 'pass' | 'fail' | 'inconclusive' | 'notes' | 'reason'>,
+): { results: WorkspaceGoalVerification['results']; violations: string[] } {
+  const violations: string[] = [];
+  const known = criteria.map((c) => c.id);
+  const notes = new Map<string, string>();
+  for (const pair of f.notes) {
+    const eq = pair.indexOf('=');
+    const id = eq > 0 ? pair.slice(0, eq).trim() : '';
+    const text = eq > 0 ? pair.slice(eq + 1).trim().replace(/^"(.*)"$/s, '$1') : '';
+    if (!id || !text) violations.push(`--note takes <id>="<why>", got "${pair}".`);
+    else if (!known.includes(id)) violations.push(`--note ${id}: no criterion ${id}.`);
+    else if (text.length > NOTE_MAX) violations.push(`--note ${id} is ${text.length} characters; the limit is ${NOTE_MAX}.`);
+    else notes.set(id, text);
+  }
+  const given = new Map<string, WorkspaceGoalVerification['results'][number]['result']>();
+  for (const [result, list] of [['pass', f.pass], ['fail', f.fail], ['inconclusive', f.inconclusive]] as const) {
+    for (const id of list) {
+      if (!known.includes(id)) violations.push(`No criterion ${id}. Criteria: ${known.join(', ') || '(none)'}.`);
+      else if (given.has(id)) violations.push(`${id} has two results (${given.get(id)} and ${result}): give it one.`);
+      else given.set(id, result);
+    }
+  }
+  for (const id of known) if (!given.has(id)) violations.push(`Criterion ${id} has no result: add it to --pass, --fail or --inconclusive.`);
+  const fallback = f.reason.trim();
+  for (const [id, result] of given) {
+    if (result !== 'pass' && !notes.has(id) && !fallback) violations.push(`${id} is ${result}: say what is missing with --note ${id}="…".`);
+  }
+  if (violations.length) return { results: [], violations };
+  return { results: known.map((id) => ({ criterion_id: id, result: given.get(id)!, note: notes.get(id) ?? fallback })), violations: [] };
+}
+
+async function verdictGoal(ctx: Ctx, legacy: string | undefined, flags: Flags): Promise<number> {
+  if (legacy === 'pass' || legacy === 'fail') {
+    return refuse(flags.json, '', '', [`"verdict ${legacy}" is gone: give one result per criterion, e.g. kortix goals verdict --pass c1,c2 --fail c3 --note c3="charged in USD".`]);
+  }
+  if (!flags.pass.length && !flags.fail.length && !flags.inconclusive.length) return missing('one result per criterion: --pass <ids> [--fail <ids>] [--inconclusive <ids>]');
+  const g = await resolveGoal(ctx, 'verifier', flags.goal);
+  if (readVerificationReport(g) === null) {
+    return refuse(flags.json, g.state, '', [`Write your report to ${join(localFolder(g), 'evidence', 'verification.md')} first: one line per criterion with the result and why.`]);
+  }
+  const next = await commit(ctx, g, {
+    to: 'done',
+    valid: (x) => [...inState(x, ['verifying'], 'verdict'), ...verdictResults(x.criteria, flags).violations],
+    send: (x) => postWorkspaceGoalAction(ctx.projectId, x, 'verdict', { results: verdictResults(x.criteria, flags).results }),
+  });
+  if (flags.json) return done(true, g.state, next);
+  process.stdout.write(`${status.ok(`${g.state} → ${next.state}`)}\n`);
+  process.stdout.write(`  ${C.dim}Your work on this goal is done. End the turn.${C.reset}\n`);
+  return 0;
+}
+
+// ── check ────────────────────────────────────────────────────────────────────
+
+const STATE_DIR = () => join(homedir(), '.kortix', 'state');
+const ENFORCE_MAX = 3;
+const ENFORCE_WINDOW_MS = 6 * 60 * 60_000;
+
+function readJson<T>(path: string, fallback: T): T {
   try {
-    return missingGoalFlags((await client.get<{ experimental?: Record<string, boolean> }>(`/projects/${projectId}`)).experimental);
+    return JSON.parse(readFileSync(path, 'utf8')) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson(path: string, value: unknown): void {
+  mkdirSync(join(path, '..'), { recursive: true });
+  writeFileSync(path, JSON.stringify(value), { mode: 0o600 });
+}
+
+/** Records one enforcement prompt for `key`; false when the cap for the window is used up. */
+export function takeEnforcementSlot(key: string, now: number, path = join(STATE_DIR(), 'goal-check.json')): boolean {
+  const state = readJson<Record<string, number[]>>(path, {});
+  const recent = (state[key] ?? []).filter((t) => now - t < ENFORCE_WINDOW_MS);
+  if (recent.length >= ENFORCE_MAX) return false;
+  state[key] = [...recent, now];
+  writeJson(path, state);
+  return true;
+}
+
+interface WakeRecord {
+  turn: string | null;
+  report: string;
+  unchanged: number;
+}
+
+/** What the owner reported: changes when it calls `progress`, or the state moves. */
+const reportSignature = (g: Goal) => JSON.stringify([g.state, g.summary, g.criteria.map((c) => [c.id, c.text, c.reported_met, c.evidence])]);
+
+/** What the owner must do on `g`, given how many wakes in a row reported nothing. */
+export function goalProblems(g: Goal): string[] {
+  // Paused, closed or blocked (wake cap, credits, flag off, a lost owner): the API holds it; a nudge would be a turn the admission gate refused.
+  if (g.paused_at || g.blocked_reason || !OPEN.has(g.state)) return [];
+  if (g.state === 'draft' && g.criteria.length === 0) {
+    return [`Draft with no done criteria: write 1 to ${MAX_GOAL_CRITERIA} under "## Done criteria" in GOAL.md, then kortix goals transition active --reason "…".`];
+  }
+  // Only a draft is nudged: it has no heartbeat, so without the nudge nothing wakes it. An active
+  // goal is woken by heartbeat fires the API admits within its wake cap; a nudge would be a turn outside it.
+  if (g.state === 'draft') return ['Still a draft: check the done criteria in GOAL.md, then kortix goals transition active --reason "…".'];
+  return [];
+}
+
+async function checkGoals(ctx: Ctx, flags: Flags): Promise<number> {
+  const goals = await listByRole(ctx, 'owner');
+  const turn = flags.turn ?? (process.env.KORTIX_TURN_MESSAGE_ID || null);
+  const wakesPath = join(STATE_DIR(), 'goal-wakes.json');
+  const wakes = readJson<Record<string, WakeRecord>>(wakesPath, {});
+  const results: Array<{ goal_id: string; title: string; state: WorkspaceGoalRecordState; problems: string[]; notes: string[]; skipped?: string }> = [];
+  for (const g of goals) {
+    const notes = [
+      ...(g.paused_at ? [`paused by a person at ${g.paused_at}`] : []),
+      ...(g.blocked_reason ? [`blocked: ${g.blocked_reason}`] : []),
+      ...(g.state === 'waiting_on_user' && g.waiting_on ? [`waiting on the assigned user: ${g.waiting_on}`] : []),
+    ];
+    const prev = wakes[g.goal_id] ?? { turn: null, report: '', unchanged: 0 };
+    if (flags.enforce && turn && prev.turn === turn) {
+      results.push({ goal_id: g.goal_id, title: g.title, state: g.state, problems: [], notes, skipped: `turn ${turn} already checked` });
+      continue;
+    }
+    const report = reportSignature(g);
+    const counted = flags.enforce && g.state === 'active' && !g.paused_at;
+    const unchanged = counted ? (prev.report === report ? prev.unchanged + 1 : 0) : prev.unchanged;
+    if (flags.enforce) wakes[g.goal_id] = { turn, report, unchanged };
+    if (g.state === 'active' && !g.paused_at && !g.blocked_reason && unchanged >= STALL_WAKES) {
+      notes.push(`Nothing reported for ${unchanged} wakes: record what changed with kortix goals progress, ask with transition waiting_on_user, or hand over.`);
+    }
+    results.push({ goal_id: g.goal_id, title: g.title, state: g.state, problems: goalProblems(g), notes });
+  }
+  if (flags.enforce) writeJson(wakesPath, wakes);
+  const broken = results.filter((r) => r.problems.length > 0);
+  if (flags.json) emitJson({ goals: results });
+  else if (!(flags.quiet && broken.length === 0)) {
+    if (!results.length) process.stdout.write(`  ${C.dim}This session owns no goal.${C.reset}\n`);
+    for (const r of results) {
+      const head = `${r.title} (${r.goal_id}) ${r.state}`;
+      process.stdout.write(r.problems.length ? `${status.err(head)}\n${r.problems.map((p) => `  - ${p}`).join('\n')}\n` : `${status.ok(head)}\n`);
+      for (const n of [...r.notes, ...(r.skipped ? [r.skipped] : [])]) process.stdout.write(`  ${C.dim}${n}${C.reset}\n`);
+    }
+  }
+  if (!flags.enforce) return broken.length ? 1 : 0;
+  const due = broken.filter((b) => takeEnforcementSlot(b.goal_id, Date.now()));
+  if (due.length) {
+    const session = await ctx.client.get<ProjectSession>(`/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId!)}`);
+    const text =
+      '[GOAL CHECK] A goal this session owns needs you. Do this now, then end the turn:\n' +
+      due.map((b) => `${b.title} (${b.goal_id})\n${b.problems.map((p) => `- ${p}`).join('\n')}`).join('\n\n');
+    await queueSessionPrompt(ctx.client, ctx.projectId, session, text);
+  }
+  // --enforce exits 0 once it handled what it found; non-zero only when it could not run.
+  return 0;
+}
+
+// ── Person commands: new, bind ───────────────────────────────────────────────
+
+async function newGoal(ctx: Ctx, brief: string, flags: Flags): Promise<number> {
+  if (!brief) return missing('the goal, e.g. kortix goals new "EU billing live: invoices in EUR with VAT"');
+  try {
+    const goal = await api(ctx, () => createWorkspaceGoalRecord(ctx.projectId, {
+      goal_id: randomUUID(),
+      brief,
+      ...(flags.criterion.length ? { criteria: flags.criterion } : {}),
+      ...(flags.agent ? { agent: flags.agent } : {}),
+      ...(flags.user ? { assigned_user_id: flags.user } : {}),
+    }));
+    if (flags.json) emitJson({ ok: true, goal });
+    else {
+      process.stdout.write(`${status.ok(`Goal created: ${C.bold}${goal.title}${C.reset} (${goal.goal_id})`)}\n`);
+      process.stdout.write(`  ${C.dim}folder ${C.reset}${goal.folder}\n  ${C.dim}owner  ${C.reset}${goal.owner_session_id ?? '(starting)'}\n`);
+    }
+    return 0;
   } catch (err) {
-    if (fromBox) return fromBox;
+    const body = goalErrorBody(err);
+    if (body?.error === 'goal_forbidden' && ctx.sessionId) {
+      if (flags.json) emitJson({ ok: false, error: body.error, message: body.message });
+      else {
+        process.stderr.write(`${status.err(body.message)}\n`);
+        process.stderr.write(
+          '  A goal\'s own session cannot start another goal. Note the follow-up in log.md, or ask the person to\n' +
+            '  create it from the Goals page.\n',
+        );
+      }
+      return 1;
+    }
     throw err;
   }
 }
 
-/** The project features a goal needs that are off. */
-export function missingGoalFlags(experimental: Record<string, boolean> | undefined): string[] {
-  return ['goals', 'volumes', 'reminders'].filter((k) => !experimental?.[k]);
+/** The goal named by `ref` (slug or goal_id) or `--goal`; in a session with neither, this session's goal. */
+async function findGoal(ctx: Ctx, ref: string | undefined, explicit: string | undefined): Promise<Goal> {
+  const id = ref ?? explicit;
+  if (!id && ctx.sessionId) return resolveGoal(ctx, 'owner');
+  const goals = await api(ctx, () => listWorkspaceGoalRecords(ctx.projectId));
+  const hit = id ? goals.filter((g) => g.goal_id === id || g.slug === id) : goals;
+  if (hit.length !== 1) {
+    throw new Refusal([
+      id ? (hit.length ? `"${id}" names ${hit.length} goals: pass the goal_id.` : `No goal "${id}" you can read.`) : 'Name the goal: <slug|goal_id> (kortix goals ls lists them).',
+    ]);
+  }
+  return getGoal(ctx, hit[0]!.goal_id);
 }
 
-const drivesRoot = () => process.env.KORTIX_DRIVES_ROOT ?? '/drives';
+async function bindGoal(ctx: Ctx, ref: string | undefined, flags: Flags): Promise<number> {
+  if (!flags.clear && flags.space === undefined && flags.agent === undefined) return missing('--space <slug>, --agent <name> or --clear');
+  const g = await findGoal(ctx, ref, flags.goal);
+  const next = await commit(ctx, g, {
+    to: g.state,
+    valid: () => [],
+    send: async (x) =>
+      (await setWorkspaceGoalBinding({ projectId: ctx.projectId, goalId: x.goal_id, revision: x.revision }, {
+        ...(flags.clear ? { space: null, agent: null } : {}),
+        ...(flags.space !== undefined ? { space: flags.space } : {}),
+        ...(flags.agent !== undefined ? { agent: flags.agent } : {}),
+      })).projectGoal.record,
+  });
+  if (flags.json) emitJson({ ok: true, goal_id: next.goal_id, space: next.space, agent: next.agent });
+  else process.stdout.write(`${status.ok(`Goal ${C.bold}${next.slug}${C.reset} is in ${next.space ?? (next.agent ? `${next.agent}'s space` : 'no space (project-wide)')}`)}\n`);
+  return 0;
+}
+
+// ── ls / status ──────────────────────────────────────────────────────────────
+
+/** The API cannot answer goals at all (offline, 5xx, or an API without the routes): fall back to the folders. */
+function unreachable(err: unknown): boolean {
+  if (!(err instanceof ApiError) || goalErrorBody(err)) return false;
+  const code = (err.body as { code?: string } | null)?.code;
+  return err.status === 0 || err.status >= 500 || (err.status === 404 && code !== 'feature_disabled');
+}
+
+const criteriaCell = (g: Goal) => `${g.criteria.filter((c) => c.reported_met).length}/${g.criteria.filter((c) => c.verified).length}/${g.criteria.length}`;
+const stateCell = (g: Goal) => (g.paused_at ? `${g.state} (paused)` : g.blocked_reason ? `${g.state} (${g.blocked_reason})` : g.state);
+
+async function listGoals(ctx: Ctx, flags: Flags): Promise<number> {
+  let goals: Goal[];
+  try {
+    goals = await api(ctx, () => listWorkspaceGoalRecords(ctx.projectId));
+  } catch (err) {
+    if (unreachable(err)) return listLocal(undefined, flags.json);
+    throw err;
+  }
+  if (flags.json) {
+    emitJson({ goals, source: 'api' });
+    return 0;
+  }
+  if (!goals.length) {
+    process.stdout.write(`  ${C.dim}No goals you can read. A person creates one from the Goals page.${C.reset}\n`);
+    return 0;
+  }
+  const w = Math.max(...goals.map((g) => g.slug.length), 4);
+  process.stdout.write(`\n  ${C.dim}${pad('GOAL', w)}  ${pad('STATE', 22)}  ${pad('MET/VERIFIED/ALL', 16)}  NEXT WAKE${C.reset}\n`);
+  for (const g of goals) process.stdout.write(`  ${pad(g.slug, w)}  ${pad(stateCell(g), 22)}  ${pad(criteriaCell(g), 16)}  ${g.next_wake_at ?? '—'}\n`);
+  process.stdout.write('\n');
+  return 0;
+}
+
+async function goalStatus(ctx: Ctx, ref: string | undefined, flags: Flags): Promise<number> {
+  let g: Goal;
+  try {
+    g = await findGoal(ctx, ref, flags.goal);
+  } catch (err) {
+    if (unreachable(err)) return listLocal(ref, flags.json);
+    throw err;
+  }
+  if (flags.json) {
+    emitJson({ goal: g, source: 'api' });
+    return 0;
+  }
+  const row = (k: string, v: string) => process.stdout.write(`  ${C.dim}${pad(k, 9)}${C.reset}${v}\n`);
+  process.stdout.write(`\n  ${C.bold}${g.title}${C.reset}\n  ${C.dim}${g.folder} · ${g.goal_id}${C.reset}\n\n`);
+  row('state', `${g.state}${g.paused_at ? ` (paused by a person ${g.paused_at})` : ''}${g.blocked_reason ? ` (blocked: ${g.blocked_reason})` : ''}`);
+  row('revision', String(g.revision));
+  row('owner', g.owner_session_id ?? '—');
+  if (g.verification) row('verifier', `${g.verification.verifier_session_id} (attempt ${g.verification.attempt}, ${g.verification.outcome})`);
+  row('wakes', `${g.wakes_today}/${g.max_wakes_per_day} today, every ${g.heartbeat_every}, next ${g.next_wake_at ?? '—'}`);
+  row('sessions', `${g.sessions.length}/${g.max_sessions}`);
+  if (g.provenance === 'legacy_unverified') row('note', 'imported from a folder: no criterion was verified by the API');
+  process.stdout.write(`\n  ${C.dim}Criteria (revision ${g.criteria_revision}):${C.reset}\n`);
+  for (const c of g.criteria) {
+    const mark = c.verified ? 'verified' : c.reported_met ? 'reported met' : 'open';
+    process.stdout.write(`  ${pad(c.id, 4)} ${pad(mark, 13)} ${c.text}${c.evidence ? ` ${C.dim}(${c.evidence})${C.reset}` : ''}\n`);
+  }
+  if (g.waiting_on) process.stdout.write(`\n  ${C.dim}Waiting on the assigned user:${C.reset} ${g.waiting_on}${g.chase_at ? ` ${C.dim}(chase ${g.chase_at})${C.reset}` : ''}\n`);
+  if (g.summary) process.stdout.write(`\n  ${g.summary}\n`);
+  process.stdout.write('\n');
+  return 0;
+}
 
 /** Every goal folder under the mounted drives: /drives/<mount>/Goals/<slug> with GOAL.md (or a legacy goal.json). */
 export function goalFolders(root = drivesRoot()): string[] {
@@ -236,475 +876,32 @@ export function goalFolders(root = drivesRoot()): string[] {
   return out.sort();
 }
 
-function readGoal(folder: string): ProjectGoalDocument | null {
-  try {
-    if (existsSync(join(folder, 'GOAL.md'))) return parseGoalFile(readFileSync(join(folder, 'GOAL.md'), 'utf8'));
-    const legacy = JSON.parse(readFileSync(join(folder, 'goal.json'), 'utf8')) as ProjectGoalDocument;
-    return { ...legacy, success_criteria: legacy.success_criteria ?? [], sessions: legacy.sessions ?? [], transitions: legacy.transitions ?? [], format: 'goal.json' };
-  } catch {
-    return null;
-  }
-}
-
-const writeGoal = (folder: string, g: ProjectGoalDocument) => writeFileSync(join(folder, 'GOAL.md'), formatGoalFile(g));
-const readReport = (folder: string) => {
-  const path = join(folder, 'evidence', 'verification.md');
-  return existsSync(path) ? readFileSync(path, 'utf8') : null;
-};
-
-function appendLog(folder: string, line: string): void {
-  const path = join(folder, 'log.md');
-  const fd = openSync(path, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
-  try {
-    appendFileSync(fd, `${fstatSync(fd).size === 0 ? '# Log\n' : ''}${line}\n`);
-  } finally {
-    closeSync(fd);
-  }
-}
-
-export function slugify(text: string): string {
-  return (
-    text
-      .toLowerCase()
-      .normalize('NFKD')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .split('-')
-      .slice(0, 5)
-      .join('-') || 'goal'
-  );
-}
-
-interface Reminder {
-  id: string;
-  prompt: string;
-  state: string;
-  next_fire_at?: string | null;
-}
-
-export const heartbeatPrompt = (folder: string) => `Goal wake: ${folder}. Load the kortix-goals skill and run one wake.`;
-const verifierPrompt = (folder: string) =>
-  `Verify the goal in ${folder}. Load the kortix-goals skill (<verify>). You did none of the work and have no memory of it. ` +
-  'Check every done criterion in GOAL.md yourself, against its evidence and the real world. Write PASS or FAIL per criterion, ' +
-  'with the reason, to evidence/verification.md. Then run kortix goals verdict pass|fail --reason "…". Do not edit GOAL.md.';
-const ownerPrompt = (folder: string, from: string) =>
-  `${heartbeatPrompt(folder)} You are its new owner: session ${from} handed it over because its context was full. ` +
-  'Read GOAL.md and the handover at the end of log.md first.';
-
-const ENFORCE_STATE = () => join(homedir(), '.kortix', 'state', 'goal-check.json');
-const ENFORCE_MAX = 3;
-const ENFORCE_WINDOW_MS = 6 * 60 * 60_000;
-
-/** Records one enforcement prompt for `folder`; false when the cap for the window is used up. */
-export function takeEnforcementSlot(folder: string, now: number, path = ENFORCE_STATE()): boolean {
-  let state: Record<string, number[]> = {};
-  try {
-    state = JSON.parse(readFileSync(path, 'utf8'));
-  } catch {}
-  const recent = (state[folder] ?? []).filter((t) => now - t < ENFORCE_WINDOW_MS);
-  if (recent.length >= ENFORCE_MAX) return false;
-  state[folder] = [...recent, now];
-  mkdirSync(join(path, '..'), { recursive: true });
-  writeFileSync(path, JSON.stringify(state));
-  return true;
-}
-
-interface Ctx {
-  client: ApiClient;
-  projectId: string;
-  sessionId: string;
-  sessionPath: string;
-}
-
-interface Flags {
-  slug?: string;
-  folder?: string;
-  user?: string;
-  agent?: string;
-  every?: string;
-  space?: string;
-  note?: string;
-  reason: string;
-  clear: boolean;
-  enforce: boolean;
-  quiet: boolean;
-  json: boolean;
-}
-
-function parseFlags(rest: string[]): Flags {
-  // --shared meant "in the company folder", which no longer exists: ignored.
-  takeFlagBool(rest, ['--shared']);
-  return {
-    slug: takeFlagValue(rest, ['--slug']),
-    folder: takeFlagValue(rest, ['--folder']),
-    user: takeFlagValue(rest, ['--user']),
-    agent: takeFlagValue(rest, ['--agent']),
-    every: takeFlagValue(rest, ['--every']),
-    space: takeFlagValue(rest, ['--space']),
-    note: takeFlagValue(rest, ['--note']),
-    reason: takeFlagValue(rest, ['--reason']) ?? '',
-    clear: takeFlagBool(rest, ['--clear']),
-    enforce: takeFlagBool(rest, ['--enforce']),
-    quiet: takeFlagBool(rest, ['--quiet']),
-    json: takeFlagBool(rest, ['--json']),
-  };
-}
-
-const SUBCOMMANDS = ['new', 'check', 'transition', 'verify', 'verdict', 'handover', 'bind', 'ls', 'list', 'status'];
-
-export async function runGoals(argv: string[]): Promise<number> {
-  const helpExit = splitHelp(argv, HELP);
-  if (helpExit !== null) return helpExit;
-  const rest = [...argv];
-  let flags: Flags;
-  try {
-    flags = parseFlags(rest);
-  } catch (err) {
-    return fail((err as Error).message);
-  }
-  const sub = rest.shift();
-  if (flags.space !== undefined && !SPACE_SLUG.test(flags.space)) return fail(`--space "${flags.space}" is not a space slug.`);
-  if (flags.agent !== undefined && !AGENT_NAME.test(flags.agent)) return fail(`--agent "${flags.agent}" is not an agent name.`);
-  if (!sub || !SUBCOMMANDS.includes(sub)) return fail(`Unknown subcommand "${sub ?? ''}". Run \`kortix goals --help\`.`);
-  if (sub !== 'new' && !existsSync(drivesRoot())) {
-    return fail('Files is not mounted here (no /drives). Run kortix goals inside a session on Platinum, where the Drive mounts.');
-  }
-  if (sub === 'ls' || sub === 'list') return listGoals(flags.json);
-  if (sub === 'status') return goalStatus(rest[0], flags.json);
-  if (sub === 'bind') return bindGoal(rest[0], flags);
-
-  const sessionId = process.env.KORTIX_SESSION_ID;
-  if (!sessionId) return fail('No $KORTIX_SESSION_ID: kortix goals runs inside a session.');
-  const resolved = await resolveProjectContext({});
-  if (!resolved) return 1;
-  const ctx: Ctx = { ...resolved, sessionId, sessionPath: `/projects/${resolved.projectId}/sessions/${sessionId}` };
-  try {
-    if (sub === 'new') return await newGoal(ctx, rest.join(' ').trim(), flags);
-    if (sub === 'check') return await checkGoals(ctx, rest[0], flags);
-    if (sub === 'verdict') return await verdictGoal(ctx, rest[0], rest[1], flags);
-    const folder = pickFolder(sub === 'transition' ? rest[1] : rest[0], sessionId);
-    if (!folder) return fail('Pass the goal folder: this session owns none, or several.');
-    const g = readGoal(folder);
-    if (!g) return fail(`${folder}/GOAL.md is missing or unreadable.`);
-    if (sub === 'transition') return await transitionGoal(ctx, folder, g, rest[0] ?? '', flags);
-    if (sub === 'verify') return await verifyGoal(ctx, folder, g, flags);
-    return await handoverGoal(ctx, folder, g, flags);
-  } catch (err) {
-    return surfaceApiError(err);
-  }
-}
-
-/** `<folder>` when given, else the one goal this session owns. */
-function pickFolder(arg: string | undefined, sessionId: string): string | undefined {
-  if (arg && arg.startsWith('/')) return arg;
-  const mine = goalFolders().filter((f) => ownerOf(readGoal(f)) === sessionId);
-  return mine.length === 1 ? mine[0] : undefined;
-}
-
-async function armHeartbeat(ctx: Ctx, folder: string, g: ProjectGoalDocument, at?: string): Promise<Reminder> {
-  const every = g.heartbeat_every ?? HEARTBEAT_EVERY;
-  return ctx.client.post<Reminder>(`${ctx.sessionPath}/reminders`, {
-    prompt: heartbeatPrompt(folder),
-    ...(at ? { at } : { in: every }),
-    every,
-    name: `goal ${folder.split('/').at(-1)}`,
-  });
-}
-
-async function heartbeatsOf(ctx: Ctx, folder: string, g: ProjectGoalDocument): Promise<Reminder[]> {
-  const { reminders } = await ctx.client.get<{ reminders: Reminder[] }>(`${ctx.sessionPath}/reminders`);
-  return reminders.filter((r) => r.state === 'active' && (r.id === g.reminder_id || r.prompt.includes(folder)));
-}
-
-async function newGoal(ctx: Ctx, objective: string, flags: Flags): Promise<number> {
-  if (!objective) return missing('the goal, e.g. kortix goals new "EU billing live: invoices in EUR with VAT"');
-  const off = await goalFlagsOff(ctx.client, ctx.projectId);
-  if (off.length) {
-    return fail(`Goals need these project features on: ${off.join(', ')}. Turn them on with ${off.map((f) => `kortix projects features enable ${f}`).join(' && ')} (a project admin), then run this again.`);
-  }
-  if (!existsSync(drivesRoot())) return fail('Files is not mounted in this session yet. Volumes is on: start a new session, then run this again.');
-  const parent = flags.folder ?? join(drivesRoot(), 'me');
-  if (!parent.startsWith(`${drivesRoot()}/`) || !existsSync(parent)) return fail(`${parent} is not a mounted folder under ${drivesRoot()}; see /drives/README.md.`);
-  const slug = flags.slug ?? slugify(objective);
-  const folder = join(parent, 'Goals', slug);
-  if (existsSync(join(folder, 'GOAL.md')) || existsSync(join(folder, 'goal.json'))) return fail(`${folder} already holds a goal. Pick another --slug.`);
-  const session = await ctx.client.get<ProjectSession & { created_by?: string; metadata?: Record<string, unknown> }>(ctx.sessionPath);
-  await ctx.client.patch(ctx.sessionPath, { metadata: { unattended: 'true', goal: folder, goal_role: 'owner' } });
-  const now = new Date().toISOString();
-  const draft: ProjectGoalDocument = {
-    version: 1,
-    objective,
-    status: 'draft',
-    summary: '',
-    assigned_user: flags.user ?? session.created_by ?? null,
-    agent: flags.agent ?? process.env.KORTIX_AGENT_NAME ?? null,
-    space: flags.space ?? null,
-    success_criteria: [],
-    items: [],
-    links: [],
-    waiting_on: null,
-    heartbeat_every: flags.every ?? HEARTBEAT_EVERY,
-    max_wakes_per_day: MAX_WAKES_PER_DAY,
-    max_sessions: MAX_SESSIONS,
-    sessions: [{ id: ctx.sessionId, role: 'owner', since: now }],
-    reminder_id: null,
-    next_wake_at: null,
-    verified_by: null,
-    transitions: [{ from: null, to: 'draft', at: now, reason: 'goal created', by: ctx.sessionId }],
-    body: `# ${objective}\n\n## Context\n\nThe request in the person's words, constraints, and what was learned.\n`,
-  };
-  mkdirSync(join(folder, 'evidence'), { recursive: true });
-  const reminder = await armHeartbeat(ctx, folder, draft);
-  const goal = { ...draft, reminder_id: reminder.id, next_wake_at: reminder.next_fire_at ?? null };
-  writeGoal(folder, goal);
-  writeFileSync(join(folder, 'log.md'), `# Log\n\n- ${now} Goal created: ${objective}\n`);
-  if (flags.json) emitJson({ folder, slug, reminder_id: reminder.id, next_wake_at: goal.next_wake_at });
-  else {
-    process.stdout.write(`${status.ok(`Goal created: ${C.bold}${folder}${C.reset}`)}\n`);
-    process.stdout.write(`  ${C.dim}heartbeat ${C.reset}${reminder.id} (every ${goal.heartbeat_every}, next ${goal.next_wake_at ?? '—'})\n`);
-    process.stdout.write(`  ${C.dim}next      ${C.reset}write done_criteria into GOAL.md, then kortix goals transition active --reason "…"\n`);
-  }
-  return 0;
-}
-
-async function transitionGoal(ctx: Ctx, folder: string, g: ProjectGoalDocument, to: string, flags: Flags): Promise<number> {
-  if (!to) return missing('the target state: kortix goals transition <to> --reason "…" [<folder>]');
-  const [heartbeats, session] = await Promise.all([
-    heartbeatsOf(ctx, folder, g),
-    ctx.client.get<ProjectSession & { metadata?: Record<string, unknown> }>(ctx.sessionPath),
-  ]);
-  const violations = transitionViolations(g, to, flags.reason, {
-    activeHeartbeats: heartbeats.map((r) => r.id),
-    unattended: ['true', true].includes(session.metadata?.unattended as never),
-    sessionId: ctx.sessionId,
-  });
-  if (violations.length) return refuse(flags.json, g.status, to, violations);
-  if (to === 'stopped') for (const r of heartbeats) await ctx.client.delete(`${ctx.sessionPath}/reminders/${r.id}`);
-  const next = move(g, to as ProjectGoalStatus, flags.reason, ctx.sessionId);
-  next.waiting_on = to === 'waiting_on_user' ? flags.reason : null;
-  if (to === 'stopped') Object.assign(next, { reminder_id: null, next_wake_at: null });
-  writeGoal(folder, next);
-  appendLog(folder, `- ${now()} ${g.status} → ${to}: ${flags.reason}`);
-  return done(flags.json, g.status, to);
-}
-
-async function verifyGoal(ctx: Ctx, folder: string, g: ProjectGoalDocument, flags: Flags): Promise<number> {
-  const existingEvidence = new Set(g.success_criteria.map((c) => c.evidence).filter((p): p is string => !!p && existsSync(join(folder, p))));
-  const violations = verifyViolations(g, { existingEvidence, sessionId: ctx.sessionId });
-  if (violations.length) return refuse(flags.json, g.status, 'verifying', violations);
-  // The engine starts the verifier, so no session contract ("do not spawn
-  // sessions") stands between the owner and its verification.
-  const verifier = await ctx.client.post<ProjectSession>(`/projects/${ctx.projectId}/sessions`, {
-    initial_prompt: verifierPrompt(folder),
-    title_source: `Verify goal ${folder.split('/').at(-1)}`,
-    ...(g.agent ? { agent_name: g.agent } : {}),
-    metadata: { unattended: 'true', goal: folder, goal_role: 'verifier' },
-  });
-  const next = move(g, 'verifying', 'every criterion has evidence', ctx.sessionId);
-  next.sessions = [...g.sessions, { id: verifier.session_id, role: 'verifier', since: now() }];
-  writeGoal(folder, next);
-  appendLog(folder, `- ${now()} active → verifying: verifier session ${verifier.session_id} started`);
-  if (flags.json) emitJson({ ok: true, from: g.status, to: 'verifying', verifier_session_id: verifier.session_id });
-  else process.stdout.write(`${status.ok(`active → verifying: verifier ${verifier.session_id}`)}\n`);
-  return 0;
-}
-
-async function verdictGoal(ctx: Ctx, verdict: string | undefined, folderArg: string | undefined, flags: Flags): Promise<number> {
-  const folder =
-    folderArg ??
-    goalFolders().find((f) => [...(readGoal(f)?.sessions ?? [])].reverse().find((s) => s.role === 'verifier')?.id === ctx.sessionId);
-  if (!folder) return fail('This session verifies no goal: pass the folder.');
-  const g = readGoal(folder);
-  if (!g) return fail(`${folder}/GOAL.md is missing or unreadable.`);
-  const to: ProjectGoalStatus = verdict === 'pass' ? 'done' : 'active';
-  const violations = verdictViolations(g, verdict ?? '', flags.reason, { sessionId: ctx.sessionId, verification: readReport(folder) });
-  if (violations.length) return refuse(flags.json, g.status, to, violations);
-  const next = move(g, to, `verifier ${verdict!.toUpperCase()}: ${flags.reason}`, ctx.sessionId);
-  if (to === 'done') next.verified_by = ctx.sessionId;
-  writeGoal(folder, next);
-  appendLog(folder, `- ${now()} verifying → ${to}: verifier ${verdict!.toUpperCase()}: ${flags.reason}. Report: evidence/verification.md`);
-  // Wake the owner: on done its turn-end check drops the heartbeat; on fail it works the findings.
-  const owner = ownerOf(g);
-  if (owner) {
-    const session = await ctx.client.get<ProjectSession>(`/projects/${ctx.projectId}/sessions/${owner}`).catch(() => null);
-    if (session) {
-      await queueSessionPrompt(ctx.client, ctx.projectId, session, `${heartbeatPrompt(folder)} Verification ${verdict!.toUpperCase()}: ${flags.reason}`).catch(() => {});
-    }
-  }
-  return done(flags.json, g.status, to);
-}
-
-async function handoverGoal(ctx: Ctx, folder: string, g: ProjectGoalDocument, flags: Flags): Promise<number> {
-  const out: string[] = [];
-  if (!flags.note?.trim()) out.push('Pass --note "<the state of play>": the next owner starts from it.');
-  if (ownerOf(g) !== ctx.sessionId) out.push(`Only the owner session ${ownerOf(g) ?? '(none)'} hands the goal over.`);
-  if (!OPEN.has(g.status)) out.push(`The goal is ${g.status} (closed).`);
-  if (g.sessions.length >= sessionCap(g)) out.push(`The goal used ${g.sessions.length} of max_sessions ${sessionCap(g)}: ask the assigned user to raise it.`);
-  if (out.length) return refuse(flags.json, g.status, g.status, out);
-  appendLog(folder, `\n## Handover ${now()} from ${ctx.sessionId}\n\n${flags.note!.trim()}\n`);
-  const next = await ctx.client.post<ProjectSession>(`/projects/${ctx.projectId}/sessions`, {
-    initial_prompt: ownerPrompt(folder, ctx.sessionId),
-    title_source: `Goal ${folder.split('/').at(-1)}`,
-    ...(g.agent ? { agent_name: g.agent } : {}),
-    metadata: { unattended: 'true', goal: folder, goal_role: 'owner' },
-  });
-  // A loop belongs to one session: the new owner's first turn end arms its own (check --enforce).
-  for (const r of await heartbeatsOf(ctx, folder, g)) await ctx.client.delete(`${ctx.sessionPath}/reminders/${r.id}`);
-  writeGoal(folder, { ...g, reminder_id: null, next_wake_at: null, sessions: [...g.sessions, { id: next.session_id, role: 'owner', since: now() }] });
-  if (flags.json) emitJson({ ok: true, owner_session_id: next.session_id });
-  else process.stdout.write(`${status.ok(`Handed over to ${next.session_id}`)}\n`);
-  return 0;
-}
-
-async function checkGoals(ctx: Ctx, folderArg: string | undefined, flags: Flags): Promise<number> {
-  const folders = folderArg ? [folderArg] : goalFolders().filter((f) => ownerOf(readGoal(f)) === ctx.sessionId);
-  const results: Array<{ folder: string; violations: string[]; repaired: string[] }> = [];
-  for (const folder of folders) {
-    const g = readGoal(folder);
-    const repaired = flags.enforce && g?.format === 'goal.md' && ownerOf(g) === ctx.sessionId ? await repair(ctx, folder, g) : [];
-    results.push({ folder, violations: goalViolations(readGoal(folder), { verification: readReport(folder) }), repaired });
-  }
-  const broken = results.filter((r) => r.violations.length > 0);
-  if (flags.json) emitJson({ goals: results });
-  else if (!(flags.quiet && broken.length === 0)) {
-    for (const r of results) {
-      process.stdout.write(r.violations.length ? `${status.err(r.folder)}\n${r.violations.map((v) => `  - ${v}`).join('\n')}\n` : `${status.ok(r.folder)}\n`);
-      for (const fix of r.repaired) process.stdout.write(`  ${C.dim}repaired: ${fix}${C.reset}\n`);
-    }
-  }
-  if (flags.enforce) {
-    const due = broken.filter((b) => takeEnforcementSlot(b.folder, Date.now()));
-    if (due.length) {
-      const session = await ctx.client.get<ProjectSession>(ctx.sessionPath);
-      const text =
-        '[GOAL CHECK] GOAL.md has problems only you can fix. Fix them now, then end the turn:\n' +
-        due.map((b) => `${b.folder}\n${b.violations.map((v) => `- ${v}`).join('\n')}`).join('\n\n');
-      await queueSessionPrompt(ctx.client, ctx.projectId, session, text);
-    }
-  }
-  return broken.length ? 1 : 0;
-}
-
-/** The owner's turn ended: count the wake and fix, without the model, what code can fix. */
-async function repair(ctx: Ctx, folder: string, start: ProjectGoalDocument): Promise<string[]> {
-  const fixes: string[] = [];
-  const heartbeats = await heartbeatsOf(ctx, folder, start);
-  if (!OPEN.has(start.status)) {
-    for (const r of heartbeats) await ctx.client.delete(`${ctx.sessionPath}/reminders/${r.id}`);
-    if (heartbeats.length) {
-      writeGoal(folder, { ...start, reminder_id: null, next_wake_at: null });
-      fixes.push(`removed the heartbeat of a ${start.status} goal`);
-    }
-    return fixes;
-  }
-  const { doc, capped } = recordWake(start, new Date());
-  let g = doc;
-  const tomorrow = nextUtcDay(new Date());
-  let keep: Reminder | undefined = heartbeats[0];
-  for (const extra of heartbeats.slice(1)) await ctx.client.delete(`${ctx.sessionPath}/reminders/${extra.id}`);
-  if (keep && capped && (keep.next_fire_at ?? '') < tomorrow) {
-    await ctx.client.delete(`${ctx.sessionPath}/reminders/${keep.id}`);
-    keep = undefined;
-  }
-  if (!keep) {
-    keep = await armHeartbeat(ctx, folder, g, capped ? tomorrow : undefined);
-    fixes.push(capped ? `wake cap ${g.max_wakes_per_day ?? MAX_WAKES_PER_DAY}/day reached: the heartbeat waits until ${tomorrow}` : 'armed a missing heartbeat');
-    if (capped) appendLog(folder, `- ${now()} wake cap reached (${g.wake_count} wakes today): the heartbeat waits until ${tomorrow}`);
-  }
-  g = { ...g, reminder_id: keep.id, next_wake_at: keep.next_fire_at ?? g.next_wake_at ?? null };
-  writeGoal(folder, g);
-  return fixes;
-}
-
-const now = () => new Date().toISOString();
-
-function move(g: ProjectGoalDocument, to: ProjectGoalStatus, reason: string, by: string): ProjectGoalDocument {
-  return { ...g, status: to, transitions: [...g.transitions, { from: g.status, to, at: now(), reason, by }] };
-}
-
-function refuse(json: boolean, from: string, to: string, violations: string[]): number {
-  if (json) emitJson({ ok: false, from, to, violations });
-  else process.stderr.write(`${status.err(`${from} → ${to} refused`)}\n${violations.map((v) => `  - ${v}`).join('\n')}\n`);
-  return 1;
-}
-
-function done(json: boolean, from: string, to: string): number {
-  if (json) emitJson({ ok: true, from, to });
-  else process.stdout.write(`${status.ok(`${from} → ${to}`)}\n`);
-  return 0;
-}
-
-function summarize(folder: string) {
-  const g = readGoal(folder);
-  const criteria = g?.success_criteria ?? [];
-  return {
-    folder,
-    slug: folder.split('/').pop()!,
-    status: g?.status ?? 'invalid',
-    objective: g?.objective ?? '',
-    summary: g?.summary ?? '',
-    assigned_user: g?.assigned_user ?? null,
-    assigned_agent: g?.agent ?? null,
-    criteria_met: criteria.filter((c) => c.met).length,
-    criteria_total: criteria.length,
-    waiting_on: g?.waiting_on ?? null,
-    owner_session_id: ownerOf(g),
-    next_wake_at: g?.next_wake_at ?? null,
-    last_wake_at: g?.last_wake_at ?? null,
-  };
-}
-
-function listGoals(json: boolean): number {
-  const goals = goalFolders().map(summarize);
+/**
+ * The API could not be reached: list the mounted folders, marked unverified.
+ * Only the brief is read (title, criteria text); no lifecycle field and no
+ * mirror block, because any session can write those.
+ */
+function listLocal(ref: string | undefined, json: boolean): number {
+  const goals = goalFolders()
+    .filter((f) => !ref || f.endsWith(`/${ref}`))
+    .map((folder) => {
+      let title = folder.split('/').pop()!;
+      let criteria: string[] = [];
+      try {
+        const text = existsSync(join(folder, 'GOAL.md')) ? readFileSync(join(folder, 'GOAL.md'), 'utf8') : '';
+        title = parseGoalFile(text)?.objective ?? /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? title;
+        criteria = briefCriteria(text);
+      } catch {}
+      return { folder, slug: folder.split('/').pop()!, title, criteria, state: 'unknown' as const };
+    });
   if (json) {
-    emitJson({ goals });
+    emitJson({ goals, source: 'unverified_local_copy' });
     return 0;
   }
-  if (!goals.length) {
-    process.stdout.write(`  ${C.dim}No goals in the mounted folders. Start one: kortix goals new "<goal>"${C.reset}\n`);
-    return 0;
-  }
-  const w = Math.max(...goals.map((g) => g.slug.length), 4);
-  process.stdout.write(`\n  ${C.dim}${pad('GOAL', w)}  ${pad('STATE', 16)}  CRITERIA  NEXT WAKE${C.reset}\n`);
+  process.stdout.write(`  ${C.dim}Unverified local copy: the Goals API did not answer. State, owner and verification are unknown.${C.reset}\n`);
+  if (!goals.length) process.stdout.write(`  ${C.dim}No goal folders under ${drivesRoot()}.${C.reset}\n`);
   for (const g of goals) {
-    process.stdout.write(`  ${pad(g.slug, w)}  ${pad(g.status, 16)}  ${pad(`${g.criteria_met}/${g.criteria_total}`, 8)}  ${g.next_wake_at ?? '—'}\n`);
+    process.stdout.write(`  ${pad(g.slug, 24)}  ${g.title}  ${C.dim}(${g.criteria.length} criteria in GOAL.md)${C.reset}\n`);
   }
-  process.stdout.write('\n');
-  return 0;
-}
-
-function findGoalFolder(slug: string | undefined): string | undefined {
-  const folders = goalFolders();
-  return slug ? folders.find((f) => f.endsWith(`/${slug}`)) : folders.length === 1 ? folders[0] : undefined;
-}
-
-/** `kortix goals bind`: set or clear the goal's `space` / `assigned_agent` in GOAL.md. */
-function bindGoal(slug: string | undefined, flags: Flags): number {
-  if (!flags.clear && flags.space === undefined && flags.agent === undefined) return missing('--space <slug>, --agent <name> or --clear');
-  const folder = findGoalFolder(slug);
-  if (!folder) return fail(slug ? `No goal "${slug}" in the mounted folders.` : 'Name the goal: kortix goals bind <slug> (kortix goals ls lists them).');
-  const g = readGoal(folder);
-  if (!g || g.format !== 'goal.md') return fail(`${folder}/GOAL.md is missing or unreadable.`);
-  const next = { ...g, space: flags.clear ? null : (flags.space ?? g.space ?? null), agent: flags.clear ? null : (flags.agent ?? g.agent ?? null) };
-  writeGoal(folder, next);
-  if (flags.json) emitJson({ folder, space: next.space, agent: next.agent });
-  else process.stdout.write(`${status.ok(`Goal ${C.bold}${folder.split('/').at(-1)}${C.reset} is in ${next.space ?? (next.agent ? `${next.agent}'s space` : 'no space (project-wide)')}`)}\n`);
-  return 0;
-}
-
-function goalStatus(slug: string | undefined, json: boolean): number {
-  const folder = findGoalFolder(slug);
-  if (!folder) return fail(slug ? `No goal "${slug}" in the mounted folders.` : 'Name the goal: kortix goals status <slug> (kortix goals ls lists them).');
-  const s = summarize(folder);
-  if (json) {
-    emitJson(s);
-    return 0;
-  }
-  process.stdout.write(`\n  ${C.bold}${s.objective}${C.reset}\n  ${C.dim}${s.folder}${C.reset}\n\n`);
-  process.stdout.write(`  ${C.dim}state    ${C.reset}${s.status}\n  ${C.dim}criteria ${C.reset}${s.criteria_met}/${s.criteria_total} met\n`);
-  process.stdout.write(`  ${C.dim}agent    ${C.reset}${s.assigned_agent ?? '—'}\n  ${C.dim}owner    ${C.reset}${s.owner_session_id ?? '—'}\n  ${C.dim}next     ${C.reset}${s.next_wake_at ?? '—'}\n`);
-  if (s.waiting_on) process.stdout.write(`\n  ${C.dim}Waiting on the assigned user:${C.reset} ${s.waiting_on}\n`);
-  if (s.summary) process.stdout.write(`\n  ${s.summary}\n`);
-  process.stdout.write('\n');
   return 0;
 }

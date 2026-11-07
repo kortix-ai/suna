@@ -3,12 +3,12 @@
  * the same list `kortix ship` runs before it commits: the sandbox Dockerfile
  * lint, the agent wiring lint, and the repository size check.
  */
-import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import type { ManifestIssue } from '@kortix/manifest-schema';
 import { extractSandboxTemplates } from '@kortix/shared/sandbox';
 import { lintDockerfile } from './dockerfile-lint.ts';
+import { runGit } from './git-run.ts';
 import { lintWiring } from './wiring-lint.ts';
 
 /**
@@ -77,8 +77,8 @@ function lintSandboxDockerfiles(
 }
 
 function git(cwd: string, args: string[], input?: string): string | null {
-  const r = spawnSync('git', args, { cwd, input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-  return r.status === 0 ? r.stdout : null;
+  const r = runGit(cwd, args, { input, maxBuffer: 256 * 1024 * 1024 });
+  return r.ok ? r.stdout : null;
 }
 
 const mib = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
@@ -140,7 +140,7 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
     .map((f) => `${f.path} (${mib(f.bytes)})`);
   const headline =
     total > REPO_WARN_BYTES
-      ? `the files in Git total ${mib(total)}. A new session still runs the agent config, but above 512 MiB compressed Kortix builds no project snapshot, so a running session stops picking up agent config changes from the base branch until a new session starts.`
+      ? `the files in Git total ${mib(total)}. A new session still runs the agent config, but above 512 MiB compressed Kortix builds no workspace snapshot, so a running session stops picking up agent config changes from the base branch until a new session starts.`
       : `large static files are in Git. Every session downloads them, and so does every agent config change a running session picks up.`;
   return [
     {

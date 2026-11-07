@@ -5,7 +5,6 @@ import {
   triggerSandboxUpdate,
   getSandboxUpdateStatus,
   resetSandboxUpdateStatus,
-  type SandboxVersionInfo,
   type SandboxUpdateStatus,
   type UpdatePhase,
 } from '@/lib/platform/client';

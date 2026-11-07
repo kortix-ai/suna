@@ -102,8 +102,6 @@ export function topUpBonusUsd(amountUsd: number): number {
   return step ? Math.round(amountUsd * step.percent) / 100 : 0;
 }
 
-export const MAX_PROJECTS_PER_ACCOUNT = 200;
-
 const GIB = 1024 ** 3;
 
 /**
@@ -470,7 +468,7 @@ export function isValidTier(name: string): boolean {
 
 /**
  * Whether a tier unlocks the full model catalog — the premium LLM gateway
- * (Claude/GPT/Gemini/…), not just OpenCode's built-in models. Pure function of
+ * (Claude/GPT/Gemini/…), not just the free and BYOK models. Pure function of
  * tier config: environment and wallet balance cannot grant it.
  */
 export function tierGrantsAllModels(tierName: string): boolean {

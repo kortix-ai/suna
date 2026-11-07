@@ -6,7 +6,7 @@
 // no-invention rule it kept to them ("Tuesday's worse, with over two millimeters expected"). Off with VOICE_FOLLOWUP=0.
 import { chargeReply } from './cost'
 import type { Msg } from './lane'
-import { fastFetch } from './models'
+import { fastFetch, fastOn, viaModels } from './models'
 
 const MODEL = process.env.VOICE_FOLLOWUP_MODEL ?? 'gemini-3.5-flash-lite'
 const SYSTEM =
@@ -28,7 +28,7 @@ const CHECK =
 const CHECK_MODEL = process.env.VOICE_FOLLOWUP_CHECK_MODEL ?? 'qwen/qwen3.8-27b'
 /** Whether the caller would want this sentence after that answer (no on doubt, timeout, failure or no key). */
 export async function wanted(user: string, answer: string, line: string, signal: AbortSignal, ms = 700): Promise<boolean> {
-  if (!process.env.GROQ_API_KEY || signal.aborted) return false
+  if (!fastOn() || signal.aborted) return false
   try {
     const res = await fastFetch({
       method: 'POST',
@@ -53,26 +53,41 @@ export async function wanted(user: string, answer: string, line: string, signal:
 
 /** The sentence, or undefined (nothing to add, off, no model, or no answer within `ms`). `data`: the turn's <data>. */
 export async function followup(user: string, answer: string, history: Msg[], signal: AbortSignal, data = '', ms = 1200): Promise<string | undefined> {
-  if (process.env.VOICE_FOLLOWUP === '0' || !process.env.GEMINI_API_KEY || signal.aborted || !answer.trim()) return undefined
+  // Gemini's own API with its key locally; in a Kortix box the models base serves the same model as chat.
+  if (process.env.VOICE_FOLLOWUP === '0' || !(process.env.GEMINI_API_KEY || viaModels()) || signal.aborted || !answer.trim()) return undefined
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), ms)
   const stop = () => ac.abort()
   signal.addEventListener('abort', stop)
   try {
-    const turn = (m: Msg) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
-      method: 'POST',
-      signal: ac.signal,
-      headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY!, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM }] },
-        contents: [...history.slice(-6).map(turn), turn({ role: 'user', content: data ? `${user}\n${data}` : user }), turn({ role: 'assistant', content: answer }), turn({ role: 'user', content: '(Write the next sentence, or (nothing).)' })],
-        generationConfig: { temperature: 0, maxOutputTokens: 80, thinkingConfig: { thinkingLevel: 'minimal' } },
-      }),
-    })
-    const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
-    chargeReply('followup', MODEL, j)
-    const line = (j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '').trim()
+    const msgs: Msg[] = [...history.slice(-6), { role: 'user', content: data ? `${user}\n${data}` : user }, { role: 'assistant', content: answer }, { role: 'user', content: '(Write the next sentence, or (nothing).)' }]
+    let line: string
+    if (viaModels()) {
+      const res = await fastFetch({
+        method: 'POST',
+        signal: ac.signal,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: MODEL, temperature: 0, max_completion_tokens: 80, reasoning_effort: 'minimal', messages: [{ role: 'system', content: SYSTEM }, ...msgs] }),
+      })
+      const j = (await res.json()) as { choices?: { message?: { content?: string } }[] }
+      chargeReply('followup', MODEL, j)
+      line = (j.choices?.[0]?.message?.content ?? '').trim()
+    } else {
+      const turn = (m: Msg) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+        method: 'POST',
+        signal: ac.signal,
+        headers: { 'x-goog-api-key': process.env.GEMINI_API_KEY!, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM }] },
+          contents: msgs.map(turn),
+          generationConfig: { temperature: 0, maxOutputTokens: 80, thinkingConfig: { thinkingLevel: 'minimal' } },
+        }),
+      })
+      const j = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
+      chargeReply('followup', MODEL, j)
+      line = (j.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '').trim()
+    }
     // "(nothing)", or the same in its own words or language ("(none)", "(nic)"): a lone parenthesis is never speech.
     const said = line.replace(/\$([^$\n]{1,40})\$/g, '$1')
     if (!said || /^\W*\([^)]{0,24}\)\W*$/.test(said) || said.length > 220) return undefined

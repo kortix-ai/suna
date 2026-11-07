@@ -8,6 +8,20 @@
   "first_chunk_ms": 1790845200000,
   "hostname": "fixture-host.local",
   "last_chunk_ms": 1790845262000,
+  "machine": {
+    "os_name": "macOS 26.0",
+    "os_build": "25A354",
+    "cpu": "Apple M3 Pro",
+    "cpu_cores": 12,
+    "memory_bytes": 38654705664,
+    "disk_free_bytes": 412316860416,
+    "disk_total_bytes": 994662584320,
+    "gpus": [],
+    "booted_at_ms": 1790841600000,
+    "timezone": "Europe/Berlin",
+    "utc_offset": "+01:00",
+    "locale": "en-US"
+  },
   "machine_key_sha256": "7d8211fcdf0e93a009e33c48c970261649cb43b785744040fbc57149d9ce29e0",
   "member": {
     "email": "person@example.com"

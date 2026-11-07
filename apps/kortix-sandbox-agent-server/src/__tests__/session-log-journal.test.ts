@@ -205,6 +205,8 @@ function fakeApi(
         if (body.kind === 'end') turnEnds.push(performance.now())
         return Response.json({ ok: true })
       }
+      // The boot reconcile reads the manifest on every box; 503 (ingest off) restores nothing and keeps the store.
+      if (url.pathname.endsWith('/log/manifest')) return new Response('ingest off', { status: 503 })
       const raw = new Uint8Array(await request.arrayBuffer())
       const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(raw))) as SessionLogJournalRequest
       received.push({ body, gzippedBytes: raw.byteLength, at: performance.now(), path: url.pathname, headers: request.headers })
@@ -250,7 +252,7 @@ describe('session-log journal', () => {
 
     expect(api.received).toHaveLength(1)
     const [first] = api.received
-    expect(first!.path).toBe('/v1/projects/project-1/sessions/session-1/log/journal')
+    expect(first!.path).toBe('/v1/workspaces/project-1/sessions/session-1/log/journal')
     expect(first!.headers.get('authorization')).toBe('Bearer session-token')
     expect(first!.headers.get('content-encoding')).toBe('gzip')
     expect(first!.body.generation).toBe(7)
@@ -761,7 +763,7 @@ describe('session-log journal', () => {
     expect(last.session).toEqual({ title: 'A synthetic title' })
   })
 
-  test('pi and the OpenCode orphan path: a slow acknowledgement holds relayTurnEnd at most 3 s; the batch is retried afterwards', async () => {
+  test('a slow acknowledgement holds relayTurnEnd at most 3 s; the batch is retried afterwards', async () => {
     const api = fakeApi(async (body, n, request) => {
       if (n === 1) {
         await Promise.race([Bun.sleep(6_000), aborted(request)])
@@ -1106,7 +1108,7 @@ describe('no batch is dropped', () => {
     expect(journal.clean).toBe(true)
   })
 
-  test('422: the live turn after a re-sequence streams at the moved seqs; a restarted daemon keeps them (restore off) and posts no 422', async () => {
+  test('422: the live turn after a re-sequence streams at the moved seqs; a restarted daemon keeps them (no restore: the manifest answers 503) and posts no 422', async () => {
     resetKortixEventBusForTests()
     const api = storeApi([['old1', 1], ['old2', 2]])
     const fake = fakeAdapter()
@@ -1123,7 +1125,7 @@ describe('no batch is dropped', () => {
     expect(frames.map((f) => f.payload.message?.seq)).toEqual([moved + 1])
     await journal.stop(0)
 
-    // The daemon restarts on the same store, restore off: the boot hands the journal the offsets.
+    // The daemon restarts on the same store and restores nothing: the boot hands the journal the offsets.
     const boot = await reconcileSessionLog(fake.port)
     const before = api.statuses.length
     const restarted = new SessionLogJournal(fake.port, boot!)
@@ -1194,7 +1196,7 @@ describe('no batch is dropped', () => {
     await journal.stop(0)
   })
 
-  test('recovery: a daemon restart (restore off) re-sends every message of the native store, also one an older daemon dropped', async () => {
+  test('recovery: a daemon restart that restores nothing (the manifest answers 503) re-sends every message of the native store, also one an older daemon dropped', async () => {
     const api = storeApi([['old1', 1], ['old2', 2]])
     const fake = fakeAdapter()
     // An older daemon dropped new1 on a 422: the store holds it, the log does not.

@@ -18,7 +18,7 @@ export function bindSessionStart(projectId: string, sessionId: string) {
     // so the total honors readyTimeoutMs — a fixed 30s wait would overshoot
     // the deadline by up to ~30s on the final iteration.
     const remainingMs = () => Math.max(0, deadline - Date.now());
-    let started = await P.startProjectSession(
+    let started = await P.startWorkspaceSession(
       projectId,
       sessionId,
       Math.min(30_000, remainingMs()),
@@ -36,9 +36,9 @@ export function bindSessionStart(projectId: string, sessionId: string) {
         ((started.stage === 'provisioning' || started.stage === 'starting') && started.retriable))
     ) {
       await new Promise((r) => setTimeout(r, Math.min(1_000, remainingMs())));
-      started = await P.startProjectSession(projectId, sessionId, Math.min(30_000, remainingMs()));
+      started = await P.startWorkspaceSession(projectId, sessionId, Math.min(30_000, remainingMs()));
     }
-    const runtimeSessionId = started?.runtime_session_id ?? started?.opencode_session_id;
+    const runtimeSessionId = started?.runtime_session_id;
     if (!started || started.stage !== 'ready' || !started.sandbox || !runtimeSessionId) {
       throw new ApiError(runtimeNotReadyMessage(started), {
         code: 'RUNTIME_UNAVAILABLE',

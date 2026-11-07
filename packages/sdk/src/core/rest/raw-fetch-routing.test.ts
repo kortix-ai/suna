@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { ApiError } from '../http/api/errors';
 import { configureKortix } from '../http/config';
-import { fetchProjectArchive } from './projects-client/files';
+import { fetchWorkspaceArchive } from './projects-client/files';
 import { fetchCostExportCsv } from './projects-client/session-costs';
 import { getAllVersions, getFullChangelog } from './platform-client/updates';
 
@@ -35,14 +35,14 @@ afterEach(() => configureKortix({ backendUrl: '', getToken: async () => null }))
 test('fetchProjectArchive replays a 401 once with the fresh token', async () => {
   statuses = [401, 200];
   configure(['old', 'new']);
-  await fetchProjectArchive('p1', 'main');
+  await fetchWorkspaceArchive('p1', 'main');
   expect(seenAuth).toEqual(['Bearer old', 'Bearer new']);
 });
 
 test('fetchProjectArchive throws an ApiError carrying the status', async () => {
   statuses = [500];
   configure(['tok']);
-  const error = await fetchProjectArchive('p1', 'main').catch((e: unknown) => e);
+  const error = await fetchWorkspaceArchive('p1', 'main').catch((e: unknown) => e);
   expect(error).toBeInstanceOf(ApiError);
   expect((error as ApiError).status).toBe(500);
 });

@@ -2,7 +2,7 @@
  * Integration test (real local DB, real routes): turning Channels on and off.
  *
  * - Only a project admin (`project.settings.write`, the Manager role)
- *   turns `project_channels` on or off. A member gets 403 and nothing changes.
+ *   turns `chat` on or off. A member gets 403 and nothing changes.
  *   (The other writer, `PUT /v1/admin/api/projects/:id/features`, is for
  *   platform operators only.)
  * - First turn-on: no "turned on again" record, even when `#general` is made
@@ -66,8 +66,8 @@ const base = `/v1/projects/${PROJECT}`;
 const channelsMeta = async () =>
   ((await db.select({ m: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT)))[0]!.m as any)?.channels;
 
-const ON = { experimental: { project_channels: true } };
-const OFF = { experimental: { project_channels: false } };
+const ON = { experimental: { chat: true } };
+const OFF = { experimental: { chat: false } };
 
 /**
  * PATCH the flag, then run the toggle effect once more and await it, with the
@@ -76,11 +76,11 @@ const OFF = { experimental: { project_channels: false } };
  * awaits it too (`toggleEffectsSettled`), so nothing writes after an assertion.
  */
 async function toggle(projectId: string, enabled: boolean, between?: () => Promise<unknown>) {
-  const res = await req('PATCH', `/v1/projects/${projectId}/features`, keys[`manager:${projectId}`]!, { feature: 'project_channels', enabled });
+  const res = await req('PATCH', `/v1/projects/${projectId}/features`, keys[`manager:${projectId}`]!, { feature: 'chat', enabled });
   expect(res.status).toBe(200);
   await between?.();
   const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId));
-  const ctx = { key: 'project_channels' as const, projectId, accountId: ACCOUNT, metadata: row!.metadata, previousMetadata: enabled ? OFF : ON, writtenAt: row!.updatedAt };
+  const ctx = { key: 'chat' as const, projectId, accountId: ACCOUNT, metadata: row!.metadata, previousMetadata: enabled ? OFF : ON, writtenAt: row!.updatedAt };
   await runFeatureFlagToggleEffects(ctx);
   await toggleEffectsSettled();
   return ctx;
@@ -92,9 +92,9 @@ const introMarks = async (projectId: string) =>
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'channels-onboarding' });
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'Northwind', repoUrl: 'https://example.test/n.git', metadata: { experimental: { project_channels: true } } },
-    { projectId: OFF_PROJECT, accountId: ACCOUNT, name: 'Acme', repoUrl: 'https://example.test/a.git' },
-    { projectId: FIRST_PROJECT, accountId: ACCOUNT, name: 'Globex', repoUrl: 'https://example.test/g.git' },
+    { splitPending: true, projectId: PROJECT, accountId: ACCOUNT, name: 'Northwind', repoUrl: 'https://example.test/n.git', metadata: { experimental: { chat: true } } },
+    { splitPending: true, projectId: OFF_PROJECT, accountId: ACCOUNT, name: 'Acme', repoUrl: 'https://example.test/a.git' },
+    { splitPending: true, projectId: FIRST_PROJECT, accountId: ACCOUNT, name: 'Globex', repoUrl: 'https://example.test/g.git' },
   ]);
   await insertIntoView(db, accountMembers, [
     { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
@@ -125,11 +125,11 @@ afterAll(async () => {
 
 describe('only a project admin turns Channels on or off', () => {
   test('a member gets 403 naming project.settings.write, and the flag stays on', async () => {
-    const res = await req('PATCH', `${base}/features`, keys.priya, { feature: 'project_channels', enabled: false });
+    const res = await req('PATCH', `${base}/features`, keys.priya, { feature: 'chat', enabled: false });
     expect(res.status).toBe(403);
-    expect(JSON.stringify(await res.json())).toContain('(project.settings.write)');
+    expect(JSON.stringify(await res.json())).toContain('(workspace.settings.write)');
     const [row] = await db.select({ m: projects.metadata }).from(projects).where(eq(projects.projectId, PROJECT));
-    expect((row!.m as any).experimental.project_channels).toBe(true);
+    expect((row!.m as any).experimental.chat).toBe(true);
   });
 });
 
@@ -192,7 +192,7 @@ describe('turning Channels on again', () => {
     // Turn on without the route, so this effect is the only one: the flag write as `writeProjectFeatureFlag` does it.
     const [row] = await db
       .update(projects)
-      .set({ metadata: { experimental: { project_channels: true } }, updatedAt: sql`date_trunc('milliseconds', now())` })
+      .set({ metadata: { experimental: { chat: true } }, updatedAt: sql`date_trunc('milliseconds', now())` })
       .where(eq(projects.projectId, PROJECT))
       .returning();
     // The first marks INSERT for this project fails once (a sequence survives the rollback).
@@ -205,7 +205,7 @@ describe('turning Channels on again', () => {
     );
     await db.execute(sql.raw(`create trigger onb_fail before insert on kortix.project_user_marks for each row execute function ${name}()`));
     try {
-      await runFeatureFlagToggleEffects({ key: 'project_channels', projectId: PROJECT, accountId: ACCOUNT, metadata: row!.metadata, previousMetadata: OFF, writtenAt: row!.updatedAt });
+      await runFeatureFlagToggleEffects({ key: 'chat', projectId: PROJECT, accountId: ACCOUNT, metadata: row!.metadata, previousMetadata: OFF, writtenAt: row!.updatedAt });
     } finally {
       await db.execute(sql.raw(`drop trigger onb_fail on kortix.project_user_marks; drop function ${name}(); drop sequence ${name}`));
     }
@@ -215,7 +215,7 @@ describe('turning Channels on again', () => {
 
   test('a repeated "on" (on before the write too) records nothing new', async () => {
     const before = await channelsMeta();
-    await runFeatureFlagToggleEffects({ key: 'project_channels', projectId: PROJECT, accountId: ACCOUNT, metadata: ON, previousMetadata: ON, writtenAt: new Date() });
+    await runFeatureFlagToggleEffects({ key: 'chat', projectId: PROJECT, accountId: ACCOUNT, metadata: ON, previousMetadata: ON, writtenAt: new Date() });
     expect(await channelsMeta()).toEqual(before);
   });
 });

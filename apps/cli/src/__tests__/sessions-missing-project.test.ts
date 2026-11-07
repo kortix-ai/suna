@@ -30,23 +30,23 @@ async function run(extra: string[] = []) {
 test('a missing default project explains the recovery command', async () => {
   const result = await run();
   expect(result.code).toBe(1);
-  expect(result.stderr).toContain('Default project');
+  expect(result.stderr).toContain('Default workspace');
   expect(result.stderr).toContain('not found');
-  expect(result.stderr).toContain('kortix projects use <id> --host test');
+  expect(result.stderr).toContain('kortix workspaces use <id> --host test');
 });
 
 test('an explicit project is not called the default', async () => {
   const result = await run(['--project', 'explicit-project']);
   expect(result.code).toBe(1);
-  expect(result.stderr).not.toContain('Default project');
-  expect(result.stderr).toContain('Project "explicit-project" was not found');
+  expect(result.stderr).not.toContain('Default workspace');
+  expect(result.stderr).toContain('Workspace "explicit-project" was not found');
 });
 
 test('other errors retain their meaning', async () => {
   responseStatus = 500;
   const result = await run();
   expect(result.code).toBe(1);
-  expect(result.stderr).not.toContain('Default project');
+  expect(result.stderr).not.toContain('Default workspace');
 });
 
 test('a valid default keeps the empty-list output', async () => {
@@ -64,6 +64,6 @@ test('a valid default keeps the empty-list output', async () => {
   try {
     const result = await run();
     expect(result.code).toBe(1);
-    expect(result.stderr).not.toContain('Default project');
+    expect(result.stderr).not.toContain('Default workspace');
   } finally { rmSync(join(root, '.kortix'), { recursive: true }); }
 });

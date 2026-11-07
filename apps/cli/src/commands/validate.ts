@@ -18,7 +18,9 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
-import { DEPRECATED_KORTIX_PERMISSION_ALIASES, fixManifestText, GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
+import { DEPRECATED_KORTIX_PERMISSION_ALIASES, fixManifestText, GRANTABLE_KORTIX_PERMISSIONS, isEveryGrant } from '@kortix/manifest-schema';
+import { toLegacyAction, toWorkspaceAction } from '@kortix/shared/workspace-actions';
+import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import { type FileIssue, formatIssueLine, validateManifestFile } from '../manifest.ts';
 import { resolveLocalManifestImports } from '../manifest-imports.ts';
 import { applyLocalLegacy, convertLocalLegacy, localManifestFile, readLegacyManifest } from '../manifest-legacy.ts';
@@ -28,7 +30,7 @@ import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 
 const HELP = help`Usage: kortix validate [options]
 
-Statically validate the project's kortix.yaml against the canonical schema,
+Statically validate the workspace's kortix.yaml against the canonical schema,
 and lint every \`sandbox.templates\` Dockerfile for the constraints the cloud
 builder enforces (no COPY from the repo, no RUN heredocs, Debian-family base).
 Warn when the files in Git are large: every session downloads them, and above
@@ -49,10 +51,12 @@ each agent .md keeps only its prompt).
 
 Options:
   --file <path>          Validate this file instead of ./kortix.yaml (or kortix.toml).
-  --fix                  Rewrite deprecated shapes to the latest shape first.
+  --fix                  Rewrite deprecated shapes to the latest shape,
+                         \`all\` grants to \`"*"\`, and \`project.*\`
+                         kortix_permissions to their \`workspace.*\` names, first.
   --no-dockerfile-lint   Skip the sandbox Dockerfile checks (manifest only).
   --json                 Emit a machine-readable JSON report (no color).
-  --scopes               Print the full grantable kortix_permissions enum and exit.
+  --scopes               Print every grantable kortix_permissions name and exit.
   -h, --help             Show this help.
 `;
 
@@ -61,7 +65,7 @@ function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return '';
   const show = (v: unknown): string =>
-    v === 'all' ? 'all' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
+    isEveryGrant(v) ? '* (every)' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
   const keys = ['skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets'];
   const lines = Object.entries(agents as Record<string, Record<string, unknown> | null>).map(
     ([name, block]) => `  ${C.cyan}${name}${C.reset}  ${keys.map((key) => `${key}=[${show(block?.[key])}]`).join('  ')}`,
@@ -103,6 +107,57 @@ function convertLegacyFile(filePath: string, json: boolean): string | null {
   return manifest;
 }
 
+/** Each name once, first spelling first. */
+const unique = (names: readonly string[]): string[] => [...new Set(names)];
+
+/** The grantable kortix_permissions names an agent should write: workspace.*. */
+export function grantableWorkspacePermissions(): string[] {
+  return unique(GRANTABLE_KORTIX_PERMISSIONS.map(toWorkspaceAction));
+}
+
+/** Legacy name → workspace name, for every grantable legacy name. */
+export function legacyPermissionRenames(): Array<[legacy: string, workspace: string]> {
+  return unique(GRANTABLE_KORTIX_PERMISSIONS.map(toLegacyAction))
+    .map((legacy) => [legacy, toWorkspaceAction(legacy)] as [string, string])
+    .filter(([legacy, workspace]) => legacy !== workspace);
+}
+
+/**
+ * `--fix`: every \`agents.<name>.kortix_permissions\` entry written under its
+ * legacy name (\`project.session.start\`) gets its workspace name
+ * (\`workspace.session.start\`). \`"*"\`, \`all\` and unknown names stay as written.
+ * Only the name's own characters change: quotes, comments and every other
+ * byte of the file stay. Returns the agent paths it rewrote.
+ */
+export function rewriteLegacyPermissionNames(text: string): { text: string; fixed: string[] } {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0 || !isMap(doc.contents)) return { text, fixed: [] };
+  const agents = doc.contents.get('agents', true);
+  if (!isMap(agents)) return { text, fixed: [] };
+  const renames = new Map(legacyPermissionRenames());
+  const edits: Array<{ start: number; end: number; from: string; to: string }> = [];
+  const fixed: string[] = [];
+  for (const pair of agents.items) {
+    if (!isMap(pair.value)) continue;
+    const grant = pair.value.get('kortix_permissions', true);
+    if (!isSeq(grant)) continue;
+    let touched = false;
+    for (const item of grant.items) {
+      if (!isScalar(item) || typeof item.value !== 'string' || !item.range) continue;
+      const to = renames.get(item.value);
+      if (!to) continue;
+      edits.push({ start: item.range[0], end: item.range[1], from: item.value, to });
+      touched = true;
+    }
+    if (touched) fixed.push(`agents.${isScalar(pair.key) ? String(pair.key.value) : String(pair.key)}.kortix_permissions`);
+  }
+  let out = text;
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    out = out.slice(0, edit.start) + out.slice(edit.start, edit.end).replace(edit.from, edit.to) + out.slice(edit.end);
+  }
+  return { text: out, fixed };
+}
+
 export function runValidate(argv: string[]): number {
   const flags = takeFlags(argv, HELP, (rest) => ({
     file: takeFlagValue(rest, ['--file']),
@@ -114,9 +169,16 @@ export function runValidate(argv: string[]): number {
   if (typeof flags === 'number') return flags;
   if (flags.scopes) {
     process.stdout.write(
-      `${C.dim}Grantable kortix_permissions (project-scoped — account-level admin actions can never be granted to an agent):${C.reset}\n`,
+      `${C.dim}Grantable kortix_permissions (\`"*"\` grants every one of them):${C.reset}\n`,
     );
-    for (const a of GRANTABLE_KORTIX_PERMISSIONS) process.stdout.write(`  ${a}\n`);
+    for (const a of grantableWorkspacePermissions()) process.stdout.write(`  ${a}\n`);
+    const legacy = legacyPermissionRenames();
+    if (legacy.length > 0) {
+      process.stdout.write(
+        `\n${C.dim}Legacy names, still accepted (\`kortix validate --fix\` writes the new name):${C.reset}\n`,
+      );
+      for (const [was, now] of legacy) process.stdout.write(`  ${was}${C.dim} → ${now}${C.reset}\n`);
+    }
     const renamed = Object.entries(DEPRECATED_KORTIX_PERMISSION_ALIASES);
     if (renamed.length > 0) {
       // Not grantable any more, but still ACCEPTED in a manifest that has one.
@@ -126,7 +188,7 @@ export function runValidate(argv: string[]): number {
         `\n${C.dim}Renamed — still accepted, but write the new name:${C.reset}\n`,
       );
       for (const [was, now] of renamed) {
-        process.stdout.write(`  ${was}${C.dim} → ${now.join(', ')}${C.reset}\n`);
+        process.stdout.write(`  ${was}${C.dim} → ${now.map(toWorkspaceAction).join(', ')}${C.reset}\n`);
       }
     }
     return 0;
@@ -145,7 +207,7 @@ export function runValidate(argv: string[]): number {
       process.stderr.write(
         `${status.err('Manifest not found')}\n` +
           `  ${C.dim}Looked for ${filePath}${C.reset}\n` +
-          `  ${C.dim}Run from your project root, or pass${C.reset} ${C.cyan}--file <path>${C.reset}\n`,
+          `  ${C.dim}Run from your workspace root, or pass${C.reset} ${C.cyan}--file <path>${C.reset}\n`,
       );
     }
     return 2;
@@ -163,11 +225,16 @@ export function runValidate(argv: string[]): number {
       // A broken file or import: fix what can be read, and let validation report the rest.
     }
     for (const path of paths) {
-      const { text, fixed } = fixManifestText(readFileSync(path, 'utf8'));
+      const healed = fixManifestText(readFileSync(path, 'utf8'), { canonical: true });
+      const renamed = rewriteLegacyPermissionNames(healed.text);
+      const fixed = [
+        ...healed.fixed.map((f) => `${f.path} (${f.id})`),
+        ...renamed.fixed.map((p) => `${p} (workspace-permission-names)`),
+      ];
       if (fixed.length === 0) continue;
-      writeFileSync(path, text, 'utf8');
+      writeFileSync(path, renamed.text, 'utf8');
       if (!flags.json) {
-        process.stdout.write(`${status.ok(`${relative(process.cwd(), path) || basename(path)}: rewrote ${fixed.map((f) => `${f.path} (${f.id})`).join(', ')}`)}\n`);
+        process.stdout.write(`${status.ok(`${relative(process.cwd(), path) || basename(path)}: rewrote ${fixed.join(', ')}`)}\n`);
       }
     }
   }

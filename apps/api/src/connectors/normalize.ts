@@ -15,6 +15,7 @@ import type {
   PipedreamActionLike,
   Risk,
 } from './types';
+import { withKortixComposioTools } from './composio-youtube-upload';
 export { normalizePostmanCollection } from './postman-normalize';
 
 /* ─── shared helpers ─────────────────────────────────────────────────────── */
@@ -438,11 +439,11 @@ function pdType(t: string): string {
 
 /* ─── Composio ──────────────────────────────────────────────────────────── */
 
-/** Normalize Composio session tools. */
+/** Normalize Composio session tools, with the tools Kortix runs itself on this toolkit. */
 export function normalizeComposio(tools: ComposioToolLike[], toolkit: string): NormalizedAction[] {
   if (!Array.isArray(tools)) return [];
   const prefix = `${toolkit.toUpperCase()}_`;
-  const actions: NormalizedAction[] = tools
+  const actions: NormalizedAction[] = withKortixComposioTools(tools, toolkit)
     .filter(
       (tool) =>
         tool?.type === 'function' &&

@@ -45,7 +45,6 @@ import { useDesktopShell } from '../../internal/layout/sidebar-opener';
 import { SidebarToggle } from '../../internal/layout/sidebar-toggle';
 import { useRenameSession } from '../actions/use-rename-session';
 import { SessionDeleteModal } from '../actions/session-delete-modal';
-import { useNotificationCenter } from '../../internal/hooks/use-notification-center';
 import {
   useUiComponents,
   useUiHostConfig,
@@ -69,6 +68,7 @@ import {
   useHasSessionDesktop,
   useProjectSession,
   useRuntimeSupports,
+  useSessionChildren,
   useSessionParticipants,
   useSessionWatch,
 } from '@kortix/sdk/react';
@@ -186,7 +186,7 @@ export function SessionSiteHeader({
   // The ids come from the session view (`SessionIdsProvider`); a host whose
   // URL has another shape still gets them. apps/web's route is the fallback.
   const sessionIds = useSessionIds();
-  const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+  const projectRoute = pathname?.match(/^\/(?:workspaces|projects)\/([^/]+)\/sessions\/([^/]+)/);
   const projectId = sessionIds.projectId ?? projectRoute?.[1];
   const projectSessionId = sessionIds.sessionId ?? projectRoute?.[2];
   const isProjectSession = !!projectId && !!projectSessionId;
@@ -210,17 +210,14 @@ export function SessionSiteHeader({
   });
   // Mute: the caller's watch on this session (KRTX-1742). Anyone who can open
   // it may mute it; unmuting a session you never watched makes you a watcher.
-  // Only with the project's `notification_center` flag on: off, the watch
-  // routes answer 403 and the item does not exist.
   const viewerId = useUiViewerId();
-  const notificationCenter = useNotificationCenter(projectId);
   const sessionWatch = useSessionWatch({
     userId: viewerId,
     projectId,
     sessionId: projectSessionId,
-    enabled: isProjectSession && !parent && notificationCenter,
+    enabled: isProjectSession && !parent,
   });
-  const watching = notificationCenter ? sessionWatch.data?.watching : undefined;
+  const watching = sessionWatch.data?.watching;
   const toggleWatch = () => {
     if (watching === undefined) return;
     sessionWatch
@@ -274,6 +271,10 @@ export function SessionSiteHeader({
   const renameMutation = useRenameSession(projectId ?? '', projectSessionId ?? null);
   const canRename = isProjectSession && !!projectSession && !parent;
   const subsessions = projectSession && !parent ? directSubsessions(projectSession) : [];
+  const childSessions = useSessionChildren(projectId ?? '', projectSessionId ?? '', {
+    enabled: isProjectSession && !parent,
+    refetchInterval: 5_000,
+  });
   const startRename = () => {
     if (canRename) setIsRenaming(true);
   };
@@ -605,7 +606,7 @@ export function SessionSiteHeader({
                 // No name yet: `SavedSessionSkeleton` renders this header
                 // before the session row has answered.
                 <Skeleton className="mx-2.5 h-3.5 w-24 py-0 motion-reduce:animate-none" />
-              ) : canRename && subsessions.length > 0 ? (
+              ) : isProjectSession && !parent && (subsessions.length > 0 || childSessions.sessions.length > 0) ? (
                 // A parent session: hovering its name lists the subagents it
                 // spawned. The card replaces the "Rename" hint — two floating
                 // surfaces on one hover is one too many; a click still renames.
@@ -613,6 +614,9 @@ export function SessionSiteHeader({
                   projectId={projectId!}
                   projectSessionId={projectSessionId!}
                   subsessions={subsessions}
+                  spawnedSessions={childSessions.sessions}
+                  onLoadMore={childSessions.hasNextPage ? () => { void childSessions.fetchNextPage(); } : undefined}
+                  loadingMore={childSessions.isFetchingNextPage}
                 >
                   {titleButton}
                 </SubagentHoverCard>

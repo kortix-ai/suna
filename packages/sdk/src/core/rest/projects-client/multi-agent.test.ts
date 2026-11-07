@@ -15,7 +15,7 @@ import {
   type PeerMessage,
   type SessionTask,
 } from './multi-agent';
-import { listProjectSessionsPage } from './sessions';
+import { listWorkspaceSessionsPage } from './sessions';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextBody: unknown = {};
@@ -33,7 +33,7 @@ beforeEach(() => {
 
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 const last = () => calls[calls.length - 1]!;
-const SESSION = 'http://test.local/projects/p1/sessions/s1';
+const SESSION = 'http://test.local/workspaces/p1/sessions/s1';
 
 const MESSAGE: PeerMessage = {
   id: 'm_7Kq2',
@@ -137,8 +137,8 @@ test('updateSessionTask rejects a 409 task_taken', async () => {
 
 test('listProjectSessionsPage sends teamLead as team_lead', async () => {
   nextBody = [];
-  await listProjectSessionsPage('p1', { teamLead: 's1' });
-  expect(last().url).toBe('http://test.local/projects/p1/sessions?team_lead=s1');
+  await listWorkspaceSessionsPage('p1', { teamLead: 's1' });
+  expect(last().url).toBe('http://test.local/workspaces/p1/sessions?team_lead=s1');
 });
 
 test('a session handle binds the multi-agent routes to its own ids', async () => {

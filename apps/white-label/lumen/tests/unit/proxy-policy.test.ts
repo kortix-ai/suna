@@ -55,17 +55,17 @@ describe('proxy policy: an Assistant file opens only inside the bearer\'s matter
 
 describe('proxy policy: browser-visible responses carry no platform plumbing', () => {
   const RT = 'p/sbx_01M5/8000';
-  test('a session record loses its sandbox URL, audit envelope, branch, provider and deprecated runtime aliases', () => {
+  test('a session record loses its sandbox URL, audit envelope, branch, provider and model bookkeeping', () => {
     const body = {
       session_id: 's1', name: 'NDA', agent_name: 'lumen-f-k17', sandbox_id: 'sbx_01M5',
       sandbox_url: 'https://example-tunnel.invalid/v1/p/sbx_01M5/8000', audit_v2: { actor_type: 'service_account' },
       repository_access: false, sandbox_provider: 'platinum', branch_name: 'session/s1', base_ref: 'main',
-      runtime_session_id: 'ses_9', opencode_session_id: 'ses_9', runtime_sessions: [], opencode_sessions: [],
-      metadata: { source: 'ui', lumen_matter_id: 'kh7', audit_v2: { actor_type: 'service_account' }, repository_access: false, opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform' },
+      runtime_session_id: 'ses_9', runtime_sessions: [],
+      metadata: { source: 'ui', lumen_matter_id: 'kh7', audit_v2: { actor_type: 'service_account' }, repository_access: false, model: 'kortix/deepseek-v4.1-flash', model_source: 'platform' },
     };
     for (const path of [S, `${S}/snapshot`]) {
       const out = JSON.stringify(redactIdentity(path, path === S ? body : { session: body }));
-      for (const leak of ['sandbox_url', 'example-tunnel', 'audit_v2', 'service_account', 'repository_access', 'platinum', 'branch_name', 'opencode_session', 'opencode_sessions']) {
+      for (const leak of ['sandbox_url', 'example-tunnel', 'audit_v2', 'service_account', 'repository_access', 'platinum', 'branch_name', 'opencode_session']) {
         expect(out).not.toContain(leak);
       }
       expect(out).toContain('"runtime_session_id":"ses_9"');
@@ -79,7 +79,7 @@ describe('proxy policy: browser-visible responses carry no platform plumbing', (
     const health = {
       status: 'ok', runtimeReady: true, version: '0.9.1', capabilities: ['session.rewind'],
       agent_path: '/usr/local/bin/kortix-agent', harness: { id: 'opencode', version: '1.18.15', state: 'ok', ready: true, error: null, session: { id: 'ses_9', required: true }, turn: null, details: { models: ['kortix/deepseek-v4.1-flash'], boot: 'opencode-spawned' } },
-      opencode_version: '1.18.15', boot_labels: ['opencode-spawned'],
+      harness_version: '1.18.15', boot_labels: ['opencode-spawned'],
     };
     expect(redactsIdentity(`${RT}/kortix/health`)).toBe(true);
     const out = redactIdentity(`${RT}/kortix/health`, health) as Record<string, unknown>;
@@ -93,7 +93,7 @@ describe('proxy policy: browser-visible responses carry no platform plumbing', (
   test('a transcript names an inbox file by its name only', () => {
     expect(redactsIdentity(`${S}/transcript`)).toBe(true);
     const out = redactIdentity(`${S}/transcript`, {
-      runtime_session_id: 'ses_9', opencode_session_id: 'ses_9', messages: [{ text: 'See /workspace/uploads/.kortix-inbox/a1b2/one-way-nda.pdf now' }],
+      runtime_session_id: 'ses_9', messages: [{ text: 'See /workspace/uploads/.kortix-inbox/a1b2/one-way-nda.pdf now' }],
     });
     expect(JSON.stringify(out)).toBe('{"runtime_session_id":"ses_9","messages":[{"text":"See one-way-nda.pdf now"}]}');
   });
@@ -501,7 +501,7 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
 
   test("records drop the operator's Kortix user and account ids and the managed repository", () => {
     const ids = { account_id: 'acc_op', created_by: 'u_op', owner_id: 'u_op' };
-    const session = { session_id: 's1', ...ids, owner_email: OPERATOR, opencode_model: 'kortix/x' };
+    const session = { session_id: 's1', ...ids, owner_email: OPERATOR, model: 'kortix/x' };
     const cases: Array<[string, unknown]> = [
       [P, { project_id: 'p1', name: 'Firm', ...ids, repo_url: 'https://github.com/managed-x/p1', manifest_path: 'kortix.yaml', description: 'A Kortix project.' }],
       [
@@ -515,7 +515,7 @@ describe("proxy responses: the operator's Kortix identity never reaches a member
             warnings: 0,
             issues: [{ path: 'agents.worker.promt', message: 'unknown agent key "promt". Did you mean "prompt"?', severity: 'error', line: 3, column: 5 }],
           },
-          experimental_features: [{ key: 'agent_rooms', enabled: true, description: 'KORTIX_FEATURE_FLAGS lists it in kortixd' }],
+          experimental_features: [{ key: 'voice_call', enabled: true, description: 'KORTIX_FEATURE_FLAGS lists it in kortixd' }],
         },
       ],
       [S, session],
@@ -660,9 +660,9 @@ describe('proxy policy: the shared project detail lists only the caller firm age
   const detail = {
     project: { project_id: 'p1', name: 'lumen', account_id: 'acc_operator', repo_url: 'https://git.example/x' },
     config: {
-      default_agent: 'lumen-none', open_code_default_agent: 'lumen-none',
+      default_agent: 'lumen-none',
       agents: [{ name: 'lumen-f-firma' }, { name: 'lumen-f-firmb', description: 'firm b prompt' }, { name: 'lumen-none' }, { name: 'kortix' }],
-      manifest: { agents: { 'lumen-f-firmb': {} } }, manifest_raw: 'lumen-f-firmb', open_code_raw: '{}', env: { optional: ['K'] },
+      manifest: { agents: { 'lumen-f-firmb': {} } }, manifest_raw: 'lumen-f-firmb', env: { optional: ['K'] },
       skills: [{ name: 'agent-browser' }], commands: [],
     },
     files: [{ path: 'kortix.yaml' }], file_count: 174,
@@ -672,7 +672,6 @@ describe('proxy policy: the shared project detail lists only the caller firm age
     const out = redactIdentity(`${P}/detail`, detail, 'lumen-f-firma') as typeof detail;
     expect(out.config.agents).toEqual([{ name: 'lumen-f-firma' }]);
     expect(out.config.default_agent).toBe('lumen-f-firma');
-    expect(out.config.open_code_default_agent).toBe('lumen-f-firma');
     expect([out.files, out.file_count]).toEqual([[], 0]);
     expect(JSON.stringify(out)).not.toMatch(/firmb|acc_operator|git\.example/);
     expect(redactsIdentity(`${P}/detail`)).toBe(true);

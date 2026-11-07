@@ -13,13 +13,19 @@ import { type ReactNode, createContext, createElement, useContext } from 'react'
  */
 const KortixProjectContext = createContext<string | null>(null);
 
-export function KortixProjectProvider(props: {
+export function KortixWorkspaceProvider(props: {
   projectId: string | null;
   children?: ReactNode;
 }): ReactNode {
   return createElement(KortixProjectContext.Provider, { value: props.projectId }, props.children);
 }
 
-export function useKortixRouteProjectId(): string | null {
+/** @deprecated Use `KortixWorkspaceProvider`. Kept permanently. */
+export const KortixProjectProvider = KortixWorkspaceProvider;
+
+export function useKortixRouteWorkspaceId(): string | null {
   return useContext(KortixProjectContext);
 }
+
+/** @deprecated Use `useKortixRouteWorkspaceId`. Kept permanently. */
+export const useKortixRouteProjectId = useKortixRouteWorkspaceId;

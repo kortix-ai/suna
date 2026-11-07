@@ -303,12 +303,12 @@ describe('<ArtifactsView/>', () => {
       [{ rows: [], loading: true }, 'loading artifacts'],
       [{ rows: [], errorMessage: '403 Forbidden' }, '403 Forbidden'],
       [
-        { unavailable: 'Artifacts are off for this project. Turn on the `artifacts` flag.' },
+        { unavailable: 'Artifacts are off for this workspace. Turn on the `artifacts` flag.' },
         'Artifacts are off',
       ],
       [
-        { unavailable: 'No project selected. Pick a project to see its artifacts.' },
-        'No project selected',
+        { unavailable: 'No workspace open. Type /workspaces to pick one and see its artifacts.' },
+        'No workspace open',
       ],
     ];
     for (const [over, expected] of cases) {

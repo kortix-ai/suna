@@ -35,8 +35,8 @@ import { type Server, createServer as createHttpsServer } from 'node:https';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { REPO_ROOT as root, readWorkflow } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const installer = resolve(root, 'scripts/install.sh');
 const REPO = 'kortix-ai/CompanyOS';
 const TAG = 'v9.9.9-test';
@@ -306,7 +306,7 @@ describe('scripts/install.sh installs a verified release', () => {
 
 describe('the release manifest covers every installable asset', () => {
   it('the prod workflow checksums and asserts every asset install.sh can ask for', () => {
-    const workflow = readFileSync(resolve(root, '.github/workflows/deploy-prod.yml'), 'utf8');
+    const workflow = readWorkflow('deploy-prod.yml');
     // The guard's EXPECTED list (release-record-workflow.test.ts pins the rest).
     const expected = [...workflow.matchAll(/^\s+(kortix-[A-Za-z0-9._-]+)\s*$/gm)].map((m) => m[1]);
     for (const os of ['darwin', 'linux']) {
@@ -322,7 +322,7 @@ describe('the release manifest covers every installable asset', () => {
   });
 
   it('the dev channel publishes its manifest too', () => {
-    const workflow = readFileSync(resolve(root, '.github/workflows/deploy-dev.yml'), 'utf8');
+    const workflow = readWorkflow('deploy-dev.yml');
     expect(workflow).toContain('sha256sum kortix-* > SHA256SUMS');
     expect(workflow).toContain('artifacts/SHA256SUMS');
   });

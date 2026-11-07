@@ -44,7 +44,6 @@ export type Route =
   | 'goals'
   | 'memory'
   | 'spaces'
-  | 'rooms'
   | 'loops'
   | 'audit';
 

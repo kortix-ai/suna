@@ -42,7 +42,6 @@ import { MEMORY_KEYS } from './features/memory/keys.ts';
 import { PORTS_KEYS } from './features/ports/keys.ts';
 import { REPO_KEYS } from './features/repo/keys.ts';
 import { REVIEW_KEYS } from './features/review/keys.ts';
-import { ROOMS_KEYS } from './features/rooms/keys.ts';
 import { COMPOSER_KEYMAP } from './features/session/composer/keys.ts';
 import { TRANSCRIPT_KEYS } from './features/session/transcript/keys.ts';
 import { AGENTS_KEYS } from './features/agents/keys.ts';
@@ -74,7 +73,6 @@ export type KeyScope =
   | 'goals'
   | 'memory'
   | 'spaces'
-  | 'rooms'
   | 'loops'
   | 'audit'
   | 'review'
@@ -106,7 +104,6 @@ export const SCOPE_ORDER: readonly KeyScope[] = [
   'goals',
   'memory',
   'spaces',
-  'rooms',
   'loops',
   'audit',
   'review',
@@ -138,7 +135,6 @@ export const SCOPE_TITLE: Record<KeyScope, string> = {
   goals: 'Goals',
   memory: 'Company memory',
   spaces: 'Channels and DMs',
-  rooms: 'Rooms',
   loops: 'Loops',
   audit: 'Session audit',
   review: 'Review',
@@ -147,7 +143,7 @@ export const SCOPE_TITLE: Record<KeyScope, string> = {
   providers: 'Model providers',
   connectors: 'Connectors',
   connect: 'Connect',
-  account: 'Account',
+  account: 'Workspace members',
   login: 'Login',
   ports: 'Ports panel',
   links: 'Links panel',
@@ -296,7 +292,7 @@ export const KEYMAP: readonly Binding[] = [
     id: 'screen.account',
     scope: 'global',
     chords: [chord('u', { alt: true })],
-    description: 'Open the account screen: members, invites, billing.',
+    description: 'Open the workspace members screen: members, invites, billing.',
   },
   {
     // `Alt+H` is FIRST because `Ctrl+H` is the ASCII backspace byte (0x08).
@@ -366,7 +362,6 @@ function featureTables(): readonly (readonly Binding[])[] {
     GOALS_KEYS,
     MEMORY_KEYS,
     SPACES_KEYS,
-    ROOMS_KEYS,
     LOOPS_KEYS,
     AUDIT_KEYS,
     REVIEW_KEYS,

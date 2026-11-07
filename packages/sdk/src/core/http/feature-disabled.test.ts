@@ -30,7 +30,7 @@ for (const [status, code, expectedReports] of [
       },
     });
 
-    const result = await backendApi.get('/projects/synthetic-project/reminders');
+    const result = await backendApi.get('/workspaces/synthetic-project/reminders');
 
     expect(result.success).toBe(false);
     expect(result.error).toBeInstanceOf(ApiError);

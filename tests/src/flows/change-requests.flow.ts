@@ -15,19 +15,19 @@ const RANDOM_UUID = "00000000-0000-4000-a000-0000000000c1";
 
 flow(
   "CR-1",
-  { domain: "change-requests", tags: ["smoke"], routes: ["GET /v1/projects/:projectId/change-requests"] },
+  { domain: "change-requests", tags: ["smoke"], routes: ["GET /v1/workspaces/:projectId/change-requests"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER lists change requests → 200 with the contract ChangeRequestList envelope", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/change-requests", { params: { projectId: p.id } });
       r.status(200).body().exists("$.change_requests").schema(ChangeRequestListSchema);
     });
     await ctx.step("invalid status filter → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests", { params: { projectId: p.id }, query: { status: "wizard" } });
+        .get("/v1/workspaces/:projectId/change-requests", { params: { projectId: p.id }, query: { status: "wizard" } });
       r.status(400);
     });
   },
@@ -35,24 +35,24 @@ flow(
 
 flow(
   "CR-2",
-  { domain: "change-requests", routes: ["POST /v1/projects/:projectId/change-requests"] },
+  { domain: "change-requests", routes: ["POST /v1/workspaces/:projectId/change-requests"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("missing title → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/change-requests", { head_ref: "feature" }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/change-requests", { head_ref: "feature" }, { params: { projectId: p.id } });
       r.status(400);
     });
     await ctx.step("missing head_ref → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/change-requests", { title: ctx.fixtures.name("cr") }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/change-requests", { title: ctx.fixtures.name("cr") }, { params: { projectId: p.id } });
       r.status(400);
     });
     await ctx.step("base_ref == head_ref → 400", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/change-requests",
+        "/v1/workspaces/:projectId/change-requests",
         { title: ctx.fixtures.name("cr"), head_ref: "main", base_ref: "main" },
         { params: { projectId: p.id } },
       );
@@ -60,7 +60,7 @@ flow(
     });
     await ctx.step("nonexistent head_ref → branch-tip resolution fails → 400/404/409", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/change-requests",
+        "/v1/workspaces/:projectId/change-requests",
         { title: ctx.fixtures.name("cr"), head_ref: "ke2e/does-not-exist" },
         { params: { projectId: p.id } },
       );
@@ -71,13 +71,13 @@ flow(
 
 flow(
   "CR-3",
-  { domain: "change-requests", routes: ["GET /v1/projects/:projectId/change-requests/:crId"] },
+  { domain: "change-requests", routes: ["GET /v1/workspaces/:projectId/change-requests/:crId"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("unknown crId → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests/:crId", { params: { projectId: p.id, crId: RANDOM_UUID } });
+        .get("/v1/workspaces/:projectId/change-requests/:crId", { params: { projectId: p.id, crId: RANDOM_UUID } });
       r.status(404);
     });
   },
@@ -85,12 +85,12 @@ flow(
 
 flow(
   "CR-4",
-  { domain: "change-requests", routes: ["PATCH /v1/projects/:projectId/change-requests/:crId"] },
+  { domain: "change-requests", routes: ["PATCH /v1/workspaces/:projectId/change-requests/:crId"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("patch unknown crId → 404", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).patch(
-        "/v1/projects/:projectId/change-requests/:crId",
+        "/v1/workspaces/:projectId/change-requests/:crId",
         { title: "renamed" },
         { params: { projectId: p.id, crId: RANDOM_UUID } },
       );
@@ -101,13 +101,13 @@ flow(
 
 flow(
   "CR-5",
-  { domain: "change-requests", routes: ["GET /v1/projects/:projectId/change-requests/:crId/diff"] },
+  { domain: "change-requests", routes: ["GET /v1/workspaces/:projectId/change-requests/:crId/diff"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("diff for unknown crId → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/change-requests/:crId/diff", { params: { projectId: p.id, crId: RANDOM_UUID } });
+        .get("/v1/workspaces/:projectId/change-requests/:crId/diff", { params: { projectId: p.id, crId: RANDOM_UUID } });
       r.status(404);
     });
   },
@@ -115,11 +115,11 @@ flow(
 
 flow(
   "CR-6",
-  { domain: "change-requests", routes: ["GET /v1/projects/:projectId/change-requests/:crId/merge-preview"] },
+  { domain: "change-requests", routes: ["GET /v1/workspaces/:projectId/change-requests/:crId/merge-preview"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("merge-preview for unknown crId → 404", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/change-requests/:crId/merge-preview", {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/change-requests/:crId/merge-preview", {
         params: { projectId: p.id, crId: RANDOM_UUID },
       });
       r.status(404);
@@ -129,12 +129,12 @@ flow(
 
 flow(
   "CR-7",
-  { domain: "change-requests", routes: ["POST /v1/projects/:projectId/change-requests/:crId/merge"] },
+  { domain: "change-requests", routes: ["POST /v1/workspaces/:projectId/change-requests/:crId/merge"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("merge unknown crId → 404", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/change-requests/:crId/merge",
+        "/v1/workspaces/:projectId/change-requests/:crId/merge",
         {},
         { params: { projectId: p.id, crId: RANDOM_UUID } },
       );
@@ -148,15 +148,15 @@ flow(
   {
     domain: "change-requests",
     routes: [
-      "POST /v1/projects/:projectId/change-requests/:crId/close",
-      "POST /v1/projects/:projectId/change-requests/:crId/reopen",
+      "POST /v1/workspaces/:projectId/change-requests/:crId/close",
+      "POST /v1/workspaces/:projectId/change-requests/:crId/reopen",
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("close unknown crId → 404", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/change-requests/:crId/close",
+        "/v1/workspaces/:projectId/change-requests/:crId/close",
         {},
         { params: { projectId: p.id, crId: RANDOM_UUID } },
       );
@@ -164,7 +164,7 @@ flow(
     });
     await ctx.step("reopen unknown crId → 404", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/change-requests/:crId/reopen",
+        "/v1/workspaces/:projectId/change-requests/:crId/reopen",
         {},
         { params: { projectId: p.id, crId: RANDOM_UUID } },
       );
@@ -175,18 +175,18 @@ flow(
 
 flow(
   "CR-11",
-  { domain: "change-requests", routes: ["GET /v1/projects/:projectId/change-requests"] },
+  { domain: "change-requests", routes: ["GET /v1/workspaces/:projectId/change-requests"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("NONMEMBER cannot list → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/change-requests", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/change-requests", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("NONMEMBER cannot create → 403/404", async () => {
       const r = await ctx.client.as(ctx.P.NONMEMBER).post(
-        "/v1/projects/:projectId/change-requests",
+        "/v1/workspaces/:projectId/change-requests",
         { title: "nope", head_ref: "feature" },
         { params: { projectId: p.id } },
       );
@@ -200,11 +200,11 @@ flow(
 // `integration-change-requests-list-filters` (a CR needs a session branch).
 flow(
   "CR-13",
-  { domain: "change-requests", routes: ["GET /v1/projects/:projectId/change-requests"] },
+  { domain: "change-requests", routes: ["GET /v1/workspaces/:projectId/change-requests"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     const get = (query: Record<string, string>) =>
-      ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/change-requests", { params: { projectId: p.id }, query });
+      ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/change-requests", { params: { projectId: p.id }, query });
     await ctx.step("no limit → 200 one page; the contract requires next_cursor (null on the last page)", async () => {
       const r = await get({});
       r.status(200).body().schema(ChangeRequestListSchema);
@@ -232,13 +232,13 @@ flow(
 
 flow(
   "CR-12",
-  { domain: "change-requests", routes: ["GET /v1/projects/:projectId/change-requests"] },
+  { domain: "change-requests", routes: ["GET /v1/workspaces/:projectId/change-requests"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("ANON cannot list → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/change-requests", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/change-requests", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -254,13 +254,13 @@ flow(
   "CR-8b",
   {
     domain: "change-requests",
-    routes: ["POST /v1/projects/:projectId/change-requests/:crId/request-changes"],
+    routes: ["POST /v1/workspaces/:projectId/change-requests/:crId/request-changes"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("missing feedback → 400", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/change-requests/:crId/request-changes",
+        "/v1/workspaces/:projectId/change-requests/:crId/request-changes",
         {},
         { params: { projectId: p.id, crId: RANDOM_UUID } },
       );
@@ -268,7 +268,7 @@ flow(
     });
     await ctx.step("unknown crId (feedback present) → 404", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/change-requests/:crId/request-changes",
+        "/v1/workspaces/:projectId/change-requests/:crId/request-changes",
         { feedback: "please fix the thing" },
         { params: { projectId: p.id, crId: RANDOM_UUID } },
       );
@@ -276,7 +276,7 @@ flow(
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client.as(ctx.P.NONMEMBER).post(
-        "/v1/projects/:projectId/change-requests/:crId/request-changes",
+        "/v1/workspaces/:projectId/change-requests/:crId/request-changes",
         { feedback: "please fix the thing" },
         { params: { projectId: p.id, crId: RANDOM_UUID } },
       );
@@ -297,9 +297,9 @@ flow(
     domain: "change-requests",
     requires: ["database"],
     routes: [
-      "POST /v1/projects/:projectId/change-requests",
-      "POST /v1/projects/:projectId/change-requests/:crId/merge",
-      "GET /v1/projects/:projectId/change-requests/:crId",
+      "POST /v1/workspaces/:projectId/change-requests",
+      "POST /v1/workspaces/:projectId/change-requests/:crId/merge",
+      "GET /v1/workspaces/:projectId/change-requests/:crId",
     ],
   },
   async (ctx) => {
@@ -316,7 +316,7 @@ flow(
     await db.connect();
     const work = mkdtempSync(join(tmpdir(), "ke2e-cr14-"));
     const open = async (head: string) => {
-      const r = await owner.post("/v1/projects/:projectId/change-requests", { title: `ke2e ${head}`, head_ref: head }, { params });
+      const r = await owner.post("/v1/workspaces/:projectId/change-requests", { title: `ke2e ${head}`, head_ref: head }, { params });
       r.status([200, 201]);
       return r.json<{ change_request?: { cr_id: string; number: number }; cr_id?: string; number?: number }>();
     };
@@ -352,7 +352,7 @@ flow(
 
       await ctx.step("merging b names a's request in also_merged; a reads merged, c stays open", async () => {
         const merged = await owner.post(
-          "/v1/projects/:projectId/change-requests/:crId/merge",
+          "/v1/workspaces/:projectId/change-requests/:crId/merge",
           {},
           { params: { ...params, crId: stackedTop.cr_id } },
         );
@@ -362,7 +362,7 @@ flow(
         if (JSON.stringify(also.map((cr) => cr.number)) !== JSON.stringify([stackedLow.number])) {
           throw new Error(`also_merged ${JSON.stringify(also)}, expected only #${stackedLow.number}`);
         }
-        const read = (crId: string) => owner.get("/v1/projects/:projectId/change-requests/:crId", { params: { ...params, crId } });
+        const read = (crId: string) => owner.get("/v1/workspaces/:projectId/change-requests/:crId", { params: { ...params, crId } });
         (await read(stackedLow.cr_id))
           .status(200)
           .body()

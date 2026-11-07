@@ -51,8 +51,9 @@ export const config = {
   // refused with 413 before a byte is read. 0 disables the per-request cap.
   maxRequestBytes: optionalInt('GATEWAY_MAX_REQUEST_BYTES', DEFAULT_MAX_REQUEST_BYTES),
   // Inline-image cap per request (see @kortix/llm-gateway pipeline/image-window.ts).
-  // Default 20 (Bedrock Converse's hard limit); on overflow the 12 most recent
-  // images survive. GATEWAY_MAX_INLINE_IMAGES=0 disables pruning.
+  // Count: default 20 (a choice: Bedrock accepts 600); on overflow 13 images survive.
+  // Bytes: default 22 MiB of base64 images (Bedrock and Anthropic refuse a ~32 MB
+  // body); on overflow 16 MiB survive. 0 disables either cap.
   // Anthropic's origin for Claude Code's model calls on Claude accounts
   // (@kortix/llm-gateway claude-code/passthrough.ts). A test points it at a
   // local stand-in.
@@ -62,6 +63,11 @@ export const config = {
     keepOnOverflow: optionalInt(
       'GATEWAY_IMAGE_KEEP_ON_OVERFLOW',
       DEFAULT_IMAGE_WINDOW.keepOnOverflow,
+    ),
+    maxBytes: optionalInt('GATEWAY_MAX_INLINE_IMAGE_BYTES', DEFAULT_IMAGE_WINDOW.maxBytes ?? 0),
+    keepBytesOnOverflow: optionalInt(
+      'GATEWAY_IMAGE_KEEP_BYTES_ON_OVERFLOW',
+      DEFAULT_IMAGE_WINDOW.keepBytesOnOverflow ?? 0,
     ),
   },
 };

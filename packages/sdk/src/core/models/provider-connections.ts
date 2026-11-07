@@ -17,7 +17,7 @@ import {
   isProviderAuthSatisfied,
   primaryAuthEnvVars,
   providerAuthRequirement,
-} from '@kortix/llm-catalog';
+} from '@kortix/llm-catalog/lite';
 
 import type { AccountSecretResource } from '../rest/projects-client/account-secret-resources';
 import type { ConnectorSharing } from '../rest/projects-client/shared';
@@ -145,7 +145,12 @@ export function buildLlmProviderCatalog(raw: LlmProviderCatalogSource): LlmProvi
 
 /** The secret a ChatGPT sign-in writes. Its models appear under provider `codex`. */
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
-/** The legacy runtime auth row an old ChatGPT sign-in wrote. */
+/**
+ * The legacy runtime auth row an old ChatGPT sign-in wrote. A ChatGPT sign-in
+ * writes `CODEX_AUTH_JSON` now. The connection checks still count this name and
+ * a disconnect still deletes it.
+ * @deprecated No sign-in writes this secret. Read `CODEX_AUTH_JSON_SECRET_NAME`. Removed in the next major.
+ */
 export const LEGACY_RUNTIME_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
 /**

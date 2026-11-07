@@ -82,10 +82,10 @@ function startServer(initial: Record<string, boolean | null> = {}): string {
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
-      if (url.pathname === `/v1/projects/${PROJECT}` && req.method === 'GET') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}` && req.method === 'GET') {
         return Response.json(project(state));
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/features` && req.method === 'PATCH') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/features` && req.method === 'PATCH') {
         const body = (await req.json()) as { feature: string; enabled: boolean | null };
         patches.push({ path: url.pathname, body });
         if (body.feature === 'session_log') {
@@ -176,7 +176,7 @@ describe('kortix projects features', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'features', 'enable', 'reminders', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(patches).toEqual([{ path: `/v1/projects/${PROJECT}/features`, body: { feature: 'reminders', enabled: true } }]);
+    expect(patches).toEqual([{ path: `/v1/workspaces/${PROJECT}/features`, body: { feature: 'reminders', enabled: true } }]);
     expect(r.stdout).toContain('reminders enabled — effective: on');
 
     const ls = await runCli(['projects', 'features', '--project', PROJECT], config);

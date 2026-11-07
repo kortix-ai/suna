@@ -11,7 +11,7 @@
  * The unique (user_id, dedupe_key) of the inbox makes a repeat tick, or a
  * second replica, write nothing. A spell is open while a down row has no up row.
  */
-import { accountMembers, captureDevices, captureWorkspaces, notifications } from '@kortix/db';
+import { accountMembers, captureDevices, captureTenants, notifications } from '@kortix/db';
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { ACCOUNT_ACTIONS } from '../iam/actions';
@@ -77,11 +77,11 @@ async function watchedDevices(now: number, latestVersion: string | null, account
       reportedAt: captureDevices.statusReportedAt,
     })
     .from(captureDevices)
-    .innerJoin(captureWorkspaces, eq(captureWorkspaces.accountId, captureDevices.accountId))
+    .innerJoin(captureTenants, eq(captureTenants.accountId, captureDevices.accountId))
     .where(
       and(
         isNull(captureDevices.revokedAt),
-        eq(captureWorkspaces.enabled, true),
+        eq(captureTenants.enabled, true),
         isNotNull(captureDevices.status),
         ...(accountId ? [eq(captureDevices.accountId, accountId)] : []),
       ),

@@ -54,3 +54,106 @@ test('convex start.js: starts the dashboard on 6792, answers the embed handshake
   handler!({ method: 'GET', url: '/?embedded=1', pipe: () => {} }, {});
   expect(proxied).toEqual(['/?embedded=1']);
 });
+
+const watcher = APP_TEMPLATES.watcher!;
+
+test('watcher: one on-demand Dockerfile App in apps/<name>, node pinned by digest, the runner and the check', () => {
+  expect(Object.keys(watcher.blocks('status-watch'))).toEqual(['status-watch']);
+  expect(watcher.blocks('status-watch')['status-watch']).toMatchObject({
+    path: 'apps/status-watch',
+    type: 'dockerfile',
+    command: ['node', 'runner.js'],
+    always_on: false,
+    http_service: { internal_port: 3000, access: 'app', checks: [{ type: 'http', path: '/health' }] },
+  });
+  const files = watcher.files!('status-watch');
+  expect(Object.keys(files)).toEqual(['apps/status-watch/Dockerfile', 'apps/status-watch/runner.js', 'apps/status-watch/watch.js']);
+  expect(files['apps/status-watch/Dockerfile']).toMatch(/^FROM node:22\.[0-9.]+-alpine[0-9.]+@sha256:[0-9a-f]{64}$/m);
+  expect(files['apps/status-watch/Dockerfile']).toContain('COPY runner.js watch.js ./');
+  expect(watcher.deployOrder('status-watch')).toEqual(['status-watch']);
+  expect(watcher.nextSteps('status-watch').join('\n')).toContain('--target-app status-watch --target-path /tick');
+});
+
+type FakeResponse = { ok: boolean; status: number; json: () => Promise<unknown>; text: () => Promise<string>; headers: { get: (name: string) => string | null } };
+const answer = (status: number, body: unknown, retryAfter: string | null = null): FakeResponse => ({
+  ok: status >= 200 && status < 300, status, json: async () => body, text: async () => JSON.stringify(body), headers: { get: (name) => (name === 'retry-after' ? retryAfter : null) },
+});
+
+/** Run runner.js with a fake http server, fetch and check(); returns a POST /tick caller. */
+function loadRunner(check: () => Promise<unknown>, replies: FakeResponse[]) {
+  const runner = watcher.files!('w')['apps/w/runner.js']!;
+  let handler: ((req: unknown, res: unknown) => Promise<void>) | undefined;
+  const posted: Array<{ url: string; auth: string; body: { events: Array<{ name: string; id: string; data: unknown }> } }> = [];
+  const modules: Record<string, unknown> = {
+    'node:http': { createServer: (h: typeof handler) => ({ listen: (_port: number, ready?: () => void) => { handler = h; ready?.(); } }) },
+    'node:crypto': require('node:crypto'),
+    './watch.js': { check },
+  };
+  const fetchFake = async (url: string, init: { headers: Record<string, string>; body: string }) => {
+    posted.push({ url, auth: init.headers.authorization!, body: JSON.parse(init.body) });
+    return replies.shift() ?? answer(500, { error: 'no reply left' });
+  };
+  const env = { KORTIX_APP_EVENTS_URL: 'https://kortix.test/v1/projects/p/apps/a/events', KORTIX_APP_TOKEN: 'app-token' };
+  new Function('require', 'process', 'fetch', 'console', 'setTimeout', runner)(
+    (name: string) => modules[name],
+    { env },
+    fetchFake,
+    { log: () => {}, error: () => {} },
+    (fn: () => void) => fn(),
+  );
+  const call = async (method: string, url: string) => {
+    let status = 0;
+    let body = '';
+    await handler!({ method, url }, { writeHead: (s: number) => { status = s; }, end: (b: string) => { body = b; } });
+    return { status, body: JSON.parse(body) as Record<string, unknown> };
+  };
+  return { call, posted };
+}
+
+test('watcher runner: a tick posts what check() returns with ids built from the content, so the same state has the same id', async () => {
+  const state = [{ name: 'status.changed', data: { status: 'All Systems Operational' } }];
+  const { call, posted } = loadRunner(async () => state, [
+    answer(202, { triggers: 1, accepted: 1, deduped: 0, suppressed: 0, unmatched: 0 }),
+    answer(202, { triggers: 1, accepted: 0, deduped: 1, suppressed: 0, unmatched: 0 }),
+  ]);
+  expect(await call('GET', '/health')).toEqual({ status: 200, body: { ok: true } });
+  expect((await call('POST', '/tick')).body).toMatchObject({ events: 1, triggers: 1, accepted: 1 });
+  expect((await call('POST', '/tick?from=kortix')).body).toMatchObject({ events: 1, accepted: 0, deduped: 1 });
+  expect(posted[0]!.auth).toBe('Bearer app-token');
+  expect(posted[0]!.body.events[0]).toMatchObject({ name: 'status.changed', data: { status: 'All Systems Operational' } });
+  expect(posted[0]!.body.events[0]!.id).toMatch(/^[0-9a-f]{32}$/);
+  expect(posted[1]!.body.events[0]!.id).toBe(posted[0]!.body.events[0]!.id);
+  expect((await call('GET', '/tick')).status).toBe(404);
+});
+
+test('watcher runner: nothing to report sends a heartbeat; 429 is retried; a failing check answers 502', async () => {
+  const quiet = loadRunner(async () => [], [answer(429, { error: 'slow down' }, '1'), answer(202, { triggers: 1, accepted: 0, deduped: 0, suppressed: 0, unmatched: 0, heartbeats: 1 })]);
+  expect((await quiet.call('POST', '/tick')).body).toMatchObject({ events: 0, triggers: 1 });
+  expect(quiet.posted.map((p) => p.body.events as unknown[])).toEqual([[{ name: 'kortix.heartbeat' }], [{ name: 'kortix.heartbeat' }]]);
+
+  const broken = loadRunner(async () => { throw new Error('GET https://status.example.com answered 503'); }, []);
+  expect(await broken.call('POST', '/tick')).toEqual({ status: 502, body: { error: 'GET https://status.example.com answered 503' } });
+
+  const refused = loadRunner(async () => [{ name: 'x' }], [answer(400, { error: 'bad name' })]);
+  const out = await refused.call('POST', '/tick');
+  expect(out.status).toBe(502);
+  expect(String(out.body.error)).toContain('Kortix refused the events: 400');
+  expect(refused.posted).toHaveLength(1);
+});
+
+test('watcher check: back to "All Systems Operational" after an incident is a new event, not a repeat of the first one', async () => {
+  const source = watcher.files!('w')['apps/w/watch.js']!;
+  const pages = [
+    { status: { indicator: 'none', description: 'All Systems Operational' }, page: { updated_at: '2026-11-01T10:00:00.000Z' } },
+    { status: { indicator: 'minor', description: 'Minor Service Outage' }, page: { updated_at: '2026-11-02T10:00:00.000Z' } },
+    { status: { indicator: 'none', description: 'All Systems Operational' }, page: { updated_at: '2026-11-02T12:00:00.000Z' } },
+  ];
+  const module = { exports: {} as { check: () => Promise<Array<{ name: string; data: unknown }>> } };
+  let page = pages[0];
+  new Function('module', 'process', 'fetch', source)(module, { env: {} }, async () => ({ ok: true, status: 200, json: async () => page }));
+  const seen: string[] = [];
+  for (page of pages) seen.push(JSON.stringify(await module.exports.check()));
+  expect(seen[2]).not.toBe(seen[0]);
+  // Unchanged page: the same event, so the same content id fires nothing.
+  expect(JSON.stringify(await module.exports.check())).toBe(seen[2]);
+});

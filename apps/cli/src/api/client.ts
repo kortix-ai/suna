@@ -1,4 +1,5 @@
 import { ApiError as SdkApiError, backendApi } from '@kortix/sdk';
+import { WORKSPACE_ACCOUNT_FAMILIES } from '@kortix/shared/workspace-routes';
 
 import type { Auth } from './auth.ts';
 import { secureRemoteBase } from './config.ts';
@@ -121,19 +122,45 @@ const CLI_DELETE_TIMEOUT_MS = (() => {
  *  collapsing a 402 into a generic status-0 failure. */
 function unwrap<T>(res: { data?: T; error?: unknown; success: boolean }): T {
   if (res.success) return res.data as T;
-  const err = res.error;
+  throw cliError(res.error);
+}
+
+function cliError(err: unknown): ApiError {
   if (err instanceof Error) {
     const carrier = err as Error & { status?: unknown; details?: unknown; data?: unknown };
     const status = typeof carrier.status === 'number' ? carrier.status : 0;
     const body = carrier.details ?? carrier.data ?? null;
-    throw new ApiError(status, err.message, body);
+    return new ApiError(status, err.message, body);
   }
-  throw new ApiError(0, String(err ?? 'request failed'));
+  return new ApiError(0, String(err ?? 'request failed'));
 }
 
-/** Is this the identity endpoint, with or without a query string? */
+/** Non-enumerable: the field rides the error object in memory only, and
+ *  never reaches a log line, a spread or a JSON dump. */
+function attachCredential(err: ApiError, auth: Auth): ApiError {
+  if (auth.token) {
+    Object.defineProperty(err, 'credential', {
+      value: { host: auth.api_base, token: auth.token },
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return err;
+}
+
+/** Run an SDK call as `auth` and fail with the CLI's `ApiError`, as an `ApiClient` request does: `surfaceApiError` words a 401, 403 or 5xx from `status`. */
+export async function withCliErrors<T>(auth: Auth, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await withKortixScope(auth, fn);
+  } catch (err) {
+    throw attachCredential(cliError(err), auth);
+  }
+}
+
+/** Is this the identity endpoint (`/me`, or its legacy name `/accounts/me`), with or without a query string? */
 function isMeEndpoint(endpoint: string): boolean {
-  return endpoint === '/accounts/me' || endpoint.startsWith('/accounts/me?');
+  return /^\/(?:accounts\/)?me(?:\?|$)/.test(endpoint);
 }
 
 /**
@@ -173,6 +200,29 @@ function isManifestCasConflict(err: unknown): boolean {
   }
 }
 
+const ACCOUNT_FAMILY_PATH = new RegExp(
+  `^(/v1)?/workspaces/([^/?#]+)/(${WORKSPACE_ACCOUNT_FAMILIES.map((f) => f.replace(/[-]/g, '\\-')).join('|')})(?=[/?#]|$)`,
+);
+
+/**
+ * The legacy twin of a workspace-level path (`/workspaces/<id>/<family>…` →
+ * `/accounts/<id>/<family>…`), or null. The CLI builds those paths from the
+ * workspace context, whose id is an account id when it came from the older
+ * `--account` flag, the older active account or the stored credential. The
+ * canonical name takes a workspace id only (404 `workspace_not_found` for an
+ * account id); `/v1/accounts/:id/<family>` takes either id, permanently.
+ */
+export function accountFamilyTwin(path: string): string | null {
+  const m = ACCOUNT_FAMILY_PATH.exec(path);
+  return m ? `${m[1] ?? ''}/accounts/${path.slice(`${m[1] ?? ''}/workspaces/`.length)}` : null;
+}
+
+function isWorkspaceNotFound(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 404) return false;
+  const body = err.body as { code?: unknown } | null;
+  return body?.code === 'workspace_not_found';
+}
+
 async function request<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
@@ -182,6 +232,8 @@ async function request<T>(
   try {
     return await requestOnce<T>(method, path, body, opts);
   } catch (err) {
+    const twin = isWorkspaceNotFound(err) ? accountFamilyTwin(path) : null;
+    if (twin) return requestOnce<T>(method, twin, body, opts);
     if (method === 'GET' || !isManifestCasConflict(err)) throw err;
     await new Promise((r) => setTimeout(r, MANIFEST_CAS_RETRY_DELAY_MS));
     return requestOnce<T>(method, path, body, opts);
@@ -223,16 +275,7 @@ async function requestOnce<T>(
       }
     });
   } catch (err) {
-    if (err instanceof ApiError && opts.auth.token) {
-      // Non-enumerable: the field rides the error object in memory only, and
-      // never reaches a log line, a spread or a JSON dump.
-      Object.defineProperty(err, 'credential', {
-        value: { host: opts.auth.api_base, token: opts.auth.token },
-        enumerable: false,
-        writable: true,
-        configurable: true,
-      });
-    }
+    if (err instanceof ApiError) attachCredential(err, opts.auth);
     throw err;
   }
 }

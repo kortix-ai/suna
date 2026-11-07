@@ -58,7 +58,7 @@ const BINDING = {
   channelName: 'eng',
   channelType: 'public',
   agentName: null,
-  opencodeModel: null,
+  model: null,
   conversationPolicy: 'owner_approval',
   installedAt: '2026-01-01T00:00:00.000Z',
   effectiveAgent: { agent: 'default', source: 'project' },
@@ -93,7 +93,7 @@ function startServer(
       const url = new URL(req.url);
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json();
       calls.push({ method: req.method, path: url.pathname, query: url.search, body });
-      const p = url.pathname.replace(`/v1/projects/${PROJECT}`, '');
+      const p = url.pathname.replace(`/v1/workspaces/${PROJECT}`, '');
 
       if (p === '' && req.method === 'GET') {
         return Response.json({ project_id: PROJECT, name: 'Channels', metadata: {} });
@@ -174,13 +174,13 @@ function startServer(
         return Response.json({
           ...BINDING,
           agentName: (b.agentName as string | null) ?? null,
-          opencodeModel: (b.opencodeModel as string | null) ?? null,
+          model: (b.model as string | null) ?? null,
           conversationPolicy: (b.conversationPolicy as string) ?? BINDING.conversationPolicy,
           effectiveAgent: b.agentName
             ? { agent: b.agentName as string, source: 'explicit' }
             : { agent: 'default', source: 'project' },
-          effectiveModel: b.opencodeModel
-            ? { model: b.opencodeModel as string, source: 'explicit' }
+          effectiveModel: b.model
+            ? { model: b.model as string, source: 'explicit' }
             : { model: null, source: 'platform' },
         });
       }
@@ -263,7 +263,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
       expect(filtered.code).toBe(0);
       expect(JSON.parse(filtered.stdout)).toEqual({ connected: false, installation: null });
       expect(calls.filter((call) => call.path.includes('/channels/')).map((call) => call.path))
-        .toEqual([`/v1/projects/${PROJECT}/channels/${platform}/installation`]);
+        .toEqual([`/v1/workspaces/${PROJECT}/channels/${platform}/installation`]);
     }
   });
 
@@ -310,7 +310,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(calls).toEqual([
       {
         method: 'DELETE',
-        path: `/v1/projects/${PROJECT}/channels/teams/installation`,
+        path: `/v1/workspaces/${PROJECT}/channels/teams/installation`,
         query: '',
         body: null,
       },
@@ -325,8 +325,8 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(r.stdout).toContain('support@acme.kortix.email');
     expect(r.stdout).toContain('restricted — bob@x.io · @acme.com');
     expect(calls.map((c) => `${c.method} ${c.path}${c.query}`).sort()).toEqual([
-      `GET /v1/projects/${PROJECT}/channels/email/installation?connector_slug=kortix_email`,
-      `GET /v1/projects/${PROJECT}/channels/email/mode`,
+      `GET /v1/workspaces/${PROJECT}/channels/email/installation?connector_slug=kortix_email`,
+      `GET /v1/workspaces/${PROJECT}/channels/email/mode`,
     ]);
 
     const j = await runCli(['channels', 'email', 'status', '--project', PROJECT, '--json'], config);
@@ -351,10 +351,10 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(r.code).toBe(0);
     expect(calls).toEqual([
       // No --api-key: the CLI first checks that this server offers managed inboxes.
-      { method: 'GET', path: `/v1/projects/${PROJECT}/channels/email/mode`, query: '', body: null },
+      { method: 'GET', path: `/v1/workspaces/${PROJECT}/channels/email/mode`, query: '', body: null },
       {
         method: 'POST',
-        path: `/v1/projects/${PROJECT}/channels/email/connect`,
+        path: `/v1/workspaces/${PROJECT}/channels/email/connect`,
         query: '',
         body: {
           connector_slug: 'kortix_email',
@@ -389,7 +389,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
       config,
     );
     expect(r.code).toBe(0);
-    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`POST /v1/projects/${PROJECT}/channels/email/connect`]);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`POST /v1/workspaces/${PROJECT}/channels/email/connect`]);
     expect((calls[0]?.body as { api_key?: string }).api_key).toBe('re_secret');
   });
 
@@ -403,7 +403,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(calls).toEqual([
       {
         method: 'POST',
-        path: `/v1/projects/${PROJECT}/channels/email/domains/add`,
+        path: `/v1/workspaces/${PROJECT}/channels/email/domains/add`,
         query: '',
         body: { api_key: 're_secret', domain: 'mail.acme.io' },
       },
@@ -432,7 +432,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(r.stdout).toContain('project · Kortix managed');
     expect(r.stdout).toContain('me@kortixmail.com');
     expect(r.stdout).toContain('only you');
-    expect(calls.at(-1)).toMatchObject({ method: 'GET', path: `/v1/projects/${PROJECT}/channels/email/inboxes` });
+    expect(calls.at(-1)).toMatchObject({ method: 'GET', path: `/v1/workspaces/${PROJECT}/channels/email/inboxes` });
   });
 
   test('email inboxes add posts share, the name and the sender policy; the key stays in the body', async () => {
@@ -443,7 +443,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     );
     expect(r.code).toBe(0);
     const post = calls.find((c) => c.method === 'POST')!;
-    expect(post.path).toBe(`/v1/projects/${PROJECT}/channels/email/inboxes`);
+    expect(post.path).toBe(`/v1/workspaces/${PROJECT}/channels/email/inboxes`);
     expect(post.body).toEqual({
       share: 'me',
       username: 'help',
@@ -464,16 +464,16 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     const rm = await runCli(['channels', 'email', 'inboxes', 'rm', 'me@kortixmail.com', '--project', PROJECT], config);
     expect(rm.code).toBe(0);
     expect(rm.stdout).toContain('deleted on Resend');
-    expect(calls.at(-1)).toMatchObject({ method: 'DELETE', path: `/v1/projects/${PROJECT}/channels/email/inboxes/conn_2` });
+    expect(calls.at(-1)).toMatchObject({ method: 'DELETE', path: `/v1/workspaces/${PROJECT}/channels/email/inboxes/conn_2` });
 
     const def = await runCli(['channels', 'email', 'inboxes', 'default', 'me@kortixmail.com', '--project', PROJECT], config);
     expect(def.code).toBe(0);
-    expect(calls.at(-1)).toMatchObject({ method: 'PUT', path: `/v1/projects/${PROJECT}/connections/conn_2/default` });
+    expect(calls.at(-1)).toMatchObject({ method: 'PUT', path: `/v1/workspaces/${PROJECT}/connections/conn_2/default` });
 
     const pol = await runCli(['channels', 'email', 'inboxes', 'policy', 'support@kortixmail.com', '--allow', '@acme.com', '--project', PROJECT], config);
     expect(pol.code).toBe(0);
     expect(pol.stdout).toContain('@acme.com');
-    expect(calls.at(-1)).toMatchObject({ method: 'PATCH', path: `/v1/projects/${PROJECT}/channels/email/inboxes/conn_1` });
+    expect(calls.at(-1)).toMatchObject({ method: 'PATCH', path: `/v1/workspaces/${PROJECT}/channels/email/inboxes/conn_1` });
 
     const missing = await runCli(['channels', 'email', 'inboxes', 'rm', 'nobody@kortixmail.com', '--project', PROJECT], config);
     expect(missing.code).not.toBe(0);
@@ -488,7 +488,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'DELETE',
-      path: `/v1/projects/${PROJECT}/channels/email/installation`,
+      path: `/v1/workspaces/${PROJECT}/channels/email/installation`,
       query: '?connector_slug=support_email',
       body: null,
     });
@@ -535,7 +535,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     const config = writeConfig(startServer({ emailEnabled: false }));
     const r = await runCli(['channels', 'email', 'connect', '--api-key', 're_secret', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('kortix projects features enable email_channel');
+    expect(r.stderr).toContain('kortix workspaces features enable email_channel');
   });
 
   test('email status with the flag off says so and how to turn it on', async () => {
@@ -550,11 +550,11 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     const r = await runCli(['channels', 'bindings', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls).toEqual([
-      { method: 'GET', path: `/v1/projects/${PROJECT}/channels/bindings`, query: '', body: null },
+      { method: 'GET', path: `/v1/workspaces/${PROJECT}/channels/bindings`, query: '', body: null },
     ]);
     // A Slack channel reads `#eng`, as the Channels page shows it.
     expect(r.stdout).toMatch(/bind_1\s+#eng\s+slack\s+default \(project\)\s+auto \(platform\)\s+owner_approval/);
-    expect(r.stdout).toContain('project default agent: default');
+    expect(r.stdout).toContain('workspace default agent: default');
 
     const j = await runCli(['channels', 'bindings', 'ls', '--project', PROJECT, '--json'], config);
     expect(JSON.parse(j.stdout).bindings[0].bindingId).toBe('bind_1');
@@ -575,9 +575,9 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
     expect(set.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'PATCH',
-      path: `/v1/projects/${PROJECT}/channels/bindings/bind_1`,
+      path: `/v1/workspaces/${PROJECT}/channels/bindings/bind_1`,
       query: '',
-      body: { agentName: 'reviewer', opencodeModel: 'glm-5.3-flash', conversationPolicy: 'owner_only' },
+      body: { agentName: 'reviewer', model: 'glm-5.3-flash', conversationPolicy: 'owner_only' },
     });
     expect(set.stdout).toContain('agent   reviewer (explicit)');
 
@@ -586,7 +586,7 @@ describe('kortix channels — email, bindings, teams disconnect', () => {
       config,
     );
     expect(reset.code).toBe(0);
-    expect(calls.at(-1)?.body).toEqual({ agentName: null, opencodeModel: null });
+    expect(calls.at(-1)?.body).toEqual({ agentName: null, model: null });
   });
 
   test('bind rejects an unknown policy and an empty patch without a request', async () => {

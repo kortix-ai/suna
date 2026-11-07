@@ -69,8 +69,14 @@ import { createAccountToken } from '../repositories/account-tokens';
 // +1 since #10893: the session visibility rule reads the project's private
 // channels (`hiddenSpaceIds`, one statement). In production it is
 // TTL-memoized for 10 s; under `bun test` ttlMemo is bypassed.
-const ONE_SHOT_STATEMENT_BUDGET = 39;
-const LONG_POLL_STATEMENT_BUDGET = 50;
+//
+// +3 since the workspaces model (design.md §3.2 C3): every `authorize` reads
+// the account's workspace facts (its one project, split_pending, closing) for
+// the membership-is-access tier and the closing gate, and /start authorizes
+// three times. In production `workspaceFactsOf` is TTL-memoized for 15 s; under
+// `bun test` ttlMemo is bypassed. The long-poll pays the same 3 once.
+const ONE_SHOT_STATEMENT_BUDGET = 42;
+const LONG_POLL_STATEMENT_BUDGET = 53;
 
 /** The long-poll the second suite runs. Ten ticks at the default 200 ms. */
 const LONG_POLL_MS = 2000;
@@ -90,7 +96,7 @@ beforeAll(async () => {
   // The platinum control plane answers on loopback (the sandbox is
   // provider-running); its daemon never does (the session stays in the
   // booting state the long-poll serves). This is the prod-shaped mix for a
-  // wake: the box is up, OpenCode is not answering yet.
+  // wake: the box is up, the runtime is not answering yet.
   stubServer = Bun.serve({
     port: 0,
     idleTimeout: 30,

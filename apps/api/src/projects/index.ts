@@ -49,6 +49,7 @@ import { registerModelsRoutes } from './routes/models';
 import { registerCustomProvidersRoutes } from './routes/custom-providers';
 import { registerTurnQuestionsRoutes } from './routes/turn-questions';
 import { registerTurnPermissionsRoutes } from './routes/turn-permissions';
+import { registerSessionAsksRoutes } from './routes/session-asks';
 import { registerOauth2ConnectorsRoutes } from './routes/oauth2-connectors';
 import { registerConnectorMoveRoutes } from './routes/connector-moves';
 import { registerProjectDetailRoutes } from './routes/project-detail';
@@ -60,6 +61,8 @@ import { registerProjectInvitesRoutes } from './routes/project-invites';
 import { registerGroupGrantsRoutes } from './routes/group-grants';
 import { registerProviderSecretPoolsRoutes } from './routes/provider-secret-pools';
 import { registerProjectSessionsRoutes, registerSessionLookupRoutes } from './routes/project-sessions';
+import { registerChatThreadRoutes } from './routes/chat-threads';
+import { registerSpaceProactiveRoutes } from './routes/space-proactive';
 import { registerSessionTranscriptsRoutes } from './routes/session-transcripts';
 import { registerSessionAttachmentsRoutes } from './routes/session-attachments';
 import { registerSessionOpenBundleRoutes } from './routes/session-open-bundle';
@@ -82,13 +85,12 @@ import { registerSessionGroupsRoutes } from './routes/session-groups';
 import { registerSessionListStateRoutes } from './routes/session-list-state';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
-import { registerRoomsRoutes } from './routes/rooms';
 import { registerPeerMessagesRoutes } from './routes/peer-messages';
 import { registerTeamTasksRoutes } from './routes/team-tasks';
 import { registerArtifactRoutes } from './routes/artifacts';
-import { registerArtifactCommentRoutes } from './routes/artifact-comments';
 import { registerLinkPreviewRoutes } from './routes/link-preview';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
+import { registerGoalRoutes } from './routes/goals';
 import { registerRuntimeTriggersRoutes } from './routes/runtime-triggers';
 import { registerProjectSpacesRoutes } from './routes/project-spaces';
 import { registerProjectMemoryRoutes } from './routes/project-memory';
@@ -153,6 +155,7 @@ export function registerAllProjectRoutes(): void {
   registerCustomProvidersRoutes();
   registerTurnQuestionsRoutes();
   registerTurnPermissionsRoutes();
+  registerSessionAsksRoutes();
   registerOauth2ConnectorsRoutes();
   registerConnectorMoveRoutes();
   registerProjectDetailRoutes();
@@ -164,6 +167,8 @@ export function registerAllProjectRoutes(): void {
   registerGroupGrantsRoutes();
   registerProviderSecretPoolsRoutes();
   registerProjectSessionsRoutes();
+  registerChatThreadRoutes();
+  registerSpaceProactiveRoutes();
   registerSessionTranscriptsRoutes();
   registerSessionAttachmentsRoutes();
   registerSessionOpenBundleRoutes();
@@ -185,13 +190,12 @@ export function registerAllProjectRoutes(): void {
   registerSessionGroupsRoutes();
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
-  registerRoomsRoutes();
   registerPeerMessagesRoutes();
   registerTeamTasksRoutes();
   registerArtifactRoutes();
-  registerArtifactCommentRoutes();
   registerLinkPreviewRoutes();
   registerSessionRemindersRoutes();
+  registerGoalRoutes();
   registerRuntimeTriggersRoutes();
   registerProjectSpacesRoutes();
   registerProjectMemoryRoutes();
@@ -215,6 +219,9 @@ export function registerAllProjectRoutes(): void {
 export { projectsApp, projectWebhooksApp, sessionsApp };
 // `/v1/sessions` (one session by id). app.ts calls it right before mounting sessionsApp.
 export { registerSessionLookupRoutes };
+// The canonical workspace records (`workspaces/routes.ts` declares the routes).
+export { ProjectSchema } from './lib/app';
+export { createWorkspace, listCallerWorkspaces, patchWorkspace, readWorkspace } from './routes/workspace-records';
 
 // The service surface (git-proxy, session, trigger and manifest helpers).
 export * from './surface';

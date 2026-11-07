@@ -1,11 +1,11 @@
 # Build a custom dashboard or App on @kortix/sdk + @kortix/ui
 
-A React host with your own chrome around Kortix's whole session experience: a project list, a
-sidebar with Kortix's session list, the project home composer, the session workspace (thread plus
-side panel with files, viewer, terminal, browser), a project Files page, a company theme and a custom
+A React host with your own chrome around Kortix's whole session experience: a workspace list, a
+sidebar with Kortix's session list, the workspace home composer, the session workspace (thread plus
+side panel with files, viewer, terminal, browser), a workspace Files page, a company theme and a custom
 tool row. Every sample below is a file of one Vite 8 + React 19 + react-router 7 app that installed
 `@kortix/sdk` and `@kortix/ui` from their packed tarballs. It passed `tsc --noEmit` and `vite build`,
-and ran against a live Kortix API: project list, a prompt from the home composer, the session opening,
+and ran against a live Kortix API: workspace list, a prompt from the home composer, the session opening,
 the tool rows (the custom one included), the reply, the file in the side panel, the Files page and its
 viewer, 0 console errors.
 
@@ -189,7 +189,7 @@ pass stable objects (module scope):
 | `navigation` | full page loads; `usePathname` / `useSearchParams` read `window.location` | `{ useRouter, usePathname, useSearchParams, useParams }` of its router |
 | `config` | `{ connectorsEnabled: true, managedModelsEnabled: false }` | `managedModelsEnabled: true` when the deployment serves its model lineup. Billing is the SDK flag `billingEnabled` of `createKortix({ backendUrl, getToken, billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. |
 | `resolvePreviewUrl` | the SDK preview URL, with the SDK token | an async function of the request (it returns a Promise) that resolves to the framed URL with the host's own scoped token, or to `null` to keep the SDK preview URL (a host whose origin is not the Kortix backend). `config.terminalEnabled: false` hides the Terminal when the host's proxy cannot upgrade a WebSocket. `config.cliConnectEnabled` (default true): false hides the Terminal's "Connect from your machine" bar, for a host that serves no `<origin>/install` installer and ships no Kortix CLI. `config.publicSharesEnabled` (default true): false hides every public-link control, for a host that serves no page at `share.public_path` (`/share/session/<token>`). `config.commandPaletteShortcut` / `config.settingsShortcut` (default false): true when the host opens a command palette on ⌘K or settings on ⌘,; only then does the composer hint at them. `config.providerIconBaseUrl`: where the host serves provider logos (`<base>/<icon>.svg`); without it they load from models.dev, and the Kortix provider draws `useBrand`'s icon. `config.accountApiEnabled` (default true): false for a host that fronts one operator key and blocks the account routes; then no IAM probe, billing or session-oversight request runs, billing state stays empty, and every permission gate shows its control (the server enforces each route). `config.modelPickerEnabled`, `contextMeterEnabled`, `sessionOverridesEnabled`, `runtimeSlashEnabled` (default true): false hides the model and effort pickers, the context ring, the session-overrides gear, or the runtime's skills and commands in the `/` menu. `config.offeredAgents` and `agentLabels`: the agents the composer's picker offers, and their display names. `config.takeFiles` and `attachAccept`: the host takes the composer's files itself, and the attach picker's `accept` list. |
-| `components` | no slots: each control that opens one is hidden | `ShareSessionModal` (`@kortix/ui/workspace` exports Kortix's), `HomeAnnouncement`, `Wallpaper`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`, `ArtifactViewer` (without it, the panel shows an artifact read-only), `RoomPanel` (flag `agent_rooms`) |
+| `components` | no slots: each control that opens one is hidden | `ShareSessionModal` (`@kortix/ui/workspace` exports Kortix's), `HomeAnnouncement`, `Wallpaper`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`, `ArtifactViewer` (without it, the panel shows an artifact read-only) |
 | `useBrand` | the Kortix marks | a hook that returns `{ app_name, logo_url, icon_url }` |
 | `image` | a plain `<img>` | its image component |
 | `i18n` | the bundled English catalog | `{ useTranslations, useLocale }` (next-intl signatures) or `{ locale, messages }` |
@@ -200,9 +200,9 @@ pass stable objects (module scope):
 A Next.js host passes `next/link` and `{ useRouter, usePathname, useSearchParams, useParams }` from
 `next/navigation` unchanged.
 
-## 5. The project shell
+## 5. The workspace shell
 
-Your sidebar chrome around Kortix's session list. Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/admin/sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings), `admin` `/projects/<id>/admin/<section>` (it follows `customize` when you map only `customize`), `rooms` `/projects/<id>/rooms` (flag `agent_rooms`), `goals` `/projects/<id>/goals` (flag `goals`), `artifacts` `/projects/<id>/artifacts` (flag `artifacts`), and, while the project's `project_channels` flag is on, `space` `/projects/<id>/spaces/<slug>`, `memory` `/projects/<id>/memory`, `channel` `/projects/<id>/c/<slug>` and `dm` `/projects/<id>/dm/<agent>`. Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project`, `session`, `channel` and `dm` cannot be null. This app serves the project
+Your sidebar chrome around Kortix's session list. Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/workspaces/<id>`, `session` `/workspaces/<id>/sessions/<sessionId>`, `sessions` `/workspaces/<id>/sessions` (`?view=archived|deleted`), `files` `/workspaces/<id>/files`, `drive` `/workspaces/<id>/drive`, `apps` `/workspaces/<id>/apps`, `members` `/workspaces/<id>/members`, `sandboxSettings` `/workspaces/<id>/admin/sandbox`, `customize` `/workspaces/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings), `admin` `/workspaces/<id>/admin/<section>` (it follows `customize` when you map only `customize`), `goals` `/workspaces/<id>/goals` (flag `goals`), `artifacts` `/workspaces/<id>/artifacts`, `review` `/workspaces/<id>/review`, and, while the workspace's `chat` flag is on, `space` `/workspaces/<id>/spaces/<slug>`, `memory` `/workspaces/<id>/memory`, `channel` `/workspaces/<id>/c/<slug>` and `dm` `/workspaces/<id>/dm/<agent>`. Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project`, `session`, `channel` and `dm` cannot be null. This app serves the workspace
 home, its files and a session (section 7), so it maps the other pages to `null`.
 
 ```tsx
@@ -224,14 +224,14 @@ import { ProjectSessionList } from '@kortix/ui/workspace';
 import { FolderSimpleIcon, NavigationArrowIcon, SquaresFourIcon } from '@phosphor-icons/react';
 import { Link, Outlet, useLocation, useParams } from 'react-router-dom';
 
-// Every project page: your sidebar chrome around Kortix's session list.
+// Every workspace page: your sidebar chrome around Kortix's session list.
 export function ProjectShell() {
   const { projectId = '', sessionId } = useParams();
   const { pathname } = useLocation();
   const nav = [
-    { to: `/projects/${projectId}`, label: 'New session', icon: NavigationArrowIcon },
-    { to: `/projects/${projectId}/files`, label: 'Files', icon: FolderSimpleIcon },
-    { to: '/', label: 'All projects', icon: SquaresFourIcon },
+    { to: `/workspaces/${projectId}`, label: 'New session', icon: NavigationArrowIcon },
+    { to: `/workspaces/${projectId}/files`, label: 'Files', icon: FolderSimpleIcon },
+    { to: '/', label: 'All workspaces', icon: SquaresFourIcon },
   ];
   return (
     <SessionIdsProvider projectId={projectId} sessionId={sessionId}>
@@ -295,7 +295,7 @@ export function ProjectsPage() {
         <CardContent className="flex flex-col gap-1">
           {projects.isLoading && <Loading />}
           {projects.data?.map((project) => (
-            <Link key={project.project_id} to={`/projects/${project.project_id}`} className="hover:bg-accent rounded-md px-2 py-1.5">
+            <Link key={project.project_id} to={`/workspaces/${project.project_id}`} className="hover:bg-accent rounded-md px-2 py-1.5">
               {project.name}
             </Link>
           ))}
@@ -329,7 +329,7 @@ export function FilesPage() {
   `beforeSend` gates the send (throw to refuse); `onSend` replaces it.
 - `SessionWorkspace` is the thread plus the resizable side panel. Tool rows, clickable paths and the
   header's Files, Terminal and Browser buttons open in the panel. `key={sessionId}` remounts it per session.
-- `ProjectFilesView` is the project's git-backed files: folders, files, history, and a viewer for
+- `ProjectFilesView` is the workspace's git-backed files: folders, files, history, and a viewer for
   any file kind. A live session's own workspace is the panel's Files view.
 - The parent sets the height of each screen (`SidebarInset className="h-dvh min-h-0"`).
 
@@ -377,7 +377,6 @@ setUiRoutes({
   sessions: () => null,
   drive: () => null,
   apps: () => null,
-  rooms: () => null,
   goals: () => null,
   artifacts: () => null,
   space: () => null,
@@ -397,7 +396,7 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: <ProjectsPage /> },
       {
-        path: '/projects/:projectId',
+        path: '/workspaces/:projectId',
         element: <ProjectShell />,
         children: [
           { index: true, element: <HomePage /> },
@@ -460,7 +459,7 @@ The modules compose at any depth (`modules.md` has every entry with its props an
   `SessionTerminal` (`@kortix/ui/terminal`) with the session's `runtimeSessionId`.
 - Blocks (`ComposerChatInput`, `ModelSelector`, `UserMessage`, `ToolPartRenderer`, …) outside the
   composed screens need the two scopes those screens mount: `KortixProjectProvider` (`@kortix/sdk/react`)
-  and `SessionIdsProvider` (`@kortix/ui`) with the project and session ids.
+  and `SessionIdsProvider` (`@kortix/ui`) with the workspace and session ids.
 - To draw every part yourself: `useChatTurns` and `renderParts` from `@kortix/sdk/react`
   (https://kortix.com/docs/developers#react).
 - Other data for a dashboard: `useProjectApps`, `useProjectTriggers`, `useChangeRequests`,
@@ -469,7 +468,7 @@ The modules compose at any depth (`modules.md` has every entry with its props an
 ## 10. Verify
 
 1. `tsc --noEmit` and the production build pass.
-2. In a browser: the project list renders; a prompt from the home opens the session; the tool rows and
+2. In a browser: the workspace list renders; a prompt from the home opens the session; the tool rows and
    your row draw; the reply streams; a file opens in the side panel; the Files page opens a file;
    0 console errors.
 3. The theme computes: `getComputedStyle(document.documentElement).getPropertyValue('--radius')`

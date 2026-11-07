@@ -12,7 +12,7 @@ afterEach(async () => {
   cleanup = undefined;
 });
 
-test('frame claims expose the actual iframe without reclaiming when callback identity changes', async () => {
+test('a claimed frame loads the page and sends only the app origin as referrer', async () => {
   const page = new Window({ url: 'https://app.example.test' });
   const saved = new Map<string, PropertyDescriptor | undefined>();
   for (const key of [
@@ -34,8 +34,6 @@ test('frame claims expose the actual iframe without reclaiming when callback ide
   const mount = page.document.createElement('div');
   page.document.body.append(mount);
   const root = createRoot(mount as unknown as Element);
-  const first: Array<HTMLIFrameElement | null> = [];
-  const second: Array<HTMLIFrameElement | null> = [];
   cleanup = async () => {
     await act(async () => root.unmount());
     pruneFrames(new Set());
@@ -46,27 +44,18 @@ test('frame claims expose the actual iframe without reclaiming when callback ide
     }
   };
   const props = {
-    frameKey: 'artifact:callback-test:immutable:annotate',
+    frameKey: 'artifact:referrer-test:immutable',
     src: 'https://content.example.test/page',
     title: 'Page',
   };
-  await act(async () =>
-    root.render(
-      createElement(ArtifactFrame, { ...props, onFrame: (frame) => first.push(frame) }),
-    ),
-  );
-  expect(first).toHaveLength(1);
-  expect(first[0]?.tagName).toBe('IFRAME');
-  expect(first[0]?.src).toBe(props.src);
-  await act(async () =>
-    root.render(
-      createElement(ArtifactFrame, { ...props, onFrame: (frame) => second.push(frame) }),
-    ),
-  );
-  expect(first).toHaveLength(1);
-  expect(second).toHaveLength(0);
-  await act(async () => root.render(null));
-  expect(second).toEqual([null]);
+  await act(async () => root.render(createElement(ArtifactFrame, props)));
+  const frames = mount.querySelectorAll('iframe');
+  expect(frames).toHaveLength(1);
+  const frame = frames[0] as unknown as HTMLIFrameElement;
+  expect(frame.dataset.frameKey).toBe(props.frameKey);
+  expect(frame.src).toBe(props.src);
+  // The page learns its host's origin, never the path with project ids.
+  expect(frame.referrerPolicy).toBe('strict-origin');
 });
 
 test('changing an immutable frame key publishes and focuses the new claim before deferred old-frame parking', async () => {
@@ -100,13 +89,11 @@ test('changing an immutable frame key publishes and focuses the new claim before
       else Reflect.deleteProperty(globalThis, key);
     }
   };
-  const oldKey = 'artifact:version-transition:current:annotate';
-  const newKey = 'artifact:version-transition:historical:annotate';
-  const exposed: Array<HTMLIFrameElement | null> = [];
-  const props = {
-    title: 'Versioned page',
-    onFrame: (frame: HTMLIFrameElement | null) => exposed.push(frame),
-  };
+  const oldKey = 'artifact:version-transition:current';
+  const newKey = 'artifact:version-transition:historical';
+  const frameOf = (key: string) =>
+    page.document.querySelector(`iframe[data-frame-key="${key}"]`) as unknown as HTMLIFrameElement;
+  const props = { title: 'Versioned page' };
   await act(async () =>
     root.render(
       createElement(ArtifactFrame, {
@@ -116,7 +103,7 @@ test('changing an immutable frame key publishes and focuses the new claim before
       }),
     ),
   );
-  const oldFrame = exposed.at(-1)!;
+  const oldFrame = frameOf(oldKey);
   await act(async () =>
     root.render(
       createElement(ArtifactFrame, {
@@ -126,7 +113,7 @@ test('changing an immutable frame key publishes and focuses the new claim before
       }),
     ),
   );
-  const newFrame = exposed.at(-1)!;
+  const newFrame = frameOf(newKey);
   expect(newFrame.dataset.frameKey).toBe(newKey);
   expect(newFrame !== oldFrame).toBe(true);
   expect(newFrame.src).toBe('https://content.example.test/historical');

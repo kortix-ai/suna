@@ -1,161 +1,73 @@
 'use client';
 
-import type { PeerMessageKind, PeerMessagePromptInfo } from '@kortix/shared';
+import { peerMessagePreview } from '@kortix/sdk';
+import type { PeerMessagePromptInfo } from '@kortix/shared';
 import { peerHandleLabel } from '@kortix/shared';
-import {
-  ArrowBendDownLeftIcon,
-  CaretRightIcon,
-  ChatTeardropTextIcon,
-  CheckCircleIcon,
-  PowerIcon,
-  type Icon,
-} from '@phosphor-icons/react';
-import { useId, useState } from 'react';
 import { useTranslations } from '../../i18n';
-import { cn } from '../../lib/utils';
 import { UnifiedMarkdown } from '../../markdown/unified-markdown';
+import { AgentFace, AgentRowBody, AgentRowScope, AgentStatus, AgentTrigger } from '../agents/agent-surface';
+import { BasicTool } from '../tool/shared/infrastructure';
 
 /**
- * A message another Kortix session sent this one (`send_message`): one dim
- * line that says where it came from, "Message from @reviewer · Schema
- * migration finished", then the whole message as Markdown behind a left rule,
- * so it reads as one text and never as this session's own reply. The header
- * and the footer the API wrapped around it (`peerMessagePromptText`) are for
- * the agent, not the reader, so neither renders. An idle notice says only that
- * a teammate finished: it stays one line that opens in place. A shutdown
- * request and a shutdown answer get their own words.
+ * A message another Kortix session sent this one (`send_message`). Nobody here
+ * typed it, so it is never a bubble: it is an agent row, the sender's face and
+ * handle, then the message on the rail, open, because a message is there to be
+ * read. The header and the footer the API wrapped around it
+ * (`peerMessagePromptText`) are for the agent, not the reader.
+ *
+ *   [face] reviewer  Review done, 2 comments
+ *          │ Rebased and reviewed. Two comments: …
+ *
+ * An idle notice says only that a teammate finished: one row like an agent's
+ * finish, that opens to the rest. A shutdown request and its answer say so on the right.
  */
 
-const KIND_ICON: Record<PeerMessageKind, Icon> = {
-  message: ChatTeardropTextIcon,
-  idle_notice: CheckCircleIcon,
-  shutdown_request: PowerIcon,
-  shutdown_response: ArrowBendDownLeftIcon,
-};
-
-const KIND_KEY = new Map<PeerMessageKind, string>([
-  ['message', 'message'],
-  ['idle_notice', 'idleNotice'],
-  ['shutdown_request', 'shutdownRequest'],
-  ['shutdown_response', 'shutdownResponse'],
-]);
-
-/**
- * The preview after the sender: the summary, else the first line of the text. CSS cuts it with `…`.
- * An idle notice (`firePeerIdleNotices` in the API) previews its "Its last answer:" line; its
- * first line ("reviewer finished its turn and is idle.") repeats the headline, so it shows only
- * when it says something else (an error).
- */
-export function peerMessagePreview(info: Pick<PeerMessagePromptInfo, 'summary' | 'text'> & { kind?: PeerMessageKind }): string {
-  if (info.summary?.trim()) return info.summary.trim();
-  const lines = info.text.split('\n').map((line) => line.trim()).filter(Boolean);
-  if (info.kind === 'idle_notice') {
-    const answer = lines.find((line) => line.startsWith('Its last answer:'));
-    if (answer) return answer.slice('Its last answer:'.length).trim();
-    return lines[0] && !/finished its turn and is idle\.?$/.test(lines[0]) ? lines[0] : '';
-  }
-  return lines[0] ?? '';
+/** An idle notice's text without the line that repeats the state, and its answer without the "Its last answer:" label. */
+export function idleNoticeBody(text: string): string {
+  // Only the platform's two lines change; the answer itself keeps its Markdown (indents, blank lines).
+  return text
+    .split('\n')
+    .filter((line) => !/finished its turn and is idle\.?\s*$/.test(line))
+    .map((line) => line.replace(/^(\s*)Its last answer:\s?/, '$1'))
+    .join('\n')
+    .trim();
 }
 
 export function PeerMessageRow({ info, actions }: { info: PeerMessagePromptInfo; actions?: React.ReactNode }) {
-  if (info.kind !== 'idle_notice') return <PeerMessageBody info={info} actions={actions} />;
-  return <PeerIdleRow info={info} actions={actions} />;
-}
-
-/** A message, a shutdown request or a shutdown answer: the source line, then the full text. */
-function PeerMessageBody({ info, actions }: { info: PeerMessagePromptInfo; actions?: React.ReactNode }) {
   const t = useTranslations('multiAgent.peer');
-  const KindIcon = KIND_ICON[info.kind];
-  const headline = t(KIND_KEY.get(info.kind) ?? 'message', { from: peerHandleLabel(info.from) });
-  const summary = info.summary?.trim();
-  const body = info.text.trim();
-  return (
-    <div
-      data-testid="peer-message-turn"
-      data-peer-kind={info.kind}
-      data-peer-message-id={info.messageId}
-      className="flex min-w-0 flex-col gap-1.5"
-    >
-      <div className="text-muted-foreground flex w-full min-w-0 items-center gap-1.5 text-xs">
-        <KindIcon aria-hidden className="size-3.5 shrink-0" />
-        <span className="shrink-0">{headline}</span>
-        {summary && (
-          <>
-            <span aria-hidden className="shrink-0">
-              ·
-            </span>
-            <span className="min-w-0 truncate" title={summary}>
-              {summary}
-            </span>
-          </>
-        )}
-      </div>
-      {body && (
-        <div data-slot="peer-message-body" className="border-border ml-1.5 min-w-0 border-l pl-3 text-sm">
-          <UnifiedMarkdown content={body} trust="agent" isStreaming={false} />
-        </div>
-      )}
-      {actions}
-    </div>
-  );
-}
-
-/** An idle notice: one line that opens in place to the rest. */
-function PeerIdleRow({ info, actions }: { info: PeerMessagePromptInfo; actions?: React.ReactNode }) {
-  const t = useTranslations('multiAgent.peer');
-  const [open, setOpen] = useState(false);
-  const bodyId = useId();
-  const KindIcon = KIND_ICON[info.kind];
+  const from = info.from;
+  const name = peerHandleLabel(from).replace(/^@/, '');
+  const idle = info.kind === 'idle_notice';
   const preview = peerMessagePreview(info);
-  const headline = t(KIND_KEY.get(info.kind) ?? 'message', { from: peerHandleLabel(info.from) });
-  // Nothing more to read than the line says: the row is not a disclosure.
-  const expandable = info.text.trim().length > 0 && info.text.trim() !== preview;
-  const line = (
-    <>
-      <KindIcon aria-hidden className="size-3.5 shrink-0" />
-      <span className="shrink-0">{headline}</span>
-      {preview && (
-        <>
-          <span aria-hidden className="shrink-0">
-            ·
-          </span>
-          <span className="min-w-0 truncate" title={preview}>
-            {preview}
-          </span>
-        </>
-      )}
-    </>
-  );
+  const text = info.text.trim();
+  // An idle notice's first line repeats the state word: its body is the answer, without its label.
+  const body = idle ? idleNoticeBody(text) : text;
+  const kindWord =
+    info.kind === 'shutdown_request'
+      ? t('kind.shutdownRequest')
+      : info.kind === 'shutdown_response'
+        ? t('kind.shutdownResponse')
+        : idle
+          ? t('kind.finished')
+          : t('kind.message');
   return (
-    <div
-      data-testid="peer-message-turn"
-      data-peer-kind={info.kind}
-      data-peer-message-id={info.messageId}
-      className="flex min-w-0 flex-col gap-1"
-    >
-      {expandable ? (
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={bodyId}
-          onClick={() => setOpen((value) => !value)}
-          className="text-muted-foreground hover:text-foreground duration-fast flex w-full min-w-0 items-center gap-1.5 text-left text-xs transition-colors"
+    <div data-testid="peer-message-turn" data-peer-kind={info.kind} data-peer-message-id={info.messageId} className="flex min-w-0 flex-col gap-1">
+      <AgentRowScope>
+        <BasicTool
+          icon={<AgentFace handle={from} />}
+          trigger={<AgentTrigger title={name} subtitle={idle ? preview : info.summary?.trim()} />}
+          triggerAction={<AgentStatus status={idle ? 'done' : undefined} label={kindWord} opens={!!body} />}
+          defaultOpen={!idle}
         >
-          {line}
-          <CaretRightIcon aria-hidden className={cn('size-3 shrink-0', open && 'rotate-90')} />
-          <span className="sr-only">{open ? t('collapse') : t('expand')}</span>
-        </button>
-      ) : (
-        <div className="text-muted-foreground flex w-full min-w-0 items-center gap-1.5 text-xs">{line}</div>
-      )}
-      {expandable && open && (
-        <div
-          id={bodyId}
-          className="text-muted-foreground border-border ml-1.5 border-l pl-3 text-sm whitespace-pre-wrap wrap-break-word"
-        >
-          {info.text}
-        </div>
-      )}
+          {body ? (
+            <AgentRowBody>
+              <div data-slot="peer-message-body" className="min-w-0">
+                <UnifiedMarkdown content={body} trust="agent" isStreaming={false} />
+              </div>
+            </AgentRowBody>
+          ) : undefined}
+        </BasicTool>
+      </AgentRowScope>
       {actions}
     </div>
   );

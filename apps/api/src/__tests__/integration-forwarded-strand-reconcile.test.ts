@@ -11,7 +11,7 @@
  * redelivered. `integration-prompt-inbox` proves the other readers of the
  * shared `wireMessageIdMatches` predicate; this file proves this one.
  *
- * Stubbed: the box. `sandboxOpencodeEndpoint` returns a fixed address, `fetch`
+ * Stubbed: the box. `sandboxRuntimeEndpoint` returns a fixed address, `fetch`
  * serves the transcript tip and accepts the message delete, and the drain kick
  * is recorded instead of delivering. The ledger read, the command-row lookup
  * and the re-queue write run against real rows.
@@ -19,7 +19,7 @@
 import { afterAll, beforeAll, beforeEach, expect, mock, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
-import * as realOpencodeMapping from '../projects/opencode-mapping';
+import * as realRuntimeMapping from '../projects/runtime-session-mapping';
 import * as realDrain from '../projects/session-lifecycle/drain';
 import { WIRE_ID_TIME_SCALE } from '../projects/wire-message-id';
 
@@ -27,7 +27,7 @@ const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();
 const SESSION_ID = crypto.randomUUID();
 const SANDBOX_ID = crypto.randomUUID();
-const OPENCODE_SESSION = 'ses_strand_root';
+const RUNTIME_SESSION = 'ses_strand_root';
 const BOX_URL = 'http://strand-box.test';
 const BOX_ORIGIN = new URL(BOX_URL).origin;
 
@@ -59,9 +59,9 @@ function nextKick(timeoutMs = 5_000): Promise<'kicked' | 'timeout'> {
   });
 }
 
-mock.module('../projects/opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  sandboxOpencodeEndpoint: async () => ({ url: BOX_URL, headers: {} }),
+mock.module('../projects/runtime-session-mapping', () => ({
+  ...realRuntimeMapping,
+  sandboxRuntimeEndpoint: async () => ({ url: BOX_URL, headers: {} }),
 }));
 mock.module('../projects/session-lifecycle/drain', () => ({
   ...realDrain,
@@ -80,20 +80,25 @@ const { enqueueContinueSessionCommand, markCommandForwarded } = await import(
   '../projects/session-lifecycle/store'
 );
 
-/** The transcript page: ANSWERED, then STRANDED below the assistant that
- *  answered ANSWERED. Nothing is parented on STRANDED. */
+/** One record of the box's session log page. */
+const logRecord = (id: string, role: 'user' | 'assistant', created: number, over: Record<string, unknown> = {}) => ({
+  message_id: id,
+  role,
+  kind: 'turn',
+  status: 'complete',
+  reply_to: null,
+  created_at: new Date(created).toISOString(),
+  completed_at: new Date(created).toISOString(),
+  blocks: [{ type: 'text', id: `${id}-b0`, text: '' }],
+  ...over,
+});
+
+/** The box's log page: ANSWERED, then STRANDED below the assistant that
+ *  answered ANSWERED. Nothing replies to STRANDED. */
 const TIP = [
-  { info: { id: ANSWERED, role: 'user', time: { created: T } }, parts: [{ id: 'prt_a' }] },
-  { info: { id: STRANDED, role: 'user', time: { created: T + 500 } }, parts: [{ id: 'prt_s' }] },
-  {
-    info: {
-      id: ASSISTANT,
-      role: 'assistant',
-      parentID: ANSWERED,
-      time: { created: T + 1_000, completed: T + 1_500 },
-    },
-    parts: [{ id: 'prt_r' }],
-  },
+  logRecord(ANSWERED, 'user', T),
+  logRecord(STRANDED, 'user', T + 500),
+  logRecord(ASSISTANT, 'assistant', T + 1_000, { reply_to: ANSWERED, completed_at: new Date(T + 1_500).toISOString() }),
 ];
 
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -129,9 +134,9 @@ async function forwardedPrompt(payloadPatch: Record<string, unknown> = {}): Prom
   // The ledger row the forward opened, still open at turn end.
   await db.execute(sql`
     INSERT INTO kortix.session_turns
-      (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state)
+      (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state)
     VALUES (${`tok-${row.commandId}`}, ${SESSION_ID}, ${SANDBOX_ID}::uuid, ${PROJECT_ID}::uuid,
-            ${ACCOUNT_ID}::uuid, ${OPENCODE_SESSION}, ${STRANDED}, 'active')`);
+            ${ACCOUNT_ID}::uuid, ${RUNTIME_SESSION}, ${STRANDED}, 'active')`);
   return row.commandId;
 }
 
@@ -151,7 +156,7 @@ async function readCommand(commandId: string) {
 function reconcile() {
   return reconcileForwardedTurnsAtEnd({
     sessionId: SESSION_ID,
-    opencodeSessionId: OPENCODE_SESSION,
+    runtimeSessionId: RUNTIME_SESSION,
     endedMessageId: ANSWERED,
   });
 }
@@ -164,9 +169,9 @@ beforeAll(async () => {
     VALUES (${PROJECT_ID}::uuid, ${ACCOUNT_ID}::uuid, 'strand-reconcile-it', 'https://example.invalid/r.git')`);
   await db.execute(sql`
     INSERT INTO kortix.project_sessions
-      (session_id, account_id, project_id, branch_name, status, opencode_session_id)
+      (session_id, account_id, project_id, branch_name, status, runtime_session_id)
     VALUES (${SESSION_ID}, ${ACCOUNT_ID}::uuid, ${PROJECT_ID}::uuid, ${`br-${SESSION_ID}`}, 'running',
-            ${OPENCODE_SESSION})`);
+            ${RUNTIME_SESSION})`);
   await db.execute(sql`
     INSERT INTO kortix.session_sandboxes
       (sandbox_id, session_id, account_id, project_id, external_id, status)
@@ -193,7 +198,7 @@ beforeAll(async () => {
       retractedMessages.push(decodeURIComponent(new URL(url).pathname.split('/').at(-2) ?? ''));
       return Response.json({ retracted: true });
     }
-    return Response.json({ messages: TIP, has_more: false });
+    return Response.json({ thread_id: 'ses_strand', messages: TIP, has_more: false });
   };
 });
 

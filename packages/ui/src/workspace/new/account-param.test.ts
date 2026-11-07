@@ -1,5 +1,5 @@
 /**
- * `/new?account=` — the destination after creating an account.
+ * `/workspaces/new?account=` — the destination after creating an account.
  *
  * The landing door cannot serve that flow: it opens the first project found in
  * ANY account, so a brand-new empty account falls through to a different
@@ -45,7 +45,7 @@ describe('readAccountParam', () => {
 
 describe('newWorkspacePathForAccount', () => {
   test('scopes /new to one account', () => {
-    expect(newWorkspacePathForAccount(ACCOUNT)).toBe(`/new?account=${ACCOUNT}`);
+    expect(newWorkspacePathForAccount(ACCOUNT)).toBe(`/workspaces/new?account=${ACCOUNT}`);
   });
 
   test('round-trips through readAccountParam', () => {

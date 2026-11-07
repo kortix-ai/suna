@@ -6,6 +6,7 @@
 import { flow } from '../core/flow';
 import { assert } from '../core/expect';
 import { CliSandbox } from '../fixtures/cli';
+import { loadEnv } from '../core/env';
 
 const VALID = { kind: 'idea', message: 'A sessions --watch flag would save me a loop.' };
 
@@ -19,7 +20,7 @@ flow(
   {
     domain: 'feedback',
     tags: ['smoke'],
-    routes: ['POST /v1/feedback'],
+    routes: ['POST /v1/feedback', 'POST /v1/workspaces/:projectId/cli-token'],
   },
   async (ctx) => {
     await ctx.step('ANON cannot file feedback → 401', async () => {
@@ -39,6 +40,35 @@ flow(
         .exists('$.created_at');
     });
 
+    await ctx.step('an agent session files with its project-scoped token → 201, source agent', async () => {
+      // The in-sandbox KORTIX_TOKEN is a project-scoped PAT and there is no
+      // stored login: the CLI reads the token and the API URL from the env.
+      const project = await ctx.fixtures.project();
+      const minted = await ctx.client
+        .as(ctx.P.OWNER)
+        .post('/v1/workspaces/:projectId/cli-token', { name: ctx.fixtures.name('fb-agent') }, { params: { projectId: project.id } });
+      minted.status(201);
+      const secret = minted.json<{ secret_key: string }>().secret_key;
+      const sb = new CliSandbox('fb1-agent');
+      ctx.track('cli-sandbox', sb.cwd);
+      try {
+        const r = await sb.run(['feedback', 'an unparsed bash line asked under a deny pattern', '--kind', 'bug', '--json'], {
+          env: {
+            KORTIX_TOKEN: secret,
+            KORTIX_API_URL: `${loadEnv().apiUrl.replace(/\/v1$/, '')}/v1`,
+            KORTIX_PROJECT_ID: project.id,
+            KORTIX_SESSION_ID: 'sess-fb-agent',
+          },
+        });
+        check('exit 0', r.exitCode === 0, 0, `${r.exitCode} ${r.stderr}`);
+        const receipt = JSON.parse(r.stdout) as { source?: string; kind?: string };
+        check('source agent', receipt.source === 'agent', 'agent', receipt.source);
+        check('kind bug', receipt.kind === 'bug', 'bug', receipt.kind);
+      } finally {
+        sb.dispose();
+      }
+    });
+
     await ctx.step('source defaults to cli when the body omits it', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post('/v1/feedback', { kind: 'bug', message: 'x' });
       r.status(201).body().has('$.source', 'cli');
@@ -54,8 +84,10 @@ flow(
         { kind: 'idea', message: 'x'.repeat(4001) },
         { kind: 'idea', message: 'm', context: { session_id: 'x'.repeat(257) } },
       ];
+      // NONMEMBER: validation does not depend on the caller, and the limiter
+      // (10/min per user) keeps OWNER's budget for the CLI steps.
       for (const body of bad) {
-        const r = await ctx.client.as(ctx.P.OWNER).post('/v1/feedback', body);
+        const r = await ctx.client.as(ctx.P.NONMEMBER).post('/v1/feedback', body);
         r.status(400);
       }
     });
@@ -73,7 +105,7 @@ flow(
           'friction',
           '--json',
         ]);
-        check('exit 0', r.exitCode === 0, 0, r.exitCode);
+        check('exit 0', r.exitCode === 0, 0, `${r.exitCode} ${r.stderr}`);
         const receipt = JSON.parse(r.stdout) as { id?: string; source?: string; kind?: string };
         check('receipt id printed', typeof receipt.id === 'string' && receipt.id.length > 0, true, receipt.id);
         check('source cli', receipt.source === 'cli', 'cli', receipt.source);

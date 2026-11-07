@@ -142,14 +142,15 @@ export async function sendMessage(host: MessagingHost, params: SendParams, signa
   if (params.message.length > PEER_MESSAGE_MAX_CHARS) {
     return invalid(`The message is ${params.message.length} characters; one message takes at most ${PEER_MESSAGE_MAX_CHARS}. Send the essentials, or split it.`)
   }
-  if (params.approve !== undefined && params.type !== 'shutdown_response') return invalid('approve goes only with type "shutdown_response".')
+  // `approve` belongs to a shutdown answer only. A model that fills it on an ordinary message still sends the message: the field is dropped, never a refusal.
+  const approve = params.type === 'shutdown_response' ? params.approve : undefined
   const body: PeerMessageSendBody = {
     to,
     message: params.message,
     ...(params.summary?.trim() ? { summary: params.summary.trim().slice(0, PEER_MESSAGE_SUMMARY_MAX_CHARS) } : {}),
     ...(params.notify_when_idle ? { notify_when_idle: true } : {}),
     ...(params.type ? { type: params.type } : {}),
-    ...(params.approve !== undefined ? { approve: params.approve } : {}),
+    ...(approve !== undefined ? { approve } : {}),
     ...(params.project_id?.trim() ? { project_id: params.project_id.trim() } : {}),
   }
   let answer
@@ -252,6 +253,6 @@ function agentRow(agent: ReachableAgent): KortixCardRow {
     title: agent.handle,
     ...(detail.length ? { detail: detail.join(' · ') } : {}),
     badge: BOARD_STATE_BADGE[agent.state] ?? agent.state,
-    href: `/projects/${agent.project_id}/sessions/${agent.session_id}`,
+    href: `/workspaces/${agent.project_id}/sessions/${agent.session_id}`,
   }
 }

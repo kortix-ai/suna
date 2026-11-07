@@ -77,7 +77,7 @@ export interface ComposerDraft {
   secretName: string;
   startActive: boolean;
   sessionAccess: SharingSelection;
-  /** The channel or DM its runs post to (`project_channels`). Null = none: runs land in `#general`. */
+  /** The channel or DM its runs post to (`chat`). Null = none: runs land in `#general`. */
   spaceId: string | null;
   /** Run limits (KRTX-1721) as typed. Empty = unset: 60 an hour, no daily cap. */
   maxRunsPerHour: string;

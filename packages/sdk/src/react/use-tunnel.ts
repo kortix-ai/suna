@@ -23,8 +23,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
-import { addComputerToProject, type ConnectorConnectOwner } from '../core/rest/projects-client';
-import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
+import { addComputerToWorkspace, type ConnectorConnectOwner } from '../core/rest/projects-client';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -89,58 +88,6 @@ export interface ComputerAccessChange {
   keepAwake?: boolean;
 }
 
-/** @deprecated Per-machine permissions are no longer a product surface. Removed in the next major. */
-export interface TunnelPermission {
-  permissionId: string;
-  tunnelId: string;
-  accountId: string;
-  capability: string;
-  scope: Record<string, unknown>;
-  status: 'active' | 'revoked' | 'expired';
-  expiresAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** @deprecated Permission requests were removed; approvals use connector policies. Removed in the next major. */
-export interface TunnelPermissionRequest {
-  requestId: string;
-  tunnelId: string;
-  accountId: string;
-  capability: string;
-  requestedScope: Record<string, unknown>;
-  reason: string | null;
-  status: 'pending' | 'approved' | 'denied' | 'expired';
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** @deprecated The tunnel audit log route was removed. Removed in the next major. */
-export interface TunnelAuditLog {
-  logId: string;
-  tunnelId: string;
-  accountId: string;
-  capability: string;
-  operation: string;
-  requestSummary: Record<string, unknown>;
-  success: boolean;
-  durationMs: number | null;
-  bytesTransferred: number | null;
-  errorMessage: string | null;
-  createdAt: string;
-}
-
-/** @deprecated The tunnel audit log route was removed. Removed in the next major. */
-export interface AuditLogPage {
-  data: TunnelAuditLog[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-}
-
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
 export const tunnelKeys = {
@@ -199,24 +146,6 @@ export function useTunnelConnection(tunnelId: string) {
     refetchOnMount: 'always',
     refetchOnWindowFocus: 'always',
   });
-}
-
-/** @deprecated Pairing is device-auth only. Removed in the next major. */
-export interface TunnelConnectionCreateResponse extends TunnelConnection {
-  /** One-time setup token — only returned on creation, never retrievable again. */
-  setupToken: string;
-}
-
-/**
- * @deprecated The API removed `POST /tunnel/connections`: a machine pairs
- * through device auth (`npx @kortix/agent-tunnel connect`). Fails with
- * `ENDPOINT_RETIRED`. Removed in the next major.
- */
-export function useCreateTunnelConnection() {
-  return useRetiredMutation<
-    TunnelConnectionCreateResponse,
-    { name: string; sandboxId?: string; capabilities?: string[] }
-  >('useCreateTunnelConnection');
 }
 
 export function useUpdateTunnelConnection() {
@@ -282,42 +211,6 @@ export function useSetComputerAccess() {
 // product surface. The local agent's config is the ceiling; human approval of
 // risky calls is a connector policy (`require_approval`).
 
-/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
-export function useTunnelPermissions(tunnelId: string) {
-  return useRetiredQuery<TunnelPermission[]>('useTunnelPermissions', tunnelKeys.permissions(tunnelId), !!tunnelId);
-}
-
-/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
-export function useGrantTunnelPermission() {
-  return useRetiredMutation<
-    TunnelPermission,
-    { tunnelId: string; capability: string; scope?: Record<string, unknown>; expiresAt?: string }
-  >('useGrantTunnelPermission');
-}
-
-/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
-export function useRevokeTunnelPermission() {
-  return useRetiredMutation<void, { tunnelId: string; permissionId: string }>('useRevokeTunnelPermission');
-}
-
-/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
-export function useTunnelPermissionRequests() {
-  return useRetiredQuery<TunnelPermissionRequest[]>('useTunnelPermissionRequests', tunnelKeys.permissionRequests());
-}
-
-/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
-export function useApprovePermissionRequest() {
-  return useRetiredMutation<
-    unknown,
-    { requestId: string; scope?: Record<string, unknown>; expiresAt?: string }
-  >('useApprovePermissionRequest');
-}
-
-/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
-export function useDenyPermissionRequest() {
-  return useRetiredMutation<void, string>('useDenyPermissionRequest');
-}
-
 // ─── Project Hooks ───────────────────────────────────────────────────────────
 
 /**
@@ -327,20 +220,23 @@ export function useDenyPermissionRequest() {
  * account follows them into every project they belong to. `share: 'me'`
  * (the server default) stays accepted and is idempotent.
  */
-export function useAddComputerToProject() {
+export function useAddComputerToWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ projectId, ...input }: {
       projectId: string;
       tunnelId: string;
       share?: ConnectorConnectOwner;
-    }) => addComputerToProject(projectId, input),
+    }) => addComputerToWorkspace(projectId, input),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['connections', vars.projectId] });
       queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
     },
   });
 }
+
+/** @deprecated Use `useAddComputerToWorkspace`. Kept permanently. */
+export const useAddComputerToProject = useAddComputerToWorkspace;
 
 // ─── Device Auth Hooks ──────────────────────────────────────────────────────
 
@@ -437,7 +333,3 @@ export function useDenyDeviceAuth() {
 
 // ─── Retired audit hook ──────────────────────────────────────────────────────
 
-/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
-export function useTunnelAuditLogs(tunnelId: string, page = 1, _limit = 50) {
-  return useRetiredQuery<AuditLogPage>('useTunnelAuditLogs', tunnelKeys.auditLogs(tunnelId, page), !!tunnelId);
-}

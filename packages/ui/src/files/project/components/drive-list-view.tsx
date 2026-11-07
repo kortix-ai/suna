@@ -47,8 +47,7 @@ import { getFileIcon } from './file-icon';
 import { ownClicks } from './own-clicks';
 
 const ELEVATED_DIR_META: Record<string, string> = {
-  '.kortix': 'Project config, tasks, context',
-  '.opencode': 'Agents, skills, commands',
+  '.kortix': 'Workspace config, tasks, context',
 };
 
 function ChalkBadge({ label }: { label: string }) {

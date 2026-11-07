@@ -22,6 +22,9 @@ function inferAccountId(c: AuditContext): string | null {
     getRequestContext()?.accountId ||
     c.req.query('account_id') ||
     c.req.query('accountId') ||
+    // An account-key route resolved its path id (a workspace id or an account
+    // key) to the account key; on `/v1/accounts/<account>` it equals the path.
+    c.get('workspaceAccountId') ||
     accountPathId ||
     null
   );
@@ -61,24 +64,40 @@ function errorStatus(error: unknown): number {
 }
 
 /**
- * The route template of the endpoint Hono matched, or null when none did.
+ * An endpoint, not middleware: a method route, or a catch-all handler
+ * (`app.all`) the catalog labels. Everything else that matches with method
+ * ALL is `use()` middleware.
+ */
+function isEndpoint(route: { method: string; path: string }): boolean {
+  return route.method !== 'ALL' || auditLabelForRoute('ALL', route.path) !== null;
+}
+
+/**
+ * The route template of the endpoint Hono ran, or would have run, or null when
+ * no endpoint matched.
  *
- * Not `routePath`: that is the handler Hono stopped at, so a request an auth
- * middleware refused was recorded under the middleware's `/v1/projects/*`
- * instead of the endpoint it asked for. The router matches the whole handler
- * stack up front, so the endpoint is known even when it never ran: the last
- * method route, or else a catch-all handler (`app.all`) the catalog labels.
- * Everything else that matches with method ALL is middleware.
+ * The router matches the whole handler stack up front, in registration order,
+ * and runs it in that order until one handler answers. `c.req.routeIndex` is
+ * the last route Hono ran: the one that answered. When it is an endpoint, that
+ * is the request's route. When it is middleware (an auth check that refused
+ * with a 401), the request is recorded under the first endpoint after it — the
+ * one Hono would have run — never under the middleware's `/v1/projects/*`.
+ *
+ * Never the last match: `GET …/logs/facets` is registered before
+ * `GET …/logs/:logId`, which also matches it, so the last match named the
+ * wrong endpoint. An endpoint that passed the request on with `next()` and no
+ * later route answered is the fallback.
  */
 function matchedEndpointRoute(c: AuditContext): string | null {
   const routes = matchedRoutes(c);
-  for (let i = routes.length - 1; i >= 0; i -= 1) {
+  const answered = Math.min(Math.max(c.req.routeIndex, 0), routes.length);
+  for (let i = answered; i < routes.length; i += 1) {
     const route = routes[i];
-    if (route && route.method !== 'ALL') return route.path;
+    if (route && isEndpoint(route)) return route.path;
   }
-  for (let i = routes.length - 1; i >= 0; i -= 1) {
+  for (let i = answered - 1; i >= 0; i -= 1) {
     const route = routes[i];
-    if (route && auditLabelForRoute('ALL', route.path)) return route.path;
+    if (route && isEndpoint(route)) return route.path;
   }
   return null;
 }

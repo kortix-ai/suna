@@ -38,6 +38,7 @@ import { groupAlwaysOn, groupScale, releaseConfigOf } from './release-config';
 import { appRuntimeIdentityEnv } from './viewer';
 import { appServiceUrl } from './hostnames';
 import { acquireVolume, detachVolume, ensureMachineVolume, releaseVolume } from './volumes';
+import { transitionAppRuntime, transitionAppRuntimes } from './runtime-status';
 
 type AppRow = typeof apps.$inferSelect;
 type DeploymentRow = typeof appDeployments.$inferSelect;
@@ -263,18 +264,17 @@ export async function waitInstanceReady(hosting: AppHostingProvider, instance: I
     await hosting.waitUntilReady(provider, instance.externalId, instance.runtimeId);
   }
   const now = new Date();
-  await db.update(appRuntimes).set({ status: 'running', startedAt: now, stoppedAt: null, updatedAt: now })
-    .where(and(eq(appRuntimes.runtimeId, instance.runtimeId), ne(appRuntimes.status, 'deleted')));
+  await transitionAppRuntime('ready', eq(appRuntimes.runtimeId, instance.runtimeId), { startedAt: now, stoppedAt: null, updatedAt: now });
 }
 
 /** Stop an instance's box and close its meter. Idempotent. */
 export async function stopInstance(hosting: AppHostingProvider, instance: InstanceRow): Promise<void> {
   await hosting.stop(instance.provider as SandboxProviderName, instance.externalId);
   const now = new Date();
-  await db.update(appRuntimes).set({
-    status: 'stopped', stoppedAt: now, activityLeaseUntil: null, idleDeadlineAt: null,
+  await transitionAppRuntime('stop', eq(appRuntimes.runtimeId, instance.runtimeId), {
+    stoppedAt: now, activityLeaseUntil: null, idleDeadlineAt: null,
     wakeLeaseOwner: null, wakeLeaseUntil: null, updatedAt: now,
-  }).where(and(eq(appRuntimes.runtimeId, instance.runtimeId), ne(appRuntimes.status, 'deleted')));
+  });
   await pauseComputeSession(instance.runtimeId, now);
 }
 
@@ -416,8 +416,8 @@ export async function rollOutRelease(input: {
     if (strategy === 'immediate') {
       const now = new Date();
       if (instances.length > 0) {
-        await db.update(appRuntimes).set({ status: 'running', updatedAt: now })
-          .where(inArray(appRuntimes.runtimeId, instances.map((instance) => instance.runtimeId)));
+        // A runtime removed while the rollout launched it stays deleted.
+        await transitionAppRuntimes('ready', inArray(appRuntimes.runtimeId, instances.map((instance) => instance.runtimeId)), { updatedAt: now });
       }
     } else {
       await firstRejection(await Promise.allSettled(instances.map((instance) => waitInstanceReady(hosting, instance))));

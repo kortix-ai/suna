@@ -168,7 +168,7 @@ export function connectorBindingOptions(
       description = 'This connector manages authentication through its platform connection.';
     } else if (connector.credentialSource === 'stored') {
       disabled = true;
-      description = 'Disconnect the stored connector credential before using a project secret.';
+      description = 'Disconnect the stored connector credential before using a workspace secret.';
     } else if (connector.secretIdentifier && !selected) {
       disabled = true;
       description = `Already uses ${connector.secretIdentifier}. Unbind it there first.`;
@@ -583,8 +583,6 @@ export function missingAgentGrantNotice(
 export type AgentGrantConfig = {
   agent_discovery?: string | null;
   default_agent?: string | null;
-  /** @deprecated Server alias for `default_agent`. */
-  open_code_default_agent?: string | null;
   agents?: readonly { name: string; scope?: { env?: string[] | 'all' } | null }[];
 };
 
@@ -621,9 +619,10 @@ function admitsIdentifier(list: readonly string[], identifier: string): boolean 
  *
  * `agent_discovery` is the server's own verdict on whether the manifest
  * declares any agent (apps/api/src/projects/git/config.ts `resolveConfigAgents`)
- * — `declarative` means it does, `opencode` means it declares none. Anything
- * else is a config we cannot read, and an unread config confirms rather than
- * guesses: a missed confirmation silently revokes working runtime secrets.
+ * — `declarative` means it does. Anything else (`null` in a response filtered
+ * by the caller's access) is a config we cannot read, and an unread config
+ * confirms rather than guesses: a missed confirmation silently revokes working
+ * runtime secrets.
  */
 export function agentGrantPlan(
   config: AgentGrantConfig | null | undefined,
@@ -641,7 +640,7 @@ export function agentGrantPlan(
     });
   }
 
-  const defaultAgent = (config?.default_agent ?? config?.open_code_default_agent ?? '').trim();
+  const defaultAgent = (config?.default_agent ?? '').trim();
   // A project can carry a default agent that no manifest entry declares — the
   // endpoint upserts the entry, so it is still a valid target.
   const candidates =
@@ -697,7 +696,7 @@ export function agentGrantActionLabel(plan: AgentGrantPlan, selected: string | n
 export function agentGrantCandidateHint(candidate: AgentGrantCandidate): string | null {
   if (candidate.alreadyGranted) return 'Already lists this secret.';
   if (candidate.currentSecrets === 'all') {
-    return 'Runs on "secrets: all". The grant expands that to an explicit list of the project secrets.';
+    return 'Runs on every secret ("*"). The grant expands that to an explicit list of the project secrets.';
   }
   return null;
 }

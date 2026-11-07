@@ -2,15 +2,15 @@
  * Durable active-turn authority for sandbox lifecycle renewal.
  *
  * `deadline_at` answers when an idle sandbox stops. It cannot also answer
- * whether an OpenCode turn is active. A local tool can run without an LLM call
+ * whether a runtime turn is active. A local tool can run without an LLM call
  * for longer than one deadline grant. This module stores that separate fact in
  * `session_sandboxes.metadata.activeTurns`.
  *
  * Only the control plane can create a turn record. Promotion requires either
  * the API's accepted upstream response or daemon evidence tied to that record's
  * opaque token. Terminal evidence removes the record and shortens the deadline.
- * Renewal requires a fresh control-plane observation of the exact OpenCode
- * turn. A durable record cannot renew itself when OpenCode is unreachable.
+ * Renewal requires a fresh control-plane observation of the exact runtime
+ * turn. A durable record cannot renew itself when the runtime is unreachable.
  *
  * The `session_turns` ledger — every statement that records what these writes
  * erased — lives in ./session-turn-ledger.ts; every writer here records
@@ -90,7 +90,7 @@ function sandboxTurnTargetCte(sessionId: string): SQL {
 
 /**
  * The `all_active_turns ... selected` CTE chain of completeSandboxTurn: every
- * live turn of the session, narrowed to the end frame's OpenCode identity, an
+ * live turn of the session, narrowed to the end frame's runtime identity, an
  * exact-message match taking precedence over the newest fallback. It follows
  * the `target` CTE, so the fragment opens with a comma.
  */
@@ -169,7 +169,6 @@ export async function beginSandboxTurn(
                    'token', ${turn.token}::text,
                    'state', 'delivering',
                    'runtimeSessionId', ${turn.runtimeSessionId}::text,
-                   'opencodeSessionId', ${turn.runtimeSessionId}::text,
                    'messageId', ${turn.messageId}::text,
                    'source', ${turn.source ?? null}::text,
                    'startedAtMs', floor(extract(epoch from ${observedAt}) * 1000))),
@@ -200,7 +199,7 @@ export async function beginSandboxTurn(
       sql`WITH granted AS (${grant}), ledger AS (
             INSERT INTO kortix.session_turns
               (turn_token, session_id, sandbox_id, project_id, account_id,
-               opencode_session_id, message_id, state, started_at, created_at, updated_at)
+               runtime_session_id, message_id, state, started_at, created_at, updated_at)
             SELECT ${turn.token}, granted.session_id, granted.sandbox_id,
                    granted.project_id, granted.account_id,
                    ${turn.runtimeSessionId || null}, ${turn.messageId}, 'delivering',
@@ -251,9 +250,9 @@ async function withLedger(authority: SQL, combined: SQL, context: string) {
 /**
  * Give a BOX-INITIATED turn the same durable authority a delivered prompt gets.
  *
- * Not every turn starts with `POST .../prompts`. OpenCode starts turns of its
- * own — most commonly the synthetic `<pty_exited>` user message it injects when
- * a background pty finishes — and those turns had NO `session_turns` row, no
+ * Not every turn starts with `POST .../prompts`. The runtime can start turns of
+ * its own (in the incident below, OpenCode's synthetic `<pty_exited>` user
+ * message after a background pty finished), and those turns had NO `session_turns` row, no
  * `activeTurns` record, and therefore no deadline grant: `GET .../turn`
  * reported idle for minutes of live streaming, the composer read "not
  * running" over a working session, and a long pty-driven work phase ran on
@@ -355,7 +354,6 @@ export async function acceptSandboxTurn(
              (s.metadata->'activeTurns'->${token}) || jsonb_strip_nulls(jsonb_build_object(
                'state', 'active',
                'runtimeSessionId', ${identity?.runtimeSessionId ?? null}::text,
-               'opencodeSessionId', ${identity?.runtimeSessionId ?? null}::text,
                'messageId', ${identity?.messageId ?? null}::text)),
              false),
            deadline_at = GREATEST(
@@ -377,7 +375,7 @@ export async function acceptSandboxTurn(
     sql`WITH accepted AS (${promote}), ledger AS (
           INSERT INTO kortix.session_turns
             (turn_token, session_id, sandbox_id, project_id, account_id,
-             opencode_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
+             runtime_session_id, message_id, state, started_at, accepted_at, created_at, updated_at)
           SELECT ${token}, accepted.session_id, accepted.sandbox_id,
                  accepted.project_id, accepted.account_id,
                  ${identity?.runtimeSessionId ?? null}, ${identity?.messageId ?? null},
@@ -389,7 +387,7 @@ export async function acceptSandboxTurn(
           ON CONFLICT (turn_token) DO UPDATE SET
                 state = 'active',
                 accepted_at = coalesce(kortix.session_turns.accepted_at, now()),
-                opencode_session_id = coalesce(EXCLUDED.opencode_session_id, kortix.session_turns.opencode_session_id),
+                runtime_session_id = coalesce(EXCLUDED.runtime_session_id, kortix.session_turns.runtime_session_id),
                 message_id = coalesce(EXCLUDED.message_id, kortix.session_turns.message_id),
                 updated_at = now()
           WHERE kortix.session_turns.state <> 'ended')
@@ -405,7 +403,7 @@ export async function acceptSandboxTurn(
     // ACCEPTANCE IS THE INBOX'S ANSWER. The upstream took the prompt and the
     // ledger now holds an `active` turn keyed to this exact wire id, so the
     // message belongs to the transcript rather than to the queue — whether or
-    // not OpenCode has started running it yet.
+    // not the runtime has started running it yet.
     //
     // THE ID COMES FROM THE ROW, not only from the argument. The one caller
     // that carries an inbox prompt is the proxy (`preview.ts`'s
@@ -457,7 +455,7 @@ export async function abandonSandboxTurn(target: DeadlineTarget, token: string):
   const abandoned = (rows?.length ?? 0) > 0;
   if (!abandoned) return false;
 
-  // A delivery that never reached OpenCode still happened. Without this the row
+  // A delivery that never reached the runtime still happened. Without this the row
   // beginSandboxTurn inserted stays `delivering` forever, and a boot prompt the
   // daemon reports abandoned leaves no history at all.
   const owner = ledgerIdentity(rows?.[0]);
@@ -478,12 +476,12 @@ export async function abandonSandboxTurn(target: DeadlineTarget, token: string):
 }
 
 /**
- * Repair the delivery-to-acceptance gap from provider-neutral OpenCode evidence.
+ * Repair the delivery-to-acceptance gap from provider-neutral runtime evidence.
  *
  * `reason` is what the daemon reported about a turn it says is no longer in
  * flight. The default is `abandoned`, not `completed`: this function only ever
  * sees turns still in `delivering`, i.e. turns NOTHING has confirmed reached
- * OpenCode, and the daemon answers `turn_in_flight === false` for a prompt it
+ * the runtime, and the daemon answers `turn_in_flight === false` for a prompt it
  * never received exactly as it does for one that finished.
  */
 export async function reconcileSandboxTurnDelivery(
@@ -686,6 +684,10 @@ export async function completeSandboxTurn(
       endedTurnLedger(owner, turns, endReason, endError),
       `complete ${turns.map((turn) => turn.token).join(',')} (${endReason})`,
     );
+    // Lazy like `../shared/db` above: this module loads without a database.
+    void import('./turn-analytics')
+      .then((m) => m.reportTurnsCompleted(owner, turns, status, error?.name, ABORT_END_ERROR_NAMES))
+      .catch(() => undefined);
     // The backstop for an acceptance that never landed: `completed`/`failed`
     // both mean the turn RAN, so the prompt it carried is consumed either way.
     // The never-ran reasons (`abandoned`, `runtime_gone`, `unknown`) cannot
@@ -777,7 +779,7 @@ export async function closeSandboxTurnByMessageId(
 }
 
 /**
- * Renew one accepted turn after the reaper observes that exact OpenCode turn in
+ * Renew one accepted turn after the reaper observes that exact runtime turn in
  * flight. The token CAS prevents stale evidence from renewing a newer turn.
  */
 export async function renewActiveSandboxTurn(

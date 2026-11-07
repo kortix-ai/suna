@@ -6,7 +6,7 @@ import { queueSessionPrompt } from './sessions-queue.ts';
 /**
  * The CLI cannot read the session transcript, so it cannot place a wire id.
  * Until 2026-09 it minted the HIGH 12 hex digits of `Date.now() * 0x1000`
- * (`msg_1a0d…`) where OpenCode keeps the LOW 48 bits (`msg_0d4…`): every CLI
+ * (`msg_1a0d…`) where the wire format keeps the LOW 48 bits (`msg_0d4…`): every CLI
  * prompt sat ~40 days ahead of the transcript, and every turn sent after it
  * from the web rendered ABOVE it.
  */
@@ -25,7 +25,7 @@ describe('queueSessionPrompt', () => {
     return body;
   }
 
-  test('mints the id in OpenCode’s own clock encoding, within minutes of now', async () => {
+  test('mints the id in the wire format’s clock encoding, within minutes of now', async () => {
     const before = Date.now();
     const id = String((await posted()).message_id);
     expect(id).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);

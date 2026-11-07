@@ -11,8 +11,14 @@
 
 /** The group of a resource bound to no space: the Project-wide bucket. Not a
  *  valid space slug (a slug starts with a letter or a digit), so a space named
- *  `general` never collides with it. */
+ *  `general` never collides with it.
+ *
+ * @deprecated Use `WORKSPACE_WIDE_SPACE`. Kept permanently.
+ */
 export const PROJECT_WIDE_SPACE = '_project';
+
+/** The workspace name of {@link PROJECT_WIDE_SPACE}: the same value. */
+export const WORKSPACE_WIDE_SPACE = PROJECT_WIDE_SPACE;
 
 /** One block of a board tab: a room, a file, an App, an embedded page or text. */
 export interface SpaceBlock {

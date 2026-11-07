@@ -30,6 +30,7 @@ import {
 } from './connectors-model.ts';
 import { matchesConnectorsBinding as is } from './keys.ts';
 import { useConnectors } from './use-connectors.ts';
+import { PICK_WORKSPACE_TEXT } from '../../lib/workspaces.ts';
 
 export interface ConnectorsScreenProps {
   projectId: string | null;
@@ -39,7 +40,7 @@ export interface ConnectorsScreenProps {
   height: number;
   webBaseUrl: string;
   /** `/connectors <query>`: search for it, and open the one connector it names. */
-  initialQuery?: string;
+  target?: string | null;
   onBack(): void;
   onToast(message: string, kind?: 'info' | 'error'): void;
   /** True while Esc is ours: the sheet is open, a search or a flow is active. */
@@ -50,7 +51,7 @@ const SPLIT_MIN_WIDTH = 90;
 
 export function ConnectorsScreen(props: ConnectorsScreenProps) {
   if (!props.projectId) {
-    return <text fg={theme.faint}>No project selected. Type /projects to pick one.</text>;
+    return <text fg={theme.faint}>{PICK_WORKSPACE_TEXT}</text>;
   }
   return <ConnectorsScreenBody {...props} projectId={props.projectId} />;
 }
@@ -62,7 +63,7 @@ function ConnectorsScreenBody({
   width,
   height,
   webBaseUrl,
-  initialQuery,
+  target: initialQuery,
   onBack,
   onToast,
   onHoldsBack,
@@ -296,7 +297,7 @@ function ConnectorList({
       });
     }
   };
-  lines.push({ key: 'h-project', text: `In this project · ${project.length}`, fg: theme.faint });
+  lines.push({ key: 'h-project', text: `In this workspace · ${project.length}`, fg: theme.faint });
   if (project.length === 0) {
     lines.push({
       key: 'e-project',

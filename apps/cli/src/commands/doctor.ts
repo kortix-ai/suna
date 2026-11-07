@@ -12,7 +12,7 @@ import { C, help, status } from '../style.ts';
 
 const HELP = help`Usage: kortix doctor [options]
 
-End-to-end smoke test: confirms login → project resolves → optionally
+End-to-end smoke test: confirms login → workspace resolves → optionally
 spins up a throwaway session, sends a message, and asserts the agent
 replies. Designed so coding agents can verify Kortix end-to-end before
 they start orchestrating real work.
@@ -21,12 +21,12 @@ By default, doctor attempts to delete only its diagnostic session.
 With --keep-session, it leaves that session in place.
 
 Options:
-  --no-session         Stop after auth + project checks. Don't create
+  --no-session         Stop after auth + workspace checks. Don't create
                        a sandbox. Fast and cheap.
   --keep-session       Don't delete the test session at the end.
   --prompt "<text>"    Test prompt (default: "ping").
   --timeout <seconds>  How long to wait for the reply (default: 180).
-  --project <id>       Operate on this project (default: linked).
+  --workspace <id>     Operate on this workspace (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 
@@ -39,7 +39,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
   const flags = takeFlags(argv, HELP, (rest) => ({
     noSession: takeFlagBool(rest, ['--no-session']),
     keepSession: takeFlagBool(rest, ['--keep-session']),
-    project: takeFlagValue(rest, ['--project']),
+    project: takeFlagValue(rest, ['--project', '--workspace']),
     host: takeFlagValue(rest, ['--host']),
     prompt: takeFlagValue(rest, ['--prompt']) || 'ping',
     timeoutSec: timeoutSeconds(takeFlagValue(rest, ['--timeout'])),
@@ -67,7 +67,7 @@ export async function runDoctor(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   try {
-    const me = await ctx.client.get<MeResponse>('/accounts/me');
+    const me = await ctx.client.get<MeResponse>('/me');
     process.stdout.write(`${status.ok(`identity verified as ${C.bold}${me.email}${C.reset}`)}\n`);
   } catch (err) {
     process.stdout.write(`${status.err(`identity probe failed: ${describe(err)}`)}\n`);
@@ -77,12 +77,12 @@ export async function runDoctor(argv: string[]): Promise<number> {
   // ── 3. Project ──────────────────────────────────────────────────────────
   let project: ProjectSummary;
   try {
-    project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+    project = await ctx.client.get<ProjectSummary>(`/workspaces/${ctx.projectId}`);
     process.stdout.write(
-      `${status.ok(`project ${C.bold}${project.name}${C.reset} ${C.faded}(${project.project_id})${C.reset}`)}\n`,
+      `${status.ok(`workspace ${C.bold}${project.name}${C.reset} ${C.faded}(${project.project_id})${C.reset}`)}\n`,
     );
   } catch (err) {
-    process.stdout.write(`${status.err(`project lookup failed: ${describe(err)}`)}\n`);
+    process.stdout.write(`${status.err(`workspace lookup failed: ${describe(err)}`)}\n`);
     return 1;
   }
 

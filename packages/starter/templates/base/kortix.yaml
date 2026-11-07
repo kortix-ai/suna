@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=https://kortix.com/schema/kortix.schema.json
 #
-# {{projectName}}: the Kortix project manifest. Agents, what each may use,
+# {{projectName}}: the Kortix workspace manifest. Agents, what each may use,
 # triggers and sandboxes live here, committed beside your files.
 # Reference: https://kortix.com/docs/developers#kortixyaml-reference
 
 project:
   name: "{{projectName}}"
-  description: A Kortix project.
+  description: A Kortix workspace.
 
 # Built-in agents. My Kortix, the agent you talk to, routes each task to the
 # right agent below. Delete this key or set it to false to leave it out.
@@ -17,7 +17,7 @@ builtin_agents:
 # `worker` when it names no agent.
 default_agent: mykortix
 
-# Project skills: folders under skills/, registered by name. Each agent then
+# Workspace skills: folders under skills/, registered by name. Each agent then
 # enables them with its own `skills:` grant.
 skills: {}
 
@@ -27,11 +27,12 @@ agents:
     mode: primary
     permission: allow
     prompt_file: agents/worker.md
-    tools: all
-    skills: all
-    connectors: all
-    secrets: all
-    kortix_permissions: all
+    # "*" is every name (quoted: a bare * is a YAML alias). `all` means the same.
+    tools: "*"
+    skills: "*"
+    connectors: "*"
+    secrets: "*"
+    kortix_permissions: "*"
     workspace: { project_repository: true }
 
 # More you can add here, each with an example in the reference:

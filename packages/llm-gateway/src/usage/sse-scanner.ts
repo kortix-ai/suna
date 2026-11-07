@@ -50,6 +50,8 @@ export class IncrementalSseScanner {
   // reached a well-defined end" from "the upstream just stopped sending
   // bytes", which #7679's boundary-repair alone does not distinguish.
   private explicitDone = false;
+  /** The literal `data: [DONE]` sentinel: the response is complete, usage chunk included. */
+  private doneSentinel = false;
   private readonly maxCarryBytes: number;
 
   constructor(maxCarryBytes: number = DEFAULT_MAX_CARRY_BYTES) {
@@ -86,6 +88,7 @@ export class IncrementalSseScanner {
     if (!payload) return;
     if (payload === '[DONE]') {
       this.explicitDone = true;
+      this.doneSentinel = true;
       return;
     }
     let chunk: UpstreamChunkShape & {
@@ -151,6 +154,11 @@ export class IncrementalSseScanner {
   }
 
   /** True once `[DONE]` or a populated `finish_reason` was seen. */
+  /** Whether the `data: [DONE]` sentinel itself was seen (a `finish_reason` alone does not count). */
+  get sawDoneSentinel(): boolean {
+    return this.doneSentinel;
+  }
+
   get hasExplicitDone(): boolean {
     return this.explicitDone;
   }

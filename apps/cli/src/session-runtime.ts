@@ -46,7 +46,7 @@ export class SessionRuntimeError extends Error {
   }
 }
 
-/** A session whose sandbox is up and whose OpenCode runtime answered. */
+/** A session whose sandbox is up and whose session runtime answered. */
 export interface SessionRuntime {
   /** Kortix session row as read before any restart (status may be stale). */
   session: ProjectSession;
@@ -54,9 +54,9 @@ export interface SessionRuntime {
   auth: Auth;
   /** Session-scoped SDK handle. */
   handle: SessionHandle;
-  /** SDK-resolved runtime URL used by the local `opencode attach` adapter. */
+  /** SDK-resolved runtime URL: the sandbox's daemon port behind the API proxy. */
   runtimeUrl: string;
-  /** Canonical OpenCode session id resolved by `/start`. */
+  /** Canonical runtime session id resolved by `/start`. */
   runtimeSessionId: string;
 }
 
@@ -75,7 +75,7 @@ const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => set
 
 /**
  * Drive the canonical `/start` lifecycle endpoint until the runtime is ready —
- * row status alone can say "running" before OpenCode actually answers. Sandbox
+ * row status alone can say "running" before the runtime actually answers. Sandbox
  * boots take minutes, not seconds: up to 75 x 4s ~= 5 min, matching the API's
  * own provisioning ceiling.
  */
@@ -93,7 +93,7 @@ export async function waitForSessionReady(
     if (i > 0) await sleep(intervalMs);
     let start: SessionStartPayload;
     try {
-      start = await client.post<SessionStartPayload>(`/projects/${projectId}/sessions/${sessionId}/start`, {});
+      start = await client.post<SessionStartPayload>(`/workspaces/${projectId}/sessions/${sessionId}/start`, {});
     } catch (err) {
       throw new SessionRuntimeError('api', (err as Error).message, err);
     }
@@ -156,7 +156,7 @@ export async function resolveSessionRuntime(
     options.onStarting?.(session);
     if (DORMANT_SESSION_STATUSES.has(session.status)) {
       try {
-        await client.post(`/projects/${projectId}/sessions/${session.session_id}/restart`, {});
+        await client.post(`/workspaces/${projectId}/sessions/${session.session_id}/restart`, {});
       } catch (err) {
         throw new SessionRuntimeError('api', (err as Error).message, err);
       }
@@ -208,7 +208,7 @@ export async function fetchProjectSession(
   sessionId: string,
 ): Promise<ProjectSession> {
   try {
-    return await client.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`);
+    return await client.get<ProjectSession>(`/workspaces/${projectId}/sessions/${sessionId}`);
   } catch (err) {
     throw new SessionRuntimeError('api', (err as Error).message, err);
   }

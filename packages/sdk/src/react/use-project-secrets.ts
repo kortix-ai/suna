@@ -2,11 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  deletePersonalProjectSecret,
-  deleteProjectSecret,
-  listProjectSecrets,
-  setPersonalProjectSecret,
-  upsertProjectSecret,
+  deletePersonalWorkspaceSecret,
+  deleteWorkspaceSecret,
+  listWorkspaceSecrets,
+  setPersonalWorkspaceSecret,
+  upsertWorkspaceSecret,
   type ProjectSecretsResponse,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
@@ -18,8 +18,11 @@ import { qk } from './query-keys';
  *  SAME entry every other `listProjectSecrets` reader in `apps/web` shares
  *  (Customize secrets view, agents view, connected-providers, the LLM
  *  provider connect forms). */
-export const projectSecretsKey = (projectId: string | null | undefined) =>
+export const workspaceSecretsKey = (projectId: string | null | undefined) =>
   qk.project.secrets(projectId ?? '');
+
+/** @deprecated Use `workspaceSecretsKey`. Kept permanently. */
+export const projectSecretsKey = workspaceSecretsKey;
 
 /**
  * Project secrets — list + the mutations a settings screen needs (shared
@@ -27,13 +30,13 @@ export const projectSecretsKey = (projectId: string | null | undefined) =>
  * over `projects-client/secrets.ts`; every mutation invalidates the list so
  * the UI reflects the write without a manual refetch.
  */
-export function useProjectSecrets(projectId: string | null | undefined) {
+export function useWorkspaceSecrets(projectId: string | null | undefined) {
   const queryClient = useQueryClient();
-  const queryKey = projectSecretsKey(projectId);
+  const queryKey = workspaceSecretsKey(projectId);
 
   const query = useQuery<ProjectSecretsResponse>({
     queryKey,
-    queryFn: () => listProjectSecrets(projectId as string),
+    queryFn: () => listWorkspaceSecrets(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
   });
@@ -41,26 +44,29 @@ export function useProjectSecrets(projectId: string | null | undefined) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const upsert = useMutation({
-    mutationFn: (input: Parameters<typeof upsertProjectSecret>[1]) =>
-      upsertProjectSecret(projectId as string, input),
+    mutationFn: (input: Parameters<typeof upsertWorkspaceSecret>[1]) =>
+      upsertWorkspaceSecret(projectId as string, input),
     onSuccess: invalidate,
   });
 
   const remove = useMutation({
-    mutationFn: (name: string) => deleteProjectSecret(projectId as string, name),
+    mutationFn: (name: string) => deleteWorkspaceSecret(projectId as string, name),
     onSuccess: invalidate,
   });
 
   const setPersonal = useMutation({
-    mutationFn: (args: { name: string; input: Parameters<typeof setPersonalProjectSecret>[2] }) =>
-      setPersonalProjectSecret(projectId as string, args.name, args.input),
+    mutationFn: (args: { name: string; input: Parameters<typeof setPersonalWorkspaceSecret>[2] }) =>
+      setPersonalWorkspaceSecret(projectId as string, args.name, args.input),
     onSuccess: invalidate,
   });
 
   const removePersonal = useMutation({
-    mutationFn: (name: string) => deletePersonalProjectSecret(projectId as string, name),
+    mutationFn: (name: string) => deletePersonalWorkspaceSecret(projectId as string, name),
     onSuccess: invalidate,
   });
 
   return { ...query, upsert, remove, setPersonal, removePersonal };
 }
+
+/** @deprecated Use `useWorkspaceSecrets`. Kept permanently. */
+export const useProjectSecrets = useWorkspaceSecrets;

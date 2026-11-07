@@ -562,6 +562,9 @@ describe('invoice.payment_failed', () => {
     const invoice = createMockStripeInvoice();
     const event = createMockStripeEvent('invoice.payment_failed', invoice);
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
+    // Stripe moves a subscription whose renewal failed to past_due.
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      createMockStripeSubscription({ status: 'past_due' });
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
@@ -573,6 +576,13 @@ describe('invoice.payment_failed', () => {
 });
 
 describe('RevenueCat', () => {
+  // A store lifecycle event speaks only for an account billed through the
+  // store, on the product the event names.
+  beforeEach(() => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ provider: 'revenuecat' });
+  });
+
   test('INITIAL_PURCHASE: maps product to tier, grants credits', async () => {
     const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
       product_id: 'kortix_pro_monthly',
@@ -1265,7 +1275,7 @@ describe('handleSubscriptionDeleted: restore other active sub', () => {
     expect(machineRestore).toBeUndefined();
   });
 
-  test('falls through to revertToFree when Stripe list fails', async () => {
+  test('keeps the paid tier and rethrows when the Stripe list fails (redelivery)', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         stripeSubscriptionId: 'sub_machine',
@@ -1285,11 +1295,10 @@ describe('handleSubscriptionDeleted: restore other active sub', () => {
       throw new Error('Stripe API error');
     };
 
-    await processStripeWebhook(JSON.stringify(event), 'sig');
+    await expect(processStripeWebhook(JSON.stringify(event), 'sig')).rejects.toThrow('Stripe API error');
 
-    // Should fall through to revertToFree
-    const freeRevert = updateCreditAccountCalls.find((c: any) => c.data.tier === 'free');
-    expect(freeRevert).toBeDefined();
+    // The account must stay on its paid tier; Stripe redelivers the event.
+    expect(updateCreditAccountCalls.find((c: any) => c.data.tier === 'free')).toBeUndefined();
   });
 });
 

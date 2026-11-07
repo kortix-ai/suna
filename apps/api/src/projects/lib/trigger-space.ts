@@ -1,6 +1,6 @@
 /**
  * The channel or DM a trigger posts its runs to (`project_trigger_runtime.space_id`,
- * flag `project_channels`). Account-local like the trigger's access policy, so it
+ * flag `chat`). Account-local like the trigger's access policy, so it
  * is not in the repo manifest. The routes validate it on write
  * (`resolveTriggerSpace`); session create reads it for every run of the trigger
  * (`liveTriggerSpace`), so a queued run resolves the space when it executes.
@@ -86,7 +86,7 @@ function privateChannelTrigger(): { error: TriggerSpaceError } {
     error: {
       status: 400,
       body: {
-        error: 'A trigger cannot post into a private channel: the project config it lives in is editable by people outside the channel.',
+        error: 'A trigger cannot post into a private channel: the workspace config it lives in is editable by people outside the channel.',
         code: 'private_channel_trigger',
       },
     },
@@ -158,7 +158,7 @@ export function defaultTriggerCreateAccess(space: SpaceRow | null, sessionAccess
 }
 
 /**
- * A create body's space and sharing. `project_channels` off: `space_id` is
+ * A create body's space and sharing. `chat` off: `space_id` is
  * ignored, never stored. A DM trigger must run the DM's agent (400).
  */
 export async function resolveTriggerSpaceCreate(
@@ -168,7 +168,7 @@ export async function resolveTriggerSpaceCreate(
   agent: string,
 ): Promise<{ space: SpaceRow | null; access: TriggerSessionAccess } | { error: TriggerSpaceError }> {
   let space: SpaceRow | null = null;
-  if (resolveFeatureFlag(caller.row.metadata, 'project_channels') && body.space_id != null) {
+  if (resolveFeatureFlag(caller.row.metadata, 'chat') && body.space_id != null) {
     const found = await resolveTriggerSpace(projectId, body.space_id, caller);
     if ('error' in found) return found;
     if (isPrivateChannel(found.space)) return privateChannelTrigger();
@@ -187,7 +187,7 @@ export async function resolveTriggerSpaceCreate(
 
 /**
  * `decideTriggerSpacePatch` for a PATCH body, with its `session_access` parsed
- * and checked. `project_channels` off: `space_id` is ignored. The stored space
+ * and checked. `chat` off: `space_id` is ignored. The stored space
  * is read whatever the flag, so a flag-off sharing write on a DM trigger stays
  * DM-only. Another member's DM trigger: anyone else may only move it out or
  * switch it on or off (403). `agentSpace` is the space whose DM agent the PATCH
@@ -205,7 +205,7 @@ export async function resolveTriggerSpacePatch(
   const parsed = body.session_access === undefined ? null : parseTriggerSessionAccess(body.session_access);
   if (parsed && !parsed.ok) return { error: { status: 400, body: { error: parsed.error } } };
   let requested: SpaceRow | null | undefined;
-  if (resolveFeatureFlag(caller.row.metadata, 'project_channels') && 'space_id' in body) {
+  if (resolveFeatureFlag(caller.row.metadata, 'chat') && 'space_id' in body) {
     if (body.space_id === null) requested = null;
     else {
       const found = await resolveTriggerSpace(projectId, body.space_id, caller);

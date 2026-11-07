@@ -34,7 +34,6 @@ import {
   type AppIcon,
 } from '@/lib/icons';
 
-import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -78,7 +77,9 @@ export function SettingsHeader({
   return (
     <View
       className={cn('flex-row items-center gap-3 pb-3 px-4 bg-background')}
-      style={{ paddingTop: topPadding, minHeight: 56 }}>
+      // Above the page below: a pressed glass button grows past the row (the
+      // system press response), and the list would draw over it.
+      style={{ paddingTop: topPadding, minHeight: 56, zIndex: 1 }}>
       {onOpenMenu ? <MenuButton onPress={onOpenMenu} /> : (
         <BackButton onPress={handleBack} />
       )}

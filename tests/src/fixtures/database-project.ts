@@ -92,7 +92,21 @@ export async function createDatabaseProject(
   open: OpenProjectDb = openProjectDb,
 ): Promise<CreatedProject> {
   const projectId = randomUUID();
-  return withProjectDb(env, "create", open, async (client) => {
+  // An account holds ONE active project that is not split-pending
+  // (`uq_projects_workspace_account`, Workspaces). The run's owner account
+  // carries many fixture projects, so a second project makes it a legacy
+  // multi-project account: every active project in it, the new one included,
+  // is marked `split_pending`, as the workspace migration marks a real one.
+  // The advisory lock serializes concurrent fixture creates in one account.
+  return withProjectTx(env, "create", open, async (client) => {
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended('ke2e:project-fixture:' || $1, 0))", [input.accountId]);
+      const marked = (await client.query(
+        `UPDATE kortix.projects SET split_pending = true
+          WHERE account_id = $1::uuid AND status = 'active'
+          RETURNING project_id`,
+        [input.accountId],
+      )) as { rowCount?: number | null };
+      const legacy = (marked.rowCount ?? 0) > 0;
       await client.query(
         `WITH inserted_project AS (
            INSERT INTO kortix.projects (
@@ -103,7 +117,8 @@ export async function createDatabaseProject(
              default_branch,
              manifest_path,
              status,
-             metadata
+             metadata,
+             split_pending
            )
            VALUES (
              $1::uuid,
@@ -113,7 +128,8 @@ export async function createDatabaseProject(
              'main',
              'kortix.yaml',
              'active'::kortix.project_status,
-             $6::jsonb
+             $6::jsonb,
+             $7::boolean
            )
            RETURNING project_id
          )
@@ -143,6 +159,7 @@ export async function createDatabaseProject(
             onboarding_completed_at: "2026-01-01T00:00:00.000Z",
             ...(input.metadata ?? {}),
           }),
+          legacy,
         ],
       );
     return { id: projectId, name: input.name };
@@ -290,7 +307,7 @@ export async function seedDatabaseRunningTurn(
       );
       await client.query(
         `INSERT INTO kortix.session_turns
-           (turn_token, session_id, sandbox_id, project_id, account_id, opencode_session_id, message_id, state, accepted_at)
+           (turn_token, session_id, sandbox_id, project_id, account_id, runtime_session_id, message_id, state, accepted_at)
          VALUES ($1, $2::text, $2::uuid, $3::uuid, $4::uuid, 'ses_ke2e_root', $5, 'active', now())`,
         [turnToken, input.sessionId, input.projectId, input.accountId, input.messageId],
       );

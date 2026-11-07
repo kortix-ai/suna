@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 // Exercise the real artifact builder, including its private-package vendor guard.
 test('the UI npm artifact builds without conflicting private export origins', () => {
+  // No NODE_OPTIONS: the build must bring its own heap, as smoke:install and publish call it.
+  const { NODE_OPTIONS: _unset, ...env } = process.env;
   const result = spawnSync('node', ['scripts/build.mjs'], {
     cwd: fileURLToPath(new URL('../', import.meta.url)),
-    env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=8192' },
+    env,
     encoding: 'utf8',
     timeout: 300_000,
   });

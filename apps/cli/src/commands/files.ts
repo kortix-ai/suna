@@ -63,7 +63,7 @@ interface BranchInfo {
 
 const HELP = help`Usage: kortix files <subcommand> [options]
 
-Browse the project's git repo — the same read-only view the dashboard shows
+Browse the workspace's git repo — the same read-only view the dashboard shows
 (Files tab + version history). Operates on the default branch unless --ref
 selects another branch, tag, or commit sha.
 
@@ -84,14 +84,14 @@ Subcommands:
                                     --ref as a zip.
 
 Options:
-  --ref <ref>        Branch / tag / commit (default: the project's default branch).
+  --ref <ref>        Branch / tag / commit (default: the workspace's default branch).
   --path <p>         Scope to a subtree (commits, download) or file (diff).
   -o, --out <file>   download: where to write the zip. Required.
   --content          search: grep file contents instead of names.
   --limit <n>        Cap rows for history / commits.
   --json             Emit the raw API payload as JSON (machine-readable);
                      suppresses human output. Supported by every subcommand.
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
@@ -115,7 +115,7 @@ export async function runFiles(argv: string[]): Promise<number> {
   let content = false;
   let json = false;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
     ref = takeFlagValue(rest, ['--ref']);
     path = takeFlagValue(rest, ['--path']);
@@ -129,7 +129,7 @@ export async function runFiles(argv: string[]): Promise<number> {
   const positional = rest.filter((a) => !a.startsWith('-'));
   const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
   const refQ = ref ? `ref=${encodeURIComponent(ref)}` : '';
 
   try {

@@ -9,6 +9,7 @@ import { type App, type AppDeployment, type ProjectTrigger } from '@kortix/sdk';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { UiTranslator } from '@/i18n/translator';
 import type { ReactNode } from 'react';
+import { AppEventsSection, LastEventFact } from './app-events';
 
 /**
  * What a background App shows when it is opened: it has no page, so the view
@@ -19,17 +20,25 @@ import type { ReactNode } from 'react';
  * it, where does it answer. A row with no answer is left out.
  */
 export function AppOverview({
+  projectId,
   app,
   triggers,
   latest,
   onVersions,
+  canDeploy = false,
+  focusEventId = null,
 }: {
+  projectId: string;
   app: App;
   triggers: ProjectTrigger[];
+  /** The operations view (project.app.deploy): the App's events and the test event. */
+  canDeploy?: boolean;
   /** The newest deployment, when the viewer may read deployments. */
   latest?: AppDeployment;
   /** Absent: the viewer may not see versions. */
   onVersions?: () => void;
+  /** Open the Events section on this event id. */
+  focusEventId?: string | null;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
   const locale = useLocale();
@@ -71,6 +80,11 @@ export function AppOverview({
                 <TriggerList t={t} rows={startsOn} detail={() => null} />
               </Fact>
             ) : null}
+            {startsOn.length ? (
+              <Fact label={t.raw('texta76d8716b0ff')}>
+                <LastEventFact app={app} triggers={triggers} />
+              </Fact>
+            ) : null}
             {isStatic ? null : <Fact label={t.raw('text1af851907331')}>{appSizeLabel(app, t)}</Fact>}
             <Fact label={t.raw('texte7a241debad5')}>
               <span className="flex min-w-0 items-center gap-1.5">
@@ -108,7 +122,17 @@ export function AppOverview({
                 <TriggerList t={t} rows={startsOn} detail={() => null} />
               </Fact>
             ) : null}
+            {startsOn.length ? (
+              <Fact label={t.raw('texta76d8716b0ff')}>
+                <LastEventFact app={app} triggers={triggers} />
+              </Fact>
+            ) : null}
           </dl>
+        ) : null}
+
+        {/* What the App posted and what came of it: the operations view only. */}
+        {canDeploy && !isStatic && !app.external_url ? (
+          <AppEventsSection projectId={projectId} app={app} triggers={triggers} focusEventId={focusEventId} />
         ) : null}
 
         {status.deployed && (latest || onVersions) ? (

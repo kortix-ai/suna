@@ -34,6 +34,37 @@ function nonNegInt(value: number | undefined) {
   return Number.isFinite(value) && value && value > 0 ? Math.floor(value) : 0;
 }
 
+// metadata is an INCLUDE column of idx_gateway_logs_project_time_covering_v2,
+// so it lives in a btree tuple (max ~2.7 KB): an oversized value fails the
+// INSERT of the whole trace row. attemptFailures carries upstream error text,
+// the one unbounded part; shrink it tier by tier until the metadata fits.
+const METADATA_MAX_BYTES = 2000;
+const FAILURE_TIERS = [
+  { keep: 8, chars: 160 },
+  { keep: 3, chars: 60 },
+  { keep: 1, chars: 20 },
+] as const;
+
+const byteLength = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+const clip = (value: unknown, chars: number) => (typeof value === 'string' ? Array.from(value).slice(0, chars).join('') : value);
+
+function boundMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  if (byteLength(metadata) <= METADATA_MAX_BYTES) return metadata;
+  const { attemptFailures, ...rest } = metadata;
+  if (Array.isArray(attemptFailures)) {
+    for (const { keep, chars } of FAILURE_TIERS) {
+      const shrunk = attemptFailures.slice(0, keep).map((failure) =>
+        failure && typeof failure === 'object'
+          ? Object.fromEntries(Object.entries(failure).map(([key, value]) => [key, clip(value, chars)]))
+          : failure,
+      );
+      const candidate = { ...rest, attemptFailures: shrunk };
+      if (byteLength(candidate) <= METADATA_MAX_BYTES) return candidate;
+    }
+  }
+  return rest;
+}
+
 function asJson(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === 'object') return value as Record<string, unknown>;
   if (value === undefined || value === null) return null;
@@ -84,6 +115,6 @@ export function buildGatewayTraceRow(input: GatewayTraceInput) {
     billingMode: input.billingMode || null,
     request: stripNullBytesDeep(asJson(input.request)),
     response: stripNullBytesDeep(asJson(input.response)),
-    metadata: stripNullBytesDeep(input.metadata ?? {}),
+    metadata: boundMetadata(stripNullBytesDeep(input.metadata ?? {})),
   };
 }

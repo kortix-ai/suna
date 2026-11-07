@@ -2,7 +2,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { markSessionNotificationsRead } from '../../notifications/inbox-read';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -29,13 +28,13 @@ const PresenceResponse = z.object({
 
 export function registerSessionPresenceRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'put', path: '/{projectId}/sessions/{sessionId}/presence', tags: ['sessions'],
+    method: 'put', path: '/{workspaceId}/sessions/{sessionId}/presence', tags: ['sessions'],
     summary: 'Renew a browser tab presence lease', ...auth,
-    description: 'active=true holds a 90 s lease for this tab and, with the project\'s notification_center flag on, marks the caller\'s notifications of this session read; active=false drops the lease. For a caller who may start the session, active=true also keeps its computer on by the idle grace, and the response says until when.',
-    request: { params: z.object({ projectId: z.string().uuid(), sessionId: z.string() }), body: { required: true, content: { 'application/json': { schema: PresenceBody } } } },
+    description: 'active=true holds a 90 s lease for this tab and marks the caller\'s notifications of this session read; active=false drops the lease. For a caller who may start the session, active=true also keeps its computer on by the idle grace, and the response says until when.',
+    request: { params: z.object({ workspaceId: z.string().uuid(), sessionId: z.string() }), body: { required: true, content: { 'application/json': { schema: PresenceBody } } } },
     responses: { 200: json(PresenceResponse, 'Presence updated'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const { tab_id: tabId, active, alerts } = c.req.valid('json');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -61,10 +60,7 @@ export function registerSessionPresenceRoutes(): void {
       await Promise.all([
         upsertSessionPresence(loaded.userId, sessionId, tabId, alerts === true),
         // KRTX-1742: a person looking at the session has seen what it notified.
-        // Only with the `notification_center` flag on.
-        notificationsEnabled(loaded.row.metadata)
-          ? markSessionNotificationsRead(loaded.userId, sessionId)
-          : Promise.resolve(),
+        markSessionNotificationsRead(loaded.userId, sessionId),
       ]);
       // KRTX-1729: a person who may start the session keeps its computer awake,
       // by the idle grace. A read-only viewer's lease only routes pushes.

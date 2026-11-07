@@ -29,21 +29,27 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useEffect, useSyncExternalStore } from 'react';
 import {
   markInitialCheckDone,
+  sandboxConnectionAccepts,
+  sandboxConnectionKey,
   setConnectionStreamDriven,
   setRuntimeCapabilities,
   setRuntimeHealth,
   setSandboxStatus,
+  subscribeSandboxConnectionOwner,
 } from '../browser/stores/sandbox-connection-store';
 import { noteSessionStopped } from '../core/http/session-stopped';
 import { sessionStartKey } from '../core/rest/projects-client';
 import {
   openSessionStream,
   sessionStreamConnected,
+  sessionStreamEnded,
   subscribeSessionStreamConnections,
   type SessionControlFrame,
+  type SessionStreamEnd,
 } from '../core/session/control-stream';
 import type { SessionWorkingVerdict } from '../core/session/working-server';
-import { invalidateProjectProviderQueries } from './provider-refresh';
+import { isParkedRuntimeDownReason, type SessionControlFrameType } from '../core/wire-values';
+import { invalidateWorkspaceProviderQueries } from './provider-refresh';
 import { qk } from './query-keys';
 import type { SessionTurnObservation } from './use-session-working';
 
@@ -55,6 +61,38 @@ export function useSessionStreamConnected(projectId: string, sessionId: string):
     () => false,
   );
 }
+
+/**
+ * Why this session's stream ended for good, or null while it runs: access was
+ * revoked mid-stream (`kortix.stream.revoked`), or the server refused it with
+ * `403`/`404` (or `401` five times in a row). The SDK does not reconnect it. A
+ * host shows that the session is no longer available to this viewer.
+ */
+export function useSessionStreamEnded(projectId: string, sessionId: string): SessionStreamEnd | null {
+  return useSyncExternalStore(
+    subscribeSessionStreamConnections,
+    () => (projectId && sessionId ? sessionStreamEnded(projectId, sessionId) : null),
+    () => null,
+  );
+}
+
+export type { SessionStreamEnd, SessionStreamEndReason } from '../core/session/control-stream';
+
+/**
+ * What the reducer below does with each control frame type. A type added to
+ * `SESSION_CONTROL_FRAME_TYPES` fails the typecheck here until it is routed.
+ */
+const CONTROL_FRAME_ROUTES: Record<SessionControlFrameType, 'applied' | 'ignored'> = {
+  'kortix.control.turn': 'applied',
+  'kortix.control.session': 'applied',
+  'kortix.control.audit': 'applied',
+  'kortix.control.runtime': 'applied',
+  // The stream hands the queue to `onQueue` (`useSessionQueue` and the inbox read it).
+  'kortix.control.queue': 'ignored',
+  // The deprecated OpenCode `/kortix/opencode/state` projection. A pi box has
+  // none; the session log and `/kortix/runtime/pending` carry what it held.
+  'kortix.control.runtime_state': 'ignored',
+};
 
 interface TurnPayload {
   known?: boolean;
@@ -93,6 +131,8 @@ export function applySessionControlFrame(
   memory: { secretsRev?: string; runtimeKey?: string; modelRev?: string },
   nowMs: number = Date.now(),
 ): void {
+  // An unknown type comes from a newer API: ignored, as before.
+  if (CONTROL_FRAME_ROUTES[frame.type as SessionControlFrameType] !== 'applied') return;
   if (frame.type === 'kortix.control.turn') {
     const payload = frame.payload as TurnPayload;
     if (!payload?.known || !Array.isArray(payload.turns)) return;
@@ -114,8 +154,9 @@ export function applySessionControlFrame(
       ...(canStop !== undefined ? { can_stop: canStop } : {}),
       ...(payload.working ? { working: payload.working } : {}),
       // This tab's clock at arrival. The server re-publishes an unchanged frame
-      // every 20 s, so a live stream keeps the entry fresh.
-      atMs: nowMs,
+      // every 20 s, so a live stream keeps the entry fresh. A frame replayed to
+      // a late joiner keeps the instant it first arrived.
+      atMs: frame.receivedAtMs ?? nowMs,
     };
     queryClient.setQueryData(key, observation);
     return;
@@ -129,7 +170,7 @@ export function applySessionControlFrame(
     if (typeof payload.secrets_rev === 'string') {
       // The first frame only records the version: the caches were read just now.
       if (memory.secretsRev !== undefined && memory.secretsRev !== payload.secrets_rev) {
-        invalidateProjectProviderQueries(queryClient, projectId);
+        invalidateWorkspaceProviderQueries(queryClient, projectId);
       }
       memory.secretsRev = payload.secrets_rev;
     }
@@ -228,20 +269,27 @@ export function patchCachedSessionTitle(
 }
 
 /** Feed the connection store from the server's frames. Exported for tests. */
-export function applyRuntimeStatus(status: { state: 'up' | 'down'; reason: string | null }): void {
+export function applyRuntimeStatus(status: { state: 'up' | 'down'; reason: string | null; parked?: boolean }): void {
   if (status.state === 'down') {
-    // `sandbox_*`: the box is not running (parked); anything else is a
-    // transient attach failure the server retries on its own ladder.
-    const parked = (status.reason ?? '').startsWith('sandbox_') || status.reason === 'no_sandbox';
+    // Parked: the box is not running, and only a send resumes it. Anything
+    // else is a transient attach failure the server retries on its own ladder.
+    // The API decides it (`parked`); an older API sends only the reason.
+    const parked = status.parked ?? isParkedRuntimeDownReason(status.reason);
     setSandboxStatus('connecting');
     setRuntimeHealth(false, undefined, status.reason, { parked });
     markInitialCheckDone();
   }
 }
 
+/** Is the runtime ready, by a pushed `/kortix/health` document? */
+function runtimeHealthReady(health: Record<string, unknown>): boolean {
+  const harness = health.harness as { ready?: unknown } | undefined;
+  return health.status !== 'starting' && health.status !== 'down' && health.status !== 'error' && harness?.ready !== false;
+}
+
 export function applyRuntimeHealth(health: Record<string, unknown>): boolean {
   const harness = health.harness as { ready?: unknown; version?: unknown } | undefined;
-  const ready = health.status !== 'starting' && health.status !== 'down' && health.status !== 'error' && harness?.ready !== false;
+  const ready = runtimeHealthReady(health);
   const version =
     typeof health.version === 'string'
       ? health.version
@@ -268,9 +316,17 @@ export function useSessionStream(
   useEffect(() => {
     if (!enabled) return;
     const memory: { secretsRev?: string; runtimeKey?: string; runtimeReady?: boolean; modelRev?: string } = {};
-    const syncStreamDriven = () => setConnectionStreamDriven(sessionStreamConnected(projectId, sessionId));
+    // The connection store is one per tab and describes the session that owns
+    // it. Another mounted session's stream must not write its own box's state there.
+    const key = sandboxConnectionKey(projectId, sessionId);
+    const owns = () => sandboxConnectionAccepts(key);
+    const syncStreamDriven = () => {
+      if (owns()) setConnectionStreamDriven(sessionStreamConnected(projectId, sessionId));
+    };
     // A change of channels keeps the connection: `onConnectionChange` stays quiet.
     const unsubscribe = subscribeSessionStreamConnections(syncStreamDriven);
+    // A session that becomes the owner states its own stream at once.
+    const unsubscribeOwner = subscribeSandboxConnectionOwner(syncStreamDriven);
     const stream = openSessionStream({
       projectId,
       sessionId,
@@ -282,10 +338,10 @@ export function useSessionStream(
       },
       onRuntimeStatus: (status) => {
         if (status.state === 'down') memory.runtimeReady = false;
-        applyRuntimeStatus(status);
+        if (owns()) applyRuntimeStatus(status);
       },
       onRuntimeHealth: (health) => {
-        const ready = applyRuntimeHealth(health);
+        const ready = owns() ? applyRuntimeHealth(health) : runtimeHealthReady(health);
         // The runtime answering is what moves `/start` to `ready`: re-read it
         // now instead of waiting on its long-poll.
         if (ready && memory.runtimeReady === false) {
@@ -297,8 +353,9 @@ export function useSessionStream(
     });
     return () => {
       unsubscribe();
+      unsubscribeOwner();
       stream.close();
-      setConnectionStreamDriven(false);
+      if (owns()) setConnectionStreamDriven(false);
     };
   }, [enabled, projectId, sessionId, queryClient, options.tabId]);
   return useSessionStreamConnected(projectId, sessionId);

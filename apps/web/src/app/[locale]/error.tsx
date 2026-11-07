@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 /**
- * Transient "the sandbox/opencode runtime URL isn't pinned yet" throw. It fires
+ * Transient "the sandbox runtime URL isn't pinned yet" throw. It fires
  * during provisioning and — critically — for a beat on every SESSION SWITCH,
  * before the new session's runtime URL resolves, and it ALWAYS self-heals within
  * a second or two. `SandboxLoadingBoundary` catches it inside the session

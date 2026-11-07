@@ -4,7 +4,6 @@
 // for someone's private folder.
 
 import { logger } from '../lib/logger';
-import { recordDriveCommitAuthor } from '../artifacts/events-store';
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -81,7 +80,6 @@ import {
   writeDriveVolume,
 } from './service';
 import { type DriveUpload, openDriveUpload, sealDriveUpload } from './upload-token';
-import { parseVolumeWriteCommit } from './volume-commit';
 import {
   assertDriveWriteFits,
   driveFolderSizes,
@@ -818,10 +816,6 @@ drivesApp.openapi(
         writeVolumeFile(volume, path, body, { overwrite: true, ...(ifMatch ? { ifMatch } : {}) }),
       ),
     );
-    await recordDriveCommitAuthor(caller.drive.driveId, written.commit, {
-      userId: caller.userId,
-      sessionId: callerKortixSessionId(c),
-    });
     noteDriveWrite(caller.drive.driveId);
     forgetDriveUsage(caller.drive.platinumVolumeName);
     // The version this write made, as storage answered it: a read afterwards
@@ -974,13 +968,9 @@ drivesApp.openapi(
       const current = await withStorage(() => currentFileVersion(caller.drive, upload.path));
       if (!current || !sameVersion(current, upload.ifMatch)) fail(409, FILE_CHANGED_MESSAGE, 'file_changed');
     }
-    const committed = await withUploadStorage(() =>
+    await withUploadStorage(() =>
       writeDriveVolume(caller.drive, (volume) => commitVolumeUpload(volume, upload.uploadId)),
     );
-    await recordDriveCommitAuthor(caller.drive.driveId, parseVolumeWriteCommit(committed), {
-      userId: caller.userId,
-      sessionId: callerKortixSessionId(c),
-    });
     noteDriveWrite(caller.drive.driveId);
     forgetDriveUsage(caller.drive.platinumVolumeName);
     return c.json({ path: upload.path, size: upload.size });

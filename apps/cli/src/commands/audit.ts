@@ -34,20 +34,20 @@ type AuditPage = AuditEventList & { audit_access?: boolean; actions?: SessionAud
 
 const HELP = help`Usage: kortix audit <subcommand> [options]
 
-Read the account audit trail — who did what, when, and whether it was allowed.
+Read the workspace audit trail — who did what, when, and whether it was allowed.
 Every authenticated API request is recorded, plus semantic session, connector,
-and approval events. The account trail requires the Enterprise plan.
+and approval events. The workspace audit trail requires the Enterprise plan.
 
 Subcommands:
   ls [filters] [--json]           List audit events of the last 90 days, newest first.
   export [filters] [--out <f>]    Export matching events as CSV or JSONL. Reaches back
                                   365 days: events older than 90 days come from the
                                   archive.
-  project <project-id> [--json]   One project's canonical audit log.
+  workspace <id> [--json]         One workspace's canonical audit log (alias: project).
   activity [filters] [--json]     Who was active and how often, per UTC day: active
                                   days, distinct active hours, events, and a
                                   day-by-day strip. Default: the last 28 days.
-  session <session-id> --project <project-id> [--json]
+  session <session-id> --workspace <id> [--json]
                                    One session's canonical ordered timeline and
                                    its connector calls gated for approval.
                                    Without Enterprise: the pending approvals.
@@ -67,7 +67,7 @@ Activity filters: --since/--until (a date, ISO instant, or span like 6w),
   --client <c>         browser (a person in a web page) | program (CLI, SDK,
                        sandbox, or a script acting as the user).
 
-Filters (ls, export, project):
+Filters (ls, export, workspace):
   --since <when>       Only events at or after this point. ISO-8601, or a
                        relative span like 30m, 24h, 7d, 2w.
   --until <when>       Only events at or before this point.
@@ -75,10 +75,10 @@ Filters (ls, export, project):
   --actor <user-id>    Only this actor.
   --actor-type <t>     human | agent | service_account | system | anonymous
   --outcome <o>        success | failure | denied | pending
-  --project <id>       Only this project.
+  --workspace <id>     Only this workspace.
   --session <id>       Only this session.
   --source <s>         Trusted execution source, e.g. "human", "agent",
-                       "api_key", "opencode".
+                       "api_key", "runtime".
   --credential-kind <k>  What the API authenticated: browser_session,
                        personal_access_token, oauth_app, session_token,
                        api_key, service_account, scim_token.
@@ -86,7 +86,7 @@ Filters (ls, export, project):
   --resource-type <t>  Only this resource type.
   --request-id <id>    One request.
   --correlation-id <id>  One correlated chain of events.
-  -q, --query <text>   Free-text match on action, resource, project, session.
+  -q, --query <text>   Free-text match on action, resource, workspace, session.
 
 Options:
   --limit <n>          Events per page (default 50, server max 200).
@@ -97,7 +97,6 @@ Options:
   --name <n>           webhooks add: a label for this endpoint.
   --url <u>            webhooks add: the http(s) endpoint to POST events to.
   --action-prefix <p>  webhooks add: only deliver actions with this prefix.
-  --account <id>       Operate on this account (default: the linked project's account, else the active account).
   --host <name>        Operate against a non-default Kortix host.
   --json               Machine-readable output.
   -h, --help           Show this help.
@@ -106,9 +105,9 @@ Examples:
   kortix audit ls --since 24h
   kortix audit ls --outcome denied --since 7d
   kortix audit ls --action iam. --json
-  kortix audit ls --project <project-id> --all
-  kortix audit session <session-id> --project <project-id>
-  kortix audit activity --project <project-id> --since 6w --client browser
+  kortix audit ls --workspace <id> --all
+  kortix audit session <session-id> --workspace <id>
+  kortix audit activity --workspace <id> --since 6w --client browser
   kortix audit export --since 30d --format jsonl --out audit.jsonl
   kortix audit webhooks add --name splunk --url https://siem.corp.com/kortix
 `;
@@ -191,7 +190,7 @@ function surfaceAuditError(err: unknown): number {
   const httpStatus = (err as { status?: unknown } | null)?.status;
   if (httpStatus === 402) {
     process.stderr.write(
-      `${status.err('The account audit log is an Enterprise feature and is not enabled for this account.')}\n`,
+      `${status.err('The workspace audit log is an Enterprise feature and is not enabled for this workspace.')}\n`,
     );
     process.stderr.write(
       `  ${C.dim}Per-session agent actions are still available: ${C.reset}kortix audit session <session-id>\n`,
@@ -338,7 +337,7 @@ async function showActivity(ctx: AccountContext, f: Record<string, string | unde
     ['credential_kind', f.credentialKind],
   ];
   for (const [key, value] of wire) if (value) search.set(key, value);
-  const result = await ctx.client.get<AuditActivity>(`/accounts/${ctx.accountId}/audit/activity${search.size ? `?${search}` : ''}`);
+  const result = await ctx.client.get<AuditActivity>(`/workspaces/${ctx.accountId}/audit/activity${search.size ? `?${search}` : ''}`);
   if (json) {
     emitJson(result);
     return 0;
@@ -375,7 +374,7 @@ export async function runAudit(argv: string[]): Promise<number> {
     f.action = takeFlagValue(rest, ['--action']);
     f.actor = takeFlagValue(rest, ['--actor']);
     f.actorType = takeFlagValue(rest, ['--actor-type']);
-    f.project = takeFlagValue(rest, ['--project']);
+    f.project = takeFlagValue(rest, ['--project', '--workspace']);
     f.session = takeFlagValue(rest, ['--session']);
     f.source = takeFlagValue(rest, ['--source']);
     f.credentialKind = takeFlagValue(rest, ['--credential-kind']);
@@ -402,9 +401,9 @@ export async function runAudit(argv: string[]): Promise<number> {
   }
   const positional = rest.filter((a) => !a.startsWith('-'));
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.project, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/accounts/${ctx.accountId}/audit`;
+  const base = `/workspaces/${ctx.accountId}/audit`;
 
   try {
     switch (sub) {
@@ -412,11 +411,13 @@ export async function runAudit(argv: string[]): Promise<number> {
       case 'list':
         return await listAuditEvents(ctx, (search) => `${base}?${search}`, f, all, json, 'ls');
 
+      case 'workspace':
       case 'project': {
         const projectId = positional[0] ?? f.project;
-        if (!projectId) return fail('Missing a project id.');
+        if (!projectId) return fail('Missing a workspace id.');
         return await listAuditEvents(
           ctx,
+          // Legacy name on purpose: `/workspaces/:id/audit` is the workspace audit log, not the project slice.
           (search) => `/projects/${encodeURIComponent(projectId)}/audit?${search}`,
           { ...f, project: undefined },
           all,
@@ -501,11 +502,11 @@ export async function runAudit(argv: string[]): Promise<number> {
         if (!sessionId) return fail('Missing a session id.');
         const projectId = f.project;
         if (!projectId)
-          return missing('--project <id> — the session audit route is project-scoped');
+          return missing('--workspace <id> — the session audit route is workspace-scoped');
         return await listAuditEvents(
           ctx,
           (search) =>
-            `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${search.size ? `?${search}` : ''}`,
+            `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/audit${search.size ? `?${search}` : ''}`,
           f,
           all,
           json,

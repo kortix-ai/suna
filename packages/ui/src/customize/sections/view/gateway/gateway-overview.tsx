@@ -130,7 +130,7 @@ export function GatewayOverview({
       const label = s.name ?? s.custom_name ?? null;
       if (!label) continue;
       m.set(s.session_id, label);
-      const runtimeSessionId = s.runtime_session_id ?? s.opencode_session_id;
+      const runtimeSessionId = s.runtime_session_id;
       if (runtimeSessionId) m.set(runtimeSessionId, label);
     }
     return m;
@@ -191,7 +191,7 @@ export function GatewayOverview({
 
   return (
     // No scroller and no padding of its own: this is a tab of
-    // `/projects/[id]/models`, and `CapabilityPageShell` owns the page's one
+    // `/workspaces/[id]/models`, and `CapabilityPageShell` owns the page's one
     // scroll container and its column.
     <div className="flex flex-col">
       <div className="w-full space-y-12">

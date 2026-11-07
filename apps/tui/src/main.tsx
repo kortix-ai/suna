@@ -37,11 +37,12 @@
 
 import { createCliRenderer } from '@opentui/core';
 import { createRoot } from '@opentui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 
 import { App } from './app.tsx';
 import { QueryPolling } from './lib/query-polling.ts';
+import { forgetHostIdentity } from './lib/host-identity.ts';
 import {
   type ResolvedHost,
   hostOrigin,
@@ -54,6 +55,7 @@ import { registerEmbeddedTerminal } from './features/terminal/register.ts';
 import { initKortix, kortix } from './kortix.ts';
 import type { UiPrefs } from './layout/ui-prefs.ts';
 import { initialUi, prefsPath, readPrefs } from './lib/prefs.ts';
+import { NO_WORKSPACE_TEXT } from './lib/workspaces.ts';
 
 registerEmbeddedTerminal();
 
@@ -106,7 +108,7 @@ export async function bootSession(
 ): Promise<string | null> {
   if (!request) return null;
   if (!projectId) {
-    note('--new needs a project: none is configured on this host.');
+    note(`--new needs a workspace. ${NO_WORKSPACE_TEXT}`);
     return null;
   }
   try {
@@ -168,12 +170,22 @@ export async function resolveProjectId(
     } catch (error) {
       const reason = error instanceof Error && error.message ? error.message : String(error);
       deps.note(
-        `Project ${trimmed.slice(0, 8)} is not available on this host (${reason}); using the first project in your account.`,
+        `Workspace ${trimmed.slice(0, 8)} is not available on this host (${reason}); opening your first workspace.`,
       );
     }
   }
+  // The host account first. An account with no project is not a workspace,
+  // so when it has none, the first workspace in any account the person
+  // belongs to opens instead.
   try {
     const projects = await deps.listProjects(accountId);
+    const first = projects?.[0]?.project_id;
+    if (first || !accountId) return first ?? null;
+  } catch {
+    if (!accountId) return null;
+  }
+  try {
+    const projects = await deps.listProjects(null);
     return projects?.[0]?.project_id ?? null;
   } catch {
     return null;
@@ -204,8 +216,9 @@ interface RootProps {
  *
  * The host is state, so `Ctrl+H` is a state change and not a process restart:
  * the login screen comes back, the user picks another host, `initKortix`
- * rebuilds the one client, and the app remounts with a fresh `key` so every
- * query and every SSE stream is torn down with the old host.
+ * rebuilds the one client, the query cache and SDK identity state are cleared
+ * (`forgetHostIdentity`), and the app remounts with a fresh `key` so every
+ * observer and every SSE stream is torn down with the old host.
  */
 function Root({
   initialHost,
@@ -225,15 +238,19 @@ function Root({
   const [previousHost, setPreviousHost] = useState<ResolvedHost | null>(null);
   const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [generation, setGeneration] = useState(0);
+  const queryClient = useQueryClient();
 
   const onLoggedIn = useCallback((resolved: ResolvedHost) => {
     setNotice(null);
+    // A sign-in is an identity change: the cache and SDK state of the host
+    // before it must not render under the new one.
+    forgetHostIdentity(queryClient);
     initKortix(resolved);
     setHost(resolved);
     setPreviousHost(null);
     setProjectId(resolved.defaultProjectId ?? null);
     setGeneration((value) => value + 1);
-  }, []);
+  }, [queryClient]);
 
   // Esc on the host list. With a host behind it this is "never mind" and the
   // app comes back on the SAME host — `initKortix` again because the login
@@ -373,7 +390,7 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
         state: host ? 'waiting' : 'done',
         detail: host ? hostOrigin(host.backendUrl) : 'opening the login screen',
       },
-      ...(host ? [{ id: 'project', label: 'Opening the project', state: 'waiting' as const }] : []),
+      ...(host ? [{ id: 'project', label: 'Opening the workspace', state: 'waiting' as const }] : []),
       ...(host && options.newSession
         ? [{ id: 'session', label: 'Starting a session', state: 'waiting' as const }]
         : []),
@@ -431,7 +448,7 @@ export async function runTui(options: RunTuiOptions): Promise<number> {
         mark(
           'project',
           'done',
-          projectName ?? (projectId ? projectId.slice(0, 8) : 'none on this host'),
+          projectName ?? (projectId ? projectId.slice(0, 8) : 'No workspace yet'),
         );
       }
 

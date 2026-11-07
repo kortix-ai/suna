@@ -15,8 +15,6 @@ export interface NotificationPushPayload {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
-  artifactId?: string | null;
-  artifactThreadId?: string | null;
   /** Web path that opens the subject and marks the row read. */
   url: string;
 }
@@ -57,25 +55,19 @@ export function notificationUrl(input: {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
-  roomId?: string | null;
-  roomThreadSeq?: number | null;
-  artifactId?: string | null;
-  artifactThreadId?: string | null;
   kind?: string;
   accountId?: string;
 }): string {
+  // Still `/projects/…`, not the web's `/workspaces/…` (2026-11-06): mobile
+  // builds before then open an artifact push only for a `/projects/` path
+  // (apps/mobile/lib/notifications/push.ts). The web redirects the old path,
+  // `public/sw.js` and the notification center rewrite it, and emails name the
+  // canonical page (notification-email.ts `absoluteAppUrl`). Switch once no
+  // supported mobile build predates the change.
   const query = `?notification=${encodeURIComponent(input.notificationId)}`;
-  if (input.projectId && input.artifactId && input.artifactThreadId) {
-    return `/projects/${encodeURIComponent(input.projectId)}/artifacts/${encodeURIComponent(input.artifactId)}?thread=${encodeURIComponent(input.artifactThreadId)}&${query.slice(1)}`;
-  }
   // A Capture fleet-health alert opens the account's Devices page.
   if (input.kind?.startsWith('capture_device_') && input.accountId) {
     return `/capture/${encodeURIComponent(input.accountId)}/devices${query}`;
-  }
-  // A room message opens its room; a thread reply opens its thread.
-  if (input.projectId && input.roomId) {
-    const thread = input.roomThreadSeq ? `?thread=${input.roomThreadSeq}&${query.slice(1)}` : query;
-    return `/projects/${encodeURIComponent(input.projectId)}/rooms/${encodeURIComponent(input.roomId)}${thread}`;
   }
   if (input.projectId && input.sessionId) {
     return `/projects/${encodeURIComponent(input.projectId)}/sessions/${encodeURIComponent(input.sessionId)}${query}`;
@@ -96,10 +88,6 @@ export function buildPushContent(input: {
   projectId: string | null;
   sessionId: string | null;
   triggerSlug: string | null;
-  roomId?: string | null;
-  roomThreadSeq?: number | null;
-  artifactId?: string | null;
-  artifactThreadId?: string | null;
   accountId?: string;
 }): NotificationPushContent {
   return {
@@ -112,7 +100,6 @@ export function buildPushContent(input: {
       projectId: input.projectId,
       sessionId: input.sessionId,
       triggerSlug: input.triggerSlug,
-      ...(input.artifactId ? { artifactId: input.artifactId, artifactThreadId: input.artifactThreadId ?? null } : {}),
       url: notificationUrl(input),
     },
   };
@@ -129,8 +116,6 @@ const SOUNDS: Record<NotificationKindName, { sound: string; channelId: string }>
   automation_failed: { sound: 'kortix_error.wav', channelId: 'session-error' },
   capture_device_down: { sound: 'kortix_error.wav', channelId: 'session-error' },
   capture_device_recovered: { sound: 'kortix_complete.wav', channelId: 'session-complete' },
-  message: { sound: 'kortix_attention.wav', channelId: 'session-attention' },
-  artifact_comment: { sound: 'kortix_attention.wav', channelId: 'session-attention' },
 };
 const SILENT_CHANNEL_ID = 'session-silent';
 

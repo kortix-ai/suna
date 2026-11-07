@@ -4,21 +4,35 @@
 //
 //   bun apps/web/scripts/generate-audit-actions-doc.mjs
 //   bun apps/web/scripts/generate-audit-actions-doc.mjs --check
-import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { onByDefault } from './docs-generated-region.mjs';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { code, onByDefault, repositoryRoot, runFileGenerator } from './docs-generated-region.mjs';
 
-const scriptDirectory = dirname(fileURLToPath(import.meta.url));
-const webRoot = resolve(scriptDirectory, '..');
-const repositoryRoot = resolve(webRoot, '../..');
-const outputPath = resolve(webRoot, 'content/docs/audit-actions.mdx');
+const outputPath = resolve(repositoryRoot, 'apps/web/content/docs/audit-actions.mdx');
 
 async function catalog() {
   return import(pathToFileURL(resolve(repositoryRoot, 'packages/shared/src/audit-labels.ts')).href);
 }
 
-const code = (value) => `\`${value}\``;
+/**
+ * `METHOD path` → the canonical route of a legacy key (`/v1/projects/…` →
+ * `/v1/workspaces/…`), from the one alias rule of the route manifest
+ * (`workspaceAliasOf`), or null. The audit catalog is keyed by the legacy
+ * name; the reference leads with the canonical one.
+ */
+async function canonicalRouteOf() {
+  const { workspaceAliasOf } = await import(pathToFileURL(resolve(repositoryRoot, 'packages/shared/src/workspace-routes.ts')).href);
+  const manifest = JSON.parse(readFileSync(resolve(repositoryRoot, 'tests/spec/routes.generated.json'), 'utf8'));
+  const seen = new Set(manifest.routes.map((route) => `${route.method} ${route.path}`));
+  return (key) => {
+    const space = key.indexOf(' ');
+    if (space < 0 || key.startsWith('ENTRY ') || key.startsWith('ALL ')) return null;
+    const method = key.slice(0, space);
+    const canonical = workspaceAliasOf(method, key.slice(space + 1), (m, path) => seen.has(`${m} ${path}`));
+    return canonical ? `${method} ${canonical}` : null;
+  };
+}
 
 function routeCell(key) {
   if (key.startsWith('ENTRY ')) return 'before the API router';
@@ -39,13 +53,10 @@ function isOperatorRoute(route) {
 // The actions of a feature whose flag is off by default (apps/api/src/feature-flags/registry.ts).
 // The public docs leave such a feature out until its flag is on by default.
 const FLAGGED_ACTION_PREFIXES = {
-  agent_rooms: ['project.room.', 'session.room.', 'session.idle_notice.'],
-  artifacts: ['project.artifact.', 'artifact.'],
   email_channel: ['channel.email.', 'webhook.email.'],
   event_triggers: ['trigger.event_apps.', 'trigger.event_types.', 'webhook.event.'],
-  notification_center: ['notification.inbox.', 'notification.web_push.', 'notification.web_push_key.', 'session.watch.'],
   pooled_provider_secrets: ['secret.account_resource.', 'session.provider_secret_pool.'],
-  project_channels: ['project.space.', 'space.'],
+  chat: ['project.space.', 'space.'],
   session_groups: ['project.session_group.', 'session.group.'],
 };
 
@@ -53,7 +64,14 @@ const FLAGGED_ACTION_PREFIXES = {
 const LEGACY_ACTION_PREFIXES = ['webhook.daytona.'];
 
 // Actions of a removed feature: old audit rows still carry them, and the API answers 410 (routes/retired.ts).
-const REMOVED_ACTION_PREFIXES = ['session.warm.'];
+const REMOVED_ACTION_PREFIXES = [
+  'session.warm.',
+  // Artifact comments, live presence, doc co-editing and the activity feed (removed 2026-11-06).
+  'project.artifact.comment.',
+  'project.artifact.live.',
+  'project.artifact.doc.',
+  'project.artifact.activity',
+];
 
 function hiddenActionFilter(actions) {
   const prefixes = [
@@ -82,9 +100,13 @@ export async function renderAuditActionsDoc() {
     else if (!hidden(value.action)) routes.push({ key, ...value });
   }
   const byAction = (a, b) => (a.action < b.action ? -1 : 1);
+  const canonicalOf = await canonicalRouteOf();
   const row = (route) => {
-    const aliases = (aliasesOf.get(route.key) ?? []).map(routeCell).join(', ');
-    const where = aliases ? `${routeCell(route.key)} (also ${aliases})` : routeCell(route.key);
+    const canonical = canonicalOf(route.key);
+    const legacy = [...(canonical ? [route.key] : []), ...(aliasesOf.get(route.key) ?? [])];
+    const aliases = legacy.map(routeCell).join(', ');
+    const primary = canonical ?? route.key;
+    const where = aliases ? `${routeCell(primary)} (also ${aliases})` : routeCell(primary);
     const action = [route.action, ...(route.events ?? [])].map(code).join(' or ');
     return `| ${action} | ${route.title} | ${where} |`;
   };
@@ -124,7 +146,7 @@ Every audit row carries an \`action\` of the form \`domain.resource.verb\`, for 
 - A request that matched no route records ${code(UNMATCHED_ROUTE_LABEL.action)}.
 - A row with two or more actions, such as \`secret.strategy.update\` or \`secret.strategy.changed\`, lists the route's action first. The others are events the handler records in place of the request row: only on a real change (\`secret.strategy.changed\`), or one per outcome (\`connector.approval.approved\` or \`connector.approval.denied\`). A recorded event is the request's only row.
 - An action ending in \`.*\` is a family. The rest of the action names the call, for example \`connector.github.create_issue\`.
-- An action that starts with \`opencode.\` records an agent runtime event. Every agent runtime writes it under that name.
+- An action that starts with \`agent.\` records an agent runtime event. Rows written before that name start with \`opencode.\`: filter on both prefixes to cover every row.
 
 ## Request actions
 
@@ -149,14 +171,10 @@ ${[...TABLE_HEAD, ...operator.map(row)].join('\n')}
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const rendered = await renderAuditActionsDoc();
-  if (process.argv.includes('--check')) {
-    if (readFileSync(outputPath, 'utf8') !== rendered) {
-      console.error(`${outputPath} is stale. Run: bun apps/web/scripts/generate-audit-actions-doc.mjs`);
-      process.exit(1);
-    }
-  } else {
-    writeFileSync(outputPath, rendered);
-    console.log(`Wrote the audit action reference to ${outputPath}`);
-  }
+  await runFileGenerator(
+    'the audit action reference',
+    'bun apps/web/scripts/generate-audit-actions-doc.mjs',
+    renderAuditActionsDoc,
+    outputPath,
+  );
 }

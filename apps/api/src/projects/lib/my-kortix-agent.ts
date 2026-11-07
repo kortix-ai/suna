@@ -100,7 +100,7 @@ export function builtinAgentConfigView(key: BuiltinAgentKey, defaultAgent: strin
 /** The refusal for a write that targets a built-in agent's configuration. */
 export function builtinAgentWriteRefusal(key: BuiltinAgentKey) {
   return {
-    error: `${BUILTIN_AGENTS[key].displayName} is built in: Kortix maintains its prompt, tools and model. To remove it from this project, delete \`builtin_agents.${key}\` from kortix.yaml or set it to false.`,
+    error: `${BUILTIN_AGENTS[key].displayName} is built in: Kortix maintains its prompt, tools and model. To remove it from this workspace, delete \`builtin_agents.${key}\` from kortix.yaml or set it to false.`,
     code: 'builtin_agent_managed' as const,
   };
 }
@@ -114,7 +114,6 @@ export function addMyKortixAgent(config: ProjectConfigSummary): ProjectConfigSum
   return {
     ...config,
     default_agent: defaultAgent,
-    open_code_default_agent: defaultAgent,
     agents: [
       {
         name: MY_KORTIX_AGENT_NAME,
@@ -122,7 +121,8 @@ export function addMyKortixAgent(config: ProjectConfigSummary): ProjectConfigSum
         path: '',
         description: MY_KORTIX_DESCRIPTION,
         mode: 'primary',
-        source: 'opencode',
+        // Turned on by `builtin_agents.my_kortix` in kortix.yaml.
+        source: 'kortix.yaml',
         platform: true,
         enabled: true,
         sandbox: MY_KORTIX_SANDBOX_SLUG,

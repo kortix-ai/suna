@@ -1,4 +1,4 @@
-import { isWebhookEventProcessed, recordWebhookEvent } from './webhook-concurrency';
+import { isWebhookEventProcessed, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
 import { logger } from '../../lib/logger';
 import { WebhookError } from '../../errors';
 import { getCreditAccount } from '../repositories/credit-accounts';
@@ -7,9 +7,55 @@ import { getRevenueCatPeriodType, isRevenueCatAnonymous, planMonthlyUsd, revenue
 import { wallet } from '../wallet';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
+import { isNoWorkspaceError } from '../../shared/no-workspace';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { creditAccounts } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { accountRolesForUser } from '../../iam/read-models';
+import { db } from '../../shared/db';
+import { resolveCanonicalWorkspace } from '../../workspaces/surface';
 import { config } from '../../config';
 import { formatUsdAsCredits } from '@kortix/shared';
+import { captureProductEvent, type ProductEvent } from '../../shared/product-analytics';
+
+/** In-app store purchases as product events; `app_user_id` is the Supabase user id. */
+const REVENUECAT_PRODUCT_EVENTS: Partial<Record<string, ProductEvent>> = {
+  INITIAL_PURCHASE: 'subscription_activated',
+  NON_RENEWING_PURCHASE: 'credits_topped_up',
+  EXPIRATION: 'subscription_cancelled',
+};
+
+function captureRevenueCatProductEvent(
+  eventType: string,
+  appUserId: string,
+  accountId: string,
+  eventId: string,
+  event: { product_id?: unknown; store?: unknown; price?: unknown; period_type?: unknown },
+): void {
+  const productEvent = REVENUECAT_PRODUCT_EVENTS[eventType];
+  if (!productEvent) return;
+  const productId = typeof event.product_id === 'string' ? event.product_id : null;
+  const amountUsd =
+    productEvent === 'credits_topped_up'
+      ? Number(event.price) || null
+      : productId
+        ? revenueCatProductMonthlyUsd(productId)
+        : null;
+  captureProductEvent({
+    userId: appUserId,
+    accountId,
+    event: productEvent,
+    dedupeKey: `revenuecat:${eventId}`,
+    properties: {
+      store: typeof event.store === 'string' ? event.store.toLowerCase() : 'revenuecat',
+      via: 'revenuecat_webhook',
+      tier: 'credits',
+      product_id: productId,
+      amount_usd: amountUsd,
+      trial: event.period_type === 'TRIAL',
+    },
+  });
+}
 
 /**
  * A deleted account keeps its row (ledger history, audit) but is terminal:
@@ -20,6 +66,45 @@ import { formatUsdAsCredits } from '@kortix/shared';
  */
 function isDeletedBillingAccount(account: { paymentStatus?: string | null } | null | undefined): boolean {
   return account?.paymentStatus === 'deleted';
+}
+
+/** The subscriber attribute the mobile app sets before a purchase: the workspace it buys for. */
+export const REVENUECAT_WORKSPACE_ATTRIBUTE = 'kortix_workspace_id';
+
+/**
+ * The account a RevenueCat event bills. One person holds several workspaces,
+ * so the person's id alone cannot say which one bought (Workspaces C6):
+ *
+ * 1. The account that already holds this store subscription
+ *    (`revenuecat_subscription_id` = the original transaction): renewals,
+ *    cancellations and product changes follow the purchase.
+ * 2. The workspace the app named in the `kortix_workspace_id` subscriber
+ *    attribute at purchase time, when the person is a member of it.
+ * 3. Else the person's default account (`resolveAccountId`), as before.
+ */
+export async function resolveRevenueCatAccountId(
+  appUserId: string,
+  event: { original_transaction_id?: unknown; subscriber_attributes?: unknown },
+): Promise<string> {
+  const transaction = typeof event.original_transaction_id === 'string' ? event.original_transaction_id : null;
+  if (transaction) {
+    const [holder] = await db
+      .select({ accountId: creditAccounts.accountId })
+      .from(creditAccounts)
+      .where(and(eq(creditAccounts.provider, 'revenuecat'), eq(creditAccounts.revenuecatSubscriptionId, transaction)));
+    if (holder) return holder.accountId;
+  }
+  const attributes = (event.subscriber_attributes ?? {}) as Record<string, { value?: unknown } | undefined>;
+  const named = attributes[REVENUECAT_WORKSPACE_ATTRIBUTE]?.value;
+  if (typeof named === 'string' && named) {
+    const workspace = await resolveCanonicalWorkspace(named).catch(() => null);
+    if (workspace) {
+      const roles = await accountRolesForUser(appUserId);
+      if (roles.has(workspace.accountId)) return workspace.accountId;
+      logger.warn('[RevenueCat] the named workspace is not the app user\'s; using the default account', { workspaceId: named });
+    }
+  }
+  return resolveAccountId(appUserId);
 }
 
 export async function processRevenueCatWebhook(body: any) {
@@ -53,9 +138,74 @@ export async function processRevenueCatWebhook(body: any) {
     return { received: true, event_type: eventType, skipped: true };
   }
 
-  const accountId = await resolveAccountId(appUserId);
+  // A store user with no workspace has no account to credit. Acknowledge
+  // (200) and skip: RevenueCat retries a non-2xx for days, and an account is
+  // never created from a webhook. The event is not marked processed, so a
+  // later redelivery after the person creates a workspace is handled then.
+  let accountId: string;
+  try {
+    accountId = await resolveRevenueCatAccountId(appUserId, event);
+  } catch (err) {
+    if (!isNoWorkspaceError(err)) throw err;
+    logger.warn(`[RevenueCat] Skipping ${eventType} (${eventId}): app user has no workspace`);
+    return { received: true, event_type: eventType, skipped: true };
+  }
 
   console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
+
+  // One account's events apply one at a time, as the Stripe handlers do.
+  await withAccountLock(accountId, () => applyRevenueCatEvent(accountId, eventType, event, dedupeKey));
+
+  await recordWebhookEvent(dedupeKey, eventType);
+  captureRevenueCatProductEvent(eventType, appUserId, accountId, eventId, event);
+  return { received: true, event_type: eventType, account_id: accountId };
+}
+
+/** Lifecycle events that move the plan, as opposed to purchases that grant credit. */
+const LIFECYCLE_EVENTS = new Set(['CANCELLATION', 'EXPIRATION', 'UNCANCELLATION', 'PRODUCT_CHANGE', 'SUBSCRIPTION_PAUSED', 'BILLING_ISSUE']);
+
+/**
+ * Why a store lifecycle event must not move this account, or null when it
+ * may. A store event speaks only for the store subscription the account is
+ * on now:
+ *   - the account is closed (`deleted` is terminal);
+ *   - the account bills through another provider (a user who moved from the
+ *     app to a Stripe plan is not downgraded by a late store EXPIRATION);
+ *   - the event names another store product than the current one (an old
+ *     product's EXPIRATION after a resubscribe or a product change);
+ *   - an EXPIRATION whose period ended before the account's last store grant:
+ *     a RENEWAL processed after that period end paid for a newer period, so
+ *     the expiration is older than the state it would overwrite.
+ */
+function staleLifecycleReason(account: Awaited<ReturnType<typeof getCreditAccount>>, event: any): string | null {
+  if (!account) return null;
+  if (isDeletedBillingAccount(account)) return 'account is closed';
+  if (account.provider && account.provider !== 'revenuecat') return `account bills through ${account.provider}`;
+  const productId = typeof event.product_id === 'string' ? event.product_id : null;
+  if (productId && account.revenuecatProductId && productId !== account.revenuecatProductId) {
+    return `event product ${productId} is not the current product ${account.revenuecatProductId}`;
+  }
+  const expiresAtMs = event.expiration_at_ms == null ? NaN : Number(event.expiration_at_ms);
+  if (event.type === 'EXPIRATION' && expiresAtMs > 0 && account.lastGrantDate) {
+    if (new Date(account.lastGrantDate).getTime() > expiresAtMs) {
+      return `a store grant at ${account.lastGrantDate} is newer than the period this expiration ends`;
+    }
+  }
+  return null;
+}
+
+async function applyRevenueCatEvent(accountId: string, eventType: string, event: any, dedupeKey: string) {
+  if (LIFECYCLE_EVENTS.has(eventType)) {
+    const stale = staleLifecycleReason(await getCreditAccount(accountId), event);
+    if (stale) {
+      logger.info(`[RevenueCat] Ignoring ${eventType} for ${accountId}: ${stale}`);
+      // A store refund still takes back what the store purchase granted.
+      if (eventType === 'CANCELLATION' && event.cancel_reason === 'CUSTOMER_SUPPORT' && !stale.startsWith('account is closed')) {
+        await clawBackRevenueCatRefund(accountId, event, dedupeKey);
+      }
+      return;
+    }
+  }
 
   switch (eventType) {
     case 'INITIAL_PURCHASE':
@@ -94,9 +244,6 @@ export async function processRevenueCatWebhook(body: any) {
     default:
       console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
   }
-
-  await recordWebhookEvent(dedupeKey, eventType);
-  return { received: true, event_type: eventType, account_id: accountId };
 }
 
 async function handleRevenueCatPurchase(accountId: string, event: any, dedupeKey: string) {

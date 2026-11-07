@@ -25,6 +25,7 @@ import {
   acceptEnterpriseOffer,
   contactEnterpriseSales,
   purchaseCredits,
+  redeemCreditCode,
   reactivateSubscription,
   requestTopUp,
   resolvedPlan,
@@ -293,6 +294,25 @@ test('purchaseCredits posts amount + urls to purchase-credits', async () => {
   expect(result.checkout_url).toContain('stripe.com');
 });
 
+test('redeemCreditCode posts the code + account to redeem-code and returns the grant', async () => {
+  nextResponse = { status: 200, body: { code: 'FRONTIER', amount_usd: 100, balance: 105 } };
+  const result = await redeemCreditCode({ code: 'frontier', accountId: 'acc-1' });
+  expect(last().url).toContain('/billing/redeem-code');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ code: 'frontier', account_id: 'acc-1' });
+  expect(result).toEqual({ code: 'FRONTIER', amount_usd: 100, balance: 105 });
+});
+
+test('redeemCreditCode throws an ApiError that carries the refusal code and message', async () => {
+  nextResponse = {
+    status: 409,
+    body: { error: 'This account has already redeemed this code.', code: 'credit_code_already_redeemed' },
+  };
+  const error = await redeemCreditCode({ code: 'FRONTIER', accountId: 'acc-1' }).catch((e) => e);
+  expect(error.message).toBe('This account has already redeemed this code.');
+  expect(error.code).toBe('credit_code_already_redeemed');
+});
+
 test('getAutoTopupSettings GETs and configureAutoTopup POSTs auto-topup', async () => {
   nextResponse = { status: 200, body: { enabled: false, threshold: 0, amount: 0 } };
   await getAutoTopupSettings('acc-1');
@@ -522,4 +542,21 @@ test('contactEnterpriseSales posts the account and an optional note, and returns
   expect(last().url).toContain('/billing/enterprise/contact');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ account_id: 'acc-1', note: 'SSO for 40 people' });
+});
+
+test('getAccountState types the free-grant and split-off comp fields (Workspaces C6)', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      credits: { total: 0, free_grant: { eligible: false, claimed_workspace_id: '11111111-1111-4111-8111-111111111111' } },
+      tier: { name: 'free', monthly_credits: 0 },
+      plan_comp: { until: '2026-12-01T00:00:00.000Z', source: 'workspace_split' },
+    },
+  };
+  const state = await getAccountState({ accountId: 'acct-2' });
+  const grant: { eligible: boolean; claimed_workspace_id: string | null } | undefined = state.credits.free_grant;
+  const comp: { until: string; source: 'workspace_split' } | null | undefined = state.plan_comp;
+  expect(grant).toEqual({ eligible: false, claimed_workspace_id: '11111111-1111-4111-8111-111111111111' });
+  expect(comp).toEqual({ until: '2026-12-01T00:00:00.000Z', source: 'workspace_split' });
+  expect(last()?.url).toContain('account_id=acct-2');
 });

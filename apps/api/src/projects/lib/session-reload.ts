@@ -5,24 +5,26 @@
  * get it into my open session?". `git pull` inside the sandbox updated the
  * working tree but not the agent's behaviour (the compiled config never came
  * from the working tree), restarting re-read the daemon's unchanged env and
- * rebuilt the same bytes, and killing opencode from inside the session killed
- * the turn doing the killing. The honest answer was "start a new session".
+ * rebuilt the same bytes, and killing the runtime from inside the session
+ * killed the turn doing the killing. The honest answer was "start a new session".
  *
  * A reload is two steps against a box that stays up:
  *
  *   1. Refresh the workspace — `POST /kortix/refresh?restart=0`. Explicitly NO
- *      restart here: step 2 restarts, and doing it twice would cost a second
- *      opencode boot and two windows where the box 503s.
- *   2. Recompile the agent config from the session's ref and push it, which
- *      restarts opencode so it rebuilds its config. This is the step that makes
- *      the agent's behaviour actually change; opencode reads config only at
- *      spawn, so nothing short of that applies.
+ *      restart here: step 2 applies the config, and a restart here would cost
+ *      a second runtime boot and a window where the box 503s.
+ *   2. Converge the agent config. A daemon with `config.release.v1` fetches
+ *      the session's release itself (`POST /kortix/config/converge`), and pi
+ *      applies it in place. A daemon without it (an old OpenCode box) takes the
+ *      compiled config push, which restarts its runtime, because that runtime
+ *      reads config only at spawn. This is the step that makes the agent's
+ *      behaviour actually change.
  *
  * WHAT IT DOES NOT DO, said plainly because the difference bites:
  *
- *   - It does not preserve an in-flight turn. The restart ends it. Callers
- *     default to refusing while the session is busy rather than discarding work
- *     silently.
+ *   - It does not preserve an in-flight turn on a runtime that restarts. The
+ *     restart ends it. Callers default to refusing while the session is busy
+ *     rather than discarding work silently.
  *   - It does not change what the agent already read. A reload is "from here
  *     on", exactly like a secrets re-scope.
  *   - It cannot rewrite a session's identity: its branch, its tokens, its
@@ -30,7 +32,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { logger } from '../../lib/logger';
@@ -65,6 +67,7 @@ import {
   repositoryAccessFromSessionMetadata,
 } from './session-sandbox-metadata';
 import { parseActualRuntime, UNREPORTED_ACTUAL_RUNTIME, type ActualRuntimeDocument } from '../../runtime-convergence/actual';
+import { projectsView } from '../../workspaces/rows';
 
 /** A competing refresh is a fetch plus a fast-forward: seconds, not minutes. */
 const REFRESH_BUSY_RETRIES = 5;
@@ -73,7 +76,7 @@ const REFRESH_BUSY_DELAY_MS = 3_000;
 const CONVERGE_BUSY_RETRIES = 40;
 
 /**
- * What happened to the agent `.md` files opencode actually reads.
+ * What happened to the agent files the runtime actually reads.
  *
  * Six outcomes and not a boolean, because three of them are successes, one is a
  * deliberate refusal, and two are "we did not find out" for different reasons.
@@ -120,10 +123,11 @@ export function classifyAgentFiles(input: {
 }
 
 /**
- * Does the box need the push — and the opencode restart that comes with it?
+ * Does a pre-release box need the push — and the runtime restart that comes
+ * with it?
  *
  * Two independent reasons, because the config has two homes. Files that were
- * just brought forward are read only at opencode's spawn, so they need the
+ * just brought forward are read only when its runtime spawns, so they need the
  * restart even when the compiled etag did not move (a skill body is not part of
  * it). And a moved etag needs the push even when the files were kept: governance
  * — connectors, secrets, scope — lives in the compiled config alone.
@@ -178,13 +182,15 @@ export interface SessionReloadResult {
   repo_refreshed: boolean;
   commit_sha: string | null;
   /**
-   * What happened to the agent files opencode ACTUALLY reads.
+   * What happened to the agent files the runtime ACTUALLY reads.
    *
-   * This, not `applied`, decides whether the agent behaves differently: opencode
-   * is spawned with `OPENCODE_CONFIG_DIR` pointing into the working tree, and
-   * the `.md` files there beat the compiled config this pushes as JSON. So
-   * `applied: true` with anything but `updated` means the etag moved and the
-   * agent did not.
+   * On the release path pi reads the agents from the config release
+   * (`harness/pi/config-release.ts` in kortixd), so `updated` means the release
+   * applied. On the pre-release path (an old OpenCode box) the runtime reads
+   * the `.md` files in the working tree, and they beat the compiled config this
+   * pushes as JSON. There, this, not `applied`, decides whether the agent
+   * behaves differently: `applied: true` with anything but `updated` means the
+   * etag moved and the agent did not.
    *
    * A boolean was not enough. `false` conflated a deliberate refusal with two
    * outcomes that are plain successes (nothing to do, project keeps no agent
@@ -196,15 +202,16 @@ export interface SessionReloadResult {
   /**
    * How the box applied the new config, when it said.
    *
-   * `kept-old` is the verified swap declining: the daemon booted the new
-   * opencode, it never started serving, so the previous one was left running.
+   * `kept-old` is the daemon declining the new config: the new runtime of a
+   * verified swap never started serving, or the release failed its proven
+   * check, so the previous config was left running.
    * The push landed and the config did NOT take — which is a FAILED reload with
    * a healthy session, a combination `applied` alone cannot express.
    *
    * `null` means the box did not say (a daemon older than the verified swap, or
    * no reload was needed) — never "it worked".
    */
-  opencode_reload: 'disposed' | 'restarted' | 'kept-old' | null;
+  runtime_reload: 'disposed' | 'restarted' | 'kept-old' | null;
   /**
    * Did the reload stop a turn the user was waiting on?
    *
@@ -256,7 +263,7 @@ export type SessionReloadPhase =
  *
  * The old copy — "Reloaded. The next prompt runs the new config." — was
  * unconditional, and measurably false whenever the agent's `.md` files were not
- * brought forward: the etag moved, opencode kept reading the working tree, and
+ * brought forward: the etag moved, the runtime kept reading the working tree, and
  * the user was told the opposite.
  */
 /**
@@ -382,8 +389,8 @@ export interface SessionReloadDeps {
   /**
    * Repair the turn a config swap took with it.
    *
-   * The daemon retires the OpenCode process that was writing a turn. That
-   * process emits neither `session.idle` nor `session.error`, so the ledger row
+   * A daemon that swaps its runtime process (an old OpenCode box) retires the
+   * process that was writing a turn. That process emits neither `session.idle` nor `session.error`, so the ledger row
    * it opened would stay open for ever and the client that sent the prompt gets
    * a bare `HTTP 503` with its dedupe claim still held. This settles those rows
    * `runtime_gone` and hands each prompt back to the redelivery path — the SAME
@@ -490,7 +497,7 @@ const UNREACHABLE_STATE: SandboxConfigState = {
 export async function readSandboxConfigState(
   input: {
     sessionId: string;
-    /** Also ask whether a turn is running. Costs a call into opencode, so opt-in. */
+    /** Also ask whether a turn is running. Costs a call into the runtime, so opt-in. */
     includeTurnState?: boolean;
   },
   deps: SessionReloadDeps = defaultReloadDeps(),
@@ -597,12 +604,12 @@ export async function latestAgentConfigEtag(
       const [[project], [session]] = await Promise.all([
         db
           .select({
-            repoUrl: projects.repoUrl,
-            defaultBranch: projects.defaultBranch,
-            manifestPath: projects.manifestPath,
+            repoUrl: projectsView.repoUrl,
+            defaultBranch: projectsView.defaultBranch,
+            manifestPath: projectsView.manifestPath,
           })
-          .from(projects)
-          .where(and(eq(projects.projectId, input.projectId), eq(projects.accountId, input.accountId)))
+          .from(projectsView)
+          .where(and(eq(projectsView.projectId, input.projectId), eq(projectsView.accountId, input.accountId)))
           .limit(1),
         input.sessionId
           ? db
@@ -719,7 +726,7 @@ export async function reloadSessionConfig(input: {
   /** Reload even if a turn is running. It will be ended. */
   force?: boolean;
   /**
-   * Skip the push — and the opencode restart it costs — when the box is already
+   * Skip the push — and the runtime restart it can cost — when the box is already
    * current. For callers nobody asked: the wake-time convergence runs on every
    * resume, and a current box must not pay a runtime restart for it. The reload
    * button leaves this unset, because a person who asked for a reload gets one.
@@ -749,7 +756,7 @@ export async function reloadSessionConfig(input: {
       repo_refreshed: false,
       commit_sha: null,
       agent_files: 'unknown',
-      opencode_reload: null,
+      runtime_reload: null,
       turn_ended: null,
       reason: 'no reachable sandbox',
     };
@@ -779,10 +786,10 @@ export async function reloadSessionConfig(input: {
 
   // `null` counts as busy. "Could not tell" is not permission to restart — that
   // would defeat the one promise this gate makes, in precisely the case where
-  // opencode is slow because it IS working.
+  // the runtime is slow because it IS working.
   if (input.force !== true && before.turnInFlight !== false) {
-    // The push restarts opencode, which ends the turn. Say so instead of
-    // discarding someone's work silently.
+    // A runtime restart ends the turn. Say so instead of discarding someone's
+    // work silently.
     return {
       applied: false,
       previous_etag: before.etag,
@@ -790,7 +797,7 @@ export async function reloadSessionConfig(input: {
       repo_refreshed: false,
       commit_sha: before.commitSha,
       agent_files: 'unknown',
-      opencode_reload: null,
+      runtime_reload: null,
       turn_ended: null,
       reason:
         before.turnInFlight === true
@@ -832,7 +839,7 @@ export async function reloadSessionConfig(input: {
         repo_refreshed: repoRefreshed,
         commit_sha: commitSha,
         agent_files: 'unknown',
-        opencode_reload: null,
+        runtime_reload: null,
         turn_ended: null,
         reason: 'the sandbox did not answer the config convergence',
         ...releaseFields(releaseBefore, null),
@@ -869,9 +876,10 @@ export async function reloadSessionConfig(input: {
   }
 
   // ── The pre-release path ────────────────────────────────────────────────
-  // Reached only by a daemon without `config.release.v1`. OpenCode reads
-  // the agent files in the session's checkout here, so the refresh also brings
-  // the base branch's config dir into it (`base_config=1`). Without that, a fix
+  // Reached only by a daemon without `config.release.v1` (an old OpenCode
+  // box). OpenCode reads the agent files in the session's checkout here, so
+  // the refresh also brings the base branch's config dir into it
+  // (`base_config=1`). Without that, a fix
   // merged to base never reached a live session (prod 2026-09-30).
   input.onPhase?.('refreshing-workspace');
   const refreshed = await refreshSandboxWorkspace(input.sessionId, { pullRepo, baseConfig: pullRepo }, deps);
@@ -905,7 +913,7 @@ export async function reloadSessionConfig(input: {
         repo_refreshed: repoRefreshed,
         commit_sha: commitSha,
         agent_files: agentFiles,
-        opencode_reload: null,
+        runtime_reload: null,
         turn_ended: null,
         reason: 'already current',
         ...releaseFields(null, null),
@@ -936,7 +944,7 @@ export async function reloadSessionConfig(input: {
   // the push above runs as well and disposes again; both are cheap.
   const daemonReload = agentFiles === 'updated' ? (refreshed.configReload?.how ?? null) : null;
   const applied = push.applied || daemonReload === 'disposed' || daemonReload === 'restarted';
-  const opencodeReload = push.opencodeReload ?? daemonReload;
+  const runtimeReload = push.runtimeReload ?? daemonReload;
   return {
     applied,
     previous_etag: before.etag,
@@ -946,13 +954,13 @@ export async function reloadSessionConfig(input: {
     repo_refreshed: repoRefreshed,
     commit_sha: commitSha,
     agent_files: agentFiles,
-    opencode_reload: opencodeReload ?? null,
-    turn_ended: push.opencodeTurnEnded ?? (daemonReload ? (refreshed.configReload?.turnEnded ?? null) : null),
+    runtime_reload: runtimeReload ?? null,
+    turn_ended: push.runtimeTurnEnded ?? (daemonReload ? (refreshed.configReload?.turnEnded ?? null) : null),
     ...(applied || daemonReload === 'kept-old'
-      ? opencodeReload === 'kept-old'
+      ? runtimeReload === 'kept-old'
         ? {
             reason:
-              'the new opencode did not start, so the session kept the config it was already running',
+              'the new runtime did not start, so the session kept the config it was already running',
           }
         : {}
       : { reason: agentFiles === 'already-current' ? 'already current' : (push.reason ?? 'agent config unchanged') }),
@@ -973,7 +981,7 @@ export function convergeToReloadResult(
     previous_etag: etags.previousEtag,
     etag: converged.outcome === 'applied' ? (etags.etagAfter ?? etags.previousEtag) : etags.previousEtag,
     // Null for a runtime that applies a release in place (pi): nothing restarted.
-    opencode_reload: reloaded ? ('restarted' as const) : null,
+    runtime_reload: reloaded ? ('restarted' as const) : null,
     turn_ended: converged.reload?.turn_ended ?? null,
   };
   const failedId = converged.config.failed_release_id?.slice(0, 12);
@@ -987,7 +995,7 @@ export function convergeToReloadResult(
         ...common,
         applied: false,
         agent_files: 'unknown',
-        opencode_reload: 'kept-old',
+        runtime_reload: 'kept-old',
         reason:
           converged.reason ??
           converged.config.fallback_reason ??
@@ -1076,14 +1084,14 @@ async function convergeSandboxConfig(
  * `/workspace`; on a capable daemon it is an alias for converge, which the
  * reload sends explicitly.
  *
- * `baseConfig` sends `base_config=1`: the daemon brings the base branch's
- * changes to the OpenCode config dir into the checkout (`syncConfigDirToBase` —
- * file by file, keeping the session's own edits and commits, never moving a
- * ref), and reloads the OpenCode config when files changed, despite
+ * `baseConfig` sends `base_config=1`: an old OpenCode daemon brings the base
+ * branch's changes to the OpenCode config dir into the checkout (file by file,
+ * keeping the session's own edits and commits, never moving a ref), and
+ * reloads the OpenCode config when files changed, despite
  * `restart=0` (answered as `config_dir.reload`). The pre-release path needs it
  * because OpenCode reads its agent files from this checkout.
  *
- * `restart=0`: the config push right after restarts opencode anyway, and
+ * `restart=0`: the config push right after restarts the runtime anyway, and
  * restarting twice doubles the boot cost and the window where the box 503s.
  */
 async function refreshSandboxWorkspace(

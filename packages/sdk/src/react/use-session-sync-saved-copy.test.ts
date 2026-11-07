@@ -32,7 +32,7 @@ function envelope(
     source: 'mirror',
     complete: true,
     captured_at: '2026-09-25T00:00:00Z',
-    opencode_session_id: rootId,
+    runtime_session_id: rootId,
     message_count: 1,
     messages: [
       {

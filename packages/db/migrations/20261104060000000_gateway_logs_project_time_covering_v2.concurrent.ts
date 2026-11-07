@@ -14,10 +14,12 @@
 // apps/api/src/shared/llm-value.ts), and none of them is in that index. Since
 // then every row of the window is fetched from the wide heap again.
 //
-// This index is the old one plus those five columns. metadata is a small
-// jsonb on this table (usageEstimated, operation, three <=128-char request
-// origin ids, timing), so it fits an index tuple. The old index is dropped by
-// 20261104060000001: this one serves every query it served.
+// This index is the old one plus those five columns. metadata is a jsonb that
+// can carry upstream failure text, and a btree tuple has a hard size limit: the
+// writer (buildGatewayTraceRow in apps/api/src/shared/gateway-trace-row.ts)
+// bounds it to 2000 bytes so the INSERT of a trace row can never be rejected by
+// this index. The old index is dropped by 20261104060000001: this one serves
+// every query it served.
 export const shorthands = undefined;
 
 /** @param {import('node-pg-migrate').MigrationBuilder} pgm */

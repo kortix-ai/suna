@@ -38,7 +38,7 @@ export const CONNECTORS_KEYS: readonly Binding[] = [
     id: 'connectors.remove',
     scope: 'connectors',
     chords: [{ key: 'd', shift: true }, { key: 'D' }],
-    description: 'Remove the connector from the project (asks first).',
+    description: 'Remove the connector from the workspace (asks first).',
   },
   { id: 'connectors.copyId', scope: 'connectors', chords: [{ key: 'i' }], description: 'Copy the selected account’s connection ID.' },
   { id: 'connectors.web', scope: 'connectors', chords: [{ key: 'w' }], description: 'Open the connector in the web app.' },

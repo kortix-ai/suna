@@ -7,7 +7,7 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 
 /**
  * KRTX-1742 review: opening a session marked its rows read on the server only,
- * so the bell kept them unread for up to 60 s. The SDK inbox is mocked; the
+ * so the Inbox kept them unread for up to 60 s. The SDK inbox is mocked; the
  * page visibility comes from a fake `document`.
  */
 
@@ -63,7 +63,7 @@ function row(overrides: Partial<InboxNotification> = {}): InboxNotification {
     session_id: 'ses-a',
     trigger_slug: null,
     actor_user_id: null,
-    url: '/projects/p1/sessions/ses-a',
+    url: '/workspaces/p1/sessions/ses-a',
     read: false,
     created_at: '2026-10-09T10:00:00.000Z',
     ...overrides,

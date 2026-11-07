@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { accounts, gatewayRequestLogs, projects } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { buildGatewayTraceRow } from '../../shared/gateway-trace-row';
 import { gatewaySeriesQuery, gatewaySeriesRows } from './gateway-series';
 
 const accountId = crypto.randomUUID();
@@ -61,4 +62,28 @@ test('p50/p95/p99 come back per day from one ordered-set aggregate', async () =>
   const rows = await gatewaySeriesRows(projectId, 2);
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ requests: 101, errors: 1, p50: 50, p95: 95, p99: 99 });
+});
+
+test('a trace whose upstream failures are huge still inserts into the metadata-carrying covering index', async () => {
+  // Incompressible text, so the btree tuple cannot shrink by pglz.
+  const noise = () => Buffer.from(crypto.getRandomValues(new Uint8Array(4000))).toString('base64');
+  const attemptFailures = Array.from({ length: 6 }, (_, i) => ({ attempt: i + 1, code: 502, message: noise() }));
+  const row = buildGatewayTraceRow({
+    requestId: crypto.randomUUID(),
+    accountId,
+    projectId,
+    requestedModel: 'gpt-6.1-sol',
+    resolvedModel: 'gpt-6.1-sol',
+    provider: 'openai-codex',
+    status: 502,
+    ok: false,
+    metadata: { attemptFailures },
+  });
+  await db.insert(gatewayRequestLogs).values(row);
+  // The unbounded value is what the index cannot hold: same insert, raw metadata.
+  const raw = await db
+    .insert(gatewayRequestLogs)
+    .values({ ...row, requestId: crypto.randomUUID(), metadata: { attemptFailures } })
+    .then(() => null, (error: Error & { cause?: Error }) => error.cause?.message ?? error.message);
+  expect(raw).toContain('index row');
 });

@@ -17,3 +17,4 @@ app/src/main/java/inline/
 
 # Bundle artifacts
 *.jsbundle
+gradle/gradle-daemon-jvm.properties

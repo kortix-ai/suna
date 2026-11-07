@@ -408,7 +408,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 3);
 
     const status = frames.find((frame) => frame.event === 'kortix.runtime.status');
-    expect(status?.data).toMatchObject({ state: 'down', reason: 'no_sandbox' });
+    expect(status?.data).toMatchObject({ state: 'down', reason: 'no_sandbox', parked: true });
 
     const queue = frames.find((frame) => frame.event === 'kortix.control.queue');
     expect(queue?.data).toMatchObject({ channel: 'control', cseq: 1 });
@@ -422,7 +422,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 2);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'sandbox_stopped' });
+    ).toMatchObject({ state: 'down', reason: 'sandbox_stopped', parked: true });
     expect(attachCalls).toHaveLength(0);
   });
 
@@ -465,7 +465,7 @@ describe('box down — the stream still serves', () => {
     expect(response.status).toBe(200);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'daemon_503' });
+    ).toMatchObject({ state: 'down', reason: 'daemon_503', parked: false });
   });
 
   test('a control-plane read failure degrades to a reason, not to a dead stream', async () => {
@@ -474,7 +474,7 @@ describe('box down — the stream still serves', () => {
     const frames = await readFrames(response, 2);
     expect(
       frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
-    ).toMatchObject({ state: 'down', reason: 'control_plane_unavailable' });
+    ).toMatchObject({ state: 'down', reason: 'control_plane_unavailable', parked: false });
   });
 });
 
@@ -500,7 +500,7 @@ describe('runtime channel: forwarded verbatim, never renumbered', () => {
     expect(status!.data.seq).toBe(2016);
     expect(status!.data.channel).toBe('runtime');
     expect(status!.data.epoch).toBe('bmtaokkdb0piayh');
-    // `payload` is OpenCode's `properties` verbatim — an existing reducer must
+    // `payload` is the runtime event's `properties` verbatim — an existing reducer must
     // keep working without a translation layer.
     expect(status!.data.payload).toEqual({ sessionID: 'ses_abc', status: { type: 'busy' } });
     // No control cursor leaked onto a runtime frame.
@@ -799,7 +799,7 @@ describe('R5.2: a runtime turn end reaches the reconciler at once', () => {
           // The daemon had already sequenced 5 frames when this stream attached.
           'event: kortix.hello\ndata: {"type":"kortix.hello","epoch":"ep-turn","head_seq":5,"first_seq":1,"since":3,"at":1}\n\n',
           // Replay: an old turn end. It must not end a newer turn.
-          'event: kortix.turn\nid: 4\ndata: {"seq":4,"type":"kortix.turn","at":2,"payload":{"opencode_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
+          'event: kortix.turn\nid: 4\ndata: {"seq":4,"type":"kortix.turn","at":2,"payload":{"runtime_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
           // Live: pi names `runtime_session_id`.
           'event: kortix.turn\nid: 6\ndata: {"seq":6,"type":"kortix.turn","at":3,"payload":{"runtime_session_id":"ses_root","verdict":"idle"},"session":"ses_root"}\n\n',
         ],
@@ -881,11 +881,9 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
     expect(presenceExpiries).toEqual([]);
   });
 
-  const FLAG_ON = { experimental: { notification_center: true } };
-
   // KRTX-1742: a closed tab's lease held back the phone and Web Push for up to 90 s.
   test('the stream ending expires that tab lease at once; an open stream expires nothing', async () => {
-    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata: FLAG_ON }, actor: { credential: { kind: 'jwt' } } } as never;
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
     sandboxRow = { externalId: 'box-1', status: 'stopped' };
     const response = await openStream(`?tab_id=${TAB}`);
     const reader = response.body!.getReader();
@@ -902,7 +900,7 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
   // KRTX-1742 review: a stream that never wrote the lease expired the one a
   // newer stream of the same tab had just renewed.
   test('a stream that renewed no lease expires nothing when it ends', async () => {
-    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata: FLAG_ON }, actor: { credential: { kind: 'jwt' } } } as never;
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
     sandboxRow = { externalId: 'box-1', status: 'stopped' };
     renewResult = null;
     const response = await openStream(`?tab_id=${TAB}`);
@@ -915,20 +913,18 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
     expect(presenceExpiries).toEqual([]);
   });
 
-  // The notification_center flag off (the default): the lease lives to its
-  // expiry after the stream ends, as before KRTX-1742.
-  test('with the notification_center flag off, the stream ending expires nothing', async () => {
-    for (const metadata of [{}, { experimental: { notification_center: false } }]) {
-      loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata }, actor: { credential: { kind: 'jwt' } } } as never;
-      sandboxRow = { externalId: 'box-1', status: 'stopped' };
-      const response = await openStream(`?tab_id=${TAB}`);
-      const reader = response.body!.getReader();
-      await reader.read();
-      await reader.cancel();
-    }
-    await Bun.sleep(50);
-    expect(presenceRenewals).toHaveLength(2);
-    expect(presenceExpiries).toEqual([]);
+  // The flag graduated on 2026-11-06: a stored override changes nothing.
+  test('with a stored notification_center: false override, the stream ending still expires the tab lease', async () => {
+    const metadata = { experimental: { notification_center: false } };
+    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata }, actor: { credential: { kind: 'jwt' } } } as never;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    const response = await openStream(`?tab_id=${TAB}`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    for (let i = 0; i < 20 && presenceExpiries.length === 0; i++) await Bun.sleep(5);
+    expect(presenceRenewals).toHaveLength(1);
+    expect(presenceExpiries).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB, wroteUntil: LEASE_WRITTEN_UNTIL }]);
   });
 });
 

@@ -1,0 +1,138 @@
+'use client';
+
+import { useQuery, useMutation } from '@tanstack/react-query';
+import type { Command } from '../../core/runtime/runtime-types';
+import { activeRuntimeAction, runtimeActionError, runtimeActionPaths } from '../../core/session/runtime-actions';
+import { useRuntimeSupports } from '../use-runtime-supports';
+import { runtimeKeys, useRuntimeReady } from './keys';
+import { asRuntimeList } from './shared';
+
+// ============================================================================
+// Command Hooks
+// ============================================================================
+
+/**
+ * The session's slash commands.
+ *
+ * Always resolves an ARRAY. `GET /command` is typed `Command[]`, but a runtime
+ * or proxy that answers with an object body used to hand that value straight
+ * to the render, where `for (const cmd of commands)` threw
+ * `TypeError: t is not iterable` and killed the whole session view (dev,
+ * 2026-08-23). `asRuntimeList` normalizes the response, so every consumer
+ * (`detectCommandFromText`, the slash menu, command attachments) can iterate
+ * the result unconditionally.
+ *
+ * Slash commands are a runtime capability (`session.commands`): a runtime
+ * without them is never asked, and the list stays empty.
+ *
+ * Pass `agent` to list only the commands that agent may run: a kortix.yaml v3
+ * command carries `agents`, and a command without `agents` (v1/v2) is listed
+ * for every agent. Every agent reads the same cached list.
+ */
+export function useRuntimeCommands(options: UseRuntimeCommandsOptions = {}) {
+  const { agent } = options;
+  const runtimeReady = useRuntimeReady();
+  const supported = useRuntimeSupports('session.commands');
+  return useQuery<Command[]>({
+    queryKey: runtimeKeys.commands(),
+    queryFn: async () => {
+      const listed = await activeRuntimeAction('GET', runtimeActionPaths.commands);
+      if (!listed.ok) throw await runtimeActionError(listed, 'Listing the commands failed');
+      const body = (await listed.json()) as { commands?: unknown };
+      return asRuntimeList<NativeCommand>(body.commands).map(commandOf);
+    },
+    select: agent
+      ? (commands) => commands.filter((command) => !command.agents || command.agents.includes(agent))
+      : undefined,
+    enabled: runtimeReady && supported,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+  });
+}
+
+/** One entry of `GET /kortix/runtime/commands` (`RuntimeCommandInfo`). */
+interface NativeCommand {
+  name: string;
+  description: string | null;
+  source: 'command' | 'template' | 'skill';
+  agents?: string[];
+}
+
+/** A listed command in the hook's `Command` shape. The list carries no templates. */
+function commandOf(command: NativeCommand): Command {
+  return {
+    name: command.name,
+    ...(command.description ? { description: command.description } : {}),
+    source: command.source === 'skill' ? 'skill' : 'command',
+    ...(command.agents ? { agents: command.agents } : {}),
+    template: '',
+    hints: [],
+  };
+}
+
+export interface UseRuntimeCommandsOptions {
+  /** The selected agent. Omitted: every command is listed. */
+  agent?: string;
+}
+
+/**
+ * The runtime refused a command the agent does not enable (kortix.yaml v3):
+ * `403 { error: "command_not_enabled", command, agent }`.
+ */
+export class CommandNotEnabledError extends Error {
+  readonly status = 403;
+  readonly code = 'command_not_enabled';
+  constructor(
+    readonly command: string,
+    readonly agent: string,
+  ) {
+    super(`The agent "${agent}" cannot run /${command}.`);
+    this.name = 'CommandNotEnabledError';
+  }
+}
+
+export interface ExecuteRuntimeCommandInput {
+  sessionId: string;
+  command: string;
+  args?: string;
+  agent?: string;
+  model?: string;
+  variant?: string;
+}
+
+export async function executeRuntimeCommand({
+  sessionId,
+  command,
+  args,
+  agent,
+  model,
+  variant,
+}: ExecuteRuntimeCommandInput): Promise<void> {
+  const ran = await activeRuntimeAction('POST', runtimeActionPaths.command(sessionId), {
+    name: command,
+    arguments: args || '',
+    ...(agent ? { agent } : {}),
+    ...(model ? { model } : {}),
+    ...(variant ? { variant } : {}),
+  });
+  if (ran.ok) return;
+  const refusal = (await ran.clone().json().catch(() => null)) as { error?: unknown; command?: unknown; agent?: unknown } | null;
+  if (ran.status === 403 && refusal?.error === 'command_not_enabled') {
+    throw new CommandNotEnabledError(String(refusal.command ?? command), String(refusal.agent ?? agent ?? ''));
+  }
+  throw await runtimeActionError(ran, 'Running the command failed');
+}
+
+export function useExecuteRuntimeCommand() {
+  return useMutation({
+    mutationFn: executeRuntimeCommand,
+    // CRITICAL: Disable retry for commands. The /command endpoint blocks until
+    // the agent finishes, which can take minutes (e.g. onboarding). If a proxy
+    // timeout or network error kills the connection, TanStack Query's default
+    // global retry would re-POST the command, causing it to execute twice on
+    // the server. Commands are non-idempotent — each POST creates a new
+    // execution. Never retry them.
+    retry: false,
+  });
+}
+

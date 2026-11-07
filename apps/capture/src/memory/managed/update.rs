@@ -1,6 +1,7 @@
 //! Self-update of Kortix Capture, run by the machine service (root / SYSTEM).
 //!
-//! The service checks a signed manifest at start and every 6 hours (jittered).
+//! The service checks a signed manifest at start and every 6 hours (jittered), never
+//! within 10 minutes of a wake from sleep.
 //! A newer, verified installer for this OS is downloaded to a directory only
 //! root can write, installed silently, and then proved healthy. If the new
 //! version does not become healthy, the previous installer goes back and the
@@ -373,18 +374,148 @@ pub fn decide(
 
 // ─── Health (what the new version must show) ────────────────────────────────
 
-/// One signed-in person is fine when their recorder runs, and, while it says it
-/// records, it saved a frame after `since_ms` (the install). Paused, a missing
-/// permission and a locked screen are the person's state, not the update's.
-/// `status` is `kortix-capture --json status` run as that person.
-pub fn person_ok(status: &Value, since_ms: i64) -> bool {
-    if status["recorder_running"] != true {
-        return false;
+/// One person the health check looks at: a Windows session, or a macOS/Linux user.
+#[derive(Debug, Clone)]
+pub struct Probe {
+    /// Stable across a service restart: `session 2` (Windows), `uid 501` (macOS, Linux).
+    pub who: String,
+    /// Connected and in use. A disconnected Windows session (switched user, closed
+    /// remote desktop) is false: nobody watches its screen, so it proves nothing.
+    pub active: bool,
+    /// `kortix-capture --json status` run as that person, or why it could not run.
+    pub status: std::result::Result<String, String>,
+}
+
+/// One person is fine when their recorder runs, and, while it says it records, it
+/// saved a frame after `since_ms` (the install). Paused, a missing permission and a
+/// locked screen are the person's state, not the update's. The error is one reason
+/// code with the last state seen: `not_running`, `no_new_frame`, `status_command_failed`
+/// or `status_parse_error`.
+pub fn person_health(
+    status: &std::result::Result<String, String>,
+    since_ms: i64,
+) -> std::result::Result<(), String> {
+    let text = status
+        .as_ref()
+        .map_err(|e| format!("status_command_failed ({})", clip(e, 160)))?;
+    let v = parse_status(text)
+        .map_err(|e| format!("status_parse_error ({e}; output {:?})", clip(text, 80)))?;
+    let state = v["state"].as_str().unwrap_or("unknown");
+    if v["recorder_running"] != true {
+        let why = v["inactive_reason"].as_str().unwrap_or("none");
+        return Err(format!("not_running (state {state}, reason {why})"));
     }
-    if status["state"] != "recording" {
-        return true;
+    if state != "recording" {
+        return Ok(());
     }
-    status["counts"]["last_frame_ms"].as_i64().unwrap_or(0) > since_ms
+    match v["counts"]["last_frame_ms"].as_i64().filter(|t| *t > 0) {
+        Some(t) if t > since_ms => Ok(()),
+        Some(t) => Err(format!(
+            "no_new_frame (state recording, last frame {} s before the install)",
+            (since_ms - t) / 1000
+        )),
+        None => Err("no_new_frame (state recording, no frame saved yet)".into()),
+    }
+}
+
+/// Whether the people that matter are healthy. A disconnected session never counts.
+/// `required` lists who had a running recorder before the update (the old service
+/// looked, [`baseline`]): only they must have one after it, so a person whose
+/// recorder was already off cannot fail an update. `None` (a job written by an
+/// older build) requires every active person. The error names the first person
+/// that failed and why; nobody to check is healthy (the new service itself runs).
+pub fn judge(
+    probes: &[Probe],
+    required: Option<&[String]>,
+    since_ms: i64,
+) -> std::result::Result<(), String> {
+    for p in probes {
+        if !p.active || required.is_some_and(|r| !r.contains(&p.who)) {
+            continue;
+        }
+        person_health(&p.status, since_ms).map_err(|why| format!("{}: {why}", p.who))?;
+    }
+    Ok(())
+}
+
+/// Who has a running recorder now, from the old service's probes: the update must keep them recording.
+pub fn baseline(probes: &[Probe]) -> Vec<String> {
+    probes
+        .iter()
+        .filter(|p| {
+            p.active
+                && p.status
+                    .as_ref()
+                    .ok()
+                    .and_then(|s| parse_status(s).ok())
+                    .is_some_and(|v| v["recorder_running"] == true)
+        })
+        .map(|p| p.who.clone())
+        .collect()
+}
+
+/// The JSON object in a helper's output. On macOS and Linux stderr follows stdout in
+/// the same text, so a warning line after the object must not hide it.
+fn parse_status(text: &str) -> serde_json::Result<Value> {
+    let text = text.trim();
+    serde_json::from_str(text).or_else(|e| match text.find('{') {
+        Some(a) => serde_json::Deserializer::from_str(&text[a..])
+            .into_iter::<Value>()
+            .next()
+            .unwrap_or(Err(e)),
+        None => Err(e),
+    })
+}
+
+fn clip(s: &str, max: usize) -> String {
+    let s = s.trim();
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        s.chars().take(max).collect::<String>() + "…"
+    }
+}
+
+// ─── Versions that failed here ──────────────────────────────────────────────
+
+/// A version that failed here is skipped this long, then tried once more (a fixed
+/// computer, a re-published release). A failure again starts the wait again.
+pub const BAD_RETRY_AFTER: Duration = Duration::from_secs(7 * 86_400);
+
+/// An installer that could not run (`install_failed`) this many times in a row
+/// for one version marks it bad like a failed health check. One failure may be
+/// a locked file or a full disk; three on one version is a broken installer.
+/// Before this cap, every check re-downloaded the installer (up to 1 GiB) and
+/// failed again, forever.
+pub const INSTALL_FAILS_BEFORE_BAD: u32 = 3;
+
+/// The versions still skipped, and when each was marked. The rules: a version not
+/// newer than the installed one is dropped (it can never be offered again); a mark
+/// older than [`BAD_RETRY_AFTER`] is dropped (the version is tried again); a mark with
+/// no time (a state file from an older build) starts its wait at `now`. A newer
+/// version than every skipped one is always tried: [`decide`] skips only exact matches.
+/// So a computer is never stuck: at worst it retries a bad version once a week.
+pub fn prune_bad(
+    bad: &[String],
+    bad_at: &BTreeMap<String, i64>,
+    installed: Option<&Version>,
+    now: i64,
+) -> (Vec<String>, BTreeMap<String, i64>) {
+    let mut keep = Vec::new();
+    let mut at = BTreeMap::new();
+    for b in bad {
+        let Some(v) = Version::parse(b) else { continue };
+        if installed.is_some_and(|i| v <= *i) || keep.contains(b) {
+            continue;
+        }
+        let marked = bad_at.get(b).copied().unwrap_or(now);
+        if now - marked >= BAD_RETRY_AFTER.as_millis() as i64 {
+            continue;
+        }
+        keep.push(b.clone());
+        at.insert(b.clone(), marked);
+    }
+    (keep, at)
 }
 
 // ─── Files ──────────────────────────────────────────────────────────────────
@@ -488,9 +619,15 @@ pub struct State {
     /// What the last check did, in a sentence.
     pub last_check: Option<String>,
     pub last_result: Option<LastResult>,
-    /// Versions that failed their health check here; never tried again.
+    /// Versions that failed their health check here. Skipped until [`prune_bad`] drops them.
     #[serde(default)]
     pub bad: Vec<String>,
+    /// When each version in `bad` failed (ms). Absent in a state file from an older build.
+    #[serde(default)]
+    pub bad_at: BTreeMap<String, i64>,
+    /// Consecutive `install_failed` results per version. Cleared by any other outcome.
+    #[serde(default)]
+    pub install_failures: BTreeMap<String, u32>,
     pub updating_to: Option<String>,
 }
 
@@ -509,6 +646,8 @@ fn write_state(s: &State) {
         let mut s = s.clone();
         if let Some(disk) = read_state() {
             s.bad = disk.bad;
+            s.bad_at = disk.bad_at;
+            s.install_failures = disk.install_failures;
             s.last_result = disk.last_result;
         }
         let _ = write_atomic(
@@ -555,14 +694,23 @@ fn summarize(s: &State) -> Value {
     } else {
         "current"
     };
+    let retry_ms = BAD_RETRY_AFTER.as_millis() as i64;
     json!({
         "status": status,
         "installed": s.installed,
         "channel": s.channel,
         "latest": s.latest,
         "lastCheckMs": s.last_check_ms,
+        "lastCheck": s.last_check,
+        "updatingTo": s.updating_to,
         "lastResult": s.last_result,
         "badVersions": s.bad,
+        // When each skipped version is tried again (null: marked by an older build, unknown).
+        "skipped": s.bad.iter().map(|v| json!({
+            "version": v,
+            "failedAtMs": s.bad_at.get(v),
+            "retryAtMs": s.bad_at.get(v).map(|t| t + retry_ms),
+        })).collect::<Vec<_>>(),
     })
 }
 
@@ -571,6 +719,8 @@ pub fn reset() -> Result<()> {
     let mut s = read_state()
         .ok_or_else(|| anyhow!("no update state: the machine service has not run yet"))?;
     s.bad.clear();
+    s.bad_at.clear();
+    s.install_failures.clear();
     s.last_result = None;
     write_state_exact(&s);
     Ok(())
@@ -588,6 +738,9 @@ struct Job {
     started_ms: i64,
     #[serde(default)]
     claimed_ms: Option<i64>,
+    /// Who had a running recorder when the update started ([`baseline`]); None from an older build.
+    #[serde(default)]
+    required: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -607,6 +760,31 @@ fn result_path() -> PathBuf {
 }
 fn verified_path() -> PathBuf {
     updates_dir().join("verified.json")
+}
+/// The new service's last health probe: `{version, at_ms, ok, detail}`. The supervisor
+/// quotes it when the version does not prove healthy, so the reason reaches Kortix.
+fn probe_path() -> PathBuf {
+    updates_dir().join("probe.json")
+}
+
+/// Why `job.to` did not prove healthy, from the last probe the new service wrote.
+fn unhealthy_reason(job: &Job, probe: Option<&Value>) -> String {
+    let fresh = probe.filter(|p| {
+        p["version"] == job.to.as_str() && p["at_ms"].as_i64().unwrap_or(0) >= job.started_ms
+    });
+    match fresh {
+        None => {
+            "no health probe ran: the new machine service did not start or never reached the check"
+                .into()
+        }
+        Some(p) if p["ok"] == true => {
+            "the last probe passed, but two passing probes in a row never came".into()
+        }
+        Some(p) => p["detail"]
+            .as_str()
+            .unwrap_or("the probe failed")
+            .to_string(),
+    }
 }
 
 fn read_job() -> Option<Job> {
@@ -645,9 +823,22 @@ fn os_key() -> Option<&'static str> {
 
 // ─── The service side ───────────────────────────────────────────────────────
 
+/// A gap this long between two ticks (every 10 s) means the computer slept.
+const SLEEP_GAP_MS: i64 = 120_000;
+/// No check this soon after a wake: a computer that just woke is often still
+/// locked, or has its display off, and its recorder fails until the person is
+/// back. An update installed then would be judged on that state.
+const WAKE_SETTLE: Duration = Duration::from_secs(600);
+
+/// Whether the computer slept between the tick at `last_ms` and now.
+pub fn woke(last_ms: i64, now_ms: i64) -> bool {
+    last_ms > 0 && now_ms - last_ms > SLEEP_GAP_MS
+}
+
 /// Owned by the machine service loop; `tick` costs nothing between checks.
 pub struct Updater {
     next_check: Instant,
+    last_tick_ms: i64,
     failures: u32,
     worker: Option<std::thread::JoinHandle<bool>>,
     ok_probes: u32,
@@ -668,6 +859,7 @@ impl Updater {
         };
         Updater {
             next_check: Instant::now() + delay,
+            last_tick_ms: 0,
             failures: 0,
             worker: None,
             ok_probes: 0,
@@ -681,11 +873,20 @@ impl Updater {
         self.verifying_job
     }
 
-    /// The machine loop reports one health probe; two good ones in a row verify the update.
-    pub fn note_probe(&mut self, ok: bool) {
+    /// Who must have a running recorder after the update in progress (see [`judge`]).
+    pub fn required(&self) -> Option<Vec<String>> {
+        read_job().and_then(|j| j.required)
+    }
+
+    /// The machine loop reports one health probe ([`judge`]); two good ones in a row verify
+    /// the update. Every probe is written to `probe.json`, so a failure names its reason.
+    pub fn note_probe(&mut self, result: std::result::Result<(), String>) {
         let Some(job) = read_job() else {
             return;
         };
+        let ok = result.is_ok();
+        let probe = json!({"version": job.to, "at_ms": now_ms(), "ok": ok, "detail": result.err()});
+        let _ = write_atomic(&probe_path(), probe.to_string().as_bytes());
         self.ok_probes = if ok { self.ok_probes + 1 } else { 0 };
         if self.ok_probes >= 2 && !test_fail_health() {
             let v = json!({"version": job.to, "at_ms": now_ms(), "pid": std::process::id()});
@@ -694,8 +895,16 @@ impl Updater {
         }
     }
 
-    pub fn tick(&mut self) {
+    /// One turn of the loop. `baseline` runs only when a check starts: it names the people
+    /// whose recorder runs now (see [`baseline`]), so the update can keep them recording.
+    pub fn tick(&mut self, baseline: impl FnOnce() -> Vec<String>) {
         self.ingest_result();
+        let now = now_ms();
+        if woke(self.last_tick_ms, now) && !test_hooks() {
+            // A check that came due during the sleep waits until the computer settles.
+            self.next_check = self.next_check.max(Instant::now() + WAKE_SETTLE);
+        }
+        self.last_tick_ms = now;
         let current = installed_version();
         // A freshly installed version proves itself before anything else.
         self.verifying_job = None;
@@ -726,7 +935,9 @@ impl Updater {
         }
         if Instant::now() >= self.next_check {
             self.next_check = Instant::now() + Duration::from_secs(3600);
-            self.worker = Some(std::thread::spawn(check_once));
+            prune_bad_on_disk(current.as_ref());
+            let required = baseline();
+            self.worker = Some(std::thread::spawn(move || check_once(required)));
         }
     }
 
@@ -740,21 +951,56 @@ impl Updater {
             return;
         };
         let mut s = read_state().unwrap_or_default();
-        // An installer that failed to run says nothing about the release: retry it later.
-        let bad = matches!(r.outcome.as_str(), "rolled_back" | "failed");
-        if bad && !s.bad.contains(&r.to) {
-            s.bad.push(r.to.clone());
-        }
-        s.last_result = Some(LastResult {
-            at_ms: r.at_ms,
-            from: r.from,
-            to: r.to,
-            outcome: r.outcome,
-            detail: r.detail,
-        });
-        s.updating_to = None;
+        fold_result(&mut s, r);
         write_state_exact(&s);
         let _ = std::fs::remove_file(result_path());
+    }
+}
+
+/// The state after one supervisor answer. `rolled_back` and `failed` mark the
+/// version bad. `install_failed` says little about the release, so it marks the
+/// version bad only after [`INSTALL_FAILS_BEFORE_BAD`] in a row.
+fn fold_result(s: &mut State, r: JobResult) {
+    let install_failed = r.outcome == "install_failed";
+    let mut bad = matches!(r.outcome.as_str(), "rolled_back" | "failed");
+    if install_failed {
+        let n = s.install_failures.entry(r.to.clone()).or_insert(0);
+        *n += 1;
+        if *n >= INSTALL_FAILS_BEFORE_BAD {
+            bad = true;
+        }
+    }
+    if bad || !install_failed {
+        s.install_failures.remove(&r.to);
+    }
+    if bad {
+        if !s.bad.contains(&r.to) {
+            s.bad.push(r.to.clone());
+        }
+        // A retry that failed again starts the wait again.
+        s.bad_at.insert(r.to.clone(), r.at_ms);
+    }
+    s.last_result = Some(LastResult {
+        at_ms: r.at_ms,
+        from: r.from,
+        to: r.to,
+        outcome: r.outcome,
+        detail: r.detail,
+    });
+    s.updating_to = None;
+}
+
+/// Apply [`prune_bad`] to `update.json`. Runs on the service thread, the only writer of `bad`.
+fn prune_bad_on_disk(installed: Option<&Version>) {
+    let Some(mut s) = read_state() else { return };
+    let (bad, bad_at) = prune_bad(&s.bad, &s.bad_at, installed, now_ms());
+    if bad != s.bad || bad_at != s.bad_at {
+        for v in s.bad.iter().filter(|v| !bad.contains(v)) {
+            log_line(&format!("{v} is no longer skipped"));
+        }
+        s.bad = bad;
+        s.bad_at = bad_at;
+        write_state_exact(&s);
     }
 }
 
@@ -951,7 +1197,8 @@ fn platform_signature(path: &Path) -> PlatformSig {
 }
 
 /// One check, in a worker thread. Returns whether to retry sooner than the normal cadence.
-fn check_once() -> bool {
+/// `required`: who had a running recorder when the check started.
+fn check_once(required: Vec<String>) -> bool {
     let mut st = read_state().unwrap_or_default();
     let policy = read_policy();
     let current = installed_version();
@@ -965,7 +1212,7 @@ fn check_once() -> bool {
     let channel = policy.channel.unwrap_or(build_channel);
     st.channel = channel.name().into();
     st.last_check_ms = Some(now_ms());
-    let outcome = run_check(&mut st, &policy, current.as_ref(), channel);
+    let outcome = run_check(&mut st, &policy, current.as_ref(), channel, required);
     let retry = outcome.is_err();
     let msg = match outcome {
         Ok(m) => m,
@@ -984,6 +1231,7 @@ fn run_check(
     policy: &Policy,
     current: Option<&Version>,
     channel: Channel,
+    required: Vec<String>,
 ) -> Result<String> {
     if !policy.enabled {
         return Ok("updates are turned off by policy".into());
@@ -1029,7 +1277,8 @@ fn run_check(
     if m.channel == channel.name() {
         st.latest = Some(m.version.clone());
     }
-    let (asset, version) = match decide(&m, current, channel, &st.bad, os) {
+    let (skipped, _) = prune_bad(&st.bad, &st.bad_at, Some(current), now_ms());
+    let (asset, version) = match decide(&m, current, channel, &skipped, os) {
         Decision::UpToDate => {
             return Ok(format!("up to date ({current}; newest is {})", m.version))
         }
@@ -1093,8 +1342,10 @@ fn run_check(
         health_secs: health_window().as_secs(),
         started_ms: now_ms(),
         claimed_ms: None,
+        required: Some(required),
     };
     let _ = std::fs::remove_file(verified_path());
+    let _ = std::fs::remove_file(probe_path());
     write_atomic(&job_path(), &serde_json::to_vec_pretty(&job)?)?;
     st.updating_to = Some(version.clone());
     write_state(st);
@@ -1355,14 +1606,20 @@ pub fn apply(job_file: &Path) -> Result<()> {
     }
     let (why, unhealthy) = match &installed {
         Err(e) => (format!("the installer failed: {e:#}"), false),
-        Ok(()) => (
-            format!(
-                "{} did not report healthy in {} s",
-                job.to,
-                window.as_secs()
-            ),
-            true,
-        ),
+        Ok(()) => {
+            let probe = std::fs::read(probe_path())
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+            (
+                format!(
+                    "{} did not report healthy in {} s: {}",
+                    job.to,
+                    window.as_secs(),
+                    unhealthy_reason(&job, probe.as_ref())
+                ),
+                true,
+            )
+        }
     };
     log_line(&format!("{} -> {}: {why}", job.from, job.to));
     // A release that ran and failed its health check is bad; an installer that could not run is not.
@@ -1376,8 +1633,8 @@ pub fn apply(job_file: &Path) -> Result<()> {
             &job,
             failed,
             Some(format!(
-                "{why}; no installer of {} to roll back to",
-                job.from
+                "{why}; no installer of {} to roll back to, so {} stays installed",
+                job.from, job.to
             )),
         );
     };
@@ -1567,15 +1824,229 @@ mod tests {
         assert!(!p.enabled && p.channel == Some(Channel::Dev));
     }
 
+    fn st(running: bool, state: &str, frame: i64) -> std::result::Result<String, String> {
+        Ok(json!({"recorder_running": running, "state": state, "inactive_reason": if running { Value::Null } else { json!("not_running") }, "counts": {"last_frame_ms": frame}}).to_string())
+    }
+
     #[test]
     fn health_needs_a_running_recorder_and_a_new_frame_while_recording() {
-        let s = |running, state: &str, frame| json!({"recorder_running": running, "state": state, "counts": {"last_frame_ms": frame}});
-        assert!(!person_ok(&s(false, "recording", 2000), 1000));
-        assert!(person_ok(&s(true, "recording", 2000), 1000));
-        assert!(!person_ok(&s(true, "recording", 900), 1000));
-        assert!(person_ok(&s(true, "paused", 0), 1000));
-        assert!(person_ok(&s(true, "permission_missing", 0), 1000));
-        assert!(!person_ok(&Value::Null, 1000));
+        assert!(person_health(&st(true, "recording", 2000), 1000).is_ok());
+        assert!(person_health(&st(true, "paused", 0), 1000).is_ok());
+        assert!(person_health(&st(true, "permission_missing", 0), 1000).is_ok());
+        let why = |s| person_health(&s, 61_000).unwrap_err();
+        assert_eq!(
+            why(st(false, "not_recording", 2000)),
+            "not_running (state not_recording, reason not_running)"
+        );
+        assert_eq!(
+            why(st(true, "recording", 20_000)),
+            "no_new_frame (state recording, last frame 41 s before the install)"
+        );
+        assert_eq!(
+            why(st(true, "recording", 0)),
+            "no_new_frame (state recording, no frame saved yet)"
+        );
+        assert!(why(Err("`--json status` did not finish in 90 s".into()))
+            .starts_with("status_command_failed (`--json status` did not finish"));
+        assert!(why(Ok("Error: no library".into())).starts_with("status_parse_error ("));
+        // macOS and Linux append stderr to stdout: a warning after the object is fine.
+        let noisy = format!(
+            "{}\nwarning: {{slow disk}}\n",
+            st(true, "recording", 70_000).unwrap()
+        );
+        assert!(person_health(&Ok(noisy), 61_000).is_ok());
+    }
+
+    #[test]
+    fn a_tick_gap_over_two_minutes_is_a_wake() {
+        assert!(!woke(0, 1_000_000), "the first tick is no wake");
+        assert!(!woke(1_000_000, 1_010_000), "the next tick 10 s later");
+        assert!(!woke(1_000_000, 1_120_000), "a slow tick of exactly the limit");
+        assert!(woke(1_000_000, 1_120_001));
+    }
+
+    fn probe(who: &str, active: bool, s: std::result::Result<String, String>) -> Probe {
+        Probe {
+            who: who.into(),
+            active,
+            status: s,
+        }
+    }
+
+    #[test]
+    fn judge_counts_only_active_people_that_recorded_before_the_update() {
+        let broken = st(false, "not_recording", 0);
+        let good = st(true, "recording", 2000);
+        // A disconnected session with no recorder does not fail the update.
+        let p = [
+            probe("session 1", true, good.clone()),
+            probe("session 3", false, broken.clone()),
+        ];
+        assert!(judge(&p, None, 1000).is_ok());
+        // An active session without a recorder fails it, and the reason names the session.
+        let p = [
+            probe("session 1", true, good.clone()),
+            probe("session 2", true, broken.clone()),
+        ];
+        assert_eq!(
+            judge(&p, None, 1000).unwrap_err(),
+            "session 2: not_running (state not_recording, reason not_running)"
+        );
+        // ...unless its recorder did not run before the update either.
+        let before = ["session 1".to_string()];
+        assert!(judge(&p, Some(&before), 1000).is_ok());
+        // Nobody signed in: the new service runs, which is all there is to prove.
+        assert!(judge(&[], Some(&[]), 1000).is_ok());
+        // The baseline is who records now, active sessions only.
+        let p = [
+            probe("session 1", true, good.clone()),
+            probe("session 2", true, broken),
+            probe("session 3", false, good),
+            probe("session 4", true, Err("no token".into())),
+        ];
+        assert_eq!(baseline(&p), vec!["session 1".to_string()]);
+    }
+
+    #[test]
+    fn the_failure_reason_quotes_the_new_services_last_probe() {
+        let job = Job {
+            from: "0.13.57".into(),
+            to: "0.13.58".into(),
+            installer: PathBuf::new(),
+            previous: None,
+            health_secs: 900,
+            started_ms: 5000,
+            claimed_ms: None,
+            required: None,
+        };
+        let p = |version: &str, at: i64, ok: bool, detail: Value| json!({"version": version, "at_ms": at, "ok": ok, "detail": detail});
+        assert_eq!(
+            unhealthy_reason(
+                &job,
+                Some(&p(
+                    "0.13.58",
+                    6000,
+                    false,
+                    json!("session 2: no_new_frame (…)")
+                ))
+            ),
+            "session 2: no_new_frame (…)"
+        );
+        assert!(unhealthy_reason(&job, None).starts_with("no health probe ran"));
+        // A probe from before the install, or of another version, is not this update's.
+        assert!(
+            unhealthy_reason(&job, Some(&p("0.13.58", 4000, false, json!("old"))))
+                .starts_with("no health probe ran")
+        );
+        assert!(
+            unhealthy_reason(&job, Some(&p("0.13.59", 6000, false, json!("x"))))
+                .starts_with("no health probe ran")
+        );
+        assert!(
+            unhealthy_reason(&job, Some(&p("0.13.58", 6000, true, Value::Null)))
+                .contains("two passing probes")
+        );
+        // A job from an older build has no baseline.
+        let old: Job = serde_json::from_value(json!({"from": "a", "to": "b", "installer": "/x", "previous": null, "health_secs": 1, "started_ms": 1})).unwrap();
+        assert_eq!(old.required, None);
+    }
+
+    #[test]
+    fn a_bad_version_is_skipped_for_a_week_and_a_newer_one_is_always_tried() {
+        let day = 86_400_000i64;
+        let now = 100 * day;
+        let at = |pairs: &[(&str, i64)]| {
+            pairs
+                .iter()
+                .map(|(v, t)| (v.to_string(), *t))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let bad = vec![
+            "0.13.56".to_string(),
+            "0.13.58".into(),
+            "0.13.59".into(),
+            "0.13.60".into(),
+        ];
+        let (keep, kept_at) = prune_bad(
+            &bad,
+            &at(&[
+                ("0.13.56", now - day),
+                ("0.13.58", now - day),
+                ("0.13.59", now - 8 * day),
+            ]),
+            Some(&v("0.13.57")),
+            now,
+        );
+        // 0.13.56 is older than the installed build, 0.13.59 waited a week; 0.13.60 has no time yet.
+        assert_eq!(keep, vec!["0.13.58".to_string(), "0.13.60".into()]);
+        assert_eq!(kept_at, at(&[("0.13.58", now - day), ("0.13.60", now)]));
+        // The installed version itself (a failed update that could not roll back) is dropped too.
+        assert!(prune_bad(
+            &["0.13.57".into()],
+            &BTreeMap::new(),
+            Some(&v("0.13.57")),
+            now
+        )
+        .0
+        .is_empty());
+        // A skipped version blocks only itself: a newer release installs.
+        let m = serde_json::from_str::<Manifest>(&manifest("0.13.61", "stable", false)).unwrap();
+        assert!(matches!(
+            decide(&m, &v("0.13.57"), Channel::Stable, &keep, "linux"),
+            Decision::Install(..)
+        ));
+    }
+
+    #[test]
+    fn a_broken_installer_is_skipped_after_three_install_failures_in_a_row() {
+        let res = |to: &str, outcome: &str, at_ms: i64| JobResult {
+            from: "0.13.57".into(),
+            to: to.into(),
+            outcome: outcome.into(),
+            detail: None,
+            at_ms,
+        };
+        let mut s = State { updating_to: Some("0.13.58".into()), ..Default::default() };
+        fold_result(&mut s, res("0.13.58", "install_failed", 1));
+        fold_result(&mut s, res("0.13.58", "install_failed", 2));
+        assert!(s.bad.is_empty(), "two failures may be a locked file: retry");
+        assert_eq!(s.install_failures.get("0.13.58"), Some(&2));
+        assert_eq!(s.updating_to, None);
+        fold_result(&mut s, res("0.13.58", "install_failed", 3));
+        assert_eq!(s.bad, ["0.13.58"], "the third marks it bad");
+        assert_eq!(s.bad_at.get("0.13.58"), Some(&3));
+        assert!(s.install_failures.is_empty());
+        // prune_bad then skips it for a week, and a newer release still installs.
+        let (kept, _) = prune_bad(&s.bad, &s.bad_at, Some(&v("0.13.57")), 4);
+        assert_eq!(kept, ["0.13.58"]);
+    }
+
+    #[test]
+    fn a_good_install_clears_the_install_failure_count() {
+        let mut s = State::default();
+        let r = |outcome: &str| JobResult { from: "a".into(), to: "0.13.58".into(), outcome: outcome.into(), detail: None, at_ms: 1 };
+        fold_result(&mut s, r("install_failed"));
+        fold_result(&mut s, r("updated"));
+        assert!(s.install_failures.is_empty());
+        assert!(s.bad.is_empty());
+        fold_result(&mut s, r("rolled_back"));
+        assert_eq!(s.bad, ["0.13.58"], "a failed health check marks bad at once");
+    }
+
+    #[test]
+    fn a_state_file_from_an_older_build_still_reads() {
+        let s: State = serde_json::from_value(json!({
+            "installed": "0.13.57", "channel": "stable", "enabled": true, "latest": "0.13.58",
+            "last_check_ms": 1, "last_check": "x", "last_result": null, "bad": ["0.13.58"], "updating_to": null,
+        }))
+        .unwrap();
+        assert!(s.bad_at.is_empty());
+        let r = summarize(&s);
+        assert_eq!(r["badVersions"], json!(["0.13.58"]));
+        assert_eq!(
+            r["skipped"],
+            json!([{"version": "0.13.58", "failedAtMs": null, "retryAtMs": null}])
+        );
     }
 
     #[test]
@@ -1593,6 +2064,18 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(summarize(&s)["status"], "failed");
+        s.bad = vec!["0.13.58".into()];
+        s.bad_at.insert("0.13.58".into(), 1000);
+        s.last_check = Some("no update: 0.13.58 is marked bad on this computer".into());
+        let r = summarize(&s);
+        assert_eq!(
+            r["lastCheck"],
+            "no update: 0.13.58 is marked bad on this computer"
+        );
+        assert_eq!(
+            r["skipped"],
+            json!([{"version": "0.13.58", "failedAtMs": 1000, "retryAtMs": 1000 + BAD_RETRY_AFTER.as_millis() as i64}])
+        );
         // A newer release clears the failure of the older one.
         s.latest = Some("0.13.59".into());
         assert_eq!(summarize(&s)["status"], "behind");

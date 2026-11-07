@@ -1,5 +1,5 @@
 /**
- * Files feature hooks — all backed by the OpenCode server API.
+ * Files feature hooks — all backed by the sandbox daemon's file API.
  */
 
 // Directory listing

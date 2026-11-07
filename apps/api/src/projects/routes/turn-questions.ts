@@ -1,6 +1,6 @@
 /** Agent questions: the sandbox `turn-question` relay and the session question read/answer routes. */
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
@@ -21,10 +21,10 @@ import {
   renderAnswerPrompt,
   resolvePendingQuestion,
 } from '../lib/pending-questions';
+import { askExpiresAt, liveWaitMsFor, surfaceSessionIdOf } from '../lib/session-asks';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, sessionIsTombstoned } from '../lib/access';
 import {
-  normalizeRuntimeRelayBody,
   type TurnQuestionRelayBody,
   TurnQuestionRelayBodySchema,
 } from '@kortix/api-contract/runtime-relay';
@@ -32,10 +32,9 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
-import { notificationsEnabled } from '../../notifications/enabled';
 import { notifySessionEvent } from '../../notifications/session-push';
-import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
 import { askNotificationContext } from '../lib/notification-recipients';
+import { workspaceIdParam } from '../../shared/route-params';
 
 export function registerTurnQuestionsRoutes(): void {
   // POST /v1/projects/:projectId/turn-question
@@ -43,18 +42,18 @@ export function registerTurnQuestionsRoutes(): void {
   // agent calls the `question` tool, the sandbox relays its RuntimeQuestion[]
   // (`@kortix/api-contract/transcript`) here.
   // We post a Block Kit form, block on Submit, return `answers: string[][]`,
-  // and the sandbox POSTs the same payload to opencode's
-  // /question/{requestID}/reply so the tool resumes.
+  // and the sandbox POSTs the same payload to the box's
+  // `/question/{requestID}/reply` route so the tool resumes.
 
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/turn-question',
+      path: '/{workspaceId}/turn-question',
       tags: ['projects'],
       summary: 'Ask the user a question from a turn',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         // Documents the relay body; the handler owns validation (its own 400s).
         body: { content: { 'application/json': { schema: TurnQuestionRelayBodySchema.or(AnyObject) } } },
       },
@@ -64,7 +63,7 @@ export function registerTurnQuestionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
 
       // The session this credential is BOUND to, when it is a sandbox token.
       // Null for a human caller.
@@ -93,7 +92,7 @@ export function registerTurnQuestionsRoutes(): void {
           )
           .limit(1);
         if (!sandbox) {
-          return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+          return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
         }
         callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;
       } else {
@@ -106,8 +105,7 @@ export function registerTurnQuestionsRoutes(): void {
 
       let body: Partial<TurnQuestionRelayBody>;
       try {
-        // A daemon built before W3 names the runtime session `opencode_session_id`.
-        body = normalizeRuntimeRelayBody((await c.req.json()) as typeof body);
+        body = (await c.req.json()) as typeof body;
       } catch {
         return c.json({ error: 'Invalid JSON body' }, 400);
       }
@@ -141,10 +139,9 @@ export function registerTurnQuestionsRoutes(): void {
           accountId: projectSessions.accountId,
           origin: projectSessions.origin,
           metadata: projectSessions.metadata,
-          projectMetadata: projects.metadata,
+          parentSessionId: projectSessions.parentSessionId,
         })
         .from(projectSessions)
-        .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
         .where(
           and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
         )
@@ -152,12 +149,6 @@ export function registerTurnQuestionsRoutes(): void {
       if (!turnQuestionSession) {
         return c.json({ error: 'Not found' }, 404);
       }
-      // KRTX-1742 is behind the project's notification_center flag. Off, this
-      // route keeps its earlier contract: any caller's new question pushes the
-      // session creator before the relay, and a relay that throws fails the
-      // request.
-      const notificationCenter = notificationsEnabled(turnQuestionSession.projectMetadata);
-
       if (!Array.isArray(body.questions) || body.questions.length === 0) {
         return c.json({ error: 'at least one question is required' }, 400);
       }
@@ -198,7 +189,7 @@ export function registerTurnQuestionsRoutes(): void {
       // extension: the reaper renews nothing for it and ends it after the wait
       // bound (`turnWaitingMaxMs`, box-reaper.ts `holdWaitingTurn`), and its box
       // is parked. The bounded-lifetime invariant depends on it. What parking
-      // used to destroy is the question itself: opencode restarts cold, so the
+      // used to destroy is the question itself: the runtime restarts cold, so the
       // user returned to a session that had forgotten what it asked. Storing it
       // out here lets the box die on time and the conversation survive it. See
       // lib/pending-questions.ts.
@@ -208,6 +199,10 @@ export function registerTurnQuestionsRoutes(): void {
       // deleted.
       const resolvedAccountId = (c as any).get('accountId') as string | undefined;
       const pendingRequestId = body.request_id?.trim() || `q-${sessionId}`;
+      // A daemon that parks says so (`parkable`): the question then outlives
+      // the turn and waits in Review until a person answers (lib/session-asks.ts).
+      const parkable = (body as { parkable?: unknown }).parkable === true;
+      const liveWaitMs = liveWaitMsFor(turnQuestionSession);
       let notify = false;
       let pendingId: string | null = null;
       if (resolvedAccountId) {
@@ -216,8 +211,11 @@ export function registerTurnQuestionsRoutes(): void {
           projectId,
           sessionId,
           requestId: pendingRequestId,
-          opencodeSessionId: body.runtime_session_id ?? null,
+          runtimeSessionId: body.runtime_session_id ?? null,
           questions,
+          parkable,
+          surfaceSessionId: await surfaceSessionIdOf(sessionId, turnQuestionSession),
+          expiresAt: parkable ? askExpiresAt() : null,
         }).catch((err) => {
           // Never fail the relay on a bookkeeping error — the agent is blocked and
           // the channel render is still worth attempting.
@@ -230,13 +228,7 @@ export function registerTurnQuestionsRoutes(): void {
         // session's own sandbox notifies (KRTX-1742): a person's token may
         // store a question, but its text must never reach other people's
         // inbox, phone and email.
-        notify = notificationCenter && recorded?.inserted === true && callerSandboxSessionId !== null;
-        // Flag off: the session creator's phones, for any caller, before the relay.
-        if (!notificationCenter && recorded?.inserted) {
-          void notifySessionPushLegacy({ type: 'question', sessionId, projectId, question: questions[0]?.question }).catch(
-            (err) => logger.warn('[push] question notification failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
-          );
-        }
+        notify = recorded?.inserted === true && callerSandboxSessionId !== null;
       }
 
       // Non-blocking: post the question(s) into the thread and return immediately
@@ -250,7 +242,6 @@ export function registerTurnQuestionsRoutes(): void {
       // would make the relay look broken for every non-Slack session.
       // A relay that throws (a DB read before anything is posted) must not cost
       // the stored question its notification: the daemon never retries it.
-      // Flag off, the push went out above and a throw fails the request.
       const runtimeRequestId = body.request_id?.trim();
       // Only the session's own sandbox posts into a session-addressed chat
       // (Telegram): a person's token may store a question, but its text never
@@ -266,12 +257,10 @@ export function registerTurnQuestionsRoutes(): void {
       // A Slack or Teams button names the stored question only when the runtime
       // named it, for the same reason.
       const buttonsFor = runtimeRequestId ? pendingId : null;
-      const result = notificationCenter
-        ? await relayTurnQuestion(sessionId, questions, chat, buttonsFor).catch((err): { ok: false; error: string } => {
-            logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
-            return { ok: false, error: 'relay_failed' };
-          })
-        : await relayTurnQuestion(sessionId, questions, chat, buttonsFor);
+      const result = await relayTurnQuestion(sessionId, questions, chat, buttonsFor).catch((err): { ok: false; error: string } => {
+        logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+        return { ok: false, error: 'relay_failed' };
+      });
 
       // Release the runtime's BLOCKING `question` call for a chat-channel session
       // — see channels/question-release.ts. Keyed on the session's own metadata,
@@ -295,7 +284,6 @@ export function registerTurnQuestionsRoutes(): void {
             threadCarriesAsk: channel !== null && result.ok,
           },
           {
-            notificationCenter: true,
             context: () =>
               askNotificationContext({
                 sessionId,
@@ -331,8 +319,10 @@ export function registerTurnQuestionsRoutes(): void {
       }
 
       // A trigger-started session has nobody to answer: release the call now so
-      // the turn finishes and the next fire is not queued behind it.
-      if (!channel && runtimeRequestId && isUnattendedSessionMetadata(turnQuestionSession.metadata)) {
+      // the turn finishes and the next fire is not queued behind it. A daemon
+      // that parks needs no release: `live_wait_ms: 0` parks the question at
+      // once, and it waits in Review instead of being answered by a sentinel.
+      if (!channel && runtimeRequestId && !parkable && isUnattendedSessionMetadata(turnQuestionSession.metadata)) {
         const answers = Array.from({ length: Math.max(1, questions.length) }, () => [unattendedQuestionSentinel()]);
         const released = await releaseRuntimeQuestion(sessionId, runtimeRequestId, answers);
         if (released === 'unreachable') {
@@ -347,10 +337,11 @@ export function registerTurnQuestionsRoutes(): void {
         }
       }
 
+      // `live_wait_ms` (AskRelayResponse): how long the runtime holds the call before it parks.
       if (!result.ok) {
-        return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error });
+        return c.json({ ok: true, persisted: true, answers: [], channel_error: result.error, live_wait_ms: liveWaitMs });
       }
-      return c.json({ ok: true, persisted: true, answers: result.answers });
+      return c.json({ ok: true, persisted: true, answers: result.answers, live_wait_ms: liveWaitMs });
     },
   );
 
@@ -369,15 +360,15 @@ export function registerTurnQuestionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/question',
+      path: '/{workspaceId}/sessions/{sessionId}/question',
       tags: ['sessions'],
       summary: 'Get the pending agent question of a session',
       ...auth,
-      request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(AnyObject, 'Open question, or null'), ...errors(404) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -408,18 +399,18 @@ export function registerTurnQuestionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/question',
+      path: '/{workspaceId}/sessions/{sessionId}/question',
       tags: ['sessions'],
       summary: 'Answer the pending agent question of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: AnyObject } } },
       },
       responses: { 200: json(AnyObject, 'Answer delivered'), ...errors(400, 404, 409) },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       // The `question` tool exists so the agent YIELDS TO A HUMAN. An
       // agent-session token is scoped to its own session, which is precisely the
@@ -478,6 +469,8 @@ export function registerTurnQuestionsRoutes(): void {
         idempotencyKey: `question:${sessionId}:${requestId}`,
         sessionId,
         text: renderAnswerPrompt(open.questions, answers),
+        // Harness context, not the person's words: the transcript draws it as the answered question.
+        parts: [{ type: 'text', text: renderAnswerPrompt(open.questions, answers), synthetic: true }],
         userId: loaded.userId,
       });
 

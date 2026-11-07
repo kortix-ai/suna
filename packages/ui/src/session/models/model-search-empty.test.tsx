@@ -22,7 +22,7 @@ test('single-model search explains the available scope and opens the upgrade pat
   if (!renderer) throw new Error('Renderer not mounted');
   const mounted = renderer;
   expect(JSON.stringify(mounted.toJSON())).toContain(
-    'Only 1 model is available in this project.',
+    'Only 1 model is available in this workspace.',
   );
   const buttons = mounted.root.findAllByType('button');
   const upgrade = buttons.find((button) => button.props.children === 'Upgrade');

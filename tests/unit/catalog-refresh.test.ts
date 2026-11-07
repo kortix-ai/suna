@@ -3,13 +3,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { readWorkflow } from '../src/fixtures/repo';
 
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 for (const existing of [false, true]) {
   test(`catalog refresh leaves ${existing ? 'an existing' : 'a new'} PR open for review`, () => {
-    const workflow = readFileSync(resolve(import.meta.dirname, '../../.github/workflows/catalog-refresh.yml'), 'utf8');
+    const workflow = readWorkflow('catalog-refresh.yml');
     // Execute the publication step, not a duplicate of its implementation.
     const script = workflow.slice(workflow.lastIndexOf('        run: |\n') + '        run: |\n'.length)
       .split('\n').map((line) => line.replace(/^          /, '')).join('\n')

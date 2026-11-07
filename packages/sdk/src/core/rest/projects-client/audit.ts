@@ -16,8 +16,6 @@ export interface AuditEvent {
   session_id: string | null;
   /** The runtime session the event came from. Served by APIs since W4. */
   runtime_session_id?: string | null;
-  /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
-  opencode_session_id?: string | null;
   turn_id?: string | null;
   message_id?: string | null;
   tool_call_id?: string | null;
@@ -213,13 +211,20 @@ export async function getAccountAuditActivity(accountId: string, options: GetAcc
 }
 
 /** Canonical project-scoped audit timeline. The API binds project scope server-side. */
-export async function listProjectAudit(projectId: string, options?: ListAccountAuditOptions) {
+export async function listWorkspaceAudit(projectId: string, options?: ListAccountAuditOptions) {
   // The path carries the project; a caller-passed projectId stays off the wire.
+  // `/workspaces/:id/audit` is the workspace audit log; this slice's canonical
+  // name is `/workspaces/:id/audit/events` (`@kortix/shared/workspace-routes`).
+  // An API older than that name answers its unknown-route 404 and the call
+  // retries on `/projects/:id/audit` (`withWorkspaceRouteFallback`).
   const qs = auditFilterQuery(auditFilter({ ...options, projectId: undefined })).toString();
   return unwrap(
-    await backendApi.get<AuditEventList>(`/projects/${projectId}/audit${qs ? `?${qs}` : ''}`),
+    await backendApi.get<AuditEventList>(`/workspaces/${projectId}/audit/events${qs ? `?${qs}` : ''}`),
   );
 }
+
+/** @deprecated Use `listWorkspaceAudit`. Kept permanently. */
+export const listProjectAudit = listWorkspaceAudit;
 
 export interface ExportAccountAuditOptions extends ListAccountAuditOptions {
   /** Export format. */

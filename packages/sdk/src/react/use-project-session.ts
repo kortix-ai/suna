@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import { getProjectSession, type ProjectSession } from '../core/rest/projects-client';
+import { getWorkspaceSession, type ProjectSession } from '../core/rest/projects-client';
 import { readProjectSessionRow } from '../core/session/project-session-read';
 
 import { contract } from './query-contracts';
@@ -15,7 +15,7 @@ import { qk } from './query-keys';
  * and the migration that unified their KEY left their CONTRACTS apart — the
  * narrower half of the same bug:
  *
- *   use-canonical-opencode-session.ts   staleTime: 10_000, showErrors: false
+ *   use-canonical-runtime-session.ts   staleTime: 10_000, showErrors: false
  *   session-files-panel.tsx             contract('inventory'), default errors
  *   session-changes-shared.tsx          contract('inventory'), default errors
  *
@@ -43,7 +43,7 @@ import { qk } from './query-keys';
  * disagree — the session page skips the read entirely when `POST /start`
  * already handed it the pin.
  */
-export function useProjectSession(
+export function useWorkspaceSession(
   projectId: string | undefined,
   sessionId: string | undefined,
   options?: { enabled?: boolean },
@@ -57,9 +57,12 @@ export function useProjectSession(
     queryFn: (context) =>
       readProjectSessionRow(projectId as string, sessionId as string, {
         bundle: context?.client?.getQueryData(queryKey) === undefined,
-        fetchRow: getProjectSession,
+        fetchRow: getWorkspaceSession,
       }),
     enabled: Boolean(projectId) && Boolean(sessionId) && (options?.enabled ?? true),
     ...contract('inventory'),
   });
 }
+
+/** @deprecated Use `useWorkspaceSession`. Kept permanently. */
+export const useProjectSession = useWorkspaceSession;

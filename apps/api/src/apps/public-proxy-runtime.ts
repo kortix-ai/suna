@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { appDeployments, appRuntimes, apps, projects } from '@kortix/db';
+import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
@@ -9,6 +9,9 @@ import { AppHostingProvider, instanceMachine } from './hosting';
 import { appWakeSupersededResponse } from './public-proxy-status';
 import { logger } from '../lib/logger';
 import { releaseConfigOf, servingGroups } from './release-config';
+import { projectsView } from '../workspaces/rows';
+import { transitionAppRuntime } from './runtime-status';
+
 const WAKE_LEASE_MS = 2 * 60_000;
 
 /**
@@ -27,10 +30,10 @@ export async function loadPublicAppState(routeKey: string, serviceName = 'http')
   const [loaded] = await db
     .select({ app: apps, active: appDeployments })
     .from(apps)
-    .innerJoin(projects, eq(projects.projectId, apps.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, apps.projectId))
     .leftJoin(appDeployments, eq(appDeployments.deploymentId, apps.activeDeploymentId))
     // An App of a deleted workspace is not served (KRTX-1714).
-    .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt), eq(projects.status, 'active')))
+    .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt), eq(projectsView.status, 'active')))
     .limit(1);
   if (!loaded) return null;
   const app = loaded.app;
@@ -109,6 +112,22 @@ export async function loadPublicApp(routeKey: string, service = 'http') {
   };
 }
 
+/** True when the runtime was `stopping` and the stop finished before `deadline`. */
+async function waitWhileStopping(runtimeId: string, deadline: number): Promise<boolean> {
+  let sawStopping = false;
+  while (Date.now() < deadline) {
+    const [runtime] = await db
+      .select({ status: appRuntimes.status })
+      .from(appRuntimes)
+      .where(eq(appRuntimes.runtimeId, runtimeId))
+      .limit(1);
+    if (runtime?.status !== 'stopping') return sawStopping;
+    sawStopping = true;
+    await Bun.sleep(250);
+  }
+  return false;
+}
+
 async function waitForWake(runtimeId: string, deadline: number) {
   while (Date.now() < deadline) {
     const [runtime] = await db
@@ -155,20 +174,22 @@ type App = LoadedApp['app'];
 async function claimWakeLease(runtimeId: string) {
   const owner = `${config.INTERNAL_KORTIX_ENV}:${process.pid}:${randomUUID()}`;
   const now = new Date();
-  const [leased] = await db.update(appRuntimes).set({
-    status: 'starting', wakeLeaseOwner: owner,
-    wakeLeaseUntil: new Date(now.getTime() + WAKE_LEASE_MS), updatedAt: now,
-  }).where(and(eq(appRuntimes.runtimeId, runtimeId),
-    or(isNull(appRuntimes.wakeLeaseUntil), lt(appRuntimes.wakeLeaseUntil, now)))).returning();
-  return { owner, leased };
+  // Never a row the idle reaper is stopping (`stopping`): its final write
+  // would land over the box this wake starts. The caller waits for the stop.
+  const leased = await transitionAppRuntime(
+    'wake',
+    and(eq(appRuntimes.runtimeId, runtimeId), or(isNull(appRuntimes.wakeLeaseUntil), lt(appRuntimes.wakeLeaseUntil, now))),
+    { wakeLeaseOwner: owner, wakeLeaseUntil: new Date(now.getTime() + WAKE_LEASE_MS), updatedAt: now },
+  );
+  return { owner, leased: leased ?? undefined };
 }
 
 async function stopWakingRuntime(runtimeId: string, owner: string) {
   const stoppedAt = new Date();
-  await db.update(appRuntimes).set({
-    status: 'stopped', stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null,
+  await transitionAppRuntime('stop', and(eq(appRuntimes.runtimeId, runtimeId), eq(appRuntimes.wakeLeaseOwner, owner)), {
+    stoppedAt, activityLeaseUntil: null, idleDeadlineAt: null,
     wakeLeaseOwner: null, wakeLeaseUntil: null, updatedAt: stoppedAt,
-  }).where(and(eq(appRuntimes.runtimeId, runtimeId), eq(appRuntimes.wakeLeaseOwner, owner)));
+  });
   return stoppedAt;
 }
 
@@ -183,11 +204,11 @@ async function publishWake(app: App, loaded: LoadedApp, leased: Runtime, owner: 
     throw appWakeSupersededResponse();
   }
   const readyAt = new Date();
-  const [running] = await db.update(appRuntimes).set({
-    status: 'running', startedAt: readyAt, stoppedAt: null, wakeLeaseOwner: null,
+  const running = await transitionAppRuntime('wakeReady', and(eq(appRuntimes.runtimeId, leased.runtimeId), eq(appRuntimes.wakeLeaseOwner, owner)), {
+    startedAt: readyAt, stoppedAt: null, wakeLeaseOwner: null,
     wakeLeaseUntil: null, idleDeadlineAt: new Date(readyAt.getTime() + app.idleTimeoutSeconds * 1000),
     updatedAt: readyAt,
-  }).where(and(eq(appRuntimes.runtimeId, leased.runtimeId), eq(appRuntimes.wakeLeaseOwner, owner))).returning();
+  });
   if (!running) throw new Error('App wake lease was lost after provider start');
   await startComputeSession({
     sandboxId: running.runtimeId, accountId: running.accountId, provider,
@@ -222,7 +243,11 @@ export async function ensureAppRuntimeRunning(
   // exactly the cap from waking the very App it owns.
   await assertAppComputeAllowed(app, { excludeRuntimeId: loaded.runtime.runtimeId });
 
-  const { owner, leased } = await claimWakeLease(loaded.runtime.runtimeId);
+  let { owner, leased } = await claimWakeLease(loaded.runtime.runtimeId);
+  // The idle reaper is stopping the box: let its stop finish, then wake it.
+  if (!leased && (await waitWhileStopping(loaded.runtime.runtimeId, Date.now() + WAKE_LEASE_MS))) {
+    ({ owner, leased } = await claimWakeLease(loaded.runtime.runtimeId));
+  }
   if (!leased) return waitForWake(loaded.runtime.runtimeId, Date.now() + WAKE_LEASE_MS);
 
   try {

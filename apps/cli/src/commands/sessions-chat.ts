@@ -16,7 +16,7 @@ import {
   toolCallRawOutput,
 } from '@kortix/sdk';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
-import { formatRelative, parseRoomDigest, parseRoomPrompt } from '@kortix/shared';
+import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
@@ -155,7 +155,7 @@ function blockToText(block: SessionLogBlock, streaming: boolean): string {
     case 'compaction':
       return block.summary ?? '';
     case 'harness': {
-      // A file the harness keeps in its own form (OpenCode inlines a text file) holds its v1 part.
+      // A file the harness keeps in its own form (a text file inlined by the harness) holds its v1 part.
       const data = block.data as { type?: unknown; filename?: unknown } | null;
       return block.kind === 'file' && data?.type === 'file' ? fileText(typeof data.filename === 'string' ? data.filename : undefined) : '';
     }
@@ -174,35 +174,8 @@ export function logMessageText(message: SessionLogMessage): string {
     .join('\n');
 }
 
-/**
- * The header a delivered room message prints under instead of `user`: where it
- * came from and who sent it (`agent session 3f2a1b9c (builder)` or a person).
- * Null for any other message.
- */
-export function roomMessageHeader(text: string): { header: string; body: string } | null {
-  const digest = parseRoomDigest(text);
-  if (digest) {
-    const range = digest.fromSeq === digest.toSeq ? `#${digest.toSeq}` : `#${digest.fromSeq}–#${digest.toSeq}`;
-    const lines = digest.lines.map((line) => `#${line.seq} ${line.sender}: ${line.text}`);
-    if (digest.more) lines.push(`… and ${digest.more} more`);
-    return { header: `room ${digest.room} ${range} · ${digest.count} new message${digest.count === 1 ? '' : 's'}`, body: lines.join('\n') };
-  }
-  const room = parseRoomPrompt(text);
-  if (!room) return null;
-  const who = room.senderKind === 'session' ? `agent session ${room.sender}` : room.sender;
-  const reply = room.replyTo ? ` ↳#${room.replyTo}` : '';
-  return { header: `room ${room.room} #${room.seq} · from ${who}${reply}`, body: room.text };
-}
-
 /** Print one session-log message: a role header, its blocks as text, and its error. */
 export function printLogMessage(message: SessionLogMessage): void {
-  const roomEvent = message.role === 'user' ? roomMessageHeader(logMessageText(message)) : null;
-  if (roomEvent) {
-    const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';
-    process.stdout.write(`\n${C.cyan}${C.bold}${roomEvent.header}${C.reset} ${C.faded}${ts}${C.reset}\n`);
-    for (const line of roomEvent.body.split('\n')) process.stdout.write(`  ${line}\n`);
-    return;
-  }
   const role = message.kind === 'compaction' ? 'compaction' : message.role;
   const color = role === 'user' || role === 'system' ? C.green : C.cyan;
   const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';
@@ -270,14 +243,14 @@ session (or starts one with --new).
                           synchronous subagent calls).
   --new                   Start a fresh session and chat with it.
   --agent <name>          Agent to run for this turn (defaults to the session's).
-  --project <id>          Operate on this project id (default: linked).
+  --workspace <id>        Operate on this workspace id (default: linked).
   --host <name>           Operate against a non-default Kortix host.
   -h, --help              Show this help.
 
 In the REPL: type a message + Enter to send. Ctrl-D or \`exit\` quits.`;
 
 /**
- * `kortix sessions chat` — send prompts to a session's OpenCode agent and
+ * `kortix sessions chat` — send prompts to a session's agent and
  * print replies. One-shot with --prompt; interactive REPL otherwise.
  */
 export async function runSessionsChat(argv: string[]): Promise<number> {
@@ -296,7 +269,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   let queue = false;
   let steer = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     promptText = takeFlagValue(rest, ['--prompt', '-p']);
     agent = takeFlagValue(rest, ['--agent']);
@@ -499,7 +472,7 @@ async function resolveChatSessionId(
     if (agent) body.agent_name = agent;
     try {
       const created = await ctx.client.post<ProjectSession>(
-        `/projects/${ctx.projectId}/sessions`,
+        `/workspaces/${ctx.projectId}/sessions`,
         body,
       );
       if (!quiet) {
@@ -548,7 +521,7 @@ export async function chooseRunningSession(
 ): Promise<ProjectSession | null | 'error'> {
   let sessions: ProjectSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+    sessions = await ctx.client.get<ProjectSession[]>(`/workspaces/${ctx.projectId}/sessions`);
   } catch (err) {
     surfaceApiError(err);
     return 'error';
@@ -612,7 +585,7 @@ async function waitForRunning(
   for (let i = 0; i < 75; i += 1) {
     let s: ProjectSession;
     try {
-      s = await ctx.client.get<ProjectSession>(`/projects/${ctx.projectId}/sessions/${sessionId}`);
+      s = await ctx.client.get<ProjectSession>(`/workspaces/${ctx.projectId}/sessions/${sessionId}`);
     } catch (err) {
       surfaceApiError(err);
       return false;
@@ -651,7 +624,7 @@ session is not read live.
                     the log does not hold yet carry
                     "ext": {"kortix": {"data": {"provisional": true}}}
                     (their seq is not stored yet).
-  --project <id>    Operate on this project id (default: linked).
+  --workspace <id>  Operate on this workspace id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
 
@@ -684,7 +657,7 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
   let json = false;
   // `--schema v2` is the only output; `--schema v1` (the OpenCode-shaped rows) is gone.
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     limitRaw = takeFlagValue(rest, ['--limit', '-n']);
     schemaRaw = takeFlagValue(rest, ['--schema']);
@@ -755,7 +728,11 @@ export async function runSessionsLog(argv: string[]): Promise<number> {
       liveError = err instanceof SessionRuntimeError ? (err.cause ?? err) : err;
     }
   }
-  const why = liveError !== null ? 'its sandbox is not answering' : `session is ${session.status}`;
+  // A 403 is the box refusing this credential (the caller is not allowed to read this box's live log), not a box that is down.
+  const refused = (liveError as { status?: unknown } | null)?.status === 403;
+  const why = liveError === null
+    ? `session is ${session.status}`
+    : refused ? 'the live turn is not open to this credential' : 'its sandbox is not answering';
 
   let stored: StoredSessionLog | null = null;
   const handle = kortixFromAuth(auth).session(projectId, session.session_id);
@@ -1053,7 +1030,7 @@ to include stopped ones. Aliases: \`overview\`, \`ps\`.
                     stopped), attention (question, approval or null),
                     agent_handle and team_lead_session_id are the agent
                     board's fields (null on an older API).
-  --project <id>    Operate on this project id (default: linked).
+  --workspace <id>  Operate on this workspace id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
 
@@ -1090,7 +1067,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
   let all = false;
   let json = false;
   try {
-    projectArg = takeFlagValue(rest, ['--project']);
+    projectArg = takeFlagValue(rest, ['--project', '--workspace']);
     hostArg = takeFlagValue(rest, ['--host']);
     all = takeFlagBool(rest, ['--all', '-a']);
     json = takeFlagBool(rest, ['--json']);
@@ -1110,7 +1087,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
 
   let sessions: ProjectSession[];
   try {
-    sessions = await ctx.client.get<ProjectSession[]>(`/projects/${ctx.projectId}/sessions`);
+    sessions = await ctx.client.get<ProjectSession[]>(`/workspaces/${ctx.projectId}/sessions`);
   } catch (err) {
     return surfaceApiError(err);
   }

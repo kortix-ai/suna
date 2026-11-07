@@ -555,6 +555,41 @@ function finishAnthropicStream(
   controller.close();
 }
 
+// Anthropic's documented error types; anything else (a gateway code such as
+// `upstream_incomplete_stream`) is reported as `api_error`.
+const ANTHROPIC_ERROR_TYPES = new Set([
+  'invalid_request_error', 'authentication_error', 'permission_error', 'not_found_error',
+  'request_too_large', 'rate_limit_error', 'api_error', 'overloaded_error',
+]);
+
+/**
+ * The failed ending of a translated stream. Anthropic's `error` event is
+ * terminal: it closes the open block, sends `error`, and closes the stream,
+ * so no `message_delta`/`message_stop` follows and the turn never reads as
+ * `end_turn`.
+ */
+function failAnthropicStream(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  state: AnthropicSseState,
+  error: { type?: unknown; message?: unknown },
+): void {
+  if (state.finished) return;
+  state.finished = true;
+  ensureMessageStart(controller, encoder, state);
+  closeOpenBlock(controller, encoder, state);
+  controller.enqueue(
+    sseFrame(encoder, 'error', {
+      type: 'error',
+      error: {
+        type: typeof error.type === 'string' && ANTHROPIC_ERROR_TYPES.has(error.type) ? error.type : 'api_error',
+        message: typeof error.message === 'string' ? error.message : 'upstream error',
+      },
+    }),
+  );
+  controller.close();
+}
+
 // OpenAI chat.completions SSE stream -> Anthropic Messages SSE stream. Text
 // before the first tool call streams immediately. Tool arguments and later text
 // flush at message end because upstream can interleave chunks for one tool.
@@ -633,18 +668,9 @@ export function chatSseToAnthropicSse(
             continue;
           }
           if (chunk.error) {
-            ensureMessageStart(controller, encoder, state);
-            const err = chunk.error as Record<string, unknown>;
-            controller.enqueue(
-              sseFrame(encoder, 'error', {
-                type: 'error',
-                error: {
-                  type: typeof err.type === 'string' ? err.type : 'api_error',
-                  message: typeof err.message === 'string' ? err.message : 'upstream error',
-                },
-              }),
-            );
-            continue;
+            failAnthropicStream(controller, encoder, state, chunk.error as Record<string, unknown>);
+            await reader.cancel().catch(() => undefined);
+            return;
           }
           handleOpenAiChunk(controller, encoder, state, chunk);
         }
@@ -652,17 +678,11 @@ export function chatSseToAnthropicSse(
     } catch {
       // The upstream broke before [DONE]. Report a failed turn so the client
       // retries, instead of a normal end_turn over a truncated answer.
-      if (!cancelled && !state.finished) {
-        state.finished = true;
-        ensureMessageStart(controller, encoder, state);
-        closeOpenBlock(controller, encoder, state);
-        controller.enqueue(
-          sseFrame(encoder, 'error', {
-            type: 'error',
-            error: { type: 'api_error', message: 'Upstream stream ended before the response completed' },
-          }),
-        );
-        controller.close();
+      if (!cancelled) {
+        failAnthropicStream(controller, encoder, state, {
+          type: 'api_error',
+          message: 'Upstream stream ended before the response completed',
+        });
       }
     } finally {
       if (!cancelled) finishAnthropicStream(controller, encoder, state);

@@ -100,7 +100,7 @@ describe('connectorsRows', () => {
 describe('an account row', () => {
   test('says who can use it in the web’s words', () => {
     expect(accountAudience(account(), 'u-1')).toBe('Only you');
-    expect(accountAudience(account({ owner_type: 'project', owner_id: null, shared_with: [] }), 'u-1')).toBe('Everyone in project');
+    expect(accountAudience(account({ owner_type: 'project', owner_id: null, shared_with: [] }), 'u-1')).toBe('Everyone in workspace');
     const narrowed = account({
       owner_type: 'project',
       owner_id: null,
@@ -177,7 +177,7 @@ describe('installOutcome', () => {
 });
 
 test('connectorWebPath is the web connector page', () => {
-  expect(connectorWebPath('p-1', 'linear-ab12cd')).toBe('/projects/p-1/admin/connectors/connected/linear-ab12cd');
+  expect(connectorWebPath('p-1', 'linear-ab12cd')).toBe('/workspaces/p-1/admin/connectors/connected/linear-ab12cd');
 });
 
 test('wrapText breaks on spaces within the width', () => {

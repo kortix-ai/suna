@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import type { Context, Next } from 'hono';
 import { timeout } from 'hono/timeout';
 import { HTTPException } from 'hono/http-exception';
@@ -94,8 +95,8 @@ const EXEMPT_FRAGMENTS = [
   // plus its GET .../updates drift-listing route
   '/snapshots', // sandbox template builds
   '/legacy-migration', // legacy VM → project migration runs
-  '/oauth/', // provider OAuth device flow — `start` spawns
-  // OpenCode + waits for the device challenge, which
+  '/oauth/', // provider OAuth device flow — `start` runs
+  // the provider's device grant + waits for the device challenge, which
   // can exceed the deadline on a cold replica
 ];
 
@@ -144,7 +145,8 @@ export function isExempt(c: Context): boolean {
   // streaming endpoints not covered by the prefix/fragment lists.
   if (c.req.header('accept')?.includes('text/event-stream')) return true;
 
-  const path = c.req.path;
+  // A canonical `/v1/workspaces/…` request is exempt exactly when its legacy twin is.
+  const path = asLegacyWorkspaceRoute(c.req.path);
   for (const p of EXEMPT_PREFIXES) {
     if (path === p || path.startsWith(p + '/')) return true;
   }
@@ -180,7 +182,8 @@ const ATTACHMENT_COMPLETE_DEADLINE_MS = 95_000;
 /** This request's wall-clock deadline, or null when it is exempt or the guard is off. */
 export function requestDeadlineMs(c: Context): number | null {
   if (!ENABLED || isExempt(c)) return null;
-  if ((c.req.method === 'POST' && ATTACHMENT_COMPLETE.test(c.req.path)) || (c.req.method === 'PUT' && LOG_BLOB_UPLOAD.test(c.req.path)))
+  const path = asLegacyWorkspaceRoute(c.req.path);
+  if ((c.req.method === 'POST' && ATTACHMENT_COMPLETE.test(path)) || (c.req.method === 'PUT' && LOG_BLOB_UPLOAD.test(path)))
     return Math.max(DEADLINE_MS, ATTACHMENT_COMPLETE_DEADLINE_MS);
   return DEADLINE_MS;
 }

@@ -268,4 +268,34 @@ describe('chatSseToResponsesSse', () => {
     const events = await collectSseEvents(chatSseToResponsesSse(upstream));
     expect(events.map((e) => e.event)).toContain('error');
   });
+  test('a mid-stream error frame ends with response.failed, never response.completed', async () => {
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode('data: {"id":"c1","model":"x","choices":[{"index":0,"delta":{"content":"hi"}}]}\n\n'));
+        controller.enqueue(encoder.encode('data: {"error":{"message":"Overloaded","code":529}}\n\n'));
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+    const events = await collectSseEvents(chatSseToResponsesSse(upstream));
+    const names = events.map((e) => e.event);
+    expect(names).not.toContain('response.completed');
+    expect(names.at(-1)).toBe('response.failed');
+    const failed = events.at(-1)!.data as { response: { status: string; error: { message: string } } };
+    expect(failed.response.status).toBe('failed');
+    expect(failed.response.error.message).toBe('Overloaded');
+  });
+
+  test('an upstream break before [DONE] also ends with response.failed', async () => {
+    const encoder = new TextEncoder();
+    const upstream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"id":"c1","model":"x","choices":[{"index":0,"delta":{"content":"hi"}}]}\n\n'));
+        controller.error(new Error('boom'));
+      },
+    });
+    const events = await collectSseEvents(chatSseToResponsesSse(upstream));
+    expect(events.map((e) => e.event).at(-1)).toBe('response.failed');
+  });
 });

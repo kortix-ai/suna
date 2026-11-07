@@ -5,10 +5,11 @@ import {
   type AgentCapabilities,
   capabilityGranted,
   getAgentCapabilities,
-  getProjectCapabilities,
+  getWorkspaceCapabilities,
   setCapabilityGranted,
 } from './agent-capabilities';
 import type { AgentConfigBlock } from './agent-config';
+import type { AgentCapabilityGrant } from './agent-capabilities';
 
 let urls: string[] = [];
 const CATALOG: AgentCapabilities = {
@@ -32,7 +33,7 @@ configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token'
 describe('getAgentCapabilities', () => {
   test('reads the agent capability catalog route and returns its body', async () => {
     const catalog = await getAgentCapabilities('p1', 'support team');
-    expect(urls).toEqual(['http://test.local/projects/p1/agents/support%20team/capabilities']);
+    expect(urls).toEqual(['http://test.local/workspaces/p1/agents/support%20team/capabilities']);
     expect(catalog).toEqual(CATALOG);
   });
 });
@@ -40,8 +41,8 @@ describe('getAgentCapabilities', () => {
 describe('getProjectCapabilities', () => {
   test("reads the project's catalog route: every tool, skill and extension any agent can get", async () => {
     urls = [];
-    await getProjectCapabilities('p1');
-    expect(urls).toEqual(['http://test.local/projects/p1/capabilities']);
+    await getWorkspaceCapabilities('p1');
+    expect(urls).toEqual(['http://test.local/workspaces/p1/capabilities']);
   });
 });
 
@@ -54,6 +55,14 @@ describe('capabilityGranted', () => {
     expect(capabilityGranted(['a'], 'b', 'all')).toBe(false);
     expect(capabilityGranted('none', 'a', 'all')).toBe(false);
     expect(capabilityGranted(['*'], 'a', 'none')).toBe(true);
+  });
+
+  test('kortix.yaml\'s "*" (and any-case all) grants every id, like all', () => {
+    // The wire spells it `all`; a block read straight from kortix.yaml may say "*".
+    const star = '*' as unknown as AgentCapabilityGrant;
+    expect(capabilityGranted(star, 'a', 'none')).toBe(true);
+    expect(capabilityGranted('ALL' as unknown as AgentCapabilityGrant, 'a', 'none')).toBe(true);
+    expect(setCapabilityGranted(star, 'bash', false, 'all')).toEqual({ exclude: ['bash'] });
   });
 
   test('an omitted grant reads as the default the caller names', () => {

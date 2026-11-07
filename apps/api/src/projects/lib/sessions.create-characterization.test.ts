@@ -101,7 +101,7 @@ test('insert stores the exact create-time metadata fields and override order', a
   expect(result.error).toBeUndefined();
   expect(inserted?.metadata).toEqual({
     arbitrary: 7, custom_name: 'Chosen name', source: 'trigger',
-    opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform',
+    model: 'kortix/deepseek-v4.1-flash', model_source: 'platform',
     repository_access: false, repository_generation: null, workspace_mode: 'runtime',
     sandbox_slug: 'default',
     audit_v2: {
@@ -144,7 +144,7 @@ test('a fresh free-tier account never boots pinned to a managed model', async ()
   mayUseManagedModels = false;
   const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
   expect(result.error).toBeUndefined();
-  expect((inserted?.metadata as Record<string, unknown> | undefined)?.opencode_model).toBeUndefined();
+  expect((inserted?.metadata as Record<string, unknown> | undefined)?.model).toBeUndefined();
 });
 
 test('a paid account boots on the resolved platform default (the configured id when Platinum serves it)', async () => {
@@ -152,8 +152,8 @@ test('a paid account boots on the resolved platform default (the configured id w
   const result = await createProjectSession({ project, userId: 'synthetic-user', requestingPrincipalType: 'human', body: {} });
   expect(result.error).toBeUndefined();
   expect(inserted?.metadata).toMatchObject({
-    opencode_model: 'kortix/deepseek-v4.1-flash',
-    opencode_model_source: 'platform',
+    model: 'kortix/deepseek-v4.1-flash',
+    model_source: 'platform',
   });
 });
 
@@ -167,7 +167,7 @@ test('a free-tier account with no default boots on the model its first prompt pi
     body: { pending_prompt: { text: '', agent: 'default', model: { providerID: 'claude-agent', modelID: 'opus' } } },
   });
   expect(result.error).toBeUndefined();
-  expect(inserted?.metadata).toMatchObject({ opencode_model: 'claude-agent/opus', opencode_model_source: 'explicit' });
+  expect(inserted?.metadata).toMatchObject({ model: 'claude-agent/opus', model_source: 'explicit' });
 });
 
 test('a first-prompt pick the account cannot use, or an unknown Claude id, is not the boot model', async () => {
@@ -180,7 +180,7 @@ test('a first-prompt pick the account cannot use, or an unknown Claude id, is no
       body: { pending_prompt: { text: '', model } },
     });
     expect(result.error).toBeUndefined();
-    expect(((inserted as { metadata?: Record<string, unknown> } | undefined)?.metadata)?.opencode_model).toBeUndefined();
+    expect(((inserted as { metadata?: Record<string, unknown> } | undefined)?.metadata)?.model).toBeUndefined();
   }
 });
 
@@ -190,5 +190,5 @@ test('a paid account keeps its default as the boot model; the first prompt still
     body: { pending_prompt: { text: '', model: { providerID: 'claude-agent', modelID: 'opus' } } },
   });
   expect(result.error).toBeUndefined();
-  expect(inserted?.metadata).toMatchObject({ opencode_model: 'kortix/deepseek-v4.1-flash', opencode_model_source: 'platform' });
+  expect(inserted?.metadata).toMatchObject({ model: 'kortix/deepseek-v4.1-flash', model_source: 'platform' });
 });

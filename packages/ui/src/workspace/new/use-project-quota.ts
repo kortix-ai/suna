@@ -5,7 +5,7 @@ import { getProjectQuota, type ProjectQuota } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 
 /**
- * The project-cap state of the account a `/new` create would target, read
+ * The project-cap state of the account a `/workspaces/new` create would target, read
  * once on load so the page can show the cap reason BEFORE the user hits the
  * 403 a denied create answers (KRTX-2495).
  *

@@ -39,11 +39,12 @@ import { readJsonObject } from '../../shared/http-body';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { OkSchema } from '../lib/app';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // Bodies are documented with `lenientBody` and parsed by each handler, so a bad
 // body still answers its own 400 message, and only after the 404/403 checks.
-const ConnectionParams = z.object({ projectId: z.string(), connectionId: z.string() });
-const body = (schema: z.AnyZodObject) => ({
+const ConnectionParams = z.object({ workspaceId: z.string(), connectionId: z.string() });
+const body = (schema: z.ZodObject) => ({
   body: { content: { 'application/json': { schema: lenientBody(schema.shape) } } },
 });
 const ApplicationResponse = z.object({ application: OAuth2ApplicationViewSchema });
@@ -88,16 +89,16 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'post',
-      path: '/{projectId}/connectors/{slug}/oauth2/connection',
+      path: '/{workspaceId}/connectors/{slug}/oauth2/connection',
       summary: "Get or create a connector's shared OAuth2 connection",
-      request: { params: z.object({ projectId: z.string(), slug: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), slug: z.string() }) },
       responses: {
         200: json(z.object({ connection_id: z.string() }), 'The connection id'),
         ...errors(403, 404),
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const slug = c.req.param('slug');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -138,13 +139,13 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'put',
-      path: '/{projectId}/connections/{connectionId}/oauth2/application',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/application',
       summary: "Save a connection's OAuth2 application",
-      request: { params: ConnectionParams, ...body(OAuth2ApplicationInputSchema.innerType()) },
+      request: { params: ConnectionParams, ...body(OAuth2ApplicationInputSchema) },
       responses: { 200: json(OkSchema, 'Saved'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const connectionId = c.req.param('connectionId');
     const mutable = await loadMutableConnection(c, projectId, connectionId);
     if (!mutable) return c.json({ error: 'Not found' }, 404);
@@ -166,14 +167,14 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'get',
-      path: '/{projectId}/connections/{connectionId}/oauth2/application',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/application',
       summary: "Read a connection's OAuth2 application, secrets redacted",
       request: { params: ConnectionParams },
       // 409 SECRET_UNDECRYPTABLE: this server cannot decrypt the stored application.
       responses: { 200: json(ApplicationResponse, 'The application'), ...errors(403, 404, 409) },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const connectionId = c.req.param('connectionId');
     const mutable = await loadMutableConnection(c, projectId, connectionId);
     if (!mutable) return c.json({ error: 'Not found' }, 404);
@@ -187,7 +188,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'post',
-      path: '/{projectId}/connections/{connectionId}/oauth2/discover',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/discover',
       summary: 'Read OAuth2 endpoints from a discovery document',
       request: { params: ConnectionParams, ...body(OAuth2DiscoveryInputSchema) },
       responses: {
@@ -196,7 +197,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const connectionId = c.req.param('connectionId');
     if (!(await loadMutableConnection(c, projectId, connectionId))) {
       return c.json({ error: 'Not found' }, 404);
@@ -223,7 +224,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'post',
-      path: '/{projectId}/connections/{connectionId}/oauth2/discover-resource',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/discover-resource',
       summary: "Discover the authorization server of a connector's resource",
       request: { params: ConnectionParams, ...body(OAuth2ResourceDiscoveryInputSchema) },
       responses: {
@@ -232,7 +233,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const connectionId = c.req.param('connectionId');
       if (!(await loadMutableConnection(c, projectId, connectionId))) {
         return c.json({ error: 'Not found' }, 404);
@@ -260,13 +261,13 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'post',
-      path: '/{projectId}/connections/{connectionId}/oauth2/register',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/register',
       summary: 'Register Kortix as an OAuth2 client (RFC 7591)',
-      request: { params: ConnectionParams, ...body(OAuth2ClientRegistrationInputSchema.innerType()) },
+      request: { params: ConnectionParams, ...body(OAuth2ClientRegistrationInputSchema) },
       responses: { 200: json(ApplicationResponse, 'The registered application'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const connectionId = c.req.param('connectionId');
     const mutable = await loadMutableConnection(c, projectId, connectionId);
     if (!mutable) return c.json({ error: 'Not found' }, 404);
@@ -296,7 +297,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'post',
-      path: '/{projectId}/connections/{connectionId}/oauth2/authorize',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/authorize',
       summary: 'Start an OAuth2 authorization-code flow',
       request: { params: ConnectionParams, ...body(OAuth2AuthorizationStartInputSchema) },
       responses: {
@@ -305,7 +306,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const connectionId = c.req.param('connectionId');
     const mutable = await loadMutableConnection(c, projectId, connectionId);
     if (!mutable) return c.json({ error: 'Not found' }, 404);
@@ -339,7 +340,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'post',
-      path: '/{projectId}/connections/{connectionId}/oauth2/device',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/device',
       summary: 'Start an OAuth2 device authorization',
       request: { params: ConnectionParams, ...body(OAuth2DeviceAuthorizationStartInputSchema) },
       responses: {
@@ -348,7 +349,7 @@ export function registerOauth2ConnectorsRoutes(): void {
       },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const connectionId = c.req.param('connectionId');
     const mutable = await loadMutableConnection(c, projectId, connectionId);
     if (!mutable) return c.json({ error: 'Not found' }, 404);
@@ -383,13 +384,13 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'post',
-      path: '/{projectId}/connections/{connectionId}/oauth2/device/{sessionId}',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/device/{sessionId}',
       summary: 'Poll an OAuth2 device authorization',
       request: { params: ConnectionParams.extend({ sessionId: z.string() }) },
       responses: { 200: json(DevicePollSchema, 'The poll result'), ...errors(400, 403, 404, 409) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const connectionId = c.req.param('connectionId');
       const mutable = await loadMutableConnection(c, projectId, connectionId);
       if (!mutable) return c.json({ error: 'Not found' }, 404);
@@ -415,13 +416,13 @@ export function registerOauth2ConnectorsRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'get',
-      path: '/{projectId}/connections/{connectionId}/oauth2/status',
+      path: '/{workspaceId}/connections/{connectionId}/oauth2/status',
       summary: "Read a connection's OAuth2 token status",
       request: { params: ConnectionParams },
       responses: { 200: json(OAuth2ConnectionStatusSchema, 'The token status'), ...errors(403, 404) },
     }),
     async (c) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const connectionId = c.req.param('connectionId');
     if (!(await loadMutableConnection(c, projectId, connectionId))) {
       return c.json({ error: 'Not found' }, 404);

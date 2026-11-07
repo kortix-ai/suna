@@ -341,7 +341,9 @@ export function planFolderMounts(
  * one on a folder that holds one (`/Channels` then: its mount would show
  * them): a private channel's folder reaches only its own threads, as
  * `channelFolder` (read-write), and in such a thread every other folder mounts
- * read-only. Any other folder under `/Channels` mounts like any folder.
+ * read-only. Any other folder under `/Channels` mounts like any folder. A
+ * thread of a public channel or a DM (and its workers) mounts that space's
+ * folder read-write (`spaceFolder`), so every session of the thread shares its files.
  */
 export function sessionMountCandidates(
   grants: readonly FolderGrant[],
@@ -355,6 +357,12 @@ export function sessionMountCandidates(
     channelFolder: string | null;
     /** The project's private channel folders. */
     privateChannelFolders: PrivateChannelFolders;
+    /**
+     * With `chat` on, the files folder of the public channel or DM the session's
+     * thread is filed in (its thread files live there, `memory/thread-files.ts`);
+     * null otherwise. A private channel's is `channelFolder`.
+     */
+    spaceFolder?: string | null;
   },
 ): FolderMountCandidate[] {
   const candidates: FolderMountCandidate[] = [];
@@ -376,6 +384,7 @@ export function sessionMountCandidates(
     });
   }
   if (who.channelFolder) candidates.push({ path: who.channelFolder, level: 'write', priority: 0 });
+  else if (who.spaceFolder) candidates.push({ path: who.spaceFolder, level: 'write', priority: 0 });
   return candidates;
 }
 

@@ -70,9 +70,9 @@ async function projectMember(team: TeamFixture, projectId: string): Promise<Prin
 }
 
 const filesOf = (s: AgentSession, projectId: string) =>
-  s.client.get('/v1/projects/:projectId/files', { params: { projectId } });
+  s.client.get('/v1/workspaces/:projectId/files', { params: { projectId } });
 const secretsOf = (s: AgentSession, projectId: string) =>
-  s.client.get('/v1/projects/:projectId/secrets', { params: { projectId } });
+  s.client.get('/v1/workspaces/:projectId/secrets', { params: { projectId } });
 
 /** The session-token environment the sandbox gives the CLI. */
 function cliEnv(ctx: FlowContext, s: AgentSession, projectId: string): Record<string, string> {
@@ -123,19 +123,19 @@ flow(
     requires: ['database'],
     timeoutMs: 180_000,
     routes: [
-      'POST /v1/projects/:projectId/manifest/validate',
-      'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/workspaces/:projectId/manifest/validate',
+      'PUT /v1/workspaces/:projectId/agents/:agentName/config',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
-      'GET /v1/projects/:projectId/files',
-      'GET /v1/projects/:projectId/secrets',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
+      'GET /v1/workspaces/:projectId/files',
+      'GET /v1/workspaces/:projectId/secrets',
     ],
   },
   async (ctx) => {
     const { world } = await governedWorld(ctx);
     const validate = (raw: string) =>
-      world.owner.post('/v1/projects/:projectId/manifest/validate', { raw }, { params: { projectId: world.projectId } });
+      world.owner.post('/v1/workspaces/:projectId/manifest/validate', { raw }, { params: { projectId: world.projectId } });
     type Issue = { path: string; message: string; severity: 'error' | 'warning' };
     const canonical = manifest({ modern: { kortix_permissions: ['project.file.read'] } });
     const retired = manifest({ legacy: { kortix_cli: ['project.file.read'] } });
@@ -174,7 +174,7 @@ flow(
           throw new Error(`expected a deprecation warning naming kortix_permissions, got ${JSON.stringify(issues)}`);
         }
         const put = await world.owner.put(
-          '/v1/projects/:projectId/agents/:agentName/config',
+          '/v1/workspaces/:projectId/agents/:agentName/config',
           { kortix_cli: ['project.file.read'], kortix_permissions: ['project.secret.read'] },
           { params: { projectId: world.projectId, agentName: 'modern' }, timeoutMs: 60_000 },
         );
@@ -208,13 +208,13 @@ flow(
     requires: ['database'],
     timeoutMs: 180_000,
     routes: [
-      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
-      'GET /v1/projects/:projectId/files',
-      'GET /v1/projects/:projectId/secrets',
-      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
+      'GET /v1/workspaces/:projectId/files',
+      'GET /v1/workspaces/:projectId/secrets',
+      'GET /v1/workspaces/:projectId/sessions',
     ],
   },
   async (ctx) => {
@@ -228,7 +228,7 @@ flow(
       });
 
       await ctx.step('the member alone (own JWT) is refused files: 403 project_role_insufficient', async () => {
-        const r = await ctx.client.as(member).get('/v1/projects/:projectId/files', { params: { projectId: project.id } });
+        const r = await ctx.client.as(member).get('/v1/workspaces/:projectId/files', { params: { projectId: project.id } });
         assertDenial(r, 'project_role_insufficient', 'project.file.read');
       });
 
@@ -251,7 +251,7 @@ flow(
         const ownerRun = await world.mintAgentSession({ agent: 'reader', launcher: ctx.P.OWNER });
         assertDenial(await secretsOf(ownerRun, project.id), 'agent_scope_insufficient', 'project.secret.read');
         assertDenial(
-          await ownerRun.client.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } }),
+          await ownerRun.client.get('/v1/workspaces/:projectId/sessions', { params: { projectId: project.id } }),
           'agent_scope_insufficient',
           'project.session.read',
         );
@@ -278,13 +278,13 @@ flow(
     routes: [
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
       'POST /v1/accounts/:accountId/iam/assignments',
       'GET /v1/accounts/:accountId/iam/assignments',
       'DELETE /v1/accounts/:accountId/iam/assignments/:assignmentId',
-      'GET /v1/projects/:projectId',
-      'GET /v1/projects/:projectId/files',
-      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:projectId/files',
+      'GET /v1/workspaces/:projectId/sessions',
     ],
   },
   async (ctx) => {
@@ -297,7 +297,7 @@ flow(
         }));
       });
       const run = await world.mintAgentSession({ agent: 'auditor', launcher: ctx.P.OWNER });
-      const sessionsOf = () => run.client.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+      const sessionsOf = () => run.client.get('/v1/workspaces/:projectId/sessions', { params: { projectId: project.id } });
 
       await ctx.step('with no binding the default ceiling applies: files 200, sessions 200', async () => {
         (await filesOf(run, project.id)).status(200);
@@ -329,7 +329,7 @@ flow(
       });
 
       await ctx.step('a system role is a working ceiling, not a trap: project.read 200 and sessions (inside `member`) 200', async () => {
-        (await run.client.get('/v1/projects/:projectId', { params: { projectId: project.id } })).status(200);
+        (await run.client.get('/v1/workspaces/:projectId', { params: { projectId: project.id } })).status(200);
         // The principal cache (15 s) is invalidated only on the replica that
         // took the write, so another replica can still see the binding without
         // its role until its own entry expires.
@@ -355,7 +355,7 @@ flow(
   },
 );
 
-// ── AGP-5 — permissions decide: members.manage and project.delete are ordinary ──
+// ── AGP-5 — permissions decide: members.manage is ordinary; delete and minting are HUMAN_ONLY ──
 flow(
   'AGP-5',
   {
@@ -365,12 +365,12 @@ flow(
     routes: [
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
-      'PUT /v1/projects/:projectId/access/:userId',
-      'GET /v1/projects/:projectId/access',
-      'POST /v1/projects/:projectId/cli-token',
-      'DELETE /v1/projects/:projectId',
-      'GET /v1/projects/:projectId',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
+      'PUT /v1/workspaces/:projectId/access/:userId',
+      'GET /v1/workspaces/:projectId/access',
+      'POST /v1/workspaces/:projectId/cli-token',
+      'DELETE /v1/workspaces/:projectId',
+      'GET /v1/workspaces/:projectId',
     ],
   },
   async (ctx) => {
@@ -388,10 +388,10 @@ flow(
       const steward = await world.mintAgentSession({ agent: 'steward', launcher: ctx.P.OWNER });
       const root = await world.mintAgentSession({ agent: 'root', launcher: ctx.P.OWNER });
       const setRole = (s: AgentSession, role: string) =>
-        s.client.put('/v1/projects/:projectId/access/:userId', { role },
+        s.client.put('/v1/workspaces/:projectId/access/:userId', { role },
           { params: { projectId: project.id, userId: member.userId! } });
       const memberRole = async () => {
-        const r = await world.owner.get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+        const r = await world.owner.get('/v1/workspaces/:projectId/access', { params: { projectId: project.id } });
         r.status(200);
         const text = r.text();
         const body = r.json<any>();
@@ -421,16 +421,16 @@ flow(
         if (role !== 'member' && role !== 'user') throw new Error(`member role is ${role}, expected member`);
       });
 
-      await ctx.step('the one human-only action: `all` cannot mint a project token (403 agent_human_only_action)', async () => {
-        const r = await root.client.post('/v1/projects/:projectId/cli-token', {}, { params: { projectId: project.id } });
+      await ctx.step('HUMAN_ONLY (minting credentials): `all` cannot mint a project token (403 agent_human_only_action)', async () => {
+        const r = await root.client.post('/v1/workspaces/:projectId/cli-token', {}, { params: { projectId: project.id } });
         assertDenial(r, 'agent_human_only_action', 'project.credentials.issue');
       });
 
-      await ctx.step('`all` includes project.delete: root deletes the project (2xx); the owner no longer reads it as active', async () => {
-        const r = await root.client.del('/v1/projects/:projectId', { params: { projectId: project.id } });
-        if (r.statusCode < 200 || r.statusCode >= 300) throw new Error(`root delete: ${r.statusCode} ${r.text().slice(0, 400)}`);
-        const read = await world.owner.get('/v1/projects/:projectId', { params: { projectId: project.id } });
-        if (read.statusCode === 200 && read.json<any>().status === 'active') throw new Error('project still active after delete');
+      await ctx.step('HUMAN_ONLY (moving money): `all` cannot delete the workspace (403 agent_human_only_action); it stays active', async () => {
+        const r = await root.client.del('/v1/workspaces/:projectId', { params: { projectId: project.id } });
+        assertDenial(r, 'agent_human_only_action', 'project.delete');
+        const read = await world.owner.get('/v1/workspaces/:projectId', { params: { projectId: project.id } });
+        read.status(200).body().has('$.status', 'active');
       });
     } finally {
       await world.close();
@@ -446,15 +446,15 @@ flow(
     requires: ['database'],
     timeoutMs: 240_000,
     routes: [
-      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
-      'GET /v1/projects/:projectId/triggers',
-      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
+      'GET /v1/workspaces/:projectId/triggers',
+      'POST /v1/workspaces/:projectId/triggers/:slug/fire',
       'POST /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/projects/:projectId/files',
-      'GET /v1/projects/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/files',
+      'GET /v1/workspaces/:projectId/sessions',
     ],
   },
   async (ctx) => {
@@ -475,7 +475,7 @@ flow(
           `triggers:\n  - slug: agp-nightly\n    type: cron\n    cron: "0 9 * * *"\n    prompt: summarize open work\n    agent: nightly\n    session_mode: pinned\n    session_id: ${pinnedSessionId}\n`,
         ));
         run = await world.mintAgentSession({ agent: 'nightly', launcher: null, sessionId: pinnedSessionId });
-        const r = await world.owner.get('/v1/projects/:projectId/triggers', { params: { projectId: project.id } });
+        const r = await world.owner.get('/v1/workspaces/:projectId/triggers', { params: { projectId: project.id } });
         r.status(200);
         const trigger = r.json<{ triggers: Array<{ slug: string; agent: string; session_id: string | null }> }>().triggers
           .find((t) => t.slug === 'agp-nightly');
@@ -485,7 +485,7 @@ flow(
       });
 
       const fire = () =>
-        ctx.client.as(member).post('/v1/projects/:projectId/triggers/:slug/fire', {},
+        ctx.client.as(member).post('/v1/workspaces/:projectId/triggers/:slug/fire', {},
           { params: { projectId: project.id, slug: 'agp-nightly' } });
       const queued = async () =>
         (await world.db.query(
@@ -525,7 +525,7 @@ flow(
         });
         assertDenial(await filesOf(run, project.id), 'agent_ceiling_insufficient', 'project.file.read');
         await eventually('sessions inside the `member` ceiling', async () => {
-          const r = await run.client.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+          const r = await run.client.get('/v1/workspaces/:projectId/sessions', { params: { projectId: project.id } });
           return { ok: r.statusCode === 200, detail: `${r.statusCode} ${r.text().slice(0, 200)}` };
         });
       });
@@ -543,11 +543,11 @@ flow(
     requires: ['database'],
     timeoutMs: 180_000,
     routes: [
-      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
-      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
+      'POST /v1/workspaces/:projectId/sessions',
     ],
   },
   async (ctx) => {
@@ -563,7 +563,7 @@ flow(
         await world.grantRun('coordinator', member);
       });
       const spawn = (s: AgentSession, agent: string) =>
-        s.client.post('/v1/projects/:projectId/sessions', { agent_name: agent }, { params: { projectId: project.id } });
+        s.client.post('/v1/workspaces/:projectId/sessions', { agent_name: agent }, { params: { projectId: project.id } });
       /** Past the run gate: created (201/202), or the local profile's no-sandbox 503. */
       const passedGate = (r: { statusCode: number; json<T>(): T; text(): string }) => {
         const code = r.statusCode === 503 ? r.json<any>().code : null;
@@ -578,7 +578,7 @@ flow(
         )).rows[0].n);
 
       await ctx.step('baseline: the member (own JWT) cannot start `vault` → 403', async () => {
-        const r = await ctx.client.as(member).post('/v1/projects/:projectId/sessions', { agent_name: 'vault' },
+        const r = await ctx.client.as(member).post('/v1/workspaces/:projectId/sessions', { agent_name: 'vault' },
           { params: { projectId: project.id } });
         r.status(403);
       });
@@ -614,13 +614,13 @@ flow(
     requires: ['database'],
     timeoutMs: 240_000,
     routes: [
-      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/resource-grants',
       'PATCH /v1/accounts/:accountId/iam/session-oversight',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
-      'GET /v1/connectors/projects/:projectId/connectors/:slug/accounts',
-      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
+      'GET /v1/connectors/workspaces/:projectId/connectors/:slug/accounts',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/prompts',
     ],
   },
   async (ctx) => {
@@ -655,7 +655,7 @@ flow(
         );
       });
       const labels = async (s: AgentSession) => {
-        const r = await s.client.get('/v1/connectors/projects/:projectId/connectors/:slug/accounts',
+        const r = await s.client.get('/v1/connectors/workspaces/:projectId/connectors/:slug/accounts',
           { params: { projectId: project.id, slug } });
         r.status(200);
         return (r.json<{ accounts: Array<{ label: string }> }>().accounts ?? []).map((a) => a.label);
@@ -694,7 +694,7 @@ flow(
              '{"text":"hold","clientMessageId":"agp8-hold"}'::jsonb, 'AGP-8', now() + interval '1 hour')`,
           [project.id, privateRun.sessionId, team.id, human.userId],
         );
-        const r = await ctx.client.as(admin).post('/v1/projects/:projectId/sessions/:sessionId/prompts', {
+        const r = await ctx.client.as(admin).post('/v1/workspaces/:projectId/sessions/:sessionId/prompts', {
           client_message_id: 'agp8-admin',
           message_id: 'msg_0123456789abAgPeIgHtAdMnXy',
           parts: [{ type: 'text', text: 'status please' }],
@@ -721,15 +721,15 @@ flow(
     requires: ['database'],
     timeoutMs: 180_000,
     routes: [
-      'POST /v1/projects/:projectId/apps',
-      'PATCH /v1/projects/:projectId/apps/:appId/access',
-      'GET /v1/projects/:projectId/apps/:appId/agents',
-      'PUT /v1/projects/:projectId/agents/:agentName/scope',
-      'DELETE /v1/projects/:projectId/apps/:appId',
-      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/apps',
+      'PATCH /v1/workspaces/:projectId/apps/:appId/access',
+      'GET /v1/workspaces/:projectId/apps/:appId/agents',
+      'PUT /v1/workspaces/:projectId/agents/:agentName/scope',
+      'DELETE /v1/workspaces/:projectId/apps/:appId',
+      'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
     ],
   },
   async (ctx) => {
@@ -740,12 +740,12 @@ flow(
     let appUrl = '';
     try {
       await ctx.step('enable Apps; create an App restricted to the owner', async () => {
-        const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
+        const created = await world.owner.post('/v1/workspaces/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
           { params: { projectId: project.id } });
         created.status(201);
         appId = created.json<any>().app_id;
         appUrl = created.json<any>().url;
-        const restricted = await world.owner.patch('/v1/projects/:projectId/apps/:appId/access',
+        const restricted = await world.owner.patch('/v1/workspaces/:projectId/apps/:appId/access',
           { mode: 'restricted', member_ids: [ctx.P.OWNER.userId] },
           { params: { projectId: project.id, appId } });
         restricted.status(200).body().has('$.mode', 'restricted');
@@ -759,7 +759,7 @@ flow(
         await world.grantRun('bystander', human);
       });
       await ctx.step('GET /apps/:appId/agents lists `reporter` (grant `listed`) and omits `bystander`', async () => {
-        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+        const r = await world.owner.get('/v1/workspaces/:projectId/apps/:appId/agents',
           { params: { projectId: project.id, appId } });
         r.status(200);
         const agents = r.json<{ agents: Array<{ agent_name: string; grant: string; path: string }> }>().agents;
@@ -775,11 +775,11 @@ flow(
       // through the scope route, so `apps` has to round-trip on it exactly
       // like `connectors` does — no whole-block /config PUT for one list.
       await ctx.step('PUT /agents/bystander/scope {apps} writes the grant and answers with it', async () => {
-        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+        const scoped = await world.owner.put('/v1/workspaces/:projectId/agents/:agentName/scope',
           { apps: [appSlug] },
           { params: { projectId: project.id, agentName: 'bystander' } });
         scoped.status(200).body().has('$.apps[0]', appSlug);
-        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+        const r = await world.owner.get('/v1/workspaces/:projectId/apps/:appId/agents',
           { params: { projectId: project.id, appId } });
         r.status(200);
         const names = r.json<{ agents: Array<{ agent_name: string }> }>().agents.map((a) => a.agent_name).sort();
@@ -788,11 +788,11 @@ flow(
         }
       });
       await ctx.step('PUT the same route with apps `all` replaces the list with the sentinel', async () => {
-        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+        const scoped = await world.owner.put('/v1/workspaces/:projectId/agents/:agentName/scope',
           { apps: 'all' },
           { params: { projectId: project.id, agentName: 'bystander' } });
         scoped.status(200).body().has('$.apps', 'all');
-        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+        const r = await world.owner.get('/v1/workspaces/:projectId/apps/:appId/agents',
           { params: { projectId: project.id, appId } });
         r.status(200);
         const row = r.json<{ agents: Array<{ agent_name: string; grant: string }> }>().agents
@@ -802,11 +802,11 @@ flow(
         }
       });
       await ctx.step('PUT with apps `[]` clears the grant again', async () => {
-        const scoped = await world.owner.put('/v1/projects/:projectId/agents/:agentName/scope',
+        const scoped = await world.owner.put('/v1/workspaces/:projectId/agents/:agentName/scope',
           { apps: [] },
           { params: { projectId: project.id, agentName: 'bystander' } });
         scoped.status(200);
-        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+        const r = await world.owner.get('/v1/workspaces/:projectId/apps/:appId/agents',
           { params: { projectId: project.id, appId } });
         r.status(200);
         const names = r.json<{ agents: Array<{ agent_name: string }> }>().agents.map((a) => a.agent_name);
@@ -816,7 +816,7 @@ flow(
       });
     } finally {
       if (appId) {
-        await world.owner.del('/v1/projects/:projectId/apps/:appId', { params: { projectId: project.id, appId } }).catch(() => {});
+        await world.owner.del('/v1/workspaces/:projectId/apps/:appId', { params: { projectId: project.id, appId } }).catch(() => {});
       }
       await world.close();
     }
@@ -836,14 +836,14 @@ flow(
     requires: ['database', 'appHost'],
     timeoutMs: 180_000,
     routes: [
-      'POST /v1/projects/:projectId/apps',
-      'PATCH /v1/projects/:projectId/apps/:appId/access',
-      'GET /v1/projects/:projectId/apps/:appId/agents',
-      'DELETE /v1/projects/:projectId/apps/:appId',
-      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/apps',
+      'PATCH /v1/workspaces/:projectId/apps/:appId/access',
+      'GET /v1/workspaces/:projectId/apps/:appId/agents',
+      'DELETE /v1/workspaces/:projectId/apps/:appId',
+      'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
     ],
   },
   async (ctx) => {
@@ -854,12 +854,12 @@ flow(
     let appUrl = '';
     try {
       await ctx.step('enable Apps; create an App restricted to the owner', async () => {
-        const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
+        const created = await world.owner.post('/v1/workspaces/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
           { params: { projectId: project.id } });
         created.status(201);
         appId = created.json<any>().app_id;
         appUrl = created.json<any>().url;
-        const restricted = await world.owner.patch('/v1/projects/:projectId/apps/:appId/access',
+        const restricted = await world.owner.patch('/v1/workspaces/:projectId/apps/:appId/access',
           { mode: 'restricted', member_ids: [ctx.P.OWNER.userId] },
           { params: { projectId: project.id, appId } });
         restricted.status(200).body().has('$.mode', 'restricted');
@@ -873,7 +873,7 @@ flow(
         await world.grantRun('bystander', human);
       });
       await ctx.step('GET /apps/:appId/agents lists `reporter` (grant `listed`) and omits `bystander`', async () => {
-        const r = await world.owner.get('/v1/projects/:projectId/apps/:appId/agents',
+        const r = await world.owner.get('/v1/workspaces/:projectId/apps/:appId/agents',
           { params: { projectId: project.id, appId } });
         r.status(200);
         const agents = r.json<{ agents: Array<{ agent_name: string; grant: string; path: string }> }>().agents;
@@ -923,7 +923,7 @@ flow(
       });
     } finally {
       if (appId) {
-        await world.owner.del('/v1/projects/:projectId/apps/:appId', { params: { projectId: project.id, appId } }).catch(() => {});
+        await world.owner.del('/v1/workspaces/:projectId/apps/:appId', { params: { projectId: project.id, appId } }).catch(() => {});
       }
       await world.close();
     }
@@ -940,17 +940,17 @@ flow(
     routes: [
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
       'GET /v1/git/:project/info/refs',
       'POST /v1/git/:project/git-upload-pack',
       'POST /v1/git/:project/git-receive-pack',
-      'POST /v1/projects/:projectId/change-requests',
-      'POST /v1/projects/:projectId/change-requests/:crId/merge',
-      'POST /v1/projects/:projectId/change-requests/:crId/close',
-      'GET /v1/projects/:projectId/change-requests/:crId',
-      'POST /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/secrets/:identifier/grant',
-      'GET /v1/projects/:projectId/agents/:agentName/config',
+      'POST /v1/workspaces/:projectId/change-requests',
+      'POST /v1/workspaces/:projectId/change-requests/:crId/merge',
+      'POST /v1/workspaces/:projectId/change-requests/:crId/close',
+      'GET /v1/workspaces/:projectId/change-requests/:crId',
+      'POST /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/secrets/:identifier/grant',
+      'GET /v1/workspaces/:projectId/agents/:agentName/config',
     ],
   },
   async (ctx) => {
@@ -986,8 +986,8 @@ flow(
       // The secret-grant route commits the manifest itself, so it runs while the
       // project still points at its local repository (the HTTP fixture below has
       // no write credential for the API).
-      const secretsPath = '/v1/projects/:projectId/secrets';
-      const grantPath = '/v1/projects/:projectId/secrets/:identifier/grant';
+      const secretsPath = '/v1/workspaces/:projectId/secrets';
+      const grantPath = '/v1/workspaces/:projectId/secrets/:identifier/grant';
       await ctx.step('the owner creates secrets AGP_KEEP and AGP_OTHER', async () => {
         for (const name of ['AGP_KEEP', 'AGP_OTHER']) {
           (await world.owner.post(secretsPath, { name, value: `${name.toLowerCase()}-value` }, { params: { projectId: project.id } }))
@@ -1001,7 +1001,7 @@ flow(
       await ctx.step('`keeper` granting `courier` AGP_KEEP, which it holds → 200, written', async () => {
         const r = await keeper.client.post(grantPath, { agent: 'courier' }, { params: { projectId: project.id, identifier: 'AGP_KEEP' } });
         r.status(200).body().has('$.agent', 'courier').has('$.already_granted', false);
-        const config = await world.owner.get('/v1/projects/:projectId/agents/:agentName/config', { params: { projectId: project.id, agentName: 'courier' } });
+        const config = await world.owner.get('/v1/workspaces/:projectId/agents/:agentName/config', { params: { projectId: project.id, agentName: 'courier' } });
         config.status(200);
         if (!JSON.stringify(config.json<any>().block?.secrets ?? []).includes('AGP_KEEP')) {
           throw new Error(`courier's committed grant lacks AGP_KEEP: ${JSON.stringify(config.json<any>().block)}`);
@@ -1018,7 +1018,7 @@ flow(
         await agentGit(['-c', 'user.name=builder', '-c', 'user.email=builder@example.test', 'commit', '-m', message]);
         await agentGit(['push', 'origin', `HEAD:refs/heads/${run.sessionId}`]);
       };
-      const crPath = '/v1/projects/:projectId/change-requests';
+      const crPath = '/v1/workspaces/:projectId/change-requests';
       const openCr = async (title: string) => {
         const r = await run.client.post(crPath, { title, head_ref: run.sessionId }, { params: { projectId: project.id } });
         r.status(201);
@@ -1148,11 +1148,11 @@ flow(
     requires: ['database'],
     timeoutMs: 180_000,
     routes: [
-      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
-      'GET /v1/projects/:projectId/files',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
+      'GET /v1/workspaces/:projectId/files',
       'GET /v1/accounts/:accountId/audit',
       'GET /v1/git/:project/info/refs',
       'POST /v1/git/:project/git-upload-pack',
@@ -1179,7 +1179,7 @@ flow(
       });
       const auditedFiles = async (s: AgentSession, label: string) => {
         const correlationId = ctx.fixtures.name(`agp11-${label}`);
-        const r = await s.client.get('/v1/projects/:projectId/files', {
+        const r = await s.client.get('/v1/workspaces/:projectId/files', {
           params: { projectId: project.id },
           headers: { 'x-correlation-id': correlationId },
         });
@@ -1275,14 +1275,14 @@ flow(
     requires: ['database'],
     timeoutMs: 240_000,
     routes: [
-      'POST /v1/projects/:projectId/resource-grants',
+      'POST /v1/workspaces/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'GET /v1/accounts/:accountId/iam/agent-identities',
-      'GET /v1/connectors/projects/:projectId/catalog',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
       'POST /v1/accounts/:accountId/iam/assignments',
-      'GET /v1/projects/:projectId/files',
-      'GET /v1/projects/:projectId/secrets',
-      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/workspaces/:projectId/files',
+      'GET /v1/workspaces/:projectId/secrets',
+      'POST /v1/workspaces/:projectId/sessions',
     ],
   },
   async (ctx) => {
@@ -1304,7 +1304,7 @@ flow(
       await bindCeiling(ctx, world, admin, 'capped', 'member');
 
       await ctx.step('project_role_insufficient: the human JWT reading files → 403 {code, action: project.file.read}', async () => {
-        assertDenial(await ctx.client.as(human).get('/v1/projects/:projectId/files', { params: { projectId: project.id } }),
+        assertDenial(await ctx.client.as(human).get('/v1/workspaces/:projectId/files', { params: { projectId: project.id } }),
           'project_role_insufficient', 'project.file.read');
       });
       await ctx.step('agent_scope_insufficient: `scoped` reading secrets → 403 {code, action: project.secret.read}', async () => {
@@ -1318,7 +1318,7 @@ flow(
         assertDenial(await filesOf(capped, project.id), 'agent_ceiling_insufficient', 'project.file.read');
       });
       await ctx.step('agent_not_accessible: `scoped` starting `capped` for a human who may not run it → 403 {code, action}', async () => {
-        const r = await scoped.client.post('/v1/projects/:projectId/sessions', { agent_name: 'capped' },
+        const r = await scoped.client.post('/v1/workspaces/:projectId/sessions', { agent_name: 'capped' },
           { params: { projectId: project.id } });
         assertDenial(r, 'agent_not_accessible');
         if (typeof r.json<any>().action !== 'string' || !r.json<any>().action) throw new Error(`no action: ${r.text()}`);
@@ -1327,7 +1327,7 @@ flow(
       await ctx.step('real CLI, scope denial: `kortix secrets ls` fails and the hint names agents.scoped.kortix_permissions', async () => {
         const r = await sandbox.run(['secrets', 'ls'], { env: cliEnv(ctx, scoped, project.id) });
         if (r.exitCode === 0) throw new Error(`secrets ls succeeded: ${r.all.slice(0, 400)}`);
-        if (!r.stderr.includes('agents.scoped.kortix_permissions') || !r.all.includes('project.secret.read')) {
+        if (!r.stderr.includes('agents.scoped.kortix_permissions') || !r.all.includes('workspace.secret.read')) {
           throw new Error(`scope hint missing: ${r.all.slice(0, 800)}`);
         }
       });
@@ -1356,7 +1356,7 @@ flow(
     domain: 'agent-principals',
     requires: ['database'],
     timeoutMs: 240_000,
-    routes: ['POST /v1/projects/:projectId/triggers/:slug/fire'],
+    routes: ['POST /v1/workspaces/:projectId/triggers/:slug/fire'],
   },
   async (ctx) => {
     const { team, project, world } = await governedWorld(ctx);
@@ -1391,7 +1391,7 @@ flow(
           [project.id],
         );
       const fire = (who: Principal) =>
-        ctx.client.as(who).post('/v1/projects/:projectId/triggers/:slug/fire', {},
+        ctx.client.as(who).post('/v1/workspaces/:projectId/triggers/:slug/fire', {},
           { params: { projectId: project.id, slug: 'agp-default' } });
 
       const queued = async () =>

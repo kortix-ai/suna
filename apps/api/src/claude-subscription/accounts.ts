@@ -13,7 +13,7 @@
  */
 import { createHash } from 'node:crypto';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
+import { accountSecretResources, claudeSubscriptionLogins, sessionProviderSecretPools } from '@kortix/db';
 import { GatewayResolutionError, type ClaudeCodeCredentials } from '@kortix/llm-gateway';
 import { CLAUDE_AGENT_PROVIDER_ID } from '@kortix/api-contract/claude-agent';
 import { getProjectGatewayResolution } from '../repositories/project-model-access';
@@ -100,11 +100,12 @@ async function usable(accountId: string, secrets: ResolvedAccountSecret[]): Prom
   return { credentials, refused };
 }
 
-async function sharedCredentials(principal: ClaudeAccountPrincipal): Promise<ClaudeCredential[] | GatewayResolutionError | null> {
+async function sharedCredentials(principal: ClaudeAccountPrincipal, probe?: boolean): Promise<ClaudeCredential[] | GatewayResolutionError | null> {
   const shared = await resolveProjectSharedProviderSecrets({
     accountId: principal.accountId, projectId: principal.projectId, userId: principal.userId,
     grantUserId: principal.keyId ? null : principal.personalUserId,
     providerId: CLAUDE_ACCOUNT.providerId, name: CLAUDE_ACCOUNT.name,
+    sessionId: principal.sessionId, probe,
   });
   if (shared.secrets.length) {
     const { credentials, refused } = await usable(principal.accountId, shared.secrets);
@@ -146,13 +147,13 @@ export async function resolveClaudeCredentials(principal: ClaudeAccountPrincipal
     }
     if (own) {
       // Resting or refused: an account shared with the project may serve instead.
-      const shared = await sharedCredentials(principal);
+      const shared = await sharedCredentials(principal, options.probe);
       if (Array.isArray(shared)) return shared;
       if (own.restingSeconds) throw accountsResting('Your Claude accounts', own.restingSeconds);
       throw needsReconnection([own.label], 'own');
     }
   }
-  const shared = await sharedCredentials(principal);
+  const shared = await sharedCredentials(principal, options.probe);
   if (Array.isArray(shared)) return shared;
   throw shared ?? notConnected();
 }
@@ -220,7 +221,13 @@ export async function deleteOwnClaudeAccounts(accountId: string, projectId: stri
         .where(sql`${sessionProviderSecretPools.secretIds} @> jsonb_build_array(${secretId}::text)`);
       await tx.delete(accountSecretResources).where(eq(accountSecretResources.secretId, secretId));
     }
-    return own.length;
+    // The pre-named-account login is private to this member across the account.
+    // Disconnect must remove it too, or usage discovery resurrects the login.
+    const legacy = await tx.delete(claudeSubscriptionLogins).where(and(
+      eq(claudeSubscriptionLogins.accountId, accountId),
+      eq(claudeSubscriptionLogins.userId, userId),
+    )).returning({ userId: claudeSubscriptionLogins.userId });
+    return own.length + legacy.length;
   });
 }
 
@@ -234,7 +241,7 @@ export async function claudeCredentialsForGateway(principal: {
   personalUserId?: string | null;
 }, _model: string | null): Promise<ClaudeCodeCredentials> {
   if (!principal.projectId) {
-    return { error: { status: 400, code: 'provider_not_connected', message: 'Claude models run in a project session.', suggestion: 'Use a project session token.' } };
+    return { error: { status: 400, code: 'provider_not_connected', message: 'Claude models run in a workspace session.', suggestion: 'Use a workspace session token.' } };
   }
   // The provider switch applies to every call. A single turned-off model is
   // enforced where a turn's model is chosen (picker, session model change):
@@ -244,7 +251,7 @@ export async function claudeCredentialsForGateway(principal: {
   if (resolution.access.disabledProviders.includes(CLAUDE_AGENT_PROVIDER_ID)) {
     return { error: {
       status: 403, code: 'provider_disabled',
-      message: 'Claude subscription models are turned off in this project.',
+      message: 'Claude subscription models are turned off in this workspace.',
       suggestion: 'Turn them on under Models, or choose another model.',
     } };
   }
@@ -260,6 +267,8 @@ export async function claudeCredentialsForGateway(principal: {
     return { error: {
       status: err.code === 'provider_pool_rate_limited' ? 429 : 400,
       code: err.code, message: err.message, suggestion: err.suggestion, retryAfterSeconds: err.retryAfterSeconds,
+      // The gateway answers a rest over a minute as a usage limit, which Claude Code shows as one.
+      ...(err.restSeconds !== undefined ? { restSeconds: err.restSeconds } : {}),
     } };
   }
 }

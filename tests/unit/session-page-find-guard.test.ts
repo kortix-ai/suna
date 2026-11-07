@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // `GET /projects/:id/sessions` answers one bounded PAGE (KRTX-1727, the
 // 2026-09-16 learning, rule 4). A `.find(` over that page answers `null` for
@@ -18,7 +19,6 @@ import { describe, expect, it } from 'vitest';
 // in the same file is reported too, so give it another name. Scope: every
 // tracked non-test `.ts`/`.tsx` in apps/mobile and packages/sdk/src.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const SCOPES = ['apps/mobile', 'packages/sdk/src'];
 const LIST_CALLS = new Set(['listProjectSessions', 'useProjectSessions']);
 
@@ -130,7 +130,7 @@ describe('no .find( over a session page in apps/mobile and packages/sdk', () => 
   });
 
   it('finds none in the tree', () => {
-    const offenders = trackedFiles().flatMap((file) => sessionPageFinds(file, readFileSync(join(REPO_ROOT, file), 'utf8')));
+    const offenders = trackedFiles().flatMap((file) => sessionPageFinds(file, readRepoFile(file)));
     expect(offenders).toEqual([]);
   });
 });

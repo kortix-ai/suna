@@ -21,7 +21,8 @@ mock.module('../connectors/manifest-mutation', () => ({
     return { ok: true };
   },
 }));
-mock.module('../projects/surface', () => ({ withProjectGitAuth: async (row: unknown) => row }));
+const { withoutAppTriggers } = await import('../projects/lib/app-trigger-retire');
+mock.module('../projects/surface', () => ({ withProjectGitAuth: async (row: unknown) => row, withoutAppTriggers }));
 const { commitAppFields, syncDeclaredApps } = await import('./app-manifest');
 
 let project: SeededProject;
@@ -66,9 +67,9 @@ test('a sync applies every declared field, resolves uses by slug, leaves undecla
 
 test('uses naming an unknown App, or one the App\'s creator may not open, is reported and keeps the links', async () => {
   const result = await syncDeclaredApps(project.project_id, { web: { uses: ['nope'] } });
-  expect(result.errors).toEqual([{ slug: 'web', error: 'apps.web.uses names no App of this project its creator can open: nope' }]);
+  expect(result.errors).toEqual([{ slug: 'web', error: 'apps.web.uses names no App of this workspace its creator can open: nope' }]);
   const hidden = await syncDeclaredApps(project.project_id, { web: { uses: ['secret'] } });
-  expect(hidden.errors).toEqual([{ slug: 'web', error: 'apps.web.uses names no App of this project its creator can open: secret' }]);
+  expect(hidden.errors).toEqual([{ slug: 'web', error: 'apps.web.uses names no App of this workspace its creator can open: secret' }]);
   expect((await db.select().from(appLinks).where(eq(appLinks.appId, (await read('web')).appId)))).toHaveLength(1);
 });
 

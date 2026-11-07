@@ -96,7 +96,7 @@ describe('validate project tools', () => {
     expect(result.exitCode).not.toBe(0);
     expect(result.report.issues.filter((issue) => issue.path.includes('tools'))).toEqual([
       expect.objectContaining({ path: 'agents.kortix.tools', message: expect.stringContaining('bassh'), severity: 'error', line: 5, column: 5 }),
-      expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup.ts" does not exist in the project files.', severity: 'error', line: 7, column: 3 }),
+      expect.objectContaining({ path: 'tools.lookup_order', message: '"tools/lookup.ts" does not exist in the workspace files.', severity: 'error', line: 7, column: 3 }),
     ]);
   });
 });
@@ -172,7 +172,7 @@ describe('a legacy format (kortix_version 2, kortix.toml)', () => {
       const manifest = p.read('kortix.yaml');
       expect(manifest).not.toContain('kortix_version');
       expect(manifest).toContain('prompt_file: agents/lead.md');
-      expect(manifest).toContain('tools: all');
+      expect(manifest).toContain('tools: "*"');
       expect(p.read('agents/lead.md')).toBe('You lead.\n');
       expect(p.exists('harnesses/opencode/opencode.jsonc')).toBe(false);
       expect((JSON.parse(p.run(['validate', '--json', '--no-dockerfile-lint']).stdout.toString()) as Report).issues).toEqual([]);

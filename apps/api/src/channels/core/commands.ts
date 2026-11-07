@@ -18,7 +18,7 @@ import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { abortRuntimeTurn, readRunningTurn } from '../../projects/surface';
+import { PROVISIONING_SESSION_STATUSES, abortRuntimeTurn, readRunningTurn } from '../../projects/surface';
 import { applyChannelSessionKeys, checkChannelModel, listChannelModels } from '../model-access';
 import { chatAgents } from '../scoped-agents';
 import { CHANNEL_COMMANDS, type ChannelCommandName, type ParsedCommand } from './command-list';
@@ -201,8 +201,8 @@ async function pickedValue(ctx: CommandContext, name: 'model' | 'agent', ref: st
 
 const notice = (text: string, url?: string): CommandReply => ({ kind: 'notice', text, ...(url ? { url } : {}) });
 
-const NOT_CONNECTED = 'This bot is no longer connected to this Kortix project.';
-const HELD_ELSEWHERE = 'This channel uses another Kortix project. Use /connect to move it to this one first.';
+const NOT_CONNECTED = 'This bot is no longer connected to this Kortix workspace.';
+const HELD_ELSEWHERE = 'This channel uses another Kortix workspace. Use /connect to move it to this one first.';
 
 /** The chat's settings row in the project, else the notice that says why there is none. */
 async function bindForSetting(ctx: CommandContext, projectId: string): Promise<CommandReply | null> {
@@ -212,7 +212,7 @@ async function bindForSetting(ctx: CommandContext, projectId: string): Promise<C
 /** A create holds the chat: the session it binds was planned before the choice changed. */
 const CREATING = "Kortix is still creating this chat's session, which keeps its own";
 /** A queued session has no sandbox yet: its turn cannot run, or be stopped. */
-const STARTING = new Set(['queued', 'branching', 'provisioning']);
+const STARTING = new Set<string>(PROVISIONING_SESSION_STATUSES);
 
 const sessionUrl = (ctx: CommandContext, sessionId: string) => sessionWebUrl(config.FRONTEND_URL, ctx.project.projectId, sessionId);
 
@@ -223,7 +223,7 @@ async function chatSession(ctx: CommandContext): Promise<ChatThreadSession | nul
 }
 
 function pinOf(session: ChatThreadSession | null): string | null {
-  const pin = (session?.metadata as Record<string, unknown> | null | undefined)?.opencode_model;
+  const pin = (session?.metadata as Record<string, unknown> | null | undefined)?.model;
   return typeof pin === 'string' && pin.trim() ? pin.trim() : null;
 }
 
@@ -252,7 +252,7 @@ function choices(
   current: string | null,
   page: number,
   usage: string,
-  defaultLabel = 'Project default',
+  defaultLabel = 'Workspace default',
 ): CommandReply {
   const chosen = current === 'default' ? null : current;
   const sorted = [...items.filter((i) => i.value === chosen), ...items.filter((i) => i.value !== chosen)];
@@ -282,8 +282,8 @@ const PICKERS: Record<'model' | 'agent', (ctx: CommandContext, page: number) => 
       chatSelection(ctx.settings, ctx.project.projectId),
       sharedChatScope(ctx.project).then(listChannelModels),
     ]);
-    if (!models.length) return notice('No model is available to this chat. A project admin can share a provider key with the whole project in Kortix.');
-    const current = selection?.opencodeModel ?? pinOf(session);
+    if (!models.length) return notice('No model is available to this chat. A workspace admin can share a provider key with the whole Kortix workspace in Kortix.');
+    const current = selection?.sessionModel ?? pinOf(session);
     const labels = new Map<string, number>();
     for (const m of models) labels.set(m.label, (labels.get(m.label) ?? 0) + 1);
     const defaultName = defaultModel && (models.find((m) => m.id === defaultModel)?.label ?? labelForModelRef(defaultModel));
@@ -294,15 +294,15 @@ const PICKERS: Record<'model' | 'agent', (ctx: CommandContext, page: number) => 
       current ? toWireModel(current) : null,
       page,
       // No `/model <id>` hint: a button shows a model's name, never the id to type.
-      'Tap a model to use it in this chat. Only models and keys the whole project shares work here.',
-      defaultName ? `Project default · ${defaultName}` : 'Project default',
+      'Tap a model to use it in this chat. Only models and keys the whole Kortix workspace shares work here.',
+      defaultName ? `Workspace default · ${defaultName}` : 'Workspace default',
     );
   },
 
   async agent(ctx, page) {
     const { projectId } = ctx.project;
     const [agents, session, selection] = await Promise.all([chatAgents(projectId), chatSession(ctx), chatSelection(ctx.settings, projectId)]);
-    if (!agents.length) return notice('This project lists no agents this chat can use. New sessions run the project default agent.');
+    if (!agents.length) return notice('This Kortix workspace lists no agents this chat can use. New sessions run the workspace default agent.');
     return choices(
       'agent',
       'Agents for this chat',
@@ -321,7 +321,7 @@ const PICKERS: Record<'model' | 'agent', (ctx: CommandContext, page: number) => 
 async function modelRow(ctx: CommandContext, session: ChatThreadSession | null, choice: string | null): Promise<string> {
   const pin = pinOf(session);
   const wanted = choice ?? pin;
-  if (!wanted) return 'project default';
+  if (!wanted) return 'workspace default';
   const named = statusModel(choice, pin);
   let runs: string | null;
   if (session) {
@@ -358,7 +358,7 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
   async help(ctx) {
     return {
       kind: 'help',
-      intro: `Kortix project ${ctx.project.name}. The agent answers in this chat.`,
+      intro: `Kortix workspace ${ctx.project.name}. The agent answers in this chat.`,
       commands: CHANNEL_COMMANDS.map((c) => ({ usage: c.usage, description: c.description })),
       footer: 'Every other message goes to the agent, also one that starts with /.',
       actions: [
@@ -378,10 +378,10 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       chatSelection(ctx.settings, ctx.project.projectId),
       session ? readRunningTurn(session.sessionId) : null,
     ]);
-    const model = await modelRow(ctx, session, selection?.opencodeModel ?? null);
+    const model = await modelRow(ctx, session, selection?.sessionModel ?? null);
     const sessionAgent = session?.agentName || 'default';
     const agent = !session
-      ? selection?.agentName || 'project default'
+      ? selection?.agentName || 'workspace default'
       : selection?.agentName && selection.agentName !== sessionAgent
         ? `${sessionAgent} (new sessions: ${selection.agentName})`
         : sessionAgent;
@@ -389,7 +389,7 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       kind: 'panel',
       title: 'This chat in Kortix',
       rows: [
-        { label: 'Project', value: ctx.project.name },
+        { label: 'Workspace', value: ctx.project.name },
         { label: 'Agent', value: agent },
         { label: 'Model', value: model },
         {
@@ -458,17 +458,17 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
       if (selection) await setChannelModel(ctx.settings, null);
       const pin = pinOf(session);
       if (pin) {
-        return notice(`Model for this chat reset to the project default for new sessions. This chat's session keeps ${labelForModelRef(pin)}; send /new to start on the default.`);
+        return notice(`Model for this chat reset to the workspace default for new sessions. This chat's session keeps ${labelForModelRef(pin)}; send /new to start on the default.`);
       }
       return notice(
         !session && (await threadCreateHeld(ctx.createClaim))
-          ? `Model for this chat reset to the project default for new sessions. ${CREATING} model; send /new after it answers to start on the default.`
-          : 'Model for this chat reset to the project default.',
+          ? `Model for this chat reset to the workspace default for new sessions. ${CREATING} model; send /new after it answers to start on the default.`
+          : 'Model for this chat reset to the workspace default.',
       );
     }
     const verdict = await checkChannelModel(await sharedChatScope(ctx.project), arg);
     if (!verdict.ok) {
-      return notice(`${modelName(arg)} is not available in this chat. Only models and keys the whole project shares work here. Send /model to see them.`);
+      return notice(`${modelName(arg)} is not available in this chat. Only models and keys the whole Kortix workspace shares work here. Send /model to see them.`);
     }
     const unbound = await bindForSetting(ctx, projectId);
     if (unbound) return unbound;
@@ -479,8 +479,8 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
     const keys = !verdict.keys
       ? ''
       : verdict.keys.secretIds.length === 1
-        ? ' It uses a key the project shares.'
-        : ` It rotates across ${verdict.keys.secretIds.length} keys the project shares.`;
+        ? ' It uses a key the Kortix workspace shares.'
+        : ` It rotates across ${verdict.keys.secretIds.length} keys the Kortix workspace shares.`;
     // The conversation is one thread of a chat whose settings row it shares (a Telegram forum topic).
     const shared = ctx.settings.channelId !== ctx.target.threadId ? ' It applies to the whole chat, every thread in it included.' : '';
     return notice(`Model for this chat set to ${modelName(verdict.model)}.${keys}${shared} Messages you send after this reply use it.`);
@@ -492,7 +492,7 @@ const RUN: Record<ChannelCommandName, (ctx: CommandContext, arg: string) => Prom
     const refusal = notice(`${clipped(arg, 64)} is not an agent this chat can use. Send /agent to see them.`);
     if (arg.toLowerCase() === 'default') {
       if (await chatSelection(ctx.settings, projectId)) await setChannelAgent(ctx.settings, null);
-      return notice('Agent for this chat reset to the project default.');
+      return notice('Agent for this chat reset to the workspace default.');
     }
     // The list a stranger in a group may pick from: never a name a grant restricts, and never one a failed read let through.
     if (/\s/.test(arg) || !(await chatAgents(projectId)).some((a) => a.name === arg)) return refusal;

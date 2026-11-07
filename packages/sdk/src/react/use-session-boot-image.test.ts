@@ -6,7 +6,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { __getConfigResolver, __setConfigResolver } from '../core/http/config';
 import { sessionStartKey, type SessionStartImageStep, type SessionStartResult } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
-import { useSession } from './opencode';
+import { useSession } from './runtime-hooks';
 
 /**
  * While `/start` provisions a box, the server names the sandbox image step in
@@ -38,7 +38,7 @@ function provisioning(image: SessionStartImageStep | null | undefined): SessionS
     agent_name: 'default',
     retriable: true,
     sandbox: null,
-    opencode_session_id: null,
+    runtime_session_id: null,
     boot: {
       phase: 'provisioning',
       since: '2026-11-02T09:59:58.000Z',
@@ -68,7 +68,7 @@ function ready(): SessionStartResult {
       created_at: '2026-11-02T00:00:00Z',
       updated_at: '2026-11-02T00:00:00Z',
     } as unknown as NonNullable<SessionStartResult['sandbox']>,
-    opencode_session_id: 'ses_image',
+    runtime_session_id: 'ses_image',
     runtime_url: '/p/sbx_image/8000',
     boot: { phase: 'ready', since: '2026-11-02T10:01:00.000Z', actively_starting: false, image: null },
   };

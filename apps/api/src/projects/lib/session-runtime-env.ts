@@ -10,7 +10,7 @@ export interface SessionRuntimeEnvInput {
   apiUrl: string;
   /** Frontend base URL (no /v1) the sandbox surfaces as user-facing links. */
   frontendUrl?: string;
-  opencodeModel?: string | null;
+  sessionModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
   repositoryAccess?: boolean;
   /** True only for a newly-created session branch that still equals base. */
@@ -147,6 +147,10 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...restoreGitEnv,
     ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
+    // The workspace id is the project id. The box gets KORTIX_PROJECT_ID only:
+    // the CLI and kortixd read KORTIX_WORKSPACE_ID first, so an injected
+    // KORTIX_WORKSPACE_ID would outrank a script's own KORTIX_PROJECT_ID=<other>.
+    // KORTIX_WORKSPACE_ID is the name a person or a script sets.
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',
@@ -171,21 +175,13 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // Frontend base for user-facing dashboard links — the agent/CLI must never
     // surface KORTIX_API_URL (the API host) to a human. See sandboxFrontendBaseUrl().
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
-    // The sandbox daemon owns OpenCode root creation for every cold session.
-    // The API adopts/persists that root; it must not create a competing one.
+    // The sandbox daemon creates the runtime's root session for every cold
+    // session. The API adopts/persists that root; it must not create a competing one.
     KORTIX_BOOTSTRAP_RUNTIME_SESSION: '1',
-    // The pre-W3 name of the variable above, for a daemon built before W3.
-    KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
-    ...(input.opencodeModel
-      ? {
-          KORTIX_MODEL: input.opencodeModel,
-          // The pre-W3 name of `KORTIX_MODEL`; the OpenCode adapter still falls back to it.
-          KORTIX_OPENCODE_MODEL: input.opencodeModel,
-        }
-      : {}),
+    ...(input.sessionModel ? { KORTIX_MODEL: input.sessionModel } : {}),
     // The sandbox daemon applies this as the BASE of the agent config it runs
     // (connector / gateway provider / Slack overlays still apply on top). Per-call
-    // The resolved session model (KORTIX_OPENCODE_MODEL above), or an explicit
+    // The resolved session model (`KORTIX_MODEL` above), or an explicit
     // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig
       ? {

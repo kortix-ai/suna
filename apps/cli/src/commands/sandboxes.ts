@@ -57,7 +57,7 @@ interface SnapshotBuild {
 
 const HELP = help`Usage: kortix sandboxes <subcommand> [options]
 
-Manage the project's sandbox images — the same surface as the dashboard's
+Manage the workspace's sandbox images — the same surface as the dashboard's
 Customize → Sandbox images. A template is a definition (image OR Dockerfile +
 resources); a build produces the actual snapshot the platform boots sessions
 from. Templates also come from \`sandbox.templates\` in kortix.yaml.
@@ -77,7 +77,7 @@ Subcommands:
   rm <slug>                         Delete a UI-created template.
   fix                               Start a session seeded with the last failed
                                     build log so an agent can repair it.
-  provider [--json]                 Show the project's sandbox-provider pin and
+  provider [--json]                 Show the workspace's sandbox-provider pin and
                                     which providers this host offers.
   provider <name> [--timeout <sec>] Pin every new session to one provider. If
                                     the target needs its snapshot built first
@@ -89,7 +89,7 @@ Subcommands:
 Local build (build --local):
   Renders your Dockerfile + the Kortix toolchain layer and builds it with an
   EMPTY context — the same repo-less constraint the cloud builds under. Needs
-  no login and no linked project, just Docker. For the checks that need neither,
+  no login and no linked workspace, just Docker. For the checks that need neither,
   run \`kortix validate\` (it lints these Dockerfiles statically).
 
   Slug: the positional, else \`sandbox.default\`, else your only template.
@@ -110,14 +110,14 @@ Options:
   --cpu <n>            vCPUs.   --memory <n>  GiB RAM.   --disk <n>  GiB disk.
   --clear              provider: remove the pin instead of setting one.
   --timeout <sec>      provider: how long to follow a preparation (default 600).
-  --project <id>       Operate on this project id (default: linked).
+  --workspace <id>     Operate on this workspace id (default: linked).
   --host <name>        Operate against a non-default Kortix host.
   -h, --help           Show this help.
 
 Pinning a provider needs the \`project.settings.write\` permission and is a person's
 action: an agent session (a session-bound or agent-grant token) is always refused.
 A session that needs a different runtime passes \`provider\` on session create instead —
-that changes only its own session, not the project.
+that changes only its own session, not the workspace.
 `;
 
 /** The `sandboxes` flags. Values arrive as strings; each use parses its own. */
@@ -155,7 +155,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
       local: takeFlagBool(rest, ['--local']),
       clear: takeFlagBool(rest, ['--clear', '--unpin']),
       timeout: takeFlagValue(rest, ['--timeout']),
-      project: takeFlagValue(rest, ['--project']),
+      project: takeFlagValue(rest, ['--project', '--workspace']),
       host: takeFlagValue(rest, ['--host']),
       image: takeFlagValue(rest, ['--image']),
       dockerfile: takeFlagValue(rest, ['--dockerfile']),
@@ -191,7 +191,7 @@ export async function runSandboxes(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
 
   try {
     switch (sub) {
@@ -345,7 +345,7 @@ async function sandboxesBuild(
       (t) => t.slug === slug,
     )?.template_id ?? null;
   if (!id) {
-    process.stderr.write(`${status.err(`No project-scoped template "${slug}" to build.`)}\n`);
+    process.stderr.write(`${status.err(`No workspace-scoped template "${slug}" to build.`)}\n`);
     return 1;
   }
   await client.post(`${base}/sandbox-templates/${id}/build`);

@@ -1,10 +1,7 @@
 import { projectSessions, projectTriggerExecutions, projectTriggerRuntime, sessionTurns } from '@kortix/db';
 import { and, asc, eq, gte, isNotNull, isNull, sql } from 'drizzle-orm';
 import { classifyTurnError } from '../../channels/slack/errors';
-import { projectNotificationsEnabled } from '../../notifications/enabled';
-import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
 import { db } from '../../shared/db';
-import { resolveProjectAutomationActor } from '../session-lifecycle/actor';
 import { ABORT_END_ERROR_NAMES, isRequestedStopName, type SandboxTurnCompletionOutcome } from '../session-turn-ledger';
 import { clearTriggerAlert, raiseTriggerAlert } from './trigger-alerts';
 import { pauseTriggerIfAlwaysFailing } from './trigger-failure-pause';
@@ -20,12 +17,10 @@ import { pauseTriggerIfAlwaysFailing } from './trigger-failure-pause';
  * outcome on the trigger:
  * - failed: `last_status: failed`, the reason in `last_error`, and
  *   `run_failing_since`. The trigger's watchers get one `automation_failed`
- *   alert per streak (trigger-alerts.ts). With the project's
- *   `notification_center` flag off, the account owner (whom triggers run as)
- *   gets one push when the streak starts instead, as before KRTX-1742. Later
- *   fires keep `failed` (keepRunFailure);
+ *   alert per streak (trigger-alerts.ts). Later fires keep `failed`
+ *   (keepRunFailure);
  * - succeeded after failed runs: back to `fired`, error and streak cleared;
- *   the watchers get one `automation_recovered` alert (flag on only);
+ *   the watchers get one `automation_recovered` alert;
  * - failed because the history no longer fits the model even after
  *   compaction: the session is retired, so the next reuse/keyed fire starts
  *   a fresh session instead of failing into the same one.
@@ -265,10 +260,7 @@ async function failRunsWithoutTurns(now: Date): Promise<number> {
   return ((failed as unknown as { rows?: unknown[] }).rows ?? (failed as unknown as unknown[])).length;
 }
 
-export async function recordTriggerRunEnd(
-  end: TriggerRunEnd,
-  legacyPush: typeof notifySessionPushLegacy = notifySessionPushLegacy,
-): Promise<TriggerRunEndResult> {
+export async function recordTriggerRunEnd(end: TriggerRunEnd): Promise<TriggerRunEndResult> {
   // A subagent's turn and a retry say nothing about any run.
   if (end.childSession || end.outcome === 'non_terminal') return 'not_a_trigger_run';
   // Every terminal relay settles the session's runs from the ledger, which
@@ -297,7 +289,7 @@ export async function recordTriggerRunEnd(
     return recovered.length > 0 ? 'recovered' : 'unchanged';
   }
 
-  // OpenCode compacts on overflow by itself. ContextOverflowError as the
+  // The runtime compacts on overflow by itself. ContextOverflowError as the
   // turn's end means compaction failed: this session can never run again.
   if (end.error?.name === 'ContextOverflowError') {
     await db
@@ -310,7 +302,7 @@ export async function recordTriggerRunEnd(
 
   const lastError = triggerRunFailureText(end.error);
   // One statement starts the streak: concurrent ends of two runs cannot both
-  // see it unset, so a flag-off owner is pushed once per streak.
+  // see it unset.
   const transitioned = await db
     .update(projectTriggerRuntime)
     .set({ lastStatus: 'failed', lastError, runFailingSince: now, lastAttemptAt: now, updatedAt: now })
@@ -329,18 +321,8 @@ export async function recordTriggerRunEnd(
   // trigger after 24 hours of such runs: the reused session's box otherwise
   // wakes every fire to fail again (2026-11-02: every 30 min for a week).
   await pauseTriggerIfAlwaysFailing({ projectId: end.projectId, accountId: end.accountId, slug, error: lastError, now });
-  if (!(await projectNotificationsEnabled(end.projectId))) {
-    if (transitioned.length === 0) return result;
-    // The identity every trigger runs as. `owner_user_id` is deprecated and
-    // ignored (integration-trigger-actor.test.ts): it may name a stale human.
-    const owner = await resolveProjectAutomationActor(end.accountId);
-    if (owner) {
-      await legacyPush({ type: 'error', sessionId: end.sessionId, projectId: end.projectId, recipients: [owner] });
-    }
-    return result;
-  }
   // Every failed run tries: the alert edge is separate from the display
   // streak, and a fire alert that cleared meanwhile must not hide this one.
-  await raiseTriggerAlert({ projectId: end.projectId, accountId: end.accountId, slug, source: 'run', error: lastError, notificationCenter: true });
+  await raiseTriggerAlert({ projectId: end.projectId, accountId: end.accountId, slug, source: 'run', error: lastError });
   return result;
 }

@@ -41,21 +41,20 @@ export function buildInviteUrl(inviteId: string): string {
   return `${base}/invites/${inviteId}`;
 }
 
-// Sends the invite email for both account-level invites (join the team) and
-// project-level invites (collaborate on a specific project). The two flows
-// share one transport + template; pass `projectName` to frame the copy around
-// a project instead of the whole account. Both create an `account_invitations`
+// Sends the invite email for both invite routes: the workspace members screen
+// and the older project access screen. Both name the workspace; `projectName`
+// is its name when the account's own name differs. Both create an `account_invitations`
 // row redeemed at the same /invites/:id link.
 type InviteEmailInput = {
   email: string;
   accountName: string;
   inviterEmail: string | null;
   inviteId: string;
-  // Display label for the role chip (account: admin|member, project:
-  // manager|member). Rendered verbatim (uppercased).
+  // The ladder role the invite grants (member | manager | admin), shown as
+  // the role chip in sentence case.
   role?: string;
-  // When set, the invite is framed as joining this project rather than the
-  // whole account/team (project-level /access/invite flow).
+  // The workspace's name when it is not the account's (the older
+  // /access/invite flow passes the project's name).
   projectName?: string | null;
 };
 
@@ -77,16 +76,14 @@ export function renderAccountInviteEmail(opts: InviteEmailInput): { subject: str
     ? `<div style="${S.chipWrap}"><span style="${S.chip}">${escapeHtml(role)}</span></div>`
     : '';
 
-  const target = opts.projectName
-    ? `the <span style="${S.strong}">${escapeHtml(opts.projectName)}</span> project`
-    : `the <span style="${S.strong}">${escapeHtml(opts.accountName)}</span> team`;
+  // One container: the workspace. `projectName` is the workspace's name when
+  // the invite came from its access screen; otherwise the account's name is.
+  const workspaceName = opts.projectName || opts.accountName;
+  const target = `the <span style="${S.strong}">${escapeHtml(workspaceName)}</span> workspace`;
 
-  const signupTail = opts.projectName
-    ? 'the project will appear in your account automatically.'
-    : 'the team will appear in your accounts list automatically.';
   // Accepting requires the invited address (email_matches_caller), so say which
   // one. Brand voice 5.5: one closing note, ending with the ignore line.
-  const note = `This invitation is for ${opts.email}. Sign in with that address, or sign up with it if you don't have a Kortix account yet — ${signupTail} If you were not expecting this invitation, you can ignore this email.`;
+  const note = `This invitation is for ${opts.email}. Sign in with that address, or sign up with it if you don't have a Kortix account yet — it will appear in your workspaces. If you were not expecting this invitation, you can ignore this email.`;
 
   const body = `
     <p style="${S.p}">
@@ -97,28 +94,20 @@ export function renderAccountInviteEmail(opts: InviteEmailInput): { subject: str
     <p style="${S.smallNote}">${escapeHtml(note)}</p>
   `;
 
-  const subjectTarget = opts.projectName
-    ? `collaborate on "${opts.projectName}"`
-    : `join "${opts.accountName}"`;
+  const subjectTarget = `join "${workspaceName}"`;
 
   const html = renderEmail({
-    title: opts.projectName
-      ? `Join ${opts.projectName} on Kortix`
-      : `Join ${opts.accountName} on Kortix`,
+    title: `Join ${workspaceName} on Kortix`,
     body,
   });
 
-  const targetText = opts.projectName
-    ? `the ${opts.projectName} project`
-    : `the ${opts.accountName} team`;
+  const targetText = `the ${workspaceName} workspace`;
 
   return {
     subject: `You're invited to ${subjectTarget} on Kortix`,
     html,
     text: renderText({
-      title: opts.projectName
-        ? `Join ${opts.projectName} on Kortix`
-        : `Join ${opts.accountName} on Kortix`,
+      title: `Join ${workspaceName} on Kortix`,
       paragraphs: [
         `${inviter} invited you to join ${targetText} on Kortix.`,
         ...(role ? [`Role: ${role}`] : []),
@@ -143,17 +132,17 @@ export async function sendProjectAddedEmail(opts: ProjectAddedEmailInput): Promi
 
 export function renderProjectAddedEmail(opts: ProjectAddedEmailInput): { subject: string; html: string; text: string } {
   const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
-  const url = `${base}/projects/${encodeURIComponent(opts.projectId)}`;
+  const url = `${base}/workspaces/${encodeURIComponent(opts.projectId)}`;
   const title = `Open ${opts.projectName} on Kortix`;
-  const lead = `${opts.inviterEmail || 'A project manager'} added you to the ${opts.projectName} project as ${opts.role}.`;
-  const note = `This access is for ${opts.email}. Sign in with that address to open the project. You already have access; no invitation acceptance is required. If you were not expecting this access, contact the project manager.`;
+  const lead = `${opts.inviterEmail || 'A workspace manager'} added you to the ${opts.projectName} workspace as ${opts.role}.`;
+  const note = `This access is for ${opts.email}. Sign in with that address to open the workspace. You already have access; no invitation acceptance is required. If you were not expecting this access, contact a workspace admin.`;
   return {
     subject: `Open "${opts.projectName}" on Kortix`,
     html: renderEmail({
       title,
-      body: `<p style="${S.p}">${escapeHtml(lead)}</p>${actionButton(url, 'Open project')}<p style="${S.smallNote}">${escapeHtml(note)}</p>`,
+      body: `<p style="${S.p}">${escapeHtml(lead)}</p>${actionButton(url, 'Open workspace')}<p style="${S.smallNote}">${escapeHtml(note)}</p>`,
     }),
-    text: renderText({ title, paragraphs: [lead], cta: { url, label: 'Open project' }, note }),
+    text: renderText({ title, paragraphs: [lead], cta: { url, label: 'Open workspace' }, note }),
   };
 }
 
@@ -170,7 +159,7 @@ export async function sendProjectAccessRequestEmail(opts: AccessRequestEmailInpu
 }
 
 export function renderProjectAccessRequestEmail(opts: AccessRequestEmailInput): { subject: string; html: string; text: string } {
-  const projectName = opts.projectName?.trim() || 'a Kortix project';
+  const projectName = opts.projectName?.trim() || 'a Kortix workspace';
   const message = opts.message?.trim();
   const messageBlock = message
     ? `<p style="${S.p}"><span style="${S.strong}">Message:</span><br />${escapeHtml(message)}</p>`
@@ -184,12 +173,12 @@ export function renderProjectAccessRequestEmail(opts: AccessRequestEmailInput): 
     ${messageBlock}
     ${actionButton(opts.reviewUrl, 'Review request')}
     <p style="${S.smallNote}">
-      Project managers can approve or decline this from Customize → Members.
+      Workspace admins and managers can approve or decline this in Workspace settings → Members.
     </p>
   `;
 
   const html = renderEmail({
-    title: 'Review project access',
+    title: 'Review workspace access',
     body,
   });
 
@@ -197,13 +186,13 @@ export function renderProjectAccessRequestEmail(opts: AccessRequestEmailInput): 
     subject: `${opts.requesterEmail} requested access to ${projectName}`,
     html,
     text: renderText({
-      title: 'Review project access',
+      title: 'Review workspace access',
       paragraphs: [
         `${opts.requesterEmail} requested access to ${projectName}.`,
         ...(message ? [`Message: ${message}`] : []),
       ],
       cta: { url: opts.reviewUrl, label: 'Review request' },
-      note: 'Project managers can approve or decline this from Customize → Members.',
+      note: 'Workspace admins and managers can approve or decline this in Workspace settings → Members.',
     }),
   };
 }

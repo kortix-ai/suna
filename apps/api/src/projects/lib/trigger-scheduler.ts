@@ -1,4 +1,3 @@
-import { projects } from '@kortix/db';
 import { assertRepositoryConnected } from './git';
 import { REPOSITORY_DISCONNECTED_CODE, isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { eq } from 'drizzle-orm';
@@ -8,12 +7,14 @@ import { isLeader } from '../../shared/leader-election';
 import { claimDueScheduleSlots, claimTriggerExecutions, markTriggerExecutionDispatched, markTriggerExecutionFailed, markTriggerExecutionSkipped, markTriggerExecutionSucceeded, type TriggerExecutionRow } from '../trigger-execution-store';
 import type { GitTriggerSpec } from '../triggers';
 import { drainMonitorEvents } from './monitor-observer';
+import { checkAppTriggerSilence } from './app-trigger-silence';
 import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
 import { raiseTriggerAlert } from './trigger-alerts';
 import { pauseTriggerIfAlwaysFailing } from './trigger-failure-pause';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
 import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, mapWithConcurrency, schedulerSweepIsStale, automaticFirePauseReason, withTimeout } from './trigger-scheduler-state';
+import { projectsView } from '../../workspaces/rows';
 
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
@@ -125,8 +126,8 @@ async function executeTriggerExecution(
 ): Promise<'fired' | 'queued' | 'failed' | 'skipped'> {
   const [project] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, row.projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, row.projectId))
     .limit(1);
   // The project's own pause, then the account's Pause all triggers (KRTX-1721).
   const paused = project && project.status === 'active' ? await automaticFirePauseReason(project) : null;
@@ -338,6 +339,12 @@ export function runProjectTriggerSchedulerTick(): void {
     .catch((error) => {
       console.error('[project-monitors] event drain failed:', error);
     });
+
+  // App triggers that expect an event (`expect_event_within`) and heard none:
+  // tell their watchers once. At most once a minute, on the leader.
+  checkAppTriggerSilence().catch((error) => {
+    logger.warn('[app-trigger-silence] check failed', { error: error instanceof Error ? error.message : String(error) });
+  });
 
   // Connector reconcile backstop — slower cadence than the trigger sweep so
   // we don't re-read every manifest each tick. Catches out-of-band manifest

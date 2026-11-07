@@ -1,4 +1,4 @@
-import { connectors, projectSecrets, projectSecretTombstones, projects } from '@kortix/db';
+import { connectors, projectSecrets, projectSecretTombstones } from '@kortix/db';
 import type { Database } from '@kortix/db';
 import { and, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
@@ -24,6 +24,7 @@ import {
 import { decryptNamedProjectSecret, encryptProjectSecret } from './secrets/envelope';
 import { projectSecretsRevision, resolveGrantedSecretSelection } from './secrets/grant-policy';
 import { mintSessionSecretHandle } from './secrets/handles';
+import { projectsView } from '../workspaces/rows';
 
 /**
  * Upsert the SHARED (owner_user_id IS NULL) row for a project secret to a new
@@ -117,8 +118,8 @@ export async function recordProjectSecretTombstone(
   name: string,
   tx: SecretWriteTx,
 ): Promise<void> {
-  await tx.select({ status: projects.status }).from(projects)
-    .where(eq(projects.projectId, projectId)).limit(1).for('update');
+  await tx.select({ status: projectsView.status }).from(projectsView)
+    .where(eq(projectsView.projectId, projectId)).limit(1).for('update');
   await tx.insert(projectSecretTombstones)
     .values({ projectId, name, deletedAt: new Date() })
     .onConflictDoUpdate({
@@ -344,7 +345,7 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
  * Does the LLM-gateway strip apply to this row?
  *
  * The strip exists so a PLATFORM-managed model credential never reaches
- * opencode while the gateway owns that provider. It used to key off the NAME
+ * the sandbox while the gateway owns that provider. It used to key off the NAME
  * alone, via `isGatewayManagedEnv`, which answers from the models.dev catalog —
  * a 204-provider registry that maps `github-copilot` to `GITHUB_TOKEN`. So a
  * project's own `GITHUB_TOKEN`, stored by the secrets UI as
@@ -365,7 +366,7 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
  *
  * What this deliberately does NOT weaken: managed credentials and anything the
  * provider-connect flow stored keep their stamp and stay withheld, and
- * `CODEX_AUTH_JSON`/`OPENCODE_AUTH_JSON` are unconditionally gateway-managed.
+ * `CODEX_AUTH_JSON` is unconditionally gateway-managed.
  *
  * Pure so the rule is testable without a model catalog.
  */

@@ -7,11 +7,11 @@ const A = '091862e9-4937-4e9b-925e-b8f6027feb28';
 
 describe('parseArtifactUrl', () => {
   test('an app link names its project and artifact, on any Kortix host and locale', () => {
-    expect(parseArtifactUrl(`https://dev.kortix.com/projects/${P}/artifacts/${A}`)).toEqual({
+    expect(parseArtifactUrl(`https://dev.kortix.com/workspaces/${P}/artifacts/${A}`)).toEqual({
       projectId: P,
       artifactId: A,
     });
-    expect(parseArtifactUrl(`http://localhost:3000/de/projects/${P}/artifacts/${A}/`)).toEqual({
+    expect(parseArtifactUrl(`http://localhost:3000/de/workspaces/${P}/artifacts/${A}/`)).toEqual({
       projectId: P,
       artifactId: A,
     });
@@ -25,15 +25,14 @@ describe('parseArtifactUrl', () => {
   });
 
   test('any other URL is not an artifact', () => {
-    expect(parseArtifactUrl(`https://dev.kortix.com/projects/${P}/artifacts`)).toBeNull();
-    expect(parseArtifactUrl(`https://dev.kortix.com/projects/${P}/sessions/${A}`)).toBeNull();
+    expect(parseArtifactUrl(`https://dev.kortix.com/workspaces/${P}/artifacts`)).toBeNull();
+    expect(parseArtifactUrl(`https://dev.kortix.com/workspaces/${P}/sessions/${A}`)).toBeNull();
     expect(parseArtifactUrl('not a url')).toBeNull();
   });
 });
 
-test('annotated frames have a separate pool key for the same immutable version', () => {
+test('a frame key names the version, else the last save', () => {
   const artifact = { artifact_id: A, updated_at: 'now' };
   expect(artifactFrameKey(artifact, 'commit')).toBe(`artifact:${A}:commit`);
-  expect(artifactFrameKey(artifact, 'commit', true)).toBe(`artifact:${A}:commit:annotate`);
-  expect(artifactFrameKey(artifact, null, true)).not.toBe(artifactFrameKey(artifact));
+  expect(artifactFrameKey(artifact)).toBe(`artifact:${A}:now`);
 });

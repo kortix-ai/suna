@@ -719,13 +719,13 @@ function MemberProjectAccessSection({
                 kebab.push({
                   label: tI18nComplete.raw('text5e5eba7f41ab'),
                   icon: <OpenIcon className="size-3.5" />,
-                  onSelect: () => router.push(`/projects/${project.project_id}`),
+                  onSelect: () => router.push(`/workspaces/${project.project_id}`),
                 });
 
                 return (
                   <MemberTableRow
                     key={project.project_id}
-                    onOpen={() => router.push(`/projects/${project.project_id}`)}
+                    onOpen={() => router.push(`/workspaces/${project.project_id}`)}
                     avatar={
                       <EntityAvatar
                         label={project.project_name}

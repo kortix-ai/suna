@@ -191,6 +191,39 @@ export function serializePublicShare(
   };
 }
 
+// A rate-limit key must name a share, not the token's shape (KRTX-4105). The
+// LRU cache of verified token hashes keeps a popular link at one query per
+// eviction, and a rotating flood at zero — every fresh token misses, nothing is
+// stored, and the caller keys its bucket from the client address instead.
+const SHARE_ID_CACHE_MAX = 10_000;
+// replica-local: a MISS only costs one keyed query per replica (and a flood of
+// unique tokens is a miss everywhere), so a cold cache here changes no verdict,
+// only how often the read runs.
+const shareIdByTokenHash = new Map<string, string>();
+
+/** The id of the share `token` exists as, or null. Never throws on an unknown token. */
+export async function existsPublicShare(token: string): Promise<string | null> {
+  const tokenHash = publicShareTokenHash(token);
+  const cached = shareIdByTokenHash.get(tokenHash);
+  if (cached) {
+    shareIdByTokenHash.delete(tokenHash);
+    shareIdByTokenHash.set(tokenHash, cached);
+    return cached;
+  }
+  const [row] = await db
+    .select({ shareId: projectSessionPublicShares.shareId })
+    .from(projectSessionPublicShares)
+    .where(eq(projectSessionPublicShares.tokenHash, tokenHash))
+    .limit(1);
+  if (!row) return null;
+  for (const oldest of shareIdByTokenHash.keys()) {
+    if (shareIdByTokenHash.size < SHARE_ID_CACHE_MAX) break;
+    shareIdByTokenHash.delete(oldest);
+  }
+  shareIdByTokenHash.set(tokenHash, row.shareId);
+  return row.shareId;
+}
+
 export async function listPublicSharesForSession(sessionId: string) {
   const rows = await db
     .select()

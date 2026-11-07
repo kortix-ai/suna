@@ -70,6 +70,12 @@ interface SessionPermissionPromptProps {
   permissions: PermissionRequest[];
   /** Must reject on failure so busy states reset and the card stays actionable. */
   onReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
+  /**
+   * The rows that act on the live session ("Allow everything" for this session,
+   * the agent-config footer). Off in Review, where the ask may have parked and
+   * no live runtime session is in scope. Default on.
+   */
+  sessionControls?: boolean;
 }
 
 function permissionLabel(p: PermissionRequest): string {
@@ -152,9 +158,10 @@ export function SessionPermissionPrompt({
   agentName,
   permissions,
   onReply,
+  sessionControls = true,
 }: SessionPermissionPromptProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  // Only the /projects/[id]/sessions/[sessionId] route has a project in scope —
+  // Only the /workspaces/[id]/sessions/[sessionId] route has a project in scope —
   // on plain /sessions/[id], `id` IS the session, so no config surface.
   const ids = useSessionIds();
   const projectId = ids.sessionId ? ids.projectId : undefined;
@@ -309,9 +316,12 @@ export function SessionPermissionPrompt({
             ? tI18nComplete.raw('text9ef61f308b40')
             : tI18nComplete('textc49ce59d0871', { value0: permissions.length })}
         </span>
-        <span className="text-muted-foreground text-xs">
-          {tI18nComplete.raw('text9532a08e3f63')}
-        </span>
+        {/* "Paused until you decide" is true only for a call that still waits live. */}
+        {sessionControls ? (
+          <span className="text-muted-foreground text-xs">
+            {tI18nComplete.raw('text9532a08e3f63')}
+          </span>
+        ) : null}
       </div>
       <ul className="divide-border divide-y">
         {permissions.map((p) => {
@@ -384,6 +394,7 @@ export function SessionPermissionPrompt({
           );
         })}
       </ul>
+      {sessionControls ? (
       <div className="border-border flex items-center gap-2 border-t px-3 py-2">
         <span className="text-muted-foreground text-xs">
           {tI18nComplete.raw('text16324ed5894b')}
@@ -399,7 +410,8 @@ export function SessionPermissionPrompt({
             {tI18nComplete.raw('text1f05c7f5b64d')}
         </DecisionButton>
       </div>
-      {canWriteConfig.allowed && agentBlock ? (
+      ) : null}
+      {sessionControls && canWriteConfig.allowed && agentBlock ? (
         // Deliberately set apart from the one-off buttons above: these WRITE the
         // project's permission config — every future session stops asking.
         <div className="bg-muted/40 border-border flex flex-wrap items-center gap-2 border-t px-3 py-2">

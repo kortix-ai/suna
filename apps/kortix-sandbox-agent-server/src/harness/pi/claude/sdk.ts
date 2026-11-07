@@ -108,6 +108,8 @@ const ISOLATION_ENV: Record<string, string | undefined> = {
   ENABLE_TOOL_SEARCH: 'false',
   CLAUDE_CODE_DISABLE_ADVISOR_TOOL: '1',
   DISABLE_AUTOUPDATER: '1',
+  // No model call of Claude Code's own (a session title per process start) on the user's subscription.
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
   DISABLE_TELEMETRY: '1',
   DISABLE_ERROR_REPORTING: '1',
   // pi truncates tool output itself.

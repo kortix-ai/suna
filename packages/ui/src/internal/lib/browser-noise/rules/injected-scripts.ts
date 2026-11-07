@@ -6,6 +6,7 @@ import {
   sourcesOf,
   stripErrorWrappers,
 } from '../evidence';
+import { isScriptAssetSource } from './old-browsers';
 
 // OneTrust cookie-consent SDK JSON-parse noise. OneTrust
 // (`https://onetrust.com`) is a third-party cookie-consent / IAB TCF banner
@@ -273,6 +274,30 @@ export function isGoogletagUndefinedNoise(input: {
   );
 }
 
+/**
+ * A script injected into the page twice declares the same top-level `let` or
+ * `const`: `Identifier 'originalQuery' has already been declared`. Better
+ * Stack, Kortix Frontend prod, 2026-11-06 (KRTX-4353, pattern `cc5efbb8…`):
+ * one frame, the page document `app:///` at 1:1, global `onerror`, 0 users.
+ * Kortix code cannot raise it from the document: our bundle chunks wrap their
+ * code in functions and report their own `_next/static` URL, and our inline
+ * scripts declare nothing at the top level. A frame in a loaded script (our
+ * bundles, any `.js` URL, an extension) or in resolved first-party source
+ * keeps reporting.
+ */
+const REDECLARED_IDENTIFIER_MESSAGE = /^(?:Uncaught SyntaxError: )?Identifier '[^']+' has already been declared$/;
+
+function isRedeclaredInjectedIdentifierNoise(input: {
+  message?: unknown;
+  filename?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  return (
+    REDECLARED_IDENTIFIER_MESSAGE.test(stripErrorWrappers(normalizeString(input.message))) &&
+    !sourcesOf(input).some((source) => isScriptAssetSource(source) || isFirstPartyResolvedSource(source))
+  );
+}
+
 /** Vercel toolbar frames have a reserved source path outside app bundles. */
 export function isVercelLiveFeedbackNoise(input: {
   filename?: unknown;
@@ -291,5 +316,35 @@ export const INJECTED_SCRIPT_RULES: readonly NoiseRule[] = [
   { id: 'redefine-wallet-provider', appliesTo: 'both', match: isRedefineInjectedWalletNoise },
   { id: 'wallet-provider-write', appliesTo: 'both', match: isInjectedWalletProviderWriteNoise },
   { id: 'googletag-undefined', appliesTo: 'both', match: isGoogletagUndefinedNoise },
+  { id: 'redeclared-injected-identifier', appliesTo: 'both', match: isRedeclaredInjectedIdentifierNoise },
   { id: 'vercel-live-feedback', appliesTo: 'both', match: isVercelLiveFeedbackNoise },
+  {
+    // KRTX-4387: an injected `tracking_script.js` (no Kortix code, GTM tag or
+    // vendor loads it) asks Closure's jsloader for the gapi client. The CSP
+    // blocks apis.google.com and the loader throws `CustomError`. Require the
+    // exact message and the injected frame; keep any first-party frame.
+    id: 'injected-gapi-jsloader',
+    appliesTo: 'sentry',
+    match: ({ message, frames }) =>
+      /^Jsloader error \(code #\d+\): Error while loading script https:\/\/apis\.google\.com\//.test(
+        normalizeString(message),
+      ) &&
+      !frames.some((frame) => isFirstPartyResolvedSource(frame.filename)) &&
+      frames.some((frame) => frame.filename === 'app:///tracking_script.js'),
+  },
+  {
+    // KRTX-4423: a crawler's automation driver evaluates a string in the page
+    // and the CSP blocks it. Every script the page loads reports a URL (a
+    // bundle, a vendor, a `blob:` worker, the page for inline scripts); only
+    // injected code is `<anonymous>`. Require the exact CSP message and a
+    // stack of only `<anonymous>` frames; any other frame or no stack reports.
+    id: 'injected-csp-eval',
+    appliesTo: 'sentry',
+    match: ({ message, frames }) =>
+      /^Evaluating a string as JavaScript violates the following Content Security Policy directive because 'unsafe-eval' is not an allowed source of script/.test(
+        normalizeString(message),
+      ) &&
+      frames.length > 0 &&
+      frames.every((frame) => frame.filename === '<anonymous>'),
+  },
 ];

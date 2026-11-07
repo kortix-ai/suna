@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import {
   isRepositoryDisconnectedError,
   repositoryDisconnectedBody,
@@ -331,8 +332,8 @@ function handleHttpException(
   // Better Stack groups on the message string, so `-> 403 [HTTPException]`
   // collapsed every possible denial into one unactionable bucket: 2,338
   // boot-timeline 403s over 7 days never revealed that the rejecting branch
-  // was `enforceTokenProjectScope`'s default-deny (see
-  // SESSION_BOUND_PLATFORM_SINKS in middleware/auth.ts). Bounded at 200 chars
+  // was `enforceTokenProjectScope`'s default-deny (the route had no binding in
+  // middleware/workspace-binding.ts). Bounded at 200 chars
   // so a long upstream message cannot shard the grouping without limit.
   const reason = (err.message ?? '').slice(0, 200);
   // SEVERITY FOLLOWS THE CAUSE. A 4xx here is the gate working: an expired
@@ -451,7 +452,7 @@ function handleDatabaseOrUnknownError(
     if (
       databaseError.pgCode === '57014'
       && method === 'GET'
-      && /^\/v1\/projects\/[^/]+\/gateway\/(overview|series|breakdown|sessions)\/?$/.test(path)
+      && /^\/v1\/projects\/[^/]+\/gateway\/(overview|series|breakdown|sessions)\/?$/.test(asLegacyWorkspaceRoute(path))
     ) {
       appLogger.warn(`${method} ${path} -> 503 [gateway-analytics-timeout]`, {
         method, path, pgCode: databaseError.pgCode,

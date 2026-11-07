@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   CLI_CONNECTOR_RUNTIME_FILES,
+  CLI_CONNECTOR_SHARED_FILES,
   buildCliConnectorSourceDigest,
   buildFileSha256,
 } from '@kortix/shared/sandbox-runtime-artifact';
@@ -35,6 +36,11 @@ async function createCliFixture(): Promise<{
   const sharedRoot = join(root, 'packages', 'shared');
   await mkdir(join(sharedRoot, 'src', 'host-config'), { recursive: true });
   await writeFile(join(sharedRoot, 'src', 'host-config', 'config.ts'), 'config:v1\n');
+  for (const relativePath of CLI_CONNECTOR_SHARED_FILES) {
+    await writeFile(join(sharedRoot, relativePath), `${relativePath}:v1\n`);
+  }
+  await mkdir(join(sharedRoot, 'src', 'utils'), { recursive: true });
+  await writeFile(join(sharedRoot, 'src', 'utils', 'string.ts'), 'string:v1\n');
   await writeFile(join(sharedRoot, 'package.json'), '{"name":"@kortix/shared"}\n');
   const binaryPath = join(cliRoot, 'dist', 'kortix');
   const attestationPath = join(cliRoot, 'dist', 'kortix-connectors-runtime.attestation.json');

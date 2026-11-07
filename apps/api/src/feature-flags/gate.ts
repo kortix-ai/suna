@@ -31,8 +31,8 @@ export function featureDisabledBody(key: FeatureFlagKey): {
   const def = featureFlagDef(key);
   return {
     error: def?.catalogHidden
-      ? `${def.name} is not enabled for this project. Contact Kortix to enable it.`
-      : `${def?.name ?? key} is not enabled for this project. Enable it in Settings → Feature flags.`,
+      ? `${def.name} is not enabled for this workspace. Contact Kortix to enable it.`
+      : `${def?.name ?? key} is not enabled for this workspace. Enable it in Workspace settings → Feature flags.`,
     code: FEATURE_DISABLED_CODE,
     feature: key,
   };

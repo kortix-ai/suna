@@ -186,7 +186,7 @@ describe('POST /file/import', () => {
     globalThis.fetch = Object.assign(
       async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         const url = String(input)
-        if (url.startsWith('http://api.test/v1/projects/')) return Response.json(descriptor())
+        if (url.startsWith('http://api.test/v1/workspaces/')) return Response.json(descriptor())
         if (url.startsWith('http://storage.test/')) return new Response(bytes)
         throw new Error(`unexpected fetch ${url}`)
       },
@@ -215,7 +215,7 @@ describe('POST /file/import', () => {
         const url = String(input)
         const headers = new Headers(init?.headers)
         seen.push({ url, authorization: headers.get('authorization'), redirect: init?.redirect })
-        if (url.startsWith('http://api.test/v1/projects/')) return Response.json(descriptor())
+        if (url.startsWith('http://api.test/v1/workspaces/')) return Response.json(descriptor())
         if (url.startsWith('http://storage.test/')) return new Response(bytes)
         throw new Error(`unexpected fetch ${url}`)
       },
@@ -234,7 +234,7 @@ describe('POST /file/import', () => {
     expect(await fs.readFile(targetPath())).toEqual(Buffer.from(bytes))
     expect(seen).toEqual([
       {
-        url: `http://api.test/v1/projects/${config().projectId}/runtime/prompt-attachments/${ATTACHMENT_ID}?command_id=${COMMAND_ID}&part_index=0`,
+        url: `http://api.test/v1/workspaces/${config().projectId}/runtime/prompt-attachments/${ATTACHMENT_ID}?command_id=${COMMAND_ID}&part_index=0`,
         authorization: `Bearer ${TOKEN}`,
         redirect: 'error',
       },
@@ -481,7 +481,7 @@ describe('POST /file/import', () => {
 
     assertImportFailureWarning(response)
     expect(calls).toEqual([
-      `https://api.test/v1/projects/${config().projectId}/runtime/prompt-attachments/${ATTACHMENT_ID}?command_id=${COMMAND_ID}&part_index=0`,
+      `https://api.test/v1/workspaces/${config().projectId}/runtime/prompt-attachments/${ATTACHMENT_ID}?command_id=${COMMAND_ID}&part_index=0`,
     ])
     expect(await response.text()).not.toContain('storage.test')
   })

@@ -1,4 +1,3 @@
-import * as React from 'react';
 import Svg, { Rect } from 'react-native-svg';
 import type { SvgProps } from 'react-native-svg';
 import { cssInterop } from 'nativewind';

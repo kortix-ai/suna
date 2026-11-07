@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 const REFERENCE = /migrations\/(\d{14,17}_[a-z0-9_]+\.sql)/g;
 
-export function missingMigrationReferences(lines: string[], sqlFiles: Set<string>): string[] {
+function missingMigrationReferences(lines: string[], sqlFiles: Set<string>): string[] {
   const missing: string[] = [];
   for (const line of lines) {
     for (const match of line.matchAll(REFERENCE)) {
@@ -36,10 +36,11 @@ describe('migration file references', () => {
 
   it('every migration path in TypeScript and JavaScript names a tracked .sql file', () => {
     const sqlFiles = new Set(gitOrEmpty(['ls-files', '*.sql'], { maxBuffer: 64 * 1024 * 1024 }).map((path) => basename(path)));
-    // This file's own fixtures name migrations that do not exist; skip it.
+    // These files' own fixtures name migrations that do not exist; skip them.
     const lines = gitOrEmpty([
       'grep', '-nE', 'migrations/[0-9]{14,17}_[a-z0-9_]+\\.sql',
       '--', '*.ts', '*.tsx', '*.js', '*.mjs', ':!tests/unit/migration-references.test.ts',
+      ':!tests/unit/shared-db-migration-guard.test.ts',
     ], { maxBuffer: 64 * 1024 * 1024 });
     expect(missingMigrationReferences(lines, sqlFiles)).toEqual([]);
   });

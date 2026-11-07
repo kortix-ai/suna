@@ -51,7 +51,7 @@ export function inboundAllowsTeam(inbound: SlackInbound, teamId: string | null |
  */
 export async function provenSlackWorkspaces(projectId: string): Promise<string[]> {
   const rows = await db
-    .select({ workspaceId: chatInstalls.workspaceId })
+    .select({ workspaceId: chatInstalls.platformTeamId })
     .from(chatInstalls)
     .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.projectId, projectId)))
     .orderBy(desc(chatInstalls.connectedAt));

@@ -72,13 +72,13 @@ function sessionRow(sessionId = SESSION) {
     sandbox_provider: 'daytona',
     sandbox_id: 'sandbox-row-id',
     sandbox_url: `http://127.0.0.1/v1/p/${external}/8000`,
-    opencode_session_id: 'ses_oc',
+    runtime_session_id: 'ses_oc',
     name: 'Parity',
     custom_name: null,
     agent_name: 'kortix',
     status: 'running',
     error: null,
-    metadata: { opencode_model: 'kortix/glm-5.3-flash' },
+    metadata: { model: 'kortix/glm-5.3-flash' },
     sharing: { mode: 'private', ownerId: 'user-1' },
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -183,7 +183,7 @@ function startServer(): string {
       const method = req.method;
       const body = method === 'GET' || method === 'DELETE' ? undefined : await bodyOf(req);
       seen.push({ method, path: path + url.search, body });
-      const project = `/v1/projects/${PROJECT}`;
+      const project = `/v1/workspaces/${PROJECT}`;
       const session = `${project}/sessions/${SESSION}`;
 
       if (method === 'GET' && path === `${session}/config`) {
@@ -235,7 +235,7 @@ function startServer(): string {
           agent_name: 'kortix',
           retriable: false,
           sandbox: { external_id: EXTERNAL_PI },
-          opencode_session_id: 'ses_oc',
+          runtime_session_id: 'ses_oc',
         });
       }
       if (method === 'GET' && path === `/v1/p/${EXTERNAL_PI}/8000/kortix/health`) {
@@ -247,7 +247,7 @@ function startServer(): string {
           agent_name: 'kortix',
           retriable: false,
           sandbox: { external_id: EXTERNAL },
-          opencode_session_id: 'ses_oc',
+          runtime_session_id: 'ses_oc',
         });
       }
       if (method === 'POST' && path === `${session}/restart`) {
@@ -260,7 +260,7 @@ function startServer(): string {
           agent_name: 'kortix',
           retriable: false,
           sandbox: { external_id: EXTERNAL },
-          opencode_session_id: 'ses_oc',
+          runtime_session_id: 'ses_oc',
         });
       }
       if (method === 'POST' && path === `${session}/stop`) {
@@ -323,10 +323,10 @@ function startServer(): string {
         return Response.json({ prompts: [queuedPrompt()] });
       }
       if (method === 'PUT' && path === `${session}/model`) {
-        const model = (body as { opencode_model: string }).opencode_model;
+        const model = (body as { model: string }).model;
         if (model === 'kortix/wedged') {
           return Response.json({
-            opencode_model: model,
+            model: model,
             applied_live: false,
             push_failed: true,
             detail: 'env sync failed',
@@ -335,7 +335,7 @@ function startServer(): string {
         if (model === 'kortix/nope') {
           return Response.json({ error: 'Model is not available for this account' }, { status: 400 });
         }
-        return Response.json({ opencode_model: model, applied_live: true });
+        return Response.json({ model: model, applied_live: true });
       }
       if (method === 'GET' && path === `${session}/audit`) {
         // Real wire shape: `action` is connectorCalls.action_path, stored WITH
@@ -378,7 +378,7 @@ function startServer(): string {
           agent_name: 'kortix',
           retriable: false,
           reason: 'runtime_identity_unavailable',
-          opencode_session_id: 'ses_oc',
+          runtime_session_id: 'ses_oc',
         });
       }
       if (method === 'DELETE' && path === `${project}/sessions/${SESSION_B}`) {
@@ -397,7 +397,7 @@ function startServer(): string {
       if (method === 'GET' && path === `${project}/sessions/${SESSION_ARCHIVED}`) {
         return Response.json(sessionRow(SESSION_ARCHIVED));
       }
-      const listState = path.match(/^\/v1\/projects\/[^/]+\/sessions\/([^/]+)\/(pin|archive)$/);
+      const listState = path.match(/^\/v1\/workspaces\/[^/]+\/sessions\/([^/]+)\/(pin|archive)$/);
       if (method === 'PUT' && listState) {
         if (listState[1] === SESSION_B) {
           return Response.json({ error: 'Only a person can pin or archive a session' }, { status: 403 });
@@ -617,8 +617,8 @@ describe('kortix sessions stop / start / warm', () => {
   test('stop POSTs /stop and reports the resumable pause', async () => {
     const r = await runCli(['sessions', 'stop', SESSION, ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/stop`)).toEqual([
-      { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/stop`, body: {} },
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/stop`)).toEqual([
+      { method: 'POST', path: `/v1/workspaces/${PROJECT}/sessions/${SESSION}/stop`, body: {} },
     ]);
     expect(r.stdout).toContain('Stopped');
     expect(r.stdout).toContain('disk kept');
@@ -627,7 +627,7 @@ describe('kortix sessions stop / start / warm', () => {
   test('start POSTs /start once and reports ready', async () => {
     const r = await runCli(['sessions', 'start', SESSION, ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/start`)).toHaveLength(1);
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/start`)).toHaveLength(1);
     expect(r.stdout).toContain('is ready');
   });
 
@@ -667,20 +667,20 @@ describe('kortix sessions share', () => {
       session_id: SESSION,
       sharing: { mode: 'private', ownerId: 'user-1' },
     });
-    expect(calls('PUT', `/v1/projects/${PROJECT}`)).toEqual([]);
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}`)).toEqual([]);
   });
 
   test('--mode project PUTs the project intent', async () => {
     const r = await runCli(['sessions', 'share', SESSION, '--mode', 'project', ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION}/sharing`)).toEqual([
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/sharing`)).toEqual([
       {
         method: 'PUT',
-        path: `/v1/projects/${PROJECT}/sessions/${SESSION}/sharing`,
+        path: `/v1/workspaces/${PROJECT}/sessions/${SESSION}/sharing`,
         body: { mode: 'project' },
       },
     ]);
-    expect(r.stdout).toContain('every project member');
+    expect(r.stdout).toContain('every workspace member');
   });
 
   test('--member accepts an email and resolves it through the member list', async () => {
@@ -689,8 +689,8 @@ describe('kortix sessions share', () => {
       config,
     );
     expect(r.code).toBe(0);
-    expect(calls('GET', `/v1/projects/${PROJECT}/access`)).toHaveLength(1);
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION}/sharing`)[0]?.body).toEqual({
+    expect(calls('GET', `/v1/workspaces/${PROJECT}/access`)).toHaveLength(1);
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/sharing`)[0]?.body).toEqual({
       mode: 'members',
       memberIds: ['user-42'],
       groupIds: ['grp-7'],
@@ -700,7 +700,7 @@ describe('kortix sessions share', () => {
   test('--mode private sends the empty ownerId the dashboard sends', async () => {
     const r = await runCli(['sessions', 'share', SESSION, '--mode', 'private', ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION}/sharing`)[0]?.body).toEqual({
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/sharing`)[0]?.body).toEqual({
       mode: 'private',
       ownerId: '',
     });
@@ -718,19 +718,19 @@ describe('kortix sessions share', () => {
       config,
     );
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('No project member with email');
+    expect(r.stderr).toContain('No workspace member with email');
     // KRTX-2992: a plain member's roster lists only themselves
     // (apps/api/src/iam/directory-visibility.ts), so "not found" can mean
     // "not visible to you". The error says so and names the way out.
     expect(r.stderr).toContain('you may not be allowed to see this person');
     expect(r.stderr).toContain('--member <user-id>');
-    expect(calls('PUT', `/v1/projects/${PROJECT}`)).toEqual([]);
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}`)).toEqual([]);
   });
 
   test('--help says an email resolves only through the members the caller can see', async () => {
     const r = await runCli(['sessions', 'share', '--help'], config);
     expect(r.code).toBe(0);
-    expect(r.stdout.replace(/\s+/g, ' ')).toContain('resolves through the project members you can see');
+    expect(r.stdout.replace(/\s+/g, ' ')).toContain('resolves through the workspace members you can see');
   });
 });
 
@@ -741,7 +741,7 @@ describe('kortix sessions links', () => {
     const r = await runCli(['sessions', 'links', '--help'], config);
     expect(r.code).toBe(0);
     const flat = r.stdout.replace(/\s+/g, ' ');
-    expect(flat).toContain('Refused for 22, 3211 (the file-share server), 8000 and the opencode ports.');
+    expect(flat).toContain('Refused for 22, 3211 (the file-share server), 4096, 4097 and 8000.');
   });
 
   test('create POSTs a preview share and prints the public url', async () => {
@@ -750,7 +750,7 @@ describe('kortix sessions links', () => {
       config,
     );
     expect(r.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/public-shares`)[0]?.body).toEqual({
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/public-shares`)[0]?.body).toEqual({
       preview: { port: 3000, path: '/app' },
     });
     expect(r.stdout).toContain('https://p3000-sandbox-parity.example.test/?public_share=kps_abc');
@@ -762,7 +762,7 @@ describe('kortix sessions links', () => {
       config,
     );
     expect(r.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/public-shares`)[0]?.body).toEqual({
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/public-shares`)[0]?.body).toEqual({
       file: { path: 'out/report.pdf' },
       mode: 'view',
     });
@@ -777,7 +777,7 @@ describe('kortix sessions links', () => {
   test('revoke DELETEs the share', async () => {
     const r = await runCli(['sessions', 'links', SESSION, 'revoke', SHARE, ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION}/public-shares/${SHARE}`)).toHaveLength(1);
+    expect(calls('DELETE', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/public-shares/${SHARE}`)).toHaveLength(1);
     expect(r.stdout).toContain('Revoked');
   });
 
@@ -801,7 +801,7 @@ describe('kortix sessions queue', () => {
     expect((await runCli(['sessions', 'queue', SESSION, 'hold', ...P], config)).code).toBe(0);
     expect((await runCli(['sessions', 'queue', SESSION, 'release', ...P], config)).code).toBe(0);
     expect(
-      calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/prompts/hold`).map((c) => c.body),
+      calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/prompts/hold`).map((c) => c.body),
     ).toEqual([{ held: true }, { held: false }]);
   });
 
@@ -809,13 +809,13 @@ describe('kortix sessions queue', () => {
     const now = await runCli(['sessions', 'queue', SESSION, 'now', PROMPT_ROW, ...P], config);
     expect(now.code).toBe(0);
     expect(
-      calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/prompts/${PROMPT_ROW}/retry`),
+      calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/prompts/${PROMPT_ROW}/retry`),
     ).toHaveLength(1);
 
     const rm = await runCli(['sessions', 'queue', SESSION, 'rm', PROMPT_ROW, ...P], config);
     expect(rm.code).toBe(0);
     expect(
-      calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION}/prompts/${PROMPT_ROW}`),
+      calls('DELETE', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/prompts/${PROMPT_ROW}`),
     ).toHaveLength(1);
   });
 
@@ -839,7 +839,7 @@ describe('kortix sessions chat --queue', () => {
       config,
     );
     expect(r.code).toBe(0);
-    const post = calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/prompts`)[0];
+    const post = calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/prompts`)[0];
     const body = post?.body as {
       client_message_id: string;
       message_id: string;
@@ -847,7 +847,7 @@ describe('kortix sessions chat --queue', () => {
       overrides: unknown;
       client_sent_at_ms: number;
     };
-    // The API refuses anything that is not an OpenCode wire message id.
+    // The API refuses anything that is not a runtime wire message id.
     expect(body.message_id).toMatch(/^msg_[0-9a-f]{12}[A-Za-z0-9]{14}$/);
     expect(body.client_message_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.parts).toEqual([{ type: 'text', text: 'ship the thing' }]);
@@ -861,7 +861,7 @@ describe('kortix sessions chat --queue', () => {
 
   test('--queue never touches the runtime (no /start, no daemon call)', async () => {
     await runCli(['sessions', 'chat', SESSION, '-p', 'x', '--queue', ...P], config);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/start`)).toEqual([]);
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/start`)).toEqual([]);
     expect(seen.filter((s) => s.path.startsWith(`/v1/p/${EXTERNAL}`))).toEqual([]);
   });
 
@@ -876,7 +876,7 @@ describe('kortix sessions chat --steer', () => {
   test('posts to the durable inbox with delivery steer and says where it went', async () => {
     const r = await runCli(['sessions', 'chat', SESSION, '-p', 'also check the logs', '--steer', ...P], config);
     expect(r.code).toBe(0);
-    const post = calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/prompts`)[0];
+    const post = calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/prompts`)[0];
     expect(post?.body).toMatchObject({
       delivery: 'steer',
       placement: 'composer',
@@ -888,7 +888,7 @@ describe('kortix sessions chat --steer', () => {
 
   test('--steer never touches the runtime (no /start, no daemon call)', async () => {
     await runCli(['sessions', 'chat', SESSION, '-p', 'x', '--steer', ...P], config);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/start`)).toEqual([]);
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/start`)).toEqual([]);
     expect(seen.filter((s) => s.path.startsWith(`/v1/p/${EXTERNAL}`))).toEqual([]);
   });
 
@@ -921,12 +921,12 @@ describe('kortix sessions model', () => {
   test('PUTs the model and reports the live application', async () => {
     const r = await runCli(['sessions', 'model', SESSION, 'kortix/glm-5.3-flash', ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION}/model`)).toEqual([
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/model`)).toEqual([
       {
         method: 'PUT',
-        path: `/v1/projects/${PROJECT}/sessions/${SESSION}/model`,
-        // `model` since W4; `opencode_model` keeps an older self-hosted API working.
-        body: { model: 'kortix/glm-5.3-flash', opencode_model: 'kortix/glm-5.3-flash' },
+        path: `/v1/workspaces/${PROJECT}/sessions/${SESSION}/model`,
+        // `model` since W4; `model` keeps an older self-hosted API working.
+        body: { model: 'kortix/glm-5.3-flash' },
       },
     ]);
     expect(r.stdout).toContain('Now running kortix/glm-5.3-flash');
@@ -1113,10 +1113,10 @@ describe('kortix sessions approvals', () => {
   test('approve POSTs the decision to the project approvals route', async () => {
     const r = await runCli(['sessions', 'approvals', SESSION, 'approve', EXECUTION, ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/approvals/${EXECUTION}`)).toEqual([
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/approvals/${EXECUTION}`)).toEqual([
       {
         method: 'POST',
-        path: `/v1/projects/${PROJECT}/approvals/${EXECUTION}`,
+        path: `/v1/workspaces/${PROJECT}/approvals/${EXECUTION}`,
         body: { decision: 'approve' },
       },
     ]);
@@ -1124,7 +1124,7 @@ describe('kortix sessions approvals', () => {
 
   test('deny sends decision: deny', async () => {
     await runCli(['sessions', 'approvals', SESSION, 'deny', EXECUTION, ...P], config);
-    expect(calls('POST', `/v1/projects/${PROJECT}/approvals/${EXECUTION}`)[0]?.body).toEqual({
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/approvals/${EXECUTION}`)[0]?.body).toEqual({
       decision: 'deny',
     });
   });
@@ -1279,7 +1279,7 @@ describe('kortix sessions preview --list', () => {
   test('prints the named candidates instead of one url', async () => {
     const r = await runCli(['sessions', 'preview', SESSION, '--list', '--json', ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION}/previews`)).toHaveLength(1);
+    expect(calls('GET', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/previews`)).toHaveLength(1);
     expect(JSON.parse(r.stdout).map((c: { id: string }) => c.id)).toEqual(['web', 'vite']);
   });
 
@@ -1289,7 +1289,7 @@ describe('kortix sessions preview --list', () => {
     const out = JSON.parse(r.stdout);
     expect(out.port).toBe(3000);
     expect(out.sandbox).toBe(EXTERNAL);
-    expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION}/previews`)).toEqual([]);
+    expect(calls('GET', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/previews`)).toEqual([]);
   });
 });
 
@@ -1340,8 +1340,8 @@ describe('kortix sessions rm (multiple ids)', () => {
     expect(JSON.parse(removed.stdout)).toEqual([
       { session_id: SESSION, project_id: PROJECT, deleted: true, restore_until: '2026-02-01T00:00:00.000Z' },
     ]);
-    expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION}`)).toHaveLength(0);
-    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION}`)).toHaveLength(1);
+    expect(calls('GET', `/v1/workspaces/${PROJECT}/sessions/${SESSION}`)).toHaveLength(0);
+    expect(calls('DELETE', `/v1/workspaces/${PROJECT}/sessions/${SESSION}`)).toHaveLength(1);
   });
 
   test('a rejected DELETE stays a failure without a read or cross-project retry', async () => {
@@ -1349,7 +1349,7 @@ describe('kortix sessions rm (multiple ids)', () => {
     expect(r.code).toBe(1);
     expect(JSON.parse(r.stdout)).toMatchObject([{ session_id: SESSION_B, deleted: false }]);
     expect(seen.filter((call) => call.method === 'DELETE')).toHaveLength(1);
-    expect(calls('GET', `/v1/projects/${PROJECT}/sessions/${SESSION_B}`)).toHaveLength(0);
+    expect(calls('GET', `/v1/workspaces/${PROJECT}/sessions/${SESSION_B}`)).toHaveLength(0);
   });
 
   test('an ambiguous prefix does not delete a session', async () => {
@@ -1365,14 +1365,14 @@ describe('kortix sessions rm (multiple ids)', () => {
     // The fixture refuses unknown DELETE targets, but discovery must preserve
     // the archived full id rather than sending the user-supplied prefix.
     expect(r.code).toBe(1);
-    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION_ARCHIVED}`)).toHaveLength(1);
+    expect(calls('DELETE', `/v1/workspaces/${PROJECT}/sessions/${SESSION_ARCHIVED}`)).toHaveLength(1);
   });
 
   test('deletes each id and reports the failures, exiting 1', async () => {
     const r = await runCli(['sessions', 'rm', SESSION, SESSION_B, ...P], config);
     expect(r.code).toBe(1);
-    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION}`)).toHaveLength(1);
-    expect(calls('DELETE', `/v1/projects/${PROJECT}/sessions/${SESSION_B}`)).toHaveLength(1);
+    expect(calls('DELETE', `/v1/workspaces/${PROJECT}/sessions/${SESSION}`)).toHaveLength(1);
+    expect(calls('DELETE', `/v1/workspaces/${PROJECT}/sessions/${SESSION_B}`)).toHaveLength(1);
     expect(r.stdout).toContain('Deleted');
     expect(r.stderr).toContain('1 of 2 sessions could not be deleted');
   });
@@ -1399,11 +1399,11 @@ describe('kortix sessions rm (multiple ids)', () => {
     const r = await runCli(['sessions', 'rm', SESSION, ...P, '--host', 'test'], config);
     expect(r.code).toBe(0);
     const printed = r.stdout.match(/kortix sessions restore .+/)?.[0]?.trim();
-    expect(printed).toBe(`kortix sessions restore ${SESSION} --project ${PROJECT} --host test`);
+    expect(printed).toBe(`kortix sessions restore ${SESSION} --workspace ${PROJECT} --host test`);
 
     const restore = await runCli(printed!.split(/\s+/).slice(1), config);
     expect(restore.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/restore`)).toHaveLength(1);
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/restore`)).toHaveLength(1);
   });
 });
 
@@ -1411,8 +1411,8 @@ describe('kortix sessions recover', () => {
   test('POSTs the recover once and says what the next start does', async () => {
     const r = await runCli(['sessions', 'recover', SESSION, ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/recover`)).toEqual([
-      { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/recover`, body: {} },
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/recover`)).toEqual([
+      { method: 'POST', path: `/v1/workspaces/${PROJECT}/sessions/${SESSION}/recover`, body: {} },
     ]);
     expect(r.stdout).toContain('new computer');
     expect(r.stdout).toContain(`kortix sessions start ${SESSION.slice(0, 8)}`);
@@ -1427,7 +1427,7 @@ describe('kortix sessions recover', () => {
   test('a short id resolves to the full id', async () => {
     const r = await runCli(['sessions', 'recover', SESSION.slice(0, 8), ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/recover`)).toHaveLength(1);
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/recover`)).toHaveLength(1);
   });
 
   test('a refused recover exits 1 with the API reason', async () => {
@@ -1462,8 +1462,8 @@ describe('kortix sessions restore', () => {
   test('POSTs the restore once and says what the next start does', async () => {
     const r = await runCli(['sessions', 'restore', SESSION, ...P], config);
     expect(r.code).toBe(0);
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/restore`)).toEqual([
-      { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/restore`, body: {} },
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/restore`)).toEqual([
+      { method: 'POST', path: `/v1/workspaces/${PROJECT}/sessions/${SESSION}/restore`, body: {} },
     ]);
     expect(r.stdout).toContain('Restored');
     expect(r.stdout).toContain('fresh sandbox');
@@ -1488,7 +1488,7 @@ describe('kortix sessions restore', () => {
     const none = await runCli(['sessions', 'restore', ...P], config);
     expect(none.code).toBe(2);
     expect(none.stderr).toContain('Pass a session id');
-    expect(calls('POST', `/v1/projects/${PROJECT}/sessions`).filter((c) => c.path.endsWith('/restore'))).toEqual([]);
+    expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions`).filter((c) => c.path.endsWith('/restore'))).toEqual([]);
   });
 
   test('--help documents the window and what comes back', async () => {
@@ -1514,8 +1514,8 @@ describe('kortix sessions pin / unpin / archive / unarchive', () => {
   test.each(verbs)('$verb PUTs $route once with $body and prints one line', async ({ verb, route, body, done }) => {
     const r = await runCli(['sessions', verb, SESSION, ...P], config);
     expect(r.code).toBe(0);
-    const path = `/v1/projects/${PROJECT}/sessions/${SESSION}/${route}`;
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/`)).toEqual([{ method: 'PUT', path, body }]);
+    const path = `/v1/workspaces/${PROJECT}/sessions/${SESSION}/${route}`;
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/`)).toEqual([{ method: 'PUT', path, body }]);
     expect(r.stdout.trim()).toBe(`✓  ${done} Parity`);
   });
 
@@ -1530,8 +1530,8 @@ describe('kortix sessions pin / unpin / archive / unarchive', () => {
   test('several ids: each is attempted, a refusal exits 1 with the API reason', async () => {
     const r = await runCli(['sessions', 'archive', SESSION, SESSION_B, ...P], config);
     expect(r.code).toBe(1);
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION}/archive`)).toHaveLength(1);
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION_B}/archive`)).toHaveLength(1);
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/archive`)).toHaveLength(1);
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/${SESSION_B}/archive`)).toHaveLength(1);
     expect(r.stdout).toContain('Archived Parity');
     expect(r.stderr).toContain('Only a person can pin or archive a session');
     expect(r.stderr).toContain('1 of 2 sessions could not be archived');
@@ -1545,15 +1545,15 @@ describe('kortix sessions pin / unpin / archive / unarchive', () => {
   test('the short id of an archived session resolves through archived=only', async () => {
     const r = await runCli(['sessions', 'unarchive', SESSION_ARCHIVED.slice(0, 8), ...P], config);
     expect(r.code).toBe(0);
-    const lists = calls('GET', `/v1/projects/${PROJECT}/sessions`).filter((c) => !c.path.includes('/sessions/'));
+    const lists = calls('GET', `/v1/workspaces/${PROJECT}/sessions`).filter((c) => !c.path.includes('/sessions/'));
     expect(lists.map((c) => c.path)).toEqual([
-      `/v1/projects/${PROJECT}/sessions`,
-      `/v1/projects/${PROJECT}/sessions?archived=only`,
+      `/v1/workspaces/${PROJECT}/sessions`,
+      `/v1/workspaces/${PROJECT}/sessions?archived=only`,
     ]);
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/`)).toEqual([
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/`)).toEqual([
       {
         method: 'PUT',
-        path: `/v1/projects/${PROJECT}/sessions/${SESSION_ARCHIVED}/archive`,
+        path: `/v1/workspaces/${PROJECT}/sessions/${SESSION_ARCHIVED}/archive`,
         body: { archived: false },
       },
     ]);
@@ -1566,7 +1566,7 @@ describe('kortix sessions pin / unpin / archive / unarchive', () => {
     const unknown = await runCli(['sessions', 'archive', SESSION, '--force', ...P], config);
     expect(unknown.code).toBe(2);
     expect(unknown.stderr).toContain('unknown option "--force"');
-    expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/`)).toEqual([]);
+    expect(calls('PUT', `/v1/workspaces/${PROJECT}/sessions/`)).toEqual([]);
     const usage = await runCli(['sessions', 'unarchive', '--help'], config);
     expect(usage.code).toBe(0);
     expect(usage.stdout).toContain('Usage: kortix sessions pin|unpin|archive|unarchive');
@@ -1585,8 +1585,8 @@ describe('kortix sessions reload', () => {
       ? { running_etag: 'old', latest_etag: 'new', stale: true, sandbox_reachable: true }
       : { applied: true, previous_etag: 'old', etag: 'new', repo_refreshed: true, detail: 'Config reloaded.' });
     if (!statusOnly) {
-      expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`)).toEqual([
-        { method: 'POST', path: `/v1/projects/${PROJECT}/sessions/${SESSION}/reload`, body: { refresh_repo: !options.includes('--no-repo'), force: options.includes('--force') } },
+      expect(calls('POST', `/v1/workspaces/${PROJECT}/sessions/${SESSION}/reload`)).toEqual([
+        { method: 'POST', path: `/v1/workspaces/${PROJECT}/sessions/${SESSION}/reload`, body: { refresh_repo: !options.includes('--no-repo'), force: options.includes('--force') } },
       ]);
     }
   });

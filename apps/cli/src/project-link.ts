@@ -7,7 +7,7 @@ import { sandboxEnvValue } from './api/sandbox-env.ts';
  * `.kortix/link.json` — the per-repo binding between a working
  * directory and a Kortix cloud project.
  *
- * Lives inside `.kortix/` (alongside `Dockerfile` + `opencode/`), so
+ * Lives inside `.kortix/` (alongside the sandbox `Dockerfile`), so
  * the link travels with the branch when teammates clone the repo —
  * they don't have to re-link. Also stores which host the project
  * belongs to so commands always hit the right Kortix instance even if
@@ -78,9 +78,20 @@ export function clearLink(cwd = process.cwd()): void {
 }
 
 /**
+ * The workspace id the environment names: `KORTIX_WORKSPACE_ID` first, then
+ * `KORTIX_PROJECT_ID` (the platform-injected name inside a sandbox, and the
+ * env contract every older script sets). The workspace id IS the project id.
+ * The platform never injects `KORTIX_WORKSPACE_ID`: only a person or a script
+ * sets it, so it never outranks a script's own `KORTIX_PROJECT_ID=<other>`.
+ */
+export function envWorkspaceId(): string | undefined {
+  return process.env.KORTIX_WORKSPACE_ID?.trim() || sandboxEnvValue('KORTIX_PROJECT_ID') || undefined;
+}
+
+/**
  * Resolve which project a CLI command should operate on, in order:
- *   1. --project / projectArg
- *   2. KORTIX_PROJECT_ID env (platform-injected inside a sandbox)
+ *   1. --workspace / --project / projectArg
+ *   2. KORTIX_WORKSPACE_ID, then KORTIX_PROJECT_ID env (platform-injected inside a sandbox)
  *   3. .kortix/link.json in cwd (per-repo binding)
  *   4. the active host's global default project (`kortix projects use`)
  * Returns null if none of those are set.
@@ -117,7 +128,7 @@ export function resolveProjectId(
       (opts.hostArg ? getHost(opts.hostArg)?.default_project : defaultProject())?.project_id ?? null
     );
   }
-  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  const envProjectId = envWorkspaceId();
   if (envProjectId) return envProjectId;
   const link = loadLink();
   if (link?.project_id) return link.project_id;
@@ -137,8 +148,8 @@ export interface ProjectRef {
 
 /**
  * resolveProjectContext's project resolution, with the winning source
- * attached: --project → link.json → KORTIX_PROJECT_ID → the active host's
- * default. The directory link is the most specific binding, so it outranks
+ * attached: --workspace/--project → link.json → KORTIX_WORKSPACE_ID →
+ * KORTIX_PROJECT_ID → the active host's default. The directory link is the most specific binding, so it outranks
  * the session env for every caller of this path.
  *
  * When the link names the env project itself, the env source is kept: the
@@ -149,7 +160,7 @@ export interface ProjectRef {
 export function resolveProjectRef(projectArg?: string): ProjectRef | null {
   if (projectArg) return { projectId: projectArg, source: 'flag' };
   const link = loadLink();
-  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  const envProjectId = envWorkspaceId();
   const env: ProjectRef | null = envProjectId ? { projectId: envProjectId, source: 'env' } : null;
   if (link?.project_id) {
     if (env && link.project_id === env.projectId) return env;

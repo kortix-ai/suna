@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // kortixd (apps/kortix-sandbox-agent-server) is a standalone binary. A value it
 // shares with another package lives in packages/api-contract (or, for message
@@ -15,7 +15,6 @@ import { describe, expect, it } from 'vitest';
 // (snapshots/) and Dockerfile reads. Those
 // treat the daemon as a build input, not as code.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const DAEMON = 'apps/kortix-sandbox-agent-server';
 const DAEMON_SRC = `${DAEMON}/src`;
 
@@ -35,7 +34,7 @@ function trackedSources(): string[] {
 
 /** The file text without whole-line comments, which may cite a path freely. */
 function code(file: string): string {
-  return readFileSync(join(REPO_ROOT, file), 'utf8')
+  return readRepoFile(file)
     .split('\n')
     .filter((line) => !/^\s*(?:\/\/|\/\*|\*)/.test(line))
     .join('\n');

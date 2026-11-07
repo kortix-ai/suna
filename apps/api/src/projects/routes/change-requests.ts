@@ -42,6 +42,7 @@ import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { deliverThroughQueue } from '../session-lifecycle';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
@@ -116,14 +117,14 @@ export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/change-requests',
+      path: '/{workspaceId}/change-requests',
       tags: ['change-requests'],
       summary: 'List change requests of a project',
       description:
         'One page, newest number first. Pass `next_cursor` back as `cursor` for the next page; `null` means the last page.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         query: z
           .object({
             status: queryText('`open`, `merged`, `closed` or `all`. Default: every status. Anything else is a 400.'),
@@ -141,7 +142,7 @@ export function registerChangeRequestsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_GITOPS_READ);
@@ -196,14 +197,14 @@ export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/change-requests',
+      path: '/{workspaceId}/change-requests',
       tags: ['change-requests'],
       summary: 'Open a change request',
       description:
         'Open a change request from a branch.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             title: z.string().openapi({ description: 'Change request title.' }),
             head_ref: z.string().openapi({ description: 'Branch with the changes.' }),
@@ -218,7 +219,7 @@ export function registerChangeRequestsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -273,7 +274,7 @@ export function registerChangeRequestsRoutes(): void {
           .limit(1);
         if (!sessionRow) {
           if (actorIsSession) {
-            return c.json({ error: 'Authenticated session not found in this project', code: 'CR_SESSION_NOT_FOUND' }, 403);
+            return c.json({ error: 'Authenticated session not found in this workspace', code: 'CR_SESSION_NOT_FOUND' }, 403);
           }
           originSessionId = null;
         } else {
@@ -383,12 +384,12 @@ export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/commit-push',
+      path: '/{workspaceId}/sessions/{sessionId}/commit-push',
       tags: ['sessions'],
       summary: 'Commit and push a session\'s changes',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             message: z.string().optional().openapi({ description: 'Commit message.' }),
           }) } } },
@@ -399,7 +400,7 @@ export function registerChangeRequestsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -531,12 +532,12 @@ export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/change-requests/{crId}',
+      path: '/{workspaceId}/change-requests/{crId}',
       tags: ['change-requests'],
       summary: 'Get a change request',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
+        params: z.object({ workspaceId: z.string(), crId: z.string() }),
       },
       responses: {
         200: json(z.object({ change_request: ChangeRequestSchema }), 'The change request'),
@@ -544,7 +545,7 @@ export function registerChangeRequestsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -570,12 +571,12 @@ export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/change-requests/{crId}',
+      path: '/{workspaceId}/change-requests/{crId}',
       tags: ['change-requests'],
       summary: 'Edit a change request title or description',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
+        params: z.object({ workspaceId: z.string(), crId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             title: z.string().optional().openapi({ description: 'New title.' }),
             description: z.string().optional().openapi({ description: 'New description.' }),
@@ -587,7 +588,7 @@ export function registerChangeRequestsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -631,12 +632,12 @@ export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/change-requests/{crId}/request-changes',
+      path: '/{workspaceId}/change-requests/{crId}/request-changes',
       tags: ['change-requests'],
       summary: 'Request changes on a change request',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
+        params: z.object({ workspaceId: z.string(), crId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             feedback: z.string().openapi({ description: 'What must change. text is accepted as an alias.' }),
           }) } } },
@@ -647,7 +648,7 @@ export function registerChangeRequestsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const crId = c.req.param('crId');
       const body = await readJsonObject(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -724,12 +725,12 @@ export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/change-requests/{crId}/diff',
+      path: '/{workspaceId}/change-requests/{crId}/diff',
       tags: ['change-requests'],
       summary: 'Get the diff of a change request',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
+        params: z.object({ workspaceId: z.string(), crId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'OK'),
@@ -737,7 +738,7 @@ export function registerChangeRequestsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -782,12 +783,12 @@ export function registerChangeRequestsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/change-requests/{crId}/merge-preview',
+      path: '/{workspaceId}/change-requests/{crId}/merge-preview',
       tags: ['change-requests'],
       summary: 'Preview merging a change request',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
+        params: z.object({ workspaceId: z.string(), crId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'OK'),
@@ -795,7 +796,7 @@ export function registerChangeRequestsRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const crId = c.req.param('crId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

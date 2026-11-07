@@ -14,7 +14,7 @@ import {
 describe('white-label SDK boundary', () => {
   test('detects runtime imports, URLs, legacy stores, raw fetches, and native controls', () => {
     const fixture = `
-      import { createClient } from '@opencode-ai/sdk';
+      const runtimeLabel = 'OpenCode';
       import { stream } from '@kortix/sdk/event-stream';
       const legacy = 'server-store';
       const runtime = '/p/sandbox-1/8000/global/event';
@@ -32,12 +32,11 @@ describe('white-label SDK boundary', () => {
       new Set(scanSource(fixture).map((violation) => violation.rule)),
     ).toEqual(
       new Set([
-        'opencode-package',
         'direct-runtime-import',
         'legacy-runtime-store',
         'runtime-proxy-url',
         'runtime-url-api',
-        'opencode-rest-path',
+        'runtime-rest-path',
         'provider-term',
         'raw-kortix-fetch',
         'native-control',

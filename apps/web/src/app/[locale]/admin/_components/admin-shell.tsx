@@ -32,7 +32,7 @@ import { AdminSidebar, isAdminNavActive } from './admin-sidebar';
 
 const NAV_LABELS: { href: string; label: string }[] = [
   { href: '/admin/accounts', label: 'Accounts' },
-  { href: '/admin/projects', label: 'Projects' },
+  { href: '/admin/workspaces', label: 'Workspaces' },
   { href: '/admin/analytics', label: 'Analytics' },
   { href: '/admin/sandboxes', label: 'Sandboxes' },
   { href: '/admin/git', label: 'Git' },

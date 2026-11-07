@@ -17,39 +17,17 @@
  * drawn as `•`, so it never reaches the frame buffer.
  */
 
-import {
-  type Connection,
-  type NewConnectorAccountAudience,
-  type NewConnectorAccountDraft,
-  connectionSharedWithEveryone,
-  connectorProviderLabel,
-  newConnectorAccountGrantees,
-  newConnectorAccountLabelTaken,
-  newConnectorAccountReady,
-  planConnectionShare,
-  planPrivateConnectionShare,
-  proposeConnectorAccountLabel,
-  revokeAssignment,
-  grantConnectionAccess,
-} from '@kortix/sdk';
-import { type KeyEvent, decodePasteBytes } from '@opentui/core';
-import { useKeyboard, usePaste } from '@opentui/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { connectorProviderLabel, proposeConnectorAccountLabel } from '@kortix/sdk';
+import { useCallback, useEffect } from 'react';
 
-import { kortix } from '../../kortix.ts';
-import { copyToClipboard } from '../../lib/clipboard.ts';
-import { openUrl } from '../../lib/open-url.ts';
 import { printable } from '../../lib/printable.ts';
+import { hostOf } from '../../lib/url.ts';
 import { theme } from '../../theme.ts';
 import { layoutRow } from '../../ui/index.ts';
-import {
-  type SignInIo,
-  connectManagedAccount,
-  createDirectAccount,
-  isManaged,
-  saveAccountCredential,
-  signInDirectAccount,
-} from './account-flows.ts';
+import { VIEW, useMaskedPaste, useSheetFlow } from '../../ui/sheet-flow.ts';
+import { isManaged } from './account-flows.ts';
+import { useConnectorActions } from './connector-actions.ts';
+import { type Flow, editCredential, useAccountCursor, useConnectorKeys } from './connector-flow.ts';
 import {
   type ProjectConnectorRow,
   TONE_WORD,
@@ -60,7 +38,6 @@ import {
   connectorWebPath,
   mayChangeAccount,
 } from './connectors-model.ts';
-import { matchesConnectorsBinding as is } from './keys.ts';
 import type { ConnectorsData } from './use-connectors.ts';
 
 export interface ConnectorSheetProps {
@@ -79,69 +56,6 @@ export interface ConnectorSheetProps {
   onBusy(busy: boolean): void;
   /** The connector was removed from the project. */
   onRemoved(): void;
-}
-
-type Flow =
-  | { kind: 'view' }
-  | { kind: 'label'; value: string }
-  | { kind: 'rename'; connection: Connection; value: string }
-  | {
-      kind: 'access';
-      purpose: 'create' | 'share';
-      label: string;
-      choice: NewConnectorAccountAudience;
-      connection?: Connection;
-    }
-  | {
-      kind: 'pick';
-      purpose: 'create' | 'share';
-      label: string;
-      /** `<kind>:<id>` of each candidate picked. */
-      selected: string[];
-      cursor: number;
-      connection?: Connection;
-    }
-  | { kind: 'signin'; title: string; url: string | null; code: string | null }
-  | { kind: 'credential'; connectionId: string; label: string; value: string; reason?: string }
-  | { kind: 'confirm'; action: 'disconnect' | 'remove'; connection?: Connection };
-
-const VIEW: Flow = { kind: 'view' };
-
-// Keys inside one frame run before React renders: every edit reads the flow it changes.
-const editCredential =
-  (change: (value: string) => string) =>
-  (flow: Flow): Flow =>
-    flow.kind === 'credential' ? { ...flow, value: change(flow.value) } : flow;
-
-function errorText(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
-
-/** A printable character from a key event, or null. */
-function typed(key: KeyEvent): string | null {
-  if (key.ctrl || key.option || key.meta || !key.sequence || key.sequence.length !== 1) return null;
-  const code = key.sequence.charCodeAt(0);
-  return code >= 0x20 && code !== 0x7f ? key.sequence : null;
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
-
-/** Picked candidates, split into the draft's three lists. */
-function pickedLists(selected: readonly string[]): NewConnectorAccountDraft['picked'] {
-  const ids = (kind: string) => selected.filter((key) => key.startsWith(`${kind}:`)).map((key) => key.slice(kind.length + 1));
-  return { memberIds: ids('member'), groupIds: ids('group'), agentIds: ids('agent') };
-}
-
-/** The current grants of a shared account, as picker keys. */
-function currentPicks(connection: Connection | undefined): string[] {
-  if (!connection || connection.owner_type !== 'project' || connectionSharedWithEveryone(connection)) return [];
-  return (connection.shared_with ?? []).map((share) => `${share.principal_type}:${share.principal_id}`);
 }
 
 export function ConnectorSheet({
@@ -163,217 +77,13 @@ export function ConnectorSheet({
   const managed = isManaged(connector);
   // Channels (Slack, Telegram, email inboxes) and computers connect on their own pages.
   const webOnly = connector.provider === 'channel' || connector.provider === 'computer';
-  const [flow, setFlowState] = useState<Flow>(VIEW);
-  // The selection follows the account, not its row: setting a default reorders the list.
-  const [cursorId, setCursorId] = useState<string | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
-  const abort = useRef<AbortController | null>(null);
-
-  const setFlow = useCallback(
-    (next: Flow) => {
-      setFlowState(next);
-      onBusy(next.kind !== 'view');
-    },
-    [onBusy],
-  );
-  useEffect(
-    () => () => {
-      abort.current?.abort(new Error('cancelled'));
-      onBusy(false);
-    },
-    [onBusy],
-  );
-
-  const current = accounts.find((account) => account.connection_id === cursorId) ?? accounts[0] ?? null;
-  const accountsRef = useRef(accounts);
-  accountsRef.current = accounts;
-  const moveCursor = useCallback((delta: number) => {
-    setCursorId((previous) => {
-      const rows = accountsRef.current;
-      if (rows.length === 0) return previous;
-      const from = Math.max(
-        rows.findIndex((row) => row.connection_id === previous),
-        0,
-      );
-      return rows[Math.min(Math.max(from + delta, 0), rows.length - 1)]!.connection_id;
-    });
-  }, []);
+  const { flow, setFlow, setFlowState, abort } = useSheetFlow<Flow>(onBusy);
+  const { current, moveCursor } = useAccountCursor(accounts);
   const webUrl = `${webBaseUrl.replace(/\/$/, '')}${connectorWebPath(projectId, connector.slug)}`;
-  const api = kortix().project(projectId).connectors;
-
-  // ── Writes ───────────────────────────────────────────────────────────────
-  const run = useCallback(
-    async (label: string, work: () => Promise<unknown>, done: string) => {
-      setPending(label);
-      try {
-        await work();
-        await data.refresh();
-        onToast(done);
-        setFlow(VIEW);
-      } catch (error) {
-        await data.refresh();
-        onToast(errorText(error, `${label} failed.`), 'error');
-      } finally {
-        setPending(null);
-      }
-    },
-    [data, onToast, setFlow],
-  );
-
-  /**
-   * Run one sign-in. The flow shows the link once the SDK hands it over; Esc
-   * aborts it. Resolves with what to do next, or null when it failed or was
-   * cancelled.
-   */
-  const signIn = useCallback(
-    async <T,>(title: string, work: (io: SignInIo) => Promise<T>): Promise<T | null> => {
-      abort.current?.abort(new Error('cancelled'));
-      const controller = new AbortController();
-      abort.current = controller;
-      setFlow({ kind: 'signin', title, url: null, code: null });
-      try {
-        const result = await work({
-          signal: controller.signal,
-          show: ({ url, code }) =>
-            setFlowState((flow) => (flow.kind === 'signin' ? { ...flow, url, code: code ?? null } : flow)),
-        });
-        return result;
-      } catch (error) {
-        if (!controller.signal.aborted) onToast(errorText(error, 'Could not connect the account. Try again.'), 'error');
-        return null;
-      } finally {
-        if (abort.current === controller) abort.current = null;
-        await data.refresh();
-      }
-    },
-    [data, onToast, setFlow],
-  );
-
-  const afterDirect = useCallback(
-    (next: Awaited<ReturnType<typeof signInDirectAccount>> | null, label: string, done: string) => {
-      if (!next) return setFlow(VIEW);
-      if (next.kind === 'credential') {
-        if (next.reason) onToast(`Could not start the ${row.name} sign-in: ${next.reason}`, 'error');
-        return setFlow({ kind: 'credential', connectionId: next.connectionId, label, value: '' });
-      }
-      onToast(done);
-      setFlow(VIEW);
-    },
-    [onToast, row.name, setFlow],
-  );
-
-  const returnUrl = webUrl;
-
-  /** Add account: the draft is complete (a name and who can use it). */
-  const submitAdd = useCallback(
-    async (draft: NewConnectorAccountDraft) => {
-      if (newConnectorAccountLabelTaken(draft, accounts)) {
-        onToast(`An account named ${draft.label.trim()} already exists.`, 'error');
-        return;
-      }
-      if (!newConnectorAccountReady(draft, accounts, { canManageConnections: data.canManageConnections, accountId: data.accountId })) {
-        onToast(
-          draft.audience === 'members'
-            ? 'Pick at least one person, group, or agent.'
-            : "Sharing an account needs permission to manage the project's connections.",
-          'error',
-        );
-        return;
-      }
-      if (managed) {
-        const ok = await signIn(`Connect ${draft.label}`, async (io) => {
-          await connectManagedAccount(
-            projectId,
-            connector,
-            {
-              label: draft.label,
-              owner: draft.audience === 'private' ? 'me' : 'project',
-              grantees: draft.audience === 'members' ? newConnectorAccountGrantees(draft.picked) : undefined,
-              accountId: data.accountId,
-            },
-            io,
-          );
-          return true;
-        });
-        if (ok) {
-          onToast(draft.audience === 'private' ? 'Connected privately — only you can use this' : 'Project connection created');
-          setFlow(VIEW);
-        } else setFlow(VIEW);
-        return;
-      }
-      setPending('Adding account');
-      let connection: Connection;
-      try {
-        connection = await createDirectAccount(projectId, connector, row.name, draft, data.accountId);
-      } catch (error) {
-        await data.refresh();
-        onToast(errorText(error, 'Could not add the account.'), 'error');
-        setPending(null);
-        return;
-      }
-      setPending(null);
-      const next = await signIn(`Connect ${draft.label}`, (io) =>
-        signInDirectAccount(projectId, connector, connection.connection_id, returnUrl, io),
-      );
-      afterDirect(next, connection.label, `Saved as ${connection.label}`);
-    },
-    [accounts, afterDirect, connector, data, managed, onToast, projectId, returnUrl, row.name, setFlow, signIn],
-  );
-
-  /** Connect an account that is not signed in, or reconnect one. */
-  const signInAccount = useCallback(
-    async (connection: Connection) => {
-      const owner = connection.owner_type === 'project' ? 'project' : 'me';
-      if (managed) {
-        const ok = await signIn(`Connect ${connection.label}`, async (io) => {
-          // Reconciling the SAME label re-points this row, never a second account.
-          await connectManagedAccount(projectId, connector, { label: connection.label, owner, accountId: data.accountId }, io);
-          return true;
-        });
-        if (ok) onToast(`${connection.label} connected`);
-        setFlow(VIEW);
-        return;
-      }
-      const next = await signIn(`Connect ${connection.label}`, (io) =>
-        signInDirectAccount(projectId, connector, connection.connection_id, returnUrl, io),
-      );
-      afterDirect(next, connection.label, `${connection.label} connected`);
-    },
-    [afterDirect, connector, data.accountId, managed, onToast, projectId, returnUrl, setFlow, signIn],
-  );
-
-  /** Share: who can use an existing account. Grants first, then revokes. */
-  const saveShare = useCallback(
-    (connection: Connection, audience: NewConnectorAccountAudience, selected: string[]) => {
-      const accountId = data.accountId;
-      if (!accountId) return onToast('Could not find this project’s account.', 'error');
-      const picked = pickedLists(selected);
-      if (audience === 'members' && picked.memberIds.length + picked.groupIds.length + (picked.agentIds?.length ?? 0) === 0) {
-        return onToast('Pick at least one person, group, or agent.', 'error');
-      }
-      if (connection.owner_type === 'member') {
-        const viewerId = data.viewerId ?? '';
-        const principals =
-          audience === 'project' ? [] : planPrivateConnectionShare({ ...picked, everyone: false }, true, viewerId);
-        if (!principals) return setFlow(VIEW);
-        void run('Saving access', () => api.connections.share(connection.connection_id, principals), 'Access updated');
-        return;
-      }
-      const current = connection.shared_with ?? [];
-      // Every current grant is up for removal; a picked one is kept (`planConnectionShare`).
-      const removed = new Set(current.map((grant) => grant.grant_id));
-      const plan = planConnectionShare(current, removed, audience === 'project' ? { memberIds: [], groupIds: [] } : picked, projectId);
-      void run(
-        'Saving access',
-        async () => {
-          await grantConnectionAccess(accountId, projectId, connection.connection_id, plan.add);
-          await Promise.all(plan.revoke.map((id) => revokeAssignment(accountId, id)));
-        },
-        'Access updated',
-      );
-    },
-    [api.connections, data.accountId, data.viewerId, onToast, projectId, run, setFlow],
-  );
+  const actions = useConnectorActions({
+    projectId, row, connector, accounts, managed, data, webUrl, setFlow, setFlowState, abort, onToast,
+  });
+  const { api, pending, run } = actions;
 
   const openAdd = useCallback(() => {
     if (webOnly) {
@@ -391,199 +101,13 @@ export function ConnectorSheet({
   }, [addRequest, onAddRequestHandled, openAdd]);
 
   // A pasted credential arrives as one bracketed paste, not as keys.
-  usePaste((event) => {
-    if (!focused || pending || flow.kind !== 'credential') return;
-    const text = decodePasteBytes(event.bytes).replace(/[\r\n]+/g, '').trim();
-    if (text) setFlowState(editCredential((value) => value + text));
-  });
+  useMaskedPaste(focused && !pending && flow.kind === 'credential', (text) =>
+    setFlowState(editCredential((value) => value + text)),
+  );
 
-  // ── Keys ─────────────────────────────────────────────────────────────────
-  useKeyboard((key) => {
-    if (!focused || pending) return;
-
-    if (flow.kind === 'signin') {
-      if (is(key, 'connectors.cancel')) {
-        abort.current?.abort(new Error('cancelled'));
-        setFlow(VIEW);
-        return;
-      }
-      if (flow.url && (is(key, 'connectors.openLink') || is(key, 'connectors.submit'))) {
-        const url = flow.url;
-        void openUrl(url).then(
-          () => onToast(`Opened ${hostOf(url)}`),
-          () => onToast('Could not open the browser. Press c to copy the link.', 'error'),
-        );
-        return;
-      }
-      if (flow.url && is(key, 'connectors.copy')) {
-        const value = flow.code ?? flow.url;
-        void copyToClipboard(value).then((result) =>
-          onToast(
-            result.ok ? (flow.code ? 'Code copied' : 'Link copied') : `Copy failed: ${result.error ?? 'no clipboard tool'}`,
-            result.ok ? 'info' : 'error',
-          ),
-        );
-      }
-      return;
-    }
-
-    if (flow.kind === 'credential') {
-      if (is(key, 'connectors.cancel')) return setFlow(VIEW);
-      if (is(key, 'connectors.submit')) {
-        if (!flow.value.trim()) return;
-        const { connectionId, label, value } = flow;
-        void run('Saving credential', () => saveAccountCredential(projectId, connectionId, value), `Saved as ${label}`);
-        return;
-      }
-      if (key.name === 'backspace') return setFlowState(editCredential((value) => value.slice(0, -1)));
-      const char = typed(key);
-      if (char) setFlowState(editCredential((value) => value + char));
-      return;
-    }
-
-    if (flow.kind === 'confirm') {
-      if (is(key, 'connectors.cancel')) return setFlow(VIEW);
-      if (!is(key, 'connectors.confirm')) return;
-      if (flow.action === 'remove') {
-        setPending('Removing');
-        void api
-          .remove(connector.slug)
-          .then(async () => {
-            await data.refresh();
-            onToast(`${row.name} removed`);
-            setFlow(VIEW);
-            onRemoved();
-          })
-          .catch((error: unknown) => onToast(errorText(error, 'Could not remove the connector.'), 'error'))
-          .finally(() => setPending(null));
-        return;
-      }
-      const connection = flow.connection;
-      if (connection) void run('Disconnecting', () => api.connections.revoke(connection.connection_id), 'Disconnected');
-      return;
-    }
-
-    if (flow.kind === 'label' || flow.kind === 'rename') {
-      // The `<input>` owns typing; Esc is ours.
-      if (is(key, 'connectors.cancel')) setFlow(VIEW);
-      return;
-    }
-
-    if (flow.kind === 'access') {
-      if (is(key, 'connectors.cancel')) return setFlow(VIEW);
-      const choices = accessChoices(data.projectName, flow.purpose).map((choice) => choice.id);
-      const allowed = (choice: NewConnectorAccountAudience) => choice === 'private' || data.canManageConnections;
-      // Functional: two keys inside one frame each move from the choice before them.
-      const step = (delta: number) =>
-        setFlowState((prev) => {
-          if (prev.kind !== 'access') return prev;
-          const at = choices.indexOf(prev.choice);
-          const choice = choices[Math.min(Math.max(at + delta, 0), choices.length - 1)]!;
-          return allowed(choice) ? { ...prev, choice } : prev;
-        });
-      if (is(key, 'connectors.down')) return step(1);
-      if (is(key, 'connectors.up')) return step(-1);
-      const digit = Number(key.name);
-      if (Number.isInteger(digit) && digit >= 1 && digit <= choices.length) {
-        const choice = choices[digit - 1]!;
-        if (allowed(choice)) setFlowState((prev) => (prev.kind === 'access' ? { ...prev, choice } : prev));
-        return;
-      }
-      if (is(key, 'connectors.submit')) {
-        if (flow.choice === 'members') {
-          return setFlowState({
-            kind: 'pick',
-            purpose: flow.purpose,
-            label: flow.label,
-            selected: currentPicks(flow.connection),
-            cursor: 0,
-            connection: flow.connection,
-          });
-        }
-        if (flow.purpose === 'share' && flow.connection) return saveShare(flow.connection, flow.choice, []);
-        void submitAdd({ label: flow.label, audience: flow.choice, picked: { memberIds: [], groupIds: [] } });
-      }
-      return;
-    }
-
-    if (flow.kind === 'pick') {
-      const candidates = data.candidates;
-      if (is(key, 'connectors.cancel')) return setFlow(VIEW);
-      const last = Math.max(candidates.length - 1, 0);
-      if (is(key, 'connectors.down'))
-        return setFlowState((prev) => (prev.kind === 'pick' ? { ...prev, cursor: Math.min(prev.cursor + 1, last) } : prev));
-      if (is(key, 'connectors.up'))
-        return setFlowState((prev) => (prev.kind === 'pick' ? { ...prev, cursor: Math.max(prev.cursor - 1, 0) } : prev));
-      if (is(key, 'connectors.mark')) {
-        return setFlowState((prev) => {
-          if (prev.kind !== 'pick') return prev;
-          const candidate = candidates[prev.cursor];
-          if (!candidate) return prev;
-          const id = `${candidate.kind}:${candidate.id}`;
-          const selected = prev.selected.includes(id) ? prev.selected.filter((x) => x !== id) : [...prev.selected, id];
-          return { ...prev, selected };
-        });
-      }
-      if (is(key, 'connectors.submit')) {
-        if (flow.purpose === 'share' && flow.connection) return saveShare(flow.connection, 'members', flow.selected);
-        void submitAdd({ label: flow.label, audience: 'members', picked: pickedLists(flow.selected) });
-      }
-      return;
-    }
-
-    // ── View ──
-    if (is(key, 'connectors.down')) return moveCursor(1);
-    if (is(key, 'connectors.up')) return moveCursor(-1);
-    if (is(key, 'connectors.add')) return openAdd();
-    if (is(key, 'connectors.web')) {
-      void openUrl(webUrl).then(
-        () => onToast(`Opened ${hostOf(webUrl)}`),
-        () => onToast(`Could not open the browser: ${webUrl}`, 'error'),
-      );
-      return;
-    }
-    if (is(key, 'connectors.remove')) {
-      if (!data.canWrite) return onToast('Removing a connector needs permission to manage the project’s connectors.', 'error');
-      return setFlow({ kind: 'confirm', action: 'remove' });
-    }
-    if (!current) return;
-    const mayChange = mayChangeAccount(current, data.canManageConnections);
-    const active = current.status === 'active';
-    if (is(key, 'connectors.copyId')) {
-      void copyToClipboard(current.connection_id).then((result) =>
-        onToast(result.ok ? 'Connection ID copied to clipboard.' : `Copy failed: ${result.error ?? 'no clipboard tool'}`, result.ok ? 'info' : 'error'),
-      );
-      return;
-    }
-    if (!mayChange) {
-      if (is(key, 'connectors.rename') || is(key, 'connectors.access') || is(key, 'connectors.disconnect') || is(key, 'connectors.default') || is(key, 'connectors.signIn') || is(key, 'connectors.credential')) {
-        onToast('Only the account owner or a connection manager can change this account.', 'error');
-      }
-      return;
-    }
-    if (is(key, 'connectors.signIn') && !webOnly && (managed || connector.authSecret)) return void signInAccount(current);
-    if (is(key, 'connectors.rename')) return setFlow({ kind: 'rename', connection: current, value: current.label });
-    if (is(key, 'connectors.access')) {
-      if (current.owner_type === 'member' && !data.canManageConnections) {
-        return onToast("Sharing an account needs permission to manage the project's connections.", 'error');
-      }
-      return setFlow({
-        kind: 'access',
-        purpose: 'share',
-        label: current.label,
-        choice: current.owner_type === 'project' && !connectionSharedWithEveryone(current) ? 'members' : 'project',
-        connection: current,
-      });
-    }
-    if (is(key, 'connectors.default') && !current.is_default && active) {
-      const id = current.connection_id;
-      void run('Saving default', () => api.connections.setDefault(id), 'Default connection updated');
-      return;
-    }
-    if (is(key, 'connectors.credential') && !managed && !webOnly && connector.authSecret) {
-      return setFlow({ kind: 'credential', connectionId: current.connection_id, label: current.label, value: '' });
-    }
-    if (is(key, 'connectors.disconnect')) return setFlow({ kind: 'confirm', action: 'disconnect', connection: current });
+  useConnectorKeys({
+    ...actions, projectId, row, connector, data, focused, managed, webOnly, webUrl, current, moveCursor,
+    flow, setFlow, setFlowState, abort, openAdd, onToast, onRemoved,
   });
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -634,7 +158,7 @@ export function ConnectorSheet({
       push(`Disconnect "${flow.connection?.label ?? ''}"?`, theme.danger);
       push(
         flow.connection?.owner_type === 'project'
-          ? 'Everyone on this project loses access to this account. Sessions bound to it will stop working.'
+          ? 'Everyone in this workspace loses access to this account. Sessions bound to it will stop working.'
           : 'Your own connection is removed. Sessions bound to it will stop working.',
         theme.faint,
       );
@@ -645,7 +169,7 @@ export function ConnectorSheet({
     push(
       flow.purpose === 'share'
         ? flow.connection?.owner_type === 'member'
-          ? 'Choose who else can use your account. It becomes a shared account, which the project’s connection managers can also manage.'
+          ? 'Choose who else can use your account. It becomes a shared account, which the workspace’s connection managers can also manage.'
           : 'Choose who can use this account.'
         : 'Who can use it',
       theme.faint,
@@ -656,13 +180,13 @@ export function ConnectorSheet({
       push(`${on ? '●' : '○'} ${index + 1} ${choice.label}`, locked ? theme.faint : theme.fg);
       push(`    ${choice.detail}`, theme.faint);
     });
-    if (!data.canManageConnections) push("Sharing an account needs permission to manage the project's connections.", theme.faint);
+    if (!data.canManageConnections) push("Sharing an account needs permission to manage the workspace's connections.", theme.faint);
     if (flow.purpose === 'create') push("You'll authorize the account in the next step.", theme.faint);
     const n = accessChoices(data.projectName, flow.purpose).length;
     hint = `1-${n} or j/k choose · Enter ${flow.choice === 'members' ? 'pick' : flow.purpose === 'share' ? 'save' : 'continue'} · Esc cancel`;
   } else if (flow.kind === 'pick') {
     push('Specific people, groups, or agents');
-    if (data.candidates.length === 0) push('No one else in this project yet.', theme.faint);
+    if (data.candidates.length === 0) push('No one else in this workspace yet.', theme.faint);
     const room = Math.max(height - lines.length - 3, 3);
     const start = Math.min(Math.max(flow.cursor - Math.floor(room / 2), 0), Math.max(data.candidates.length - room, 0));
     data.candidates.slice(start, start + room).forEach((candidate, offset) => {

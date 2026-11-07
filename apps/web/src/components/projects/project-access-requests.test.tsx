@@ -14,9 +14,9 @@ const descriptors = new Map(Object.keys(globals).map(key => [key, Object.getOwnP
 for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
 mock.module('@/features/providers/auth-provider', () => ({ useAuth: () => ({ user: { id: 'synthetic-member' }, isLoading: false }) }));
 mock.module('@/lib/auth/use-signed-out-redirect', () => ({ useSignedOutRedirect: () => {} }));
-mock.module('next/navigation', () => ({ useParams: () => ({ sessionId: 'synthetic-session' }), useRouter: () => ({ replace: () => {} }), usePathname: () => '/projects/synthetic-project' }));
+mock.module('next/navigation', () => ({ useParams: () => ({ sessionId: 'synthetic-session' }), useRouter: () => ({ replace: () => {} }), usePathname: () => '/workspaces/synthetic-project' }));
 mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: { isAdmin: false } }) }));
-mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/projects' }));
+mock.module('@kortix/ui/internal/lib/onboarding/use-app-home', () => ({ useAppHome: () => '/workspaces' }));
 mock.module('@kortix/ui/internal/auth/auth-card-shell', () => ({ AuthFrame: ({ children }: { children: React.ReactNode }) => children }));
 mock.module('@kortix/ui/internal/auth/auth-primitives', () => ({
   Rise: ({ children }: { children: React.ReactNode }) => children,
@@ -58,8 +58,8 @@ test.each([403, 404])('denied project (%s) makes only the access request, includ
   await act(async () => root?.render(<QueryClientProvider client={queryClient}><ProjectAccessBoundary projectId="synthetic-project"><p>Project contents</p></ProjectAccessBoundary></QueryClientProvider>));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   expect(container.textContent).not.toContain('Project contents');
-  expect(container.querySelector('a')?.getAttribute('href')).toBe('/projects');
-  expect(urls).toEqual(['http://test.local/projects/synthetic-project']);
+  expect(container.querySelector('a')?.getAttribute('href')).toBe('/workspaces');
+  expect(urls).toEqual(['http://test.local/workspaces/synthetic-project']);
 });
 
 test('authorized project waits for access, then warms shell and session reads', async () => {
@@ -69,7 +69,7 @@ test('authorized project waits for access, then warms shell and session reads', 
   globalThis.fetch = Object.assign(async (input: string | URL | Request) => {
     const url = String(input);
     urls.push(url);
-    if (url === 'http://test.local/projects/synthetic-project') {
+    if (url === 'http://test.local/workspaces/synthetic-project') {
       await access;
       return Response.json({ project_id: 'synthetic-project', account_id: 'synthetic-account' });
     }
@@ -81,10 +81,10 @@ test('authorized project waits for access, then warms shell and session reads', 
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => root?.render(<QueryClientProvider client={queryClient}><ProjectAccessBoundary projectId="synthetic-project"><p>Project contents</p></ProjectAccessBoundary></QueryClientProvider>));
-  expect(urls).toEqual(['http://test.local/projects/synthetic-project']);
+  expect(urls).toEqual(['http://test.local/workspaces/synthetic-project']);
   expect(container.textContent).not.toContain('Project contents');
   await act(async () => { grant?.(); await new Promise(resolve => setTimeout(resolve, 10)); });
   expect(container.textContent).toContain('Project contents');
-  expect(urls).toContain('http://test.local/projects/synthetic-project/detail');
-  expect(urls).toContain('http://test.local/projects/synthetic-project/sessions/synthetic-session/snapshot?transcript=0');
+  expect(urls).toContain('http://test.local/workspaces/synthetic-project/detail');
+  expect(urls).toContain('http://test.local/workspaces/synthetic-project/sessions/synthetic-session/snapshot?transcript=0');
 });

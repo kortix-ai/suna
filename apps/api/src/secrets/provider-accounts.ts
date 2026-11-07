@@ -97,11 +97,11 @@ export async function checkNamedConnection(input: {
     if (sharing.mode === 'private' && sharing.ownerId !== userId) return { ok: false, status: 400, error: 'Invalid connection owner' };
     if (sharing.mode === 'members') {
       if (sharing.groupIds?.length || (sharing.memberIds?.length ?? 0) > 200) {
-        return { ok: false, status: 400, error: 'Select up to 200 project members' };
+        return { ok: false, status: 400, error: 'Select up to 200 workspace members' };
       }
       for (const memberId of sharing.memberIds ?? []) {
         if (!z.string().uuid().safeParse(memberId).success || !(await memberMayReadProject(accountId, projectId, memberId))) {
-          return { ok: false, status: 400, error: 'Member has no project access' };
+          return { ok: false, status: 400, error: 'Member has no workspace access' };
         }
       }
     }
@@ -158,6 +158,10 @@ export async function reconnectProviderAccount(input: {
     active: true,
     cooldownUntil: null,
     needsReauthAt: null,
+    // A reconnect may sign in someone else: the old login's usage and identity go.
+    usage: null,
+    usageCheckedAt: null,
+    providerAccount: null,
     updatedAt: new Date(),
   }).where(and(
     eq(accountSecretResources.accountId, accountId),

@@ -30,13 +30,13 @@ import { sleep } from '@kortix/shared/guards';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
 
-Configure LLM providers for the linked Kortix project. Three paths:
+Configure LLM providers for the linked Kortix workspace. Three paths:
 
   • OAuth (zero config) — uses the upstream provider's device-code flow
     (ChatGPT Pro/Plus, an OpenCode Console account for OpenCode Zen or Go).
-    Tokens land encrypted on the project; Kortix refreshes them.
+    Tokens land encrypted on the workspace; Kortix refreshes them.
 
-  • API key — stored as an encrypted project secret. The Kortix LLM
+  • API key — stored as an encrypted workspace secret. The Kortix LLM
     gateway uses it; the key never enters a sandbox.
 
   • Custom endpoint — any OpenAI-compatible API (vLLM, LiteLLM, Ollama
@@ -48,27 +48,36 @@ Subcommands:
                                     providers).
   ls --catalog [--search <query>]    Browse the bundled provider catalog,
                                     filtered by id or name. --json supported.
-                                    env lists project secrets to configure
+                                    env lists workspace secrets to configure
                                     with \`kortix secrets set NAME=value\`.
   login <provider>                  Run the OAuth device-code flow.
                                     Providers: openai, opencode (Zen),
                                     opencode-go. Zen and Go each need
                                     their own login.
-  set <provider> [<key>]            Save an API key as a project secret.
+  set <provider> [<key>]            Save an API key as a workspace secret.
                                     Provider → env-var mapping below.
                                     With no <key>, reads from stdin.
                                     bedrock also needs --region <region>.
   rm <provider>                     Remove the OAuth credential and/or
                                     the matching API-key secret(s).
+  usage [<provider>] [--json]       Show the plan usage of each ChatGPT and
+                                    Claude login: the 5-hour and weekly
+                                    windows, the share used and when each
+                                    resets. Kortix asks the provider at most
+                                    once a minute per login; this spends no
+                                    plan quota. openai, chatgpt and codex
+                                    name ChatGPT; claude names Claude.
+                                    Includes the logins stored on the
+                                    workspace (--workspace, default: linked).
   retry [<provider>]                End the rate-limit rest of the account's
                                     stored provider accounts now (e.g. after
                                     resetting ChatGPT usage). openai, chatgpt
                                     and codex name ChatGPT connections. With no
                                     provider, every account still cooling down.
                                     Otherwise the gateway re-tries one every
-                                    15 min on its own. --account <id>.
-                                    Includes the logins stored on --project
-                                    (default: linked).
+                                    15 min on its own. Includes the logins
+                                    stored on the workspace (--workspace,
+                                    default: linked).
   custom ls [--json]                List custom OpenAI-compatible endpoints.
   custom set <id> --base-url <url> --model <model>[=<name>] [--model …]
              [--name <name>] [--key-stdin]
@@ -80,7 +89,7 @@ Subcommands:
   custom rm <id>                    Remove the endpoint and its
                                     CUSTOM_<ID>_API_KEY secret.
 
-Known API-key providers (provider → project secret(s)):
+Known API-key providers (provider → workspace secret(s)):
   anthropic       → ANTHROPIC_API_KEY
   openai          → OPENAI_API_KEY
   openrouter      → OPENROUTER_API_KEY
@@ -95,7 +104,7 @@ Known API-key providers (provider → project secret(s)):
   platinum        → PLATINUM_API_KEY (Platinum Inference; models listed live)
 
 Global options:
-  --project <id>     Operate on this project id (default: linked).
+  --workspace <id>   Operate on this workspace id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --region <region>  (set bedrock) AWS region, e.g. us-east-1.
   -h, --help         Show this help.
@@ -109,12 +118,12 @@ const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
 
 Start the OAuth device-code flow for openai, opencode, or opencode-go.
 \`claude\` adds your own Claude Pro or Max subscription as a Claude account of the
-project, private to you: Claude models (claude-agent/opus, fable, sonnet, haiku)
+workspace, private to you: Claude models (claude-agent/opus, fable, sonnet, haiku)
 run through Claude Code on it. You approve on claude.com and paste the code it
-shows. Share it with the project in the web under Models → Providers → Anthropic.
+shows. Share it with the workspace in the web under Models → Providers → Anthropic.
 
 Options:
-  --project <id>      Operate on this project id (default: linked).
+  --workspace <id>    Operate on this workspace id (default: linked).
   --host <name>       Operate against a non-default Kortix host.
   --token-stdin       (claude) Read a token made with \`claude setup-token\` from stdin.
   -h, --help          Show this help without starting OAuth.
@@ -191,7 +200,7 @@ export async function runProviders(argv: string[]): Promise<number> {
   let custom: CustomFlags = { models: [], keyStdin: false };
   let tokenStdin = false;
   try {
-    projectFlag = takeFlagValue(rest, ['--project']);
+    projectFlag = takeFlagValue(rest, ['--project', '--workspace']);
     hostFlag = takeFlagValue(rest, ['--host']);
     regionFlag = takeFlagValue(rest, ['--region']);
     accountFlag = takeFlagValue(rest, ['--account']);
@@ -242,6 +251,8 @@ export async function runProviders(argv: string[]): Promise<number> {
       return providersRm(rest[0], ctxOpts);
     case 'retry':
       return providersRetry(rest[0], accountFlag, ctxOpts, json);
+    case 'usage':
+      return providersUsage(rest[0], accountFlag, ctxOpts, json);
     case 'custom':
       return providersCustom(rest[0], rest[1], custom, ctxOpts, json);
     default:
@@ -263,9 +274,9 @@ export function coolingSecrets<T extends StoredAccount>(rows: T[], provider: str
 }
 
 async function providersRetry(provider: string | undefined, accountArg: string | undefined, opts: CtxOpts, json: boolean): Promise<number> {
-  const ctx = resolveAccountContext({ accountArg, hostArg: opts.hostArg });
+  const ctx = resolveAccountContext({ workspaceArg: opts.projectArg, accountArg, hostArg: opts.hostArg });
   if (!ctx) return 1;
-  const base = `/accounts/${encodeURIComponent(ctx.accountId)}/secret-resources`;
+  const base = `/workspaces/${encodeURIComponent(ctx.accountId)}/secret-resources`;
   // Without project_id the list holds only account-wide rows; an OAuth login
   // (ChatGPT, OpenCode) is stored on its project. Optional: no project, no filter.
   const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });
@@ -297,6 +308,97 @@ async function providersRetry(provider: string | undefined, accountArg: string |
   return 0;
 }
 
+/** The plan usage a subscription login reports (`usage` on a listed secret resource). */
+export interface PlanUsage {
+  windows: Array<{ id: string; window_minutes: number | null; used_percent: number; resets_at: string | null }>;
+  limited: boolean;
+  observed_at: string;
+}
+
+/** Who a subscription login signs in as (`provider_account` on a listed secret resource). */
+export interface PlanAccount { email: string | null; plan: string | null }
+
+/** `person@example.test · Pro`, leaving out an email the label already shows; null when the provider says nothing. */
+export function planAccountText(account: PlanAccount | null | undefined, label: string): string | null {
+  if (!account) return null;
+  const email = account.email && !label.toLowerCase().includes(account.email.toLowerCase()) ? account.email : null;
+  const plan = account.plan ? `${account.plan[0]!.toUpperCase()}${account.plan.slice(1)}` : null;
+  return [email, plan].filter(Boolean).join(' · ') || null;
+}
+
+const USAGE_PROVIDERS: Record<string, string> = {
+  openai: 'codex', chatgpt: 'codex', codex: 'codex', claude: 'claude-agent', 'claude-agent': 'claude-agent',
+};
+const SUBSCRIPTION_PROVIDER_IDS = new Set(Object.values(USAGE_PROVIDERS));
+
+function usageWindowName(id: string): string {
+  if (id === 'five_hour') return '5-hour';
+  if (id === 'weekly') return 'Weekly';
+  const model = /^(?:seven_day|7d)_([a-z]+)$/.exec(id)?.[1];
+  return model ? `Weekly ${model[0]!.toUpperCase()}${model.slice(1)}` : id;
+}
+
+function usageResetText(iso: string, now: number): string {
+  const at = new Date(iso);
+  const sameDay = new Date(now).toDateString() === at.toDateString();
+  const options: Intl.DateTimeFormatOptions = sameDay ? { hour: '2-digit', minute: '2-digit' }
+    : at.getTime() - now < 6 * 86_400_000 ? { weekday: 'short', hour: '2-digit', minute: '2-digit' } : { month: 'short', day: 'numeric' };
+  return new Intl.DateTimeFormat(undefined, options).format(at);
+}
+
+/** One line per plan window: name, a 10-cell bar, the share used, and the reset. */
+export function planUsageLines(usage: PlanUsage | null | undefined, now = Date.now()): string[] {
+  if (!usage?.windows.length) return ['  Usage appears after the first request.'];
+  return usage.windows.map((window) => {
+    const cells = Math.round(Math.min(100, window.used_percent) / 10);
+    const bar = `${'█'.repeat(cells)}${'░'.repeat(10 - cells)}`;
+    const full = window.used_percent >= 100 || (usage.limited && window.used_percent >= 90);
+    const reset = window.resets_at && Date.parse(window.resets_at) > now ? usageResetText(window.resets_at, now) : null;
+    const tail = full ? `limit reached${reset ? `, resets ${reset}` : ''}` : reset ? `resets ${reset}` : '';
+    return `  ${usageWindowName(window.id).padEnd(13)} ${bar} ${`${Math.round(window.used_percent)}%`.padStart(4)}  ${tail}`.trimEnd();
+  });
+}
+
+async function providersUsage(provider: string | undefined, accountArg: string | undefined, opts: CtxOpts, json: boolean): Promise<number> {
+  const want = provider ? USAGE_PROVIDERS[provider] : undefined;
+  if (provider && !want) return fail(`"${provider}" has no plan usage. Use openai, chatgpt, codex or claude.`);
+  const ctx = resolveAccountContext({ workspaceArg: opts.projectArg, accountArg, hostArg: opts.hostArg });
+  if (!ctx) return 1;
+  const base = `/workspaces/${encodeURIComponent(ctx.accountId)}/secret-resources`;
+  const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });
+  let rows: Array<StoredAccount & { usage?: PlanUsage | null; provider_account?: PlanAccount | null }>;
+  try {
+    rows = (await ctx.client.get<{ secrets: Array<StoredAccount & { usage?: PlanUsage | null; provider_account?: PlanAccount | null }> }>(`${base}${query({ project_id: projectId ?? undefined })}`)).secrets;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  const logins = rows.filter((row) => row.provider_id && SUBSCRIPTION_PROVIDER_IDS.has(row.provider_id) && (!want || row.provider_id === want));
+  const accounts = await Promise.all(logins.map(async (row) => {
+    // A refresh the server cannot make keeps the snapshot the list carried.
+    const fresh = await ctx.client.post<{ usage: PlanUsage | null; provider_account?: PlanAccount | null }>(`${base}/${encodeURIComponent(row.secret_id)}/usage`, {})
+      .catch(() => null);
+    return {
+      secret_id: row.secret_id, label: row.label, provider_id: row.provider_id,
+      provider_account: fresh?.provider_account ?? row.provider_account ?? null,
+      usage: fresh?.usage ?? row.usage ?? null,
+    };
+  }));
+  if (json) {
+    emitJson({ accounts });
+    return 0;
+  }
+  if (!accounts.length) {
+    process.stdout.write(`No ${provider ? `${provider} ` : 'ChatGPT or Claude '}login is connected. Run \`kortix providers login openai\` or \`kortix providers login claude\`.\n`);
+    return 0;
+  }
+  for (const account of accounts) {
+    const who = planAccountText(account.provider_account, account.label);
+    process.stdout.write(`${C.bold}${account.label}${C.reset} ${C.dim}(${[account.provider_id === 'codex' ? 'ChatGPT' : 'Claude', who].filter(Boolean).join(' · ')})${C.reset}\n`);
+    process.stdout.write(`${planUsageLines(account.usage).join('\n')}\n`);
+  }
+  return 0;
+}
+
 function providersCatalog(search: string | undefined, json: boolean): number {
   const query = (search ?? '').trim().toLowerCase();
   const providers = CATALOG.providers
@@ -323,8 +425,8 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   let secrets: { items: ProjectSecret[] };
   try {
     [oauthList, secrets] = await Promise.all([
-      ctx.client.get<OauthListResponse>(`/projects/${ctx.projectId}/oauth`),
-      ctx.client.get<{ items: ProjectSecret[] }>(`/projects/${ctx.projectId}/secrets`),
+      ctx.client.get<OauthListResponse>(`/workspaces/${ctx.projectId}/oauth`),
+      ctx.client.get<{ items: ProjectSecret[] }>(`/workspaces/${ctx.projectId}/secrets`),
     ]);
   } catch (err) {
     return surfaceApiError(err);
@@ -408,14 +510,14 @@ async function claudeLogin(opts: CtxOpts, tokenStdin: boolean): Promise<number> 
     const token = (await Bun.stdin.text()).trim();
     if (!token) return fail('stdin is empty: pipe the token `claude setup-token` printed');
     try {
-      return done(await ctx.client.put<ClaudeConnectedResponse>(`/projects/${ctx.projectId}/claude-subscription/token`, { token, sharing: { mode: 'private' } }));
+      return done(await ctx.client.put<ClaudeConnectedResponse>(`/workspaces/${ctx.projectId}/claude-subscription/token`, { token, sharing: { mode: 'private' } }));
     } catch (err) {
       return surfaceApiError(err);
     }
   }
   let flow: ClaudeLoginStartResponse;
   try {
-    flow = await ctx.client.post<ClaudeLoginStartResponse>(`/projects/${ctx.projectId}/claude-subscription/login/start`, { sharing: { mode: 'private' } });
+    flow = await ctx.client.post<ClaudeLoginStartResponse>(`/workspaces/${ctx.projectId}/claude-subscription/login/start`, { sharing: { mode: 'private' } });
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -429,7 +531,7 @@ async function claudeLogin(opts: CtxOpts, tokenStdin: boolean): Promise<number> 
   const code = (await readVisible('  Code from claude.com: ')).trim();
   if (!code) return fail('No code entered. Run the command again.');
   try {
-    return done(await ctx.client.post<ClaudeConnectedResponse>(`/projects/${ctx.projectId}/claude-subscription/login/complete`, { flow_id: flow.flow_id, code }));
+    return done(await ctx.client.post<ClaudeConnectedResponse>(`/workspaces/${ctx.projectId}/claude-subscription/login/complete`, { flow_id: flow.flow_id, code }));
   } catch (err) {
     return surfaceApiError(err);
   }
@@ -455,7 +557,7 @@ async function providersLogin(provider: string | undefined, opts: CtxOpts): Prom
   let flow: OauthFlowStartResponse;
   try {
     flow = await ctx.client.post<OauthFlowStartResponse>(
-      `/projects/${ctx.projectId}/oauth/${provider}/start`,
+      `/workspaces/${ctx.projectId}/oauth/${provider}/start`,
       {},
     );
   } catch (err) {
@@ -479,7 +581,7 @@ async function providersLogin(provider: string | undefined, opts: CtxOpts): Prom
     let resp: OauthPollResponse;
     try {
       resp = await ctx.client.post<OauthPollResponse>(
-        `/projects/${ctx.projectId}/oauth/${provider}/poll`,
+        `/workspaces/${ctx.projectId}/oauth/${provider}/poll`,
         { flow_id: flow.flow_id },
       );
     } catch (err) {
@@ -488,7 +590,7 @@ async function providersLogin(provider: string | undefined, opts: CtxOpts): Prom
     }
     if (resp.status === 'success') {
       process.stdout.write(
-        `\n${status.ok(`Authorized ${C.bold}${provider}${C.reset} on this project`)}\n`,
+        `\n${status.ok(`Authorized ${C.bold}${provider}${C.reset} on this workspace`)}\n`,
       );
       const exp = resp.credential.expires_in_ms;
       if (exp !== null) {
@@ -578,7 +680,7 @@ async function providersSet(
       // NAME, which is a guess the server has no business making: models.dev
       // claims `GITHUB_TOKEN` for `github-copilot`, so an ordinary GitHub PAT
       // was classified as a Copilot key and withheld from the sandbox.
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+      await ctx.client.post<ProjectSecret>(`/workspaces/${ctx.projectId}/secrets`, {
         name,
         value,
         strategy: 'broker',
@@ -601,11 +703,11 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
   if (!ctx) return 1;
   if (provider === CLAUDE_CLI_PROVIDER) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/claude-subscription`);
+      await ctx.client.delete(`/workspaces/${ctx.projectId}/claude-subscription`);
     } catch (err) {
       return surfaceApiError(err);
     }
-    process.stdout.write(`${status.ok('Deleted your Claude accounts in this project')}\n  ${C.dim}Claude accounts others shared with you stay.${C.reset}\n`);
+    process.stdout.write(`${status.ok('Deleted your Claude accounts in this workspace')}\n  ${C.dim}Claude accounts others shared with you stay.${C.reset}\n`);
     return 0;
   }
 
@@ -614,7 +716,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
 
   if (OAUTH_PROVIDERS.has(provider)) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/oauth/${provider}`);
+      await ctx.client.delete(`/workspaces/${ctx.projectId}/oauth/${provider}`);
       removedOauth = true;
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {
@@ -626,7 +728,7 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
   const envVars = PROVIDER_ENV_VARS[provider] ?? [];
   for (const envVar of envVars) {
     try {
-      await ctx.client.delete(`/projects/${ctx.projectId}/secrets/${envVar}`);
+      await ctx.client.delete(`/workspaces/${ctx.projectId}/secrets/${envVar}`);
       removedKeys.push(envVar);
     } catch (err) {
       if (!(err instanceof ApiError) || err.status !== 404) {
@@ -685,7 +787,7 @@ async function providersCustom(
   }
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/custom-providers`;
+  const base = `/workspaces/${ctx.projectId}/custom-providers`;
   let provider: CustomLlmProvider;
   try {
     provider = await ctx.client.put<CustomLlmProvider>(`${base}/${encodeURIComponent(id)}`, {
@@ -696,7 +798,7 @@ async function providersCustom(
     if (key) {
       // The same write the web Custom form makes: the gateway spends the key,
       // the sandbox never sees it.
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+      await ctx.client.post<ProjectSecret>(`/workspaces/${ctx.projectId}/secrets`, {
         name: provider.secret_name,
         value: key,
         strategy: 'broker',
@@ -724,7 +826,7 @@ async function customLs(opts: CtxOpts, json: boolean): Promise<number> {
   let providers: CustomLlmProvider[];
   try {
     ({ providers } = await ctx.client.get<{ providers: CustomLlmProvider[] }>(
-      `/projects/${ctx.projectId}/custom-providers`,
+      `/workspaces/${ctx.projectId}/custom-providers`,
     ));
   } catch (err) {
     return surfaceApiError(err);
@@ -760,7 +862,7 @@ async function customLs(opts: CtxOpts, json: boolean): Promise<number> {
 async function customRm(id: string, opts: CtxOpts): Promise<number> {
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}`;
+  const base = `/workspaces/${ctx.projectId}`;
   let provider: CustomLlmProvider | undefined;
   try {
     const { providers } = await ctx.client.get<{ providers: CustomLlmProvider[] }>(`${base}/custom-providers`);

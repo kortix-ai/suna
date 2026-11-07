@@ -25,7 +25,7 @@ describe('malformed account_id is a 400, not a 500', () => {
     expect(body.error).toBe(true);
     expect(body.status).toBe(400);
     expect(body.code).toBe('invalid_account_id');
-    expect(body.message).toBe('account_id must be a valid id');
+    expect(body.message).toBe('account_id must be a valid workspace id');
   });
 
   test('GET /github/installation?account_id=not-a-uuid answers 400 too', async () => {

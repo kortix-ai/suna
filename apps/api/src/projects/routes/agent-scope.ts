@@ -24,7 +24,7 @@ import { extractAgents, grantsByAgent } from '../agents';
 import { builtinAgentWriteRefusal, enabledBuiltinAgentKey, projectBuiltinAgents } from '../lib/my-kortix-agent';
 import { extractConnectors } from '../connectors';
 import { canonicalConnectorAlias } from '../../shared/connector-alias';
-import { policySetNameError } from '@kortix/manifest-schema';
+import { isEveryGrant, policySetNameError } from '@kortix/manifest-schema';
 import {
   applyAgentScopeV2,
   grantSecretToAgentV2,
@@ -42,10 +42,12 @@ import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-syn
 import { eagerlyProvisionAgentIdentities, type AgentIdentity } from '../../accounts/iam/custom-roles';
 import { listAgentServiceAccounts } from '../../repositories/service-accounts';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // `'all'` = every item the launcher can see; a list = an explicit allowlist;
 // `[]` = none. Mirrors the AgentSpec GrantSet.
-const GrantSetSchema = z.union([z.literal('all'), z.array(z.string().min(1).max(200)).max(500)]);
+// `"*"` (kortix.yaml's spelling) is accepted as `all`; the write emits `"*"`.
+const GrantSetSchema = z.union([z.literal('all'), z.literal('*').transform(() => 'all' as const), z.array(z.string().min(1).max(200)).max(500)]);
 
 const AgentScopeBody = z.object({
   env: GrantSetSchema.optional(),
@@ -85,12 +87,12 @@ export function registerAgentScopeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/agents/{agentName}/scope',
+      path: '/{workspaceId}/agents/{agentName}/scope',
       tags: ['projects'],
       summary: 'Set which secrets and connectors an agent may use',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), agentName: z.string() }),
+        params: z.object({ workspaceId: z.string(), agentName: z.string() }),
         body: { content: { 'application/json': { schema: AgentScopeBody } } },
       },
       responses: {
@@ -99,7 +101,7 @@ export function registerAgentScopeRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const agentName = c.req.param('agentName');
       // Floor 'read' (membership); the real gate is project.agent.write below.
       // Scoping an agent edits its `[[agents]]` manifest entry (binding its
@@ -270,12 +272,12 @@ export function registerAgentScopeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/secrets/{identifier}/grant',
+      path: '/{workspaceId}/secrets/{identifier}/grant',
       tags: ['secrets'],
       summary: 'Grant a secret to an agent',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), identifier: z.string() }),
+        params: z.object({ workspaceId: z.string(), identifier: z.string() }),
         body: { content: { 'application/json': { schema: GrantSecretToAgentInputSchema } } },
       },
       responses: {
@@ -284,7 +286,7 @@ export function registerAgentScopeRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const identifierParam = c.req.param('identifier')?.trim();
       if (!identifierParam || !isValidIdentifier(identifierParam)) {
         return c.json({ error: 'Invalid secret identifier', code: 'invalid_identifier' }, 400);
@@ -440,11 +442,11 @@ export function registerAgentScopeRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/agent-identities',
+      path: '/{workspaceId}/agent-identities',
       tags: ['agents'],
       summary: "List this project's agent identities (service accounts)",
       ...auth,
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(
           z.object({
@@ -463,7 +465,7 @@ export function registerAgentScopeRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const byKey = new Map<string, AgentIdentity>();
@@ -496,7 +498,7 @@ function policySetAssignmentError(
   granted: unknown,
   requested: Record<string, string | null>,
 ): { error: string; code: string } | null {
-  const grantsAll = granted === 'all' || (Array.isArray(granted) && granted.includes('*'));
+  const grantsAll = isEveryGrant(granted);
   const grantedSlugs = new Set(
     (Array.isArray(granted) ? granted : [])
       .filter((slug): slug is string => typeof slug === 'string')

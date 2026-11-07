@@ -458,22 +458,11 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
     expect(updateSets).toEqual([]);
   });
 
-  test('the pre-W3 runtime_session alias hits the same wall', async () => {
-    const response = await post({
-      session_id: SESSION_ID,
-      kind: 'opencode_session',
-      opencode_session_id: 'oc_member_chosen',
-    });
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: 'runtime_session requires a sandbox token' });
-    expect(updateSets).toEqual([]);
-  });
-
   test('a sandbox credential not scoped to the project is refused', async () => {
     sandboxRow = null;
     const response = await post({ session_id: SESSION_ID, kind: 'step', text: 'hi' }, sandboxCtx);
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: 'sandbox token is not scoped to this project' });
+    expect(await response.json()).toEqual({ error: 'sandbox token is not scoped to this workspace' });
   });
 
   test('a sandbox credential not scoped to the session is refused', async () => {
@@ -521,7 +510,6 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
       ok: true,
       initial_turn: null,
       runtime_session_id: null,
-      opencode_session_id: null,
     });
   });
 
@@ -529,15 +517,14 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
   // must learn the durable pin here, or it adopts or creates a different root
   // and relays that over the pin (prod 2026-09-23: a session opened empty).
   test('returns the durable OpenCode root pin with or without a pending prompt', async () => {
-    sessionRow = { ...session({}), opencodeSessionId: 'ses_durable' };
+    sessionRow = { ...session({}), runtimeSessionId: 'ses_durable' };
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       ok: true,
       initial_turn: null,
-      // Both names: a W3 daemon reads runtime_session_id, an older one opencode_session_id.
+      // Both names: a W3 daemon reads runtime_session_id, an older one runtime_session_id.
       runtime_session_id: 'ses_durable',
-      opencode_session_id: 'ses_durable',
     });
   });
 
@@ -558,7 +545,6 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
       ok: true,
       initial_turn: { prompt: 'build it', turn_token: 'turn-token-1', message_id: 'msg_1' },
       runtime_session_id: null,
-      opencode_session_id: null,
     });
   });
 
@@ -575,7 +561,6 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
       ok: true,
       initial_turn: null,
       runtime_session_id: null,
-      opencode_session_id: null,
     });
   });
 
@@ -604,7 +589,6 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
         message_id: 'msg_1',
       },
       runtime_session_id: null,
-      opencode_session_id: null,
     });
   });
 });
@@ -641,7 +625,7 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
         session_id: SESSION_ID,
         kind: 'turn_accepted',
         turn_token: 't1',
-        opencode_session_id: 'oc1',
+        runtime_session_id: 'oc1',
         turn_message_id: 'msg1',
       },
       sandboxCtx,
@@ -663,7 +647,7 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
 
   test('turn_begin accepts the W3 name and the pre-W3 name of the runtime session', async () => {
     adoptResult = 'open_turn_exists';
-    for (const id of [{ runtime_session_id: 'oc1' }, { opencode_session_id: 'oc1' }]) {
+    for (const id of [{ runtime_session_id: 'oc1' }, { runtime_session_id: 'oc1' }]) {
       const response = await post(
         { session_id: SESSION_ID, kind: 'turn_begin', ...id, turn_message_id: 'msg1' },
         sandboxCtx,
@@ -679,7 +663,7 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
       {
         session_id: SESSION_ID,
         kind: 'turn_begin',
-        opencode_session_id: 'oc1',
+        runtime_session_id: 'oc1',
         turn_message_id: 'msg1',
       },
       sandboxCtx,
@@ -699,20 +683,6 @@ describe('POST /v1/projects/:projectId/turn-stream — lifecycle acknowledgement
         session_id: SESSION_ID,
         kind: 'runtime_session',
         runtime_session_id: ' oc_root ',
-      },
-      sandboxCtx,
-    );
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: false });
-  });
-
-  test('a pre-W3 daemon pins with kind opencode_session and opencode_session_id', async () => {
-    updateRows = [];
-    const response = await post(
-      {
-        session_id: SESSION_ID,
-        kind: 'opencode_session',
-        opencode_session_id: 'oc_root',
       },
       sandboxCtx,
     );
@@ -831,7 +801,7 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
 
   test('a coordinator-spawned session skips reconcile and promotion, and still saves its transcript', async () => {
     // A session another session's agent created runs in its own sandbox with
-    // its own OpenCode root. Nobody may ever open it, so this turn end is the
+    // its own runtime root. Nobody may ever open it, so this turn end is the
     // only moment its history is saved: skipping it served `available: false`
     // and a loading bar to the first person who looked.
     sessionRow = session({ spawned_by_session: 'parent-1' });

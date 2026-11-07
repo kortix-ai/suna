@@ -13,11 +13,9 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
-  TextInput,
   Pressable,
-  StyleSheet,
-  type NativeSyntheticEvent,
-  type TextInputSelectionChangeEventData,
+  type TextInputSelectionChangeEvent,
+  type TextInputInstance
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
@@ -203,7 +201,7 @@ function SessionChatInputImpl({
   // keystrokes (the memoized sheets below take them as props).
   const textRef = useRef(text);
   textRef.current = text;
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -298,7 +296,7 @@ function SessionChatInputImpl({
   );
 
   const handleSelectionChange = useCallback(
-    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+    (e: TextInputSelectionChangeEvent) => {
       trackPasteSelection(e);
       mention.detect(textRef.current, e.nativeEvent.selection.end);
       skill.detect(textRef.current, e.nativeEvent.selection.end);

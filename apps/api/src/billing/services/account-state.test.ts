@@ -168,11 +168,13 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       expires_at: '2026-11-24T12:00:00.000Z',
       extra: 4,
       can_run: true,
+      free_grant: { eligible: true, claimed_workspace_id: null },
       lifetime_granted: 0,
       lifetime_purchased: 0,
       lifetime_used: 0,
       daily_refresh: null,
     });
+    expect(state.plan_comp).toBeNull();
     expect(state.subscription.tier_key).toBe('free');
     expect(state.tier.name).toBe('free');
     expect(state.plan).toMatchObject({
@@ -203,6 +205,44 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(state.plan?.monthly_usd).toBeNull();
     expect(state.billing_state).toBe('active');
     expect(state.has_active_subscription).toBe(false);
+  });
+
+  test('a further workspace on Free gets no free credits: monthly_credits 0, no reset date, free_grant not eligible', async () => {
+    account = creditAccount({ tier: 'free', balance: '0', freeCreditsEligible: false, nextCreditGrant: '2026-12-01T00:00:00Z' });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.tier.monthly_credits).toBe(0);
+    expect(state.credits.expires_at).toBeNull();
+    expect(state.credits.free_grant).toEqual({ eligible: false, claimed_workspace_id: null });
+    expect(state.billing_state).toBe('no_subscription');
+  });
+
+  test('a further workspace that subscribed reports its plan grant, not 0', async () => {
+    account = creditAccount({
+      tier: 'credits',
+      planMonthlyUsd: '50',
+      freeCreditsEligible: false,
+      stripeSubscriptionId: 'sub_live',
+      stripeSubscriptionStatus: 'active',
+    });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.tier.monthly_credits).toBe(50);
+    expect(state.credits.expires_at).toBe('2026-11-24T12:00:00.000Z');
+  });
+
+  test('a comped split-off reports plan_comp and its comp end as the reset date', async () => {
+    const until = new Date(Date.now() + 10 * 86_400_000).toISOString();
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '300', freeCreditsEligible: false, nextCreditGrant: null, compPlanUntil: until });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.plan_comp).toEqual({ until, source: 'workspace_split' });
+    expect(state.credits.expires_at).toBe(until);
+    expect(state.tier.monthly_credits).toBe(300);
+    expect(state.plan?.family).toBe('credits');
+  });
+
+  test('an ended comp is not reported', async () => {
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '300', compPlanUntil: new Date(Date.now() - 1000).toISOString() });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.plan_comp).toBeNull();
   });
 
   test('a credits account on an ACTIVE subscription with a drained wallet CANNOT run, and reports why', async () => {

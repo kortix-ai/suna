@@ -305,7 +305,7 @@ const PROJECT_DETAIL = new RegExp(`^projects/${PROJECT}/detail$`);
  * in the shared manifest) or the project repository. A member reads only
  * their firm's agent.
  */
-const SHARED_CONFIG_KEYS = new Set(['manifest', 'manifest_raw', 'open_code_raw', 'env', 'skills']);
+const SHARED_CONFIG_KEYS = new Set(['manifest', 'manifest_raw', 'env', 'skills']);
 
 function scopeDetail(body: unknown, firmAgent: string): unknown {
   if (!isObject(body) || !isObject(body.config)) return body;
@@ -313,7 +313,7 @@ function scopeDetail(body: unknown, firmAgent: string): unknown {
   const agents = Array.isArray(body.config.agents) ? body.config.agents.filter((a) => isObject(a) && a.name === firmAgent) : [];
   return {
     ...body,
-    config: { ...config, agents, default_agent: firmAgent, open_code_default_agent: firmAgent },
+    config: { ...config, agents, default_agent: firmAgent },
     files: [],
     file_count: 0,
   };
@@ -341,31 +341,21 @@ const isObject = (v: unknown): v is Json => !!v && typeof v === 'object' && !Arr
 /**
  * A session record's platform plumbing, which no Lumen screen reads: the
  * sandbox's upstream URL (it names the platform host), the audit envelope,
- * the provider, the repository branch and access. The deprecated
- * `opencode_*` aliases go when their `runtime_*` names are present.
+ * the provider, the repository branch and access.
  */
 const SESSION_PLATFORM_KEYS = ['sandbox_url', 'audit_v2', 'repository_access', 'sandbox_provider', 'branch_name', 'base_ref', 'owner_type'];
-
-/** `opencode_session_id` beside `runtime_session_id` is its deprecated alias: dropped at any depth. */
-function dropRuntimeAliases(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(dropRuntimeAliases);
-  if (!isObject(value)) return value;
-  const entries = Object.entries(value).filter(([k]) => !(k === 'opencode_session_id' && 'runtime_session_id' in value));
-  return Object.fromEntries(entries.map(([k, v]) => [k, dropRuntimeAliases(v)]));
-}
 
 function scrubSession(session: unknown): unknown {
   if (!isObject(session)) return session;
   const out: Json = { ...session, owner_email: null, owner_name: null, owner_avatar_url: null };
   if (isObject(session.initiator)) out.initiator = { ...session.initiator, label: null };
   for (const k of SESSION_PLATFORM_KEYS) delete out[k];
-  if ('runtime_session_id' in out) delete out.opencode_session_id;
-  if ('runtime_sessions' in out) delete out.opencode_sessions;
-  // The metadata's audit envelope and runtime model bookkeeping (`opencode_model*`): Lumen runs
-  // the firm's model with no picker, so the composer has no pin to show or keep.
+  // The metadata's audit envelope, the runtime conversation list and the model bookkeeping
+  // (`model`, `model_*`): Lumen runs the firm's model with no picker, so the composer has no
+  // pin to show or keep.
   if (isObject(session.metadata)) {
     out.metadata = Object.fromEntries(
-      Object.entries(session.metadata).filter(([k]) => k !== 'audit_v2' && k !== 'repository_access' && !k.startsWith('opencode_')),
+      Object.entries(session.metadata).filter(([k]) => k !== 'audit_v2' && k !== 'repository_access' && k !== 'runtime_sessions' && k !== 'model' && !k.startsWith('model_')),
     );
   }
   return out;
@@ -386,9 +376,6 @@ export function scrubHealth(body: unknown): unknown {
   if (isObject(body.harness)) {
     const h = body.harness;
     out.harness = { id: 'agent', version: null, state: h.state, ready: h.ready, error: h.error ?? null, session: h.session, turn: h.turn ?? null, details: {} };
-  } else if ('opencode' in body) {
-    // A daemon before the harness block: the runtime state is the field's only use.
-    out.harness = { id: 'agent', version: null, state: body.opencode === true ? 'ok' : String(body.opencode), ready: body.opencode === true || body.opencode === 'ok', error: null, session: { id: null, required: false }, turn: null, details: {} };
   }
   return out;
 }
@@ -514,7 +501,7 @@ function scrubTurn(value: unknown): unknown {
  */
 export function redactIdentity(path: string, body: unknown, firmAgent = ''): unknown {
   if (RUNTIME_HEALTH.test(path)) return scrubHealth(body);
-  if (TRANSCRIPT.test(path)) return dropRuntimeAliases(scrubInbox(body));
+  if (TRANSCRIPT.test(path)) return scrubInbox(body);
   if (RUNTIME_COMMANDS.test(path) && Array.isArray(body)) return scrubCommands(body);
   if (RUNTIME_ACTION_COMMANDS.test(path) && isObject(body) && Array.isArray(body.commands)) {
     return { ...body, commands: scrubCommands(body.commands) };
@@ -526,7 +513,7 @@ export function redactIdentity(path: string, body: unknown, firmAgent = ''): unk
   if (SESSION_TURN.test(path)) return scrubTurn(body);
   if (SESSION_RECORD.test(path)) return dropOperatorIds(Array.isArray(body.sessions) ? { ...body, sessions: body.sessions.map(scrubSession) } : scrubSession(body));
   if (SESSION_SNAPSHOT.test(path)) {
-    return dropRuntimeAliases({
+    return {
       ...(dropOperatorIds(body) as Json),
       session: dropOperatorIds(scrubSession(body.session)),
       ...('turn' in body ? { turn: scrubTurn(body.turn) } : {}),
@@ -534,7 +521,7 @@ export function redactIdentity(path: string, body: unknown, firmAgent = ''): unk
       // The snapshot bundles the session audit, whose approval rows name the
       // operator's Kortix user by email: the same empty answer as `…/audit`.
       ...('audit' in body ? { audit: emptyAudit(isObject(body.session) ? body.session.session_id : undefined) } : {}),
-    });
+    };
   }
   if (!MESSAGE_AUTHORS.test(path)) return body;
   const keep = (map: unknown) =>

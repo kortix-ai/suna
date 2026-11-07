@@ -21,6 +21,8 @@
 #
 # Creates the target when it is missing, else writes a new version.
 set -euo pipefail
+# shellcheck source=infra/scripts/lib/aws-secret.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/aws-secret.sh"
 
 usage() { sed -n '9,21p' "$0" >&2; exit 2; }
 [ $# -ge 3 ] || usage
@@ -67,15 +69,6 @@ if [ "$CHECK" = 1 ]; then
 fi
 
 payload="$(read_secret "$FROM" "$NAME" | jq -c --arg workers "$WORKERS" "$transform")"
-if aws secretsmanager describe-secret --region "$TO" --secret-id "$TO_NAME" >/dev/null 2>&1; then
-  printf '%s' "$payload" | aws secretsmanager put-secret-value --region "$TO" \
-    --secret-id "$TO_NAME" --secret-string file:///dev/stdin >/dev/null
-  verb=updated
-else
-  printf '%s' "$payload" | aws secretsmanager create-secret --region "$TO" \
-    --name "$TO_NAME" --secret-string file:///dev/stdin \
-    --description "Copy of $FROM/$NAME (infra/scripts/copy-env-secret.sh)" >/dev/null
-  verb=created
-fi
+verb="$(printf '%s' "$payload" | put_or_create_secret "$TO" "$TO_NAME" "Copy of $FROM/$NAME (infra/scripts/copy-env-secret.sh)")"
 echo "$verb $TO/$TO_NAME from $FROM/$NAME: $(jq 'length' <<<"$payload") keys," \
   "KORTIX_WORKERS_ENABLED=$(jq -r '.KORTIX_WORKERS_ENABLED // "unset"' <<<"$payload")"

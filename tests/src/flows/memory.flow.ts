@@ -37,12 +37,12 @@ import {
   type MemoryVersion,
   type SpaceList,
 } from '@kortix/api-contract';
-import { flow } from '../core/flow';
+import { flow, flowMeta } from '../core/flow';
 import { waitFor } from '../core/poll';
 import type { Client, Res } from '../core/client';
-import type { BodyAssert } from '../core/expect';
-import type { FlowContext, FlowMeta } from '../core/types';
-import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { fail, type BodyAssert } from '../core/expect';
+import type { FlowContext } from '../core/types';
+import { AgentPrincipalsWorld, driveOf, hasStorage, openWorld } from '../fixtures/agent-principals';
 
 const R = {
   layer: 'GET /v1/projects/:projectId/memory/layers/:layerKey',
@@ -58,7 +58,6 @@ const R = {
 } as const;
 const FEATURES = 'PATCH /v1/projects/:projectId/features';
 const SPACE_CREATE = 'POST /v1/projects/:projectId/spaces';
-const SPACE_UPDATE = 'PATCH /v1/projects/:projectId/spaces/:spaceId';
 const SPACE_DM = 'POST /v1/projects/:projectId/spaces/dm';
 const TOKEN_MINT = 'POST /v1/projects/:projectId/cli-token';
 const DRIVE_LIST = 'GET /v1/drives';
@@ -69,16 +68,16 @@ const DRIVE_WRITE = 'PUT /v1/drives/:driveId/files/content';
 const STORAGE_PROBE = ['GET /v1/drives', 'POST /v1/drives/:driveId/files/mkdir', 'DELETE /v1/drives/:driveId/files'];
 const RESOURCE_GRANTS = 'POST /v1/projects/:projectId/resource-grants';
 
-const LAYER = '/v1/projects/:projectId/memory/layers/:layerKey';
-const PAGES = '/v1/projects/:projectId/memory/layers/:layerKey/pages';
-const NOTES = '/v1/projects/:projectId/memory/layers/:layerKey/notes';
-const PAGE = '/v1/projects/:projectId/memory/pages/:pageId';
-const HISTORY = '/v1/projects/:projectId/memory/pages/:pageId/history';
-const SEARCH = '/v1/projects/:projectId/memory/search';
-const USAGE = '/v1/projects/:projectId/sessions/:sessionId/memory-usage';
-const SPACES = '/v1/projects/:projectId/spaces';
-const SPACE = '/v1/projects/:projectId/spaces/:spaceId';
-const DM = '/v1/projects/:projectId/spaces/dm';
+const LAYER = '/v1/workspaces/:projectId/memory/layers/:layerKey';
+const PAGES = '/v1/workspaces/:projectId/memory/layers/:layerKey/pages';
+const NOTES = '/v1/workspaces/:projectId/memory/layers/:layerKey/notes';
+const PAGE = '/v1/workspaces/:projectId/memory/pages/:pageId';
+const HISTORY = '/v1/workspaces/:projectId/memory/pages/:pageId/history';
+const SEARCH = '/v1/workspaces/:projectId/memory/search';
+const USAGE = '/v1/workspaces/:projectId/sessions/:sessionId/memory-usage';
+const SPACES = '/v1/workspaces/:projectId/spaces';
+const SPACE = '/v1/workspaces/:projectId/spaces/:spaceId';
+const DM = '/v1/workspaces/:projectId/spaces/dm';
 /** Routes the files model removed: each answers 404 (no handler). */
 const REMOVED = [
   ['POST', '/v1/projects/:projectId/memory/remember'],
@@ -91,23 +90,6 @@ const REMOVED = [
 
 /** A credential shape the secret check refuses, built at run time so no scanner reads a key here. Synthetic: it opens nothing. */
 const FAKE_KEY = ['sk', 'proj', 'a1B2c3D4e5F6g7H8i9J0k1L2'].join('-');
-
-const meta = (routes: string[], extra: Partial<FlowMeta> = {}): FlowMeta => ({
-  domain: 'memory',
-  requires: ['database'],
-  timeoutMs: 180_000,
-  routes,
-  ...extra,
-});
-
-/** A team project with Files on (the `volumes` flag): memory is gated on Files. */
-async function openWorld(ctx: FlowContext, opts: { channels?: boolean } = {}) {
-  const team = await ctx.fixtures.team();
-  const project = await team.project({ managedGit: true });
-  const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
-  if (opts.channels) await world.setFeature('project_channels', true);
-  return { team, project, world };
-}
 
 type Space = { space_id: string; slug: string | null };
 
@@ -135,7 +117,7 @@ async function thread(
      VALUES ($1::uuid, $1, $2, $3, 'active')`,
     [sessionId, world.accountId, world.projectId],
   );
-  const minted = (await world.owner.post('/v1/projects/:projectId/cli-token', { name: ctx.fixtures.name('memory') }, { params: { projectId: world.projectId } }))
+  const minted = (await world.owner.post('/v1/workspaces/:projectId/cli-token', { name: ctx.fixtures.name('memory') }, { params: { projectId: world.projectId } }))
     .status(201)
     .json<{ token_id: string; secret_key: string }>();
   world.tokens.push(minted.token_id);
@@ -151,29 +133,6 @@ function read<T>(res: Res, check: (body: BodyAssert) => unknown): T {
   return res.json<T>();
 }
 
-function fail(what: string, detail: unknown): never {
-  throw new Error(`${what}: ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 1_200)}`);
-}
-
-/**
- * The target has drive storage: a write lands (a folder made and removed in
- * the owner's own folder), not 503 `drive_storage_unavailable`. A read cannot
- * tell: a drive with no volume yet reads as empty on every target.
- */
-async function hasStorage(world: AgentPrincipalsWorld): Promise<boolean> {
-  const { driveId, personalFolder } = await driveOf(world.owner, world.projectId);
-  const path = `${personalFolder}/.storage-probe-${randomUUID().slice(0, 8)}`;
-  const r = await world.owner.post('/v1/drives/:driveId/files/mkdir', { path }, { params: { driveId } });
-  if (r.statusCode === 503) {
-    r.body().has('$.code', 'drive_storage_unavailable');
-    return false;
-  }
-  r.status([200, 201]);
-  // A new folder on Platinum storage is not empty to a plain delete; remove it as the web UI does.
-  (await world.owner.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path, recursive: 'true' } })).status([200, 204]);
-  return true;
-}
-
 /** Without drive storage a Files write answers 503: the flow asserts that and ends (a local profile never skips). */
 async function noStorage(ctx: FlowContext, world: AgentPrincipalsWorld): Promise<void> {
   await ctx.step('no drive storage on this target: a Files write → 503 drive_storage_unavailable', async () => {
@@ -182,13 +141,6 @@ async function noStorage(ctx: FlowContext, world: AgentPrincipalsWorld): Promise
       params: { driveId }, query: { path: `${personalFolder}/Memory/probe.md` }, headers: { 'content-type': 'application/octet-stream' }, raw: true,
     })).status(503).body().has('$.code', 'drive_storage_unavailable');
   });
-}
-
-/** The project drive's id and the caller's own folder. */
-async function driveOf(client: Client, projectId: string): Promise<{ driveId: string; personalFolder: string }> {
-  const drive = (await client.get('/v1/drives', { query: { projectId } })).status(200).json<{ drives: { driveId: string; personalFolder: string }[] }>().drives[0];
-  if (!drive) fail('no project drive', null);
-  return drive;
 }
 
 /** Every file under `/` the caller sees, path → sha256 of its bytes (the Files listing hides `.keep` markers). */
@@ -213,7 +165,7 @@ const changed = (a: Record<string, string>, b: Record<string, string>) =>
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) => {
+flow('MEMORY-1', flowMeta('memory', [...Object.values(R), FEATURES, TOKEN_MINT], { timeoutMs: 180_000 }), async (ctx) => {
   const team = await ctx.fixtures.team();
   const project = await team.project({ managedGit: true });
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
@@ -241,9 +193,9 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
       (await ctx.client.as(ctx.P.NONMEMBER).get(LAYER, { params: { projectId, layerKey: 'mykortix' } })).status([403, 404]);
     });
 
-    await ctx.step('project_channels off: the memory routes are not gated on Channels (never 403 feature_disabled)', async () => {
+    await ctx.step('chat off: the memory routes are not gated on Channels (never 403 feature_disabled)', async () => {
       const r = await world.owner.get(LAYER, { params: { projectId, layerKey: 'mykortix' } });
-      if (r.statusCode === 403) fail('memory is gated on project_channels', r.text());
+      if (r.statusCode === 403) fail('memory is gated on chat', r.text());
       r.status([200, 503]);
     });
 
@@ -265,8 +217,8 @@ flow('MEMORY-1', meta([...Object.values(R), FEATURES, TOKEN_MINT]), async (ctx) 
   }
 });
 
-flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, FEATURES, SPACE_CREATE, SPACE_DM, ...STORAGE_PROBE]), async (ctx) => {
-  const { team, project, world } = await openWorld(ctx, { channels: true });
+flow('MEMORY-2', flowMeta('memory', [R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, FEATURES, SPACE_CREATE, SPACE_DM, ...STORAGE_PROBE], { timeoutMs: 180_000 }), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx, { features: ['chat'] });
   const projectId = project.id;
   try {
     const launch = await channel(world, 'Launch');
@@ -344,7 +296,7 @@ flow('MEMORY-2', meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.r
   }
 });
 
-flow('MEMORY-3', meta([R.create, R.update, R.note, R.search, FEATURES]), async (ctx) => {
+flow('MEMORY-3', flowMeta('memory', [R.create, R.update, R.note, R.search, FEATURES], { timeoutMs: 180_000 }), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const projectId = project.id;
   const layer = { params: { projectId, layerKey: 'company' } };
@@ -379,7 +331,7 @@ flow('MEMORY-3', meta([R.create, R.update, R.note, R.search, FEATURES]), async (
 
 flow(
   'MEMORY-4',
-  meta([R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, R.search, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE, ...STORAGE_PROBE], { tags: ['deployed'] }),
+  flowMeta('memory', [R.layer, R.pages, R.create, R.note, R.page, R.update, R.remove, R.history, R.search, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE, ...STORAGE_PROBE], { timeoutMs: 180_000, tags: ['deployed'] }),
   async (ctx) => {
     const { project, world } = await openWorld(ctx);
     const projectId = project.id;
@@ -459,7 +411,7 @@ flow(
   },
 );
 
-flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE, SPACE_CREATE, SPACE_DM, ...STORAGE_PROBE]), async (ctx) => {
+flow('MEMORY-5', flowMeta('memory', [R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIVE_READ, DRIVE_WRITE, SPACE_CREATE, SPACE_DM, ...STORAGE_PROBE], { timeoutMs: 180_000 }), async (ctx) => {
   const { project, world } = await openWorld(ctx);
   const projectId = project.id;
   try {
@@ -471,8 +423,8 @@ flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIV
     await put(`${personalFolder}/Memory/preferences.md`, '# Preferences\n\nShort answers.\n');
     let before: Record<string, string> = {};
 
-    await ctx.step('project_channels on: Company and the DM layer list the files already in Drive, in place', async () => {
-      await world.setFeature('project_channels', true);
+    await ctx.step('chat on: Company and the DM layer list the files already in Drive, in place', async () => {
+      await world.setFeature('chat', true);
       const dmId = (await world.owner.post(DM, { agent_name: 'worker' }, { params: { projectId } })).status(200).json<Space>().space_id;
       const company = (await world.owner.get(PAGES, { params: { projectId, layerKey: 'company' } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
       const dm = (await world.owner.get(PAGES, { params: { projectId, layerKey: dmId } })).status(200).json<{ pages: MemoryPageSummary[] }>().pages;
@@ -480,8 +432,8 @@ flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIV
       before = await checksums(world.owner, driveId);
     });
 
-    await ctx.step('project_channels off: no file is moved, copied, renamed or deleted (sha256 of every file the owner sees), and memory still reads', async () => {
-      await world.setFeature('project_channels', false);
+    await ctx.step('chat off: no file is moved, copied, renamed or deleted (sha256 of every file the owner sees), and memory still reads', async () => {
+      await world.setFeature('chat', false);
       // The toggle effect runs behind the PATCH response: read Files three times over ~4.5 s.
       for (let i = 0; i < 3; i++) {
         await new Promise((resolve) => setTimeout(resolve, 1_500));
@@ -491,8 +443,8 @@ flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIV
       (await world.owner.get(PAGES, { params: { projectId, layerKey: 'company' } })).status(200);
     });
 
-    await ctx.step('project_channels on again: still no file changed', async () => {
-      await world.setFeature('project_channels', true);
+    await ctx.step('chat on again: still no file changed', async () => {
+      await world.setFeature('chat', true);
       const diff = changed(before, await checksums(world.owner, driveId));
       if (diff.length) fail('files changed on turn-on', diff);
     });
@@ -501,8 +453,8 @@ flow('MEMORY-5', meta([R.layer, R.pages, FEATURES, DRIVE_LIST, DRIVE_FILES, DRIV
   }
 });
 
-flow('MEMORY-12', meta([R.usage, FEATURES, SPACE_CREATE, TOKEN_MINT]), async (ctx) => {
-  const { team, project, world } = await openWorld(ctx, { channels: true });
+flow('MEMORY-12', flowMeta('memory', [R.usage, FEATURES, SPACE_CREATE, TOKEN_MINT], { timeoutMs: 180_000 }), async (ctx) => {
+  const { team, project, world } = await openWorld(ctx, { features: ['chat'] });
   const projectId = project.id;
   try {
     const launch = await channel(world, 'Launch');
@@ -523,9 +475,9 @@ flow('MEMORY-12', meta([R.usage, FEATURES, SPACE_CREATE, TOKEN_MINT]), async (ct
   }
 });
 
-const FEATURES_PATH = '/v1/projects/:projectId/features';
-const ONBOARDING = '/v1/projects/:projectId/onboarding/channels';
-const MARKS = '/v1/projects/:projectId/onboarding/channels/marks';
+const FEATURES_PATH = '/v1/workspaces/:projectId/features';
+const ONBOARDING = '/v1/workspaces/:projectId/onboarding/channels';
+const MARKS = '/v1/workspaces/:projectId/onboarding/channels/marks';
 const ONBOARDING_ROUTES = ['GET /v1/projects/:projectId/onboarding/channels', 'POST /v1/projects/:projectId/onboarding/channels/marks'];
 const SPACE_LIST = 'GET /v1/projects/:projectId/spaces';
 
@@ -536,7 +488,7 @@ const SPACE_LIST = 'GET /v1/projects/:projectId/spaces';
  */
 flow(
   'MEMORY-16',
-  meta([...ONBOARDING_ROUTES, FEATURES, SPACE_LIST, SPACE_CREATE, SPACE_DM, R.note, RESOURCE_GRANTS]),
+  flowMeta('memory', [...ONBOARDING_ROUTES, FEATURES, SPACE_LIST, SPACE_CREATE, SPACE_DM, R.note, RESOURCE_GRANTS], { timeoutMs: 180_000 }),
   async (ctx) => {
     const { team, project, world } = await openWorld(ctx);
     const projectId = project.id;
@@ -546,7 +498,8 @@ flow(
     // A DM runs its agent: the member needs the agent's run grant to open one.
     await world.grantRun('worker', member);
     // An account member with no access to this project: never on its roster.
-    const outsider = await team.addMember('member');
+    // Membership is access (design.md C3): the outsider is a person outside the workspace.
+    const outsider = await ctx.fixtures.user({ label: 'MEM16-OUTSIDER' });
     const asMember = ctx.client.as(member);
     const stateOf = async (client: Client) => read<ChannelsOnboarding>((await client.get(ONBOARDING, { params })).status(200), (b) => b.schema(ChannelsOnboardingSchema));
     const mark = (client: Client, value: string) => client.post(MARKS, { mark: value }, { params });
@@ -582,20 +535,20 @@ flow(
     const introMarks = async () =>
       (await world.db.query<{ user_id: string }>("SELECT user_id FROM kortix.project_user_marks WHERE project_id = $1 AND mark = 'channels_intro'", [projectId])).rows.map((r) => r.user_id);
     try {
-      await ctx.step('with project_channels off, GET /onboarding/channels and POST …/marks → 403 feature_disabled', async () => {
+      await ctx.step('with chat off, GET /onboarding/channels and POST …/marks → 403 feature_disabled', async () => {
         for (const r of [await world.owner.get(ONBOARDING, { params }), await mark(world.owner, 'channels_intro')]) {
-          r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'project_channels');
+          r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'chat');
         }
       });
 
-      await ctx.step('D7: a project member turning project_channels on → 403 and the flag stays off', async () => {
-        (await asMember.patch(FEATURES_PATH, { feature: 'project_channels', enabled: true }, { params })).status(403);
+      await ctx.step('D7: a project member turning chat on → 403 and the flag stays off', async () => {
+        (await asMember.patch(FEATURES_PATH, { feature: 'chat', enabled: true }, { params })).status(403);
         (await world.owner.get(ONBOARDING, { params })).status(403).body().has('$.code', 'feature_disabled');
       });
 
       const firstOff = await offSession();
       await ctx.step('the first turn-on by the owner files the session started while off into #general, records no "turned on again" line and marks no intro', async () => {
-        await world.setFeature('project_channels', true);
+        await world.setFeature('chat', true);
         await filedIntoGeneral(firstOff);
         (await world.owner.get(SPACES, { params })).status(200).body().schema(SpaceListSchema).has('$.general_notice', undefined);
         if ((await channelsMeta()) !== null) fail('a first turn-on recorded metadata.channels', await channelsMeta());
@@ -636,20 +589,20 @@ flow(
         (await world.owner.get(ONBOARDING, { params })).status(200).body().has('$.get_started', { ...closed, visible: false });
       });
 
-      await ctx.step('D7: a project member turning project_channels off → 403 and Channels stays on', async () => {
-        (await asMember.patch(FEATURES_PATH, { feature: 'project_channels', enabled: false }, { params })).status(403);
+      await ctx.step('D7: a project member turning chat off → 403 and Channels stays on', async () => {
+        (await asMember.patch(FEATURES_PATH, { feature: 'chat', enabled: false }, { params })).status(403);
         (await asMember.get(ONBOARDING, { params })).status(200);
       });
 
       let secondOff = '';
       await ctx.step('flag off → both onboarding routes 403 feature_disabled; a session started now has no space', async () => {
-        await world.setFeature('project_channels', false);
+        await world.setFeature('chat', false);
         for (const r of [await asMember.get(ONBOARDING, { params }), await mark(asMember, 'get_started.dm')]) r.status(403).body().has('$.code', 'feature_disabled');
         secondOff = await offSession();
       });
 
       await ctx.step('turned on again: the session moves into #general, GET /spaces carries general_notice {kind: reenabled, count: 1}, and the owner’s intro is marked seen', async () => {
-        await world.setFeature('project_channels', true);
+        await world.setFeature('chat', true);
         await filedIntoGeneral(secondOff);
         const owner = await waitFor(() => stateOf(world.owner), {
           until: (s) => s.intro_seen,
@@ -666,7 +619,7 @@ flow(
       await ctx.step('the intro is marked for project members only: the owner and the member, never the account member without project access', async () => {
         const marked = await introMarks();
         for (const userId of [world.ownerUserId, member.userId!]) if (!marked.includes(userId)) fail('a project member has no intro mark', { userId, marked });
-        if (marked.includes(outsider.userId!)) fail('an account member without project access got an intro mark', marked);
+        if (marked.includes(outsider.userId!)) fail('a person outside the workspace got an intro mark', marked);
         (await ctx.client.as(outsider).get(ONBOARDING, { params })).status([403, 404]);
       });
     } finally {
@@ -681,11 +634,11 @@ const MINE = {
   save: 'PUT /v1/projects/:projectId/memory/me/agent/:agent/pages/:name',
   forget: 'DELETE /v1/projects/:projectId/memory/me/agent/:agent/pages/:name',
 } as const;
-const MINE_INDEX = '/v1/projects/:projectId/memory/me/agent/:agent';
-const MINE_PAGE = '/v1/projects/:projectId/memory/me/agent/:agent/pages/:name';
+const MINE_INDEX = '/v1/workspaces/:projectId/memory/me/agent/:agent';
+const MINE_PAGE = '/v1/workspaces/:projectId/memory/me/agent/:agent/pages/:name';
 const FACT = { description: 'Wants replies of one to three sentences', type: 'feedback', body: 'Keep replies short.\n\n**Why:** reads on a phone.\n\n**How to apply:** one to three sentences.' };
 
-flow('MEMORY-17', meta([...Object.values(MINE), FEATURES, TOKEN_MINT, ...STORAGE_PROBE]), async (ctx) => {
+flow('MEMORY-17', flowMeta('memory', [...Object.values(MINE), FEATURES, TOKEN_MINT, ...STORAGE_PROBE], { timeoutMs: 180_000 }), async (ctx) => {
   const { team, project, world } = await openWorld(ctx);
   const projectId = project.id;
   try {

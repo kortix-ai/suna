@@ -151,6 +151,11 @@ async function loadProvisionMatrix(opts: {
     // The mock mirrors the module surface principals.ts consumes; the mint
     // helper answers through the same shape as the mocked Client.post.
     mintAccountToken: async () => ({ secret_key: 'pat-secret' }),
+    // The real helper asserts the status on the response; the mocked one accepts any.
+    expectApi: (response: { status(codes: number[]): unknown }, _what: string, ...statuses: number[]) => {
+      if (statuses.length) response.status(statuses);
+      return response;
+    },
     Client: class {
       as() {
         return this;
@@ -161,7 +166,7 @@ async function loadProvisionMatrix(opts: {
           status() {
             return this;
           },
-          json: () => ({ secret_key: 'pat-secret' }),
+          json: () => ({ secret_key: 'pat-secret', account_id: 'account-id' }),
           text: () => '',
         };
       }
@@ -248,6 +253,11 @@ describe('provisionMatrix parallelism (P1.7)', () => {
       // The mock mirrors the module surface principals.ts consumes; the mint
       // helper answers through the same shape as the mocked Client.post.
       mintAccountToken: async () => ({ secret_key: 's' }),
+      // The real helper asserts the status on the response; the mocked one accepts any.
+      expectApi: (response: { status(codes: number[]): unknown }, _what: string, ...statuses: number[]) => {
+        if (statuses.length) response.status(statuses);
+        return response;
+      },
       Client: class {
         as() {
           return this;
@@ -257,7 +267,7 @@ describe('provisionMatrix parallelism (P1.7)', () => {
             status() {
               return this;
             },
-            json: () => ({ secret_key: 's' }),
+            json: () => ({ secret_key: 's', account_id: 'account-id' }),
             text: () => '',
           };
         }
@@ -343,6 +353,11 @@ describe('buildWorld provisioning parallelism (P1.7)', () => {
     }));
     vi.doMock('../src/fixtures/supabase', () => ({ adminDeleteUser: async () => undefined }));
     vi.doMock('../src/core/client', () => ({
+      // The real helper asserts the status on the response; the mocked one accepts any.
+      expectApi: (response: { status(codes: number[]): unknown }, _what: string, ...statuses: number[]) => {
+        if (statuses.length) response.status(statuses);
+        return response;
+      },
       Client: class {
         as() {
           return this;

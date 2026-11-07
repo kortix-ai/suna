@@ -18,9 +18,9 @@ import { buildFileRefsBlock } from '@kortix/ui/internal/lib/project-preamble';
 import { markSessionOnScreen } from '@kortix/ui/internal/lib/web-notifications';
 import { ComposerChatInput } from '@kortix/ui/session/composer/composer-chat-input';
 import { Skeleton } from '@kortix/ui/skeleton';
-import { SplitSheetBody, SplitSheetContent, SplitSheetHeader, SplitSheetTitle } from '@kortix/ui/split-sheet';
+import { SplitSheetBody, SplitSheetClose, SplitSheetContent, SplitSheetHeader, SplitSheetTitle } from '@kortix/ui/split-sheet';
 import { errorToast } from '@kortix/ui/toast';
-import { ArrowSquareOutIcon, ClockCounterClockwiseIcon, NotePencilIcon, SparkleIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, ClockCounterClockwiseIcon, NotePencilIcon, SparkleIcon, XIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
@@ -97,7 +97,7 @@ export function AskAgentSheet({
   return (
     // The page background, not the sheet's `bg-surface`: the column reads as part of the artifact page.
     <SplitSheetContent aria-label={t('askAgent')} className="bg-background">
-      <SplitSheetHeader closeLabel={t('close')} className="items-center py-2">
+      <SplitSheetHeader showCloseButton={false} className="items-center py-2">
         <div className="flex min-w-0 items-center gap-1">
           <SplitSheetTitle className="min-w-0 flex-1 truncate">{t('askAgent')}</SplitSheetTitle>
           {/* One group, one weight, as the page header's actions. */}
@@ -107,7 +107,7 @@ export function AskAgentSheet({
               <>
                 <Hint label={t('openSession')} side="bottom">
                   <Button size="icon-sm" variant="secondary" aria-label={t('openSession')} asChild>
-                    <Link href={`/projects/${projectId}/sessions/${sessionId}`}>
+                    <Link href={`/workspaces/${projectId}/sessions/${sessionId}`}>
                       <ArrowSquareOutIcon className="size-3.5" />
                     </Link>
                   </Button>
@@ -119,6 +119,14 @@ export function AskAgentSheet({
                 </Hint>
               </>
             ) : null}
+            {/* Close joins the group, as in every panel toolbar: one radius, one weight. */}
+            <Hint label={t('close')} side="bottom">
+              <SplitSheetClose asChild>
+                <Button size="icon-sm" variant="secondary" aria-label={t('close')}>
+                  <XIcon className="size-3.5" />
+                </Button>
+              </SplitSheetClose>
+            </Hint>
           </ButtonGroup>
         </div>
       </SplitSheetHeader>
@@ -224,13 +232,23 @@ function AskAgentHistory({
             <Skeleton className="h-7 w-full" />
             <Skeleton className="h-7 w-full" />
           </div>
+        ) : history.isError && history.sessions.length === 0 ? (
+          // A failed read is not an empty history: say so, and offer the read again.
+          <div className="flex items-center justify-between gap-2 px-2 py-2">
+            <p role="alert" className="text-muted-foreground text-xs">
+              {t('askAgentHistoryError')}
+            </p>
+            <Button size="xs" variant="ghost" onClick={() => void history.refetch()}>
+              {t('retry')}
+            </Button>
+          </div>
         ) : history.sessions.length === 0 ? (
           <p className="text-muted-foreground px-2 py-3 text-xs">{t('askAgentHistoryEmpty')}</p>
         ) : (
           history.sessions.map((session) => (
             <DropdownMenuItem key={session.session_id} onSelect={() => onPick(session.session_id)} aria-current={session.session_id === current || undefined}>
               <span className="min-w-0 flex-1 truncate">{getSessionDisplayTitle(session)}</span>
-              <span className={`shrink-0 text-xs ${session.session_id === current ? 'text-foreground' : 'text-muted-foreground'}`}>
+              <span className={`shrink-0 text-xs tabular-nums ${session.session_id === current ? 'text-foreground' : 'text-muted-foreground'}`}>
                 {session.session_id === current ? t('viewing') : relativeTime(sessionLastActivityAt(session), locale)}
               </span>
             </DropdownMenuItem>

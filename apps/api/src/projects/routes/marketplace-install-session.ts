@@ -38,6 +38,7 @@ import {
   buildTemplateInstallPrompt,
 } from './marketplace-install-prompts';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** The project's manifest raw text (kortix.yaml, else kortix.yml). */
 async function manifestRawOrNull(
@@ -97,8 +98,6 @@ function buildItemInstallPrompt(
  * session would pin is servable (the account's own key). The agent layer is
  * resolved from the metadata mirror only — loading the manifest agents here
  * would duplicate session-create's work for a case the mirror covers.
- * Native (gateway-off) projects have no plan gate: the box runs OpenCode's own
- * providers from the project's keys.
  */
 async function installModelGate(
   loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>,
@@ -129,7 +128,7 @@ async function installModelGate(
 }
 
 async function handleMarketplaceInstallSession(c: any) {
-  const projectId = c.req.param('projectId');
+  const projectId = workspaceIdParam(c);
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   // The install lands as a change request, so it needs the CR leaf.
@@ -196,12 +195,12 @@ export function registerMarketplaceInstallSessionRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/marketplace/install-session',
+      path: '/{workspaceId}/marketplace/install-session',
       tags: ['marketplace'],
       summary: 'Start a session that installs a marketplace item',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         body: {
           content: {
             'application/json': {

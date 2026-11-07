@@ -65,7 +65,7 @@ export const hero = {
   /** Four mono facts the rest of the page proves. Every value is defensible. */
   specs: [
     { k: 'Isolation', v: 'One sandbox per session', visual: 'isolation' },
-    { k: 'Secrets', v: 'AES-256-GCM, key per project', visual: 'encrypt' },
+    { k: 'Secrets', v: 'AES-256-GCM, key per workspace', visual: 'encrypt' },
     { k: 'Principals', v: 'People and service accounts', visual: 'principals' },
     { k: 'Path to main', v: 'Change request, default-deny merge', visual: 'diff' },
   ],
@@ -86,15 +86,15 @@ export const isolation = {
     label: 'inside one session',
     items: [
       'Its own sandbox, with its own filesystem and its own lifetime',
-      'A clone of the project repo on a branch named after the session',
-      'The tools, dependencies and runtime the project declares',
+      'A clone of the workspace repo on a branch named after the session',
+      'The tools, dependencies and runtime the workspace declares',
       'Only the secrets that session is granted, placed there at boot',
     ],
   },
   outside: {
     label: 'never crosses in',
     items: [
-      'Another session — same project, same team, or another customer',
+      'Another session — same workspace, same team, or another customer',
       'Connector credentials, which are resolved server-side',
       'Kortix’s own upstream provider keys, which no sandbox may hold',
       'Write access to main; a session can only propose',
@@ -146,7 +146,7 @@ export const credentials = {
   sub: 'A tool needs a real credential to do real work, so the honest question is not whether the machine ever holds one. It is which machine holds which key, who decided that, and what never gets in at all.',
   /** The five-step path a credential takes. Drawn as a mono flow. */
   flow: [
-    { n: '1', k: 'Stored', v: 'Encrypted with AES-256-GCM under a key derived per project.' },
+    { n: '1', k: 'Stored', v: 'Encrypted with AES-256-GCM under a key derived per workspace.' },
     {
       n: '2',
       k: 'Granted',
@@ -171,8 +171,8 @@ export const credentials = {
   rows: [
     {
       id: 'crypto',
-      k: 'Encrypted per project',
-      v: 'Values are sealed with AES-256-GCM. The key is derived per project with HKDF-SHA256, so one project’s ciphertext cannot be opened with another project’s key. The envelope is versioned, so the scheme can move forward without a flag day.',
+      k: 'Encrypted per workspace',
+      v: 'Values are sealed with AES-256-GCM. The key is derived per workspace with HKDF-SHA256, so one workspace’s ciphertext cannot be opened with another workspace’s key. The envelope is versioned, so the scheme can move forward without a flag day.',
     },
     {
       id: 'grant',
@@ -212,13 +212,13 @@ export const identity = {
   presets: {
     label: 'Built-in roles — on every plan',
     account: [
-      { k: 'Owner', v: 'Full account control.' },
+      { k: 'Owner', v: 'Full workspace control.' },
       { k: 'Admin', v: 'Manage members, groups, roles, tokens and billing.' },
-      { k: 'Member', v: 'Baseline account membership.' },
+      { k: 'Member', v: 'Baseline workspace membership.' },
     ],
     project: [
-      { k: 'Manager', v: 'Full project control, including members and delete.' },
-      { k: 'Member', v: 'Read, run sessions and fire triggers. The project floor role.' },
+      { k: 'Manager', v: 'Full workspace control, including members and delete.' },
+      { k: 'Member', v: 'Read, run sessions and fire triggers. The workspace floor role.' },
     ],
   },
   enterprise: {
@@ -228,7 +228,7 @@ export const identity = {
     items: [
       {
         k: 'SAML 2.0 SSO',
-        v: 'Provider config, just-in-time provisioning, and group-claim mapping. One identity provider per account today.',
+        v: 'Provider config, just-in-time provisioning, and group-claim mapping. One identity provider per workspace today.',
       },
       {
         k: 'SCIM 2.0',
@@ -244,11 +244,11 @@ export const identity = {
   },
   agents: {
     title: 'Service accounts',
-    body: 'A service account is a first-class machine identity the account owns, not a human token wearing a hat. Policies attach to it directly, and a request it makes is evaluated purely against its own policies — it never inherits the reach of whoever created it.',
+    body: 'A service account is a first-class machine identity the workspace owns, not a human token wearing a hat. Policies attach to it directly, and a request it makes is evaluated purely against its own policies — it never inherits from the person who created it.',
   },
   scoping: {
     title: 'Scope a team to specific agents',
-    body: 'A person or a group can be narrowed to named agents and skills inside a project: marketing may use this agent and that skill, and nothing else. Anything you leave unscoped stays project-wide, so narrowing is something you opt into rather than something you have to undo.',
+    body: 'A person or a group can be narrowed to named agents and skills inside a workspace: marketing may use this agent and that skill, and nothing else. Anything you leave unscoped stays workspace-wide, so narrowing is something you opt into rather than something you have to undo.',
   },
 } as const;
 
@@ -306,7 +306,7 @@ export const control = {
     {
       id: 'default',
       k: 'Set the default you want',
-      v: 'default_mode: risk makes reads run and sends writes and destructive calls to a person. A project with no policy block keeps the permissive legacy default, so set this explicitly.',
+      v: 'default_mode: risk makes reads run and sends writes and destructive calls to a person. A workspace with no policy block keeps the permissive legacy default, so set this explicitly.',
     },
   ],
 } as const;
@@ -355,11 +355,11 @@ export const audit = {
   eyebrow: 'Audit',
   title: 'Recording is never the thing you pay for.',
   titleMuted: 'Every plan records every action.',
-  sub: 'Every account action and every agent action is captured on every plan. The plan decides who may read, export, or stream that record — not whether it exists.',
+  sub: 'Every workspace action and every agent action is captured on every plan. The plan decides who may read, export, or stream that record — not whether it exists.',
   rows: [
     {
       id: 'account',
-      k: 'Account audit log',
+      k: 'Workspace audit log',
       v: 'Membership, roles, policies, tokens, groups and IAM changes are recorded as they happen, on every plan.',
     },
     {

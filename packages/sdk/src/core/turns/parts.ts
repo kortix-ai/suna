@@ -7,6 +7,7 @@
  * single-file version. No React / DOM / framework imports allowed.
  */
 
+import { isReadAction, kortixPlatformTool } from './tools/kortix-tool-card';
 import { unwrapError } from './errors';
 import { isToolCallBlock, toolPartOf } from '../session-log/tool-call';
 import type { ToolCallBlock } from '../session-log/types';
@@ -163,8 +164,26 @@ export function isToolPartHidden(
 
 const HIDDEN_TOOLS = new Set(['todoread', 'context_info']);
 
-export function shouldShowToolPart(part: Pick<ToolPartLike, 'tool'> | ToolCallBlock): boolean {
-  return !HIDDEN_TOOLS.has(isToolCallBlock(part) ? part.name : part.tool);
+/** A tool part as a filter reads it: its name, and its input when it has one. */
+type FilterablePart = Pick<ToolPartLike, 'tool'> & { state?: { input?: unknown } };
+
+/**
+ * Reading the agent roster (`kortix_agents` list or get) is the agent checking
+ * who it can call before it acts. The person never asked for it, and the turn
+ * says what the agent decided, so the step stays out of the transcript. A
+ * change to an agent (create, update, delete) still shows.
+ */
+function isAgentRosterRead(name: string, input: unknown): boolean {
+  if (kortixPlatformTool(name) !== 'kortix_agents') return false;
+  const action = typeof input === 'object' && input !== null ? (input as { action?: unknown }).action : undefined;
+  return isReadAction(action);
+}
+
+export function shouldShowToolPart(part: FilterablePart | ToolCallBlock): boolean {
+  const name = isToolCallBlock(part) ? part.name : part.tool;
+  if (HIDDEN_TOOLS.has(name)) return false;
+  const input = isToolCallBlock(part) ? part.input : part.state?.input;
+  return !isAgentRosterRead(name, input);
 }
 
 // ============================================================================

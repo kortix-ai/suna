@@ -2,7 +2,7 @@ import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { RUNTIME_STABLE_MESSAGE_ID_CAPABILITY, type RuntimeCapability } from '@kortix/api-contract/runtime-relay';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { sandboxRuntimeEndpoint } from '../runtime-session-mapping';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns, type StoredSandboxTurn } from '../session-turn-ledger';
 import { inboxFollowsRow, inboxPrecedesRow } from './inbox-order';
 import { reconcileInboxTurn } from './inbox-turn-recovery';
@@ -26,7 +26,7 @@ import { wireMessageIdMatches } from './wire-id-match';
  * stamps them with one `releasedBatchId`, and they share ONE answer. They are
  * still admitted one at a time, in order, as separate user messages, but every
  * row with a later row of its batch pending (`hasLaterReleasedSibling`) goes
- * out `noReply` — OpenCode persists it and starts no loop, and the row closes
+ * out `noReply` — the runtime persists it and starts no loop, and the row closes
  * `delivered` with `no_reply: true` — and the batch's last row starts the one
  * turn that answers them all.
  *
@@ -121,7 +121,7 @@ export type InboxAdmission =
       reason: InboxAdmissionReason;
       retryAfterMs: number;
       /** Only the first Quick Queue row may end the active turn at a tool boundary. */
-      interruptAtBoundary?: { opencodeSessionId: string; messageId: string };
+      interruptAtBoundary?: { runtimeSessionId: string; messageId: string };
     };
 
 /**
@@ -180,6 +180,12 @@ export interface InboxAdmissionDeps {
   turnPrompter?: (sessionId: string, messageId: string) => Promise<string | null>;
   /** The reads a `steer` row needs. Absent: a steer row is admitted as a queue row. */
   steer?: SteerAdmissionDeps;
+  /**
+   * The head row waits behind a live turn: park the asks that turn holds for a
+   * person, so it goes on and the row is not stuck behind a question or a
+   * permission ask (lib/session-asks.ts). Fire-and-forget.
+   */
+  parkAsks?: (sessionId: string) => Promise<void>;
 }
 
 /**
@@ -203,7 +209,7 @@ export const QUEUE_BOUNDARY_FALLBACK_MS = 10 * 60_000;
 
 /** The turn an interrupt may end, as the admission refusal carried it. */
 export interface BoundaryTurnIdentity {
-  opencodeSessionId: string;
+  runtimeSessionId: string;
   messageId: string;
 }
 
@@ -237,7 +243,7 @@ export function boundaryWaitDecision(
   const sameTurn =
     !!stored &&
     sinceMs !== null &&
-    stored.opencodeSessionId === turn.opencodeSessionId &&
+    stored.runtimeSessionId === turn.runtimeSessionId &&
     stored.messageId === turn.messageId;
   if (!sameTurn) {
     return { wait: { ...turn, sinceMs: nowMs }, abort: false };
@@ -281,7 +287,7 @@ const STEER_CAPABILITY: RuntimeCapability = 'session.steer';
 /** `/kortix/health` `capabilities` of a sandbox's runtime (memoized 5 min); null when the read failed. */
 function readRuntimeCapabilities(externalId: string | null | undefined, actorUserId: string | null): Promise<string[] | null> {
   return runtimeCapabilities(externalId ?? undefined, () =>
-    sandboxOpencodeEndpoint(externalId!, actorUserId ?? undefined));
+    sandboxRuntimeEndpoint(externalId!, actorUserId ?? undefined));
 }
 
 /**
@@ -305,8 +311,29 @@ export async function sessionKeepsMessageIds(sessionId: string | null | undefine
   }
 }
 
+/**
+ * When each session's asks were last parked from here. replica-local: a
+ * throttle only; another replica parks at most once more per window, and a
+ * second park is a no-op in the runtime.
+ */
+const parkedAt = new Map<string, number>();
+const PARK_THROTTLE_MS = 15_000;
+
+/** `InboxAdmissionDeps.parkAsks`: one runtime call per session per window, only when an ask may still wait live. */
+async function parkWaitingAsks(sessionId: string): Promise<void> {
+  const now = Date.now();
+  if (now - (parkedAt.get(sessionId) ?? 0) < PARK_THROTTLE_MS) return;
+  parkedAt.set(sessionId, now);
+  if (parkedAt.size > 5_000) for (const [id, at] of parkedAt) if (now - at >= PARK_THROTTLE_MS) parkedAt.delete(id);
+  const { sessionHasLiveAsk } = await import('../lib/session-asks');
+  if (!(await sessionHasLiveAsk(sessionId))) return;
+  const { parkRuntimeAsks } = await import('./runtime-asks');
+  await parkRuntimeAsks(sessionId);
+}
+
 export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
+  parkAsks: parkWaitingAsks,
   // Dynamic: `turn-stop-authority.ts` imports this module.
   turnPrompter: async (sessionId, messageId) =>
     (await import('./turn-stop-authority')).turnPrompterOf(sessionId, messageId),
@@ -535,8 +562,9 @@ export async function admitInboxPrompt(
         active?.state === 'active' &&
         active.messageId &&
         (await rowMayEndTurn(row, active.messageId, deps))
-          ? { opencodeSessionId: active.runtimeSessionId, messageId: active.messageId }
+          ? { runtimeSessionId: active.runtimeSessionId, messageId: active.messageId }
           : undefined;
+      if (isHead && deps.parkAsks) void deps.parkAsks(row.sessionId).catch(() => {});
       return {
         admit: false,
         reason: 'turn_active',
@@ -557,7 +585,7 @@ export async function admitInboxPrompt(
   // promoted row. A claimed row spends up to READY_DEADLINE_MS (5 min) inside
   // `continueSession` waiting for a cold box, with no message written for any
   // of it. Admitting a second prompt into that window races two deliveries of
-  // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
+  // one session, and the runtime orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
   if (await inFlightRead) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
@@ -577,7 +605,7 @@ export async function admitInboxPrompt(
 
 /**
  * Is a LATER prompt of this row's released Stop batch still waiting to go out?
- * Then this row goes out `noReply` (KRTX-683): OpenCode persists it as its own
+ * Then this row goes out `noReply` (KRTX-683): the runtime persists it as its own
  * user message and starts no turn, and the batch's last prompt starts the one
  * turn that answers them all.
  *

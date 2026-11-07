@@ -211,7 +211,7 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
     if (statuses.length > 0) {
       const wanted = new Set(statuses);
       // `listInboxPrompts`: NOT succeeded, OR forwarded. The forwarded arm is
-      // what keeps a prompt OpenCode already holds on the user's screen.
+      // what keeps a prompt the runtime already holds on the user's screen.
       if (rendered.includes('<>')) {
         return !wanted.has(r.status) || (wantsForwarded && forwarded);
       }
@@ -358,7 +358,7 @@ mock.module('../lib/agent-access', () => ({
 }));
 
 // The Stop's first request is the hold, and the hold's background settle can
-// abort OpenCode before the client's own abort leaves the browser. So the hold
+// abort the runtime before the client's own abort leaves the browser. So the hold
 // must stamp the requested stop on the open turn BEFORE the settle starts.
 // Both are recorded into one ordered log.
 const stopLog: unknown[][] = [];
@@ -564,7 +564,7 @@ describe('POST .../prompts', () => {
   });
 
   // `kortix sessions send` ≤ 2026-09 minted the HIGH bits of the id clock
-  // (`msg_1a0d…`, ~40 days ahead of every id OpenCode writes). Refusing it
+  // (`msg_1a0d…`, ~40 days ahead of every id a box writes). Refusing it
   // would break every installed CLI; delivering it as-is renders every later
   // turn above it. The server places it instead.
   test('a far-future message_id is accepted and re-placed on delivery', async () => {
@@ -669,8 +669,8 @@ describe('POST .../prompts', () => {
   });
 
   test('rejects a message id OpenCode cannot order', async () => {
-    // A badly-shaped id sorts below the transcript and OpenCode reads the
-    // prompt as already answered — the turn silently never runs.
+    // A badly-shaped id sorts below the transcript and an OpenCode box reads
+    // the prompt as already answered — the turn silently never runs.
     for (const messageId of ['msg_TOOSHORT', 'cm_12', `${WIRE_ID}extra`, 'msg_ZZZZZZZZZZZZAbCdEfGhIjKlMn']) {
       const response = await post({ ...validBody, message_id: messageId });
       expect(response.status).toBe(400);
@@ -718,20 +718,19 @@ describe('POST .../prompts', () => {
     };
     beforeEach(() => {
       loadedProject = {
-        row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: { experimental: { notification_center: true } } },
+        row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: {} },
         userId: USER_ID,
       };
       visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: OTHER_CREATOR } };
     });
 
-    test('with the notification_center flag off, the prompt is accepted and nobody follows', async () => {
-      for (const metadata of [{}, { experimental: { notification_center: false } }]) {
-        loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata }, userId: USER_ID };
-        asCredential('supabase', 'jwt');
-        expect((await post({ ...validBody, client_message_id: `off_${enqueued.length}` })).status).toBe(202);
-      }
-      expect(enqueued).toHaveLength(2);
-      expect(autoWatches).toEqual([]);
+    // The flag graduated on 2026-11-06: a stored override changes no follow.
+    test('with a stored notification_center: false override, the prompter still follows', async () => {
+      loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: { experimental: { notification_center: false } } }, userId: USER_ID };
+      asCredential('supabase', 'jwt');
+      expect((await post(validBody)).status).toBe(202);
+      expect(enqueued).toHaveLength(1);
+      expect(autoWatches).toEqual([{ projectId: PROJECT_ID, sessionId: SESSION_ID, userId: USER_ID }]);
     });
 
     test('a browser sign-in and a personal CLI token start following the session', async () => {
@@ -878,7 +877,7 @@ describe('GET .../prompts', () => {
 
   test('a FORWARDED row is still listed, as `delivering`', async () => {
     // `succeeded` normally means "gone from the inbox — it IS the transcript".
-    // A forwarded row is the exception: OpenCode has the message and has not
+    // A forwarded row is the exception: the runtime has the message and has not
     // run it yet, so dropping it here is what left the composer with nothing
     // between the send and the turn.
     commandTable = [
@@ -986,7 +985,7 @@ describe('DELETE .../prompts/:promptId', () => {
 
   test('refuses to remove a prompt OpenCode already has', async () => {
     // A forwarded row is `succeeded`, so the delete's status filter never
-    // matches it — but "no row was removed" here is 409, not 404: OpenCode has
+    // matches it — but "no row was removed" here is 409, not 404: the runtime has
     // persisted that user message and is going to answer it.
     commandTable = [
       row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } }),
@@ -1107,7 +1106,7 @@ describe('POST .../prompts/:promptId/retry', () => {
     // The DISPLAY marker is cleared — the row is no longer "waiting" — but the
     // DURABLE one survives in the payload. Clearing both is what sent a
     // promoted prompt under the id the client minted before the turn it waited
-    // out: OpenCode orders by id and reads a lower one as already answered.
+    // out: an OpenCode box orders by id and reads a lower one as already answered.
     expect(commandTable[0].result).toEqual({ promoted: true });
     expect(commandTable[0].payload.remintOnDelivery).toBe(true);
     expect(commandTable[0].payload.wireMessageId).toBe(WIRE_ID);
@@ -1120,7 +1119,7 @@ describe('POST .../prompts/:promptId/retry', () => {
   });
 
   test('refuses a FORWARDED row — re-sending it would post the message twice', async () => {
-    // OpenCode already holds this user message. "Send now" on it would deliver
+    // The runtime already holds this user message. "Send now" on it would deliver
     // a second copy under a re-minted id, not hurry the first one along.
     commandTable = [
       row({ status: 'succeeded', result: { status: 'forwarded', forwarded_message_id: WIRE_ID } }),
@@ -1202,7 +1201,7 @@ describe('POST .../prompts/hold', () => {
   });
 
   test('a FORWARDED row is stop-paused by the hold, and re-queued by the release', async () => {
-    // The Stop button's two halves for a prompt OpenCode already has: park it
+    // The Stop button's two halves for a prompt the runtime already has: park it
     // (it stays `succeeded`, so nothing re-delivers it while the user is
     // stopped), then put it back on the queue when the user sends anything.
     commandTable = [
@@ -1230,7 +1229,7 @@ describe('POST .../prompts/hold', () => {
     ];
     expect((await hold({ held: true })).status).toBe(200);
     expect(stopLog).toEqual([
-      ['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_root' }, USER_ID],
+      ['stamp', SESSION_ID, 'UserStop', { runtimeSessionId: 'ses_root' }, USER_ID],
       ['settle', SESSION_ID],
     ]);
   });
@@ -1260,7 +1259,7 @@ describe('POST .../prompts/hold', () => {
       turnPrompter = USER_ID;
       commandTable = [row()];
       expect((await hold({ held: true })).status).toBe(200);
-      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, USER_ID]);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { runtimeSessionId: null }, USER_ID]);
       expect(commandTable[0].result?.held).toBe(true);
     });
 
@@ -1270,7 +1269,7 @@ describe('POST .../prompts/hold', () => {
       visibleSession = { ...visibleSession, canManageLifecycle: true };
       commandTable = [row()];
       expect((await hold({ held: true })).status).toBe(200);
-      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, USER_ID]);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { runtimeSessionId: null }, USER_ID]);
     });
 
     test('with no running turn a hold only pauses the queue, open to anyone who may send', async () => {
@@ -1298,7 +1297,7 @@ describe('POST .../prompts/hold', () => {
       expect(stopChecks).toEqual([{ callerUserId: null, canManageLifecycle: false }]);
       visibleSession = { ...visibleSession, canManageLifecycle: true };
       expect((await hold({ held: true })).status).toBe(200);
-      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, null]);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { runtimeSessionId: null }, null]);
     });
   });
 });

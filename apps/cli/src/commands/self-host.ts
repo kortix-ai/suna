@@ -26,6 +26,8 @@ import {
 } from '../self-host/compose-assets.ts';
 import { SHARED_AUTH_DEFAULTS, SHARED_SELF_HOST_DEFAULTS } from '../self-host/shared-runtime-defaults.ts';
 import { applyEmailWiring } from '../self-host/email-wiring.ts';
+import { signupModeOf } from '../self-host/signup-policy.ts';
+import createAdminScript from '../self-host/assets/create-admin.js.txt' with { type: 'text' };
 import { deriveDomainAliasHosts, normalizeHostname, parseDomainList, planDomainMove } from '../self-host/domain-aliases.ts';
 import {
   accountFileName,
@@ -102,6 +104,8 @@ Subcommands:
   env rotate KEY|--all-generated  Regenerate a rotatable generated secret.
   domain show             The primary domain and its alias domains.
   domain move <domain>    Make <domain> primary; the current domain keeps working as an alias.
+  admin add <email>       Create a platform admin account with a one-time password. Operator
+                          addresses cannot be claimed by signing up.
   tls show                How each host gets its TLS certificate.
   tls wildcard            One wildcard certificate for all Apps and previews (keeps their
                           host names out of the public certificate logs). Prints the DNS
@@ -119,7 +123,7 @@ Options:
   --local-images          Run locally-built images (dev mode); forces auto-update off.
   --enterprise-license    Unlock SSO/SCIM/RBAC/audit (kortix.com/enterprise).
   --admin-email <email>   Grant platform-admin to this account.
-  --no-restrict-account-creation   Let any signed-in user create new accounts/orgs (default: admin-only).
+  --no-restrict-account-creation   Let any signed-in user create new workspaces (default: admin-only).
   --restrict-account-creation      Explicitly re-enable the admin-only restriction (the default).
   --disable-signup        Turn self sign-up off (DISABLE_SIGNUP=true); nobody can sign up, the admin included.
   --json                  Machine-readable output where supported.
@@ -318,6 +322,8 @@ export async function runSelfHost(argv: string[]): Promise<number> {
       return selfHostDomain(args, flags);
     case 'tls':
       return selfHostTls(args, flags);
+    case 'admin':
+      return selfHostAdmin(args, flags);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -524,7 +530,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
 
   if (!gitProviderConfigured(env)) {
     process.stdout.write(
-      `${C.dim}  note     managed git not configured yet — connect GitHub in the dashboard (Settings → Git) before creating projects.${C.reset}\n\n`,
+      `${C.dim}  note     managed git not configured yet — connect GitHub in the dashboard (Settings → Git) before creating workspaces.${C.reset}\n\n`,
     );
   }
 
@@ -651,13 +657,18 @@ function selfHostDoctor(flags: GlobalFlags): number {
     // Kortix Capture devices upload to the bundled store. A compose file
     // rendered by an older CLI has none, so every device gets 503
     // capture_credentials_unavailable until `update` re-renders it.
-    const hasStore = readFileSync(composePath(flags.instance), 'utf8').includes('\n  capture-store:\n');
+    // An instance with KORTIX_CAPTURE_STORE=external renders no bundled store
+    // by design: its devices upload to the operator's own S3-compatible store.
+    const externalStore = loadEnv(flags.instance)?.KORTIX_CAPTURE_STORE?.trim() === 'external';
+    const hasStore = externalStore || readFileSync(composePath(flags.instance), 'utf8').includes('\n  capture-store:\n');
     checks.push({
       name: 'capture-store',
       ok: hasStore,
-      detail: hasStore
-        ? 'bundled Kortix Capture store present'
-        : 'this instance has no Kortix Capture store, so Capture devices cannot sync — run: kortix self-host update',
+      detail: externalStore
+        ? 'external Kortix Capture store (KORTIX_CAPTURE_STORE=external)'
+        : hasStore
+          ? 'bundled Kortix Capture store present'
+          : 'this instance has no Kortix Capture store, so Capture devices cannot sync — run: kortix self-host update',
     });
   }
   if (existsSync(envPath(flags.instance))) {
@@ -842,8 +853,27 @@ async function selfHostUpdate(flags: GlobalFlags): Promise<number> {
   // API without the Kortix Capture store wiring (every device gets 503) until
   // its container is recreated. Without `--force-recreate`, compose recreates
   // it only when its rendered configuration differs: a no-op on every later run.
-  const converge = compose(flags.instance, ['up', '-d', '--no-deps', 'kortix-api']);
+  // Behind Caddy the API runs 2 replicas, and `up` would recreate both at once:
+  // a new version that adds an API environment key took the API down for 24 s
+  // (2026-11-04, a self-host update to v0.14.19). A drifted API rolls start-first
+  // through the updater instead, like `env set` does.
+  const apiDrifted = Boolean(env.KORTIX_DOMAIN?.trim()) && serviceConfigDrifted(flags.instance, 'kortix-api');
+  const converge = apiDrifted
+    ? compose(flags.instance, ['run', '--rm', '--no-deps', 'kortix-updater', 'roll', 'kortix-api'])
+    : compose(flags.instance, ['up', '-d', '--no-deps', 'kortix-api']);
   if (converge !== 0) return converge;
+  if (apiDrifted) process.stdout.write(`${C.dim}  rolled: kortix-api (configuration changed)${C.reset}\n`);
+
+  // The auth service runs one replica and reads its configuration only at
+  // start, so a version that changes it (such as the before-user-created
+  // sign-up hook) applies only after a recreate: a few seconds without sign-in.
+  // It runs after the migrations and the API roll, so the hook's function and
+  // the policy it reads exist before GoTrue first calls it.
+  if (serviceConfigDrifted(flags.instance, 'supabase-auth')) {
+    const auth = compose(flags.instance, ['up', '-d', '--no-deps', 'supabase-auth']);
+    if (auth !== 0) return auth;
+    process.stdout.write(`${C.dim}  restarted: supabase-auth (configuration changed)${C.reset}\n`);
+  }
 
   // A version that changes the Caddyfile (a new route, such as Capture's
   // `@capture` or the project snapshots' `@snapshots`) reaches the running
@@ -1087,15 +1117,18 @@ function openSignUpCheck(env: Record<string, string | undefined>): { ok: boolean
   if (reachabilityMode(env) === 'local') return null;
   const signupOpen = (env.DISABLE_SIGNUP ?? 'false').trim() !== 'true';
   const autoconfirm = (env.ENABLE_EMAIL_AUTOCONFIRM ?? 'true').trim() === 'true';
+  const mode = signupModeOf(env);
   return {
-    ok: !(signupOpen && autoconfirm),
+    ok: !(signupOpen && autoconfirm && mode === 'open'),
     detail: !signupOpen
-      ? 'self sign-up is off (DISABLE_SIGNUP=true)'
-      : !autoconfirm
-        ? 'new accounts must confirm their email'
-        : 'anyone who reaches this instance can create a confirmed account for any email address, including an admin address. '
-          + 'Configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587 '
-          + '— or, once your team has signed up: kortix self-host env set DISABLE_SIGNUP=true',
+      ? 'self sign-up is off (DISABLE_SIGNUP=true); SSO sign-ins of new users are refused too'
+      : mode !== 'open'
+        ? `sign-up is ${mode === 'invite' ? 'by invitation only' : 'closed'} (KORTIX_SIGNUP_MODE=${mode}); SSO sign-ins pass, operator addresses are reserved for kortix self-host admin add`
+        : !autoconfirm
+          ? 'new accounts must confirm their email; operator addresses are reserved for kortix self-host admin add'
+          : 'anyone who reaches this instance can create a confirmed account for any email address. '
+            + 'Allow invited addresses only: kortix self-host env set KORTIX_SIGNUP_MODE=invite '
+            + '— or configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587',
   };
 }
 
@@ -1152,7 +1185,7 @@ async function promptFeatureFlags(env: SelfHostEnv, flags: GlobalFlags): Promise
   // Default Yes: signups/teams/SSO all keep working either way — this only
   // gates who can spin up a brand-new organization (POST /v1/accounts).
   const restrictAccountCreation = await confirm(
-    'Restrict account creation to the admin? (new organizations can only be created by platform admins; users join by invite or SSO)',
+    'Restrict workspace creation to the admin? (new workspaces can only be created by platform admins; users join by invite or SSO)',
     env.KORTIX_RESTRICT_ACCOUNT_CREATION !== 'false',
   );
   env.KORTIX_RESTRICT_ACCOUNT_CREATION = restrictAccountCreation ? 'true' : 'false';
@@ -1928,6 +1961,74 @@ function printDelegationRecords(records: ReturnType<typeof delegationRecords>, s
  * records are missing keeps per-host certificates, so nothing ever stops
  * serving.
  */
+/**
+ * The account of a platform admin, created by the operator. Self sign-up can
+ * never claim an address in KORTIX_PLATFORM_ADMIN_EMAILS (the auth service's
+ * before-user-created hook refuses it, see self-host/signup-policy.ts), so this
+ * is how an operator account comes to exist. The account is created inside the
+ * kortix-api container through the auth admin API with the service key, which
+ * skips the hook: the key never leaves the box, and the one-time password goes
+ * over stdin, never on a command line. The address is added to
+ * KORTIX_PLATFORM_ADMIN_EMAILS when it is missing (the API rolls start-first).
+ */
+async function selfHostAdmin(args: string[], flags: GlobalFlags): Promise<number> {
+  const [action, rawEmail] = args;
+  const email = rawEmail?.trim().toLowerCase() ?? '';
+  if (action !== 'add' || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    process.stderr.write(`${status.err('Usage: kortix self-host admin add <email>')}\n`);
+    return 2;
+  }
+  const env = loadEnv(flags.instance);
+  if (!env) {
+    process.stderr.write(`${status.err('No instance here. Run: kortix self-host init')}\n`);
+    return 1;
+  }
+  if (!composeHasRunningServices(flags.instance)) {
+    process.stderr.write(`${status.err('The stack is not running. Run: kortix self-host start')}\n`);
+    return 1;
+  }
+
+  const password = randomBytes(18).toString('base64url');
+  const result = spawnSync(
+    'docker',
+    ['compose', '--project-name', composeProject(flags.instance), '--env-file', envPath(flags.instance), '-f', composePath(flags.instance), 'exec', '-T', 'kortix-api', 'bun', '-e', createAdminScript],
+    { cwd: instanceDir(flags.instance), encoding: 'utf8', input: JSON.stringify({ email, password }), timeout: 60_000 },
+  );
+  let answer: { status?: number; code?: string; message?: string } = {};
+  try {
+    answer = JSON.parse((result.stdout ?? '').trim().split('\n').pop() ?? '{}');
+  } catch {
+    // Reported below.
+  }
+  const created = answer.status === 200 || answer.status === 201;
+  const exists = answer.status === 422 && /exist|registered/i.test(`${answer.code} ${answer.message}`);
+  if (!created && !exists) {
+    process.stderr.write(`${status.err(`The account was not created: ${answer.message || (result.stderr ?? '').trim() || `exit ${result.status}`}`)}\n`);
+    return 1;
+  }
+
+  const listed = (env.KORTIX_PLATFORM_ADMIN_EMAILS ?? '').split(',').map((e) => e.trim().toLowerCase()).includes(email);
+  if (!listed) {
+    env.KORTIX_PLATFORM_ADMIN_EMAILS = [env.KORTIX_PLATFORM_ADMIN_EMAILS?.trim(), email].filter(Boolean).join(',');
+    writeEnv(flags.instance, env);
+    writeCompose(flags.instance, env);
+    const code = restartServicesForKeys(flags.instance, env, ['KORTIX_PLATFORM_ADMIN_EMAILS']);
+    if (code !== 0) return code;
+  }
+
+  const signIn = `${(env.PUBLIC_URL ?? '').replace(/\/$/, '')}/auth`;
+  if (created) {
+    process.stdout.write(
+      `\n${status.ok(`Platform admin account created: ${email}`)}\n`
+        + `  ${C.dim}Sign in  ${C.reset}${signIn}\n`
+        + `  ${C.dim}Password ${C.reset}${password}  ${C.dim}(shown once; change it after the first sign-in)${C.reset}\n\n`,
+    );
+  } else {
+    process.stdout.write(`\n${status.ok(`${email} already has an account${listed ? ' and is a platform admin' : '; it is a platform admin now'}.`)}\n\n`);
+  }
+  return 0;
+}
+
 async function selfHostTls(args: string[], flags: GlobalFlags): Promise<number> {
   const action = args.shift() ?? 'show';
   const env = loadEnvWithDefaults(flags);
@@ -2424,7 +2525,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
 async function selfHostConnectGithub(_args: string[], _flags: GlobalFlags): Promise<number> {
   process.stdout.write(
     `\n  ${C.yellow}kortix self-host connect-github is deprecated.${C.reset}\n` +
-      `  ${C.dim}GitHub (projects) is configured in the dashboard: Settings → Git.${C.reset}\n\n`,
+      `  ${C.dim}GitHub (workspaces) is configured in the dashboard: Settings → Git.${C.reset}\n\n`,
   );
   return 0;
 }
@@ -2851,7 +2952,7 @@ function renderConnectionSummary(env: SelfHostEnv): void {
  */
 function renderAfterStartNote(): void {
   process.stdout.write(
-    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (projects) · connect your model key in the app (BYOK) · optional: connectors · email with ${C.reset}env set EMAIL_URL=smtp://user:pass@host:587${C.dim}.${C.reset}\n\n`,
+    `  ${C.dim}After start ${C.reset}Sign in → Settings → Git to connect GitHub (workspaces) · connect your model key in the app (BYOK) · optional: connectors · email with ${C.reset}env set EMAIL_URL=smtp://user:pass@host:587${C.dim}.${C.reset}\n\n`,
   );
 }
 
@@ -2889,6 +2990,33 @@ async function ensurePort(
     env[urlKey] = url.toString().replace(/\/$/, '');
   }
   changes.push(`${portKey} ${current}->${next}`);
+}
+
+/**
+ * Whether a running container of `service` was created from another rendered
+ * configuration than the compose file has now. Compose labels each container
+ * with `com.docker.compose.config-hash`, and `compose config --hash` prints the
+ * hash the current file renders. No running container, or a hash Docker does
+ * not report, counts as no drift: `up` then creates what is missing.
+ */
+function serviceConfigDrifted(instance: string, service: string): boolean {
+  const options = { cwd: instanceDir(instance), encoding: 'utf8' as const, timeout: 30_000 };
+  const rendered = spawnSync(
+    'docker',
+    ['compose', '--project-name', composeProject(instance), '--env-file', envPath(instance), '-f', composePath(instance), 'config', '--hash', service],
+    options,
+  );
+  const want = rendered.stdout?.trim().split(/\s+/)[1];
+  const ids = (
+    spawnSync(
+      'docker',
+      ['ps', '--quiet', '--filter', `label=com.docker.compose.project=${composeProject(instance)}`, '--filter', `label=com.docker.compose.service=${service}`],
+      options,
+    ).stdout ?? ''
+  ).split('\n').map((id) => id.trim()).filter(Boolean);
+  if (!want || ids.length === 0) return false;
+  const running = spawnSync('docker', ['inspect', '--format', '{{index .Config.Labels "com.docker.compose.config-hash"}}', ...ids], options);
+  return (running.stdout ?? '').split('\n').map((hash) => hash.trim()).filter(Boolean).some((hash) => hash !== want);
 }
 
 function composeHasRunningServices(instance: string): boolean {
@@ -3169,6 +3297,7 @@ function writeCompose(instance: string, env: SelfHostEnv): void {
       namedTunnelConfigured: namedTunnelConfigured(env),
       captureStoreExternal,
       wildcardTlsConfigured: wildcardTls,
+      signupMode: signupModeOf(env),
     }),
     { encoding: 'utf8', mode: 0o600 },
   );

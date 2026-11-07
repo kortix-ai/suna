@@ -30,8 +30,6 @@ export const TURN_STREAM_LIFECYCLE_KINDS: ReadonlySet<string> = new Set([
   'turn_abandoned',
   'initial_turn_claim',
   'runtime_session',
-  // A pre-W3 daemon's name for `runtime_session`; the route normalizes it first.
-  'opencode_session',
 ])
 
 // Whether a turn-stream `kind` requires project.connector.write (a channel-send

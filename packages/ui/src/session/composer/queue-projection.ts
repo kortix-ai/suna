@@ -56,6 +56,8 @@ export interface QueueRow {
   clientMessageId: string;
   text: string;
   attachmentCount: number;
+  /** Platform-generated context, never text typed by a person. */
+  synthetic?: true;
   state: QueueRowState;
   lastError?: string;
   /** The server can still remove this prompt, and this viewer may. */
@@ -182,6 +184,7 @@ export function projectQueueRows(input: {
       clientMessageId: prompt.client_message_id,
       text: rowText(draft ? cleanPromptText(draft.text) : cleaned),
       attachmentCount,
+      ...(prompt.synthetic ? { synthetic: true as const } : {}),
       state,
       ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
       // A steered prompt on the wire is still unread: the server takes it back.

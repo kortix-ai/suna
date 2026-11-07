@@ -7,7 +7,7 @@ import type { SessionBindingContext } from './session-context';
 import type { SessionModel } from './session-shared';
 export function bindSessionActionsSecurity(ctx: SessionBindingContext) {
   return {
-    scope: () => P.getProjectSessionScope(ctx.projectId, ctx.sessionId),
+    scope: () => P.getWorkspaceSessionScope(ctx.projectId, ctx.sessionId),
     providerSecretPool: {
       list: () => P.listSessionProviderSecretPools(ctx.projectId, ctx.sessionId),
       get: (providerId: string) =>
@@ -17,7 +17,7 @@ export function bindSessionActionsSecurity(ctx: SessionBindingContext) {
     },
     /** Re-scope a running session — set semantics; see setProjectSessionScope. */
     rescope: (scope: P.SessionScopeInput) =>
-      P.setProjectSessionScope(ctx.projectId, ctx.sessionId, scope),
+      P.setWorkspaceSessionScope(ctx.projectId, ctx.sessionId, scope),
     /** Pick the agent `send` will use for subsequent prompts (until changed). */
     setAgent: (agent: string | undefined) => {
       ctx.agent = agent;

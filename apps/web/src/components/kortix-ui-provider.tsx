@@ -136,10 +136,6 @@ const components: UiHostComponents = {
       (m) => m.ShareSessionModal,
     ),
   ),
-  // A space home's room (flag `agent_rooms`), from the Rooms feature.
-  RoomPanel: lazyClient(() =>
-    import('@/features/workspace/rooms/space-room-panel').then((m) => m.SpaceRoomPanel),
-  ),
   // The whole Customize → Models surface: loaded on first open only.
   ProjectProviderModal: lazyClient(() =>
     import('@kortix/ui/customize/sections/llm-provider/llm-provider-modal').then(
@@ -150,7 +146,7 @@ const components: UiHostComponents = {
 
 const one = (value: string | string[] | undefined) => (typeof value === 'string' ? value : undefined);
 
-/** The session UI reads its ids from `/projects/[id]/sessions/[sessionId]`. */
+/** The session UI reads its ids from `/workspaces/[id]/sessions/[sessionId]`. */
 function RouteSessionIds({ children }: { children: ReactNode }) {
   const params = useParams<{ id?: string; sessionId?: string }>();
   return (

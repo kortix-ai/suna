@@ -1,5 +1,5 @@
 /**
- * The SSE reader that fronts the daemon's `/kortix/opencode/events`.
+ * The SSE reader that fronts the daemon's `/kortix/runtime/events`.
  *
  * The property under test is INCREMENTALITY. A parser that only yields once the
  * body ends is indistinguishable from one that works, right up until it is used

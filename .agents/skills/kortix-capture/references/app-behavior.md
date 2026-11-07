@@ -103,7 +103,21 @@ that is locked, inactive or silent while idle is `idle`.
 | `paused` by a person | `attention` |
 | sync `error` | `attention`, `sync_error` |
 | items pending, no upload for 30 min of awake time | `attention`, `backlog` |
+| `update.status` `failed` (the newest release was rolled back or did not install) | `attention`, `update_failed` |
 | app older than the newest version in `capture-update.json` | `attention`, `behind_version` |
+
+Every device in `GET /v1/accounts/:id/capture/devices` carries `diagnostics`
+(`apps/api/src/capture/diagnostics.ts`, SDK type `CaptureDeviceDiagnostics`): `os`
+(`family`, `name` such as `Windows 11 Pro 24H2`, `version`, `build`, `arch`),
+`hostname` and `computer_name` (null when masked), `member_email`, `app_version`,
+`update` (status.json `update`, parsed: `status`, `installed`, `channel`, `latest`,
+`last_check_at`, `last_check`, `updating_to`, `last_result` with `detail`, `skipped`),
+`recording`, `sync`, `policy`, `machine` (device.json `machine`: CPU, cores, memory,
+free disk, GPUs, boot time, timezone, locale), `encrypted`, `managed`,
+`described_at`, `reported_at`, `last_credentials_at`, `created_at`. A field an older
+app did not send is null. **Device details** in the device's `...` menu (the list
+row and the device page) shows it in four sections and copies it as plain text
+(**Copy diagnostics**).
 
 A closed laptop cannot report. A computer that was recording when it went
 silent therefore shows `offline` after 30 min and clears when it wakes. The
@@ -154,7 +168,7 @@ agents ──> kortix-capture list|usage|query|now|link|grab-screen (read-only S
 | `audio/` | Audio memory segments, `<start_ms>.m4a`; `audio/staging/` holds the raw PCM of the open segment. Created only once audio is turned on |
 | `audio.json` | Audio heartbeat: state, each source's state and device, the open segment. Written only once audio is turned on |
 | `settings.json` | User settings, hot-reloaded by the recorder |
-| `recorder.json` | Recorder heartbeat: state, `inactive_reason`, reason, last frame, OCR backlog, permissions |
+| `recorder.json` | Recorder heartbeat: state, `inactive_reason`, reason, last frame, OCR backlog, permissions. The tray reads it: in `low_disk`, `sync_backlog`, `permission_missing`, `error` and `privacy_model_unavailable` it does not say "Recording". The recorder's worker threads (OCR, finalize, sync, audio) restart after an error or a panic, 1 s doubling to 5 min |
 | `.kortix-storage-reserve` | Pre-allocated disk reserve, `storage.reserve_mb` (default 500). See "Disk reserve" |
 | `actions/` | Action segments, `<start_ms>-x<id>.actions.jsonl.zst`, and their screenshots in `actions/assets/sha256-<hex>.<ext>` (see "Action recording") |
 | `actions.json` | Action recorder heartbeat: recording or not, and why the policy blocks it |
@@ -363,7 +377,7 @@ every field):
 | `clock_skew` | The local clock is far off and the server gave no usable time | Same as `auth`. A 401/403 whose `Date` header is more than 5 min off is retried once with the server clock |
 | `transient` | 5xx, 408, 429, timeouts, connection loss | Backs off per chunk: jittered, 5 s doubling to 10 min |
 | `integrity` | Checksum or size mismatch | Same as `transient` |
-| `local` | The local file cannot be read | Same as `transient` |
+| `local` | The local file cannot be read | Same as `transient`. A chunk whose file is gone is marked deleted (`status = 2`): it leaves the queue and the pending bytes of the `sync_backlog` gate |
 
 - With sync on, the storage cap never removes a chunk that has not been
   uploaded unless it is older than 7 days; an uploaded chunk freed by the cap
@@ -826,8 +840,9 @@ audio, actions and policy state, the action spool summary, device info) as
 ## Updates
 
 The machine service updates the app by itself (`src/memory/managed/update.rs`).
-It checks at start and every 6 hours (jittered), on the channel the build came
-from: `stable` for `X.Y.Z`, `dev` for `X.Y.Z-dev.N`. Every Kortix release
+It checks at start and every 6 hours (jittered), never within 10 minutes of a
+wake from sleep (a just-woken computer is often locked, and its recorder fails
+until the person is back), on the channel the build came from: `stable` for `X.Y.Z`, `dev` for `X.Y.Z-dev.N`. Every Kortix release
 carries `capture-update.json` (version, channel and per-OS installer URL,
 SHA-256 and size) and its Ed25519 signature `capture-update.json.sig`. The
 service installs only a newer version whose signature verifies and whose
@@ -930,7 +945,10 @@ a conversation is recorded. The settings window shows this next to the toggle.
 
 Audio follows the screen recorder: it stops while recording is off or paused
 (tray "Pause", `kortix-capture pause`), while the screen is locked, below
-`storage.min_free_gb`, and during a sync backlog. It keeps recording while there
+`storage.min_free_gb`, and during a sync backlog. The gate fails closed: a
+last known `locked`, `low_disk` or `sync_backlog` stops audio at any age, no
+`recorder.json` yet is `starting`, and a recorder heartbeat silent for 90 s
+(`RECORDER_SILENT_GATE_MS`, longer than a 60 s private capture) is `paused`. It keeps recording while there
 is no keyboard or mouse input (a call you only listen to) and while an excluded
 app is in front (on macOS that app's audio is left out; see below). Sleep stops
 the sources with the process; on wake the next block starts a new segment, so a

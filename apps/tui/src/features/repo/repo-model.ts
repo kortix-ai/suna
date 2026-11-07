@@ -116,6 +116,15 @@ export function filterBranches(rows: readonly BranchRow[], query: string): Branc
   );
 }
 
+export function errorText(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' ? `${status} ${error.message}` : error.message;
+  }
+  if (typeof error === 'string' && error) return error;
+  return 'Unknown error';
+}
+
 /** What the history pane is about: one path, or the whole repository. */
 export function historyLabel(target: string | null): string {
   return target ? `history · ${target}` : 'history · repository';
@@ -123,5 +132,5 @@ export function historyLabel(target: string | null): string {
 
 /** Web URL of the repository files page. */
 export function repoWebUrl(webBaseUrl: string, projectId: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/files`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/files`;
 }

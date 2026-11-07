@@ -260,9 +260,9 @@ async function fresh() {
 }
 
 /**
- * KRTX-1742 review: `NotificationHost` mounts its gated part again after a
- * flag-off page. An unchanged subscription is registered once per person and
- * page load, as when the host mounted once.
+ * KRTX-1742 review: `NotificationHost` can mount again (a new person, a
+ * remount). An unchanged subscription is registered once per person and page
+ * load, as when the host mounted once.
  */
 describe('ensureWebPush', () => {
   test('registers once per person; a remount sends nothing', async () => {
@@ -321,9 +321,9 @@ describe('reregisterWebPush', () => {
 });
 
 /**
- * KRTX-1742 review: a tab on a flag-off page never mounts the gated part, so
- * it learns from the browser alone whether a subscription exists. Its copy of
- * a flag-on project's notification then goes through the service worker.
+ * KRTX-1742 review: before `ensureWebPush` answers, a tab learns from the
+ * browser alone whether a subscription exists, so its copy of a notification
+ * goes through the service worker.
  */
 describe('detectWebPush', () => {
   test('reads the browser only: a deliverable subscription counts, none or a refused host does not', async () => {

@@ -88,7 +88,7 @@ function envelope(): SessionTranscriptSyncEnvelope {
     source: 'mirror',
     complete: true,
     captured_at: '2026-10-06T00:00:00.000Z',
-    opencode_session_id: 'ses_root',
+    runtime_session_id: 'ses_root',
     message_count: 1,
     messages: [
       {
@@ -112,7 +112,6 @@ function sessionRow(n: number) {
     sandbox_id: id,
     sandbox_url: null,
     runtime_session_id: `ses_${'r'.repeat(26)}`,
-    opencode_session_id: `ses_${'r'.repeat(26)}`,
     name: 'Fix the flaky upload test in the billing worker',
     custom_name: null,
     labels: [],
@@ -121,7 +120,6 @@ function sessionRow(n: number) {
     error: null,
     metadata: { name: 'Fix the flaky upload test in the billing worker', model: 'kortix/default' },
     runtime_sessions: [{ id: `ses_${'r'.repeat(26)}`, title: 'Fix the flaky upload test', parent_id: null }],
-    opencode_sessions: [{ id: `ses_${'r'.repeat(26)}`, title: 'Fix the flaky upload test', parent_id: null }],
     created_by: '00000000-0000-4000-8000-000000000003',
     parent_session_id: null,
     child_count: 0,
@@ -166,7 +164,7 @@ describe('adopt runs before the query client registers (#10344)', () => {
     writer.persist(previous);
     await writer.flush();
 
-    opensOn('/projects/project-early/sessions/session-early');
+    opensOn('/workspaces/project-early/sessions/session-early');
     adoptDeviceCaches(user);
     await settle();
 
@@ -325,7 +323,7 @@ describe('the session a page load opens on', () => {
 
   test('its saved copy is read at sign-in, and the first read answers from memory', async () => {
     await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
-    opensOn('/projects/project-1/sessions/session-1');
+    opensOn('/workspaces/project-1/sessions/session-1');
     adoptDeviceCaches(user);
     await settle();
 
@@ -339,7 +337,7 @@ describe('the session a page load opens on', () => {
 
   test('a write before the first read drops the copy in memory', async () => {
     await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
-    opensOn('/projects/project-1/sessions/session-1');
+    opensOn('/workspaces/project-1/sessions/session-1');
     adoptDeviceCaches(user);
     await settle();
 
@@ -353,7 +351,7 @@ describe('the session a page load opens on', () => {
 
   test('a page that is not a session reads every copy from IndexedDB', async () => {
     await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
-    opensOn('/projects/project-1');
+    opensOn('/workspaces/project-1');
     adoptDeviceCaches(user);
     await settle();
 
@@ -376,7 +374,6 @@ describe('sweepRetiredDeviceCaches', () => {
     ];
     const kept = [STORAGE_KEY, 'kortix_composer_draft:s1', 'theme'];
     for (const key of [...retired, ...kept]) entries.set(key, '{}');
-    session.entries.set('opencode_stream_cache:ses_1', '{}');
     session.entries.set('kortix-impersonation', '{}');
 
     sweepRetiredDeviceCaches();

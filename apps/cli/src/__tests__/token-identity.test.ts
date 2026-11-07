@@ -14,6 +14,7 @@ import {
 } from '../api/token-identity.ts';
 import {
   denialDetailFromBody,
+  grantHolds,
   printPermissionDenialIdentity,
   recordPermissionDenial,
   resetPermissionDenial,
@@ -262,7 +263,7 @@ describe('permission-denial identity footer', () => {
     // No kortix_permissions entry unlocks these routes, so the manifest hint
     // would send the agent to a fix that cannot work.
     const out = await footerFor({ code: 'agent_session_forbidden' });
-    expect(out).toMatch(/a person with project access must do this/i);
+    expect(out).toMatch(/a person with workspace access must do this/i);
     expect(out).not.toContain('kortix_permissions');
   });
 
@@ -285,6 +286,34 @@ describe('permission-denial identity footer', () => {
     expect(out).toContain('project_role_insufficient');
     expect(out).toContain('kortix whoami --token-only');
     expect(out).not.toContain('kortix_permissions');
+  });
+
+  test('credential_fence_refused names the credential, never kortix_permissions', async () => {
+    const out = await footerFor({ code: 'credential_fence_refused' });
+    expect(out).toContain('bound to one workspace');
+    expect(out).not.toContain('kortix_permissions');
+  });
+
+  test('an older server\'s untyped fence message gets the fence remedy', async () => {
+    const out = await footerFor(
+      denialDetailFromBody({ message: 'Project-scoped token cannot list projects [check=token-project-scope:project-list]' }),
+    );
+    expect(out).toContain('bound to one workspace');
+    expect(out).not.toContain('kortix_permissions');
+  });
+
+  test('a 403 body names the action by its workspace name', () => {
+    expect(denialDetailFromBody({ code: 'agent_scope_insufficient', action: 'project.file.read' }).action).toBe('workspace.file.read');
+    expect(
+      denialDetailFromBody({ code: 'agent_scope_insufficient', action: 'project.file.read', workspace_action: 'workspace.file.read' }).action,
+    ).toBe('workspace.file.read');
+  });
+
+  test('a grant that already holds the action is never told to add it', async () => {
+    expect(grantHolds(['workspace.file.read'], 'project.file.read')).toBe(true);
+    expect(grantHolds(['project.file.read'], 'workspace.file.read')).toBe(true);
+    expect(grantHolds(['*'], 'workspace.members.manage')).toBe(true);
+    expect(grantHolds(['workspace.read'], 'workspace.members.manage')).toBe(false);
   });
 
   test('CR_AGENT_GOVERNANCE_CHANGE from an older server says a person must merge it', async () => {

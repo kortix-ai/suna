@@ -9,6 +9,7 @@ let rows: Array<Record<string, unknown>> = [];
 const audits: Array<Record<string, unknown>> = [];
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: () => ({
       from: () => ({

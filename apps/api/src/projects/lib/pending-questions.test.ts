@@ -8,7 +8,7 @@
  * "still waiting" is the self-renewal that once left 187 boxes running, the
  * oldest for 264 hours.
  *
- * The bug was that parking DESTROYED the question: opencode restarts cold, so
+ * The bug was that parking DESTROYED the question: the runtime restarts cold, so
  * the user returned to a session that had forgotten what it asked.
  *
  * The two properties worth pinning are therefore:
@@ -38,7 +38,7 @@ mock.module('../../shared/db', () => ({
                   id: 'q1',
                   sessionId: v.sessionId,
                   requestId: v.requestId,
-                  opencodeSessionId: v.opencodeSessionId ?? null,
+                  runtimeSessionId: v.runtimeSessionId ?? null,
                   questions: v.questions,
                   askedAt: '2026-08-05T12:00:00.000Z',
                 },
@@ -153,9 +153,9 @@ describe('clearOpenQuestions', () => {
 /**
  * The answer arrives as a FOLLOW-UP TURN, so it has to carry its own context.
  *
- * It cannot go back to the call that blocked: that opencode process was parked
+ * It cannot go back to the call that blocked: that runtime process was parked
  * and restarted cold, its request id no longer exists, and nothing is waiting
- * on it. A fresh opencode has no memory of asking — so a bare "yes" would land
+ * on it. A fresh runtime has no pending call — so a bare "yes" would land
  * with nothing to attach it to. Quoting the question is what makes the reply
  * legible.
  */

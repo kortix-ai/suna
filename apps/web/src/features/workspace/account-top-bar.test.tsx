@@ -22,7 +22,7 @@ describe('AccountTopBar menu rows', () => {
   };
 
   /**
-   * `/projects` and `/new` mount no `SettingsPanel`, so a row that pokes
+   * `/workspaces` and `/workspaces/new` mount no `SettingsPanel`, so a row that pokes
    * `useSettingsPanelStore.openSettings()` would set state with no subscriber
    * and the click would be swallowed — the exact dead-store bug
    * `features/layout/user-menu.tsx` documents for its own rows. `/settings/<tab>`
@@ -65,26 +65,33 @@ describe('AccountTopBar menu rows', () => {
 });
 
 /**
- * KRTX-1742: the notification bell sits in the trailing group, before the
- * account menu, on `/projects` and `/new`. It loads client-only, so the
- * static renders of those pages (project-selector.test.tsx) need no query
- * client or auth provider.
+ * KRTX-1742: the Inbox button sits in the trailing group, before the account
+ * menu, on `/workspaces` and `/workspaces/new`, and opens the account-level `/inbox` page.
+ * It loads client-only, so the static renders of those pages
+ * (project-selector.test.tsx) need no query client or auth provider.
  */
-describe('AccountTopBar notification bell', () => {
-  const source = async () => {
-    const text = await Bun.file(new URL('./account-top-bar.tsx', import.meta.url)).text();
+describe('AccountTopBar Inbox button', () => {
+  const source = async (file: string) => {
+    const text = await Bun.file(new URL(file, import.meta.url)).text();
     return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
   };
 
-  test('the bell renders before the account menu', async () => {
-    const code = await source();
-    expect(code).toContain('<NotificationBell />');
-    expect(code.indexOf('<NotificationBell />')).toBeLessThan(code.indexOf('<DropdownMenu>'));
+  test('the Inbox button renders before the account menu, and not on /inbox itself', async () => {
+    const code = await source('./account-top-bar.tsx');
+    expect(code).toContain('{inbox ? <InboxButton /> : null}');
+    expect(code.indexOf('<InboxButton />')).toBeLessThan(code.indexOf('<DropdownMenu>'));
+    expect(code).toContain('inbox = true');
+    expect(code).not.toContain('NotificationBell');
+    const page = await source('../../app/[locale]/(app)/inbox/page.tsx');
+    expect(page).toContain('inbox={false}');
   });
 
-  test('the bell is a client-only chunk', async () => {
-    const code = await source();
-    expect(code).toContain("import('@kortix/ui/internal/notifications/notification-bell')");
+  test('the Inbox button is a client-only chunk that links to /inbox', async () => {
+    const code = await source('./account-top-bar.tsx');
+    expect(code).toContain("import('@/features/notifications/inbox-button')");
     expect(code).toContain('{ ssr: false }');
+    const button = await source('../notifications/inbox-button.tsx');
+    expect(button).toContain("ACCOUNT_INBOX_HREF = '/inbox'");
+    expect(button).toContain('href={ACCOUNT_INBOX_HREF}');
   });
 });

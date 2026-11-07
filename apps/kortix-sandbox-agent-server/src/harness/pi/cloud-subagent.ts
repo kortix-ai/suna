@@ -81,8 +81,12 @@
  */
 import { AGENT_HANDLE_KEY, TEAM_LEAD_KEY } from '@kortix/api-contract/multi-agent'
 import { SUBAGENT_NOTIFY_PARENT_KEY } from '@kortix/api-contract/runtime-relay'
+import { toV1, type SessionLog, type SessionLogPage } from '@kortix/api-contract/session-log'
 import { logger } from '@/lib/log/logger'
 import type { SpawnSessionInput, SpawnSessionResult, SubagentSession } from './extensions/subagents'
+import { FRONT_CONTEXT_KEY, FRONT_THREAD_CONTEXT_KEY } from './front'
+import { WATCHER_CONTEXT_KEY } from './watcher'
+import { withWorkspaceRouteFallback } from '@/lib/kortix-api/workspace-routes'
 
 /** Why a separate call ran in this session instead. The tool result carries it to the model. */
 export const NO_CONTROL_PLANE_NOTICE =
@@ -168,6 +172,12 @@ export interface SubagentContext {
   handle?: string
   /** The lead session of this teammate. */
   teamLead?: string
+  /** A router (`kortix.front`, front.ts): messaging tools only, and its workers are not narrowed to them. */
+  front?: boolean
+  /** A worker of a router (`kortix.front.thread`): its answer reaches the thread as its run's report. */
+  frontThread?: boolean
+  /** A space's watcher (`kortix.watcher`, watcher.ts): no tools, one JSON decision per turn. */
+  watcher?: boolean
 }
 
 /** Parse `KORTIX_SESSION_CONTEXT` (the API's JSON envelope of `runtime_context`). Malformed = a root session. */
@@ -185,7 +195,15 @@ export function subagentContextFrom(raw: string | undefined): SubagentContext {
   const depth = typeof rawDepth === 'number' && Number.isInteger(rawDepth) && rawDepth > 0 ? rawDepth : 0
   const handle = typeof record[AGENT_HANDLE_CONTEXT_KEY] === 'string' && AGENT_HANDLE.test(record[AGENT_HANDLE_CONTEXT_KEY] as string) ? (record[AGENT_HANDLE_CONTEXT_KEY] as string) : undefined
   const lead = typeof record[TEAM_LEAD_CONTEXT_KEY] === 'string' && (record[TEAM_LEAD_CONTEXT_KEY] as string).trim() ? (record[TEAM_LEAD_CONTEXT_KEY] as string).trim() : undefined
-  const named = { depth, ...(handle ? { handle } : {}), ...(lead ? { teamLead: lead } : {}) }
+  const named = {
+    depth,
+    ...(handle ? { handle } : {}),
+    ...(lead ? { teamLead: lead } : {}),
+    // Only the boolean true marks a front or its worker: the API sets these keys, never a person.
+    ...(record[FRONT_CONTEXT_KEY] === true ? { front: true } : {}),
+    ...(record[FRONT_THREAD_CONTEXT_KEY] === true ? { frontThread: true } : {}),
+    ...(record[WATCHER_CONTEXT_KEY] === true ? { watcher: true } : {}),
+  }
   const rawTools = record[SUBAGENT_TOOLS_KEY]
   if (typeof rawTools !== 'string') return named
   // A present key always narrows: an empty or all-invalid list means no tools, never all tools.
@@ -269,7 +287,7 @@ interface SessionRow {
 }
 
 function sessionUrl(http: Http, childId: string, suffix = ''): string {
-  return `${http.origin}/v1/projects/${encodeURIComponent(http.projectId)}/sessions/${encodeURIComponent(childId)}${suffix}`
+  return `${http.origin}/v1/workspaces/${encodeURIComponent(http.projectId)}/sessions/${encodeURIComponent(childId)}${suffix}`
 }
 
 /** The tools a child may use: the spec's list, inside this session's own list. Undefined = no narrowing. */
@@ -293,7 +311,7 @@ export async function cloudSpawnSession(
 ): Promise<SpawnSessionResult> {
   const model = splitModel(input.model)
   const http: Http = {
-    fetchImpl: api.fetchImpl ?? fetch,
+    fetchImpl: withWorkspaceRouteFallback(api.fetchImpl ?? fetch),
     origin: apiOrigin(api.apiUrl),
     headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
     projectId: api.projectId,
@@ -323,7 +341,7 @@ export async function cloudSpawnSession(
     await refuseOverLiveCap(api, http)
     let created: Response
     try {
-      created = await http.fetchImpl(`${http.origin}/v1/projects/${encodeURIComponent(api.projectId)}/sessions`, {
+      created = await http.fetchImpl(`${http.origin}/v1/workspaces/${encodeURIComponent(api.projectId)}/sessions`, {
         method: 'POST',
         headers: http.headers,
         body: JSON.stringify(createBody),
@@ -426,7 +444,7 @@ function isBusy(row: SessionRow): boolean {
 /** This session's children, newest first (`GET …/sessions?parent=`). Throws when the list cannot be read. */
 async function listChildren(api: CloudSubagentApi, http: Http): Promise<SessionRow[]> {
   const res = await http.fetchImpl(
-    `${http.origin}/v1/projects/${encodeURIComponent(http.projectId)}/sessions?parent=${encodeURIComponent(api.sessionId ?? '')}&limit=200`,
+    `${http.origin}/v1/workspaces/${encodeURIComponent(http.projectId)}/sessions?parent=${encodeURIComponent(api.sessionId ?? '')}&limit=200`,
     { headers: http.headers },
   )
   if (res.status !== 200) throw new Error(`the child list answered ${res.status}`)
@@ -687,7 +705,7 @@ export interface StopChildResult {
  */
 export async function cloudStopChild(api: CloudSubagentApi, target: { taskId?: string; name?: string }): Promise<StopChildResult> {
   const http: Http = {
-    fetchImpl: api.fetchImpl ?? fetch,
+    fetchImpl: withWorkspaceRouteFallback(api.fetchImpl ?? fetch),
     origin: apiOrigin(api.apiUrl),
     headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
     projectId: api.projectId,
@@ -735,7 +753,7 @@ export interface ChildReport {
  */
 export async function cloudChildReport(api: CloudSubagentApi, childId: string): Promise<ChildReport> {
   const http: Http = {
-    fetchImpl: api.fetchImpl ?? fetch,
+    fetchImpl: withWorkspaceRouteFallback(api.fetchImpl ?? fetch),
     origin: apiOrigin(api.apiUrl),
     headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
     projectId: api.projectId,
@@ -756,20 +774,21 @@ export async function cloudChildReport(api: CloudSubagentApi, childId: string): 
   }
 }
 
-/** Messages of a child's saved transcript one `cloudChildToolDetails` read takes, newest last. */
+/** Messages of a child's session log one `cloudChildToolDetails` read takes, newest last. */
 const TOOL_DETAILS_MESSAGES = 40
 
 /**
  * The `details` (part `state.metadata`) of each settled call of `tool` in a
- * child's saved transcript, oldest first: `GET …/sessions/:id/transcript?shape=sync`,
- * the API's durable copy of its session log, which answers while the child's
- * box is parked. Null when the child is no child of this session or the read
+ * child's session log, oldest first: `GET …/sessions/:id/log`, the API's
+ * stored copy, which answers while the child's box is parked. The page goes
+ * through `toV1`, the conversion the API's v1 reads used, so a call's details
+ * are its `result.details`, else its harness's own ext. Null when the child is no child of this session or the read
  * fails. A workflow runner's final run document carries the agents' saved
  * results, which a resume hands to the next runner (`extensions/workflow.ts`).
  */
 export async function cloudChildToolDetails(api: CloudSubagentApi, childId: string, tool: string): Promise<Array<Record<string, unknown>> | null> {
   const http: Http = {
-    fetchImpl: api.fetchImpl ?? fetch,
+    fetchImpl: withWorkspaceRouteFallback(api.fetchImpl ?? fetch),
     origin: apiOrigin(api.apiUrl),
     headers: { authorization: `Bearer ${api.token}`, 'content-type': 'application/json' },
     projectId: api.projectId,
@@ -778,13 +797,15 @@ export async function cloudChildToolDetails(api: CloudSubagentApi, childId: stri
     const row = await http.fetchImpl(sessionUrl(http, childId), { headers: http.headers })
     const session = row.status === 200 ? ((await row.json().catch(() => null)) as SessionRow | null) : null
     if (!session || (api.sessionId && session.parent_session_id !== api.sessionId)) return null
-    const res = await http.fetchImpl(sessionUrl(http, childId, `/transcript?shape=sync&limit=${TOOL_DETAILS_MESSAGES}`), { headers: http.headers })
+    const res = await http.fetchImpl(sessionUrl(http, childId, `/log?limit=${TOOL_DETAILS_MESSAGES}`), { headers: http.headers })
     if (res.status !== 200) return null
-    const body = (await res.json().catch(() => null)) as { messages?: Array<{ parts?: unknown }> } | null
-    if (!Array.isArray(body?.messages)) return null
+    const page = (await res.json().catch(() => null)) as SessionLogPage | null
+    if (!page || !Array.isArray(page.messages)) return null
+    const thread = page.threads?.find((t) => t.thread_id === page.thread_id) ?? { thread_id: page.thread_id ?? childId, parent_thread_id: null }
+    const v1 = toV1({ ...page.session, session_id: childId, threads: [{ ...thread, messages: page.messages }] } as unknown as SessionLog)
     const details: Array<Record<string, unknown>> = []
-    for (const message of body.messages) {
-      for (const part of Array.isArray(message?.parts) ? message.parts : []) {
+    for (const row of v1.rows) {
+      for (const part of Array.isArray(row.parts) ? row.parts : []) {
         const call = part as { type?: unknown; tool?: unknown; state?: { status?: unknown; metadata?: unknown } } | null
         if (call?.type !== 'tool' || typeof call.tool !== 'string' || call.tool.replace(/^oc-/, '') !== tool) continue
         const metadata = call.state?.metadata

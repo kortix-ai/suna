@@ -6,7 +6,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { sessionStartKey, type SessionStartResult } from '../core/rest/projects-client';
 import { noteSessionDeleted } from '../core/http/session-stopped';
 import { getCurrentRuntimeSandboxId, setCurrentRuntime } from '../core/session/current-runtime';
-import { useSession } from './opencode';
+import { useSession } from './runtime-hooks';
 
 /**
  * A session keeps its `sandbox_id` (the session id) while its box changes: a
@@ -41,7 +41,7 @@ function readyOn(externalId: string): SessionStartResult {
       created_at: '2026-10-09T00:00:00Z',
       updated_at: '2026-10-09T00:00:00Z',
     } as unknown as NonNullable<SessionStartResult['sandbox']>,
-    opencode_session_id: 'ses_box',
+    runtime_session_id: 'ses_box',
     runtime_url: `/p/${externalId}/8000`,
     reason: 'unchanged',
   };

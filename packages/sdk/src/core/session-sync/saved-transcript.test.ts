@@ -149,7 +149,7 @@ describe('savedCopyEmptyRoot', () => {
       source: 'mirror',
       complete: true,
       captured_at: '2026-09-28T00:00:00Z',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_count: 0,
       total: 0,
       messages: [],
@@ -168,7 +168,7 @@ describe('savedCopyEmptyRoot', () => {
     // An older API sends no total, and never an available empty window.
     expect(savedCopyEmptyRoot(window({ total: undefined }))).toBeNull();
     expect(savedCopyEmptyRoot(window({ total: 1 }))).toBeNull();
-    expect(savedCopyEmptyRoot(window({ opencode_session_id: null }))).toBeNull();
+    expect(savedCopyEmptyRoot(window({ runtime_session_id: null }))).toBeNull();
     expect(
       savedCopyEmptyRoot(
         window({ messages: [{ info: { id: 'msg_1' }, parts: [] }] as SessionTranscriptSyncEnvelope['messages'] }),
@@ -235,7 +235,7 @@ describe('readSavedSessionCopy reads the session log first (P8)', () => {
     expect(answer.log?.messages).toHaveLength(root.messages.length);
     expect(answer.envelope).toBeNull();
     expect(answer.empty).toBe(false);
-    expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+    expect(urls).toEqual(['http://test.local/v1/workspaces/p1/sessions/s1/log?limit=40']);
   });
 
   test('a page that proves the root empty, and no turn on record, is empty', async () => {
@@ -264,14 +264,14 @@ describe('readSavedSessionCopy reads the session log first (P8)', () => {
       const answer = await readSavedSessionCopy({ projectId: 'p1', sessionId: 's1', runtimeSessionId: rootRuntimeId, sessionLog });
       expect(answer.log?.thread_id).toBe(root.thread_id);
       expect(answer.envelope).toBeNull();
-      expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+      expect(urls).toEqual(['http://test.local/v1/workspaces/p1/sessions/s1/log?limit=40']);
     }
   });
 
   test('a new session on an API that serves the log (404 session_log_missing): no copy, and no v1 window', async () => {
     const urls = serve(() => Response.json({ error: 'No session log for this session', code: 'session_log_missing' }, { status: 404 }));
     expect(await read()).toEqual({ envelope: null, empty: false, log: null });
-    expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+    expect(urls).toEqual(['http://test.local/v1/workspaces/p1/sessions/s1/log?limit=40']);
   });
 
   test.each([
@@ -281,6 +281,6 @@ describe('readSavedSessionCopy reads the session log first (P8)', () => {
   ] as const)('GET …/log answers %s: no copy, and no v1 window (P8.3)', async (_name, answer) => {
     const urls = serve((url) => (url.includes('/log?') ? answer() : Response.json({ available: true, source: 'mirror', messages: [] })));
     expect(await read()).toEqual({ envelope: null, empty: false, log: null });
-    expect(urls).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+    expect(urls).toEqual(['http://test.local/v1/workspaces/p1/sessions/s1/log?limit=40']);
   });
 });

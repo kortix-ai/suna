@@ -14,8 +14,8 @@ import { isSelectableAgent } from '../rest/projects-client/project-agents';
  * per-session/user picks still resolve by name and therefore keep precedence.
  */
 export function projectConfigAgentsToRuntimeAgents(config: ProjectConfigSummary): Agent[] {
-  const agents = config.agents.map(projectConfigAgentToOpenCodeAgent);
-  const defaultName = config.default_agent ?? config.open_code_default_agent;
+  const agents = config.agents.map(projectConfigAgentToRuntimeAgent);
+  const defaultName = config.default_agent;
   if (!defaultName) return agents;
   return agents.sort((left, right) => {
     if (left.name === defaultName) return -1;
@@ -24,7 +24,7 @@ export function projectConfigAgentsToRuntimeAgents(config: ProjectConfigSummary)
   });
 }
 
-function projectConfigAgentToOpenCodeAgent(agent: ProjectConfigSummary['agents'][number]): Agent {
+function projectConfigAgentToRuntimeAgent(agent: ProjectConfigSummary['agents'][number]): Agent {
   return {
     name: agent.name,
     description: agent.description ?? undefined,
@@ -146,6 +146,3 @@ export function resolveComposerAgent(input: {
   return { selected: selectable[0].name, disabled: false, reason: 'first_accessible' };
 }
 
-// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
-/** @deprecated Renamed to `projectConfigAgentsToRuntimeAgents`. Removed in the next major. */
-export const projectConfigAgentsToOpenCodeAgents = projectConfigAgentsToRuntimeAgents;

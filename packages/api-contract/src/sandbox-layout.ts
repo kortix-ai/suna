@@ -24,7 +24,6 @@ export const KORTIXD_SHARED_SOURCES = [
   // The voice runtime (`@kortix/voice/kortix`), loaded with a dynamic import: one directory.
   'packages/voice/src',
   'packages/shared/src/peer-message-prompt.ts',
-  'packages/shared/src/room-prompt.ts',
   'packages/shared/src/ssrf-guard.ts',
   'packages/api-contract/src/claude-agent.ts',
   'packages/api-contract/src/compiled-agent-config-env.ts',
@@ -46,5 +45,6 @@ export const KORTIXD_SHARED_SOURCES = [
   'packages/api-contract/src/session-log/v1.ts',
   'packages/api-contract/src/session-log/wire.ts',
   'packages/api-contract/src/transcript.ts',
+  'packages/api-contract/src/wire-values.ts',
   'packages/sdk/src/core/session/wire-message-id.ts',
 ] as const;

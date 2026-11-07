@@ -42,14 +42,6 @@ beforeEach(() => {
 
 configureKortix({ backendUrl: 'http://test.local/v1', getToken: async () => 'tok' });
 
-test('Artifact comment notifications support bell, push and digest preferences', async () => {
-  expect(INBOX_NOTIFICATION_KINDS).toContain('artifact_comment');
-  expect(DEFAULT_NOTIFICATION_PREFERENCES.artifact_comment).toEqual({ push: true, email: true });
-  nextResponse = { status: 200, body: { kinds: { artifact_comment: { push: false, email: true } } } };
-  await updateNotificationPreferences({ kinds: { artifact_comment: { push: false } } });
-  expect(calls[0]?.body).toEqual({ kinds: { artifact_comment: { push: false } } });
-});
-
 test('registerDeviceToken POSTs the token, platform and preferences', async () => {
   nextResponse = { status: 200, body: { success: true, message: 'Device token registered' } };
   const result = await registerDeviceToken({
@@ -172,7 +164,7 @@ const ROW: InboxNotification = {
   session_id: 'S1',
   trigger_slug: null,
   actor_user_id: null,
-  url: '/projects/P1/sessions/S1?notification=0192a000-0000-7000-8000-000000000001',
+  url: '/workspaces/P1/sessions/S1?notification=0192a000-0000-7000-8000-000000000001',
   read: false,
   created_at: '2026-10-09T10:00:00.000Z',
 };
@@ -349,9 +341,12 @@ describe('kind parity with @kortix/shared/notification-kinds', () => {
     expect(DEFAULT_NOTIFICATION_PREFERENCES).toEqual(shared.DEFAULT_NOTIFICATION_PREFERENCES);
   });
 
-  test('the kind unions are the same type', () => {
-    const toShared = (kind: InboxNotificationKind): shared.NotificationKindName => kind;
+  test('the live kind union is the shared type; the SDK union adds only the deprecated `message`', () => {
+    type LiveKind = (typeof INBOX_NOTIFICATION_KINDS)[number];
+    const toShared = (kind: LiveKind): shared.NotificationKindName => kind;
+    const deprecated: Exclude<InboxNotificationKind, LiveKind> = 'message';
+    expect(deprecated).toBe('message');
     const toSdk = (kind: shared.NotificationKindName): InboxNotificationKind => kind;
-    expect(toShared(toSdk('question'))).toBe('question');
+    expect(toSdk(toShared('question'))).toBe('question');
   });
 });

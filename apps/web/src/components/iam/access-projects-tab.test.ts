@@ -72,7 +72,7 @@ describe('a mocked access response passes through the row derivations', () => {
   });
 
   test('implicit account admin and no-access rows label themselves', () => {
-    expect(accessVia(member({ effective_source: 'implicit' }))).toBe('via account admin');
+    expect(accessVia(member({ effective_source: 'implicit' }))).toBe('Admin');
     expect(accessVia(member({ effective_project_role: null, effective_source: null }))).toBe(
       'no access',
     );

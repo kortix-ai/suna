@@ -1,7 +1,7 @@
 /**
  * Integration test (real local DB, real routes, fake storage): a folder a
  * person made at `/Channels` in Files is an ordinary folder, with the
- * `project_channels` flag off and on. Only `/Channels/<space_id>` of a private
+ * `chat` flag off and on. Only `/Channels/<space_id>` of a private
  * channel of the project is reserved (prod-readiness finding 1: the branch
  * reserved all of `/Channels` in every project).
  *
@@ -107,8 +107,8 @@ beforeAll(async () => {
     USERS.map((userId) => ({ userId, accountId: ACCOUNT, accountRole: 'member' as const, isSuperAdmin: false })),
   );
   for (const [mode, f] of Object.entries(fixtures) as Array<['off' | 'on', Fixture]>) {
-    const metadata = { experimental: { drives: true, shared_drives: true, project_channels: mode === 'on' } };
-    await db.insert(projects).values({ projectId: f.projectId, accountId: ACCOUNT, name: `reservation-${mode}`, repoUrl: 'https://example.test/r.git', metadata });
+    const metadata = { experimental: { drives: true, shared_drives: true, chat: mode === 'on' } };
+    await db.insert(projects).values({ splitPending: true, projectId: f.projectId, accountId: ACCOUNT, name: `reservation-${mode}`, repoUrl: 'https://example.test/r.git', metadata });
     await insertIntoView(db, projectMembers, [
       { accountId: ACCOUNT, projectId: f.projectId, userId: MANAGER, projectRole: 'manager' },
       ...[ALICE, BOB, CAROL].map((userId) => ({ accountId: ACCOUNT, projectId: f.projectId, userId, projectRole: 'member' as const })),
@@ -176,7 +176,7 @@ afterAll(async () => {
 });
 
 for (const mode of ['off', 'on'] as const) {
-  describe(`project_channels ${mode}: a person-made /Channels/notes is an ordinary folder`, () => {
+  describe(`chat ${mode}: a person-made /Channels/notes is an ordinary folder`, () => {
     const f = fixtures[mode];
 
     test('an admin manages it like any folder', async () => {
@@ -204,7 +204,7 @@ for (const mode of ['off', 'on'] as const) {
   });
 }
 
-describe('project_channels on: the private channel folder stays reserved', () => {
+describe('chat on: the private channel folder stays reserved', () => {
   const f = fixtures.on;
 
   test('only its member reaches it; the manager and Bob get nothing', async () => {

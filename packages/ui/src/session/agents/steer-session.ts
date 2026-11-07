@@ -1,6 +1,6 @@
 'use client';
 
-import { createSessionPrompt, mintWireMessageId } from '@kortix/sdk';
+import { createSessionPrompt, mintWireMessageId, type SessionPromptPart } from '@kortix/sdk';
 import { useMutation } from '@tanstack/react-query';
 
 /**
@@ -11,7 +11,7 @@ import { useMutation } from '@tanstack/react-query';
  */
 export function useSteerSession(projectId: string | undefined, options: { onSent?: () => void; onError?: (error: unknown) => void } = {}) {
   return useMutation({
-    mutationFn: async ({ sessionId, text }: { sessionId: string; text: string }) => {
+    mutationFn: async ({ sessionId, text, files = [] }: { sessionId: string; text: string; files?: SessionPromptPart[] }) => {
       if (!projectId) throw new Error('No project');
       // Minted with no transcript to place it against: the server places it at delivery.
       const messageId = mintWireMessageId();
@@ -20,7 +20,8 @@ export function useSteerSession(projectId: string | undefined, options: { onSent
         messageId,
         remintOnDelivery: true,
         delivery: 'steer',
-        parts: [{ type: 'text', text }],
+        // Images first, then the words, as the composer orders a prompt's parts.
+        parts: [...files, ...(text ? [{ type: 'text' as const, text }] : [])],
         clientSentAtMs: Date.now(),
       });
     },

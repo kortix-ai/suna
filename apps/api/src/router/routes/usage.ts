@@ -24,6 +24,7 @@ import {
 import { db } from '../../shared/db';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { getSessionCostRecord, listSessionCosts } from '../../shared/session-costs';
+import { isUuid } from '../../shared/validate';
 import type { AppEnv } from '../../types';
 import {
   InvalidUsageQueryError,
@@ -55,10 +56,10 @@ async function resolveSessionCostAccountId(
   const tokenAccountId = c.get('accountId');
   const tokenProjectId = c.get('tokenProjectId');
   if (tokenProjectId) {
-    if (!tokenAccountId) throw new HTTPException(403, { message: 'Project token has no account binding' });
+    if (!tokenAccountId) throw new HTTPException(403, { message: 'Workspace token has no workspace binding' });
     if (!projectId || projectId !== tokenProjectId || c.req.query('account_id')) {
       throw new HTTPException(403, {
-        message: 'Project-scoped token requires its own project_id and no account_id; grant project.usage.read in kortix_permissions',
+        message: 'A workspace-bound token requires its own project_id and no account_id; grant project.usage.read in kortix_permissions',
       });
     }
     await assertProjectCapability(
@@ -69,11 +70,11 @@ async function resolveSessionCostAccountId(
   if (projectId) {
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) {
-      throw new HTTPException(404, { message: 'Project not found' });
+      throw new HTTPException(404, { message: 'Workspace not found' });
     }
     const explicitAccountId = tokenAccountId ?? c.req.query('account_id');
     if (explicitAccountId && explicitAccountId !== loaded.row.accountId) {
-      throw new HTTPException(404, { message: 'Project not found' });
+      throw new HTTPException(404, { message: 'Workspace not found' });
     }
     await assertProjectCapability(
       c,
@@ -95,7 +96,7 @@ async function resolveSessionCostAccountId(
  */
 export async function resolveAccountWideUsageAccountId(c: Context<AppEnv>): Promise<string> {
   if (c.get('tokenProjectId')) {
-    throw new HTTPException(403, { message: 'Project-scoped tokens cannot read account-wide usage' });
+    throw new HTTPException(403, { message: 'Workspace-bound tokens cannot read usage across workspaces' });
   }
   const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_READ);
@@ -534,9 +535,16 @@ usageApp.openapi(
       throw error;
     }
 
+    // owner_id is compared with the uuid-typed project_sessions.created_by: a
+    // malformed value would fail in Postgres (22P02) and surface as a 500.
+    const requestedOwnerId = c.req.query('owner_id') || undefined;
+    if (requestedOwnerId && !isUuid(requestedOwnerId)) {
+      throw new HTTPException(400, { message: 'owner_id must be a UUID' });
+    }
+
     const projectId = c.req.query('project_id') || undefined;
     const accountId = await resolveSessionCostAccountId(c, projectId);
-    const ownerId = await sessionCostOwner(c, accountId, c.req.query('owner_id') || undefined);
+    const ownerId = await sessionCostOwner(c, accountId, requestedOwnerId);
 
     if (c.req.query('format') === 'csv') {
       // Same filtered query as the JSON branch (accountId, projectId, ownerId,
@@ -792,7 +800,7 @@ usageApp.openapi(
       const accountId = await resolveSessionCostAccountId(c, projectId);
       if (c.get('tokenProjectId') && c.req.query('session_id')) {
         throw new HTTPException(403, {
-          message: 'Project-scoped token cannot query an arbitrary session',
+          message: 'A workspace-bound token cannot query an arbitrary session',
         });
       }
       return c.json(

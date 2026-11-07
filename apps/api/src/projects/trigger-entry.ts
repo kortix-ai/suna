@@ -2,6 +2,8 @@ import { BoundedMap } from '../shared/bounded-map';
 import {
   EVENT_FORBIDDEN_KEYS,
   TRIGGER_MIN_MAX_LATENESS_SECONDS,
+  TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS,
+  TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS,
   formatDurationSeconds,
   normalizeTriggerList,
   parseChangeRequestFilter,
@@ -129,7 +131,7 @@ export function parseTargetField(
   if (payload !== undefined && (!isPlainObject(payload) || JSON.stringify(payload).length > 64 * 1024)) {
     return { error: 'target.payload must be an object of at most 64 KiB' };
   }
-  if (typeof app !== 'string' || !APP_SLUG_RE.test(app.trim())) return { error: 'target.app must be the slug of an App in this project' };
+  if (typeof app !== 'string' || !APP_SLUG_RE.test(app.trim())) return { error: 'target.app must be the slug of an App in this workspace' };
   if (typeof path !== 'string' || !path.startsWith('/') || /[\r\n]/.test(path) || path.length > 2048) return { error: 'target.path must be an HTTP path starting with /' };
   if (method !== 'POST' && method !== 'GET') return { error: 'target.method must be POST or GET' };
   return { target: { app: app.trim(), path, method, ...(payload ? { payload: payload as Record<string, unknown> } : {}) } };
@@ -149,6 +151,24 @@ export function parseMaxLateness(
   if (type !== 'cron') return { error: 'max_lateness is only valid on a cron trigger' };
   const parsed = parseMonitorDuration(raw, 'max_lateness', TRIGGER_MIN_MAX_LATENESS_SECONDS);
   return 'error' in parsed ? parsed : { maxLatenessSeconds: parsed.seconds };
+}
+
+/**
+ * An app trigger's `expect_event_within`: the silence alert. Absent → `{}`, so
+ * a spec without it keeps its shape and schedule revision. Mirrors
+ * `@kortix/manifest-schema`: app only, 5m to 30d.
+ */
+export function parseExpectEventWithin(
+  row: Record<string, unknown>,
+  type: GitTriggerType,
+): { expectEventWithinSeconds?: number } | { error: string } {
+  const raw = row.expect_event_within;
+  if (raw === undefined || raw === null) return {};
+  if (type !== 'app') return { error: 'expect_event_within is only valid on an app trigger' };
+  const parsed = parseMonitorDuration(raw, 'expect_event_within', TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS);
+  if ('error' in parsed) return parsed;
+  if (parsed.seconds > TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS) return { error: 'expect_event_within must be at most 30d' };
+  return { expectEventWithinSeconds: parsed.seconds };
 }
 
 /**
@@ -390,6 +410,8 @@ export function triggerSpecToFlatEntry(spec: GitTriggerSpec): Record<string, unk
   } else if (spec.secretEnv) {
     entry.secret_env = spec.secretEnv;
   }
+  // An app trigger's silence alert; written outside the type branch so an edit of any type that holds it keeps it.
+  if (spec.expectEventWithinSeconds) entry.expect_event_within = formatDurationSeconds(spec.expectEventWithinSeconds);
   if (spec.target) entry.target = spec.target;
   if (spec.promptTemplate) entry.prompt = spec.promptTemplate;
   return entry;
@@ -448,6 +470,7 @@ export function triggerSpecToOnRunEntry(spec: GitTriggerSpec): Record<string, un
     ...(spec.maxRunsPerDay ? { max_runs_per_day: spec.maxRunsPerDay } : {}),
     ...(spec.overlap ? { overlap: spec.overlap } : {}),
     ...(spec.maxLatenessSeconds ? { max_lateness: formatDurationSeconds(spec.maxLatenessSeconds) } : {}),
+    ...(spec.expectEventWithinSeconds ? { expect_event_within: formatDurationSeconds(spec.expectEventWithinSeconds) } : {}),
   };
 }
 
@@ -499,6 +522,8 @@ function parseTriggerEntry(
   const type = typeRaw as GitTriggerType;
   const lateness = parseMaxLateness(row, type);
   if ('error' in lateness) return err(slug, lateness.error);
+  const silence = parseExpectEventWithin(row, type);
+  if ('error' in silence) return err(slug, silence.error);
   const caps = parseRunCaps(row);
   if ('error' in caps) return err(slug, caps.error);
   const overlap = parseOverlap(row);
@@ -649,6 +674,7 @@ function parseTriggerEntry(
         timezone: 'UTC',
         secretEnv: null,
         app: parsed.app,
+        ...silence,
       },
     };
   }

@@ -1,25 +1,4 @@
-/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-export interface RuntimeConfigIssue {
-  path?: unknown[];
-  message?: string;
-}
 
-/**
- * OpenCode's `ConfigInvalidError`: its own config (`opencode.jsonc`, agent frontmatter) failed to load.
- * @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support.
- */
-export interface RuntimeConfigInvalidError {
-  name: 'ConfigInvalidError';
-  data?: {
-    path?: string;
-    issues?: RuntimeConfigIssue[];
-  };
-}
-
-/** @deprecated Renamed to `RuntimeConfigIssue`. Removed in the next major. */
-export type OpenCodeConfigIssue = RuntimeConfigIssue;
-/** @deprecated Renamed to `RuntimeConfigInvalidError`. Removed in the next major. */
-export type OpenCodeConfigInvalidError = RuntimeConfigInvalidError;
 
 function rawErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -58,28 +37,6 @@ export function parseRuntimeErrorPayload(error: unknown): unknown {
   return null;
 }
 
-/** @deprecated Renamed to `parseRuntimeErrorPayload`. Removed in the next major. */
-export const parseOpenCodeErrorPayload = parseRuntimeErrorPayload;
-
-/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-export function getRuntimeConfigInvalidError(error: unknown): RuntimeConfigInvalidError | null {
-  const payload = parseRuntimeErrorPayload(error);
-  if (!payload || typeof payload !== 'object') return null;
-  const maybe = payload as Partial<RuntimeConfigInvalidError>;
-  return maybe.name === 'ConfigInvalidError' ? (maybe as RuntimeConfigInvalidError) : null;
-}
-
-/** @deprecated Renamed to `getRuntimeConfigInvalidError`. Removed in the next major. */
-export const getOpenCodeConfigInvalidError = getRuntimeConfigInvalidError;
-
-/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
-export function isRuntimeConfigInvalidError(error: unknown): boolean {
-  return getRuntimeConfigInvalidError(error) !== null;
-}
-
-/** @deprecated Renamed to `isRuntimeConfigInvalidError`. Removed in the next major. */
-export const isOpenCodeConfigInvalidError = isRuntimeConfigInvalidError;
-
 // Every readiness phrase the API can answer with while a sandbox (or the
 // runtime inside it) is provisioning, resuming, or parked. Each line maps to a
 // production site in apps/api:
@@ -87,39 +44,34 @@ export const isOpenCodeConfigInvalidError = isRuntimeConfigInvalidError;
 //     → sandbox-proxy/routes/preview.ts (HTTP proxy + WebSocket resolver)
 //   - `Sandbox is not running` → sandbox-proxy/routes/public-share.ts
 //   - `Sandbox is not ready` → public-session-shares, shared/session-public-shares
-//   - `opencode … not ready` → daemon 503 pass-through, session-transcript,
-//     public-session-share-view
 //   - `sandbox_not_ready`, `sandbox_lifecycle_unavailable` → machine codes on
 //     503 bodies from the sandbox proxy
 // Deliberately NOT here: `sandbox port unreachable` — that is emitted only
 // after the box reported active and the port still failed to answer, which is
 // a genuine failure, not parking.
-//   - `runtime_not_ready` (code), `sandbox runtime not ready`, `opencode not
-//     ready` → the daemon's own 503, `RUNTIME_NOT_READY_MARKERS` below
+//   - `runtime_not_ready` (code), `sandbox runtime not ready` → the daemon's
+//     own 503, `RUNTIME_NOT_READY_MARKERS` below
 const SANDBOX_NOT_READY_PATTERNS: readonly RegExp[] = [
   /sandbox not ready/i,
   /sandbox is not (?:ready|running)/i,
-  /opencode (?:session )?(?:is )?not ready/i,
   /\bsandbox_not_ready\b/,
   /\bsandbox_lifecycle_unavailable\b/,
 ];
 
 /**
  * Every spelling of the daemon's 503 while the session runtime cannot take a
- * request, as lower-case substrings: the `code` a W6 daemon sends on both
- * harnesses, then the two `error` texts of a daemon without the code (pi and
- * OpenCode's boot steps; the OpenCode process itself). For a host that needs
- * a string list (a telemetry ignore list); a predicate should call
+ * request, as lower-case substrings: the `code` a W6 daemon sends, then the
+ * `error` text of a daemon without the code. For a host that needs a string
+ * list (a telemetry ignore list); a predicate should call
  * `isRuntimeNotReadyResponse`.
  */
 export const RUNTIME_NOT_READY_MARKERS = [
   'runtime_not_ready',
   'sandbox runtime not ready',
-  'opencode not ready',
 ] as const;
 
 // `\b` keeps the API's `runtime_not_ready_timeout` park reason out.
-const RUNTIME_NOT_READY_PATTERN = /\bruntime_not_ready\b|sandbox runtime not ready|opencode not ready/i;
+const RUNTIME_NOT_READY_PATTERN = /\bruntime_not_ready\b|sandbox runtime not ready/i;
 
 /**
  * True when the daemon refused a request because the session runtime is not up
@@ -190,24 +142,6 @@ export function formatRuntimeError(error: unknown): {
   message: string;
   detail?: string;
 } {
-  const configError = getRuntimeConfigInvalidError(error);
-  if (configError) {
-    // `ConfigInvalidError` is OpenCode's own error about its own config files.
-    const workspacePath = configError.data?.path ?? 'OpenCode config';
-    const repoPath = workspacePath.replace(/^\/workspace\//, '');
-    const issue = configError.data?.issues?.[0]?.message;
-    const issuePath = configError.data?.issues?.[0]?.path?.join('.');
-    const permissionHint = issuePath?.startsWith('permission')
-      ? 'Remove the invalid permission frontmatter entry or replace it with valid OpenCode permission config.'
-      : 'Fix the invalid config entry, then restart this session.';
-
-    return {
-      title: 'OpenCode config is invalid',
-      message: `${repoPath} is preventing OpenCode from loading. ${permissionHint}`,
-      detail: issue ? `${issuePath ? `${issuePath}: ` : ''}${issue}` : undefined,
-    };
-  }
-
   const raw = rawErrorMessage(error);
 
   // A parked or still-provisioning box is not a crash. The proxy answers with
@@ -217,7 +151,7 @@ export function formatRuntimeError(error: unknown): {
   // genuinely broke.
   //
   // Matched against the raw string, not a `parseRuntimeErrorPayload` field:
-  // `unwrap()` (react/use-opencode-sessions/shared.ts) is what actually
+  // `unwrap()` (react/use-runtime-sessions/shared.ts) is what actually
   // produces the error this function receives for the session-list poll that
   // drives the page's runtime-error card, and it throws `new Error(body.error)`
   // — just the bare phrase, with the JSON wrapper already stripped off. There
@@ -236,5 +170,3 @@ export function formatRuntimeError(error: unknown): {
   };
 }
 
-/** @deprecated Renamed to `formatRuntimeError`. Removed in the next major. */
-export const formatOpenCodeRuntimeError = formatRuntimeError;

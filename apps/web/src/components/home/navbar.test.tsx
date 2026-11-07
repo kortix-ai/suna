@@ -40,7 +40,7 @@ globals.ResizeObserver = win.ResizeObserver;
 
 let authUser: { id: string } | null = null;
 let pathname = '/';
-const stars: number | null = 4321;
+let stars: number | null = 4321;
 
 const translate = Object.assign((key: string) => key, { raw: (key: string) => key });
 mock.module('@/i18n/use-translations', () => ({ useTranslations: () => translate }));
@@ -101,6 +101,7 @@ afterEach(async () => {
   container = undefined;
   authUser = null;
   pathname = '/';
+  stars = 4321;
 });
 
 /** Open the drawer at mobile width and return its root element. */
@@ -135,6 +136,20 @@ test('the bar renders the brand, the desktop nav and a GitHub stars chip', async
   expect(html).toContain('4,321');
   // The desktop navigation renders every top-level site link.
   expect(html).toContain('href="/pricing"');
+});
+
+test('the GitHub link shows at every width, with or without a star count', async () => {
+  await mountNavbar();
+  const link = () => header()!.querySelector('[data-github-link]');
+  expect(link()!.getAttribute('href')).toBe('https://github.com/kortix-ai/CompanyOS');
+  // No breakpoint hides it: it is the bar's one always-on social proof.
+  expect(link()!.className.split(' ').some((c) => c === 'hidden' || c.endsWith(':hidden'))).toBe(false);
+  expect(link()!.textContent).toContain('4,321');
+
+  stars = null;
+  await act(async () => root!.render(React.createElement(Navbar)));
+  expect(link()).not.toBeNull();
+  expect(link()!.textContent).toBe('GitHub');
 });
 
 test('the mobile drawer locks body scroll while open and unlocks on close', async () => {
@@ -252,7 +267,7 @@ test('closing the drawer clears a pending navigation so no row stays marked', as
 test('a signed-in visitor sees the projects button; a signed-out one sees Get Started', async () => {
   authUser = { id: 'synthetic-user' };
   await mountNavbar();
-  expect(container!.innerHTML).toContain('href="/projects/start"');
+  expect(container!.innerHTML).toContain('href="/workspaces/start"');
 
   root?.unmount();
   container?.remove();

@@ -47,7 +47,7 @@ describe('agentRows', () => {
     agents: [
       {
         name: 'default',
-        path: '.opencode/agent/default.md',
+        path: 'agents/default.md',
         description: 'The everyday agent',
         mode: 'primary',
         model: 'openai/gpt-5.6-sol',
@@ -61,10 +61,9 @@ describe('agentRows', () => {
       },
     ],
     default_agent: 'auditor',
-    open_code_default_agent: 'default',
   };
 
-  test('marks the provider-neutral default, not the deprecated one', () => {
+  test('marks the project default', () => {
     const rows = agentRows(config);
     expect(rows.map((row) => [row.name, row.isDefault])).toEqual([
       ['default', false],
@@ -72,9 +71,9 @@ describe('agentRows', () => {
     ]);
   });
 
-  test('falls back to the deprecated default when the new field is absent', () => {
+  test('marks no agent when the project has no default', () => {
     const rows = agentRows({ ...config, default_agent: null });
-    expect(rows.find((row) => row.name === 'default')?.isDefault).toBe(true);
+    expect(rows.some((row) => row.isDefault)).toBe(false);
   });
 
   test('an agent with no `enabled` field is enabled', () => {
@@ -86,7 +85,7 @@ describe('agentRows', () => {
 describe('skillScope / skillRows', () => {
   test('a path under .kortix is a platform skill, anything else the project’s', () => {
     expect(skillScope('/workspace/.kortix/skills/pdf/SKILL.md')).toBe('kortix');
-    expect(skillScope('.opencode/skill/deal-desk/SKILL.md')).toBe('project');
+    expect(skillScope('skills/deal-desk/SKILL.md')).toBe('project');
   });
 
   test('skillRows carries the path as the row id source', () => {
@@ -274,9 +273,9 @@ describe('connectorSetup / connectorWebUrl', () => {
 
   test('the connect hint is the web page that runs the OAuth round-trip', () => {
     expect(connectorWebUrl('p1', 'slack', 'https://dev.kortix.com/')).toBe(
-      'https://dev.kortix.com/projects/p1/connectors?c=slack',
+      'https://dev.kortix.com/workspaces/p1/connectors?c=slack',
     );
-    expect(connectorWebUrl('p1', 'slack')).toBe('/projects/p1/connectors?c=slack');
+    expect(connectorWebUrl('p1', 'slack')).toBe('/workspaces/p1/connectors?c=slack');
   });
 });
 
@@ -431,7 +430,7 @@ describe('<AgentsTabView/>', () => {
       description: 'The everyday agent',
       model: 'openai/gpt-5.6-sol',
       mode: 'primary',
-      path: '.opencode/agent/default.md',
+      path: 'agents/default.md',
       enabled: true,
       isDefault: true,
       scope: null,
@@ -490,7 +489,7 @@ describe('<AgentsTabView/>', () => {
     await flush();
     const frame = captureCharFrame();
     expect(frame).toContain('kortix.yaml#agents.auditor');
-    expect(frame).toContain('Uses the project default');
+    expect(frame).toContain('Uses the workspace default');
     expect(frame).toContain('none');
     expect(captured.at(-1)).toBe(true);
 
@@ -509,7 +508,7 @@ describe('<SkillsTabView/>', () => {
         rows={[
           {
             name: 'deal-desk',
-            path: '.opencode/skill/deal-desk/SKILL.md',
+            path: 'skills/deal-desk/SKILL.md',
             description: 'Build a deal memo',
             scope: 'project',
           },
@@ -527,7 +526,7 @@ describe('<SkillsTabView/>', () => {
     expect(captureCharFrame()).toContain('deal-desk · Build a deal memo');
     await act(async () => mockInput.pressEnter());
     await flush();
-    expect(captureCharFrame()).toContain('.opencode/skill/deal-desk/SKILL.md');
+    expect(captureCharFrame()).toContain('skills/deal-desk/SKILL.md');
     renderer.destroy();
   });
 });
@@ -795,7 +794,7 @@ describe('<TriggersTabView/>', () => {
     );
     await flush();
     const frame = captureCharFrame();
-    expect(frame).toContain('Triggers are paused for this project');
+    expect(frame).toContain('Triggers are paused for this workspace');
     expect(frame).toContain('broken: cron: bad field');
     renderer.destroy();
   });
@@ -834,7 +833,7 @@ describe('<ConnectorsTabView/>', () => {
         height={16}
         loading={false}
         errorMessage={null}
-        connectUrlFor={(slug) => `https://dev.kortix.com/projects/p1/connectors?c=${slug}`}
+        connectUrlFor={(slug) => `https://dev.kortix.com/workspaces/p1/connectors?c=${slug}`}
         onInputActive={() => {}}
       />,
       SIZE,
@@ -857,7 +856,7 @@ describe('<ConnectorsTabView/>', () => {
         height={16}
         loading={false}
         errorMessage={null}
-        connectUrlFor={(slug) => `https://dev.kortix.com/projects/p1/connectors?c=${slug}`}
+        connectUrlFor={(slug) => `https://dev.kortix.com/workspaces/p1/connectors?c=${slug}`}
         onInputActive={() => {}}
       />,
       SIZE,
@@ -868,7 +867,7 @@ describe('<ConnectorsTabView/>', () => {
     await act(async () => mockInput.pressEnter());
     await flush();
     const frame = captureCharFrame();
-    expect(frame).toContain('https://dev.kortix.com/projects/p1/connectors?c=gmail');
+    expect(frame).toContain('https://dev.kortix.com/workspaces/p1/connectors?c=gmail');
     expect(frame).toContain('none');
     renderer.destroy();
   });

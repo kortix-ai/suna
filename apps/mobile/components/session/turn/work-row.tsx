@@ -1,21 +1,17 @@
 /**
- * A settled turn's work, behind one "Worked for 2m 14s" row (KRTX-2113).
+ * The "Worked for 2m 14s" row over a settled turn's work (KRTX-2113).
  *
- * The row reads like a burst summary (apps/web `turn/turn-work-accordion.tsx`
- * and mobile `ActivityBurst`: `text-sm text-muted-foreground/70`, `gap-2`,
- * trailing caret `size-3.5 text-muted-foreground/40`).
+ * Same shape as web `packages/ui/src/session/turn/turn-work-accordion.tsx`:
+ * the label (`text-sm text-muted-foreground/70`), a trailing caret
+ * (`size-3.5 text-muted-foreground/40`). While the row is open, a full-width
+ * hairline under it marks where the work starts; a closed row has no line.
  *
- * A tap opens the work inline, the way web and Codex read it: the agent's
- * interim text in full, and between two sentences one burst line named by what
- * it did ("Ran 9 commands, read 2 files"). That line still opens the activity
- * sheet on its steps. `SessionTurn` renders the work as siblings under this row
- * while `open`; the row only owns the toggle. Instant, no fold animation.
- *
- * `SessionTurn` mounts this only once the turn has settled; while the turn
- * works the segments stream as the plain list.
+ * The row owns only the toggle. `SessionTurn` keeps every segment in one keyed
+ * list and hides the work in place while the row is closed, so an opened row
+ * reads in call order and nothing remounts. Instant, no fold animation.
  */
 
-import { Pressable } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import { workedForLabel } from '@kortix/sdk';
 import { Text } from '@/components/ui/text';
 import { CaretDownIcon, CaretRightIcon } from '@/lib/icons';
@@ -38,9 +34,18 @@ export function WorkRow({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
-      hitSlop={{ top: 6, bottom: 6 }}
+      hitSlop={{ top: 6 }}
       onPress={onToggle}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: TURN_SPACE.gap2 }}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: TURN_SPACE.gap2,
+        ...(open && {
+          paddingBottom: TURN_SPACE.gap2,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: palette.border,
+        }),
+      }}
     >
       <Text variant="muted" numberOfLines={1} style={[TURN_TYPE.sm, TABULAR, { flexShrink: 1, color: palette.muted70 }]}>
         {workedForLabel(durationMs)}

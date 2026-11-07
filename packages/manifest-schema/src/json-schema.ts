@@ -39,6 +39,7 @@
  *     `enabledValueSchema` — not left to this warning-level exemption.
  */
 
+import { HUMAN_ONLY, toWorkspaceAction } from '@kortix/shared/workspace-actions';
 import { IMPORT_PATH_PATTERN } from './imports';
 import { AGENT_FILE_PATTERN, TOOL_FILE_PATTERN } from './layout';
 import {
@@ -52,6 +53,8 @@ import {
   ENV_NAME_RE,
   DEPRECATED_KORTIX_PERMISSION_ALIASES,
   GRANTABLE_KORTIX_PERMISSIONS,
+  GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
+  RETIRED_KORTIX_PERMISSIONS,
   HEX_COLOR_RE_V2,
   PI_PACKAGE_NAME_RE,
   PI_PACKAGE_NPM_RE,
@@ -159,10 +162,10 @@ const APP_GRANT_ENTRY_PATTERN = '^(?:[a-z0-9][a-z0-9_-]{0,127}|\\*)$';
  *  grantable-action enum. */
 function grantSetSchema(itemSchema: JsonSchemaFragment = NON_BLANK_STRING): JsonSchemaFragment {
   return {
-    description: 'An allowlist of names, or the "all" / "none" sentinel. "*" (alone or in the list) means "all".',
+    description: '"*" (every name; `all` is its alias), "none", or a list of names. A list that holds "*" is every name.',
     oneOf: [
       { type: 'array', items: itemSchema },
-      normalizedEnumSchema(['all', '*', 'none', '']),
+      normalizedEnumSchema(['*', 'all', 'none', '']),
     ],
   };
 }
@@ -180,13 +183,23 @@ function kortixPermissionsEnum(): readonly string[] {
   // still resolve), so an editor must not red-squiggle a file that passes
   // `kortix validate`. They are absent from the grantable catalog, so nothing
   // presents them as a live choice.
-  return [...GRANTABLE_KORTIX_PERMISSIONS, ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES), '*'];
+  // The retired actions are in it for the same reason: `kortix validate` only warns on them.
+  // The workspace names are accepted everywhere the legacy names are.
+  return [
+    ...GRANTABLE_KORTIX_PERMISSIONS,
+    ...GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS,
+    ...Object.keys(DEPRECATED_KORTIX_PERMISSION_ALIASES),
+    ...RETIRED_KORTIX_PERMISSIONS,
+    // HUMAN_ONLY validates with a warning (it grants nothing), so it is accepted here too.
+    ...[...HUMAN_ONLY].flatMap((action) => [action, toWorkspaceAction(action)]),
+    '*',
+  ];
 }
 
 function kortixPermissionsGrantSetSchema(): JsonSchemaFragment {
   return {
     ...grantSetSchema({ type: 'string', enum: [...kortixPermissionsEnum()] }),
-    description: 'Kortix permissions: the project.* IAM actions this agent may exercise, or "all" / "none".',
+    description: 'Kortix permissions: the workspace.* IAM actions (or their legacy names) this agent may exercise, "*" (every one; alias `all`) or "none". Minting credentials and moving money are reserved for people.',
   };
 }
 
@@ -202,14 +215,28 @@ function deprecatedKortixCliGrantSetSchema(): JsonSchemaFragment {
   };
 }
 
+/** One permission action: `allow`, `ask` or `deny`. `"*"` and `all` (any case) also mean `allow` (`normalizePermissionAction`). */
+function permissionActionSchema(): JsonSchemaFragment {
+  return {
+    type: 'string',
+    description: '`allow`, `ask` or `deny`. `"*"` and `all` also mean `allow`.',
+    anyOf: [{ enum: [...PERMISSION_ACTIONS_V2] }, everyWordSchema()],
+  };
+}
+
+/** `"*"` or `all` in any case, padded or not: every name (`isEveryGrant`). */
+function everyWordSchema(): JsonSchemaFragment {
+  return { pattern: `^\\s*(?:\\*|${caseInsensitiveLiteral('all')})\\s*$(?![\\s\\S])` };
+}
+
 /** `PermissionRuleConfig`: a bare action, or a glob-pattern → action map. */
 function permissionRuleSchema(): JsonSchemaFragment {
   return {
     oneOf: [
-      { type: 'string', enum: [...PERMISSION_ACTIONS_V2] },
+      permissionActionSchema(),
       {
         type: 'object',
-        additionalProperties: { type: 'string', enum: [...PERMISSION_ACTIONS_V2] },
+        additionalProperties: permissionActionSchema(),
       },
     ],
   };
@@ -220,11 +247,11 @@ function permissionRuleSchema(): JsonSchemaFragment {
  *  `validatePermissionConfig` in `./index.ts`). */
 function permissionConfigSchema(): JsonSchemaFragment {
   const actionOnlyProps = Object.fromEntries(
-    PERMISSION_ACTION_ONLY_KEYS_V2.map((key) => [key, { type: 'string', enum: [...PERMISSION_ACTIONS_V2] }]),
+    PERMISSION_ACTION_ONLY_KEYS_V2.map((key) => [key, permissionActionSchema()]),
   );
   return {
     oneOf: [
-      { type: 'string', enum: [...PERMISSION_ACTIONS_V2] },
+      permissionActionSchema(),
       {
         type: 'object',
         properties: { ...actionOnlyProps },
@@ -526,6 +553,10 @@ function onRunTriggerSchema(): JsonSchemaFragment {
       max_runs_per_hour: { type: 'integer', minimum: 1, default: 60, description: 'Runs the trigger starts in any 60 minutes.' },
       max_runs_per_day: { type: 'integer', minimum: 1, description: 'Runs the trigger starts in a UTC day.' },
       max_lateness: { ...durationSchema, description: 'Schedules only, `60s` or more. A missed fire later than this does not run.' },
+      expect_event_within: {
+        ...durationSchema,
+        description: 'App events only, `5m` or more. No event for this long tells the trigger\'s watchers once; the next event clears it.',
+      },
       overlap: {
         type: 'string',
         enum: ['skip', 'allow'],
@@ -627,6 +658,8 @@ function triggerSchema(): JsonSchemaFragment {
       // `type: cron` only — the misfire bound. Its 60s floor is the imperative
       // validator's.
       max_lateness: durationSchema,
+      // `type: app` only — the silence alert. Its 5m floor is the imperative validator's.
+      expect_event_within: durationSchema,
       // Any trigger type: runs started in any 60 minutes (60 when unset) and
       // in a UTC day (KRTX-1721).
       max_runs_per_hour: { type: 'integer', minimum: 1 },
@@ -731,6 +764,11 @@ function triggerSchema(): JsonSchemaFragment {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'app'] } }, required: ['type'] },
         then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
+      },
+      {
+        // The silence alert exists only on an app trigger.
+        if: { properties: { type: { enum: ['cron', 'webhook', 'event'] } }, required: ['type'] },
+        then: { properties: { expect_event_within: false } },
       },
       {
         // The misfire bound and `every` exist only on a cron trigger.
@@ -888,15 +926,20 @@ function connectorSchema(): JsonSchemaFragment {
   };
 }
 
+/** `tools: "*"` (alias `all`, any case) or `none`. */
+function toolsWordSchema(): JsonSchemaFragment {
+  return { type: 'string', anyOf: [{ enum: ['*', 'all', 'none'] }, everyWordSchema()] };
+}
+
 /** `agents.<name>.tools` — which tools the agent may use (`AgentToolsV2`). */
 function agentToolsSchema(): JsonSchemaFragment {
   const names = { type: 'array', items: NON_BLANK_STRING };
   return {
     description:
       'Which tools this agent may use: harness tools (bash, read, edit, …), Kortix tools (web_search, memory, show, …) and project tools (top-level `tools`). ' +
-      '`all` (default) or `none`; a list allows only those; `{ exclude: [...] }` allows every tool but those. A map of tool name → boolean is the earlier form.',
+      '`"*"` (default; every tool; `all` is its alias) or `none`; a list allows only those; `{ exclude: [...] }` allows every tool but those. A map of tool name → boolean is the earlier form.',
     oneOf: [
-      { type: 'string', enum: ['all', 'none'] },
+      toolsWordSchema(),
       names,
       { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
       { type: 'object', not: { required: ['exclude'] }, additionalProperties: { type: 'boolean' } },
@@ -1181,7 +1224,7 @@ function namedGrantSchema(description: string, grant: JsonSchemaFragment = grant
 /** `agents.<name>.skills` / `.extensions` (v3): a named grant, or `{ exclude: [...] }`. */
 function excludableGrantSchema(description: string): JsonSchemaFragment {
   return {
-    description: `${description} "all", "none" (default), a list of names, or \`{ exclude: [names] }\` for every name but those.`,
+    description: `${description} "*" (every name; alias \`all\`), "none" (default), a list of names, or \`{ exclude: [names] }\` for every name but those.`,
     oneOf: [
       grantSetSchema(),
       { type: 'object', required: ['exclude'], properties: { exclude: { type: 'array', items: NON_BLANK_STRING } }, additionalProperties: false },
@@ -1231,7 +1274,7 @@ function agentBlockV3Schema(): JsonSchemaFragment {
       permission: {
         ...permission,
         default: 'allow',
-        description: 'Which tool calls run, ask a person, or never run. `skill` and `task` belong to `skills` and `subagents`.',
+        description: 'Which tool calls run, ask a person, or never run: `allow`, `ask` or `deny` (`"*"` and `all` also mean `allow`). `skill` and `task` belong to `skills` and `subagents`.',
       },
       prompt: { ...NON_BLANK_STRING, description: 'The system prompt. Set `prompt` or `prompt_file`, not both.' },
       prompt_file: { type: 'string', pattern: AGENT_FILE_PATTERN, description: 'A repository path to a `.md` file. The whole file is the system prompt.' },
@@ -1251,11 +1294,11 @@ function agentBlockV3Schema(): JsonSchemaFragment {
           "What happens when the session's context fills. `record`: the agent continues at once in a fresh context and searches the session's full record, word for word, when it needs a detail; nothing is summarized. `summary`: a model call writes a summary of the conversation and the agent continues from it.",
       },
       tools: {
-        default: 'all',
+        default: '*',
         description:
-          'The tools the agent may call: built-in tools, Kortix tools and registered tools. A list allows only those. `{ exclude: [bash] }` allows every tool but those.',
+          'The tools the agent may call: built-in tools, Kortix tools and registered tools. `"*"` (quoted; `all` is its alias) is every tool, `none` is none. A list allows only those. `{ exclude: [bash] }` allows every tool but those.',
         oneOf: [
-          { type: 'string', enum: ['all', 'none'] },
+          toolsWordSchema(),
           names,
           { type: 'object', required: ['exclude'], properties: { exclude: names }, additionalProperties: false },
         ],
@@ -1465,7 +1508,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
       },
       spaces: {
         type: ['object', 'null'],
-        description: 'Spaces: channels with a room (always the first tab) and configured tabs. Agents join one with `agents.<name>.space`.',
+        description: 'Spaces: channels with configured tabs. Agents join one with `agents.<name>.space`.',
         propertyNames: { pattern: SPACE_SLUG_RE.source },
         additionalProperties: {
           type: 'object',
@@ -1480,7 +1523,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
             },
             tabs: {
               type: 'array',
-              description: 'The tabs after the room, in order. Absent: the default set.',
+              description: 'The tabs, in order. Absent: the default set.',
               items: {
                 type: 'object',
                 required: ['type'],
@@ -1501,7 +1544,7 @@ export function buildManifestSchema(): JsonSchemaFragment {
                       properties: {
                         type: { type: 'string', enum: ['chat', 'artifact', 'app', 'iframe', 'text'] },
                         label: { type: 'string' },
-                        room: { type: 'string' },
+                        room: { type: 'string', deprecated: true, description: 'Retired with Rooms (2026-11); ignored.' },
                         path: { type: 'string' },
                         app: { type: 'string' },
                         url: { type: 'string' },

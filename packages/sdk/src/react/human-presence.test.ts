@@ -128,7 +128,7 @@ describe('watchHumanPresence', () => {
 
 // KRTX-1742: a closing tab must end its lease at once. Otherwise the lease
 // outlives the tab by up to 90 s and suppresses the phone and Web Push.
-// Only with `pageExit` on: the project's `notification_center` flag.
+// Only with `pageExit` on: `useSession`'s `presencePageExit`, default true.
 describe('watchHumanPresence on pagehide', () => {
   test('pagehide reports absent once, and the page stays absent until it is shown or used', () => {
     const f = fakeEnv();

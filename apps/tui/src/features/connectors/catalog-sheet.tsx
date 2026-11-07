@@ -18,6 +18,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { kortix } from '../../kortix.ts';
+import { errorText } from '../../lib/errors.ts';
 import { openUrl } from '../../lib/open-url.ts';
 import { printable } from '../../lib/printable.ts';
 import { theme } from '../../theme.ts';
@@ -39,10 +40,6 @@ export interface CatalogSheetProps {
   onBusy(busy: boolean): void;
   /** Install added (or found) this profile: open it. `addAccount`: open Add account. */
   onInstalled(slug: string, addAccount: boolean): void;
-}
-
-function errorText(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function wayKind(variant: DiscoverConnectorVariant): string {
@@ -178,7 +175,7 @@ export function CatalogSheet({
         return;
       }
       if (!data.canWrite) {
-        onToast('Installing a connector needs permission to manage the project’s connectors.', 'error');
+        onToast('Installing a connector needs permission to manage the workspace’s connectors.', 'error');
         return;
       }
       setNaming({ value: entry.name });

@@ -1,6 +1,6 @@
 /**
  * The one abort classifier. Every producer of an "this turn was aborted"
- * error in this codebase — the SDK's own optimistic patch, the real opencode
+ * error in this codebase — the SDK's own optimistic patch, the real runtime
  * wire error, and a plain `AbortController`/`fetch` abort — ends up here.
  *
  * Before this file, FOUR divergent detectors existed across `apps/web` and
@@ -16,10 +16,10 @@
  *   message when the user hits Stop, or when a runtime disposes mid-stream.
  *   `{ name: "AbortError", data: { message: string } }`. See
  *   `react/use-session-send.ts` (`applyOptimisticAbort`) and
- *   `react/use-opencode-events/use-event-stream-refs.ts`
+ *   `react/use-runtime-events/use-event-stream-refs.ts`
  *   (`markSessionAbortedLocally`).
- * - `MessageAbortedError` — the real opencode wire shape, one member of
- *   `AssistantMessage['error']` (`@opencode-ai/sdk` `types.gen.d.ts`).
+ * - `MessageAbortedError` — the real runtime wire shape, one member of
+ *   `AssistantMessage['error']` (`core/runtime/runtime-types.ts`).
  *   `{ name: "MessageAbortedError", data: { message: string } }`.
  * - A `DOMException`/`Error`-shaped `AbortError` from a real
  *   `AbortController`/`fetch` abort. `.name === "AbortError"`.
@@ -127,9 +127,9 @@ export const ABORT_REASONS = [
    *  click, patched instantly so the "Interrupted" row appears before the
    *  SSE round-trip. */
   'user',
-  /** `markSessionAbortedLocally` (`react/use-opencode-events/use-event-stream-refs.ts`),
+  /** `markSessionAbortedLocally` (`react/use-runtime-events/use-event-stream-refs.ts`),
    *  invoked from the `server.instance.disposed` handler in `handle-event.ts`.
-   *  Pure infrastructure — OpenCode disposed and respawned mid-stream — for
+   *  Pure infrastructure — the runtime disposed and respawned mid-stream — for
    *  EVERY non-idle session in the tab, not a user action. Must render
    *  nothing: a respawn that recovers cleanly should not scar the transcript. */
   'runtime-disposed',
@@ -144,14 +144,13 @@ export type AbortReason = (typeof ABORT_REASONS)[number];
 /**
  * Members that NO code path writes today. Read this before reading a zero.
  *
- * `'orphan-finalized'` is reserved for the sandbox daemon's orphan-turn
- * finalizer (`apps/kortix-sandbox-agent-server/src/main.ts`,
- * `finalizeOrphanedTurn` / `abortOpencodeTurn`). That finalizer aborts through
- * OpenCode's OWN `/session/{id}/abort` REST endpoint — a bare `POST` with no
- * body — so the resulting `MessageAbortedError` is entirely opencode's wire
- * shape. There is no hook to inject a client-chosen `data.reason` into it;
- * doing so would mean forking opencode's abort response, which is worse than
- * leaving it untagged. So a genuine wire abort (no synthetic patch involved)
+ * `'orphan-finalized'` is reserved for an orphan-turn finalizer. The daemon's
+ * OpenCode-era finalizer (`finalizeOrphanedTurn`, deleted with the OpenCode
+ * harness) aborted through the runtime's OWN `/session/{id}/abort` REST
+ * endpoint — a bare `POST` with no body — so the resulting
+ * `MessageAbortedError` was entirely the runtime's wire shape. There is no hook
+ * to inject a client-chosen `data.reason` into it; doing so would mean forking
+ * the runtime's abort response, which is worse than leaving it untagged. So a genuine wire abort (no synthetic patch involved)
  * stays reason-less on purpose — see `abortErrorReason`'s doc comment.
  *
  * `'wake'` is reserved for a not-yet-built producer (a session woken from a
@@ -169,7 +168,7 @@ export const ABORT_REASONS_NOT_YET_EMITTED = [
  * The machine-readable reason an abort happened, when the producer sent one
  * (`data.reason`, e.g. `'runtime-disposed'`). Set by `applyOptimisticAbort`
  * (`'user'`) and `markSessionAbortedLocally` (`'runtime-disposed'`). A real
- * opencode wire `MessageAbortedError` — the daemon's own `/abort` call, see
+ * runtime wire `MessageAbortedError` — the daemon's own `/abort` call, see
  * `ABORT_REASONS_NOT_YET_EMITTED` above — carries no `data.reason` and never
  * will, so this returns `undefined` for it: that is a genuine, once-only
  * cut turn, not a fabricated marker, and callers render it as "Interrupted"

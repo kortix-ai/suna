@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { workspaceIdFromEnv } from './workspace-id'
 
 /**
  * Env contract for kortix-sandbox-agent-server.
@@ -163,7 +164,8 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_BRANCH_FETCH_ATTEMPTS: env.KORTIX_BRANCH_FETCH_ATTEMPTS,
     KORTIX_BRANCH_FETCH_DELAY: env.KORTIX_BRANCH_FETCH_DELAY,
     KORTIX_PROJECT_AUTO_CLONE: env.KORTIX_PROJECT_AUTO_CLONE,
-    KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID,
+    // KORTIX_WORKSPACE_ID first, then the older KORTIX_PROJECT_ID (same value).
+    KORTIX_PROJECT_ID: workspaceIdFromEnv(env) || undefined,
     KORTIX_API_URL: env.KORTIX_API_URL,
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,

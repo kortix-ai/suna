@@ -31,8 +31,6 @@ function read(overrides: Partial<RuntimeProjectionRead> = {}): RuntimeProjection
         harness: 'opencode',
         runtime_session_id: 'ses_abc',
         harness_version: '1.18.23',
-        opencode_session_id: 'ses_abc',
-        opencode_version: '1.18.23',
         daemon_build: 1756240000,
         agent_config_etag: 'ff8a8b4f',
         head_seq: { ses_abc: 2016 },
@@ -44,7 +42,7 @@ function read(overrides: Partial<RuntimeProjectionRead> = {}): RuntimeProjection
       source: 'daemon_push',
       capturedAt: new Date(NOW - 60_000),
     },
-    pinnedOpencodeSessionId: 'ses_abc',
+    pinnedRuntimeSessionId: 'ses_abc',
     runtimeRunning: true,
     ...overrides,
   };
@@ -61,7 +59,7 @@ describe('resolveRuntimeLeg', () => {
     // The cursor a client hands straight to `stream(?epoch=&since=)`.
     expect(leg.epoch).toBe('bmtaokkdb0piayh');
     expect(leg.seq).toBe(41);
-    expect(leg.identity.opencode_version).toBe('1.18.23');
+    expect(leg.identity.harness_version).toBe('1.18.23');
     expect(leg.state).toMatchObject({ seq: 41 });
   });
 
@@ -71,14 +69,14 @@ describe('resolveRuntimeLeg', () => {
   });
 
   test('a projection from a DIFFERENT OpenCode root is refused (the ghost rule)', () => {
-    const leg = resolveRuntimeLeg(read({ pinnedOpencodeSessionId: 'ses_reprinned' }), NOW);
+    const leg = resolveRuntimeLeg(read({ pinnedRuntimeSessionId: 'ses_reprinned' }), NOW);
     expect(leg).toEqual({ known: false, reason: 'identity_mismatch' });
   });
 
   test('a session with no pin yet is NOT a mismatch', () => {
     // A cold box mid-boot has no pin. Refusing here would blank the roster for
     // exactly the session that most needs it painted.
-    const leg = resolveRuntimeLeg(read({ pinnedOpencodeSessionId: null }), NOW);
+    const leg = resolveRuntimeLeg(read({ pinnedRuntimeSessionId: null }), NOW);
     expect(leg.known).toBe(true);
   });
 
@@ -119,8 +117,8 @@ describe('projectionIdentity', () => {
     expect(
       projectionIdentity({
         identity: {
-          opencode_session_id: 'ses_x',
-          opencode_version: '1.18.23',
+          runtime_session_id: 'ses_x',
+          harness_version: '1.18.23',
           daemon_build: 42,
           agent_config_etag: 'abc',
           head_seq: { ses_x: 7 },
@@ -131,8 +129,6 @@ describe('projectionIdentity', () => {
       harness: null,
       runtime_session_id: 'ses_x',
       harness_version: '1.18.23',
-      opencode_session_id: 'ses_x',
-      opencode_version: '1.18.23',
       daemon_build: 42,
       agent_config_etag: 'abc',
       head_seq: { ses_x: 7 },
@@ -150,8 +146,6 @@ describe('projectionIdentity', () => {
       harness: 'pi',
       runtime_session_id: 'ses_pi',
       harness_version: 'pi-agent-core@0.85.1',
-      opencode_session_id: 'ses_pi',
-      opencode_version: 'pi-agent-core@0.85.1',
     });
   });
 
@@ -161,13 +155,11 @@ describe('projectionIdentity', () => {
       harness: null,
       runtime_session_id: null,
       harness_version: null,
-      opencode_session_id: null,
-      opencode_version: null,
       daemon_build: null,
       agent_config_etag: null,
       head_seq: null,
     });
-    expect(projectionIdentity(null).opencode_session_id).toBeNull();
+    expect(projectionIdentity(null).runtime_session_id).toBeNull();
   });
 
   test('an empty-string id reads as absent, so it can never be "matched"', () => {

@@ -54,13 +54,13 @@ Adding a capability means connecting one more platform.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the operations skill and the hourly health check, and opens a change request for you to review. Prefer
 clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a Slack control-pane agent in this project.
+  code={`Set up a Slack control-pane agent in this workspace.
 
 1. Create the agent agents/slack-control-pane.md. Its job is to run cross-platform operations tasks when someone @-mentions it in a Slack thread, and to reply in that thread. It may use the Linear and Stripe connectors and the GH_TOKEN and DATABASE_URL secrets.
 
@@ -82,7 +82,7 @@ clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect Stripe and Linear. Add a GitHub
+Open **Connectors** in your workspace and connect Stripe and Linear. Add a GitHub
 token and a read-only database URL as secrets, and connect Slack as a channel
 so a mention reaches the agent. Connector credentials are brokered server-side
 and never enter the agent's machine.
@@ -121,7 +121,7 @@ The change request added this heartbeat to `kortix.yaml`. It runs every hour
 and only checks that each credential still works. The real work starts when
 someone @-mentions the agent in a Slack thread, and each mention runs in a new
 session on its own cloud computer. To change the interval, edit the cron line,
-or open **Triggers** in the project.
+or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

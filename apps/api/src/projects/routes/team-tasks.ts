@@ -35,7 +35,7 @@ import {
   type TeamCaller,
 } from '../team-tasks/service';
 
-const LeadParams = z.object({ projectId: z.string().uuid(), sessionId: z.string().min(1).max(128) });
+const LeadParams = z.object({ workspaceId: z.string().uuid(), sessionId: z.string().min(1).max(128) });
 const TaskParams = LeadParams.extend({ seq: z.coerce.number().int().positive() });
 
 /** The lead, the flag, and who calls (`TeamCaller`). */
@@ -75,28 +75,28 @@ function taskError(c: Context, err: unknown) {
 
 export function registerTeamTasksRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/sessions/{sessionId}/tasks', tags: ['sessions'],
+    method: 'get', path: '/{workspaceId}/sessions/{sessionId}/tasks', tags: ['sessions'],
     summary: "List a team's tasks",
     description: '`sessionId` is the lead. Tasks in number order; `blocked` is true while a task in `blocked_by` is not completed. Flag `agent_teams`.',
     ...auth,
     request: { params: LeadParams },
     responses: { 200: json(z.object({ tasks: z.array(SessionTaskSchema) }), 'The tasks'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const access = await authorizeTeam(c, projectId, sessionId, 'read');
     if (!access.ok) return access.response;
     return c.json({ tasks: await listTasks(sessionId) }, 200);
   });
 
   projectsApp.openapi(createRoute({
-    method: 'post', path: '/{projectId}/sessions/{sessionId}/tasks', tags: ['sessions'],
+    method: 'post', path: '/{workspaceId}/sessions/{sessionId}/tasks', tags: ['sessions'],
     summary: 'Add a task to a team',
     description: '`owner` is a teammate handle; `blocked_by` lists task numbers of this team. Flag `agent_teams`.',
     ...auth,
     request: { params: LeadParams, body: { required: true, content: { 'application/json': { schema: SessionTaskCreateBodySchema } } } },
     responses: { 201: json(SessionTaskSchema, 'The task'), ...errors(400, 403, 404, 409) },
   }), async (c) => {
-    const { projectId, sessionId } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId } = c.req.valid('param');
     const access = await authorizeTeam(c, projectId, sessionId, 'write');
     if (!access.ok) return access.response;
     try {
@@ -112,13 +112,13 @@ export function registerTeamTasksRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/sessions/{sessionId}/tasks/{seq}', tags: ['sessions'],
+    method: 'get', path: '/{workspaceId}/sessions/{sessionId}/tasks/{seq}', tags: ['sessions'],
     summary: 'Read one task of a team',
     ...auth,
     request: { params: TaskParams },
     responses: { 200: json(SessionTaskSchema, 'The task'), ...errors(400, 403, 404, 409) },
   }), async (c) => {
-    const { projectId, sessionId, seq } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId, seq } = c.req.valid('param');
     const access = await authorizeTeam(c, projectId, sessionId, 'read');
     if (!access.ok) return access.response;
     try {
@@ -129,7 +129,7 @@ export function registerTeamTasksRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'patch', path: '/{projectId}/sessions/{sessionId}/tasks/{seq}', tags: ['sessions'],
+    method: 'patch', path: '/{workspaceId}/sessions/{sessionId}/tasks/{seq}', tags: ['sessions'],
     summary: 'Change or claim a task',
     description:
       '`claim: true` takes the task for the calling session in one step: only a pending, unowned task whose blockers are all completed. ' +
@@ -138,7 +138,7 @@ export function registerTeamTasksRoutes(): void {
     request: { params: TaskParams, body: { required: true, content: { 'application/json': { schema: SessionTaskUpdateBodySchema } } } },
     responses: { 200: json(SessionTaskSchema, 'The task'), ...errors(400, 403, 404, 409) },
   }), async (c) => {
-    const { projectId, sessionId, seq } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId, seq } = c.req.valid('param');
     const access = await authorizeTeam(c, projectId, sessionId, 'write');
     if (!access.ok) return access.response;
     try {
@@ -149,14 +149,14 @@ export function registerTeamTasksRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'delete', path: '/{projectId}/sessions/{sessionId}/tasks/{seq}', tags: ['sessions'],
+    method: 'delete', path: '/{workspaceId}/sessions/{sessionId}/tasks/{seq}', tags: ['sessions'],
     summary: 'Delete a task of a team',
     description: 'Tasks that waited for it no longer do. Flag `agent_teams`.',
     ...auth,
     request: { params: TaskParams },
     responses: { 200: json(z.object({ deleted: z.literal(true) }), 'Deleted'), ...errors(400, 403, 404, 409) },
   }), async (c) => {
-    const { projectId, sessionId, seq } = c.req.valid('param');
+    const { workspaceId: projectId, sessionId, seq } = c.req.valid('param');
     const access = await authorizeTeam(c, projectId, sessionId, 'write');
     if (!access.ok) return access.response;
     try {

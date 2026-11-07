@@ -44,7 +44,7 @@ function bundleBody(overrides: Record<string, unknown> = {}) {
       source: 'mirror',
       complete: true,
       captured_at: '2026-08-26T11:59:00.000Z',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       message_count: 2,
       messages: [{ info: { id: 'msg_1' }, parts: [] }],
     },
@@ -93,7 +93,7 @@ describe('the session-open bundle coalescer', () => {
       claimOpenBundle(PID, SID),
     ]);
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toContain('/projects/P1/sessions/S1/snapshot');
+    expect(requests[0]).toContain('/workspaces/P1/sessions/S1/snapshot');
     for (const claim of claims) expect(claim?.observed_at).toBe('2026-08-26T12:00:00.000Z');
   });
 

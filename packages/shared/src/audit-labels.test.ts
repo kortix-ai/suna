@@ -50,10 +50,21 @@ function badTitle(title: string): boolean {
 }
 
 describe('route lookup', () => {
+  test('a row written before the 2026-11-05 param rename (`:projectId`, `:accountId`) keeps its label', () => {
+    expect(auditLabelForRoute('GET', '/v1/projects/:projectId/search')).toEqual(
+      auditLabelForRoute('GET', '/v1/projects/:workspaceId/search'),
+    );
+    expect(auditLabelForRoute('GET', '/v1/accounts/:accountId/audit')).not.toBeNull();
+    expect(auditLabelForRoute('GET', '/v1/accounts/:accountId/audit')).toEqual(
+      auditLabelForRoute('GET', '/v1/accounts/:workspaceId/audit'),
+    );
+    expect(auditLabelForHttpAction('GET /v1/projects/:projectId/search')?.action).toBe('drive.file.search');
+  });
+
   test('Drive index search and Git repository search round-trip to distinct audit routes', () => {
     const searches = [
-      { route: '/v1/projects/:projectId/search', action: 'drive.file.search', title: 'Searched project Drive' },
-      { route: '/v1/projects/:projectId/files/search', action: 'file.search', title: 'Searched project files' },
+      { route: '/v1/projects/:workspaceId/search', action: 'drive.file.search', title: 'Searched project Drive' },
+      { route: '/v1/projects/:workspaceId/files/search', action: 'file.search', title: 'Searched project files' },
     ];
     for (const { route, action, title } of searches) {
       expect(auditLabelForRoute('GET', route)).toEqual({ action, title });
@@ -154,6 +165,14 @@ describe('action lookup', () => {
       must(AUDIT_EVENT_LABELS['opencode.tool.updated'], 'opencode.tool.updated'),
     );
     expect(auditLabelForAction('opencode.session.idle')?.action).toBe('opencode.session.idle');
+    // New rows name the same events `agent.*`.
+    expect(auditLabelForAction('agent.message.part.reasoning.updated')?.title).toBe(
+      must(AUDIT_EVENT_LABELS['agent.message.part.*'], 'agent.message.part.*'),
+    );
+    expect(auditLabelForAction('agent.tool.updated')?.title).toBe(
+      must(AUDIT_EVENT_LABELS['agent.tool.updated'], 'agent.tool.updated'),
+    );
+    expect(auditLabelForAction('agent.session.idle')?.title).toBe(must(AUDIT_EVENT_LABELS['agent.*'], 'agent.*'));
   });
 
   test('a route action names the route it labels; an event action names none', () => {

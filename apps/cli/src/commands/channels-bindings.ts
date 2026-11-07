@@ -19,7 +19,7 @@ interface ChannelBinding {
   /** A Teams channel thread: its session's title, which tells threads of one channel apart. */
   threadTitle?: string | null;
   agentName: string | null;
-  opencodeModel: string | null;
+  model: string | null;
   conversationPolicy: ConversationPolicy;
   installedAt: string;
   effectiveAgent: { agent: string; source: string };
@@ -60,7 +60,7 @@ export async function bindingsLs(
   let resp: ChannelBindingsResponse;
   try {
     resp = await ctx.client.get<ChannelBindingsResponse>(
-      `/projects/${ctx.projectId}/channels/bindings`,
+      `/workspaces/${ctx.projectId}/channels/bindings`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -83,14 +83,14 @@ export async function bindingsLs(
   );
   for (const b of resp.bindings) {
     const agent = `${b.effectiveAgent.agent}${b.agentName ? '' : ` ${C.faded}(${b.effectiveAgent.source})${C.reset}`}`;
-    const model = `${b.effectiveModel.model ?? 'auto'}${b.opencodeModel ? '' : ` ${C.faded}(${b.effectiveModel.source})${C.reset}`}`;
+    const model = `${b.effectiveModel.model ?? 'auto'}${b.model ? '' : ` ${C.faded}(${b.effectiveModel.source})${C.reset}`}`;
     process.stdout.write(
       `  ${pad(b.bindingId, idW)}  ${pad(bindingLabel(b), chW)}  ` +
         `${pad(b.platform, 8)}  ${pad(agent, 26)}  ${pad(model, 26)}  ${C.faded}${b.conversationPolicy}${C.reset}\n`,
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${resp.bindings.length} binding${resp.bindings.length === 1 ? '' : 's'} · project default agent: ${resp.projectDefaultAgent ?? '—'}${C.reset}\n` +
+    `\n  ${C.dim}${resp.bindings.length} binding${resp.bindings.length === 1 ? '' : 's'} · workspace default agent: ${resp.projectDefaultAgent ?? '—'}${C.reset}\n` +
       `  ${C.dim}Change one: ${C.reset}${C.cyan}kortix channels bind <bindingId> --agent <name>${C.reset}\n\n`,
   );
   return 0;
@@ -116,8 +116,8 @@ export async function bindingsPatch(
   const body: Record<string, unknown> = {};
   if (extra.agent) body.agentName = extra.agent;
   else if (extra.noAgent) body.agentName = null;
-  if (extra.model) body.opencodeModel = extra.model;
-  else if (extra.noModel) body.opencodeModel = null;
+  if (extra.model) body.model = extra.model;
+  else if (extra.noModel) body.model = null;
   if (extra.policy) body.conversationPolicy = extra.policy;
   if (Object.keys(body).length === 0) {
     return fail('Pass at least one of --agent/--no-agent, --model/--no-model, --policy.');
@@ -128,7 +128,7 @@ export async function bindingsPatch(
   let binding: ChannelBinding;
   try {
     binding = await ctx.client.patch<ChannelBinding>(
-      `/projects/${ctx.projectId}/channels/bindings/${encodeURIComponent(bindingId)}`,
+      `/workspaces/${ctx.projectId}/channels/bindings/${encodeURIComponent(bindingId)}`,
       body,
     );
   } catch (err) {

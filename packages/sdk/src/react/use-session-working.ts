@@ -29,6 +29,7 @@ import { usePollOwner } from './use-poll-owner';
 import {
   projectServerWorking,
   serverWorkingExpiryAtMs,
+  serverWorkingVerdictFresh,
   type SessionWorkingVerdict,
 } from '../core/session/working-server';
 import { useSessionStreamConnected } from './use-session-stream';
@@ -149,11 +150,11 @@ export function buildWorkingInputs(input: {
 export interface UseSessionWorkingOptions {
   enabled?: boolean;
   /**
-   * The OpenCode wire session id whose SSE status frames belong to this
+   * The runtime wire session id whose SSE status frames belong to this
    * session, when the host knows it.
    *
    * Two ids, deliberately: `sessionId` is the Kortix session (what `/turn` is
-   * addressed by), while the sync store is keyed by the wire id OpenCode
+   * addressed by), while the sync store is keyed by the wire id the runtime
    * assigns inside the sandbox. Passing the wrong one would read another
    * session's frames, so it is explicit rather than guessed.
    */
@@ -376,8 +377,11 @@ export function useSessionWorking(
     // session at three times its declared cadence — measured as 6 `/turn`
     // reads inside one 25 s open. Non-owners read the same entry the owner
     // refreshes, so nobody sees a staler answer; only the scheduling moved.
+    // A verdict past its age (`serverWorkingVerdictFresh`) no longer stands the poll down.
     refetchInterval: (query) =>
-      pollOwner && !streamConnected ? workingPollMs(project(query.state.data, Date.now())) : false,
+      pollOwner && !(streamConnected && serverWorkingVerdictFresh(query.state.data?.atMs, Date.now()))
+        ? workingPollMs(project(query.state.data, Date.now()))
+        : false,
     // Coming back to a tab is the moment a turn that started (or ended) while
     // it was hidden has to be on screen. A connected stream already says so.
     refetchOnWindowFocus: !streamConnected,
@@ -437,7 +441,10 @@ export function useSessionWorking(
   // The server decides while its stream is up; this tab adds only its own
   // unanswered send or Stop. Without the stream, the six-signal projection
   // over the `/turn` poll stays the answer.
-  const serverVerdict = canRead && streamConnected ? query.data?.working : undefined;
+  // A verdict past its age came from a stream that stopped reporting turns: it decides nothing.
+  const nowMs = Date.now();
+  const serverVerdict =
+    canRead && streamConnected && serverWorkingVerdictFresh(query.data?.atMs, nowMs) ? query.data?.working : undefined;
   const projection =
     serverVerdict && query.data
       ? projectServerWorking({
@@ -445,7 +452,7 @@ export function useSessionWorking(
           atMs: query.data.atMs,
           optimistic,
           abort,
-          nowMs: Date.now(),
+          nowMs,
         })
       : projectWorking(inputs);
 
@@ -459,7 +466,7 @@ export function useSessionWorking(
   // decides nothing: it asks the pure projection again with a newer `now`.
   const [, setExpiryTick] = useState(0);
   const expiryAtMs = serverVerdict
-    ? serverWorkingExpiryAtMs({ optimistic, abort })
+    ? serverWorkingExpiryAtMs({ optimistic, abort, atMs: query.data?.atMs })
     : workingExpiryAtMs(inputs);
   useEffect(() => {
     if (expiryAtMs === null) return;

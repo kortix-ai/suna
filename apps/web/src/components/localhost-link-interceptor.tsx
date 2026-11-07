@@ -7,7 +7,7 @@
  *
  * Routing:
  *
- *   - Plain left-click on a `/projects/[id]/sessions/[sessionId]` page →
+ *   - Plain left-click on a `/workspaces/[id]/sessions/[sessionId]` page →
  *     populate that session's preview tab (`session-preview:{sessionId}`
  *     in `useTabStore`), flip the side panel to Browser view, and let
  *     `BrowserPanel` render the iframe through the proxy.
@@ -47,7 +47,7 @@ import { getActivePanelSessionId, sessionPreviewTabId } from '@kortix/ui/interna
 import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
 import { useEffect } from 'react';
 
-// The session's panel is keyed by the OpenCode chatSessionId (registered by the
+// The session's panel is keyed by the runtime chatSessionId (registered by the
 // active SessionLayout), NOT the Kortix session id in the URL — those differ,
 // so the URL id would write to a key nothing reads (panel opens but the Browser
 // tab never selects). Null off-session → fall back to opening externally.

@@ -6,10 +6,12 @@ import type { AccountMembership, MeResponse } from '../api/types.ts';
 import { takeFlags } from '../command-argv.ts';
 import { emitJson, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
+import { NO_WORKSPACE_LINE } from '../api/no-workspace.ts';
+import { boundWorkspaceId, listWorkspaceRowsReport } from '../project-bind.ts';
 
 const HELP = help`Usage: kortix whoami [options]
 
-Print the currently authenticated user + active account on the
+Print the currently authenticated user + default workspace on the
 selected host.
 
 Shortcut for the active host — same as \`kortix hosts whoami\`. Use
@@ -40,7 +42,7 @@ export async function runWhoami(argv: string[]): Promise<number> {
 const TOKEN_HELP = help`Usage: kortix token [options]
 
 Print only the active token context on the selected host: the kind of
-credential in use and its project/session/agent grants — never the
+credential in use and its workspace/session/agent grants — never the
 secret value itself. Same as \`kortix whoami --token-only\`.
 
 Options:
@@ -94,7 +96,7 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
 
   let me: MeResponse;
   try {
-    me = await clientFromAuth(auth).get<MeResponse>('/accounts/me');
+    me = await clientFromAuth(auth).get<MeResponse>('/me');
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
@@ -117,8 +119,29 @@ export async function performWhoami(opts: PerformWhoamiOptions): Promise<number>
     whoamiTokenOnly(me);
     return 0;
   }
-  whoamiHuman(me, auth, resolvedHost, active, def);
+  whoamiHuman(me, auth, resolvedHost, active, def, await hasAnyWorkspace(auth, me, def));
   return 0;
+}
+
+/**
+ * Tell "pick one" apart from "none exists" from `/accounts/me` alone: a bound
+ * credential, a default, or a membership that names its workspace all mean
+ * one exists. Only memberships that name none (an account with no project,
+ * or several older projects) need the list read, and a failed read never
+ * claims "none".
+ */
+async function hasAnyWorkspace(auth: Auth, me: MeResponse, def: DefaultProjectRef | null): Promise<boolean> {
+  if (boundWorkspaceId(me) || def) return true;
+  if (me.accounts.length === 0) return false;
+  if (me.accounts.some((a) => a.workspace_id)) return true;
+  // An older server reports no workspace_id at all: an account is enough.
+  if (me.accounts.every((a) => a.workspace_id === undefined)) return true;
+  try {
+    const report = await listWorkspaceRowsReport(auth, undefined, me);
+    return report.rows.length > 0 || report.failed.length > 0;
+  } catch {
+    return true;
+  }
 }
 
 /** The machine-readable rendering (`--json`): the raw identity payload. */
@@ -134,6 +157,7 @@ function whoamiJson(
     url: auth.api_base,
     user_id: me.user_id,
     user_email: me.email || null,
+    workspace_id: boundWorkspaceId(me) ?? def?.project_id ?? null,
     account_id: active?.account_id ?? auth.account_id ?? null,
     account: active ?? null,
     accounts: me.accounts,
@@ -157,32 +181,42 @@ function whoamiTokenOnly(me: MeResponse): void {
   process.stdout.write('\n');
 }
 
-/** The default human rendering: identity, account, then the token context. */
+/** The default human rendering: identity, workspace, then the token context. */
 function whoamiHuman(
   me: MeResponse,
   auth: Auth,
   resolvedHost: string | null,
   active: AccountMembership | undefined,
   def: DefaultProjectRef | null,
+  hasWorkspace = me.accounts.length > 0,
 ): void {
   process.stdout.write(`\n  ${C.bold}${me.email || me.user_id}${C.reset}\n`);
   if (me.email) {
     process.stdout.write(`  ${C.dim}email     ${C.reset}${me.email}\n`);
   }
   process.stdout.write(`  ${C.dim}user_id   ${C.reset}${me.user_id}\n`);
-  if (active) {
+  const bound = boundWorkspaceId(me);
+  if (bound) {
+    // A workspace key, session or agent token reaches one workspace.
+    const owner = me.accounts.find((a) => a.workspace_id === bound);
+    const label = owner?.name ? `${owner.name} ${C.faded}(${bound}, ${owner.role ? `${owner.role}, ` : ''}bound)${C.reset}` : `${bound} ${C.faded}(bound)${C.reset}`;
+    process.stdout.write(`  ${C.dim}workspace ${C.reset}${label}\n`);
+  } else if (!hasWorkspace) {
+    // A new user belongs to no workspace: say how to get one.
+    process.stdout.write(`  ${C.dim}workspace ${C.reset}${C.dim}${NO_WORKSPACE_LINE}${C.reset}\n`);
+  } else if (def) {
+    const role = active && active.account_id === def.account_id ? `${active.role}, ` : '';
     process.stdout.write(
-      `  ${C.dim}account   ${C.reset}${active.name} ${C.faded}(${active.slug}, ${active.role})${C.reset}\n`,
+      `  ${C.dim}workspace ${C.reset}${def.name || def.project_id} ${C.faded}(${role}default)${C.reset}\n`,
+    );
+  } else {
+    process.stdout.write(
+      `  ${C.dim}workspace ${C.reset}${C.dim}none selected. Pick one with ${C.reset}${C.cyan}kortix workspaces use${C.reset}\n`,
     );
   }
-  if (me.accounts.length > 1) {
+  if (me.accounts.length > 1 && def && !bound) {
     process.stdout.write(
-      `  ${C.dim}${me.accounts.length} accounts total — switch with ${C.reset}${C.cyan}kortix accounts use <slug>${C.reset}\n`,
-    );
-  }
-  if (def) {
-    process.stdout.write(
-      `  ${C.dim}project   ${C.reset}${def.name || def.project_id} ${C.faded}(default)${C.reset}\n`,
+      `  ${C.dim}switch workspace with ${C.reset}${C.cyan}kortix workspaces use${C.reset}\n`,
     );
   }
   process.stdout.write(
@@ -203,7 +237,7 @@ function whoamiHuman(
 }
 
 /**
- * The token-kind label and the project/session/agent/connectors detail lines
+ * The token-kind label and the workspace/session/agent/connectors detail lines
  * that the `--token-only` block and the human summary both render.
  *
  * `fallbackKind` exists because the two renderings drifted before they were
@@ -218,10 +252,10 @@ function renderTokenContext(
   const kind = ctx?.session_id
     ? 'session token'
     : ctx?.project_id
-      ? 'project token'
+      ? 'workspace token'
       : ctx?.auth_type || fallbackKind;
   let details = '';
-  if (ctx?.project_id) details += `  ${C.dim}project   ${C.reset}${ctx.project_id}\n`;
+  if (ctx?.project_id) details += `  ${C.dim}workspace ${C.reset}${ctx.project_id}\n`;
   if (ctx?.session_id) details += `  ${C.dim}session   ${C.reset}${ctx.session_id}\n`;
   if (ctx?.agent) details += `  ${C.dim}agent     ${C.reset}${ctx.agent}\n`;
   if (ctx?.connectors != null) {

@@ -10,9 +10,9 @@
  * Acceptance 6: an email- or Slack-origin turn end → no row for the owner who
  * stands in as its creator; the same seed from the web → a row.
  *
- * All of the above runs on projects with the `notification_center` flag on.
- * A project with the flag off (the default) keeps the pre-KRTX-1742 contract:
- * the session creator's phones only, no context lookup, no inbox row.
+ * The main project stores `experimental.notification_center: false`. The flag
+ * graduated on 2026-11-06, so that override is inert: every case below runs
+ * the one notification path.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
@@ -31,7 +31,6 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { ExpoPushMessage } from '../notifications/expo-push';
 import { liveNotifierDeps, type NotifierDeps } from '../notifications/notifier';
-import type { LegacySessionPushDeps } from '../notifications/session-push-legacy';
 import { createPermissionPushGate } from '../notifications/permission-push';
 import { notifySessionEvent, type SessionPushEvent } from '../notifications/session-push';
 import { setSessionWatch } from '../notifications/watchers';
@@ -56,12 +55,12 @@ const BACKEND_SA = crypto.randomUUID(); // a backend's service account, with a p
 const PERSONAL = crypto.randomUUID(); // the owner of a personal account: account_id === user_id
 const users = [OWNER, A, B, C, W, OUTSIDER, PERSONAL];
 
-const FLAG_ON = { experimental: { notification_center: true } };
+/** Inert since the flag graduated (2026-11-06). */
+const STALE_OVERRIDE = { experimental: { notification_center: false } };
 
 let project: SeededProject;
+let sibling: SeededProject | undefined;
 let personal: SeededProject;
-/** The same account and members, the flag left at its default (off). */
-let legacy: SeededProject;
 
 interface Sent {
   expo: ExpoPushMessage[];
@@ -69,14 +68,13 @@ interface Sent {
 }
 let sent: Sent;
 let deps: NotifierDeps;
-/** The flag-off Expo sender, captured into `sent.expo`. */
-let legacyDeps: Partial<LegacySessionPushDeps>;
-/** How often a turn end's context thunk ran. */
-let contextLookups: number;
 
 beforeAll(async () => {
-  project = await seedProject('notify-recipients', { metadata: FLAG_ON });
-  legacy = await seedProject('notify-recipients-legacy', { accountId: project.account_id });
+  project = await seedProject('notify-recipients', { metadata: STALE_OVERRIDE });
+  // A legacy account (2 projects, split_pending): only there does an account
+  // member without a project role stay out of the project. In a 1:1
+  // workspace membership is access (design.md §3.2 C3).
+  sibling = await seedProject('notify-recipients-sibling', { accountId: project.account_id });
   const user = (id: string) =>
     sql`(${id}::uuid, ${`recipients-${id.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`;
   await db.execute(sql`
@@ -89,14 +87,12 @@ beforeAll(async () => {
   await insertIntoView(
     db,
     projectMembers,
-    [project, legacy].flatMap((where) =>
-      [A, B, C, W].map((userId) => ({
-        accountId: where.account_id,
-        projectId: where.project_id,
-        userId,
-        projectRole: 'member' as const,
-      })),
-    ),
+    [A, B, C, W].map((userId) => ({
+      accountId: project.account_id,
+      projectId: project.project_id,
+      userId,
+      projectRole: 'member' as const,
+    })),
   );
   // A push goes only to a token bound to a live app sign-in (KRTX-2242). Each
   // user's sign-in id is their user id: unique, and deleted with the user.
@@ -121,13 +117,13 @@ beforeAll(async () => {
   // A personal account: its id is its owner's user id.
   await db.insert(accounts).values({ accountId: PERSONAL, name: 'notify-recipients-personal' });
   await insertIntoView(db, accountMembers, [{ userId: PERSONAL, accountId: PERSONAL, accountRole: 'owner' }]);
-  personal = await seedProject('notify-recipients-personal', { accountId: PERSONAL, metadata: FLAG_ON });
+  personal = await seedProject('notify-recipients-personal', { accountId: PERSONAL });
 }, 30_000);
 
 afterAll(async () => {
   if (!project) return;
   await db.delete(pushDeviceTokens).where(inArray(pushDeviceTokens.userId, users));
-  const seeded = [project, legacy, personal].filter((where): where is SeededProject => !!where);
+  const seeded = [sibling, project, personal].filter((where): where is SeededProject => !!where);
   await db.delete(sessionSandboxes).where(inArray(sessionSandboxes.projectId, seeded.map((where) => where.project_id)));
   await removeSeeded(seeded);
   await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(users.map((id) => sql`${id}::uuid`), sql`, `)})`);
@@ -135,7 +131,6 @@ afterAll(async () => {
 
 beforeEach(() => {
   sent = { expo: [], webPush: [] };
-  contextLookups = 0;
   deps = liveNotifierDeps({
     pushEnabled: true,
     sendExpo: async (messages) => {
@@ -147,13 +142,6 @@ beforeEach(() => {
     },
     sendEmailNow: async () => 'sent',
   });
-  legacyDeps = {
-    enabled: true,
-    send: async (messages) => {
-      sent.expo.push(...messages);
-      return { tickets: [], removedTokens: [], failedMessages: 0 };
-    },
-  };
 });
 
 /** A visibility-'project' session by default, so every project member may open it. */
@@ -234,14 +222,7 @@ async function endTurn(
   const ref = await sessionRef(sessionId, where);
   return notifySessionEvent(
     { type: 'completion', sessionId, projectId: where.project_id, turnMessageId: messageId, ...extra },
-    {
-      notifierDeps: deps,
-      legacyDeps,
-      context: () => {
-        contextLookups += 1;
-        return turnEndNotificationContext(ref, messageId);
-      },
-    },
+    { notifierDeps: deps, context: () => turnEndNotificationContext(ref, messageId) },
   );
 }
 
@@ -560,99 +541,5 @@ describe('asks (question / permission)', () => {
       .from(notifications)
       .where(and(eq(notifications.sessionId, sessionId), eq(notifications.kind, 'permission')));
     expect(permissionRows).toHaveLength(2);
-  });
-});
-
-// The notification_center flag off (the default): exactly the pre-KRTX-1742
-// push. The session creator's phones, by the creator's device switches; no
-// prompter, watcher, mute or origin rule, no context lookup, no inbox row, no
-// Web Push.
-describe('a project with the notification_center flag off', () => {
-  async function legacyAsk(sessionId: string, requestId: string) {
-    let resolved = 0;
-    const outcome = await notifySessionEvent(
-      { type: 'question', sessionId, projectId: legacy.project_id, question: 'Which region?', requestId },
-      {
-        notifierDeps: deps,
-        legacyDeps,
-        context: async () => {
-          resolved += 1;
-          return { prompterUserId: B };
-        },
-      },
-    );
-    return { outcome, resolved };
-  }
-
-  test('B prompts in A`s session → only A`s phone, with the old payload; no row, no Web Push, no lookup', async () => {
-    const sessionId = await seedSession({ in: legacy });
-    await seedPrompt(sessionId, B, 'msg_off', { bindTurnIdentity: true }, legacy);
-    expect(await endTurn(sessionId, 'msg_off', {}, legacy)).toMatchObject({ sent: 1, reason: 'sent' });
-    expect(contextLookups).toBe(0);
-    expect(pushedTo()).toEqual([token(A)]);
-    expect(sent.expo[0]).toMatchObject({
-      title: 'Refactor the billing page',
-      body: 'Session complete. Tap to see the result.',
-      data: { type: 'completion', projectId: legacy.project_id, sessionId },
-    });
-    expect(sent.webPush).toEqual([]);
-    expect(await rowsFor(sessionId)).toEqual([]);
-  });
-
-  test('watcher rows and mutes are ignored: the creator alone is pushed', async () => {
-    const sessionId = await seedSession({ in: legacy });
-    await setSessionWatch(legacy.project_id, sessionId, C, true);
-    await setSessionWatch(legacy.project_id, sessionId, A, false);
-    await endTurn(sessionId, 'msg_watch', { type: 'error', errorMessage: 'Payment Required' }, legacy);
-    expect(pushedTo()).toEqual([token(A)]);
-    expect(sent.expo[0]!.body).toBe('The session stopped with an error.');
-  });
-
-  test('a Slack-origin turn end pushes the owner who stands in as its creator, as before', async () => {
-    const sessionId = await seedSession({ in: legacy, createdBy: OWNER, metadata: { source: 'slack', slack: { channel: 'C9' } } });
-    await endTurn(sessionId, 'msg_slack_off', {}, legacy);
-    expect(pushedTo()).toEqual([token(OWNER)]);
-    expect(await rowsFor(sessionId)).toEqual([]);
-  });
-
-  test('a question reaches the creator, never the trigger`s watchers', async () => {
-    const sessionId = await seedSession({ in: legacy });
-    const asked = await legacyAsk(sessionId, 'que_off');
-    expect(asked).toMatchObject({ outcome: { sent: 1, reason: 'sent' }, resolved: 0 });
-    expect(sent.expo.map((m) => [m.to, m.body])).toEqual([[token(A), 'Kortix has a question: Which region?']]);
-
-    // A trigger session's creator is the agent's service account: nobody is pushed.
-    const metadata = { trigger_kind: 'git', trigger_slug: 'nightly-off', source: 'trigger:cron' };
-    const unattended = await seedSession({ in: legacy, createdBy: SERVICE_ACCOUNT, origin: 'schedule', metadata });
-    await db.insert(triggerWatchers).values({ projectId: legacy.project_id, slug: 'nightly-off', userId: W });
-    sent.expo.length = 0;
-    expect((await legacyAsk(unattended, 'que_cron_off')).outcome).toEqual({ sent: 0, reason: 'no_access' });
-    expect(sent.expo).toEqual([]);
-    expect(await rowsFor(unattended)).toEqual([]);
-  });
-
-  test('a permission relayed twice with one request id pushes the creator once', async () => {
-    const sessionId = await seedSession({ in: legacy });
-    let resolved = 0;
-    const gate = createPermissionPushGate({
-      notify: (event, options) => notifySessionEvent(event, { ...options, notifierDeps: deps, legacyDeps }),
-    });
-    const request = {
-      sessionId,
-      projectId: legacy.project_id,
-      requestId: 'per_off',
-      context: async () => {
-        resolved += 1;
-        return askNotificationContext(await sessionRef(sessionId, legacy));
-      },
-    };
-    expect(await gate.notify(request)).toBe(true);
-    expect(await gate.notify(request)).toBe(false);
-    for (let i = 0; i < 50 && sent.expo.length < 1; i++) await Bun.sleep(20);
-    await Bun.sleep(50);
-
-    expect(sent.expo.map((m) => [m.to, m.body])).toEqual([[token(A), 'Kortix needs your approval to continue.']]);
-    expect(resolved).toBe(0);
-    expect(await rowsFor(sessionId)).toEqual([]);
   });
 });

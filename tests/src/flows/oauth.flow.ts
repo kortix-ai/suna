@@ -330,7 +330,7 @@ flow(
       "POST /v1/oauth/token",
       "GET /v1/oauth/userinfo",
       "POST /v1/oauth/revoke",
-      "GET /v1/accounts/me",
+      "GET /v1/me",
     ],
   },
   async (ctx) => {
@@ -418,7 +418,7 @@ flow(
     });
 
     await ctx.step("the access token is a first-class credential: /accounts/me → auth_type oauth; userinfo → sub", async () => {
-      const me = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${accessToken}` } });
+      const me = await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${accessToken}` } });
       me.status(200).body().has("$.token_context.auth_type", "oauth");
       const info = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/userinfo", { headers: { Authorization: `Bearer ${accessToken}` } });
       info.status(200).body().exists("$.sub").exists("$.email");
@@ -427,7 +427,7 @@ flow(
     let rotatedRefresh = "";
     const refresh = (token: string) =>
       ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: token }));
-    const me = (token: string) => ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${token}` } });
+    const me = (token: string) => ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${token}` } });
     const mintPair = async () => {
       const auth = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/authorize", {
         query: { client_id: clientId, redirect_uri: redirectUri, response_type: "code", scope: "profile kortix", code_challenge: challenge, code_challenge_method: "S256" },
@@ -502,7 +502,7 @@ flow(
     await ctx.step("revoke the refresh token → its access token is dead too; unknown token still 200", async () => {
       const r = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/revoke", form({ client_id: clientId, client_secret: secret, token: refreshToken }));
       r.status(200).body().has("$.revoked", true);
-      const dead = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${accessToken}` } });
+      const dead = await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${accessToken}` } });
       dead.status(401);
       const unknown = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/revoke", form({ client_id: clientId, client_secret: secret, token: "kortix_oat_nope" }));
       unknown.status(200).body().has("$.revoked", false);
@@ -525,11 +525,11 @@ flow(
       );
       pair.status(200);
       const { access_token: access, refresh_token: refresh } = pair.json<any>();
-      const live = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } });
+      const live = await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${access}` } });
       live.status(200);
       const r = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/revoke", form({ client_id: clientId, client_secret: secret, token: access }));
       r.status(200).body().has("$.revoked", true);
-      const dead = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } });
+      const dead = await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${access}` } });
       dead.status(401);
       const orphan = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, client_secret: secret, refresh_token: refresh }));
       orphan.status(400).body().has("$.error", "invalid_grant");
@@ -543,7 +543,7 @@ flow(
 );
 
 // ── OAU-8: identity-only tokens (no `kortix` scope) and public clients ───────
-flow("OAU-8", { domain: "oauth", routes: ["POST /v1/oauth/token", "GET /v1/oauth/userinfo", "GET /v1/accounts/me"] }, async (ctx) => {
+flow("OAU-8", { domain: "oauth", routes: ["POST /v1/oauth/token", "GET /v1/oauth/userinfo", "GET /v1/me"] }, async (ctx) => {
   const team = await ctx.fixtures.team();
   const redirectUri = "http://localhost:5173/callback";
   const { verifier, challenge } = await pkcePair();
@@ -576,9 +576,9 @@ flow("OAU-8", { domain: "oauth", routes: ["POST /v1/oauth/token", "GET /v1/oauth
   await ctx.step("profile-only: userinfo + /accounts/me work, the general API is 403 insufficient_scope", async () => {
     const info = await ctx.client.as(ctx.P.ANON).get("/v1/oauth/userinfo", { headers: { Authorization: `Bearer ${accessToken}` } });
     info.status(200);
-    const me = await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${accessToken}` } });
+    const me = await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${accessToken}` } });
     me.status(200).body().has("$.token_context.auth_type", "oauth");
-    const projects = await ctx.client.as(ctx.P.ANON).get("/v1/projects", { headers: { Authorization: `Bearer ${accessToken}` } });
+    const projects = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces", { headers: { Authorization: `Bearer ${accessToken}` } });
     projects.status(403);
     if (!projects.text().includes("insufficient_scope")) throw new Error(`expected insufficient_scope, got: ${projects.text().slice(0, 120)}`);
   });
@@ -633,7 +633,7 @@ flow(
       "PATCH /v1/auth/user",
       "POST /v1/auth/password/update",
       "POST /v1/account/request-deletion",
-      "GET /v1/accounts/me",
+      "GET /v1/me",
       "GET /v1/oauth/authorize/consent/:requestId",
     ],
   },
@@ -663,7 +663,7 @@ flow(
       other.status(200);
       if (other.json<{ grants: any[] }>().grants.some((g) => g.client_id === clientId)) throw new Error("another user sees the grant");
       (await ctx.client.as(ctx.P.NONMEMBER).del("/v1/oauth/grants/:clientId", { params: { clientId } })).status(404);
-      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } })).status(200);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${access}` } })).status(200);
     });
 
     await ctx.step("the app's own kortix_oat_ token cannot list or revoke connected apps (403)", async () => {
@@ -689,7 +689,7 @@ flow(
       (await ctx.client.as(ctx.P.ANON).patch("/v1/auth/user", { data: { custom_claims: { groups: ["Admins"] } } }, { headers })).status(403).body().matches("$.message", /insufficient_scope/);
       (await ctx.client.as(ctx.P.ANON).post("/v1/auth/password/update", { password: "OAU-9-not-a-password-Aa1!" }, { headers })).status(403);
       (await ctx.client.as(ctx.P.ANON).post("/v1/account/request-deletion", {}, { headers })).status(403);
-      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers })).status(200);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers })).status(200);
     });
 
     await ctx.step("DELETE /oauth/grants/<not-a-uuid> → 404, not a 500", async () => {
@@ -708,7 +708,7 @@ flow(
       const r = await ctx.client.as(ctx.P.OWNER).del("/v1/oauth/grants/:clientId", { params: { clientId } });
       r.status(200).body().has("$.ok", true);
       if (r.json<any>().revoked_tokens !== 2) throw new Error(`revoked_tokens: ${r.text()}`);
-      (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${access}` } })).status(401);
+      (await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${access}` } })).status(401);
       const refreshed = await ctx.client.as(ctx.P.ANON).post("/v1/oauth/token", form({ grant_type: "refresh_token", client_id: clientId, refresh_token: refresh }));
       refreshed.status(400).body().has("$.error", "invalid_grant");
       const after = await ctx.client.as(ctx.P.OWNER).get("/v1/oauth/grants");
@@ -734,7 +734,7 @@ flow(
   "OAU-10",
   {
     domain: "oauth",
-    routes: ["GET /v1/oauth/grants", "DELETE /v1/oauth/grants/:clientId", "GET /v1/accounts/me"],
+    routes: ["GET /v1/oauth/grants", "DELETE /v1/oauth/grants/:clientId", "GET /v1/me"],
   },
   async (ctx) => {
     const name = ctx.fixtures.name("cli-connected-app");
@@ -759,7 +759,7 @@ flow(
         const r = await sb.run(["tokens", "apps", "rm", app.clientId, "-y", "--json"]);
         if (r.exitCode !== 0) throw new Error(`exit ${r.exitCode}: ${r.all.slice(0, 300)}`);
         if (JSON.parse(r.stdout).revoked_tokens !== 2) throw new Error(`rm: ${r.stdout}`);
-        (await ctx.client.as(ctx.P.ANON).get("/v1/accounts/me", { headers: { Authorization: `Bearer ${app.access}` } })).status(401);
+        (await ctx.client.as(ctx.P.ANON).get("/v1/me", { headers: { Authorization: `Bearer ${app.access}` } })).status(401);
         const again = await sb.run(["tokens", "apps", "rm", app.clientId, "-y"]);
         if (again.exitCode === 0) throw new Error("a second rm of the same app succeeded");
       });

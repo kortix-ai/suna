@@ -67,6 +67,7 @@ import { Type } from 'typebox'
 import type { PromptOrigin } from '../prompt-origin'
 import { failure, toolReturn } from './control-plane'
 import type { WorkflowRuns } from './workflow'
+import { FRONT_THREAD_CONTEXT_KEY, frontCall, type FrontRouter } from '../front'
 
 /** What the subagents extension needs from the runtime that hosts it. */
 export interface KortixHost {
@@ -120,6 +121,13 @@ export interface KortixHost {
    * would otherwise have no type to name.
    */
   anyProjectAgent?(): boolean
+  /**
+   * The router (flag `chat_front`, harness/pi/front.ts): every `agent`
+   * call starts or continues one named background worker, as the project
+   * agent the call picks (`frontCall`). Returns the agents it may name; null
+   * for every other session.
+   */
+  frontRouter?(): FrontRouter | null
   /** The agent this session runs as (its resolved name). */
   currentAgentName?(): string
   /** Every tool this session's agent may use: a child's `tools` must name only these. */
@@ -375,7 +383,7 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false, top
     'Usage:',
     '- Set subagent_type to one of the types above (omitted: general), OR pass an inline `agent` spec ({ instructions, model?, tools?, description? }) to define one on the fly: its own system prompt, its own model, and a subset of your tools.',
     '- model (provider/model) runs this hand-off on another model, for a named subagent_type too.',
-    '- Write a complete prompt: the subagent sees nothing of this conversation.',
+    '- Write the task and the facts it depends on. The subagent does not see this conversation, but it knows your session_id and reads this conversation itself (`kortix sessions log`) when your prompt leaves something out: never paste the conversation into the prompt.',
     '- Launch several subagents in one message when their work is independent.',
     '- The result is not shown to the user; summarize what matters in your own reply.',
     '- Reuse first. To continue work that builds on an earlier hand-off, continue THAT agent: send_message to its name, or agent with its task_id. It keeps its context and its computer is already warm. Start a new agent only for independent or parallel work.',
@@ -397,7 +405,7 @@ function describe(types: Map<string, SubagentType>, anyProjectAgent = false, top
     ...(teams
       ? [
           '',
-          'Agent teams (on in this project):',
+          'Agent teams (on in this workspace):',
           '- Start a teammate with team: true and a name. Only then is it a TEAMMATE: its own session that keeps running, works through the team task list (task_create, task_list, task_update) and talks to you and the other teammates with send_message. A name without team is a plain subagent.',
           '- Use a team only when several agents must share one task list. Name each teammate by its role. Run each on the project agent whose description fits the role (subagent_type); use the default agent with the role in the prompt only when none fits.',
           '- A teammate\'s role is context for its own session only: no agent and no project setting changes, and nothing is saved. The team lives in this session.',
@@ -452,7 +460,10 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
       parameters,
       executionMode: 'parallel' as const,
       ...(name === 'agent' && host.codemodeOnly?.() ? { exposure: 'model-only' as const } : {}),
-      async execute(_toolCallId: string, params: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
+      async execute(_toolCallId: string, input: SubagentParams, signal: AbortSignal | undefined, onUpdate?: (update: { content: never[]; details: unknown }) => void) {
+        // A router's call always starts or continues one named worker, in the background, in its own session.
+        const front = host.frontRouter?.() ?? null
+        const params: SubagentParams = front ? frontCall(input, front) : input
         const spawn = resolveSpawn(params, host)
         const shape = spawnShape(params, host)
         const result = await host.spawnSession({
@@ -460,6 +471,8 @@ function register(pi: ExtensionAPI, host: KortixHost): void {
           ...(params.session ? { session: params.session } : {}),
           ...shape,
           ...spawn,
+          // The worker knows it reports to a router: its runtime adds FRONT_WORKER_NOTE to its system prompt.
+          ...(front ? { runtimeContext: { [FRONT_THREAD_CONTEXT_KEY]: true } } : {}),
           prompt: params.prompt,
           signal,
           // The running part carries the child id at once, so the product links the child while it works.
@@ -539,6 +552,7 @@ function stopTool(host: KortixHost) {
 export const FORK_PROMPT = [
   'You are a fork of the session whose conversation you see above: a copy that continues on its own, in its own session.',
   'Do the task in the next message end to end. Your final message is returned to the session you were forked from, not shown to the person: make it a concise, complete report.',
+  'That session is your parent_session_id: read what it says after the fork with `kortix sessions log <parent_session_id>`.',
 ].join('\n')
 
 /** What a teammate is told when it starts (`initial_context`). */
@@ -562,7 +576,7 @@ export function teamRefusal(host: KortixHost): string {
   const omit = 'Omit team to start a plain subagent (a name alone keeps it addressable).'
   if (host.subagentDepth() > 0) return `Only a top-level session leads a team, and this session is a subagent (level ${host.subagentDepth()}), so it cannot start teammates. ${omit}`
   if (!host.separateSessions()) return `A teammate runs in its own session, and this session cannot start one (it has no Kortix control plane). ${omit}`
-  return `Agent teams are off in this project: team: true needs the agent_teams feature. ${omit}`
+  return `Agent teams are off in this workspace: team: true needs the agent_teams feature. ${omit}`
 }
 
 /** The call's name, team, fork and background shape. */

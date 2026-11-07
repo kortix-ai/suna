@@ -49,12 +49,12 @@ describe('projectConfigAgentsToRuntimeAgents', () => {
     expect(agents.map((a) => a.name)).toEqual(['support', 'kortix']);
   });
 
-  test('falls back to open_code_default_agent, then manifest order', () => {
+  test('reads only default_agent: the deprecated open_code_default_agent keeps manifest order', () => {
     expect(
       projectConfigAgentsToRuntimeAgents(
         config({ open_code_default_agent: 'b', agents: [{ name: 'a' }, { name: 'b' }] }),
       ).map((a) => a.name),
-    ).toEqual(['b', 'a']);
+    ).toEqual(['a', 'b']);
     expect(
       projectConfigAgentsToRuntimeAgents(config({ agents: [{ name: 'a' }, { name: 'b' }] })).map(
         (a) => a.name,

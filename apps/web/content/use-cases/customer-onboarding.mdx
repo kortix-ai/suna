@@ -64,14 +64,14 @@ whether to send it, edit it, or reach out a different way.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the milestones skill and the daily trigger,
 and opens a change request for you to review. Prefer clicks? Choose **Use this
 template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a daily customer onboarding agent in this project.
+  code={`Set up a daily customer onboarding agent in this workspace.
 
 1. Create the agent agents/customer-onboarding.md. Its job is to track new accounts against their onboarding milestones and alert the owning CSM. It may use the HubSpot, PostgreSQL, Slack and Gmail connectors.
 
@@ -93,7 +93,7 @@ template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect your CRM, your product
+Open **Connectors** in your workspace and connect your CRM, your product
 database, Slack and your email. Credentials are brokered server-side and never enter the agent's machine.
 
 <ToolList>
@@ -132,7 +132,7 @@ the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every day at 07:00, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

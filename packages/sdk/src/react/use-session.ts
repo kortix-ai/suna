@@ -5,7 +5,7 @@
  *
  * Everything sandbox-shaped is internal: it drives `/start` (server long-poll),
  * points the runtime at the session's sandbox, opens the SSE stream, resolves the
- * canonical OpenCode id, and syncs messages — exposing one `phase`
+ * canonical runtime session id, and syncs messages — exposing one `phase`
  * (starting|ready|error) plus messages/send/abort/questions/permissions and the
  * server-side capabilities (models/agents/commands/picks). The host imports
  * `createKortix` + `useSession` and NOTHING else runtime-related: no server-store,
@@ -23,22 +23,23 @@ import type { Message, Part } from '../core/runtime/runtime-types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { useOpenCodeCompactionStore } from '../browser/stores/opencode-compaction-store';
+import { useRuntimeCompactionStore } from '../browser/stores/runtime-compaction-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import type { SendReceipt } from '../core/session/working';
 import {
   compactionExpiryAtMs,
   projectCompacting,
-  serverCompactionRevalidateAtMs,
 } from '../core/session/compaction';
-import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/runtime-pending-store';
 import {
+  claimSandboxConnection,
   markRuntimeReadyVerified,
+  sandboxConnectionKey,
   seedConnectionFromReadyStart,
 } from '../browser/stores/sandbox-connection-store';
 import { getSandboxUrlForExternalId } from '../browser/stores/server-store';
 import { authenticatedFetch } from '../core/http/auth';
-import { RUNTIME_LOG_CAPABILITY, readRuntimeLogPage } from '../core/session/runtime-actions';
+import { readRuntimeLogPage } from '../core/session/runtime-actions';
 import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
@@ -53,7 +54,7 @@ import {
   createSessionPrompt,
   isSessionStartError,
   sessionStartKey,
-  startProjectSession,
+  startWorkspaceSession,
 } from '../core/rest/projects-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
@@ -65,9 +66,9 @@ import { holdLiveStart, liveStartPollMode } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
-import { useCanonicalRuntimeSession } from './use-canonical-opencode-session';
+import { useCanonicalRuntimeSession } from './use-canonical-runtime-session';
 import type { ModelKey } from './use-model-store';
-import { useRuntimeEventStream } from './use-opencode-events';
+import { useRuntimeEventStream } from './use-runtime-events';
 import { useSessionStream } from './use-session-stream';
 import { sessionStreamConnected } from '../core/session/control-stream';
 import {
@@ -76,24 +77,20 @@ import {
   presenceReporter,
   watchHumanPresence,
 } from './human-presence';
-import { formatModelString } from './use-opencode-local';
+import { formatModelString } from './use-runtime-local';
 import {
   type AbortSettlement,
   type PromptPart,
-  runtimeKeys,
   rejectQuestion as rejectQuestionApi,
   replyToPermission,
   replyToQuestion,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
-  useRuntimeSession,
-} from './use-opencode-sessions';
-import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
-import { unwrap } from './use-opencode-sessions/shared';
-import { usePermissionSelfHeal } from './use-permission-self-heal';
-import { useProjectConfig } from './use-project-config';
-import { useProjectModels } from './use-project-models';
-import { useQuestionSelfHeal } from './use-question-self-heal';
+} from './use-runtime-sessions';
+import { mintSessionWireMessageId } from './use-runtime-sessions/messages';
+import { unwrap } from './use-runtime-sessions/shared';
+import { useWorkspaceConfig } from './use-project-config';
+import { useWorkspaceModels } from './use-project-models';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks, type SessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
@@ -174,7 +171,7 @@ export function presenceReturnReopensSession(
 export const SESSION_START_POLL_MS = 1_500;
 
 /**
- * The absolute URL of this session's OpenCode runtime, or `null` until the box
+ * The absolute URL of this session's runtime, or `null` until the box
  * is ready.
  *
  * `/start` reports the runtime two ways and NEITHER is directly usable:
@@ -697,7 +694,7 @@ export interface KortixSendError {
   cause: unknown;
 }
 
-// `getClient()` (packages/sdk/src/opencode/client.ts) throws a
+// `getClient()` (packages/sdk/src/core/runtime/client.ts) throws a
 // `RuntimeNotReadyError` with this exact message when the sandbox url hasn't
 // been resolved yet (session still starting). The string match is kept as a
 // fallback for callers that re-wrap the original error (losing the
@@ -741,7 +738,7 @@ export function markDispatchedForPartIds(sessionId: string, parts: PromptPart[])
  * as `{ type: 'text', text }` with no id at all, so — even where a host paired
  * it with its own optimistic add — nothing correlated the two. The sync
  * store's `message.updated` handler matches an incoming echo to an optimistic
- * message primarily by EXACT part id (opencode preserves a client-supplied
+ * message primarily by EXACT part id (the runtime preserves a client-supplied
  * part id on echo); only when that fails does it fall back to "the oldest
  * DISPATCHED optimistic message" (`markDispatchedForPartIds`, called
  * unconditionally by `sendParts` below, marks it — but only once the part ids
@@ -890,7 +887,7 @@ export function classifySendError(error: unknown): KortixSendError {
   return {
     kind: 'runtime-error',
     // Prefer the gateway's own message (already human-written server-side per
-    // status/cause) over opencode's raw runtime-error formatting when present.
+    // status/cause) over the runtime's raw error formatting when present.
     // The fallback is unwrapped too: a thrown error's message is often an HTTP
     // body (`{"message":…,"code":401}`), and a body is not a sentence.
     message: gateway?.message || unwrapError(formatted.message),
@@ -974,7 +971,7 @@ export function sendReceiptId(
   return clientMessageId ?? identified?.id ?? sessionId;
 }
 
-export async function rewindOpenCodeSession(sessionId: string, messageId: string): Promise<void> {
+export async function rewindRuntimeSession(sessionId: string, messageId: string): Promise<void> {
   if (!messageId) throw new Error('Session rewind requires a message id');
   unwrap(
     await getClient().session.revert({
@@ -984,7 +981,7 @@ export async function rewindOpenCodeSession(sessionId: string, messageId: string
   );
 }
 
-export async function restoreOpenCodeSessionRewind(sessionId: string): Promise<void> {
+export async function restoreRuntimeSessionRewind(sessionId: string): Promise<void> {
   unwrap(await getClient().session.unrevert({ sessionID: sessionId }));
 }
 
@@ -1049,12 +1046,12 @@ export interface UseSessionOptions {
    * End the presence lease when the page closes or enters the back/forward
    * cache, so a turn that ends right after the tab closes still notifies:
    * `pagehide` reports absent, and every absent report is sent with
-   * `keepalive`, so it outlives the page. Default false, the presence before
+   * `keepalive`, so it outlives the page. Default true (notifications are on
+   * for every project since 2026-11-06). False is the presence before
    * KRTX-1742: no `pagehide` report and no `keepalive`. A closing tab still
    * turns hidden and reports absent, but the browser may cancel that request
-   * as the page unloads; the lease then lives to its 90 s expiry. Pass the
-   * project's `notification_center` flag. A change applies at once, with no
-   * new report. Needs `browserPresence`.
+   * as the page unloads; the lease then lives to its 90 s expiry. A change
+   * applies at once, with no new report. Needs `browserPresence`.
    */
   presencePageExit?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
@@ -1167,7 +1164,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     subscribeMessages = true,
     browserPresence = false,
     presenceAlerts = false,
-    presencePageExit = false,
+    presencePageExit = true,
   } = options;
 
   // One presence id per mounted view. The session stream carries it, and the
@@ -1210,8 +1207,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     const offDeleted = onSessionDeleted((id) => {
       if (id === sessionId) deleted = true;
     });
-    // Without page exit, an absent PUT goes without `keepalive`, as before
-    // KRTX-1742: a closing page may cancel it, and the lease then expires.
+    // With `presencePageExit: false`, an absent PUT goes without `keepalive`,
+    // as before KRTX-1742: a closing page may cancel it, and the lease then
+    // expires.
     const reporter = presenceReporter(({ active, alerts }) => {
       if (deleted) return;
       // A human coming back to a stopped session is a fresh visit: release the
@@ -1307,7 +1305,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       // A background tab that shows the session ready does not poll: the poll
       // only keeps a box alive for nobody. The next visible fetch revalidates.
       if (mode === 'skip' && previous) return previous;
-      const next = await startProjectSession(projectId, sessionId, {
+      const next = await startWorkspaceSession(projectId, sessionId, {
         waitMs,
         repositoryMode,
         // The keep-alive poll must report a user Stop or an idle park, never
@@ -1409,11 +1407,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // render: the open asks the snapshot for no transcript window, no saved copy is read
   // (`useSessionSync` `sessionLog`), and older pages come from `GET …/log`. No project flag is
   // read, and no v1 transcript (`GET …/transcript`, P8.3) is read, whatever the log answers.
-  // The box's own page, while `/start` says the box is ready and serves it (`runtime.log.v1`):
-  // ahead of the API's copy (the reply it streams, a prompt waiting on it), and a new session's
-  // log before the API holds one.
-  const liveLogBoxId =
-    startData?.stage === 'ready' && startData.capabilities?.includes(RUNTIME_LOG_CAPABILITY) ? (startData.sandbox?.external_id ?? null) : null;
+  // The box's own page, while `/start` says the box is ready: ahead of the API's copy (the reply
+  // it streams, a prompt waiting on it), and a new session's log before the API holds one. Every
+  // box `/start` answers ready serves it (`runtime.log.v1`, the runtime floor).
+  const liveLogBoxId = startData?.stage === 'ready' ? (startData.sandbox?.external_id ?? null) : null;
   const livePage = useMemo(
     () =>
       liveLogBoxId
@@ -1422,9 +1419,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
         : null,
     [liveLogBoxId],
   );
-  // The box serves its log: the session log is the only transcript read. No v1 transcript, session
-  // record, status, permission, question or diagnostics read goes to the box (see each gate below).
-  const logNative = liveLogBoxId !== null;
+  // The session log is the only transcript read. No v1 transcript, session record, status,
+  // permission, question or diagnostics read goes to the box.
   const logReloadRef = useRef<(() => void) | null>(null);
   const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled, livePage, reloadRef: logReloadRef });
   // `'missing'`: no page yet (a new session, an unconverted mirror, a failed read). Nothing saved
@@ -1555,6 +1551,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     !!sandbox?.external_id &&
     switchedBoxId === sandbox.external_id;
 
+  // 2b. The connection store describes the runtime this view switched to. It is
+  // one per tab: while this view owns it, another mounted session's stream
+  // cannot write its box's state there. Released when the view leaves the
+  // session; the next session to switch claims it.
+  useEffect(() => {
+    if (!switched) return;
+    return claimSandboxConnection(sandboxConnectionKey(projectId, sessionId));
+  }, [switched, projectId, sessionId]);
+
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
   // handling drives recovery (no steady-state health loop to halt — the old
@@ -1594,18 +1599,18 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
   // R5.3: its events come from the session stream mounted in 1c.
-  useRuntimeEventStream({ enabled: switched, projectId, sessionId, logNative });
+  useRuntimeEventStream({ enabled: switched, projectId, sessionId });
 
-  // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
+  // 5. Resolve the canonical runtime root id (server-owned; /start hands it over)
   // and sync messages off it.
   const transcriptHistoryEnabled = startEnabled && chatEngine;
   const canonicalSession = useCanonicalRuntimeSession({
     projectId,
     sessionId,
-    pinFromStart: startData?.runtime_session_id ?? startData?.opencode_session_id ?? null,
+    pinFromStart: startData?.runtime_session_id ?? null,
     initialPin: logRootRuntimeId ?? initialRuntimeSessionId,
-    // A box that serves its log: the pin comes from `/start` and the log; the box lists nothing.
-    listRuntimeSessions: switched && !logNative,
+    // The pin comes from `/start` and the log; the box lists nothing.
+    listRuntimeSessions: false,
   });
   const { rootSessionId } = canonicalSession;
   const ocSessionId = rootSessionId ?? '';
@@ -1669,8 +1674,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // which would make the sync layer read the log page a second time.
     mirror: null,
     sessionLog: logOwned,
-    // A box that serves its log: the rows come from the log, so no v1 read or liveness poll runs.
-    networkEnabled: switched && !logNative,
+    // The rows come from the log, so no v1 read or liveness poll runs.
+    networkEnabled: false,
     working: working.state === 'working',
     // The control plane holding a turn open keeps the transcript verification
     // poll on even when the projection's answer is idle — the repair for a
@@ -1690,10 +1695,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       : '',
   );
   const syncRows = chatEngine ? rawSync : DISABLED_CHAT_ENGINE_SYNC;
-  // On a box that serves its log, loading, freshness and the retry are the log's.
+  // Loading, freshness and the retry are the log's.
   const sync = useMemo(
     () =>
-      logNative && chatEngine
+      chatEngine
         ? {
             ...syncRows,
             isLoading: logHistory === 'loading',
@@ -1701,7 +1706,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
             retryTranscript: () => logReloadRef.current?.(),
           }
         : syncRows,
-    [logNative, chatEngine, syncRows, logHistory],
+    [chatEngine, syncRows, logHistory],
   );
   const runtimePhase = useRuntimePhase();
   // T22 — the revert record lives in the sync store, not component state.
@@ -1786,21 +1791,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindError(null);
   }, [sessionId, ocSessionId]);
 
-  // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
-  // rendering as running with nothing in the pending store) — see
-  // `useQuestionSelfHeal` for why this is distinct from the SSE reconnect-gap
-  // hydration in `useRuntimeEventStream`. Disabled entirely when `chatEngine`
-  // is off — see that option's jsdoc: a host mounting its own chat surface
-  // already runs its own copy of this poller for the same session.
-  // R5.3: with the session stream up, an ask cannot be dropped — the box's
-  // ring replays it on a reconnect and a resync re-reads the pending lists —
-  // so these polls run only while the stream is down.
-  useQuestionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId && !streamConnected && !logNative,
-  });
-  usePermissionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId && !streamConnected && !logNative,
-  });
+  // 5b. A missed ask cannot strand: the session stream replays it from the box's ring on a
+  // reconnect, and a resync re-reads `GET /kortix/runtime/pending`.
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.
@@ -1811,18 +1803,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // cleared ONLY by the `session.compacted` SSE frame, so a missed frame pinned
   // the composer for the lifetime of the tab and a compaction started anywhere
   // else was invisible.
-  const optimisticCompactionAtMs = useOpenCodeCompactionStore((state) =>
+  const optimisticCompactionAtMs = useRuntimeCompactionStore((state) =>
     switched ? (state.compactingBySession[ocSessionId] ?? null) : null,
   );
-  // `Session.time.compacting` — the runtime's own record. This query is the
-  // same cache entry `session.compacted` and `session.updated` already write
-  // (`runtimeKeys.runtimeSession`), so reading it here costs no extra request
-  // in a host that mounts the session row anyway.
-  // A box that serves its log reports compaction as `log.status` (the compaction store above).
-  const runtimeSessionRow = useRuntimeSession(switched && !logNative ? ocSessionId : '');
+  // The box reports compaction as `log.status`, into the compaction store above.
   const compactionInputs = {
     optimisticAtMs: optimisticCompactionAtMs,
-    serverCompactingAtMs: runtimeSessionRow.data?.time?.compacting ?? null,
+    serverCompactingAtMs: null,
     nowMs: Date.now(),
   };
   const isCompacting = projectCompacting(compactionInputs);
@@ -1840,32 +1827,6 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     );
     return () => clearTimeout(timer);
   }, [compactionExpiry]);
-  // The server-observed branch of `projectCompacting` (rule 1) is otherwise
-  // unbounded: it stays authoritative until `runtimeKeys.runtimeSession`'s
-  // cached row is refreshed, and the only event wired to refresh it
-  // (`session.compacted`, in `use-opencode-events/handle-event.ts`) is one
-  // SSE frame that can be lost — a backgrounded tab, a stream reconnect, or
-  // that handler's own refetch failing. Without this, a lost frame pins
-  // `isCompacting` — and therefore the composer and slash-commands
-  // (`session-chat.tsx`'s `effectiveBusy`) — for the rest of the tab's life.
-  // This forces a REAL, retry-backed re-check (through the same query
-  // `useRuntimeSession` above already runs, so it inherits its 3-attempt
-  // exponential-backoff retry) once the observed flag has gone unconfirmed
-  // for `SERVER_COMPACTION_REVALIDATE_MS` — independent of whether
-  // `session.compacted` ever arrives. If the server still reports
-  // compacting, the fresh timestamp re-arms this same timer; once it does
-  // not, `serverCompactingAtMs` clears and the projection follows.
-  const serverCompactionRevalidateAt = serverCompactionRevalidateAtMs(compactionInputs);
-  useEffect(() => {
-    if (serverCompactionRevalidateAt === null || !switched || !ocSessionId) return;
-    const timer = setTimeout(
-      () => {
-        void queryClient.invalidateQueries({ queryKey: runtimeKeys.runtimeSession(ocSessionId) });
-      },
-      Math.max(0, serverCompactionRevalidateAt - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [serverCompactionRevalidateAt, switched, ocSessionId, queryClient]);
   const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
   const removePermission = useRuntimePendingStore((s) => s.removePermission);
   const questions = useMemo(
@@ -1879,9 +1840,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const runtimeActionReady = switched && !!rootSessionId;
 
   // 7. Server-side capabilities + per-session picks (all pre-runtime — no sandbox).
-  const models = useProjectModels(projectId);
+  const models = useWorkspaceModels(projectId);
   const agents = useVisibleAgents({ projectId });
-  const config = useProjectConfig(projectId);
+  const config = useWorkspaceConfig(projectId);
   const picks = useSessionPicks(sessionId);
 
   // 8. Mutations. A prompt creates a durable row; retrying the POST would
@@ -2050,7 +2011,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindPending(true);
     setRewindError(null);
     try {
-      await rewindOpenCodeSession(ocSessionId, messageId);
+      await rewindRuntimeSession(ocSessionId, messageId);
       useSyncStore.getState().stageSessionRevert(ocSessionId, messageId);
     } catch (error) {
       const classified = classifySendError(error);
@@ -2067,7 +2028,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindPending(true);
     setRewindError(null);
     try {
-      await restoreOpenCodeSessionRewind(ocSessionId);
+      await restoreRuntimeSessionRewind(ocSessionId);
       useSyncStore.getState().clearSessionRevert(ocSessionId);
     } catch (error) {
       const classified = classifySendError(error);
@@ -2200,7 +2161,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     /** The serialized session_sandboxes row from /start (status, metadata, ids), or null. */
     sandbox,
     /**
-     * Absolute URL of this session's OpenCode runtime (the `/p/<ext>/8000`
+     * Absolute URL of this session's runtime (the `/p/<ext>/8000`
      * proxy), or null until `stage === 'ready'`. The same URL the hook hands
      * to `setCurrentRuntime` — hosts that need it for a PTY attach or a direct
      * daemon call read it here instead of rebuilding it from `sandbox`.
@@ -2293,7 +2254,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // server-side capabilities (pre-runtime)
     models,
     agents,
-    defaultAgent: config?.default_agent ?? config?.open_code_default_agent ?? null,
+    defaultAgent: config?.default_agent ?? null,
     commands: config?.commands ?? [],
     picks,
 

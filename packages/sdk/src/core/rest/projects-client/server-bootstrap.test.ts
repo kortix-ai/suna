@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { fetchAccountsWithToken } from './accounts';
-import { fetchProjectsForAccountWithToken, provisionProjectWithToken } from './projects';
+import { fetchWorkspacesForAccountWithToken, provisionWorkspaceWithToken } from './projects';
 
 let calls: { url: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
 let nextResponse: { status: number; body: unknown } = { status: 200, body: {} };
@@ -46,7 +46,7 @@ test('fetchAccountsWithToken returns null on failure instead of throwing', async
 
 test('fetchProjectsForAccountWithToken scopes the query by account_id', async () => {
   nextResponse = { status: 200, body: [{ project_id: 'p1' }] };
-  const result = await fetchProjectsForAccountWithToken(
+  const result = await fetchWorkspacesForAccountWithToken(
     { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
     'acc-1',
   );
@@ -56,7 +56,7 @@ test('fetchProjectsForAccountWithToken scopes the query by account_id', async ()
 
 test('provisionProjectWithToken posts seed_starter + returns the created project', async () => {
   nextResponse = { status: 200, body: { project_id: 'p2', name: 'My First Project' } };
-  const result = await provisionProjectWithToken(
+  const result = await provisionWorkspaceWithToken(
     { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
     { account_id: 'acc-1', name: 'My First Project', seed_starter: true },
   );
@@ -69,23 +69,31 @@ test('provisionProjectWithToken posts seed_starter + returns the created project
 
 test('provisionProjectWithToken reports project_limit_reached distinctly from other 403s', async () => {
   nextResponse = { status: 403, body: { code: 'project_limit_reached' } };
-  const limited = await provisionProjectWithToken(
+  const limited = await provisionWorkspaceWithToken(
     { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
     { name: 'x' },
   );
   expect(limited).toEqual({ ok: false, limitReached: true });
 
   nextResponse = { status: 403, body: { code: 'forbidden' } };
-  const forbidden = await provisionProjectWithToken(
+  const forbidden = await provisionWorkspaceWithToken(
     { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
     { name: 'x' },
   );
   expect(forbidden).toEqual({ ok: false, limitReached: false });
+
+  // The workspace rule: the account already holds its project.
+  nextResponse = { status: 409, body: { code: 'workspace_has_project', workspace_id: 'w1' } };
+  const occupied = await provisionWorkspaceWithToken(
+    { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
+    { name: 'x' },
+  );
+  expect(occupied).toEqual({ ok: false, limitReached: true });
 });
 
 test('provisionProjectWithToken returns a non-limit failure without throwing on other errors', async () => {
   nextResponse = { status: 500, body: {} };
-  const result = await provisionProjectWithToken(
+  const result = await provisionWorkspaceWithToken(
     { backendUrl: 'http://backend.local/v1', accessToken: 'server-token' },
     { name: 'x' },
   );

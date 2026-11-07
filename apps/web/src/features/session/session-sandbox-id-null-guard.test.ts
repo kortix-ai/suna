@@ -7,7 +7,7 @@ import { projectSessionStartSeed } from '@kortix/sdk';
 
 // Regression for Better Stack pattern e6d0e044 —
 // `TypeError: Cannot read properties of null (reading 'slice')` thrown on the
-// co-worker session page (`/projects/:id/sessions/:sessionId`). A render-path
+// co-worker session page (`/workspaces/:id/sessions/:sessionId`). A render-path
 // `.slice()` on `sandbox.sandbox_id` crashed when `sandbox` was truthy but
 // `sandbox_id` resolved to `null`. The null reached the page through a
 // `projectSessionStartSeed` cache seed: the
@@ -17,7 +17,7 @@ import { projectSessionStartSeed } from '@kortix/sdk';
 // `useSession` then handed straight to the page.
 
 const pageSource = readFileSync(
-  join(import.meta.dir, '../../app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx'),
+  join(import.meta.dir, '../../app/[locale]/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx'),
   'utf8',
 );
 
@@ -31,14 +31,14 @@ function runningSession(overrides: Partial<ProjectSession> = {}): ProjectSession
     sandbox_provider: 'daytona',
     sandbox_id: 'sbx-db-1',
     sandbox_url: 'https://api.kortix.com/v1/p/ext-1/8000',
-    opencode_session_id: 'oc-1',
+    runtime_session_id: 'oc-1',
     name: null,
     custom_name: null,
     agent_name: 'default',
     status: 'running',
     error: null,
     metadata: {},
-    opencode_sessions: [],
+    runtime_sessions: [],
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-02T00:00:00Z',
     ...overrides,

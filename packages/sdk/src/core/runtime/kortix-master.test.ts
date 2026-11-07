@@ -3,7 +3,7 @@ import type { Ticket, SandboxService, SandboxServiceTemplate } from './kortix-ma
 
 // This file must be hermetic against process-wide `mock.module('../http/auth', ...)`
 // registrations made by OTHER test files (files/client.test.ts, opencode/env.test.ts,
-// opencode/triggers.test.ts, opencode/client.test.ts, session/session.test.ts all mock
+// core/runtime/triggers.test.ts, core/runtime/client.test.ts, session/session.test.ts all mock
 // the same shared module path). Bun's `mock.module` is process-wide and permanent for
 // the whole `bun test` sweep — whichever file's registration is resident when THIS
 // file's own dynamic `import('./kortix-master')` below runs wins for every call made
@@ -11,7 +11,7 @@ import type { Ticket, SandboxService, SandboxServiceTemplate } from './kortix-ma
 // with a controllable token + authenticatedFetch implementation this file fully owns —
 // instead of depending on the real module's behavior, and imports the module under
 // test via `await import(...)` so it resolves against ITS OWN mock regardless of load
-// order (matching opencode/client.test.ts's pattern post-#4124).
+// order (matching core/runtime/client.test.ts's pattern post-#4124).
 
 interface Call {
   url: string;

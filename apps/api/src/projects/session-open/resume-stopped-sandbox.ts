@@ -82,7 +82,7 @@ const RUNTIME_WAKE_FINALIZE_CLEARED_KEYS = [
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
  * destroying it and cold-reprovisioning a fresh one. A stopped row whose
  * `externalId` is still set is a powered-down VM whose disk — the repo clone,
- * installed deps, opencode — is intact, so resuming it skips the dominant boot
+ * installed deps, the runtime — is intact, so resuming it skips the dominant boot
  * costs (snapshot pull + clone + deps).
  *
  * Claims wake ownership while both durable rows remain stopped. Provider start
@@ -269,7 +269,7 @@ export async function resumeStoppedSandbox(
       // The project's half of the same problem. The woken VM still holds the
       // config dir, skills and compiled agent config of its provision day;
       // nothing on a resume re-reads the base branch. Detached, idle-gated, and
-      // a no-op — no opencode restart — on a box that is already current.
+      // a no-op — no runtime restart — on a box that is already current.
       scheduleSessionConfigConvergence(row.sessionId, 'resume');
       // Drives attached, detached or granted while the box slept.
       void import('../../drives/service').then(({ reconcileSessionDrives }) => reconcileSessionDrives(row.sessionId));
@@ -356,7 +356,7 @@ export async function resumeStoppedSandbox(
  * URLs, `/v1/p/<externalId>/<port>`). Fetches the full row — crucially including
  * `metadata`, which {@link resumeStoppedSandbox} rewrites — so the sandbox-proxy
  * data path can wake a hibernated box the SAME way `/start` does when a real user
- * actively hits the OpenCode runtime. Idempotent: the conditional stopped→active
+ * actively hits the runtime. Idempotent: the conditional stopped→active
  * lock inside `resumeStoppedSandbox` de-dupes the concurrent session.list retries,
  * so at most one provider start is kicked. Returns true when THIS call won the
  * resume (false if it wasn't stopped, isn't resumable, or a concurrent call won).

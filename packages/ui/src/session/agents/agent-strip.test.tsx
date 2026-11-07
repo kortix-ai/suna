@@ -80,7 +80,7 @@ const { resolveEffectiveBusy } = await import('../status/session-chat-busy');
 const { AgentsLineView, AgentsPanel, stripRuns, runSessionIds } = await import('./agent-strip');
 const { agentRowOf } = await import('./agent-model');
 const { TasksPanel, groupTasks } = await import('./tasks-panel');
-const { HeldMessageList, heldPreview } = await import('./held-messages');
+const { HeldMessageList } = await import('./held-messages');
 const { WorkflowRunControls, workflowFileName, isLargeRun } = await import('./workflow-run-controls');
 const { SessionPromptContext } = await import('./session-prompt');
 const { parseWorkflowRun } = await import('../tool/tools/workflow-run');
@@ -240,7 +240,8 @@ describe('AgentsLineView — the line', () => {
   });
 
   test('keyboard: the line is a focusable button that opens the popover; Escape closes it', async () => {
-    const dom = await mountDom(<AgentsLineView {...baseProps} agents={[row('namer', 'working')]} />);
+    // Two agents: a single agent opens directly (see the next test), with no popover.
+    const dom = await mountDom(<AgentsLineView {...baseProps} agents={[row('namer', 'working'), row('poet', 'idle')]} />);
     const line = dom.line()!;
     // A native button: Enter and Space activate it, as a click does.
     expect(line.tagName).toBe('BUTTON');
@@ -254,7 +255,7 @@ describe('AgentsLineView — the line', () => {
     await act(async () => line.click());
     expect(line.getAttribute('aria-expanded')).toBe('true');
     expect(dom.popover()).not.toBeNull();
-    expect(dom.rows()).toHaveLength(1);
+    expect(dom.rows()).toHaveLength(2);
 
     // Focus moves to the panel itself (no row tooltip opens); one Escape closes it.
     const focused = windowObject.document.activeElement!;
@@ -266,10 +267,27 @@ describe('AgentsLineView — the line', () => {
     expect(line.getAttribute('aria-expanded')).toBe('false');
   });
 
+  test('one agent and nothing else: the line opens that agent, no popover', async () => {
+    const opened: string[] = [];
+    const dom = await mountDom(
+      <AgentsLineView {...baseProps} agents={[row('namer', 'working')]} onOpen={(target) => opened.push(target.sessionId)} />,
+    );
+    const line = dom.line()!;
+    expect(line.getAttribute('aria-haspopup')).toBeNull();
+    await act(async () => line.click());
+    expect(opened).toEqual(['namer']);
+    expect(dom.popover()).toBeNull();
+  });
+
   test('a row opens its agent and closes the popover', async () => {
     const opened: string[] = [];
     const dom = await mountDom(
-      <AgentsLineView {...baseProps} defaultOpen agents={[row('namer', 'working')]} onOpen={(target) => opened.push(target.sessionId)} />,
+      <AgentsLineView
+        {...baseProps}
+        defaultOpen
+        agents={[row('namer', 'working'), row('poet', 'idle')]}
+        onOpen={(target) => opened.push(target.sessionId)}
+      />,
     );
     await act(async () => dom.byLabel('Open namer')!.click());
     expect(opened).toEqual(['namer']);
@@ -427,13 +445,12 @@ describe('held messages', () => {
     expect(denied).toEqual(['m3']);
   });
 
-  test('the card names the sender and previews the summary, else the first line', () => {
-    expect(heldPreview(message('m', 'held'))).toBe('The schema migration finished.');
-    expect(heldPreview(message('m', 'held', { summary: 'Migration done' }))).toBe('Migration done');
+  test('the card names the sender and asks for approval', () => {
     const approve = { mutate: noop, isPending: false } as never;
     const text = textOf(renderToStaticMarkup(wrap(<HeldMessageList messages={[message('m1', 'held')]} approve={approve} deny={approve} />)));
-    expect(text).toContain('Message from @reviewer');
-    expect(text).toContain('Waiting for your approval');
+    expect(text).toContain('reviewer');
+    expect(text).toContain('wants to send this agent a message');
+    expect(text).toContain('Needs your approval');
   });
 
   test('nothing renders when no message waits', () => {

@@ -5,7 +5,7 @@
  * openai-completions client, pointed through `KORTIX_LLM_BASE_URL` +
  * `KORTIX_TOKEN` at a local OpenAI-compatible fake that streams scripted SSE
  * chunks (text deltas, tool calls, finish reasons). Everything else is real:
- * the agent loop, the bash tool against a temp workspace, the OpenCode wire the
+ * the agent loop, the bash tool against a temp workspace, the v1 wire the
  * SDK parses, the sequenced event stream and the control-plane probes the API
  * polls.
  */
@@ -36,6 +36,8 @@ import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { createEnvRouter } from '@/routes/kortix/env'
 import { expandCommandTemplate, type PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
+import { permissionArgsHash } from '@/harness/pi/interactions'
+import { PARKED_QUESTION_RESULT } from '@/harness/pi/tools'
 import { createPiSessionLogPort, piSessionLog } from '@/harness/pi/session-log'
 import { PLATFORM_EXTENSION_IDS } from '@kortix/api-contract/runtime-relay'
 import { restorePiSessionLog } from '@/harness/pi/session-log-restore'
@@ -442,7 +444,7 @@ describe('pi harness', () => {
     expect(health.boot_error).toBe('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
   })
 
-  test('a prompt runs the agent with a real bash tool and lands on the OpenCode wire', async () => {
+  test('a prompt runs the agent with a real bash tool and lands on the v1 wire', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'printf hello-from-pi > note.txt && cat note.txt' } }, { text: 'Wrote the note.' }],
     })
@@ -485,7 +487,7 @@ describe('pi harness', () => {
     expect(reply.parts.find((p) => p.type === 'text')).toMatchObject({ text: 'Wrote the note.' })
     expect((reply.info.time as { completed?: number }).completed).toBeGreaterThan(0)
 
-    // The raw OpenCode list and single-message read the API uses to prove a landing.
+    // The raw message list and single-message read the API uses to prove a landing.
     const raw = (await r.user(`/session/${root}/message`).then((res) => res.json())) as Array<{ info: { id: string } }>
     expect(raw.map((m) => m.info.id)).toEqual(page.messages.map((m) => String(m.info.id)))
     expect((await r.user(`/session/${root}/message/${messageID}`)).status).toBe(200)
@@ -531,7 +533,7 @@ describe('pi harness', () => {
     expect(await again.json()).toEqual({ deduplicated: true })
   })
 
-  // OpenCode `noReply` (the first message of a conversation with people, a
+  // A `noReply` prompt (the first message of a conversation with people, a
   // released Stop batch): the message joins the conversation and no turn runs.
   // Dev 2026-10-01: pi ignored it, answered an ask meant for a person, and the
   // turn was then aborted.
@@ -635,7 +637,7 @@ describe('pi harness', () => {
     expect(newest.headers.get('x-next-cursor')).toBe(ids[1]!)
   })
 
-  test('the Kortix turn verbs start, read, refuse to remove and stop a turn, and list the agents (W5 E4)', async () => {
+  test('the Kortix turn verbs start, read, refuse to retract and stop a turn, and list the agents (W5 E4)', async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'printf kortix > note.txt' } }, { tool: 'bash', args: { command: 'sleep 20' } }, { text: 'unreachable' }],
       env: { KORTIX_AGENT_NAME: 'coder', KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { coder: { description: 'Writes code', mode: 'primary' }, reviewer: { mode: 'subagent' } } }) },
@@ -668,11 +670,14 @@ describe('pi harness', () => {
     // note.txt empty before printf writes it, so wait for the content.
     const note = join(r.workspace, 'note.txt')
     await waitFor(() => existsSync(note) && readFileSync(note, 'utf8') === 'kortix')
-    const message = (await r.user(`/kortix/runtime/messages/${root}/${messageId}`).then((res) => res.json())) as { info: { id: string; role: string } }
-    expect(message.info).toMatchObject({ id: messageId, role: 'user' })
-    expect((await r.user(`/kortix/runtime/messages/${root}/msg_missing`)).status).toBe(404)
-    expect((await r.user(`/kortix/runtime/messages/${root}/${messageId}`, { method: 'DELETE' })).status).toBe(409)
-    expect((await r.user(`/kortix/runtime/messages/${root}/msg_missing`, { method: 'DELETE' })).status).toBe(404)
+    // The transcript page is the one read; the single-message GET and DELETE verbs left with #11821.
+    const page = (await r.user(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: { id: string; role: string } }> }
+    expect(page.messages.find((m) => m.info.id === messageId)?.info).toMatchObject({ id: messageId, role: 'user' })
+    expect((await r.user(`/kortix/runtime/messages/${root}/${messageId}`)).status).toBe(404)
+    expect((await r.user(`/kortix/runtime/messages/${root}/${messageId}`, { method: 'DELETE' })).status).toBe(404)
+    // The running prompt was read by a model call: retract refuses it; an unknown id is 404.
+    expect((await post(`/kortix/runtime/messages/${root}/${messageId}/retract`, {})).status).toBe(409)
+    expect((await post(`/kortix/runtime/messages/${root}/msg_missing/retract`, {})).status).toBe(404)
 
     const agents = (await r.user('/kortix/runtime/agents').then((res) => res.json())) as { agents: Array<{ name: string }> }
     expect(agents.agents.map((agent) => agent.name)).toEqual(['coder', 'reviewer'])
@@ -815,7 +820,7 @@ describe('pi harness', () => {
     expect(res.status).toBe(400)
   })
 
-  test('a new prompt dismisses an open question, so an unattended session never wedges behind it', async () => {
+  test('a new prompt parks an open question, so an unattended session never wedges behind it', async () => {
     // Prod 2026-10-09: a keyed cron session called `question`, nobody answered,
     // and every later fire queued behind the blocked turn for 5 days.
     const r = await boot({
@@ -833,11 +838,14 @@ describe('pi harness', () => {
     await waitFor(() => runtime.questions.list().length === 0 && !runtime.busy() && runtime.idle())
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as { messages: Array<{ info: { role: string }; parts: Array<Record<string, any>> }> }
     const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'question')!
-    expect(tool.state.status).not.toBe('running')
+    // Parked, not dismissed: the call returns, and the model reads that the answer comes later.
+    expect(tool.state.status).toBe('completed')
+    expect(tool.state.output).toBe(PARKED_QUESTION_RESULT)
     const texts = page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text)
     expect(texts).toContain('second prompt answered')
-    const text = await readSse(await r.bearer('/kortix/runtime/events?since=0'), (t) => t.includes('event: question.rejected'))
-    expect(text).toContain('event: question.rejected')
+    const text = await readSse(await r.bearer('/kortix/runtime/events?since=0'), (t) => t.includes('event: question.parked'))
+    expect(text).toContain('event: question.parked')
+    expect(text).not.toContain('event: question.rejected')
   })
 
   test('steers reach pi in arrival order, and a retract during image loading cancels the steer', async () => {
@@ -865,7 +873,7 @@ describe('pi harness', () => {
     expect(sent).not.toContain('STEER-GONE')
   })
 
-  test('a steered message dismisses an open question, so the turn reads it', async () => {
+  test('a steered message parks an open question, so the turn reads it', async () => {
     const r = await boot({
       script: [
         { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
@@ -880,7 +888,7 @@ describe('pi harness', () => {
     await waitFor(() => runtime.questions.list().length === 0 && runtime.idle())
   })
 
-  test('a synthetic steer leaves an open question open', async () => {
+  test('a synthetic steer (a peer message, a subagent report) parks an open question, so it never waits behind it', async () => {
     const r = await boot({
       script: [
         { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
@@ -891,9 +899,81 @@ describe('pi harness', () => {
     const root = runtime.rootId
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
     await waitFor(() => runtime.questions.list().length === 1)
-    expect(await runtime.steer({ messageID: siblingId(runtime.activeTurnMessageId()!, 'z'), text: 'The linear connector was just connected', parts: [], synthetic: true } as never)).toBe('steered')
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    expect(runtime.questions.list()).toHaveLength(1)
+    const before = gateway.sent.length
+    expect(await runtime.steer({ messageID: siblingId(runtime.activeTurnMessageId()!, 'z'), text: 'A background subagent you started has finished', files: [], synthetic: true } as never)).toBe('steered')
+    expect(runtime.questions.list()).toEqual([])
+    await waitFor(() => gateway.sent.length > before && runtime.idle(), 5_000)
+    expect(JSON.stringify(gateway.sent.slice(before))).toContain('A background subagent you started has finished')
+  })
+
+  test('a question nobody answers within its live window parks, and the turn goes on', async () => {
+    const relayed: Array<{ parkable: boolean }> = []
+    const r = await boot({
+      script: [
+        { tool: 'question', args: { questions: [{ question: 'Which way?', header: 'Pick', options: [{ label: 'A', description: 'a' }] }] } },
+        { text: 'went on' },
+      ],
+      // apps/api says nobody watches this session: park at once.
+      hooks: { onQuestionAsked: async (_request, ask) => (relayed.push(ask), { liveWaitMs: 0 }) },
+    })
+    const runtime = r.service.runtime()!
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => !runtime.busy() && runtime.idle())
+    expect(relayed).toEqual([{ parkable: true }])
+    const page = (await r.bearer(`/kortix/runtime/messages/${runtime.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, any>> }> }
+    const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'question')!
+    expect(tool.state.output).toBe(PARKED_QUESTION_RESULT)
+  })
+
+  test('POST /kortix/runtime/asks/park parks every open ask; nothing open parks nothing', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'went on' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+    })
+    const runtime = r.service.runtime()!
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => runtime.permissions.list().length === 1)
+    expect(await r.bearer('/kortix/runtime/asks/park', { method: 'POST' }).then((res) => res.json())).toEqual({ parked: 1 })
+    await waitFor(() => !runtime.busy() && runtime.idle())
+    expect(await r.bearer('/kortix/runtime/asks/park', { method: 'POST' }).then((res) => res.json())).toEqual({ parked: 0 })
+    const page = (await r.bearer(`/kortix/runtime/messages/${runtime.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, any>> }> }
+    const tool = page.messages.flatMap((m) => m.parts).find((p) => p.type === 'tool' && p.tool === 'bash')!
+    expect(tool.state.status).toBe('error')
+    expect(JSON.stringify(tool.state)).toContain('did not run')
+    const text = await readSse(await r.bearer('/kortix/runtime/events?since=0'), (t) => t.includes('event: permission.parked'))
+    expect(text).toContain('event: permission.parked')
+  })
+
+  test('a new prompt parks a permission ask: the call does not run and the prompt runs', async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo never > parked.txt' } }, { text: 'went on' }, { text: 'second answered' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+    })
+    const runtime = r.service.runtime()!
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
+    await waitFor(() => runtime.permissions.list().length === 1)
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
+    await waitFor(() => runtime.permissions.list().length === 0 && !runtime.busy() && runtime.idle())
+    expect(existsSync(join(r.workspace, 'parked.txt'))).toBe(false)
+    const page = (await r.bearer(`/kortix/runtime/messages/${runtime.rootId}`).then((res) => res.json())) as { messages: Array<{ parts: Array<Record<string, any>> }> }
+    expect(page.messages.flatMap((m) => m.parts).filter((p) => p.type === 'text').map((p) => p.text)).toContain('second answered')
+  })
+
+  test('a call a person approved while it was parked runs on the re-run without asking', async () => {
+    const calls: Array<{ tool: string; argsHash: string }> = []
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo approved > ran.txt' } }, { text: 'ran it' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
+      hooks: { onPermissionAsked: async (_request, call) => (calls.push(call), { approved: true, grant: 'bash' }) },
+    })
+    const runtime = r.service.runtime()!
+    expect((await prompt(r, runtime.rootId, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
+    await waitFor(() => !runtime.busy() && runtime.idle())
+    expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(true)
+    expect(calls).toEqual([{ tool: 'bash', argsHash: permissionArgsHash('bash', { command: 'echo approved > ran.txt' }) }])
+    expect(runtime.permissions.list()).toEqual([])
+    // "Always": the capability is granted for the rest of the session.
+    expect(runtime.permissions.grantList()).toEqual(['bash'])
   })
 
   test('a rejected permission blocks the tool and the turn still ends', async () => {
@@ -1069,7 +1149,7 @@ describe('pi harness', () => {
     const previous = process.env.KORTIX_MANAGED_SKILLS_DIR
     process.env.KORTIX_MANAGED_SKILLS_DIR = managed
     try {
-      const envs: Array<Record<string, string>> = [{}, { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'agent_rooms' }]
+      const envs: Array<Record<string, string>> = [{}, { KORTIX_GENUI: '0', KORTIX_FEATURE_FLAGS: 'chat' }]
       for (const env of envs) {
         const r = await boot({ script: [{ text: 'ok' }], env })
         const skills = skillList(r)
@@ -1137,7 +1217,7 @@ describe('pi harness', () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'done' }],
       env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
-      hooks: { onPermissionAsked: (request) => asked.push(request) },
+      hooks: { onPermissionAsked: async (request) => (asked.push(request), null) },
     })
     const root = r.service.runtime()!.rootId
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'go' }] })).status).toBe(204)
@@ -1159,7 +1239,7 @@ describe('pi harness', () => {
     await waitFor(() => !r.service.runtime()!.busy())
     const tool = frames.find((frame) => frame.type === 'message.part.updated' && (frame.properties.part as { type?: string })?.type === 'tool')
     expect(tool).toBeDefined()
-    // The shared sanitizer (the same one OpenCode's events go through) turns it into a ledger row.
+    // The shared sanitizer (`harness/shared/audit-relay.ts`) turns it into a ledger row.
     const event = sanitizeRuntimeEvent(tool!)
     expect(event).toMatchObject({ runtime_session_id: root, type: 'message.part.updated' })
     expect(event!.tool_call_id).toBeTruthy()
@@ -1352,7 +1432,7 @@ describe('pi harness', () => {
     // The retried request re-sends the conversation without the cut reply.
     expect(JSON.stringify(gateway.sent.at(-1))).not.toContain('half an ans')
 
-    // The stream shows OpenCode's retry status between attempts and never a session.error.
+    // The stream shows the v1 retry status between attempts and never a session.error.
     const text = await readSse(events, (t) => t.includes('Full answer.') && t.includes('event: session.idle'))
     expect(text).not.toContain('event: session.error')
     const statuses = text
@@ -1755,6 +1835,51 @@ describe('pi extensions', () => {
     expect(child).toContain("Today's date: Tue Mar 10 2026 (")
   })
 
+  test('every agent is told its session ids; a separate subagent its parent session, a subagent inside the session the main conversation', async () => {
+    const session = '11111111-1111-4111-8111-111111111111'
+    const parent = '22222222-2222-4222-8222-222222222222'
+    const r = await boot({
+      script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general', session: 'same' } }, { text: 'child done' }, { text: 'parent done' }],
+      env: { KORTIX_SESSION_ID: session, KORTIX_PROJECT_ID: 'project-1', KORTIX_PARENT_SESSION_ID: parent, KORTIX_SPACE_ID: 'space-1' },
+    })
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, 'one')
+    await promptAndSettle(r, 'delegate it')
+    const [root, , child] = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(root).toContain(`## Session ids\n- session_id: ${session} (this session)\n- project_id: project-1\n- parent_session_id: ${parent} (the session that started you)\n- space_id: space-1`)
+    expect(root).toContain('`kortix sessions log <session_id> -n 50`')
+    expect(child).toContain(`- parent: the main conversation of this session (${session}), which started you`)
+    expect(child).not.toContain('parent_session_id')
+  })
+
+  test('a box whose /workspace is a volume tells the model, a subagent included, that the computer is temporary; on a new computer it also says programs from before are not running; a box on its own disk says neither', async () => {
+    const r = await boot({
+      script: [{ text: 'a' }, { tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],
+      env: { KORTIX_WORKSPACE_VOLUME: '1' },
+    })
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, 'one')
+    // What the boot does when its reconcile restored the log onto this box (pi/boot.ts).
+    r.service.runtime()!.markNewComputer()
+    await promptAndSettle(r, 'delegate it')
+    const [one, two, child] = gateway.sent.slice(sentBefore).map(systemSent)
+    for (const prompt of [one, two, child]) {
+      expect(prompt).toContain('## This computer is temporary')
+      expect(prompt).toContain('Only /workspace is kept')
+      expect(prompt).toContain('Every program you start stops when the session goes idle')
+    }
+    expect(one).not.toContain('This is a new computer')
+    expect(two).toContain('This is a new computer')
+    expect(child).toContain('This is a new computer')
+
+    const disk = await boot({ script: [{ text: 'b' }] })
+    const diskBefore = gateway.sent.length
+    await promptAndSettle(disk, 'one')
+    const [plain] = gateway.sent.slice(diskBefore).map(systemSent)
+    expect(plain).not.toContain('## This computer is temporary')
+    expect(plain).not.toContain('This is a new computer')
+  })
+
   test('an extension that throws is reported and skipped; lifecycle events reach the others', async () => {
     let log = ''
     const r = await boot({
@@ -1808,6 +1933,20 @@ export default function (pi) {
     expect(await hooks.onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm' })
     ref.current = { hasHandlers: (type: string) => type === 'before_provider_request', emitBeforeProviderRequest: async (p: object) => ({ ...p, temperature: 0 }) }
     expect(await hooks.onPayload!({ model: 'm' }, {} as never)).toEqual({ model: 'm', temperature: 0 })
+  })
+
+  test('the context goes to the model as it is unless an extension handles it (pi copies it whole for one)', async () => {
+    const messages = [{ role: 'user', content: [{ type: 'image', data: 'x'.repeat(1000), mimeType: 'image/png' }], timestamp: 1 }] as never[]
+    let copies = 0
+    const ref: { current?: any } = {
+      current: { hasHandlers: () => false, emitContext: async (m: unknown[]) => (copies++, structuredClone(m)) },
+    }
+    const hooks = extensionAgentHooks(ref)
+    expect(await hooks.transformContext!(messages)).toBe(messages)
+    expect(copies).toBe(0)
+    ref.current.hasHandlers = (type: string) => type === 'context_with_system'
+    expect(await hooks.transformContext!(messages)).toEqual(messages)
+    expect(copies).toBe(1)
   })
 })
 
@@ -2050,12 +2189,12 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const path = new URL(req.url).pathname
-        if (req.method === 'POST' && path === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'POST' && path === '/v1/workspaces/proj-pi-test/sessions') {
           creates.push((await req.json()) as Record<string, any>)
           return Response.json({ session_id: `cloud-child-${creates.length}` }, { status: 201 })
         }
         if (path.endsWith('/transcript')) return Response.json({ messages: [{ role: 'user', text: 'go' }, { role: 'assistant', text: 'cloud report' }] })
-        if (req.method === 'GET' && path.startsWith('/v1/projects/proj-pi-test/sessions/cloud-child-')) {
+        if (req.method === 'GET' && path.startsWith('/v1/workspaces/proj-pi-test/sessions/cloud-child-')) {
           return Response.json({ status: 'running', working: { state: 'idle', since: '2026-10-24T10:00:00.000Z', pending_delivery: false } })
         }
         return new Response('not found', { status: 404 })
@@ -2103,11 +2242,11 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
           creates.push((await req.json()) as Record<string, any>)
           return Response.json({ session_id: 'bg-child-1' }, { status: 201 })
         }
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
           reads.push(`list ${url.searchParams.get('parent')}`)
           return Response.json([])
         }
@@ -2142,17 +2281,166 @@ describe('pi subagents extension', () => {
     }
   })
 
+  test('a router (kortix.front) has only agent, send_message and task_stop; it routes each task to a roster agent or My Kortix, as a named background worker, not narrowed', async () => {
+    const creates: Array<Record<string, any>> = []
+    let detailReads = 0
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
+          creates.push((await req.json()) as Record<string, any>)
+          return Response.json({ session_id: `front-worker-${creates.length}` }, { status: 201 })
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/detail') {
+          detailReads++
+          return Response.json({
+            config: {
+              agents: [
+                { name: 'mykortix', description: 'My Kortix', platform: true },
+                { name: 'researcher', description: 'Finds facts on the web\nand cites sources.' },
+                { name: 'retired', description: 'Off', enabled: false },
+                { name: 'cron-bot', description: 'Internal', hidden: true },
+              ],
+            },
+          })
+        }
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        script: [
+          // A roster agent, in the same session, in the foreground: the router keeps the agent and overrides the rest.
+          { tool: 'agent', args: { description: 'Find flights', prompt: 'find flights to Lisbon', subagent_type: 'researcher', name: 'flights', session: 'same', run_in_background: false } },
+          // No agent named and no name: My Kortix, named after the description.
+          { tool: 'agent', args: { description: 'Draft the invite', prompt: 'draft the invite' } },
+          // An agent the roster does not hold: refused with the roster.
+          { tool: 'agent', args: { description: 'Do it', prompt: 'do it', subagent_type: 'nope' } },
+          { text: 'On it.' },
+        ],
+        env: {
+          KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+          KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.front': true }),
+          // A front runs on My Kortix's box: any project agent, My Kortix included, is a name the API resolves.
+          KORTIX_META_AGENT: '1',
+        },
+      })
+      // The router works too: its agent's own tools, plus the hand-off tools it always keeps.
+      const ids = await toolIds(r)
+      expect(ids).toEqual(expect.arrayContaining(['agent', 'send_message', 'task_stop', 'read', 'bash']))
+      const sentBefore = gateway.sent.length
+      await promptAndSettle(r, 'find flights to Lisbon and draft the invite')
+      expect(creates).toHaveLength(2)
+      const [routed, fallback] = creates as [Record<string, any>, Record<string, any>]
+      expect(routed.agent_name).toBe('researcher')
+      expect(routed.initial_prompt).toBe('find flights to Lisbon')
+      expect(routed.metadata).toMatchObject({ notify_parent: true, agent_handle: 'flights' })
+      expect(routed.runtime_context['kortix.front.thread']).toBe(true)
+      expect(routed.runtime_context['kortix.agent.handle']).toBe('flights')
+      // The worker is not narrowed to the router's three tools.
+      expect(routed.runtime_context['kortix.subagent.tools']).toBeUndefined()
+      expect(fallback.agent_name).toBe('mykortix')
+      expect(fallback.metadata).toMatchObject({ notify_parent: true, agent_handle: 'draft-the-invite' })
+      expect(fallback.runtime_context['kortix.front.thread']).toBe(true)
+      const page = (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+      const refused = toolParts(page, 'agent')[2]!
+      expect(refused.state.status).toBe('error')
+      expect(JSON.stringify(refused.state)).toContain('\\"nope\\" is not an agent of this project. Pick one of: mykortix, researcher.')
+      // The roster is read once (boot warm-up and first turn share the read) and is cached across the turn.
+      expect(detailReads).toBe(1)
+      const systems = gateway.sent.slice(sentBefore).map(systemSent)
+      // The router's own prompt replaces the agent's: quick work itself, longer work handed off.
+      expect(systems.every((system) => system.startsWith('You are Kortix, talking with a person in a chat thread.'))).toBe(true)
+      expect(systems[0]).toContain('## Do it yourself when it is quick')
+      expect(systems[0]).toContain('Never paste or retype the agent\'s full text')
+      expect(systems[0]).toContain('## Agents you can hand work to\n- mykortix (the default)')
+      expect(systems[0]).toContain('- researcher: Finds facts on the web and cites sources.')
+      expect(systems[0]).not.toContain('retired')
+      expect(systems[0]).not.toContain('cron-bot')
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('a space watcher (kortix.watcher) has no tools and answers under the watcher prompt', async () => {
+    const r = await boot({
+      script: [{ text: '{"action":"quiet","why":"nothing new"}' }],
+      env: { KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.watcher': true }) },
+    })
+    expect(await toolIds(r)).toEqual([])
+    const sentBefore = gateway.sent.length
+    await promptAndSettle(r, '## Space watch: #launch')
+    const systems = gateway.sent.slice(sentBefore).map(systemSent)
+    expect(systems.length).toBeGreaterThan(0)
+    expect(systems.every((system) => system.startsWith("You are Kortix, the watcher of one space"))).toBe(true)
+  })
+
+  test("a router's prompt body thread_files end every worker prompt with the Context files block, a notice turn's too", async () => {
+    const creates: Array<Record<string, any>> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        const url = new URL(req.url)
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
+          creates.push((await req.json()) as Record<string, any>)
+          return Response.json({ session_id: `files-worker-${creates.length}` }, { status: 201 })
+        }
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/detail') return Response.json({ config: { agents: [] } })
+        return new Response('not found', { status: 404 })
+      },
+    })
+    try {
+      const r = await boot({
+        script: [
+          { tool: 'agent', args: { description: 'Write a poem', prompt: 'Write the poem the person asked for.', name: 'poem' } },
+          { text: 'On it.' },
+          { tool: 'agent', args: { description: 'Shorter', prompt: 'Make it shorter.', name: 'poem-short' } },
+          { text: 'Sure.' },
+        ],
+        env: {
+          KORTIX_API_URL: `http://127.0.0.1:${server.port}/v1`,
+          KORTIX_SESSION_CONTEXT: JSON.stringify({ 'kortix.front': true }),
+          KORTIX_META_AGENT: '1',
+        },
+      })
+      const root = r.service.runtime()!.rootId
+      const files = { folder: '/drives/general/threads/a-poem-1a2b3c4d', context: '/drives/general/context.md', session: '1a2b3c4d-5e6f-4a1b-9c2d-0e1f2a3b4c5d' }
+      // The route the API forwards a prompt to: thread_files rides beside system.
+      const sent = await r.user(`/kortix/runtime/sessions/${root}/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ parts: [{ type: 'text', text: 'a poem about rain' }], thread_files: files }) })
+      expect(sent.status).toBe(202)
+      await waitFor(() => !r.service.runtime()!.busy())
+      expect(creates).toHaveLength(1)
+      const prompt = creates[0]!.initial_prompt as string
+      expect(prompt.startsWith('Write the poem the person asked for.\n\n## Context files\n')).toBe(true)
+      expect(prompt).toContain('- The conversation: `kortix sessions log 1a2b3c4d-5e6f-4a1b-9c2d-0e1f2a3b4c5d -n 50`')
+      expect(prompt).toContain('- Your work folder: /drives/general/threads/a-poem-1a2b3c4d/work/poem/ (keep your scratch files here)')
+      expect(prompt).toContain('- Your result file: /drives/general/threads/a-poem-1a2b3c4d/results/poem-<n>.md')
+      // A notice turn carries the same thread_files: the conversation is the session log, not a message file.
+      const again = await r.user(`/session/${root}/prompt_async`, { method: 'POST', body: JSON.stringify({ parts: [{ type: 'text', text: 'worker done', synthetic: true }], thread_files: files }) })
+      expect(again.status).toBe(204)
+      await waitFor(() => !r.service.runtime()!.busy())
+      expect(creates).toHaveLength(2)
+      expect(creates[1]!.initial_prompt).toContain('- The conversation: `kortix sessions log 1a2b3c4d-5e6f-4a1b-9c2d-0e1f2a3b4c5d -n 50`')
+      expect(creates[1]!.initial_prompt).toContain('/results/poem-short-<n>.md')
+    } finally {
+      server.stop(true)
+    }
+  })
+
   test('a follow-up to a separate background child needs only its task_id, and returns at once', async () => {
     const prompts: Array<Record<string, any>> = []
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([])
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-7') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') return Response.json([])
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions/bg-child-7') {
           return Response.json({ session_id: 'bg-child-7', parent_session_id: 'sess-pi-test', status: 'stopped', metadata: { notify_parent: true }, working: { state: 'idle' } })
         }
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-7/prompts') {
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions/bg-child-7/prompts') {
           prompts.push((await req.json()) as Record<string, any>)
           return Response.json({ prompt_id: 'p1', state: 'queued' }, { status: 202 })
         }
@@ -2185,13 +2473,13 @@ describe('pi subagents extension', () => {
       port: 0,
       fetch: async (req) => {
         const url = new URL(req.url)
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions') return Response.json([finished])
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') return Response.json([finished])
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions') {
           creates.push(await req.json())
           return Response.json({ session_id: 'bg-child-10' }, { status: 201 })
         }
-        if (req.method === 'GET' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-9') return Response.json(finished)
-        if (req.method === 'POST' && url.pathname === '/v1/projects/proj-pi-test/sessions/bg-child-9/prompts') {
+        if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj-pi-test/sessions/bg-child-9') return Response.json(finished)
+        if (req.method === 'POST' && url.pathname === '/v1/workspaces/proj-pi-test/sessions/bg-child-9/prompts') {
           prompts.push((await req.json()) as Record<string, any>)
           return Response.json({ prompt_id: 'p1', state: 'queued' }, { status: 202 })
         }
@@ -2221,7 +2509,7 @@ describe('pi subagents extension', () => {
     const server = Bun.serve({
       port: 0,
       fetch: (req) => {
-        if (req.method === 'POST' && new URL(req.url).pathname === '/v1/projects/proj-pi-test/sessions') creates += 1
+        if (req.method === 'POST' && new URL(req.url).pathname === '/v1/workspaces/proj-pi-test/sessions') creates += 1
         return new Response('not found', { status: 404 })
       },
     })
@@ -3644,7 +3932,7 @@ describe('pi steering', () => {
     const dump = JSON.parse(readFileSync(join(r.workspace, '.state', 'sess-pi-test.json'), 'utf8')) as { entries: unknown[] }
     expect(JSON.stringify(dump.entries)).toContain('STEER-ONE')
     // Read: it cannot be withdrawn any more.
-    const removed = await r.user(`/kortix/runtime/messages/${root}/${steered}`, { method: 'DELETE' })
+    const removed = await post(r, `/kortix/runtime/messages/${root}/${steered}/retract`, {})
     expect(removed.status).toBe(409)
     expect(await removed.json()).toEqual({ code: 'message_read', error: 'a model call read this message' })
   })
@@ -3682,14 +3970,14 @@ describe('pi steering', () => {
     await Bun.sleep(2)
     const kept = await sendTimeId(r)
     expect((await steer(r, kept, 'STEER-KEPT')).status).toBe(202)
-    const removed = await r.user(`/kortix/runtime/messages/${root}/${withdrawn}`, { method: 'DELETE' })
+    const removed = await post(r, `/kortix/runtime/messages/${root}/${withdrawn}/retract`, {})
     expect(removed.status).toBe(200)
     await waitFor(() => seen.ends.length === 1)
     expect(sentText(before + 1)).toContain('STEER-KEPT')
     expect(sentText(before + 1)).not.toContain('STEER-GONE')
     expect(seen.reads).toEqual([kept])
     expect((await page(r)).messages.some((m) => m.info.id === withdrawn)).toBe(false)
-    expect((await r.user(`/kortix/runtime/messages/${root}/${withdrawn}`, { method: 'DELETE' })).status).toBe(404)
+    expect((await post(r, `/kortix/runtime/messages/${root}/${withdrawn}/retract`, {})).status).toBe(404)
   })
 
   test('a message steered after the last step starts the next turn when the turn ends', async () => {
@@ -3705,8 +3993,11 @@ describe('pi steering', () => {
     const rt = r.service.runtime()!
     const before = gateway.sent.length
     expect((await post(r, `/kortix/runtime/sessions/${rt.rootId}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
-    await waitFor(() => !rt.busy() && rt.activeTurnMessageId() === TURN && gateway.sent.length - before === 1)
+    await waitFor(() => rt.activeTurnMessageId() === TURN && gateway.sent.length - before === 1)
     await Bun.sleep(100)
+    // The turn's last step is over and pi said idle on the wire; the turn still runs, so it is busy.
+    expect(rt.activeTurnMessageId()).toBe(TURN)
+    expect(rt.busy()).toBe(true)
     const late = await sendTimeId(r)
     expect((await steer(r, late, 'STEER-LATE')).status).toBe(202)
     await waitFor(() => seen.ends.length === 2)
@@ -3902,14 +4193,16 @@ describe('pi retract (R7.1)', () => {
     expect((await retract(r, kept)).status).toBe(409)
   })
 
-  test('the DELETE verb an older API sends retracts a queued prompt too', async () => {
+  test('the compatibility DELETE retracts a queued prompt too; the Kortix DELETE verb is retired', async () => {
+    // #11821 removed DELETE /kortix/runtime/messages/:sid/:mid: retract is the Kortix verb.
     const { seen, hooks } = turnRelays()
     const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }], hooks })
     expect((await send(r, TURN, 'run the tool')).status).toBe(202)
     await waitForRunningTool(r, root(r))
     const queued = await sendTimeId(r)
     expect((await send(r, queued, 'QUEUED-DELETED')).status).toBe(202)
-    expect((await r.user(`/kortix/runtime/messages/${root(r)}/${queued}`, { method: 'DELETE' })).status).toBe(200)
+    expect((await r.user(`/kortix/runtime/messages/${root(r)}/${queued}`, { method: 'DELETE' })).status).toBe(404)
+    expect(await retract(r, queued).then((res) => res.json())).toEqual({ retracted: true })
     const legacy = await sendTimeId(r)
     expect((await send(r, legacy, 'QUEUED-LEGACY')).status).toBe(202)
     expect((await r.user(`/session/${root(r)}/message/${legacy}`, { method: 'DELETE' })).status).toBe(200)
@@ -4044,16 +4337,12 @@ describe('pi per-prompt agent (R7.2)', () => {
   })
 })
 
-/** The session's record file (`<state>/records/<pi session id>.log`) and its text. */
-const recordOf = (r: Rig) => {
-  const dir = join(r.workspace, '.state', 'records')
-  const file = readdirSync(dir).find((name) => name.endsWith('.log'))!
-  return { path: join(dir, file), text: readFileSync(join(dir, file), 'utf8') }
-}
 const RESET_LINE = 'You are continuing this conversation in a fresh context. Nothing was summarized.'
+/** The reset points at the stored session log of the rig's session (`KORTIX_SESSION_ID`). */
+const LOG_LINE = '`kortix sessions log sess-pi-test -n 50 --json`'
 
-describe('pi context record: retrieval instead of compaction', () => {
-  test('/summarize resets onto the record with no model call: the next request holds the reset text, not the history', async () => {
+describe('pi context record: retrieval instead of compaction, on the session log', () => {
+  test('/summarize resets onto the session log with no model call and no file: the next request holds the reset text, not the history', async () => {
     const r = await boot({ script: [{ text: 'first answer ERR-ALPHA-7731' }, { text: 'second answer' }, { text: 'third answer' }], prepare: compactEverything })
     const root = r.service.runtime()!.rootId
     expect(r.service.runtime()!.extensionStatus().loaded).toContain('kortix-context-record')
@@ -4067,39 +4356,31 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(gateway.sent.length).toBe(calls)
     const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
     const [turn] = compactionTurns(page)
-    const headerCount = recordOf(r).text.split('\n').filter((line) => line.startsWith('{"n":')).length
-    // The marker says it is a reset onto the record, with its size, for the client's divider.
-    expect(turn!.part).toMatchObject({ type: 'compaction', auto: false, mode: 'record', tokens_before: expect.any(Number), entries: headerCount })
+    // The marker says it is a reset onto the log, with the message count, for the client's divider.
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: false, mode: 'record', tokens_before: expect.any(Number), entries: 4 })
     expect(turn!.summary.info.error).toBeUndefined()
     // The session log carries the same, so a restored or API-served transcript shows the reset too.
     const { log } = piSessionLog(r.service.runtime()!.sessionLogSnapshot()!)
     const block = log.threads[0]!.messages.flatMap((m) => m.blocks).find((b) => b.type === 'compaction')
-    expect(block).toMatchObject({ type: 'compaction', trigger: 'manual', mode: 'record', entries: headerCount })
-    const { path, text } = recordOf(r)
+    expect(block).toMatchObject({ type: 'compaction', trigger: 'manual', mode: 'record', entries: 4 })
     expect(turn!.summary.parts[0]!.text).toContain(RESET_LINE)
-    expect(turn!.summary.parts[0]!.text).toContain(path)
+    expect(turn!.summary.parts[0]!.text).toContain(LOG_LINE)
     // The latest message comes along word for word; a manual reset is not mid-turn.
     expect(turn!.summary.parts[0]!.text).toContain('<message>\nBETA question\n</message>')
     expect(turn!.summary.parts[0]!.text).not.toContain('You were working on it')
-    // The record keeps every entry word for word, with a JSON header line each.
-    expect(text).toContain('ALPHA question')
-    expect(text).toContain('first answer ERR-ALPHA-7731')
-    const headers = text.split('\n').filter((line) => line.startsWith('{"n":')).map((line) => JSON.parse(line) as { n: number; kind: string })
-    expect(headers.map((h) => h.n)).toEqual(headers.map((_, i) => i + 1))
-    expect({ kinds: headers.map((h) => h.kind) }).toEqual({ kinds: ['user', 'assistant', 'user', 'assistant'] })
-    // The record never shows as a change in a checkout that holds the state dir.
-    expect(readFileSync(join(r.workspace, '.state', 'records', '.gitignore'), 'utf8')).toBe('*\n')
+    // No copy of the conversation is written.
+    expect(existsSync(join(r.workspace, '.state', 'records'))).toBe(false)
 
     await promptAndSettle(r, 'GAMMA question')
     const next = sentText(gateway.sent.at(-1)!)
     expect(next).toContain(RESET_LINE)
     expect(next).toContain('GAMMA question')
-    // Nothing before the reset is in the context: it is kept in the record only.
+    // Nothing before the reset is in the context: the session log holds it.
     expect(next).not.toContain('ERR-ALPHA-7731')
     expect(next).not.toContain('second answer')
   })
 
-  test("a short session resets on /summarize with pi's default settings: the record keeps nothing, so pi's 20,000-token tail rule does not refuse it", async () => {
+  test("a short session resets on /summarize with pi's default settings: the reset keeps nothing, so pi's 20,000-token tail rule does not refuse it", async () => {
     const r = await boot({ script: [{ text: 'first answer' }, { text: 'second answer' }] })
     const root = r.service.runtime()!.rootId
     await promptAndSettle(r, 'ALPHA question')
@@ -4146,7 +4427,7 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(page.messages.at(-1)!.parts.map((p) => p.text).join('')).toContain('answer after the reset')
   })
 
-  test('a reply cut by the length limit resets onto the record and retries once: the turn completes with the retried answer', async () => {
+  test('a reply cut by the length limit resets onto the session log and retries once: the turn completes with the retried answer', async () => {
     const r = await boot({ script: [{ text: 'partial answ', finish: 'length' }, { text: 'the whole answer' }] })
     const root = r.service.runtime()!.rootId
     const messageID = 'msg_0198e2a4b0c8ABCDEFGHIJKLMN'
@@ -4158,40 +4439,6 @@ describe('pi context record: retrieval instead of compaction', () => {
     expect(compactionTurns(page)[0]!.part).toMatchObject({ mode: 'record' })
     expect(page.messages.at(-1)!.parts.map((p) => p.text).join('')).toContain('the whole answer')
     expect(sentText(gateway.sent.at(-1)!)).toContain('You were working on it when the context filled.')
-  })
-
-  test('tool calls and results go into the record whole, an image as one line', async () => {
-    const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
-    const imageCatalog = testModel({ attachment: true })
-    const big = 'x'.repeat(60_000)
-    const r = await boot({
-      script: [{ tool: 'bash', args: { command: `printf '%s' ${big} > big.txt && cat big.txt` } }, { text: 'read it' }],
-      catalog: imageCatalog,
-    })
-    const root = r.service.runtime()!.rootId
-    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'what is this' }, { type: 'file', mime: 'image/png', url: PNG, filename: 'shot.png' }] })).status).toBe(204)
-    await waitFor(() => r.service.runtime()!.idle())
-    const { text } = recordOf(r)
-    const lines = text.split('\n')
-    const headers = lines.filter((line) => line.startsWith('{"n":')).map((line) => JSON.parse(line) as Record<string, unknown>)
-    expect(headers.map((h) => h.kind)).toEqual(['user', 'call', 'result', 'assistant'])
-    expect(headers[1]).toMatchObject({ name: 'bash', id: expect.any(String) })
-    expect(headers[2]).toMatchObject({ name: 'bash', for: headers[1]!.id, exit: 'ok' })
-    expect(text).toMatch(/\[image: image\/png, \d+ bytes, not in the record\]/)
-    expect(text).toContain('printf')
-    // The 60,000-character command is in the record whole.
-    expect(text).toContain(big)
-  })
-
-  test('a restarted daemon rebuilds the record from the restored conversation', async () => {
-    const r = await boot({ script: [{ text: 'first answer ERR-BETA-0042' }] })
-    await promptAndSettle(r, 'ALPHA question')
-    await r.service.lifecycle.stop()
-    rmSync(join(r.workspace, '.state', 'records'), { recursive: true, force: true })
-    const restarted = await boot({ script: [], workspace: r.workspace })
-    rigs.splice(rigs.indexOf(r), 1)
-    await waitFor(() => existsSync(join(r.workspace, '.state', 'records')))
-    expect(recordOf(restarted).text).toContain('first answer ERR-BETA-0042')
   })
 
   test('health lists session.context_record, so a client words its reset controls for the record; an agent on summary does not list it', async () => {
@@ -4490,17 +4737,15 @@ describe('pi session log on the v2 stream (P4.3)', () => {
   })
 
   test('a prompt queued behind a running turn is on the stream at its queued seq from admission, then at its real seq; GET /log shows the seqs the API stores', async () => {
-    const r = await boot({
-      script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'first done' }, { text: 'second done' }],
-      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: { permission: { bash: 'ask' } } } }) },
-    })
+    // A running tool holds the turn: an open ask would not, a new prompt parks it (#11797).
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 1.5; echo held' } }, { text: 'first done' }, { text: 'second done' }] })
     const rt = r.service.runtime()!
     const root = rt.rootId
     // A 422 re-sequenced this thread on an earlier boot: the API stores every seq 5 higher.
     expect(startSessionLogJournal(createPiSessionLogPort(() => r.service.runtime()?.sessionLogSnapshot() ?? null), { generation: 3, seq_offsets: { [root]: 5 } })).not.toBeNull()
     const stream = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
     expect((await prompt(r, root, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
-    await waitFor(() => rt.permissions.list().length === 1)
+    await waitForRunningTool(r, root)
     const queued = 'msg_0198e2a4b0f1QUEUEDPROMPTBC'
     expect((await prompt(r, root, { messageID: queued, parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
     const page = (await r.user('/kortix/runtime/log').then((res) => res.json())) as { generation: number; messages: SessionLogMessage[] }
@@ -4519,8 +4764,7 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     // Unshifted: the queued seq is above every real one already.
     expect(puts(admitted).map((m) => m.seq)).toEqual([Number.MAX_SAFE_INTEGER])
     expect(puts(admitted)[0]).toMatchObject({ role: 'user', blocks: [{ type: 'text', text: 'second' }] })
-    expect((await r.user(`/kortix/runtime/permissions/${rt.permissions.list()[0]!.id}/reply`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reply: 'once' }) })).status).toBe(200)
-    await waitFor(() => !rt.busy())
+    await waitFor(() => !rt.busy(), 10_000)
     const replay = await r.bearer('/kortix/runtime/events?schema=v2&since=0')
     const started = await readSse(replay, (t) => puts(t).some((m) => m.seq < 1_000_000))
     // Its turn started: the next put carries its real seq, shifted as the API stores it, before the journal collects.
@@ -5720,7 +5964,7 @@ describe('session-log actions (runtime.actions.v1)', () => {
     gateway.script([{ tool: 'bash', args: { command: 'echo asked' } }, { text: 'three' }])
     expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'again' }] })).status).toBe(204)
     await waitFor(() => rt.permissions.list().length === 1)
-    rt.permissions.rejectAll()
+    rt.permissions.parkAll()
     await waitFor(() => !rt.busy())
     expect((await call(r, '/sessions/ses_other/grants', { grants: ['*'] }, 'PUT')).status).toBe(404)
   })
@@ -5782,13 +6026,14 @@ describe('session-log actions (runtime.actions.v1)', () => {
   })
 
   test('GET /log answers a whole page; a prompt queued behind a running turn is in the log from admission, then at its real seq', async () => {
-    const r = await boot({ script: [{ tool: 'bash', args: { command: 'echo gated' } }, { text: 'first done' }, { text: 'second done' }], env: { KORTIX_COMPILED_AGENT_CONFIG: askBash } })
+    // A running tool holds the turn: an open ask would not, a new prompt parks it (#11797).
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 1.5; echo held' } }, { text: 'first done' }, { text: 'second done' }] })
     const rt = r.service.runtime()!
     const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[]; harness: { session: { root_thread_id?: string | null } } }
     expect(health.capabilities).toContain('runtime.log.v1')
     expect(health.harness.session.root_thread_id).toBe(rt.rootId)
     expect((await prompt(r, rt.rootId, { parts: [{ type: 'text', text: 'first' }] })).status).toBe(204)
-    await waitFor(() => rt.permissions.list().length === 1)
+    await waitForRunningTool(r, rt.rootId)
     const queued = 'msg_0198e2a4b0f1QUEUEDPROMPTAB'
     expect((await prompt(r, rt.rootId, { messageID: queued, parts: [{ type: 'text', text: 'second' }] })).status).toBe(204)
     type Page = LogPage & { session: Record<string, unknown>; generation: number; threads: Array<Record<string, unknown>> }
@@ -5806,8 +6051,7 @@ describe('session-log actions (runtime.actions.v1)', () => {
     // An older page never holds a queued prompt.
     const older = (await call(r, `/log?before_seq=${page.messages[0]!.seq + 1}`, undefined, 'GET').then((res) => res.json())) as Page
     expect(older.messages.some((m) => m.message_id === queued)).toBe(false)
-    expect((await call(r, `/permissions/${rt.permissions.list()[0]!.id}/reply`, { reply: 'once' })).status).toBe(200)
-    await waitFor(() => !rt.busy())
+    await waitFor(() => !rt.busy(), 10_000)
     const settled = (await call(r, '/log', undefined, 'GET').then((res) => res.json())) as Page
     const prompts = settled.messages.filter((m) => m.message_id === queued)
     expect(prompts).toHaveLength(1)

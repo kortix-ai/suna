@@ -18,6 +18,7 @@
  * Scope: `git-receive-pack` ⇒ write; `git-upload-pack` ⇒ read.
  */
 import { createRoute, z } from '@hono/zod-openapi';
+import type { MiddlewareHandler } from 'hono';
 import {
   authorizeGitProxy,
   resolveProjectUpstream,
@@ -296,8 +297,8 @@ async function forwardAuthorized(
     void (async () => {
       try {
         const gitProject = await loadGitProject({ row: auth.project });
-        // Warm the fresh-session git hint (base tip + scaffold delta + OpenCode
-        // config dir) right after the push that moved the tip, so the next
+        // Warm the fresh-session git hint (base tip + scaffold delta) right
+        // after the push that moved the tip, so the next
         // session create finds it cached instead of losing the 2 s create-time
         // race on a cold mirror (measured on dev 2026-08-27: a 200 KB delta's
         // first session fell back to a 6 s proxied fetch; the second, with the
@@ -564,6 +565,20 @@ function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {
   }
   return out;
 }
+
+// info/refs, fast-boot-bundle and project-snapshot carry a query schema, and the
+// OpenAPI validator runs before any handler code. Registered before them: Hono
+// runs middleware in registration order. Without this, an anonymous request with a missing or
+// malformed query got `400 Validation failed` (naming the parameters) instead of
+// `401`. Reject a credential-less request first; the handler still authorizes
+// the token against the project.
+const requireGitCredential: MiddlewareHandler = async (c, next) => {
+  if (!extractToken(c.req.header('authorization'))) return unauthorized(c, 'authentication required');
+  await next();
+};
+gitProxyApp.use('/:project/fast-boot-bundle', requireGitCredential);
+gitProxyApp.use('/:project/project-snapshot', requireGitCredential);
+gitProxyApp.use('/:project/info/refs', requireGitCredential);
 
 // Ref discovery — scope is determined by the requested service.
 gitProxyApp.openapi(

@@ -41,7 +41,7 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
     );
   }
   if (everyone && users.length + groups.length + agents.length > 0) {
-    return fail('--everyone shares it with the whole project; drop --user, --group and --agent.');
+    return fail('--everyone shares it with the whole workspace; drop --user, --group and --agent.');
   }
   if (!everyone && users.length + groups.length + agents.length === 0) {
     return fail(
@@ -52,7 +52,7 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   try {
-    const list = await ctx.client.get<ProjectSecretsResponse>(`/projects/${ctx.projectId}/secrets`);
+    const list = await ctx.client.get<ProjectSecretsResponse>(`/workspaces/${ctx.projectId}/secrets`);
     const target = list.items.find(
       (item) => item.identifier.toUpperCase() === identifier.toUpperCase(),
     );
@@ -70,11 +70,11 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
     let accountId: string | null = null;
     for (const who of users) {
       if (who === 'me') {
-        const me = await ctx.client.get<{ user_id: string }>('/accounts/me');
+        const me = await ctx.client.get<{ user_id: string }>('/me');
         principals.push({ principal_type: 'user', principal_id: me.user_id });
         continue;
       }
-      accountId ??= (await ctx.client.get<{ account_id: string }>(`/projects/${ctx.projectId}`))
+      accountId ??= (await ctx.client.get<{ account_id: string }>(`/workspaces/${ctx.projectId}`))
         .account_id;
       const userId = await resolveUserId(ctx.client, accountId, who);
       if (!userId) return 1;
@@ -85,20 +85,20 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
       const identities = (
         await ctx.client.get<{
           agents: Array<{ service_account_id: string; agent_name: string | null }>;
-        }>(`/projects/${ctx.projectId}/agent-identities`)
+        }>(`/workspaces/${ctx.projectId}/agent-identities`)
       ).agents;
       for (const name of agents) {
         const hit = identities.find((agent) => agent.agent_name === name);
         if (!hit) {
           process.stderr.write(
-            `${status.err(`No agent "${name}" in this project. See: kortix agents ls`)}\n`,
+            `${status.err(`No agent "${name}" in this workspace. See: kortix agents ls`)}\n`,
           );
           return 1;
         }
         principals.push({ principal_type: 'agent', principal_id: hit.service_account_id });
       }
     }
-    const response = await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+    const response = await ctx.client.post<ProjectSecret>(`/workspaces/${ctx.projectId}/secrets`, {
       name: target.name,
       identifier: target.identifier,
       shared_with: everyone ? [] : principals,
@@ -112,7 +112,7 @@ export async function secretsShare(args: string[], opts: CtxOpts, json = false):
       return n === 0 ? null : `${n} ${n === 1 ? one : many}`;
     };
     const audience = everyone
-      ? 'everyone in the project'
+      ? 'everyone in the workspace'
       : [
           count('user', 'person', 'people'),
           count('group', 'group', 'groups'),
@@ -196,7 +196,7 @@ export async function secretsRequest(rest: string[], opts: CtxOpts, json = false
         withheld_fix: z.string().optional(),
       }).parse(JSON.parse(readFileSync(cacheFile, 'utf8')));
     } else {
-      resp = await ctx.client.post(`/projects/${ctx.projectId}/secret-requests`, {
+      resp = await ctx.client.post(`/workspaces/${ctx.projectId}/secret-requests`, {
         names,
         ...(scope ? { scope } : {}),
         ...(expires ? { expires_in_minutes: Number(expires) } : {}),
@@ -305,7 +305,7 @@ export async function secretsGrant(argv: string[], opts: CtxOpts, json = false):
   };
   try {
     resp = await ctx.client.post<typeof resp>(
-      `/projects/${ctx.projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
+      `/workspaces/${ctx.projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
       { agent },
     );
   } catch (err) {
@@ -326,7 +326,7 @@ export async function secretsGrant(argv: string[], opts: CtxOpts, json = false):
   // every other agent on the project.
   if (resp.adopted_governance) {
     process.stdout.write(
-      `${status.warn('This wrote the first `agents:` block — an agent that is not listed now receives NO project secrets.')}\n`,
+      `${status.warn('This wrote the first `agents:` block — an agent that is not listed now receives NO workspace secrets.')}\n`,
     );
   }
   return 0;

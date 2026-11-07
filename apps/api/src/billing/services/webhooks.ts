@@ -1,10 +1,11 @@
 import { formatUsdAsCredits } from '@kortix/shared';
 import Stripe from 'stripe';
+import { logger } from '../../lib/logger';
 import { getStripe } from '../../shared/stripe';
 import { isWebhookEventProcessed, recordWebhookEvent, withAccountLock } from './webhook-concurrency';
 import { config } from '../../config';
 import { WebhookError } from '../../errors';
-import { applyStripeSync } from './account-write-owner';
+import { applyStripeSync, isClosedBillingAccount } from './account-write-owner';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
@@ -19,6 +20,7 @@ import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { isUuid } from '../../shared/validate';
 import { handleChargeRefunded, handleDisputeClosed, handleDisputeCreated } from './refund-clawback';
 import { planKeyFromMetadata, activateSubscriptionForAccount, allowanceForSubscription } from './stripe-checkout-webhooks';
+import { captureAccountProductEvent } from '../../iam/account-analytics';
 
 export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const accountId = session.metadata?.account_id;
@@ -75,7 +77,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     return;
   }
 
-  await wallet.grant({
+  const granted = await wallet.grant({
     accountId,
     amount: amountTotal,
     kind: 'purchase',
@@ -88,6 +90,15 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
   await markCreditPurchase(session, 'completed');
 
   console.log(`[Webhook] Credit purchase: $${amountTotal} for ${accountId}`);
+  // `checkout.session.completed` and `async_payment_succeeded` both land here.
+  if (!granted.replayed) {
+    captureAccountProductEvent({
+      accountId,
+      event: 'credits_topped_up',
+      dedupeKey: session.id,
+      properties: { store: 'stripe', amount_usd: amountTotal },
+    });
+  }
 }
 
 export async function handleCheckoutAsyncPaymentFailed(session: Stripe.Checkout.Session) {
@@ -115,6 +126,19 @@ async function handleSubscriptionCheckout(
   const tierKey = planForSubscription(subscription);
   if (!tierKey) return;
 
+  // `subscription` is the live object (read before the lock), not the
+  // session's snapshot. A late or retried checkout event for a subscription
+  // that ended since must not activate it or point the account at it.
+  const account = await getCreditAccount(accountId);
+  if (isClosedBillingAccount(account)) {
+    logger.info(`[Webhook] checkout.session.completed: skipping closed account ${accountId} (sub=${subscriptionId})`);
+    return;
+  }
+  if (ENDED_SUBSCRIPTION_STATUSES.has(subscription.status)) {
+    logger.info(`[Webhook] checkout.session.completed: skipping ended subscription ${subscriptionId} (status=${subscription.status}) for ${accountId}`);
+    return;
+  }
+
   if (session.payment_status !== 'paid') {
     await applyStripeSync(
       accountId,
@@ -128,6 +152,13 @@ async function handleSubscriptionCheckout(
     console.log(
       `[Webhook] Deferred subscription activation for ${accountId} (sub=${subscriptionId}): checkout payment_status=${session.payment_status ?? 'unknown'}, subscription status=${subscription.status}. Waiting for invoice.paid.`,
     );
+    return;
+  }
+
+  // Paid, but the subscription is not collecting now (past_due, unpaid): the
+  // first invoice.paid activates it when it is.
+  if (!isPayingSubscriptionStatus(subscription.status)) {
+    logger.info(`[Webhook] checkout.session.completed: subscription ${subscriptionId} is ${subscription.status}, not activating ${accountId}`);
     return;
   }
 
@@ -250,19 +281,33 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   return { received: true, event_type: event.type };
 }
 
-async function handleSubscriptionChange(subscription: Stripe.Subscription) {
-  const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
+/** Subscription statuses that never bill again. */
+const ENDED_SUBSCRIPTION_STATUSES = new Set(['canceled', 'incomplete_expired']);
+
+async function handleSubscriptionChange(snapshot: Stripe.Subscription) {
+  const accountId = await resolveCanonicalStripeAccountId(snapshot.metadata?.account_id, snapshot.customer);
   if (!accountId) {
     console.warn('[Webhook] subscription change: no canonical account_id');
     return;
   }
 
+  // Stripe does not deliver events in order. The event carries the
+  // subscription as it was when the event was made; a delayed
+  // `updated(past_due)` that lands after `updated(active)` wrote the older
+  // state over the newer one. Sync from the subscription as it is NOW, read
+  // before the lock (the lock pins a pooled connection), so every event,
+  // whatever its order, writes the same current state.
+  const subscription = await getStripe().subscriptions.retrieve(snapshot.id);
   await repairStripeSubscriptionAccountMetadata(subscription, accountId);
   await withAccountLock(accountId, () => syncSubscriptionState(accountId, subscription));
 }
 
 async function syncSubscriptionState(accountId: string, subscription: Stripe.Subscription) {
   const account = await getCreditAccount(accountId);
+  if (isClosedBillingAccount(account)) {
+    logger.info(`[Webhook] syncSubscriptionState: skipping closed account ${accountId} (sub=${subscription.id})`);
+    return;
+  }
   const resolvedTier = planForSubscription(subscription);
   if (account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscription.id) {
     const previousSubId = subscription.metadata?.previous_subscription_id;
@@ -383,6 +428,13 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 
   await withAccountLock(accountId, async () => {
     const account = await getCreditAccount(accountId);
+    // A closed account is terminal: its own closure cancels its subscriptions,
+    // and their `deleted` events must neither revert it to an active free plan
+    // nor adopt another subscription onto it.
+    if (isClosedBillingAccount(account)) {
+      logger.info(`[Webhook] handleSubscriptionDeleted: skipping closed account ${accountId} (sub=${subscription.id})`);
+      return;
+    }
     if (account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscription.id) {
       console.log(
         `[Webhook] handleSubscriptionDeleted: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`,
@@ -392,6 +444,19 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     const restored = await tryRestoreOtherActiveSubscription(accountId, subscription, account);
     if (restored) return;
     await revertToFree(accountId, subscription.id, account);
+    // A free plan's $0 subscription ends on every upgrade; only a paid plan ending is churn.
+    if (account?.tier && account.tier !== 'free') {
+      captureAccountProductEvent({
+        accountId,
+        event: 'subscription_cancelled',
+        dedupeKey: subscription.id,
+        properties: {
+          store: 'stripe',
+          previous_tier: account.tier,
+          amount_usd: Number(account.planMonthlyUsd ?? 0) || null,
+        },
+      });
+    }
   });
 }
 
@@ -405,21 +470,17 @@ async function tryRestoreOtherActiveSubscription(
     : deletedSubscription.customer?.id;
   if (!customerId) return false;
 
-  let otherSubs: Stripe.Subscription[];
-  try {
-    const stripe = getStripe();
-    const list = await stripe.subscriptions.list({
-      customer: customerId,
-      status: 'all',
-      limit: 10,
-    });
-    otherSubs = list.data.filter(
-      (s) => s.id !== deletedSubscription.id && (s.status === 'active' || s.status === 'trialing'),
-    );
-  } catch (err) {
-    console.error(`[Webhook] tryRestoreOtherActiveSubscription: failed to list subscriptions for ${accountId}:`, err);
-    return false;
-  }
+  // A failed list is not "no other subscription": swallowing it would revert a
+  // paying account to free on a transient Stripe error (rate limit, 5xx). Let
+  // it throw so the webhook answers 5xx and Stripe redelivers the event.
+  const list = await getStripe().subscriptions.list({
+    customer: customerId,
+    status: 'all',
+    limit: 10,
+  });
+  const otherSubs = list.data.filter(
+    (s) => s.id !== deletedSubscription.id && (s.status === 'active' || s.status === 'trialing'),
+  );
 
   if (otherSubs.length === 0) return false;
 
@@ -515,7 +576,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   const account = await getCreditAccount(accountId);
-  if (!account) return;
+  if (!account || isClosedBillingAccount(account)) return;
 
   // The period this renewal OPENS. Stripe dates a subscription_cycle invoice
   // by the period that ended (`period_start` is that period's start, which
@@ -619,16 +680,31 @@ async function handleInvoiceFailed(invoice: Stripe.Invoice) {
 
   await repairStripeSubscriptionAccountMetadata(subscription, accountId);
 
-  await applyStripeSync(
-    accountId,
-    {
-      paymentStatus: 'past_due',
-      lastPaymentFailure: new Date().toISOString(),
-    },
-    { mode: 'update', reason: 'invoice.payment_failed' },
-  );
-
-  console.log(`[Webhook] Payment failed for ${accountId}`);
+  await withAccountLock(accountId, async () => {
+    const account = await getCreditAccount(accountId);
+    if (!account || isClosedBillingAccount(account)) return;
+    // Only the account's current subscription speaks for its plan: a failing
+    // legacy machine subscription or an old plan does not mark it past due.
+    if (account.stripeSubscriptionId !== subscriptionId) {
+      logger.info(`[Webhook] invoice.payment_failed: skipping subscription ${subscriptionId} for ${accountId} (current: ${account.stripeSubscriptionId ?? 'none'})`);
+      return;
+    }
+    // `subscription` was read now. A failure Stripe already recovered from
+    // (a retry paid, the subscription is active again) is a stale event.
+    if (isPayingSubscriptionStatus(subscription.status)) {
+      logger.info(`[Webhook] invoice.payment_failed: subscription ${subscriptionId} is ${subscription.status} now, ${accountId} stays as it is`);
+      return;
+    }
+    await applyStripeSync(
+      accountId,
+      {
+        paymentStatus: 'past_due',
+        lastPaymentFailure: new Date().toISOString(),
+      },
+      { account, mode: 'update', reason: 'invoice.payment_failed' },
+    );
+    console.log(`[Webhook] Payment failed for ${accountId}`);
+  });
 }
 
 async function resolveCanonicalStripeAccountId(

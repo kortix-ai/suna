@@ -5,10 +5,39 @@
  * import the other (a `index.ts` ⇄ `json-schema.ts` cycle broke bun's
  * bundler: circular top-level `const` access threw "Cannot access before
  * initialization"). `index.ts` re-exports everything here for backward
- * compatibility with existing consumers of `@kortix/manifest-schema`. Its one
- * import, the channel descriptor, has no imports of its own.
+ * compatibility with existing consumers of `@kortix/manifest-schema`. Its two
+ * imports, the channel descriptor and the workspace action alias map, have no
+ * imports of their own.
  */
+import {
+  HUMAN_ONLY,
+  WORKSPACE_ACTION_BY_LEGACY,
+  isHumanOnlyAction,
+  toLegacyAction,
+  toWorkspaceAction,
+  type LegacyIamAction,
+} from '@kortix/shared/workspace-actions';
 import { CHANNEL_PLATFORM_IDS, channelConnectorSlug } from '@kortix/shared/channel-descriptors';
+
+/** The canonical spelling of "every name" in kortix.yaml. `all` is its accepted alias. */
+export const EVERY_GRANT = '*';
+
+/** The `agents.<name>` keys whose value may be "every name". */
+export const EVERY_GRANT_KEYS = ['tools', 'skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets', 'apps', 'kortix_permissions'] as const;
+
+/**
+ * True when a grant value means "every name": `"*"` (canonical), `all` in any
+ * case (alias), or a list that holds `"*"`. The one test for it: code that
+ * reads a grant from kortix.yaml calls this, never `=== 'all'`. `{ exclude }`
+ * is not this form (it names what is left out); `excludedNamesV3` reads it.
+ */
+export function isEveryGrant(value: unknown): boolean {
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    return v === '*' || v === 'all';
+  }
+  return Array.isArray(value) && value.some((item) => typeof item === 'string' && item.trim() === '*');
+}
 
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
@@ -16,10 +45,10 @@ export const RESERVED_SANDBOX_SLUG = 'default';
 /** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE so every space slug is also a valid room name: the space's room is the project room with that name. */
+/** Regex matching a space slug (a `spaces.<slug>` key, an agent's `space`, a binding's `space`). Tighter than SLUG_RE: at most 63 characters. */
 export const SPACE_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
-/** The tab types of a space. The room tab is implicit: always first, never listed. */
+/** The tab types of a space. */
 export const SPACE_TAB_TYPES = ['goals', 'apps', 'artifacts', 'files', 'board', 'app', 'artifact', 'link'] as const;
 
 /** What a space header shows, in order. Absent = every item. */
@@ -115,6 +144,13 @@ export const EVENT_FORBIDDEN_KEYS = [
 /** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
 export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
 /**
+ * Floor for an app trigger's `expect_event_within`: the silence alert. The
+ * check runs once a minute; a shorter window would alert on ordinary jitter.
+ */
+export const TRIGGER_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Ceiling for `expect_event_within`: 30 days. A watcher quiet that long is not a watcher. */
+export const TRIGGER_MAX_EXPECT_EVENT_WITHIN_SECONDS = 30 * 86_400;
+/**
  * A trigger starts at most this many runs in any 60 minutes when its
  * `max_runs_per_hour` is unset (KRTX-1721). Twice the busiest production
  * trigger's hour in October 2026; the 60 s cron floor allows exactly this.
@@ -206,102 +242,52 @@ export const SANDBOX_MEMORY_BOUNDS = { min: 1, max: 128 } as const;
 export const SANDBOX_DISK_BOUNDS = { min: 1, max: 500 } as const;
 
 /**
- * The permissions an agent's `kortix_permissions` grant may list — the
- * project-scoped surface (`kortix_cli` is the deprecated manifest alias).
- * MUST stay in sync with apps/api/src/iam/actions.ts PROJECT_ACTIONS —
- * every project-scoped action, including the manager-tier leaves
- * (`project.delete`, `project.members.manage`, `project.gateway.keys.manage`):
- * these are still reachable via a project's `manager` role, so an agent can be
- * granted them too.
+ * The permissions an agent's `kortix_permissions` grant may list: EVERY
+ * workspace action except HUMAN_ONLY (design.md §3.2 C8). One workspace scope,
+ * and the agent either can or cannot: members, roles, groups, policies, billing
+ * reads and the workspace settings are ordinary grantable actions. `"*"` means
+ * all of them.
  *
- * Account-scoped admin actions (member.*, billing.*, token.*, project.create, …)
- * are excluded here — but omission from this list is NOT the mechanism
- * that keeps an agent off them. The actual enforcement is that every
- * agent-session token is project-scoped (`account_tokens.project_id`):
- * apps/api's IAM v2 engine (`iam/engine-v2.ts`'s `computeTokenScope`) refuses
- * ANY account-scope action outright for a project-bound token — BEFORE the
- * agent's `kortix_permissions` grant is even loaded or consulted. This list is a
- * curation/UX surface (what the CLI/dashboard editor OFFER as grantable, and
- * what `validateGrantList` flags as a bad `kortix_permissions` entry), not the
- * security boundary itself — grant-omission alone would not stop a
- * hypothetical non-project-scoped token from calling an account action.
+ * HUMAN_ONLY (`@kortix/shared/workspace-actions`) is the one wall: minting
+ * credentials (`token.create`, `token.personal.create`,
+ * `project.credentials.issue`, `project.gateway.keys.manage`) and moving money
+ * (`billing.write`, `account.delete`, `project.delete`). apps/api refuses them
+ * for every agent session whatever the grant says; a manifest that lists one
+ * still validates, with a warning, because the entry grants nothing.
  *
- * The channel.* resource actions (channel.send, …) and the
- * project.gateway.routing.edit / project.session.exec / project.schedule.* /
- * project.webhook.* leaves were removed from the catalog (IAM enforcement
- * audit, 2026-07): none of them were ever asserted on any route, so granting
- * or omitting them was a silent no-op.
+ * Legacy spelling, as stored; `isGrantableKortixPermission` accepts both
+ * spellings, and `GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS` is the same list in
+ * workspace names. Order: the per-workspace actions first (`project.*`), then
+ * the workspace administration actions, in table order.
+ *
+ * MUST stay equal to apps/api `projects/agents/parse.ts`
+ * GRANTABLE_KORTIX_PERMISSIONS (the unit-agents-parse drift guard).
  */
-// MUST stay in sync with apps/api projects/agents.ts GRANTABLE_KORTIX_PERMISSIONS (=
-// Object.values(PROJECT_ACTIONS)). The unit-agents-parse drift-guard test
-// fails loudly if these diverge (this package can't import apps/api).
+const LEGACY_ACTIONS = Object.keys(WORKSPACE_ACTION_BY_LEGACY) as LegacyIamAction[];
 export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
-  'project.read',
-  'project.write',
-  'project.delete',
-  'project.session.read',
-  'project.session.start',
-  'project.session.stop',
-  'project.session.bindings.write',
-  'project.members.read',
-  'project.members.manage',
-  'project.trigger.read',
-  'project.trigger.create',
-  'project.trigger.update',
-  'project.trigger.delete',
-  'project.trigger.fire',
-  'project.gateway.logs.read',
-  'project.gateway.spend.read',
-  'project.usage.read',
-  'project.gateway.budget.set',
-  'project.gateway.keys.manage',
-  // IAM v1 per-capability leaves.
-  'project.agent.read',
-  'project.agent.write',
-  'project.skill.read',
-  'project.skill.write',
-  'project.command.read',
-  'project.command.write',
-  'project.file.read',
-  'project.file.write',
-  'project.settings.write',
-  'project.sandbox.write',
-  'project.model.read',
-  'project.model.write',
-  'project.gitops.read',
-  'project.gitops.push',
-  'project.gitops.merge',
-  'project.gitops.ref.any',
-  'project.gitops.ref.delete',
-  'project.secret.read',
-  'project.secret.write',
-  'project.connector.read',
-  'project.connector.connections.manage',
-  'project.connector.write',
-  'project.app.read',
-  'project.app.write',
-  'project.app.deploy',
-  'project.app.admin',
-  'project.review.read',
-  'project.review.submit',
-  'project.review.act',
-  // Rooms: read = list rooms and read messages; write = post, join, leave.
-  'project.room.read',
-  'project.room.write',
-  // Artifacts: read = gallery and viewer; write = publish and edit; manage =
-  // anyone's sharing; public = public links.
-  'project.artifact.read',
-  'project.artifact.comment',
-  'project.artifact.write',
-  'project.artifact.manage',
-  'project.artifact.public',
-  // Minting a project credential. Grantable so a manifest CAN hand it to an
-  // agent explicitly, but note the two credential routes refuse an
-  // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
-  // mint a fresh, grant-less project token would escape its own ceiling. The
-  // leaf exists so a CUSTOM ROLE can withhold it from humans.
-  'project.credentials.issue',
-];
+  ...LEGACY_ACTIONS.filter((a) => a.startsWith('project.') && a !== 'project.create'),
+  ...LEGACY_ACTIONS.filter((a) => !a.startsWith('project.') || a === 'project.create'),
+].filter((a) => !HUMAN_ONLY.has(a));
+
+/** HUMAN_ONLY, both spellings: listed in a manifest it validates with a warning and grants nothing. */
+export function isHumanOnlyKortixPermission(action: string): boolean {
+  return isHumanOnlyAction(action);
+}
+
+/**
+ * The workspace names of `GRANTABLE_KORTIX_PERMISSIONS`, one per entry, in the
+ * same order (`workspace.session.start` for `project.session.start`). The one
+ * alias map is `@kortix/shared/workspace-actions`. A `kortix_permissions` list
+ * may use either name; the grant resolves to the legacy name the engine and
+ * the stored roles compare against.
+ */
+export const GRANTABLE_KORTIX_WORKSPACE_PERMISSIONS: readonly string[] =
+  GRANTABLE_KORTIX_PERMISSIONS.map(toWorkspaceAction);
+
+/** True when `action` is grantable to an agent under either name. */
+export function isGrantableKortixPermission(action: string): boolean {
+  return GRANTABLE_KORTIX_PERMISSIONS.includes(toLegacyAction(action));
+}
 
 /**
  * Actions removed from the enforcement catalog (IAM dead-catalog cleanup,
@@ -337,6 +323,17 @@ export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, reado
     'project.agent.write',
   ],
 };
+
+/**
+ * Actions retired with their feature. A manifest that still grants one keeps
+ * validating with a warning, and the grant holds nothing: rejecting it would
+ * fail the agent's parse and give it an EMPTY grant. `project.room.*`: Rooms,
+ * removed 2026-11. `project.artifact.comment`: artifact comments, removed 2026-11-06.
+ */
+export const RETIRED_KORTIX_PERMISSIONS: readonly string[] = ['project.room.read', 'project.room.write', 'project.artifact.comment', 'workspace.artifact.comment'];
+
+/** Kortix skills retired with their feature. An agent that still grants one validates with a warning. `kortix-rooms`: Rooms, removed 2026-11. */
+export const RETIRED_KORTIX_SKILL_NAMES: readonly string[] = ['kortix-rooms'];
 
 export const LEGACY_TOLERATED_KORTIX_PERMISSIONS: readonly string[] = [
   'project.session.exec',
@@ -518,7 +515,6 @@ export const KORTIX_SKILL_NAMES = [
   'kortix-marketplace',
   'kortix-memory',
   'kortix-onboarding',
-  'kortix-rooms',
   'kortix-slack',
   'kortix-system',
   'kortix-teams',
@@ -535,6 +531,6 @@ export const CONTEXT_VALUES = ['record', 'summary'] as const;
 export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
 /**
  * OpenCode's built-in agents that v3 disables unless the manifest declares the name.
- * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ * @deprecated OpenCode only: OpenCode is deleted (2026-10-30). See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode is deleted".
  */
-export const OPENCODE_BUILTIN_AGENTS_V3 = ['build', 'plan', 'general', 'explore'] as const;
+export const RUNTIME_BUILTIN_AGENTS = ['build', 'plan', 'general', 'explore'] as const;

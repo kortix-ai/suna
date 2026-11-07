@@ -1,4 +1,4 @@
-import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
+import { type GitResult, runGit } from './git-run.ts';
 
 import type { Auth } from './api/auth.ts';
 import { type ApiClient, ApiError } from './api/client.ts';
@@ -7,6 +7,7 @@ import { loadLocalManifest } from './manifest.ts';
 import { type ProjectGitTarget, projectIsManaged } from './project-git.ts';
 import { loadLink } from './project-link.ts';
 import { confirm } from './prompts.ts';
+import { NO_WORKSPACE_LINE } from './api/no-workspace.ts';
 import { C, status } from './style.ts';
 import { selectFromList } from './tui-select.ts';
 
@@ -54,6 +55,8 @@ export async function linkGitHubBackedProject(
     ...(token ? { github_token: token } : {}),
   });
 
+  // Legacy-only route: provision and link-repository have no /v1/workspaces name
+  // (WORKSPACE_LEGACY_ONLY_ROUTES); POST /v1/workspaces is the new-workspace create.
   // PAT path: one shot, no app needed.
   if (opts.githubToken) {
     const res = await client.post<LinkRepoResponse>(
@@ -114,31 +117,31 @@ export function manifestProjectName(): string | undefined {
 }
 
 export function detectOrigin(): string | null {
-  const r = run('git', ['remote', 'get-url', 'origin']);
+  const r = run(['remote', 'get-url', 'origin']);
   const url = r.stdout.trim();
   return r.ok && url ? url : null;
 }
 
 export function setOrigin(url: string): void {
   if (detectOrigin()) {
-    run('git', ['remote', 'set-url', 'origin', url]);
+    run(['remote', 'set-url', 'origin', url]);
   } else {
-    run('git', ['remote', 'add', 'origin', url]);
+    run(['remote', 'add', 'origin', url]);
   }
 }
 
 /** Add `origin` only if it's missing — don't clobber an existing remote. */
 export function ensureOrigin(url: string): void {
-  if (!detectOrigin()) run('git', ['remote', 'add', 'origin', url]);
+  if (!detectOrigin()) run(['remote', 'add', 'origin', url]);
 }
 
 /** Returns 'ok' (committed or clean) or 'error'. */
 export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 'ok' | 'error' {
   const dirty =
-    !run('git', ['diff', '--quiet']).ok || !run('git', ['diff', '--cached', '--quiet']).ok;
-  const untracked = run('git', ['ls-files', '--others', '--exclude-standard']);
+    !run(['diff', '--quiet']).ok || !run(['diff', '--cached', '--quiet']).ok;
+  const untracked = run(['ls-files', '--others', '--exclude-standard']);
   const hasUntracked = untracked.ok && untracked.stdout.trim().length > 0;
-  const hasHead = run('git', ['rev-parse', '--verify', 'HEAD']).ok;
+  const hasHead = run(['rev-parse', '--verify', 'HEAD']).ok;
 
   if (!dirty && !hasUntracked && hasHead) {
     process.stdout.write(`  ${C.dim}clean working tree${C.reset}\n`);
@@ -152,7 +155,7 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
     return 'error';
   }
   const msg = flags.message ?? 'kortix: ship';
-  const add = run('git', ['add', '-A']);
+  const add = run(['add', '-A']);
   if (!add.ok) {
     const detail = (add.stderr || add.stdout).trim();
     process.stderr.write(`${status.err('git add -A failed.')}\n`);
@@ -167,7 +170,7 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
     }
     return 'error';
   }
-  const commit = run('git', ['commit', '-m', msg]);
+  const commit = run(['commit', '-m', msg]);
   if (!commit.ok && !/nothing to commit/i.test(commit.stdout + commit.stderr)) {
     process.stderr.write(
       `${status.err('git commit failed.')}\n${commit.stderr || commit.stdout}\n`,
@@ -180,9 +183,9 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
 
 /** Current branch name, robust to unborn branches (fresh `git init`). */
 export function currentBranch(): string {
-  const sym = run('git', ['symbolic-ref', '--short', 'HEAD']);
+  const sym = run(['symbolic-ref', '--short', 'HEAD']);
   if (sym.ok && sym.stdout.trim()) return sym.stdout.trim();
-  const ref = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
+  const ref = run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   return ref && ref !== 'HEAD' ? ref : 'main';
 }
 
@@ -196,8 +199,8 @@ export function currentBranch(): string {
 function managedShipRecovery(projectId: string): void {
   process.stderr.write(
     `\n${status.err('The managed repository could not be updated. Nothing was pushed.')}\n` +
-      `  If it contains commits missing from this folder, clone the project into a new folder with the same --host used for this ship:\n` +
-      `    kortix projects clone ${projectId} ../kortix-integrated\n` +
+      `  If it contains commits missing from this folder, clone the workspace's repo into a new folder with the same --host used for this ship:\n` +
+      `    kortix workspaces clone ${projectId} ../kortix-integrated\n` +
       `  Copy your local files into that clone (not .git), review the differences, then run kortix ship there.\n` +
       `  Keep this folder until you have verified the shipped result.\n`,
   );
@@ -209,7 +212,7 @@ function pushCurrentBranch(
   gitUsername = 'x-access-token',
   opts: { quietOnFailure?: boolean; managedProjectId?: string } = {},
 ): string | null | false {
-  const branch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
+  const branch = run(['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   if (!branch || branch === 'HEAD') {
     process.stderr.write(
       `${status.err('Not on a branch (detached HEAD?) — check out a branch and retry.')}\n`,
@@ -220,11 +223,11 @@ function pushCurrentBranch(
   // project already contains work; a fresh local init must not overwrite it.
   if (opts.managedProjectId) {
     const env = pushToken ? authGitEnv(repoUrl, pushToken, gitUsername) : undefined;
-    const shallow = run('git', ['rev-parse', '--is-shallow-repository']).stdout.trim() === 'true';
-    const fetched = run('git', [
+    const shallow = run(['rev-parse', '--is-shallow-repository']).stdout.trim() === 'true';
+    const fetched = run([
       'fetch', '--no-tags', ...(shallow ? ['--unshallow'] : []), 'origin', `refs/heads/${branch}`,
     ], { env });
-    if (fetched.ok && !run('git', ['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD']).ok) {
+    if (fetched.ok && !run(['merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD']).ok) {
       managedShipRecovery(opts.managedProjectId);
       return false;
     }
@@ -232,7 +235,7 @@ function pushCurrentBranch(
   const refspec = `${branch}:refs/heads/${branch}`;
   const args = ['push', '-u', 'origin', refspec];
 
-  const push = run('git', args, {
+  const push = run(args, {
     inheritStdio: true,
     env: pushToken ? authGitEnv(repoUrl, pushToken, gitUsername) : undefined,
   });
@@ -279,7 +282,7 @@ export async function pushProjectBranch(
 
   let minted: GitTokenResponse;
   try {
-    minted = await client.post<GitTokenResponse>(`/projects/${project.project_id}/git-token`);
+    minted = await client.post<GitTokenResponse>(`/workspaces/${project.project_id}/git-token`);
   } catch {
     // No second transport available — report the push failure we swallowed.
     process.stderr.write(`\n${status.err('git push failed.')}\n`);
@@ -355,37 +358,14 @@ export async function resolvePushCredential(
         pushUsername: provisioned.git_username ?? 'x-access-token',
       };
     }
-    const tok = await client.post<GitTokenResponse>(`/projects/${projectId}/git-token`);
+    const tok = await client.post<GitTokenResponse>(`/workspaces/${projectId}/git-token`);
     return { pushToken: tok.push_token, pushUsername: tok.git_username ?? 'x-access-token' };
   }
   return { pushToken: null, pushUsername: 'x-access-token' };
 }
 
-interface RunResult {
-  ok: boolean;
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
-export function run(
-  cmd: string,
-  args: string[],
-  opts?: { inheritStdio?: boolean; env?: Record<string, string> },
-): RunResult {
-  let result: SpawnSyncReturns<Buffer | string>;
-  const env = opts?.env ? { ...process.env, ...opts.env } : undefined;
-  if (opts?.inheritStdio) {
-    result = spawnSync(cmd, args, { stdio: 'inherit', env });
-    return { ok: result.status === 0, code: result.status ?? 1, stdout: '', stderr: '' };
-  }
-  result = spawnSync(cmd, args, { encoding: 'utf8', env });
-  return {
-    ok: result.status === 0,
-    code: result.status ?? 1,
-    stdout: (result.stdout as string) ?? '',
-    stderr: (result.stderr as string) ?? '',
-  };
+export function run(args: string[], opts?: { inheritStdio?: boolean; env?: Record<string, string> }): GitResult {
+  return runGit(undefined, args, opts);
 }
 
 /**
@@ -408,24 +388,24 @@ export function explainLinkedProjectError(
       ? ` ${C.faded}(account ${link.account_id.slice(0, 8)})${C.reset}`
       : '';
     process.stderr.write(
-      `\n${status.err("This folder is linked to a project on an account you can't access.")}\n` +
-        `  ${C.dim}linked project ${C.reset}${projectId}${linkedAccount}\n` +
-        `  ${C.dim}logged in as   ${C.reset}account ${auth.account_id.slice(0, 8)} ${C.faded}(host "${host}")${C.reset} — no access to that account\n\n` +
+      `\n${status.err("This folder is linked to a workspace you can't access.")}\n` +
+        `  ${C.dim}linked workspace ${C.reset}${projectId}${linkedAccount}\n` +
+        `  ${C.dim}logged in as     ${C.reset}account ${auth.account_id.slice(0, 8)} ${C.faded}(host "${host}")${C.reset}, no access to it\n\n` +
         `  ${C.dim}The link lives in ${C.reset}.kortix/link.json${C.dim}. Fix it one way:${C.reset}\n` +
-        `    ${C.dim}• Log in with the account that has access:${C.reset}  ${C.cyan}kortix logout && kortix login${C.reset}\n` +
-        `    ${C.dim}• Or get invited / granted access to that project, then retry.${C.reset}\n` +
-        `    ${C.dim}• Or register this folder as a new project:${C.reset}  ${C.cyan}kortix projects unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n\n`,
+        `    ${C.dim}• Log in as a person who has access:${C.reset}  ${C.cyan}kortix logout && kortix login${C.reset}\n` +
+        `    ${C.dim}• Or get invited to that workspace, then retry.${C.reset}\n` +
+        `    ${C.dim}• Or ship this folder as a new workspace:${C.reset}  ${C.cyan}kortix workspaces unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n\n`,
     );
     return 1;
   }
 
   if (err.status === 404) {
     process.stderr.write(
-      `\n${status.err('The linked project no longer exists (or was archived).')}\n` +
-        `  ${C.dim}linked project ${C.reset}${projectId} ${C.faded}(host "${host}")${C.reset}\n\n` +
+      `\n${status.err('The linked workspace no longer exists (or was archived).')}\n` +
+        `  ${C.dim}linked workspace ${C.reset}${projectId} ${C.faded}(host "${host}")${C.reset}\n\n` +
         `  ${C.dim}Re-point this folder:${C.reset}\n` +
-        `    ${C.dim}• New project under your account:${C.reset}  ${C.cyan}kortix projects unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n` +
-        `    ${C.dim}• Existing project:${C.reset}  ${C.cyan}kortix projects link <id>${C.reset}\n\n`,
+        `    ${C.dim}• A new workspace:${C.reset}  ${C.cyan}kortix workspaces unlink${C.reset}${C.dim} then ${C.reset}${C.cyan}kortix ship${C.reset}\n` +
+        `    ${C.dim}• An existing workspace:${C.reset}  ${C.cyan}kortix workspaces link <id>${C.reset}\n\n`,
     );
     return 1;
   }
@@ -447,7 +427,7 @@ export async function resolveShipAccount(
 ): Promise<string> {
   let accounts: AccountMembership[] = [];
   try {
-    accounts = (await client.get<MeResponse>('/accounts/me')).accounts ?? [];
+    accounts = (await client.get<MeResponse>('/me')).accounts ?? [];
   } catch {
     // Couldn't list accounts — fall back to the active one.
     return auth.account_id;
@@ -457,25 +437,27 @@ export async function resolveShipAccount(
     const match = accounts.find((a) => a.account_id === flags.account || a.slug === flags.account);
     if (!match) {
       const known = accounts.map((a) => a.slug).join(', ') || '(none)';
-      throw new Error(`No account "${flags.account}" — you belong to: ${known}`);
+      throw new Error(`No account "${flags.account}". You belong to: ${known}.`);
     }
     return match.account_id;
   }
 
-  if (accounts.length <= 1) return accounts[0]?.account_id ?? auth.account_id;
+  // A new user belongs to no workspace yet: `ship` needs one to create in.
+  if (accounts.length === 0) throw new Error(NO_WORKSPACE_LINE);
+  if (accounts.length === 1) return accounts[0].account_id;
 
   // Multiple accounts: only prompt in an interactive run.
   if (flags.yes || flags.dryRun || process.stdout.isTTY !== true) {
     return auth.account_id;
   }
   const picked = await selectFromList<AccountMembership>({
-    title: 'Ship to which account?',
+    title: 'Ship into which workspace?',
     items: accounts.map((a) => ({
       value: a,
       label: a.name,
       sublabel: `${a.slug} · ${a.role}`,
     })),
   });
-  if (!picked) throw new Error('No account selected.');
+  if (!picked) throw new Error('No workspace selected.');
   return picked.account_id;
 }

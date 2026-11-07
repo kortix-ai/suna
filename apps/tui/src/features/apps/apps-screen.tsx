@@ -16,6 +16,7 @@ import { useAppDeployments, useProjectApps } from '@kortix/sdk/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { kortix } from '../../kortix.ts';
+import { copyToClipboard } from '../../lib/clipboard.ts';
 import { openUrl } from '../../lib/open-url.ts';
 import { glyph as GLYPH, theme } from '../../theme.ts';
 import { type AppDetail, type AppRow, type AppStatus, AppsView } from './apps-view.tsx';
@@ -55,14 +56,18 @@ export interface AppsScreenProps {
   onBack(): void;
   onToast?(message: string, kind?: 'info' | 'error'): void;
   /**
-   * Copy to the system clipboard. `src/lib/clipboard.ts` holds the
-   * implementation; the host injects it so this screen stays free of process
-   * spawning. Without it `y` toasts the URL, which still leaves it selectable
-   * with the mouse.
+   * Copy to the system clipboard. Defaults to `copy`, which runs
+   * `src/lib/clipboard.ts`; a harness injects its own to see what `y` copied.
    */
   onCopy?(text: string): void | Promise<void>;
   /** Test seam for `o`. Defaults to `lib/open-url.ts`. */
   openUrlImpl?: (url: string) => Promise<unknown>;
+}
+
+/** `y` in a screen: copy, or throw so the screen shows "Copy failed". */
+async function copy(text: string): Promise<void> {
+  const result = await copyToClipboard(text);
+  if (!result.ok) throw new Error(result.error ?? 'no clipboard tool');
 }
 
 function errorText(error: unknown): string {
@@ -144,7 +149,7 @@ export function AppsScreen({
   height,
   onBack,
   onToast,
-  onCopy,
+  onCopy = copy,
   openUrlImpl = openUrl,
 }: AppsScreenProps) {
   const [detailAppId, setDetailAppId] = useState<string | null>(null);
@@ -236,10 +241,6 @@ export function AppsScreen({
         onToast?.(`${row.name} is not deployed yet.`, 'error');
         return;
       }
-      if (!onCopy) {
-        onToast?.(row.url);
-        return;
-      }
       void (async () => {
         try {
           await onCopy(row.url);
@@ -310,7 +311,7 @@ export function AppsScreen({
   if (!projectId) {
     return (
       <box flexDirection="column" width={width}>
-        <text fg={theme.faint}>No project selected.</text>
+        <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>
       </box>
     );
   }

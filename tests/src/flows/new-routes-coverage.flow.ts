@@ -46,8 +46,8 @@ flow(
     domain: 'connectors',
     routes: [
       'GET /v1/connectors/connect-status',
-      'GET /v1/connectors/projects/:projectId/catalog',
-      'POST /v1/connectors/projects/:projectId/call',
+      'GET /v1/connectors/workspaces/:projectId/catalog',
+      'POST /v1/connectors/workspaces/:projectId/call',
     ],
   },
   async (ctx) => {
@@ -60,7 +60,7 @@ flow(
     await ctx.step('project member can reach connector catalog', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/catalog', { params: { projectId: p.id } });
+        .get('/v1/connectors/workspaces/:projectId/catalog', { params: { projectId: p.id } });
       r.status([200, 403, 501]);
     });
     await ctx.step(
@@ -68,7 +68,7 @@ flow(
       async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post('/v1/connectors/projects/:projectId/call', {}, { params: { projectId: p.id } });
+          .post('/v1/connectors/workspaces/:projectId/call', {}, { params: { projectId: p.id } });
         r.status([400, 403, 404, 501]);
       },
     );
@@ -80,23 +80,23 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
-      'GET /v1/projects/:projectId/gateway/overview',
-      'GET /v1/projects/:projectId/gateway/series',
-      'GET /v1/projects/:projectId/gateway/sessions',
-      'GET /v1/projects/:projectId/gateway/sources',
-      'GET /v1/projects/:projectId/gateway/breakdown',
-      'GET /v1/projects/:projectId/gateway/errors',
-      'GET /v1/projects/:projectId/gateway/logs',
-      'GET /v1/projects/:projectId/gateway/logs/:logId',
-      'GET /v1/projects/:projectId/gateway/logs/facets',
-      'GET /v1/projects/:projectId/gateway/budgets',
-      'PUT /v1/projects/:projectId/gateway/budgets',
-      'DELETE /v1/projects/:projectId/gateway/budgets/:budgetId',
-      'GET /v1/projects/:projectId/gateway/keys',
-      'POST /v1/projects/:projectId/gateway/keys',
-      'DELETE /v1/projects/:projectId/gateway/keys/:keyId',
-      'POST /v1/projects/:projectId/gateway/playground',
-      'POST /v1/projects/:projectId/gateway/providers/:providerId/verify',
+      'GET /v1/workspaces/:projectId/gateway/overview',
+      'GET /v1/workspaces/:projectId/gateway/series',
+      'GET /v1/workspaces/:projectId/gateway/sessions',
+      'GET /v1/workspaces/:projectId/gateway/sources',
+      'GET /v1/workspaces/:projectId/gateway/breakdown',
+      'GET /v1/workspaces/:projectId/gateway/errors',
+      'GET /v1/workspaces/:projectId/gateway/logs',
+      'GET /v1/workspaces/:projectId/gateway/logs/:logId',
+      'GET /v1/workspaces/:projectId/gateway/logs/facets',
+      'GET /v1/workspaces/:projectId/gateway/budgets',
+      'PUT /v1/workspaces/:projectId/gateway/budgets',
+      'DELETE /v1/workspaces/:projectId/gateway/budgets/:budgetId',
+      'GET /v1/workspaces/:projectId/gateway/keys',
+      'POST /v1/workspaces/:projectId/gateway/keys',
+      'DELETE /v1/workspaces/:projectId/gateway/keys/:keyId',
+      'POST /v1/workspaces/:projectId/gateway/playground',
+      'POST /v1/workspaces/:projectId/gateway/providers/:providerId/verify',
     ],
   },
   async (ctx) => {
@@ -119,7 +119,7 @@ flow(
       }
     });
     await ctx.step('gateway logs: limit outside 1–100 and a bad offset → 400 naming the rule; limit 1 and 100 → 200 (KRTX-3389)', async () => {
-      const logs = (query: Record<string, string>) => owner.get('/v1/projects/:projectId/gateway/logs', { params, query });
+      const logs = (query: Record<string, string>) => owner.get('/v1/workspaces/:projectId/gateway/logs', { params, query });
       for (const limit of ['0', '101', '500', '-1', 'abc', '1.5']) {
         (await logs({ limit })).status(400).body().has('$.error', 'limit must be an integer from 1 to 100');
       }
@@ -133,8 +133,8 @@ flow(
       }
     });
     await ctx.step('gateway logs filters: a bad since/until → 400; session, model, provider, error code and search filters → 200 with rows that match', async () => {
-      const logs = (query: Record<string, string>) => owner.get('/v1/projects/:projectId/gateway/logs', { params, query });
-      for (const query of [{ since: 'yesterday' }, { until: 'nope' }]) {
+      const logs = (query: Record<string, string>) => owner.get('/v1/workspaces/:projectId/gateway/logs', { params, query });
+      for (const query of [{ since: 'yesterday' }, { until: 'nope' }] as Record<string, string>[]) {
         (await logs(query)).status(400).body().has('$.error', 'since and until must be ISO-8601 times');
       }
       (await logs({ q: 'x'.repeat(201) })).status(400).body().has('$.error', 'q must be at most 200 characters');
@@ -156,7 +156,7 @@ flow(
       }
     });
     await ctx.step('gateway log facets: hours outside 1–168 → 400; a window → 200 with models, providers, error codes and sessions; `facets` is not read as a log id', async () => {
-      const facets = (query: Record<string, string>) => owner.get('/v1/projects/:projectId/gateway/logs/facets', { params, query });
+      const facets = (query: Record<string, string>) => owner.get('/v1/workspaces/:projectId/gateway/logs/facets', { params, query });
       for (const hours of ['0', '169', 'abc']) {
         (await facets({ hours })).status(400).body().has('$.error', 'hours must be an integer from 1 to 168');
       }
@@ -176,7 +176,7 @@ flow(
       }
     });
     await ctx.step('gateway spend by source returns the windowed rollup shape', async () => {
-      const r = await owner.get('/v1/projects/:projectId/gateway/sources', {
+      const r = await owner.get('/v1/workspaces/:projectId/gateway/sources', {
         params,
         query: { hours: '6' },
       });
@@ -187,45 +187,45 @@ flow(
       if (typeof body.total?.cost !== 'number') throw new Error('total.cost is not a number');
     });
     await ctx.step('gateway log detail unknown id returns boundary response', async () => {
-      const r = await owner.get('/v1/projects/:projectId/gateway/logs/:logId', {
+      const r = await owner.get('/v1/workspaces/:projectId/gateway/logs/:logId', {
         params: { ...params, logId: ZERO_UUID },
       });
       r.status([404, 500]);
     });
     await ctx.step('gateway budget mutation validates permissions and payload', async () => {
       const put = await owner.put(
-        '/v1/projects/:projectId/gateway/budgets',
+        '/v1/workspaces/:projectId/gateway/budgets',
         { scope: 'member', limit_usd: 1 },
         { params },
       );
       put.status([400, 403]);
 
-      const del = await owner.del('/v1/projects/:projectId/gateway/budgets/:budgetId', {
+      const del = await owner.del('/v1/workspaces/:projectId/gateway/budgets/:budgetId', {
         params: { ...params, budgetId: ZERO_UUID },
       });
       del.status([200, 403, 404]);
     });
     await ctx.step('gateway key management reaches auth/validation boundary', async () => {
-      const list = await owner.get('/v1/projects/:projectId/gateway/keys', { params });
+      const list = await owner.get('/v1/workspaces/:projectId/gateway/keys', { params });
       list.status([200, 403]);
 
-      const create = await owner.post('/v1/projects/:projectId/gateway/keys', {}, { params });
+      const create = await owner.post('/v1/workspaces/:projectId/gateway/keys', {}, { params });
       create.status([400, 403]);
 
-      const del = await owner.del('/v1/projects/:projectId/gateway/keys/:keyId', {
+      const del = await owner.del('/v1/workspaces/:projectId/gateway/keys/:keyId', {
         params: { ...params, keyId: ZERO_UUID },
       });
       del.status([200, 403, 404]);
     });
     await ctx.step('gateway playground rejects invalid body before model calls', async () => {
-      const r = await owner.post('/v1/projects/:projectId/gateway/playground', {}, { params });
+      const r = await owner.post('/v1/workspaces/:projectId/gateway/playground', {}, { params });
       r.status([400, 403]);
     });
     await ctx.step(
       'gateway provider verify reports not_connected for an unconnected provider, no upstream call',
       async () => {
         const r = await owner.post(
-          '/v1/projects/:projectId/gateway/providers/:providerId/verify',
+          '/v1/workspaces/:projectId/gateway/providers/:providerId/verify',
           {},
           { params: { ...params, providerId: 'openai' } },
         );
@@ -239,14 +239,14 @@ flow(
   'CHN-26',
   {
     domain: 'channels',
-    routes: ['GET /v1/projects/:projectId/channels/slack/file'],
+    routes: ['GET /v1/workspaces/:projectId/channels/slack/file'],
   },
   async (ctx) => {
     const project = await ctx.fixtures.project();
     await ctx.step('Slack file download rejects a request without a file reference', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/channels/slack/file', {
+        .get('/v1/workspaces/:projectId/channels/slack/file', {
           params: { projectId: project.id },
         });
       response.status([400, 404]);
@@ -255,7 +255,7 @@ flow(
       const response = await ctx.client
         .as(ctx.P.OWNER)
         .get(
-          `/v1/projects/:projectId/channels/slack/file?url=${encodeURIComponent('https://files.slack.com/files-pri/T0KE2E-F0KE2E')}`,
+          `/v1/workspaces/:projectId/channels/slack/file?url=${encodeURIComponent('https://files.slack.com/files-pri/T0KE2E-F0KE2E')}`,
           { params: { projectId: project.id } },
         );
       response.status(400).body().matches('$.error', /must be a Slack file URL/);
@@ -269,11 +269,11 @@ flow(
     domain: 'sessions',
     requires: ['sandbox'],
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
-      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
-      'GET /v1/projects/:projectId/sessions/:sessionId/snapshot',
-      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
-      'GET /v1/projects/:projectId/sessions/:sessionId/events',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/turn',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/snapshot',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/open-bundle',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/events',
     ],
   },
   async (ctx) => {
@@ -281,7 +281,7 @@ flow(
     await ctx.step('Session transcript returns 404 for an unknown session', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/transcript', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
@@ -295,7 +295,7 @@ flow(
       const session = await ctx.fixtures.session(project);
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/turn', {
           params: { projectId: project.id, sessionId: session.id },
         });
       response.status(200);
@@ -311,7 +311,7 @@ flow(
     await ctx.step('Session turn read returns 404 for an unknown session', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/turn', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
@@ -328,7 +328,7 @@ flow(
       const session = await ctx.fixtures.session(project);
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/snapshot', {
           params: { projectId: project.id, sessionId: session.id },
         });
       response.status(200);
@@ -367,7 +367,7 @@ flow(
       }
       const single = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/turn', {
           params: { projectId: project.id, sessionId: session.id },
         });
       single.status(200);
@@ -389,7 +389,7 @@ flow(
       const session = await ctx.fixtures.session(project);
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/open-bundle', {
           params: { projectId: project.id, sessionId: session.id },
         });
       response.status(200);
@@ -419,7 +419,7 @@ flow(
       const session = await ctx.fixtures.session(project);
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/snapshot', {
           params: { projectId: project.id, sessionId: session.id },
         });
       response.status(200);
@@ -508,7 +508,7 @@ flow(
     await ctx.step('Session events stream refuses an anonymous caller', async () => {
       const response = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/events', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/events', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status([401, 403, 404]);
@@ -517,7 +517,7 @@ flow(
     await ctx.step('Session events stream returns 404 for an unknown session', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/events', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/events', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
@@ -526,7 +526,7 @@ flow(
     await ctx.step('Session snapshot returns 404 for an unknown session', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/snapshot', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
@@ -536,18 +536,18 @@ flow(
       // It carries the transcript and the prompt queue — session CONTENT.
       const response = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/snapshot', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status([401, 403, 404]);
     });
 
     await ctx.step('Session turn read refuses an anonymous caller', async () => {
-      // The turn ledger carries the OpenCode session id and the client-minted
+      // The turn ledger carries the runtime session id and the client-minted
       // message id — session CONTENT, never public.
       const response = await ctx.client
         .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+        .get('/v1/workspaces/:projectId/sessions/:sessionId/turn', {
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status([401, 403, 404]);
@@ -568,6 +568,7 @@ flow(
       'POST /internal/gateway/claude-refused',
       'POST /internal/gateway/models',
       'POST /internal/gateway/pool-rate-limit',
+      'POST /internal/gateway/pool-usage',
       'POST /internal/gateway/refresh-credential',
       'POST /internal/gateway/resolve-upstream',
       'POST /internal/gateway/trace',
@@ -584,6 +585,7 @@ flow(
       '/internal/gateway/claude-refused',
       '/internal/gateway/models',
       '/internal/gateway/pool-rate-limit',
+      '/internal/gateway/pool-usage',
       '/internal/gateway/refresh-credential',
       '/internal/gateway/resolve-upstream',
       '/internal/gateway/trace',
@@ -620,14 +622,14 @@ flow(
   'CHN-27',
   {
     domain: 'channels',
-    routes: ['PATCH /v1/projects/:projectId/channels/email/installation'],
+    routes: ['PATCH /v1/workspaces/:projectId/channels/email/installation'],
   },
   async (ctx) => {
     await ctx.step('Anonymous callers cannot update an email installation', async () => {
       const response = await ctx.client
         .as(ctx.P.ANON)
         .patch(
-          '/v1/projects/:projectId/channels/email/installation',
+          '/v1/workspaces/:projectId/channels/email/installation',
           {},
           { params: { projectId: ZERO_UUID } },
         );
@@ -712,19 +714,19 @@ flow(
   {
     domain: 'connectors',
     routes: [
-      'GET /v1/projects/:projectId/connections/all',
-      'PUT /v1/projects/:projectId/connections/:connectionId/default',
+      'GET /v1/workspaces/:projectId/connections/all',
+      'PUT /v1/workspaces/:projectId/connections/:connectionId/default',
     ],
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
     await ctx.step('An unknown project hides the connection roster and default mutation', async () => {
-      const roster = await owner.get('/v1/projects/:projectId/connections/all', {
+      const roster = await owner.get('/v1/workspaces/:projectId/connections/all', {
         params: { projectId: ZERO_UUID },
       });
       roster.status(404);
       const makeDefault = await owner.put(
-        '/v1/projects/:projectId/connections/:connectionId/default',
+        '/v1/workspaces/:projectId/connections/:connectionId/default',
         {},
         { params: { projectId: ZERO_UUID, connectionId: ZERO_UUID } },
       );
@@ -738,9 +740,9 @@ flow(
   {
     domain: 'sessions',
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/scope',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/model',
-      'PUT /v1/projects/:projectId/sessions/:sessionId/scope',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/scope',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/model',
+      'PUT /v1/workspaces/:projectId/sessions/:sessionId/scope',
     ],
   },
   async (ctx) => {
@@ -748,18 +750,18 @@ flow(
     const params = { projectId: ZERO_UUID, sessionId: ZERO_UUID };
     await ctx.step('An unknown project hides session scope and model mutations', async () => {
       const scopeRead = await owner.get(
-        '/v1/projects/:projectId/sessions/:sessionId/scope',
+        '/v1/workspaces/:projectId/sessions/:sessionId/scope',
         { params },
       );
       scopeRead.status(404);
       const model = await owner.put(
-        '/v1/projects/:projectId/sessions/:sessionId/model',
-        { opencode_model: 'openai/gpt-5' },
+        '/v1/workspaces/:projectId/sessions/:sessionId/model',
+        { model: 'openai/gpt-5' },
         { params },
       );
       model.status(404);
       const scope = await owner.put(
-        '/v1/projects/:projectId/sessions/:sessionId/scope',
+        '/v1/workspaces/:projectId/sessions/:sessionId/scope',
         { secrets: [] },
         { params },
       );
@@ -773,9 +775,9 @@ flow(
   {
     domain: 'sessions',
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/config',
-      'POST /v1/projects/:projectId/sessions/:sessionId/reload',
-      'POST /v1/projects/:projectId/sessions/:sessionId/reload-stream',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/config',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/reload',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/reload-stream',
     ],
   },
   async (ctx) => {
@@ -784,18 +786,18 @@ flow(
 
     await ctx.step('anon cannot read config freshness or reload', async () => {
       const anon = ctx.client.as(ctx.P.ANON);
-      const read = await anon.get('/v1/projects/:projectId/sessions/:sessionId/config', {
+      const read = await anon.get('/v1/workspaces/:projectId/sessions/:sessionId/config', {
         params: sessionParams,
       });
       read.status(401);
       const reload = await anon.post(
-        '/v1/projects/:projectId/sessions/:sessionId/reload',
+        '/v1/workspaces/:projectId/sessions/:sessionId/reload',
         {},
         { params: sessionParams },
       );
       reload.status(401);
       const reloadStream = await anon.post(
-        '/v1/projects/:projectId/sessions/:sessionId/reload-stream',
+        '/v1/workspaces/:projectId/sessions/:sessionId/reload-stream',
         {},
         { params: sessionParams },
       );
@@ -805,18 +807,18 @@ flow(
     await ctx.step('an unknown project hides both — no existence oracle', async () => {
       // A reload restarts a session's runtime. Distinguishing "no such project"
       // from "not yours" here would let anyone probe for live session ids.
-      const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId/config', {
+      const read = await owner.get('/v1/workspaces/:projectId/sessions/:sessionId/config', {
         params: sessionParams,
       });
       read.status(404);
       const reload = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/reload',
+        '/v1/workspaces/:projectId/sessions/:sessionId/reload',
         {},
         { params: sessionParams },
       );
       reload.status(404);
       const reloadStream = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/reload-stream',
+        '/v1/workspaces/:projectId/sessions/:sessionId/reload-stream',
         {},
         { params: sessionParams },
       );
@@ -824,10 +826,14 @@ flow(
     });
 
     await ctx.step('a malformed session id is rejected before any lookup', async () => {
+      // The legacy name: the canonical name answers the unknown workspace id first (404 workspace_not_found).
       const read = await owner.get('/v1/projects/:projectId/sessions/:sessionId/config', {
         params: { projectId: ZERO_UUID, sessionId: 'not-a-uuid' },
       });
       read.status(400);
+      (await owner.get('/v1/workspaces/:projectId/sessions/:sessionId/config', {
+        params: { projectId: ZERO_UUID, sessionId: 'not-a-uuid' },
+      })).status(404).body().has('$.code', 'workspace_not_found');
     });
   },
 );
@@ -837,8 +843,8 @@ flow(
   {
     domain: 'sessions',
     routes: [
-      'GET /v1/projects/:projectId/sessions/:sessionId/question',
-      'POST /v1/projects/:projectId/sessions/:sessionId/question',
+      'GET /v1/workspaces/:projectId/sessions/:sessionId/question',
+      'POST /v1/workspaces/:projectId/sessions/:sessionId/question',
     ],
   },
   async (ctx) => {
@@ -846,12 +852,12 @@ flow(
     const params = { projectId: ZERO_UUID, sessionId: ZERO_UUID };
     await ctx.step('An unknown project hides durable session questions', async () => {
       const read = await owner.get(
-        '/v1/projects/:projectId/sessions/:sessionId/question',
+        '/v1/workspaces/:projectId/sessions/:sessionId/question',
         { params },
       );
       read.status(404);
       const answer = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/question',
+        '/v1/workspaces/:projectId/sessions/:sessionId/question',
         { answers: ['yes'] },
         { params },
       );

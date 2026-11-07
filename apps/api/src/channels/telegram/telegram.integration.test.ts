@@ -37,6 +37,7 @@ import { deleteFromView, insertIntoView } from '../../__tests__/helpers/compat-v
 import { projectsApp } from '../../projects/surface';
 import * as projectSurface from '../../projects/surface';
 import { registerTurnQuestionsRoutes } from '../../projects/routes/turn-questions';
+import { ASK_LIVE_WAIT_MS } from '../../projects/lib/session-asks';
 import { questionReleaseSentinel } from '../question-release';
 import { relayTurnQuestion } from '../turn-relay';
 import { ensureDefaultConnection } from '../../connectors/credentials';
@@ -235,7 +236,7 @@ const claimRows = (chat: number) => db.select().from(chatEventDedup).where(eq(ch
 const holdClaim = (chat: number, expiresInMs = 60_000) =>
   db.insert(chatEventDedup).values({ eventId: claimKey(chat), expiresAt: new Date(Date.now() + expiresInMs) });
 const threadRow = async (chat: number) =>
-  (await db.select().from(chatThreads).where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, String(chat)))))[0];
+  (await db.select().from(chatThreads).where(and(eq(chatThreads.platformTeamId, BOT_ID), eq(chatThreads.threadId, String(chat)))))[0];
 const replies = () => calls.filter((c) => c.method === 'sendMessage').map((c) => String(c.body.text));
 /** The lifecycle's `create_session` row for a message, as `createSession` writes it. */
 const createCommand = (event: { id: string }, status: string, projectId = PROJECT) =>
@@ -279,6 +280,7 @@ beforeAll(async () => {
   (config as { TELEGRAM_API_URL: string }).TELEGRAM_API_URL = fake.url.origin;
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'telegram-v2-test' });
   await db.insert(projects).values({
+    splitPending: true,
     projectId: PROJECT,
     accountId: ACCOUNT,
     name: 'telegram-v2',
@@ -367,7 +369,7 @@ beforeEach(() => {
 afterAll(async () => {
   resetChannelLifecycleForTest();
   fake.stop(true);
-  await db.delete(chatThreads).where(eq(chatThreads.workspaceId, BOT_ID));
+  await db.delete(chatThreads).where(eq(chatThreads.platformTeamId, BOT_ID));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:threadcreate:${PROJECT}:%`));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, 'channel:start-retrying:%'));
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `telegram:question-buttons:${PROJECT}:%`));
@@ -644,7 +646,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
 
   test('a create row of the same key in another project is not this message', async () => {
     const other = crypto.randomUUID();
-    await db.insert(projects).values({ projectId: other, accountId: ACCOUNT, name: 'telegram-v2-other', repoUrl: 'https://example.test/o.git' });
+    await db.insert(projects).values({ splitPending: true, projectId: other, accountId: ACCOUNT, name: 'telegram-v2-other', repoUrl: 'https://example.test/o.git' });
     try {
       const event = update('mine', ALLOWED, 934);
       await createCommand(event, 'running', other);
@@ -713,6 +715,7 @@ describe('Telegram channel connector — migrated PostgreSQL', () => {
   test('a chat create the lifecycle gives up frees the chat at once', async () => {
     const archived = crypto.randomUUID();
     await db.insert(projects).values({
+      splitPending: true,
       projectId: archived,
       accountId: ACCOUNT,
       name: 'telegram-v2-archived',
@@ -864,7 +867,7 @@ describe('Telegram notices addressed by session — migrated PostgreSQL', () => 
     await db
       .update(chatThreads)
       .set({ lastMessageAt: new Date(Date.now() - 60_000) })
-      .where(and(eq(chatThreads.workspaceId, BOT_ID), eq(chatThreads.threadId, '946')));
+      .where(and(eq(chatThreads.platformTeamId, BOT_ID), eq(chatThreads.threadId, '946')));
     await runFailed(sessionId);
     expect(calls.map((c) => c.body.chat_id)).toEqual([947]);
   });
@@ -908,7 +911,7 @@ describe('Telegram notices addressed by session — migrated PostgreSQL', () => 
     const text = String(calls[0]!.body.text);
     expect(text).toContain(reason);
     expect(text).toContain('Send /new');
-    expect(text).toContain(`/projects/${PROJECT}/sessions/${sessionId}`);
+    expect(text).toContain(`/workspaces/${PROJECT}/sessions/${sessionId}`);
   });
 
   test('a failure the provider may clear is told once, as retrying; a final failure still is', async () => {
@@ -1339,15 +1342,15 @@ describe('POST /turn-question for a Telegram session — migrated PostgreSQL', (
 
     const member = await request({ userId: OWNER, authType: 'jwt' }, body('que_member'));
     expect(member.status).toBe(200);
-    expect(await member.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed' });
+    expect(await member.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed', live_wait_ms: ASK_LIVE_WAIT_MS });
     // No runtime request id: the shared `q-<session>` row names no single question.
     const unnamed = await request(sandbox, body(), tokens.get(sessionId));
-    expect(await unnamed.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed' });
+    expect(await unnamed.json()).toEqual({ ok: true, persisted: true, answers: [], channel_error: 'not_relayed', live_wait_ms: ASK_LIVE_WAIT_MS });
     expect(calls).toEqual([]);
 
     const posted = await request(sandbox, body('que_sandbox'), tokens.get(sessionId));
     expect(posted.status).toBe(200);
-    expect(await posted.json()).toEqual({ ok: true, persisted: true, answers: POSTED });
+    expect(await posted.json()).toEqual({ ok: true, persisted: true, answers: POSTED, live_wait_ms: ASK_LIVE_WAIT_MS });
     const stored = await db
       .select({ id: sessionPendingQuestions.id, requestId: sessionPendingQuestions.requestId })
       .from(sessionPendingQuestions)
@@ -1526,7 +1529,7 @@ describe('Telegram question buttons — migrated PostgreSQL', () => {
 
   test('a question of another project answers nothing', async () => {
     const otherProject = crypto.randomUUID();
-    await db.insert(projects).values({ projectId: otherProject, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/other.git' });
+    await db.insert(projects).values({ splitPending: true, projectId: otherProject, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/other.git' });
     const sessionId = await bindChat(2013);
     const [row] = await db
       .insert(sessionPendingQuestions)
@@ -2021,6 +2024,20 @@ describe('Telegram files — migrated PostgreSQL', () => {
     expect(delivered.filter((d) => 'overrides' in d)).toEqual([]);
   });
 
+  test('with voice calls on, a voice note points the agent at its voice_transcribe tool, not an install', async () => {
+    await db.update(projects).set({ metadata: { telegram: { allowedUserIds: [ALLOWED] }, experimental: { voice_call: true } } }).where(eq(projects.projectId, PROJECT));
+    try {
+      await bindChat(6044);
+      stored.set('voice-2', { bytes: new Uint8Array([0x4f, 0x67, 0x67, 0x53]) });
+      await handleTelegramEvent(mediaUpdate({ voice: { file_id: 'voice-2', mime_type: 'audio/ogg; codecs=opus', duration: 4 } }, { chat: 6044 }));
+      expect(delivered[0]!.parts[1]).toMatchObject({ type: 'file', mime: 'audio/ogg', filename: 'voice_message.ogg' });
+      expect(delivered[0]!.text).toContain('transcribe it with your voice_transcribe tool');
+      expect(delivered[0]!.text).not.toContain('No speech-to-text tool is preinstalled');
+    } finally {
+      await allowSender();
+    }
+  });
+
   test('a declared size over 8 MiB is not fetched: the agent is told, and the text goes', async () => {
     await bindChat(6005);
     await handleTelegramEvent(mediaUpdate(
@@ -2198,7 +2215,7 @@ describe('Telegram files — migrated PostgreSQL', () => {
 describe("a Telegram chat's model goes with every message — migrated PostgreSQL", () => {
   /** The chat's settings row, as `/model` or the Channels page writes it. */
   const seedChoice = (chat: number, model: string) =>
-    db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: String(chat), projectId: PROJECT, model });
+    db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: String(chat), projectId: PROJECT, model });
   /** Every model reads as servable (or none does), with nothing in the catalog to replace one. */
   const servable = (answer: boolean) => [
     spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(answer),
@@ -2211,7 +2228,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
     try {
       await handleTelegramEvent(update('first task', ALLOWED, 7012));
       expect(created).toHaveLength(1);
-      expect(created[0]!.body).toMatchObject({ agent_name: 'default', opencode_model: 'cmd-c1' });
+      expect(created[0]!.body).toMatchObject({ agent_name: 'default', model: 'cmd-c1' });
       expect(created[0]!.postCreate[1]).not.toHaveProperty('overrides');
     } finally {
       for (const spy of spies) spy.mockRestore();
@@ -2236,7 +2253,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
 
   test("with no choice, a follow-up carries the session's own model, so an earlier turn's model does not stick", async () => {
     const sessionId = await bindChat(7014);
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'cmd-p1' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'cmd-p1' } }).where(eq(projectSessions.sessionId, sessionId));
     const spies = servable(true);
     try {
       await handleTelegramEvent(update('carry on', ALLOWED, 7014));
@@ -2248,7 +2265,7 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
 
   test("a button's answer carries the session's model too", async () => {
     const sessionId = await bindChat(7016);
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'cmd-p2' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'cmd-p2' } }).where(eq(projectSessions.sessionId, sessionId));
     const spies = servable(true);
     try {
       await handleTelegramPress(press(`kq:${await pending(sessionId)}:0`, { chat: 7016 }));
@@ -2276,10 +2293,10 @@ describe("a Telegram chat's model goes with every message — migrated PostgreSQ
 
 describe('Telegram commands — migrated PostgreSQL', () => {
   const HELP = [
-    'Kortix project telegram-v2. The agent answers in this chat.',
+    'Kortix workspace telegram-v2. The agent answers in this chat.',
     "/new — Start a new conversation and stop this chat's run",
     "/stop — Stop the agent's current run in this chat",
-    "/status — Show this chat's project, agent, model and session",
+    "/status — Show this chat's workspace, agent, model and session",
     '/model [id] — List the models, or switch this chat to one',
     '/agent [name] — List the agents, or switch this chat to one',
     '/help — List the commands',
@@ -2287,7 +2304,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   ].join('\n');
   /** The chat's settings row, or undefined. */
   const settingsRow = async (chat: string) =>
-    (await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.workspaceId, BOT_ID), eq(chatChannelBindings.channelId, chat))))[0];
+    (await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.platformTeamId, BOT_ID), eq(chatChannelBindings.channelId, chat))))[0];
   /** A running turn as forwarding records it: `source` is the source of the prompt it delivered, null when none. */
   const liveTurn = (token: string, startedAtMs: number, source: string | null) => ({ token, state: 'active', messageId: `msg_${token}`, startedAtMs, source });
   /** A session of the chat in `status`; with `source`, a running turn whose prompt came from there. */
@@ -2336,7 +2353,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   const row = (text: string, data: string) => [[text, data]];
   const lastSent = () => calls.filter((c) => c.method === 'sendMessage').at(-1)!;
   /** No /model <id> hint: a button shows a model's name, never its id. */
-  const MODELS_USAGE = 'Tap a model to use it in this chat. Only models and keys the whole project shares work here.';
+  const MODELS_USAGE = 'Tap a model to use it in this chat. Only models and keys the whole Kortix workspace shares work here.';
   /** 201 models the project shares, 26 pages; only cmd-m1 is servable. */
   const modelSpies = () => {
     const models = Object.fromEntries([
@@ -2373,9 +2390,9 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     expect(replies()).toEqual([
       [
         'This chat in Kortix',
-        'Project: telegram-v2',
-        'Agent: project default',
-        'Model: project default',
+        'Workspace: telegram-v2',
+        'Agent: workspace default',
+        'Model: workspace default',
         'Session: none yet: your next message starts one',
         projectWebUrl(appConfig.FRONTEND_URL, PROJECT),
       ].join('\n'),
@@ -2385,7 +2402,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     expect(replies().at(-1)).toContain("Session: • starting: Kortix is creating this chat's session");
     const ready = await chatSession(7024, 'running', '');
     await handleTelegramEvent(update('/status', ALLOWED, 7024));
-    expect(replies().at(-1)).toContain('Agent: default\nModel: project default\nSession: • ready · started just now');
+    expect(replies().at(-1)).toContain('Agent: default\nModel: workspace default\nSession: • ready · started just now');
     expect(replies().at(-1)).toEndWith(sessionWebUrl(appConfig.FRONTEND_URL, PROJECT, ready));
     await chatSession(7025, 'running', 'telegram');
     await handleTelegramEvent(update('/status', ALLOWED, 7025));
@@ -2398,7 +2415,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     const catalog = (models: Record<string, unknown>) =>
       spyOn(servableCatalog, 'servableProjectCatalog').mockResolvedValue({ models, modelOverrides: {}, defaultModel: undefined, usingDefaults: true } as never);
     // No session, and the chat's model cannot run with nothing to replace it: the create refuses every message.
-    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7047', projectId: PROJECT, model: 'cmd-gone-s' });
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: '7047', projectId: PROJECT, model: 'cmd-gone-s' });
     let spies = [spyOn(defaultModel, 'isModelServableForAccount').mockResolvedValue(false), catalog({})];
     try {
       await handleTelegramEvent(update('/status', ALLOWED, 7047));
@@ -2411,7 +2428,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     }
     // A session pinned to a model the shared keys cannot run: its follow-ups run a replacement, and /status names it.
     const sessionId = await chatSession(7048, 'running');
-    await db.update(projectSessions).set({ metadata: { opencode_model: 'kortix/codex/pin-s' } }).where(eq(projectSessions.sessionId, sessionId));
+    await db.update(projectSessions).set({ metadata: { model: 'kortix/codex/pin-s' } }).where(eq(projectSessions.sessionId, sessionId));
     spies = [
       spyOn(defaultModel, 'isModelServableForAccount').mockImplementation(async ({ model }) => model === 'repl-s'),
       catalog({ 'repl-s': { name: 'Repl S', provider: 'kortix', enabled: true } }),
@@ -2529,7 +2546,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       await handleTelegramEvent(update('/models', ALLOWED, 7034));
       expect(replies().at(-1)).toBe(`Models for this chat (page 1 of 26)\n${MODELS_USAGE}`);
       expect(keyboard(lastSent())).toEqual([
-        row('✓ Project default', 'kc:model:=d'),
+        row('✓ Workspace default', 'kc:model:=d'),
         row('Model One', `kc:model:=${choiceRef('cmd-m1')}`),
         ...Array.from({ length: 7 }, (_, i) => row(`Synthetic 00${i}`, `kc:model:=${choiceRef(`cmd-f${i}`)}`)),
         row('More ›', 'kc:model:p1'),
@@ -2539,15 +2556,15 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       expect(replies().at(-1)).toBe('Model for this chat set to cmd-m1. Messages you send after this reply use it.');
       expect(await settingsRow('7035')).toMatchObject({ projectId: PROJECT, model: 'cmd-m1', agentName: null, channelType: 'private' });
       await handleTelegramEvent(update('/model', ALLOWED, 7035));
-      expect(keyboard(lastSent()).slice(0, 2)).toEqual([row('Project default', 'kc:model:=d'), row('✓ Model One', `kc:model:=${choiceRef('cmd-m1')}`)]);
+      expect(keyboard(lastSent()).slice(0, 2)).toEqual([row('Workspace default', 'kc:model:=d'), row('✓ Model One', `kc:model:=${choiceRef('cmd-m1')}`)]);
 
       await handleTelegramEvent(update('/model a b', ALLOWED, 7035));
       expect(replies().at(-1)).toBe('a b is not a model id. Send /model to see the list.');
       await handleTelegramEvent(update('/model cmd-f1', ALLOWED, 7035));
-      expect(replies().at(-1)).toBe('cmd-f1 is not available in this chat. Only models and keys the whole project shares work here. Send /model to see them.');
+      expect(replies().at(-1)).toBe('cmd-f1 is not available in this chat. Only models and keys the whole Kortix workspace shares work here. Send /model to see them.');
       expect((await settingsRow('7035'))?.model).toBe('cmd-m1');
       await handleTelegramEvent(update('/model default', ALLOWED, 7035));
-      expect(replies().at(-1)).toBe('Model for this chat reset to the project default.');
+      expect(replies().at(-1)).toBe('Model for this chat reset to the workspace default.');
       expect((await settingsRow('7035'))?.model).toBeNull();
 
       await handleTelegramEvent(topicUpdate('/model@synthetic_bot cmd-m1', -1007036));
@@ -2574,7 +2591,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     try {
       await handleTelegramEvent(update('/agents', ALLOWED, 7040));
       expect(replies().at(-1)).toBe('Agents for this chat\nTap an agent to use it for new sessions in this chat, or send /agent <name>.');
-      expect(keyboard(lastSent())).toEqual([row('✓ Project default', 'kc:agent:=d'), row('reviewer — Reviews changes', `kc:agent:=${choiceRef('reviewer')}`)]);
+      expect(keyboard(lastSent())).toEqual([row('✓ Workspace default', 'kc:agent:=d'), row('reviewer — Reviews changes', `kc:agent:=${choiceRef('reviewer')}`)]);
       await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7040));
       expect(replies().at(-1)).toBe('Agent for this chat set to reviewer. Your next message starts a session with it.');
       expect((await settingsRow('7040'))?.agentName).toBe('reviewer');
@@ -2595,7 +2612,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   });
 
   test('/agent and /model default while Kortix still creates the chat\'s session say that session keeps its own', async () => {
-    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7049', projectId: PROJECT, model: 'cmd-held' });
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: '7049', projectId: PROJECT, model: 'cmd-held' });
     await holdClaim(7049);
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
@@ -2609,7 +2626,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       );
       await handleTelegramEvent(update('/model default', ALLOWED, 7049));
       expect(replies().at(-1)).toBe(
-        "Model for this chat reset to the project default for new sessions. Kortix is still creating this chat's session, which keeps its own model; send /new after it answers to start on the default.",
+        "Model for this chat reset to the workspace default for new sessions. Kortix is still creating this chat's session, which keeps its own model; send /new after it answers to start on the default.",
       );
       expect(await settingsRow('7049')).toMatchObject({ agentName: 'reviewer', model: null });
     } finally {
@@ -2632,7 +2649,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     const keys = spyOn(modelAccess, 'applyChannelSessionKeys');
     try {
       await handleTelegramEvent(update('/model cmd-gone-row', ALLOWED, 7051));
-      expect(replies().at(-1)).toBe('This bot is no longer connected to this Kortix project.');
+      expect(replies().at(-1)).toBe('This bot is no longer connected to this Kortix workspace.');
       expect(keys.mock.calls.filter(([input]) => input.sessionId === sessionId)).toEqual([]);
       expect(await settingsRow('7051')).toBeUndefined();
     } finally {
@@ -2645,7 +2662,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
     const deleted = await chatSession(7054, 'running', 'telegram');
     await db
       .update(projectSessions)
-      .set({ metadata: { deletedAt: new Date().toISOString(), opencode_model: 'cmd-deleted-pin' } })
+      .set({ metadata: { deletedAt: new Date().toISOString(), model: 'cmd-deleted-pin' } })
       .where(eq(projectSessions.sessionId, deleted));
     const spies: Array<{ mockRestore(): void }> = [
       spyOn(selection, 'listProjectAgents').mockResolvedValue([{ name: 'reviewer', description: 'Reviews changes', mode: null }]),
@@ -2657,9 +2674,9 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       expect(replies().at(-1)).toBe(
         [
           'This chat in Kortix',
-          'Project: telegram-v2',
-          'Agent: project default',
-          'Model: project default',
+          'Workspace: telegram-v2',
+          'Agent: workspace default',
+          'Model: workspace default',
           'Session: none yet: your next message starts one',
           projectWebUrl(appConfig.FRONTEND_URL, PROJECT),
         ].join('\n'),
@@ -2670,7 +2687,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
       await handleTelegramEvent(update('/agent reviewer', ALLOWED, 7054));
       expect(replies().at(-1)).toBe('Agent for this chat set to reviewer. Your next message starts a session with it.');
       await handleTelegramEvent(update('/model default', ALLOWED, 7054));
-      expect(replies().at(-1)).toBe('Model for this chat reset to the project default.');
+      expect(replies().at(-1)).toBe('Model for this chat reset to the workspace default.');
       // What the delivery answers for a deleted session (follow-up-delivery.ts): the message starts a new one.
       deliverResult = 'no-session';
       await handleTelegramEvent(update('next task', ALLOWED, 7054));
@@ -2700,8 +2717,8 @@ describe('Telegram commands — migrated PostgreSQL', () => {
 
     test("a row another project left on the chat (a bot reused across projects) is taken over with both of its choices cleared", async () => {
       const other = crypto.randomUUID();
-      await db.insert(projects).values({ projectId: other, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/telegram-other.git' });
-      const left = { platform: 'telegram', workspaceId: BOT_ID, projectId: other, agentName: 'other-agent', model: 'other-model' };
+      await db.insert(projects).values({ splitPending: true, projectId: other, accountId: ACCOUNT, name: 'telegram-other', repoUrl: 'file:///nonexistent/telegram-other.git' });
+      const left = { platform: 'telegram', platformTeamId: BOT_ID, projectId: other, agentName: 'other-agent', model: 'other-model' };
       await db.insert(chatChannelBindings).values([{ ...left, channelId: '7058' }, { ...left, channelId: '7059' }]);
       try {
         await handleTelegramEvent(update('/model cmd-taken', ALLOWED, 7058));
@@ -2743,7 +2760,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
   });
 
   test("a connect with another bot drops the chats' settings", async () => {
-    await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7090', projectId: PROJECT, model: 'cmd-m1' });
+    await db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: '7090', projectId: PROJECT, model: 'cmd-m1' });
     const otherBot = String(Number(BOT_ID) + 1);
     try {
       await saveTelegramInstall({ projectId: PROJECT, botId: otherBot, username: 'other_bot', token: `${otherBot}:${'B'.repeat(35)}`, webhookSecret: 's' });
@@ -2880,7 +2897,7 @@ describe('Telegram commands — migrated PostgreSQL', () => {
 
         calls.length = 0;
         // Project default would clear the row's model: it stays.
-        await handleTelegramPress(tap(menu, '✓ Project default'));
+        await handleTelegramPress(tap(menu, '✓ Workspace default'));
         await handleTelegramPress(pick);
         expect(methods()).toEqual(['answerCallbackQuery', 'answerCallbackQuery']);
         expect(calls.map((c) => c.body.text)).toEqual([OUT_OF_DATE, OUT_OF_DATE]);
@@ -3002,13 +3019,13 @@ describe('Telegram commands — migrated PostgreSQL', () => {
         calls.length = 0;
         await handleTelegramPress(tap(menu, 'Status'));
         menu = calls.at(-1)!;
-        expect(menu.body.text).toStartWith('This chat in Kortix\nProject: telegram-v2\n');
+        expect(menu.body.text).toStartWith('This chat in Kortix\nWorkspace: telegram-v2\n');
         expect(keyboard(menu)).toEqual([[['New conversation', 'kc:new'], ['Change model', 'kc:model']], [['Change agent', 'kc:agent']]]);
         await handleTelegramPress(tap(menu, 'Change model'));
         menu = calls.at(-1)!;
         expect(menu.body.text).toBe(`Models for this chat (page 1 of 26)\n${MODELS_USAGE}`);
-        await handleTelegramPress(tap(menu, '✓ Project default'));
-        expect(calls.at(-1)!.body).toMatchObject({ text: 'Model for this chat reset to the project default.', reply_markup: { inline_keyboard: [] } });
+        await handleTelegramPress(tap(menu, '✓ Workspace default'));
+        expect(calls.at(-1)!.body).toMatchObject({ text: 'Model for this chat reset to the workspace default.', reply_markup: { inline_keyboard: [] } });
         expect(methods()).toEqual(Array(3).fill(['answerCallbackQuery', 'editMessageText']).flat());
         expect(calls.filter((c) => c.method === 'editMessageText').map((c) => [c.body.chat_id, c.body.message_id])).toEqual(Array(3).fill([7112, id]));
       } finally {
@@ -3265,7 +3282,7 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
     expect(Object.keys(entry).sort()).toEqual(['first_name', 'id', 'last_name', 'last_seen', 'username']);
     expect(entry).toMatchObject({ id: '4001', username: 'synthetic_requester', first_name: 'Synthetic', last_name: 'Requester' });
     expect(JSON.stringify(await telegramMetadata())).not.toContain('secret plan');
-    expect(replies()).toEqual([expect.stringContaining('Your request is waiting for a project admin')]);
+    expect(replies()).toEqual([expect.stringContaining('Your request is waiting for a workspace admin')]);
     expect(replies()[0]).toContain('Customize → Connectors → Channels → Telegram');
     expect(replies()[0]).toContain('4001');
     // The pairing reply is the only Telegram call: recording asks Telegram nothing.
@@ -3276,7 +3293,7 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
       await handleTelegramEvent(message('again', from));
       // The loaded install already shows the request: no row lock, no write.
       expect(transaction).not.toHaveBeenCalled();
-      expect(replies()[1]).toContain('Your request is waiting for a project admin');
+      expect(replies()[1]).toContain('Your request is waiting for a workspace admin');
     } finally {
       transaction.mockRestore();
     }
@@ -3306,7 +3323,7 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
       transaction.mockRestore();
       warn.mockRestore();
     }
-    expect(replies()).toEqual([expect.stringContaining('Ask a project admin to allow your Telegram user ID 4090 under')]);
+    expect(replies()).toEqual([expect.stringContaining('Ask a workspace admin to allow your Telegram user ID 4090 under')]);
     expect(replies()[0]).not.toContain('waiting');
     expect(replies()[0]).not.toContain('message this bot privately');
     expect(await storedIds()).toEqual([]);
@@ -3560,7 +3577,7 @@ describe('Telegram allowed users and access requests — migrated PostgreSQL', (
       webhookInfo = webhook;
       botMenu = kortixAndOwn;
       calls.length = 0;
-      await db.insert(chatChannelBindings).values({ platform: 'telegram', workspaceId: BOT_ID, channelId: '7091', projectId: PROJECT, model: 'cmd-m1' });
+      await db.insert(chatChannelBindings).values({ platform: 'telegram', platformTeamId: BOT_ID, channelId: '7091', projectId: PROJECT, model: 'cmd-m1' });
       try {
         const res = await api('DELETE', '');
         const settings = await db.select().from(chatChannelBindings).where(and(eq(chatChannelBindings.platform, 'telegram'), eq(chatChannelBindings.projectId, PROJECT)));

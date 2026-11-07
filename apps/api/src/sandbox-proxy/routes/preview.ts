@@ -27,6 +27,7 @@ export {
   forwardToSandbox,
   forwardsClientEncoding,
   isProxiedBaseReset,
+  isSessionLogRead,
   resolvePreviewWsUpstream,
   shouldAutoResumeStoppedSandbox,
   shouldWakeStoppedSandboxForWsAttach,

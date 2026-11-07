@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { hubTarget } from '../../internal/stores/account-panel-store';
+import { ACCOUNT_PANEL_PARAM, hubTarget } from '../../internal/stores/account-panel-store';
+import { SplitNoticeBanner } from '../settings/split-notice-banner';
 import { useTranslations } from '../../i18n';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -34,7 +35,6 @@ import type { AttachmentSubmission } from '../../session/composer/attachment-sub
 import { contract, invalidateProject, qk, type Command } from '@kortix/sdk/react';
 import { MY_KORTIX_SANDBOX_SLUG, isMyKortixAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from '../home/access-requests-bell';
-import { notificationCenterOn } from '../../internal/hooks/use-notification-center';
 import { FirstChat } from '../home/first-chat';
 import { SandboxPicker } from '../home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from '../home/welcome-body';
@@ -212,11 +212,16 @@ function ProjectHomeView({
   // The onboarding lands on the first chat: it starts the chat (the sidebar
   // row) and moves the address to it. Rendered as the first chat from this
   // render on, so the usual home never paints in between.
+  // An old account-settings link (`?accountId=`, or a bare `?accountTab=`) is
+  // the hub router's to resolve (`account-hub-router.tsx`): replacing the
+  // address here first would drop it, and the link would land on the first
+  // chat instead of its section.
+  const hubLinkPending = Boolean(searchParams?.get(ACCOUNT_PANEL_PARAM) || searchParams?.get('accountTab'));
   useEffect(() => {
-    if (!onboarding) return;
+    if (!onboarding || hubLinkPending) return;
     useFirstChatStore.getState().start(projectId);
     if (!firstChatRequested) router.replace(firstChatHref(projectId));
-  }, [onboarding, firstChatRequested, projectId, router]);
+  }, [onboarding, hubLinkPending, firstChatRequested, projectId, router]);
   const firstChat = (firstChatPending && firstChatRequested) || onboarding;
 
   // Once per mount: a second prefill id would send a second kickoff.
@@ -384,7 +389,6 @@ function ProjectHomeView({
       <AccessRequestsBell
         requests={accessRequests.data?.requests ?? []}
         to={accessRequestsTo}
-        notificationCenter={notificationCenterOn(projectRowQuery.data)}
       />
       {/* Not while the project is in its first-chat era, and not over the
           onboarding wizard: onboarding owns those screens. The era starts when
@@ -396,6 +400,11 @@ function ProjectHomeView({
           projects, which the create flow stamps without a wizard, the era
           never starts and the promo shows as before. */}
       {firstChatPending || !onboarded || !HomeAnnouncement ? null : <HomeAnnouncement />}
+
+      {/* What changed when a legacy account's workspaces became their own (C9). */}
+      <div className="relative z-10 mx-auto w-full max-w-2xl px-4 pt-14 empty:hidden">
+        <SplitNoticeBanner workspaceId={projectId} />
+      </div>
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the

@@ -9,7 +9,7 @@ import { WIRE_ID_TIME_SCALE } from '../wire-message-id';
  * bespoke fetch blocks must leave each of these exactly as it was.
  *
  * The signed proxy endpoint resolves through the real `runtime-client` and its
- * real helpers; `opencode-mapping` and the db row are the only stubs, plus the
+ * real helpers; `runtime-session-mapping` and the db row are the only stubs, plus the
  * `fetch` that stands in for the box.
  */
 
@@ -42,12 +42,15 @@ let closedTurns: string[] = [];
 
 mock.module('../../shared/db', () => ({
   hasDatabase: () => true,
+  // Statically imported by modules this graph loads; no test path runs it.
+  withDbTransaction: async <T>(fn: () => Promise<T>) => fn(),
+  afterDbCommit: (fn: () => void) => fn(),
   db: {
     select: (projection?: Record<string, unknown>) => ({
       from: () => ({
         where: () => ({
           limit: async () =>
-            projection && 'opencodeSessionId' in projection
+            projection && 'runtimeSessionId' in projection
               ? sessionRow
                 ? [sessionRow]
                 : []
@@ -58,10 +61,10 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-const realOpencodeMapping = await import('../opencode-mapping');
-mock.module('../opencode-mapping', () => ({
-  ...realOpencodeMapping,
-  sandboxOpencodeEndpoint: async () => ({
+const realRuntimeMapping = await import('../runtime-session-mapping');
+mock.module('../runtime-session-mapping', () => ({
+  ...realRuntimeMapping,
+  sandboxRuntimeEndpoint: async () => ({
     url: `https://box.test/p/${EXTERNAL_ID}/8000`,
     headers: { 'x-kortix': '1' },
   }),
@@ -87,7 +90,7 @@ const { cancelForwardedPrompt } = await import('./cancel-forwarded');
 beforeEach(() => {
   selectResults = [inboxRow];
   sessionRow = {
-    opencodeSessionId: OC_SESSION_ID,
+    runtimeSessionId: OC_SESSION_ID,
     sandboxUrl: `https://box.test/p/${EXTERNAL_ID}/8000/`,
     accountId: 'acct-1',
     projectId: 'proj-1',
@@ -99,6 +102,35 @@ beforeEach(() => {
 afterAll(() => {
   globalThis.fetch = realFetch;
 });
+
+/**
+ * The box's session-log page for message summaries written as `{ info, parts }`:
+ * `parentID` is the prompt a reply answers, an assistant without
+ * `time.completed` still streams, and each part id becomes a block id.
+ */
+function asLogPage(body: { messages: Array<{ info: Record<string, unknown>; parts?: Array<{ id?: string }> }>; has_more?: boolean }) {
+  const iso = (ms: unknown) => (typeof ms === 'number' ? new Date(ms).toISOString() : null);
+  return {
+    thread_id: 'ses_root',
+    has_more: body.has_more ?? false,
+    messages: body.messages.map(({ info, parts = [] }, i) => {
+      const time = (info.time ?? {}) as { created?: number; completed?: number };
+      const streaming = info.role === 'assistant' && time.completed === undefined;
+      return {
+        message_id: info.id,
+        thread_id: 'ses_root',
+        seq: i + 1,
+        role: info.role,
+        kind: 'turn',
+        reply_to: typeof info.parentID === 'string' ? info.parentID : null,
+        status: streaming ? 'streaming' : 'complete',
+        created_at: iso(time.created),
+        completed_at: streaming ? null : iso(time.completed ?? time.created),
+        blocks: parts.flatMap((part) => (typeof part.id === 'string' ? [{ type: 'text', id: part.id, text: '' }] : [])),
+      };
+    }),
+  };
+}
 
 describe('cancelForwardedPrompt — the tip read and its failure ladder', () => {
   test('an unresolved endpoint is unreachable', async () => {
@@ -143,7 +175,7 @@ describe('cancelForwardedPrompt — the tip read and its failure ladder', () => 
     };
     globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET') !== 'GET') throw new Error('must not retract an answered prompt');
-      return Response.json(tipBody);
+      return Response.json(asLogPage(tipBody));
     }) as unknown as typeof fetch;
     expect(await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).toEqual({ outcome: 'answered' });
   });
@@ -170,7 +202,7 @@ describe('cancelForwardedPrompt — a steer pi has not read (R10)', () => {
         retracted.push(decodeURIComponent(String(url)));
         return retract();
       }
-      return Response.json(tipBody);
+      return Response.json(asLogPage(tipBody));
     }) as unknown as typeof fetch;
   }
   const verb = (status: number, body: unknown) =>
@@ -219,7 +251,7 @@ describe('cancelForwardedPrompt — the runtime retract (R7.1)', () => {
       const method = init?.method ?? 'GET';
       if (method !== 'GET') calls.push(`${method} ${target.replace(`https://box.test/p/${EXTERNAL_ID}/8000`, '')}`);
       if (target.endsWith('/retract')) return retract();
-      return Response.json(tipBody);
+      return Response.json(asLogPage(tipBody));
     }) as unknown as typeof fetch;
   }
   const verb = (status: number, body: unknown) =>

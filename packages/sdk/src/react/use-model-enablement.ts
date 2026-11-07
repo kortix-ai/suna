@@ -4,10 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
 import type { ProjectLlmCatalogResponse } from '../core/rest/projects-client';
-import { getProjectModelPicker } from '../core/rest/projects-client';
-import { setProjectModelEnablement } from '../core/rest/projects-client/model-enablement';
+import { getWorkspaceModelPicker } from '../core/rest/projects-client';
+import { setWorkspaceModelEnablement } from '../core/rest/projects-client/model-enablement';
 import { applyEnablementToProviderList } from './provider-selection';
-import type { ProviderListResponse } from './use-opencode-sessions';
+import type { ProviderListResponse } from './use-runtime-sessions';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
@@ -51,7 +51,7 @@ export function useModelEnablement(projectId: string | null | undefined): UseMod
 
   const { data } = useQuery({
     queryKey,
-    queryFn: () => getProjectModelPicker(projectId as string),
+    queryFn: () => getWorkspaceModelPicker(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
     retry: false,
@@ -59,7 +59,7 @@ export function useModelEnablement(projectId: string | null | undefined): UseMod
 
   const mutation = useMutation({
     mutationFn: (next: Record<string, boolean>) =>
-      setProjectModelEnablement(projectId as string, next),
+      setWorkspaceModelEnablement(projectId as string, next),
     // Apply the new flags to the cached picker payload up front. Every surface
     // reads `enabled` off THIS query — the switch and the session picker both —
     // so without it the UI sits on the pre-toggle answer until the round trip

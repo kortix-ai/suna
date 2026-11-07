@@ -158,6 +158,8 @@ mock.module('../../projects/surface', () => ({
   // module LINK error, not a null.
   missingClaudeSubscription: async () => null,
   sessionModelPin: async () => null,
+  // The turn's origin block ("## Where you are") reads the session row here; inert in this suite.
+  sessionWhereTurn: async () => null,
 }));
 
 const { forwardToSandbox } = await import('./preview');
@@ -325,7 +327,7 @@ describe('forwardToSandbox — a client abort asks who may stop the turn', () =>
   test('allowed: the stop is stamped under the stopper, then forwarded once', async () => {
     queueFetch(new Response('true', { status: 200 }));
     expect((await abort()).status).toBe(200);
-    expect(stopLog).toEqual([{ name: 'UserStop', scope: { opencodeSessionId: 'ses_root' }, by: 'u1' }]);
+    expect(stopLog).toEqual([{ name: 'UserStop', scope: { runtimeSessionId: 'ses_root' }, by: 'u1' }]);
     expect(fetchCalls).toBe(1);
   });
 
@@ -368,7 +370,7 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
     // to `{status:'duplicate'}` and the user's prompt was silently lost — the very
     // message-loss this PR exists to stop, surviving in the one path it missed.
     //
-    // Daytona rejects this BEFORE opencode ("no IP address found" means the box has
+    // Daytona rejects this BEFORE the runtime ("no IP address found" means the box has
     // no runner at all), so delivery is provably not-delivered and releasing is safe.
     const args = [
       'sb-1',

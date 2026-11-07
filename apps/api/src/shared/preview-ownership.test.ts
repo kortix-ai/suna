@@ -31,12 +31,13 @@ let serviceAccountRow: Record<string, unknown> | null = null;
 // A gate holds a read open so a test can look at what else has started.
 let sandboxRefReads = 0;
 let accountMemberReads = 0;
-let resolveAccountCalls = 0;
 let sandboxRefGate: Promise<void> | null = null;
 let sandboxRefFailure: Error | null = null;
 let platformAdminGate: Promise<void> | null = null;
 let platformAdmins = new Set<string>();
 let projectSessionRow: Record<string, unknown> | null = null;
+/** The sessions the injected spawn-ancestor predicate says spawned the caller. */
+let spawnAncestorIds: string[] = [];
 /** The project's private channels, as `hiddenSpaceIds` reads them (`member`: the caller is in it). */
 let privateSpaceRows: Array<{ spaceId: string; kind: 'channel'; visibility: 'private'; isDefault: false; member: boolean }> = [];
 let projectSessionReads = 0;
@@ -69,6 +70,7 @@ async function unlimitedRows(table: unknown): Promise<unknown[]> {
 }
 
 mock.module('./db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: () => ({
       from: (table: unknown) => ({
@@ -119,13 +121,6 @@ mock.module('../iam', () => ({
   },
 }));
 
-mock.module('./resolve-account', () => ({
-  resolveAccountId: async (userId: string) => {
-    resolveAccountCalls += 1;
-    return userId;
-  },
-}));
-
 mock.module('./platform-roles', () => ({
   isPlatformAdmin: async (accountId: string) => {
     await platformAdminGate;
@@ -164,6 +159,7 @@ const privateSessionOf = (ownerId: string) => ({
 });
 
 beforeEach(() => {
+  spawnAncestorIds = [];
   privateSpaceRows = [];
   sandboxRefRow = {
     sandboxId: 'sbx-1',
@@ -174,7 +170,6 @@ beforeEach(() => {
   serviceAccountRow = null;
   sandboxRefReads = 0;
   accountMemberReads = 0;
-  resolveAccountCalls = 0;
   sandboxRefGate = null;
   sandboxRefFailure = null;
   platformAdminGate = null;
@@ -306,7 +301,6 @@ describe('cold ownership check — one check per (sandbox, user), reads in paral
     const [first, second, allowedA, allowedB, last] = await Promise.all(checks);
 
     expect(sandboxRefReads).toBe(1);
-    expect(resolveAccountCalls).toBe(1);
     expect(accountMemberReads).toBe(1);
     expect(first).toEqual({
       userId: 'user-human-1',
@@ -338,7 +332,6 @@ describe('cold ownership check — one check per (sandbox, user), reads in paral
     });
     expect(await stranger).toBeNull();
     expect(sandboxRefReads).toBe(2);
-    expect(resolveAccountCalls).toBe(2);
   });
 
   test('a failed check is not kept: every waiter gets the error, the next call reads again', async () => {
@@ -391,7 +384,6 @@ describe('cold ownership check — one check per (sandbox, user), reads in paral
     await settle();
     // The sandbox row is still out; the caller's account is already resolved.
     expect(sandboxRefReads).toBe(1);
-    expect(resolveAccountCalls).toBe(1);
     expect(accountMemberReads).toBe(0);
 
     sandboxRow.release();
@@ -644,5 +636,54 @@ describe('canAccessSandboxSession — private channels', () => {
         boundCredentialSessionId: null,
       }),
     ).toBe(true);
+  });
+});
+
+// A subagent reads the conversation of the session that spawned it
+// (`kortix sessions log <parent>`). The REST read path allows it; the daemon-port
+// gate refused it, so the box's own log read 403'd with
+// `[preview] session access refused` (KRTX-4412).
+describe('canAccessSandboxSession — a session token reads the log of a session that spawned it', () => {
+  const parentRead = (caller: string, isRead: boolean) => ({
+    sessionId: 'sess-parent',
+    projectId: 'proj-1',
+    accountId: 'acct-1',
+    userId: 'user-launcher',
+    callerSessionId: caller,
+    boundCredentialSessionId: caller,
+    spawnAncestorRead: isRead ? async () => spawnAncestorIds.includes('sess-parent') : undefined,
+  });
+  const privateTriggerParent = () => ({
+    visibility: 'private',
+    createdBy: 'sa-agent-owner',
+    origin: 'schedule',
+    metadata: {},
+    initiatorType: 'trigger',
+  });
+
+  test('a child session is let in for a log read', async () => {
+    projectSessionRow = privateTriggerParent();
+    spawnAncestorIds = ['sess-parent'];
+    expect(await canAccessSandboxSession(parentRead('child-a', true))).toBe(true);
+  });
+
+  test('the same child is refused for any other request, branch recorded', async () => {
+    projectSessionRow = privateTriggerParent();
+    spawnAncestorIds = ['sess-parent'];
+    expect(await canAccessSandboxSession(parentRead('child-b', false))).toBe(false);
+    expect(takeSessionAccessRefusal(parentRead('child-b', false))?.boundCredentialSessionId).toBe('child-b');
+  });
+
+  test('a log-read allow is not reused for the same caller\'s next non-read request', async () => {
+    projectSessionRow = privateTriggerParent();
+    spawnAncestorIds = ['sess-parent'];
+    expect(await canAccessSandboxSession(parentRead('child-c', true))).toBe(true);
+    expect(await canAccessSandboxSession(parentRead('child-c', false))).toBe(false);
+  });
+
+  test('a session that did not spawn the target stays refused even for a log read', async () => {
+    projectSessionRow = privateTriggerParent();
+    spawnAncestorIds = ['some-other-session'];
+    expect(await canAccessSandboxSession(parentRead('sibling', true))).toBe(false);
   });
 });

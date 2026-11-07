@@ -6,6 +6,7 @@ import { scimError } from '../middleware/scim-auth';
 import { auth, errors, json } from '../openapi';
 import { ScimResource, listResponse, scimRouter } from './app';
 import { ENTERPRISE_USER_SCHEMA } from './user-profile';
+import { accountIdParam } from '../shared/route-params';
 
 // ─── ResourceTypes + Schemas ────────────────────────────────────────────────
 // Azure AD (and other strict SCIM clients) probe /ResourceTypes and /Schemas
@@ -138,10 +139,10 @@ export function registerScimServiceProviderRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/accounts/{accountId}/ServiceProviderConfig',
+      path: '/accounts/{workspaceId}/ServiceProviderConfig',
       ...auth, tags: ['scim'],
       summary: 'SCIM ServiceProviderConfig (capabilities discovery)',
-      request: { params: z.object({ accountId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(ScimResource, 'ServiceProviderConfig'),
         ...errors(401, 403),
@@ -172,14 +173,14 @@ export function registerScimServiceProviderRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/accounts/{accountId}/ResourceTypes',
+      path: '/accounts/{workspaceId}/ResourceTypes',
       ...auth, tags: ['scim'],
       summary: 'SCIM ResourceTypes (User + Group discovery)',
-      request: { params: z.object({ accountId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(ScimResource, 'ResourceTypes ListResponse'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       return c.json(listResponse(RESOURCE_TYPE_DEFS.map((d) => resourceTypeFor(accountId, d))));
     },
   );
@@ -187,14 +188,14 @@ export function registerScimServiceProviderRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/accounts/{accountId}/ResourceTypes/{id}',
+      path: '/accounts/{workspaceId}/ResourceTypes/{id}',
       ...auth, tags: ['scim'],
       summary: 'SCIM ResourceType by id',
-      request: { params: z.object({ accountId: z.string(), id: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), id: z.string() }) },
       responses: { 200: json(ScimResource, 'ResourceType'), ...errors(401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const id = c.req.param('id');
       const def = RESOURCE_TYPE_DEFS.find((d) => d.name === id);
       if (!def) return scimError(c, 404, `Unknown ResourceType "${id}"`);
@@ -205,14 +206,14 @@ export function registerScimServiceProviderRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/accounts/{accountId}/Schemas',
+      path: '/accounts/{workspaceId}/Schemas',
       ...auth, tags: ['scim'],
       summary: 'SCIM Schemas (User + Group attribute definitions)',
-      request: { params: z.object({ accountId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: { 200: json(ScimResource, 'Schemas ListResponse'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       return c.json(listResponse(SCHEMA_DEFS.map((s) => schemaWithLocation(accountId, s))));
     },
   );
@@ -220,14 +221,14 @@ export function registerScimServiceProviderRoutes(): void {
   scimRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/accounts/{accountId}/Schemas/{id}',
+      path: '/accounts/{workspaceId}/Schemas/{id}',
       ...auth, tags: ['scim'],
       summary: 'SCIM Schema by urn',
-      request: { params: z.object({ accountId: z.string(), id: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), id: z.string() }) },
       responses: { 200: json(ScimResource, 'Schema'), ...errors(401, 403, 404) },
     }),
     async (c: any) => {
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       const id = c.req.param('id');
       const schema = SCHEMA_DEFS.find((s) => s.id === id);
       if (!schema) return scimError(c, 404, `Unknown Schema "${id}"`);

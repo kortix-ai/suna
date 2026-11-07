@@ -14,7 +14,7 @@
  * `resolve` failure.
  *
  * The pin moves back with the exact source it had (`project` stays
- * `project`, no source stays none) and `opencode_model_restored: true`. The
+ * `project`, no source stays none) and `model_restored: true`. The
  * last prompts ran on the fallback, so until the next prompt runs on the
  * pin, the marker makes the composer rank the pin above them
  * (`sessionModelCandidates`) and makes a prompt that names no model carry it
@@ -32,6 +32,7 @@ import { SESSION_CHANGED_CHANNEL } from '../../shared/pg-broadcast';
 import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { activeTurnAuthorityPredicate } from '../reaping/box-queries';
 import { resolveSessionPersonalOwner } from './personal-resources';
+import { ACTIVE_SESSION_STATUSES } from './session-status';
 
 /** Never throws. Returns the restored model ref, or null when the session stays. */
 export async function revertSessionModelFallback(sessionId: string, nowMs = Date.now()): Promise<string | null> {
@@ -47,7 +48,7 @@ export async function revertSessionModelFallback(sessionId: string, nowMs = Date
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     const metadata = (row?.metadata ?? {}) as Record<string, unknown>;
-    if (!row || metadata.opencode_model_source !== 'fallback') return null;
+    if (!row || metadata.model_source !== 'fallback') return null;
     const from = metadata[FALLBACK_KEYS.from];
     const at = metadata[FALLBACK_KEYS.at];
     const until = metadata[FALLBACK_KEYS.until];
@@ -78,14 +79,14 @@ export async function revertSessionModelFallback(sessionId: string, nowMs = Date
       .update(projectSessions)
       .set({
         metadata: sql`(${projectSessions.metadata} - ${FALLBACK_KEYS.from}::text - ${FALLBACK_KEYS.fromSource}::text
-            - ${FALLBACK_KEYS.reason}::text - ${FALLBACK_KEYS.at}::text - ${FALLBACK_KEYS.until}::text - 'opencode_model_source')
-          || jsonb_strip_nulls(jsonb_build_object('opencode_model', ${from}::text, 'opencode_model_source', ${source}::text, ${RESTORED_KEY}::text, true))`,
+            - ${FALLBACK_KEYS.reason}::text - ${FALLBACK_KEYS.at}::text - ${FALLBACK_KEYS.until}::text - 'model_source')
+          || jsonb_strip_nulls(jsonb_build_object('model', ${from}::text, 'model_source', ${source}::text, ${RESTORED_KEY}::text, true))`,
       })
       .where(
         and(
           eq(projectSessions.sessionId, sessionId),
           // Compare-and-set: a newer switch, or a person's pick, wins.
-          sql`${projectSessions.metadata}->>'opencode_model_source' = 'fallback'`,
+          sql`${projectSessions.metadata}->>'model_source' = 'fallback'`,
           sql`${projectSessions.metadata}->${FALLBACK_KEYS.at}::text IS NOT DISTINCT FROM ${JSON.stringify(at ?? null)}::jsonb`,
         ),
       )
@@ -100,8 +101,8 @@ export async function revertSessionModelFallback(sessionId: string, nowMs = Date
       resourceType: 'project_session',
       resourceId: sessionId,
       outcome: 'success',
-      before: { opencode_model: metadata.opencode_model },
-      after: { opencode_model: from },
+      before: { model: metadata.model },
+      after: { model: from },
       metadata: { reason: metadata[FALLBACK_KEYS.reason] ?? null },
     }).catch((error: Error) =>
       logger.warn('[projects] session model fallback revert audit failed', { session_id: sessionId, error: error.message }),
@@ -150,8 +151,8 @@ export async function revertIdleSessionFallbacks(nowMs = Date.now()): Promise<nu
     .from(projectSessions)
     .where(
       and(
-        inArray(projectSessions.status, ['queued', 'branching', 'provisioning', 'running']),
-        sql`${projectSessions.metadata}->>'opencode_model_source' = 'fallback'`,
+        inArray(projectSessions.status, [...ACTIVE_SESSION_STATUSES]),
+        sql`${projectSessions.metadata}->>'model_source' = 'fallback'`,
         sql`NOT EXISTS (SELECT 1 FROM ${sessionSandboxes}
           WHERE ${qualifiedColumn(sessionSandboxes.sessionId)} = ${qualifiedColumn(projectSessions.sessionId)} AND ${activeTurnAuthorityPredicate()})`,
         sql`${UNTIL} <= ${nowMs}::bigint`,

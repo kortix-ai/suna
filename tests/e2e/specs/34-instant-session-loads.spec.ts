@@ -288,7 +288,7 @@ async function setup(page: Page, label: string, messages?: SavedMessages) {
   // The recordings are PR demos: keep the personal welcome card a new account
   // gets off the session pages they show.
   await page.addInitScript(() => localStorage.setItem('kortix:marko-welcome-dismissed', '1'));
-  await installBrowserSessionDirect(page, auth, `/projects/${project.id}`, authOptions);
+  await installBrowserSessionDirect(page, auth, `/workspaces/${project.id}`, authOptions);
   await selectAccountForUi(page, accountId);
   await dismissOnboarding(page);
   return { user, auth, accountId, project, sessionId, root: seeded.root, seeded: seeded.messages };
@@ -326,7 +326,7 @@ test('34 — a reload with every read held shows the project, its session list a
     );
 
     // First open, with nothing held: the device keeps what it was shown.
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
     await expect(page.locator(`a[href$="/sessions/${sessionId}"]`).first()).toBeVisible({
       timeout: 60_000,
@@ -392,13 +392,13 @@ test('34 — a stopped session with no computer shows its conversation and a liv
           agent_name: 'kortix',
           retriable: false,
           sandbox: null,
-          opencode_session_id: root,
+          runtime_session_id: root,
           failure: null,
         },
       });
     });
 
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
 
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
     // A sent message wakes the computer and is delivered, so the composer
@@ -511,7 +511,7 @@ test('34 — a saved tool call shows its command and output, from the server and
     );
 
     // From the server's saved copy.
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
     await openWork(page);
     await expect(commandRow()).toBeVisible();
@@ -648,7 +648,7 @@ test("34 — a saved sub-agent's steps open while the computer is off", async ({
       await route.continue().catch(() => {});
     });
 
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(SUBAGENT_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
 
     // A finished turn folds its work; the sub-agent row is part of it. Since
@@ -718,7 +718,7 @@ test('34 — a tool call saved before tool calls were kept 1:1 shows its command
       await route.continue().catch(() => {});
     });
 
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(TOOL_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
     await openWork(page);
     await expect(commandRow()).toBeVisible();
@@ -750,7 +750,7 @@ test('34 — a session proven empty opens on its composer, not the boot screen',
     });
     await installFirstShown(page, sessionId);
 
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({ timeout: 120_000 });
     await page.waitForTimeout(1_000); // long enough for a boot screen to paint, were it coming
     // Never painted in any frame since the navigation. (The collapsed side
@@ -793,7 +793,7 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     });
 
     // First open: the device keeps the saved copy it was shown.
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText(SAVED_REPLY, { exact: true })).toBeVisible({ timeout: 120_000 });
     await expect
       .poll(
@@ -924,7 +924,7 @@ test('34 — a Sessions page reload shows the kept rows while the manager probe 
         new URL(response.url()).searchParams.get('scope') === 'project',
       { timeout: 120_000 },
     );
-    await page.goto(`/projects/${project.id}/sessions`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions`, { waitUntil: 'commit' });
     expect((await inventory).status()).toBe(200);
     await expect(row()).toBeVisible({ timeout: 60_000 });
     await expect
@@ -990,7 +990,7 @@ test('34 — an open reads the saved copy once: the session-open snapshot carrie
     for (const open of ['first open', 'reload'] as const) {
       const snapshot = page.waitForResponse((r) => r.url().includes(`/sessions/${sessionId}/snapshot`));
       if (open === 'first open') {
-        await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+        await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
       } else {
         await page.reload({ waitUntil: 'commit' });
       }
@@ -1071,10 +1071,10 @@ test('34 — loading older messages leaves the turn the reader is reading where 
       if (route.request().method() !== 'POST') return route.continue();
       await route.fulfill({
         status: 200,
-        json: { stage: 'stopped', agent_name: 'kortix', retriable: false, sandbox: null, opencode_session_id: root, failure: null },
+        json: { stage: 'stopped', agent_name: 'kortix', retriable: false, sandbox: null, runtime_session_id: root, failure: null },
       });
     });
-    await page.goto(`/projects/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
+    await page.goto(`/workspaces/${project.id}/sessions/${sessionId}`, { waitUntil: 'commit' });
     await expect(page.getByText('Answer 60.', { exact: true })).toBeVisible({ timeout: 120_000 });
     // The newest page only: the first turn is older history, not drawn yet.
     await expect(page.getByText('Question 1: what is special about the number 1?', { exact: true })).toHaveCount(0);

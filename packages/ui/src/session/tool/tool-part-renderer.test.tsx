@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { ToolSurfaceContext } from './shared/infrastructure';
+import { ToolActivateContext, ToolSurfaceContext } from './shared/infrastructure';
 import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, sessionLogTurnSegments, sessionLogTurns, toolCallBlock, type SessionLogBlock, type SessionLogMessage, type ToolCallBlock } from '@kortix/sdk';
 import { ToolPartRenderer } from './tool-part-renderer';
 
@@ -107,15 +107,14 @@ const FAILED_TASK = {
 describe('an errored task dispatch renders as a dispatch row, not a dead error card', () => {
   test('the child thread stays openable and the failure reason stays visible', () => {
     const html = renderPanel(FAILED_TASK);
-    // TaskTool's full-view affordance — the way into the child session — lives
-    // on the trigger, so it is there even on the closed row.
-    expect(html).toContain('aria-label="Open full view"');
-    // The row carries the dispatch's own identity again, not "Task failed".
+    // The row carries the dispatch's own identity, not "Task failed", and says it did not finish.
     expect(html).toContain('Report on the widget');
-    // And the failure reason is still on the row, as it was on the old card.
+    expect(html).toContain('data-agent-status="failed"');
+    // Open, the way into the child session and why it failed: one sentence, the raw reason behind Details.
     const open = renderPanel(FAILED_TASK, { defaultOpen: true });
-    expect(open).toContain('assistant message prefill');
-    expect(open).toContain('aria-label="Open full view"');
+    expect(open).toContain('aria-label="Open Report on the widget"');
+    expect(open).toContain('The agent stopped before it finished.');
+    expect(open).toContain('Details');
   });
 
   test('a task_id in the error keeps the child thread openable without metadata', () => {
@@ -134,8 +133,8 @@ describe('an errored task dispatch renders as a dispatch row, not a dead error c
       },
     };
     const html = renderPanel(part, { defaultOpen: true });
-    expect(html).toContain('aria-label="Open full view"');
-    expect(html).toContain('provider rejected the request');
+    expect(html).toContain('aria-label="Open Inspect the widget"');
+    expect(html).toContain('The agent stopped before it finished.');
   });
 
   test('an errored task without a child id keeps the generic error card', () => {
@@ -353,5 +352,46 @@ describe('a codemode script\'s nested image_gen call on v2 (a pi nested_part blo
   test('a block that is not a tool call (no state) renders nothing and never throws', () => {
     const html = renderToStaticMarkup(withProviders(<ToolPartRenderer call={nestedImage as unknown as ToolCallBlock} sessionId="s1" />));
     expect(html).toBe('');
+  });
+});
+
+describe('agent tools never open in the side panel', () => {
+  // Synthetic values. In the chat a tool row's click opens its step in the side panel; an
+  // agent's work (a workflow, a sub-agent, an agent message) opens in place instead, failed or not.
+  const failed = (tool: string, input: Record<string, unknown>) =>
+    ({ type: 'tool', tool, callID: `c-${tool}`, state: { status: 'error', input, error: 'Pass either a script or a name, not both.', time: { start: 1, end: 2 } } }) as unknown as ToolPart;
+  const inChat = (part: ToolPart) =>
+    renderToStaticMarkup(
+      withProviders(
+        <ToolActivateContext.Provider value={() => {}}>
+          <ToolPartRenderer call={toolCallBlock(part)} sessionId="s1" />
+        </ToolActivateContext.Provider>,
+      ),
+    );
+
+  test('a failed workflow is a disclosure in place, not a side-panel row', () => {
+    expect(inChat(failed('workflow', { script: 'x', name: 'y' }))).toContain('aria-expanded');
+  });
+
+  test('a failed agent message opens in place too', () => {
+    expect(inChat(failed('send_message', { to: 'reviewer', message: 'hi' }))).toContain('aria-expanded');
+  });
+
+  test('an ordinary tool still opens in the side panel', () => {
+    expect(inChat(failed('bash', { command: 'ls' }))).not.toContain('aria-expanded');
+  });
+
+  test("a sub-agent's step (not this session's call) never opens this session's panel: it has no view there", () => {
+    const search = { type: 'tool', tool: 'web_search', callID: 'c-child-search', state: { status: 'completed', input: { query: 'agent frameworks' }, output: 'results', time: { start: 1, end: 2 } } } as unknown as ToolPart;
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolActivateContext.Provider value={() => {}}>
+          <ToolPartRenderer call={toolCallBlock(search)} sessionId="child" disableNavigation />
+        </ToolActivateContext.Provider>,
+      ),
+    );
+    // The side-panel row ends in the panel glyph; the sub-agent's step does not.
+    expect(inChat(search)).toContain('-scale-x-100');
+    expect(html).not.toContain('-scale-x-100');
   });
 });

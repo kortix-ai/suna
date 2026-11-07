@@ -14,7 +14,7 @@ import { Button } from '@kortix/ui/button';
 import { Modal, ModalClose, ModalContent, ModalTitle } from '@kortix/ui/modal';
 import { SettingsSectionHeader } from '@kortix/ui/settings-section-header';
 import { Tabs, TabsContent } from '@kortix/ui/tabs';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/account-hub/account-settings-shell';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/components/nav-rail';
 import { Close } from '@kortix/ui/icons';
 import {
   SettingsNavProvider,
@@ -66,10 +66,6 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   'connected',
   // The browsers a person connected are theirs, in any project or none.
   'chrome',
-  // Your own API keys are yours in ONE account (the read is account-scoped —
-  // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
-  // or without a project open like the three above it.
-  'tokens',
   // Same scope as `plan` below — one wallet per account, read through the same
   // resolved id — so it renders wherever `plan` does. Listed before it, in the
   // rail's own order, because `command-palette.test.tsx` asserts this array
@@ -82,6 +78,8 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // The MCP URL is one per person and reaches every project they can open.
   // `computer` is NOT here: pairing names the project it starts from.
   'mcp',
+  // The person's keys bound to no workspace: theirs in any project or none.
+  'personal-keys',
   // `workspace`, `sandbox` and `feature-flags` are deliberately ABSENT. They
   // are the project-scoped tabs in this overlay (`settings-tabs.ts` explains
   // why each came back), so leaving them out of this list is exactly what
@@ -491,7 +489,7 @@ function SettingsTabPane({
   if (!active) return null;
 
   // Workspace name and icon have one implementation and one set of mutations,
-  // and this is now its only mount: `/projects/<id>/config` and the
+  // and this is now its only mount: `/workspaces/<id>/config` and the
   // `capabilities/project-settings/` directory behind it were both retired on
   // 2026-09-02. This pane was the second door; it is the only door.
   //
@@ -512,13 +510,14 @@ function SettingsTabPane({
     profile: () => <ProfileTab />,
     security: () => <SecurityTab />,
     appearance: () => <AppearanceTab />,
-    sessions: () => <SessionsTab projectId={projectId} />,
+    sessions: () => <SessionsTab />,
     preferences: () => <PreferencesTab />,
     connected: () => <ConnectedAccountsTab accountId={accountId} />,
     chrome: () => <ChromeConnectionsTab />,
     tokens: () => <TokensTab accountId={accountId} />,
     credits: () => <CreditsTab accountId={accountId} />,
     plan: () => <PlanTab accountId={accountId} />,
+    'personal-keys': () => <TokensTab accountId={accountId} personal />,
     mcp: () => <McpTab />,
     computer: () => (projectId ? <ComputerTab projectId={projectId} /> : null),
   };

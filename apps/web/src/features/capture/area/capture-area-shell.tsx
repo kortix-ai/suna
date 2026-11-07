@@ -148,7 +148,7 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
       <nav aria-label={t('breadcrumb')} className="flex items-center gap-1.5">
         <Hint label={t('backToKortix')}>
           <Link
-            href="/projects"
+            href="/workspaces"
             className="text-muted-foreground hover:bg-hover hover:text-foreground flex h-8 items-center gap-2 rounded-md px-2 text-sm font-medium transition-colors"
           >
             <KortixLogo variant="icon" size={14} />
@@ -237,7 +237,7 @@ function ProfileMenu({ accountId }: { accountId: string }) {
           <DropdownMenuItem asChild size="sm">
             <Link href="/settings/profile" prefetch>
               <GearSixIcon />
-              {tSidebar('workspace.settings')}
+              {tSidebar('workspace.preferences')}
             </Link>
           </DropdownMenuItem>
           <ThemeSubmenu />

@@ -1,0 +1,26 @@
+diff --git a/node_modules/react-native-purchases-ui/ios/CustomerCenterViewWrapper.m b/node_modules/react-native-purchases-ui/ios/CustomerCenterViewWrapper.m
+index f20eb08..9eabfe6 100644
+--- a/node_modules/react-native-purchases-ui/ios/CustomerCenterViewWrapper.m
++++ b/node_modules/react-native-purchases-ui/ios/CustomerCenterViewWrapper.m
+@@ -6,7 +6,7 @@
+ 
+ #import "CustomerCenterViewWrapper.h"
+ #import "UIView+Extensions.h"
+-#import "UIView+React.h"
++#import <React/UIView+React.h>
+ 
+ @import RevenueCatUI;
+ 
+diff --git a/node_modules/react-native-purchases-ui/ios/PaywallViewWrapper.m b/node_modules/react-native-purchases-ui/ios/PaywallViewWrapper.m
+index db6dc9f..0439db2 100644
+--- a/node_modules/react-native-purchases-ui/ios/PaywallViewWrapper.m
++++ b/node_modules/react-native-purchases-ui/ios/PaywallViewWrapper.m
+@@ -7,7 +7,7 @@
+ 
+ #import "PaywallViewWrapper.h"
+ #import "UIView+Extensions.h"
+-#import "UIView+React.h"
++#import <React/UIView+React.h>
+ 
+ @import PurchasesHybridCommonUI;
+ @import RevenueCat;

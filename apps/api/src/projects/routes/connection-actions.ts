@@ -21,6 +21,7 @@ import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync
 import { SecretUndecryptableError } from '../../secrets/undecryptable';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
+import { connectConnection, revokeConnections } from '../../connectors/connection-status';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { projectsApp } from '../lib/app';
 import { loadMutableConnection } from '../lib/connection-mutation';
@@ -38,6 +39,7 @@ import {
   parseRedirects,
 } from '../lib/connection-hosted-connect';
 import { rethrowDatabaseError } from '../../shared/database-errors';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const ShareConnectionInput = z
   .object({
@@ -55,7 +57,7 @@ const ShareConnectionInput = z
   .strict();
 
 async function renameConnectionHandler(c: any) {
-  const projectId = c.req.param('projectId');
+  const projectId = workspaceIdParam(c);
   const connectionId = c.req.param('connectionId');
   const body = await readJsonObject(c);
   const validated = validateConnectionLabel(body.label);
@@ -124,7 +126,7 @@ export function registerConnectionActionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/connections/{connectionId}/share',
+      path: '/{workspaceId}/connections/{connectionId}/share',
       tags: ['connectors'],
       summary: 'Share your own private connection',
       description:
@@ -135,7 +137,7 @@ export function registerConnectionActionsRoutes(): void {
         'account. A shared account is managed by every connections manager from then on.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string(), connectionId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: ShareConnectionInput } } },
       },
       responses: {
@@ -156,7 +158,7 @@ export function registerConnectionActionsRoutes(): void {
           403,
         );
       }
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const connectionId = c.req.param('connectionId');
       const parsed = ShareConnectionInput.safeParse(await readJsonObject(c));
       if (!parsed.success) {
@@ -209,7 +211,7 @@ export function registerConnectionActionsRoutes(): void {
         ) {
           return c.json(
             {
-              error: 'This computer belongs to another account. Pair it again from this project.',
+              error: 'This computer belongs to another account. Pair it again from this workspace.',
               code: 'COMPUTER_ACCOUNT_MISMATCH',
             },
             409,
@@ -218,7 +220,7 @@ export function registerConnectionActionsRoutes(): void {
       }
       if (!mutable.mayManageSystemConnections) {
         return c.json(
-          { error: "Sharing an account needs permission to manage the project's connections" },
+          { error: "Sharing an account needs permission to manage the workspace's connections" },
           403,
         );
       }
@@ -294,8 +296,8 @@ export function registerConnectionActionsRoutes(): void {
   );
 
   for (const [method, path] of [
-    ['put', '/{projectId}/connections/{connectionId}/label'],
-    ['patch', '/{projectId}/connections/{connectionId}'],
+    ['put', '/{workspaceId}/connections/{connectionId}/label'],
+    ['patch', '/{workspaceId}/connections/{connectionId}'],
   ] as const) {
     projectsApp.openapi(
       createRoute({
@@ -307,7 +309,7 @@ export function registerConnectionActionsRoutes(): void {
           'Change the label only. The authorized account, owner, default flag, and provider state stay as they are.',
         ...auth,
         request: {
-          params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+          params: z.object({ workspaceId: z.string(), connectionId: z.string().uuid() }),
           body: { content: { 'application/json': { schema: RenameConnectionInputSchema } } },
         },
         responses: {
@@ -323,12 +325,12 @@ export function registerConnectionActionsRoutes(): void {
     projectsApp.openapi(
       createRoute({
         method: 'put',
-        path: `/{projectId}/connections/{connectionId}/${operation}`,
+        path: `/{workspaceId}/connections/{connectionId}/${operation}`,
         tags: ['connectors'],
         summary: `${operation} connection`,
         ...auth,
         request: {
-          params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+          params: z.object({ workspaceId: z.string(), connectionId: z.string().uuid() }),
           body: {
             content: {
               'application/json': {
@@ -346,7 +348,7 @@ export function registerConnectionActionsRoutes(): void {
         },
       }),
       async (c: any) => {
-        const projectId = c.req.param('projectId');
+        const projectId = workspaceIdParam(c);
         const connectionId = c.req.param('connectionId');
         const mutable = await loadMutableConnection(c, projectId, connectionId);
         if (!mutable) return c.json({ error: 'Not found' }, 404);
@@ -389,6 +391,8 @@ export function registerConnectionActionsRoutes(): void {
                 connectionId,
                 oauth2: parsed.data.oauth2,
                 createdBy: loaded.userId,
+                // A person saves this credential now: it (re)connects the account.
+                connectNow: true,
               });
             } else {
               await upsertConnectionCredential({
@@ -398,6 +402,8 @@ export function registerConnectionActionsRoutes(): void {
                 value: parsed.data.value,
                 kind: parsed.data.kind,
                 createdBy: loaded.userId,
+                // A person saves this credential now: it (re)connects the account.
+                connectNow: true,
               });
             }
           } catch (error) {
@@ -472,16 +478,16 @@ export function registerConnectionActionsRoutes(): void {
                 : null,
           });
         } else {
-          if (operation === 'revoke') await revokeConnectionOAuth2(connectionId);
-          await db
-            .update(connectorConnections)
-            .set(
-              operation === 'revoke'
-                ? { status: 'revoked', updatedAt: new Date() }
-                : // Offboarding's revokedReason (connectors/computers.ts) no longer holds.
-                  { status: 'active', metadata: sql`${connectorConnections.metadata} - 'revokedReason'`, updatedAt: new Date() },
-            )
-            .where(eq(connectorConnections.connectionId, connectionId));
+          if (operation === 'revoke') {
+            await revokeConnectionOAuth2(connectionId);
+            await revokeConnections(eq(connectorConnections.connectionId, connectionId));
+          } else {
+            // A person restores it now. Offboarding's revokedReason
+            // (connectors/computers.ts) no longer holds.
+            await connectConnection(connectionId, {
+              metadata: sql`${connectorConnections.metadata} - 'revokedReason' - 'revokedAt'`,
+            });
+          }
         }
         // The default shared account may have changed: activate or park pending event triggers.
         await reconcileEventSubscriptionsFromCatalog(projectId, loaded.row.accountId);
@@ -494,7 +500,7 @@ export function registerConnectionActionsRoutes(): void {
     projectsApp.openapi(
       createRoute({
         method: 'post',
-        path: `/{projectId}/connections/{connectionId}/${operation}`,
+        path: `/{workspaceId}/connections/{connectionId}/${operation}`,
         tags: ['connectors'],
         summary:
           operation === 'connect'
@@ -502,7 +508,7 @@ export function registerConnectionActionsRoutes(): void {
             : 'Finalize Pipedream OAuth for a connection',
         ...auth,
         request: {
-          params: z.object({ projectId: z.string(), connectionId: z.string().uuid() }),
+          params: z.object({ workspaceId: z.string(), connectionId: z.string().uuid() }),
           body: {
             content: {
               'application/json': {
@@ -525,7 +531,7 @@ export function registerConnectionActionsRoutes(): void {
         },
       }),
       async (c: any) => {
-        const projectId = c.req.param('projectId');
+        const projectId = workspaceIdParam(c);
         const connectionId = c.req.param('connectionId');
         const mutable = await loadMutableConnection(c, projectId, connectionId);
         if (!mutable) return c.json({ error: 'Not found' }, 404);

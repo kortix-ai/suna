@@ -1,6 +1,15 @@
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { resolveSandboxProjectId } from '../shared/preview-ownership';
+import { WorkspaceAmbiguousError, resolveWorkspace } from '../workspaces/surface';
+import {
+  CREDENTIAL_FENCE_REFUSED_CODE,
+  WORKSPACE_PARAM_NAMES,
+  canonicalIdParam,
+  readsWorkspaceParams,
+  workspaceFenceVerdict,
+  type AccountWorkspace,
+} from './workspace-binding';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 // ─── Internal helpers ────────────────────────────────────────────────────────
@@ -28,189 +37,103 @@ export function extractPreviewSandboxId(path: string): string | null {
 }
 
 /**
- * Write-only platform sinks whose ONLY caller is the in-guest sandbox daemon
- * reporting on its OWN session. Every one of them is reached with the
- * session-scoped `KORTIX_TOKEN`, which is an `isAccountToken` PAT — so it lands
- * in the PAT branch of `resolveSupabaseAuth` and is judged by
- * `enforceTokenProjectScope`, NOT by the legacy `sandboxTokenPathAllowed`
- * allowlist above (that one only covers `kortix_`/`kortix_sb_` API keys, which
- * nothing has minted for a sandbox since the unified-credential cutover).
+ * The credential fence for a workspace-bound key (a workspace key, a project
+ * CLI token or the in-sandbox session `KORTIX_TOKEN`): it reaches a request
+ * only when the request's workspace is its own. ONE rule over ONE table,
+ * `middleware/workspace-binding.ts`; read that file to add a route.
  *
- * A sink that is missing here is not "secure" — it is UNREACHABLE, answering
- * 403 to a fire-and-forget push that nobody sees fail. That is exactly what
- * happened twice:
- *   - `/v1/platform/runtime-projection`, observed live 2026-08-27.
- *   - `/v1/platform/boot-timeline`, observed live in prod for the 7 days to
- *     2026-09-09: 2,338 x `POST /v1/platform/boot-timeline -> 403
- *     [HTTPException]`, 1,414 of them in the last two days against just 47
- *     successes (97% denied). Prod minted 583 session-scoped PATs and ZERO
- *     sandbox API keys in that window, so effectively every boot was denied and
- *     no in-guest boot timeline was recorded.
- *
- * ADD A SINK HERE when you add a route whose caller is the daemon holding
- * `KORTIX_TOKEN`.
- */
-const SESSION_BOUND_PLATFORM_SINKS = new Set([
-  '/v1/platform/runtime-projection',
-  '/v1/platform/boot-timeline',
-  // Kortix in Chrome: the session asks for the owner's Chrome. The handler checks
-  // isSessionSandboxCredential and resolves the owner from the token.
-  '/v1/chrome/attach',
-  '/v1/chrome/release',
-]);
-
-/**
- * A project-scoped CLI PAT can only act on its bound project. Reject
- * the request if:
- *   - the URL targets a `:projectId` parameter that doesn't match, OR
- *   - the URL is an account-level route (`/v1/accounts/*` other than
- *     `/v1/accounts/me`, which we allow as a self-identity probe), OR
- *   - the URL is a webhook / preview / system route the token has no
- *     business hitting — UNLESS it is the sandbox-proxy path
- *     (`/v1/p/{sandboxId}/{port}/...`) AND the sandbox belongs to the
- *     token's own project (see below).
- *
- * Throws HTTPException(403) so the calling middleware aborts the chain.
+ * Throws HTTPException(403) `credential_fence_refused` so the calling
+ * middleware aborts the chain.
  */
 export async function enforceTokenProjectScope(
   c: Context,
   tokenProjectId: string,
-  opts: { sessionBound?: boolean } = {},
+  opts: { sessionBound?: boolean; principal?: string } = {},
 ): Promise<void> {
   const path = c.req.path;
+  const method = c.req.method;
+  const workspaceId = canonicalIdParam(tokenProjectId);
+  const verdict = await workspaceFenceVerdict(
+    method,
+    path,
+    { workspaceId, sessionBound: Boolean(opts.sessionBound) },
+    { sandboxWorkspace: resolveSandboxProjectId, accountWorkspace, workspaceSplitPending },
+    readsWorkspaceParams(method, path) ? { ids: await requestWorkspaceParams(c) } : undefined,
+  );
+  if (verdict.allowed) return;
+  // NAME the principal and the check in the message. The global `app.onError`
+  // logs `${method} ${path} -> ${status} [HTTPException] ${message}`, so a bare
+  // reason made every denial indistinguishable in Better Stack: 2,338 identical
+  // `POST /v1/platform/boot-timeline -> 403` lines over 7 days (2026-09-09)
+  // named neither the credential nor the branch that rejected it.
+  const message =
+    `${verdict.reason} ` +
+    `[check=token-project-scope:${verdict.check} ` +
+    `principal=${opts.principal ?? (opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat')} ` +
+    `project=${workspaceId} path=${path}]`;
+  // A typed body: the CLI picks its remedy from `code`, and no kortix.yaml
+  // grant can lift a fence refusal, so it must never read as a grant miss.
+  throw new HTTPException(403, {
+    message,
+    res: new Response(
+      JSON.stringify({ error: true, message, status: 403, code: CREDENTIAL_FENCE_REFUSED_CODE, check: verdict.check }),
+      { status: 403, headers: { 'content-type': 'application/json' } },
+    ),
+  });
+}
 
-  // Daemon-only platform sinks (SESSION_BOUND_PLATFORM_SINKS). A session
-  // sandbox holds exactly ONE credential — a project+SESSION-scoped PAT ("One
-  // sandbox, one session-scoped Kortix credential",
-  // platform/services/session-sandbox.ts) — so without this branch the daemon's
-  // push can never reach the sink on any environment. Allowed ONLY for a
-  // session-BOUND token; an ordinary project PAT stays denied. Each handler
-  // re-verifies the binding against `session_sandboxes` (sandbox id ∧ session ∧
-  // account ∧ live) via isSessionSandboxCredential, so this gate is
-  // authentication, not the authorization boundary.
-  if (opts.sessionBound && SESSION_BOUND_PLATFORM_SINKS.has(path)) return;
-  // `kortix chrome ls` inside a sandbox lists the owner's browsers.
-  if (opts.sessionBound && c.req.method === 'GET' && path === '/v1/chrome/connections') return;
-
-  // Whitelist a couple of self-identity probes the CLI hits even for
-  // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm
-  // "what project/session/agent am I bound to?".
-  if (path === '/v1/accounts/me') return;
-
-  // Cost routes enforce the project binding and usage leaf in their handlers.
-  if (
-    c.req.method === 'GET' &&
-    (path === '/v1/usage/cost-summary' || path === '/v1/usage/cost-by-project')
-  ) return;
-
-  // `/v1/skills` — the kortix-managed system skills (how Kortix itself works).
-  // This function is default-deny, and the in-sandbox `KORTIX_TOKEN` is
-  // exactly a project+session-scoped PAT, so without this branch the ONE caller
-  // these routes exist for gets a 403: every baked sandbox seeds a kortix-system
-  // skill telling the agent to run `kortix skills get <name>`.
-  // Safe to allow — the content is static template text that is byte-identical
-  // for every caller, carries no account or project data, and is served from the
-  // shipped @kortix/starter package rather than any per-tenant store. There is
-  // no scope to enforce here; the token gate is authentication, not
-  // authorization.
-  if (path === '/v1/skills' || path.startsWith('/v1/skills/')) return;
-
-  // `/v1/runtime-assets` — the `kortix-agent` daemon binary, the CLI binary, and
-  // the managed-skill overlay this deploy bakes into sandboxes. The prefix test
-  // covers every payload route including `/agent`, which is deliberate: the
-  // daemon converging ITSELF is the same caller with the same token as the
-  // daemon converging its CLI. Same reasoning as `/v1/skills`
-  // above, and for the same single caller: the in-sandbox daemon reconciles
-  // against these on every session start/restart/resume holding exactly a
-  // project+session-scoped `KORTIX_TOKEN`. A 403 here means a sandbox can
-  // never repair a stale CLI, which is the whole bug these routes exist to fix.
-  // Safe to allow — the payloads are the deploy's own build artifacts, identical
-  // for every caller, with no account or project data in them. Authentication,
-  // not authorization.
-  if (path.startsWith('/v1/runtime-assets/')) return;
-
-  // `/v1/capture/me/*` — the agent capture tool (`kortix capture`). Capture's
-  // tenant is the account, not the project, so a session token cannot reach the
-  // account routes. These three read routes bind every query to the token's
-  // OWN account and to the person it acts for (`on_behalf_of`, private session
-  // only; else 403 capture_no_human), checked in the handler
-  // (capture/account-routes.ts). Nothing here reads another person or account.
-  if (c.req.method === 'GET' && path.startsWith('/v1/capture/me/')) return;
-
-  // `/v1/drives` — Files (`kortix drive`). Drive routes are keyed by drive id,
-  // not project id, so the project binding is checked in the handlers: a
-  // project-bound token reaches only its own project's drive (`loadDrive`),
-  // and a session token acts as the person who started the session
-  // (`sessionFilesRefusal`, drives/routes.ts).
-  if (path === '/v1/drives' || path.startsWith('/v1/drives/')) return;
-
-  const deny = (check: string, reason: string): never => {
-    // NAME the principal and the check in the message. The global `app.onError`
-    // logs `${method} ${path} -> ${status} [HTTPException] ${message}`, so a
-    // bare reason string made every one of these denials indistinguishable in
-    // Better Stack — 2,338 identical `POST /v1/platform/boot-timeline -> 403
-    // [HTTPException]` lines over 7 days named neither the credential that was
-    // rejected nor the branch that rejected it, which is why the boot-timeline
-    // gate defect above went unnoticed for weeks.
-    throw new HTTPException(403, {
-      message:
-        `${reason} ` +
-        `[check=token-project-scope:${check} ` +
-        `principal=${opts.sessionBound ? 'session-scoped-pat' : 'project-scoped-pat'} ` +
-        `project=${tokenProjectId} path=${path}]`,
-    });
-  };
-
-  // Reject other account-level routes outright.
-  if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {
-    deny('account-level-route', 'Project-scoped token cannot call account-level routes');
+/** `account → workspace` for the fence: the one live workspace, `ambiguous`, or null. */
+async function accountWorkspace(accountId: string): Promise<AccountWorkspace> {
+  try {
+    const resolved = await resolveWorkspace(accountId);
+    return resolved ? resolved.workspaceId : null;
+  } catch (err) {
+    if (err instanceof WorkspaceAmbiguousError) return 'ambiguous';
+    throw err;
   }
+}
 
-  // `/v1/projects/:projectId/...` AND `/v1/connectors/projects/:projectId/...` —
-  // both are project-scoped surfaces. Require the URL id to match the token's
-  // project. The connector branch intentionally includes both gateway and
-  // connector-management routes: the unified Connector MCP exposes add/remove
-  // connector tools from inside the sandbox, while individual routes still gate
-  // mutations via project.write in resolveAdmin.
-  if (c.req.method === 'GET' && path === '/v1/projects/current') return;
+/** The key's own workspace belongs to a split_pending legacy account. */
+async function workspaceSplitPending(workspaceId: string): Promise<boolean> {
+  return (await resolveWorkspace(workspaceId))?.splitPending === true;
+}
 
-  const m =
-    path.match(/^\/v1\/projects\/([^/]+)/) ?? path.match(/^\/v1\/connectors\/projects\/([^/]+)/);
-  if (m) {
-    const urlProjectId = m[1];
-    if (urlProjectId !== tokenProjectId) {
-      deny('cross-project', 'Project-scoped token cannot access a different project');
+/**
+ * The workspace ids a `reach: 'param'` request names: `account_id`,
+ * `workspace_id` and `project_id` in the query string and in the body.
+ *
+ * The body is read whatever the Content-Type says. Handlers call
+ * `c.req.json()`, and Hono parses that for `text/plain`, a form type or no
+ * header at all; a fence that read only `application/json` let a bound
+ * credential name another workspace by changing one header. The raw text is
+ * cached by Hono, so the handler reads the same body again. A body that is
+ * not JSON is read as form fields.
+ */
+export async function requestWorkspaceParams(c: Context): Promise<string[]> {
+  const ids: string[] = [];
+  for (const name of WORKSPACE_PARAM_NAMES) {
+    for (const value of c.req.queries(name) ?? []) if (value) ids.push(value);
+  }
+  if (c.req.method === 'GET' || c.req.method === 'HEAD') return ids;
+  const text = await c.req.text().catch(() => '');
+  if (!text) return ids;
+  let fields: Record<string, unknown> | null = null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) fields = parsed as Record<string, unknown>;
+  } catch {
+    const form = new URLSearchParams(text);
+    fields = {};
+    for (const name of WORKSPACE_PARAM_NAMES) {
+      const values = form.getAll(name).filter(Boolean);
+      for (const value of values) ids.push(value);
     }
-    return;
   }
-
-  // Bare `/v1/projects` (list) is also account-scoped: a project-bound
-  // token shouldn't enumerate other projects.
-  if (path === '/v1/projects') {
-    deny('project-list', 'Project-scoped token cannot list projects');
-  }
-
-  // Sandbox-proxy path — this is what session.send()/stream() and other
-  // runtime.* SDK calls actually hit (NOT /v1/projects/:id/*). Without this
-  // branch a project PAT could authenticate REST calls but never drive an
-  // agent turn. Allow it through ONLY for a sandbox that resolves back to
-  // THIS token's own project — resolved via `session_sandboxes` (one indexed
-  // lookup, sandbox_id is the PK). A lookup miss or a mismatched project both
-  // deny, same as every other surface a project PAT has no business on; this
-  // never widens access to another project's or another account's sandbox.
-  const previewSandboxId = extractPreviewSandboxId(path);
-  if (previewSandboxId) {
-    const sandboxProjectId = await resolveSandboxProjectId(previewSandboxId);
-    if (sandboxProjectId && sandboxProjectId === tokenProjectId) {
-      return;
+  if (fields) {
+    for (const name of WORKSPACE_PARAM_NAMES) {
+      const value = fields[name];
+      if (typeof value === 'string' && value) ids.push(value);
     }
-    deny(
-      'foreign-sandbox',
-      'Project-scoped token cannot access a sandbox outside its project',
-    );
   }
-
-  // All other surfaces (router, billing, channels, etc.) are
-  // account-level — refuse.
-  deny('default-deny', 'Project-scoped token cannot call this surface');
+  return ids;
 }

@@ -64,7 +64,7 @@ CompactionLayoutEntrySchema = union(
 ExtSchema = record({
   version: string
   native_id: string | absent
-  data: unknown
+  data: unknown | absent
 })
 
 HarnessBlockSchema = {
@@ -72,7 +72,7 @@ HarnessBlockSchema = {
   id: string(min1)
   harness: string(min1)
   kind: string(min1)
-  data: unknown
+  data: unknown | absent
   model_visible: boolean
   fallback_text: string | absent
 }
@@ -347,7 +347,7 @@ SessionLogSwitchLossSchema = {
 }
 
 SessionLogSwitchPreflightRequestSchema = {
-  to: SessionLogHarnessSchema
+  to: literal("pi")
 }
 
 SessionLogSwitchPreflightSchema = {
@@ -450,7 +450,7 @@ ToolCallBlockSchema = {
   call_id: string
   name: string
   kind: ToolKindSchema
-  input: unknown
+  input: unknown | absent
   input_format: enum(json | text) | absent
   status: enum(pending | running | complete | error)
   result: {
@@ -464,7 +464,7 @@ ToolCallBlockSchema = {
     exit_code: number | absent
     synthetic: boolean | absent
     cleared_at: string | absent
-    details: unknown
+    details: unknown | absent
   } | absent
   title: string | absent
   started_at: string | absent

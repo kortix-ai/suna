@@ -23,7 +23,7 @@ const row = (over: Record<string, unknown>) => ({
   sandbox_provider: "daytona",
   sandbox_id: PARENT_ID,
   sandbox_url: null,
-  opencode_session_id: null,
+  runtime_session_id: null,
   name: "Nightly sweep",
   agent_name: "default",
   status: "running",
@@ -69,7 +69,7 @@ beforeEach(() => {
     port: 0,
     fetch: (request) => {
       const url = new URL(request.url);
-      if (url.pathname !== `/v1/projects/${PROJECT_ID}/sessions`) return Response.json({ error: "nf" }, { status: 404 });
+      if (url.pathname !== `/v1/workspaces/${PROJECT_ID}/sessions`) return Response.json({ error: "nf" }, { status: 404 });
       queries.push(url.search);
       if (emptyList) return Response.json([]);
       if (url.searchParams.get("pinned") === "only") {

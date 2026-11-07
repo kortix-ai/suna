@@ -2,7 +2,7 @@
 
 import { useTranslations } from '../../i18n';
 /**
- * Triggers — the single capability page at `/projects/<id>/triggers`,
+ * Triggers — the single capability page at `/workspaces/<id>/triggers`,
  * mounted by `packages/ui/src/customize/triggers/triggers-page.tsx`.
  *
  * A trigger is one resource with two ways to start it: on a schedule, or from
@@ -324,7 +324,7 @@ export function TriggerActivationMenu({
 function triggerChatPrompt(agentName: string | null): string {
   if (!agentName) return newConfigPrompt('trigger');
   return (
-    `I want to set up a trigger that starts the "${agentName}" agent in this project. ` +
+    `I want to set up a trigger that starts the "${agentName}" agent in this workspace. ` +
     'Ask me what it should do and on what schedule or event, then create it with the ' +
     'Kortix CLI and show me the result.'
   );

@@ -18,20 +18,18 @@ import Loading from '@kortix/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 
 // Client only: the inbox is per signed-in person and polls, so the server
-// renders no bell and these pages' static tests need no query client. The
-// bell itself renders only while a cached project has the
-// `notification_center` flag on (these pages have no project of their own).
-const NotificationBell = dynamic(
-  () => import('@kortix/ui/internal/notifications/notification-bell').then((mod) => mod.NotificationBell),
+// renders no button and these pages' static tests need no query client.
+const InboxButton = dynamic(
+  () => import('@/features/notifications/inbox-button').then((mod) => mod.InboxButton),
   { ssr: false },
 );
 
 /**
  * The top row of the account-level pages that sit outside a project —
- * `/projects` and `/new`.
+ * `/workspaces` and `/workspaces/new`.
  *
- * Left: an optional way back. Right: the notification bell (KRTX-1742, behind
- * the `notification_center` flag), then who you are, as a button. Log out lives
+ * Left: an optional way back. Right: the Inbox button (KRTX-1742: the unread
+ * count, opens `/inbox`), then who you are, as a button. Log out lives
  * in its menu rather than as a bare button in the corner — it is the rarest
  * action on these pages, and the identity above it is what a user checks
  * first ("am I in the right account?").
@@ -49,6 +47,7 @@ export function AccountTopBar({
   onLogOut,
   back,
   trailing,
+  inbox = true,
 }: {
   email: string | null;
   name?: string | null;
@@ -58,6 +57,8 @@ export function AccountTopBar({
   back?: { href: string; label: string };
   /** Extra controls after the account button (the desktop close button). */
   trailing?: ReactNode;
+  /** The Inbox button. Off on `/inbox` itself, where it would open the page on screen. */
+  inbox?: boolean;
 }) {
   const t = useTranslations('newWorkspace');
   const identity = name?.trim() || email;
@@ -81,7 +82,7 @@ export function AccountTopBar({
       )}
 
       <div className="flex min-w-0 items-center gap-2">
-        <NotificationBell />
+        {inbox ? <InboxButton /> : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

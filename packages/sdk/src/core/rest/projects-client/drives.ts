@@ -90,7 +90,11 @@ export interface DriveUsage {
   folders: DriveFolderUsage[];
 }
 
-/** One project's Files in {@link AccountStorageUsage}. */
+/**
+ * One project's Files in {@link AccountStorageUsage}.
+ *
+ * @deprecated Use `AccountStorageWorkspace`. Kept permanently.
+ */
 export interface AccountStorageProject {
   projectId: string;
   name: string;
@@ -99,6 +103,9 @@ export interface AccountStorageProject {
   usedBytes: number | null;
   fileCount: number | null;
 }
+
+/** The workspace name of {@link AccountStorageProject}: the same type. */
+export type AccountStorageWorkspace = AccountStorageProject;
 
 /** What an account's Files hold, per project, against the plan's limits. */
 export interface AccountStorageUsage {
@@ -265,6 +272,11 @@ export interface SessionDrive {
   /** `me`: the session owner's own folder, their desktop. */
   role?: 'me' | 'drive';
   openConflicts?: number;
+  /**
+   * When the newest of `openConflicts` was detected (ISO 8601), null with none.
+   * Absent from an API older than 2026-11-04.
+   */
+  latestConflictAt?: string | null;
 }
 
 export interface SessionDrives {
@@ -294,7 +306,7 @@ export interface SessionDrives {
 const drivePath = (driveId: string) => `/drives/${encodeURIComponent(driveId)}`;
 
 /** The project's Files. Creates the drive and the caller's own folder on first use. */
-export async function getProjectDrive(projectId: string): Promise<Drive> {
+export async function getWorkspaceDrive(projectId: string): Promise<Drive> {
   const drives = unwrap(
     await backendApi.get<{ drives: Drive[] }>(`/drives?${new URLSearchParams({ projectId })}`),
     'Failed to load files',
@@ -302,6 +314,9 @@ export async function getProjectDrive(projectId: string): Promise<Drive> {
   if (!drives[0]) throw new ApiError('Files not found', { status: 404 });
   return drives[0];
 }
+
+/** @deprecated Use `getWorkspaceDrive`. Kept permanently. */
+export const getProjectDrive = getWorkspaceDrive;
 
 /**
  * Who has access to a folder: its own grants and the ones it inherits. A
@@ -725,7 +740,7 @@ export async function restoreDriveVersion(driveId: string, versionId: string): P
 }
 
 const sessionDrivesPath = (projectId: string, sessionId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/drives`;
+  `/workspaces/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/drives`;
 
 /** What the project's Files hold, their limits, and each folder sessions mount against the folder-mount cap. */
 export async function getDriveUsage(driveId: string): Promise<DriveUsage> {

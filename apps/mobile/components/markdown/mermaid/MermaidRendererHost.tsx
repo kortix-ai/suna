@@ -94,7 +94,7 @@ export function MermaidRendererHost() {
   const [source, setSource] = useState<string | null>(loadedSource);
   // Bumped to remount the WebView after its content process dies.
   const [generation, setGeneration] = useState(0);
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<React.ElementRef<typeof WebView>>(null);
 
   useEffect(() => {
     if (!wanted || source) return;

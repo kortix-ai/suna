@@ -46,7 +46,7 @@ If the work is chat, research, decks and documents done inside ChatGPT by people
 
 Kortix is the open-source CompanyOS: your agents, their skills, your company memory, and every connector in one git repo you own, with the agents working on real cloud computers.
 
-The pricing is built the other way round. Free is $0 with 500 credits a month and one project. Paid credits start at $50 a month, at the same rate on every tier. One credit is $0.01, and eleven buy an hour on an agent computer (2 vCPU, 4 GB), billed per second with nothing charged while it is stopped. $200 a month buys 20,000 credits, about 1,830 agent-computer hours ([Kortix pricing](https://kortix.com/pricing)). Members are unlimited and free, and the account shares one credit pool. Model calls are separate: any model provider with your own keys, the first $1,000 a month free and 5% after, or the ChatGPT plan you already pay for, which spends no credits.
+The pricing is built the other way round. Free is $0 with 500 credits a month on your first workspace. Paid credits start at $50 a month, at the same rate on every tier. One credit is $0.01, and eleven buy an hour on an agent computer (2 vCPU, 4 GB), billed per second with nothing charged while it is stopped. $200 a month buys 20,000 credits, about 1,830 agent-computer hours ([Kortix pricing](https://kortix.com/pricing)). Members are unlimited and free, and the account shares one credit pool. Model calls are separate: any model provider with your own keys, the first $1,000 a month free and 5% after, or the ChatGPT plan you already pay for, which spends no credits.
 
 Take the deck build in OpenAI's own walkthrough that "worked for 2m 30s" ([ChatGPT Learn, Work](https://learn.chatgpt.com/docs/get-started-with-work)). At 11 credits an hour ([Kortix pricing](https://kortix.com/pricing)), two and a half minutes of agent computer billed per second comes to 0.46 credits for that task, against 2 to 15 credits for a typical GPT-5.6 Sol task ([ChatGPT Learn, pricing](https://learn.chatgpt.com/docs/pricing)). Credits pay for the agent computer, and with your own keys also 5% of model usage past $1,000 a month ([Kortix pricing](https://kortix.com/pricing)); the tokens themselves go to whichever provider holds your key, at its published rates.
 
@@ -61,7 +61,7 @@ agents:
     kortix_permissions: all
 ```
 
-Source: `packages/starter/templates/base/kortix.yaml` in [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml), the manifest every new project starts from. An agent's reach is six lines of YAML and a markdown file, versioned with the rest of the company. Widen a grant and it is a diff a person reads. Run the same manifest on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free.
+Source: `packages/starter/templates/base/kortix.yaml` in [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS/blob/dev/packages/starter/templates/base/kortix.yaml), the manifest every new workspace starts from. An agent's reach is six lines of YAML and a markdown file, versioned with the rest of the company. Widen a grant and it is a diff a person reads. Run the same manifest on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free.
 
 ## What to read next
 

@@ -3,8 +3,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as root, readWorkflow as read } from '../src/fixtures/repo';
 
-const root = resolve(import.meta.dirname, '../..');
 const script = resolve(root, 'infra/scripts/ecs-deploy.sh');
 
 /**
@@ -564,7 +564,6 @@ describe('ecs-deploy.sh --service api: KORTIX_PROCESS_ROLE and the worker scale-
 });
 
 describe('deploy workflows roll the worker before the API', () => {
-  const read = (name: string) => readFileSync(resolve(root, '.github/workflows', name), 'utf8');
   const between = (text: string, start: string, end: string) => {
     const from = text.indexOf(start);
     expect(from, start).toBeGreaterThan(-1);

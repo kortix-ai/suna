@@ -61,8 +61,8 @@ interface RenderEntry {
 }
 
 export interface SidebarViewProps {
-  accountName: string;
-  projectName: string;
+  /** The open workspace's name, or the no-workspace line. */
+  workspaceName: string;
   /** Open change requests. `null` prints no count. */
   reviewCount: number | null;
   /** The screen rows, in order. Default: `DEFAULT_NAV`. */
@@ -81,8 +81,7 @@ export interface SidebarViewProps {
   /** One dim line under the list: `creating session…`, `loading more…`. */
   busyMessage?: string | null;
   onOpenSession(sessionId: string): void;
-  onOpenAccountPicker(): void;
-  onOpenProjectPicker(): void;
+  onOpenWorkspacePicker(): void;
   onNewSession(): void;
   onNavigate(screen: SidebarScreen): void;
   onRename(sessionId: string, name: string): void;
@@ -112,8 +111,7 @@ function statusColor(status: string | undefined): string {
 }
 
 export function SidebarView({
-  accountName,
-  projectName,
+  workspaceName,
   reviewCount,
   nav = DEFAULT_NAV,
   groups,
@@ -126,8 +124,7 @@ export function SidebarView({
   errorMessage,
   busyMessage = null,
   onOpenSession,
-  onOpenAccountPicker,
-  onOpenProjectPicker,
+  onOpenWorkspacePicker,
   onNewSession,
   onNavigate,
   onRename,
@@ -153,16 +150,9 @@ export function SidebarView({
   const entries = useMemo<RenderEntry[]>(() => {
     const rows: RenderEntry[] = [
       {
-        key: 'account',
-        id: 'account',
-        label: accountName,
-        glyph: GLYPH.expanded,
-        glyphColor: theme.dim,
-      },
-      {
-        key: 'project',
-        id: 'project',
-        label: projectName,
+        key: 'workspace',
+        id: 'workspace',
+        label: workspaceName,
         glyph: GLYPH.collapsed,
         glyphColor: theme.dim,
       },
@@ -195,7 +185,7 @@ export function SidebarView({
       }
     }
     return rows;
-  }, [accountName, projectName, reviewCount, nav, groups, now]);
+  }, [workspaceName, reviewCount, nav, groups, now]);
 
   const selectableIds = useMemo(
     () => entries.filter((entry) => entry.id).map((entry) => entry.id as EntryId),
@@ -232,13 +222,12 @@ export function SidebarView({
   const openEntry = useCallback(
     (id: EntryId | undefined, sessionId: string | null | undefined) => {
       if (!id) return;
-      if (id === 'account') return onOpenAccountPicker();
-      if (id === 'project') return onOpenProjectPicker();
+      if (id === 'workspace') return onOpenWorkspacePicker();
       if (id === 'new') return onNewSession();
       if (id.startsWith('nav:')) return onNavigate(id.slice(4));
       if (sessionId) onOpenSession(sessionId);
     },
-    [onOpenAccountPicker, onOpenProjectPicker, onNewSession, onNavigate, onOpenSession],
+    [onOpenWorkspacePicker, onNewSession, onNavigate, onOpenSession],
   );
 
   const openCurrent = useCallback(() => {
@@ -247,8 +236,7 @@ export function SidebarView({
     openEntry,
     currentId,
     currentSessionId,
-    onOpenAccountPicker,
-    onOpenProjectPicker,
+    onOpenWorkspacePicker,
     onNewSession,
     onNavigate,
     onOpenSession,

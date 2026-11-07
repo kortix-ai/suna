@@ -333,8 +333,8 @@ function useFirstPromptSources({
     // `readStartStash` covers the canonical SDK stash (written under the route
     // session id by this shell, the project-home composer, and
     // `useConfigureThread` — all three producers now share the one canonical
-    // shape) plus its `opencode_pending_prompt` legacy fallback for any other
-    // as-yet-unconverted producer.
+    // shape) plus the legacy `opencode_pending_prompt` key an older tab may
+    // still hold.
     const text = readStartStash(sessionId)?.prompt;
     if (!text) return null;
     return {

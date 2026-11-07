@@ -4,7 +4,7 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * The `/projects/[id]/admin/connectors` route's initial client chunk, walked as a
+ * The `/workspaces/[id]/admin/connectors` route's initial client chunk, walked as a
  * static import graph from the route entry.
  *
  * `customize/sections/connectors-view.tsx` is 5,075 lines whose own import

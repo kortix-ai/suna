@@ -48,8 +48,8 @@ beforeAll(async () => {
   if (!hasDatabase) return;
   await raw(`insert into kortix.accounts (account_id, name) values ('${ACCOUNT}', 'assignments-test')`);
   await raw(
-    `insert into kortix.projects (project_id, account_id, name, repo_url)
-     values ('${PROJECT}','${ACCOUNT}','p','https://example.invalid/p.git')`,
+    `insert into kortix.projects (project_id, account_id, name, repo_url, split_pending)
+     values ('${PROJECT}','${ACCOUNT}','p','https://example.invalid/p.git', true)`,
   );
   await raw(`insert into kortix.account_groups (group_id, account_id, name) values ('${groupId}','${ACCOUNT}','g')`);
 
@@ -127,7 +127,8 @@ describe.if(hasDatabase)('assignRole / revokeAssignment', () => {
   test('an owner can, and the grant is live on the next authorize', async () => {
     const before = await authorize(jwt(target), 'project.write', { type: 'project', id: PROJECT });
     expect(before.allowed).toBe(false);
-    expect(before.reason).toBe('no_project_membership');
+    // Membership is access (a 1:1 workspace): the member tier lacks project.write.
+    expect(before.reason).toBe('project_role_insufficient');
 
     const row = await assignRole(jwt(owner), ACCOUNT, {
       principal: { type: 'user', id: target },
@@ -331,8 +332,8 @@ describe.if(hasDatabase)('assignRole — granted_by provenance', () => {
 
   test('an explicit grantedBy wins over the writer, and a system re-grant never erases it', async () => {
     await raw(
-      `insert into kortix.projects (project_id, account_id, name, repo_url)
-       values ('${provProject}','${ACCOUNT}','prov','https://example.invalid/prov.git')`,
+      `insert into kortix.projects (project_id, account_id, name, repo_url, split_pending)
+       values ('${provProject}','${ACCOUNT}','prov','https://example.invalid/prov.git', true)`,
     );
     await raw(
       `insert into kortix.account_members (user_id, account_id, account_role, is_super_admin)

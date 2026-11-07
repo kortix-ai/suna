@@ -7,7 +7,7 @@ import { unwrap } from './shared';
 // redirected 2026-07-05 — "one home per concern") ──
 // Round-trips the agent's TWO homes as one wire shape: `block` (governance —
 // connectors/secrets/skills/kortix_permissions/repository_access/enabled, written to
-// kortix.yaml) and `block.opencode` (OpenCode BEHAVIOR — mode/model/
+// kortix.yaml) and `block.behavior` (the agent's BEHAVIOR — mode/model/
 // temperature/top_p/steps/variant/color/hidden/permission/prompt, written to
 // the agent's own `.md` (`block.file`, e.g. `agents/<name>.md`) frontmatter +
 // body). The backend route is what merges the two files into this one
@@ -21,13 +21,13 @@ import { unwrap } from './shared';
 /** A Kortix governance grant on the wire: an allowlist, or the sentinels. */
 export type AgentGrantSetV2 = 'all' | 'none' | string[];
 
-/** A single OpenCode permission action. */
+/** A single permission action. */
 export type PermissionAction = 'ask' | 'allow' | 'deny';
 
 /** A permission rule: a bare action, or a glob-pattern → action map. */
 export type PermissionRule = PermissionAction | Record<string, PermissionAction>;
 
-/** The OpenCode `permission` tree — a bare action, or a per-capability object. */
+/** The `permission` tree — a bare action, or a per-capability object. */
 export type PermissionConfig = PermissionAction | Record<string, PermissionRule | PermissionAction>;
 
 /** The agent's BEHAVIOR half — everything that lives in the agent's own
@@ -48,9 +48,6 @@ export interface RuntimeAgentConfig {
   steps?: number;
   permission?: PermissionConfig;
 }
-
-/** @deprecated Renamed to `RuntimeAgentConfig`. Removed in the next major. */
-export type OpencodeAgentConfig = RuntimeAgentConfig;
 
 /** The full agent block on the wire — mirrors `AgentBlockV3` in
  *  @kortix/manifest-schema PLUS the merged `behavior` half (a wire-only
@@ -109,10 +106,9 @@ export interface AgentConfigBlock {
   /** The agent's behavior half: its `.md` frontmatter, plus the body as `prompt`. */
   behavior?: RuntimeAgentConfig;
   /**
-   * @deprecated The pre-W4 name of `behavior`; servers answer both with one
-   * value. Send the behavior once, as `behavior`: a body that carries both
-   * with different values keeps the one that differs from the stored
-   * behavior, and two different edits are refused. Removed in the next major.
+   * @deprecated The pre-W4 name of `behavior`. An older API answers both with
+   * one value; the current API reads and answers only `behavior`. Send the
+   * behavior once, as `behavior`. Removed in the next major.
    */
   opencode?: RuntimeAgentConfig;
 }
@@ -127,7 +123,7 @@ export interface AgentConfigResponse {
   default_agent: string | null;
   /** The declared block, or null for an agent not declared yet. */
   block: AgentConfigBlock | null;
-  /** The harness a new session of this project runs (`opencode` or `pi`). Absent from an older API. */
+  /** The harness a new session of this project runs (`pi`; an older API can answer `opencode`). Absent from an older API. */
   harness?: string;
   /** The `behavior` settings that harness ignores (pi: `options`, `color`). Absent from an older API. */
   ignored_settings?: string[];
@@ -143,7 +139,7 @@ export interface AgentConfigResponse {
 export async function getAgentConfig(projectId: string, agentName: string) {
   const response = unwrap(
     await backendApi.get<AgentConfigResponse>(
-      `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
+      `/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/config`,
       { showErrors: false },
     ),
   );
@@ -165,7 +161,7 @@ export async function updateAgentConfig(
       agent: string;
       schema_version: number;
       block: AgentConfigBlock | null;
-    }>(`/projects/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
+    }>(`/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/config`, canonicalBlock),
   );
   return {
     ...response,
@@ -216,23 +212,30 @@ export async function grantSecretToAgent(
 ) {
   return unwrap(
     await backendApi.post<GrantSecretToAgentResponse>(
-      `/projects/${projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
+      `/workspaces/${projectId}/secrets/${encodeURIComponent(identifier)}/grant`,
       { agent: agentName },
     ),
   );
 }
 
+/** @deprecated Use `UpdateWorkspaceDefaultAgentResponse`. Kept permanently. */
 export interface UpdateProjectDefaultAgentResponse {
   ok: boolean;
   default_agent: string;
 }
 
+/** The workspace name of {@link UpdateProjectDefaultAgentResponse}: the same type. */
+export type UpdateWorkspaceDefaultAgentResponse = UpdateProjectDefaultAgentResponse;
+
 /** Set the declared project default in `kortix.yaml` (v2 and v3 projects). */
-export async function updateProjectDefaultAgent(projectId: string, agentName: string) {
+export async function updateWorkspaceDefaultAgent(projectId: string, agentName: string) {
   return unwrap(
     await backendApi.put<UpdateProjectDefaultAgentResponse>(
-      `/projects/${projectId}/default-agent`,
+      `/workspaces/${projectId}/default-agent`,
       { agent: agentName },
     ),
   );
 }
+
+/** @deprecated Use `updateWorkspaceDefaultAgent`. Kept permanently. */
+export const updateProjectDefaultAgent = updateWorkspaceDefaultAgent;

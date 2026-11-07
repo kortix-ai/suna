@@ -17,15 +17,35 @@ export function normalizeSignatureHeader(value: string | null): string | null {
   return header.startsWith('sha256=') ? header.slice('sha256='.length) : header;
 }
 
+/** How far a signed delivery's `X-Kortix-Timestamp` may be from now (KRTX-4098). */
+export const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
+
+/**
+ * Whether `X-Kortix-Timestamp` (epoch seconds) is present and inside the
+ * tolerance. Signature auth requires it, so a captured delivery stops verifying
+ * once its timestamp ages out (KRTX-4098, CWE-294).
+ */
+export function webhookTimestampFresh(timestamp: string | null | undefined, nowMs = Date.now()): boolean {
+  if (!timestamp || !timestamp.trim()) return false;
+  const seconds = Number(timestamp);
+  return Number.isFinite(seconds) && Math.abs(nowMs / 1000 - seconds) <= WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS;
+}
+
+/**
+ * HMAC-SHA256 of `<timestamp>.<body>`: the signature covers the freshness
+ * stamp, so a captured signature cannot be paired with a newer timestamp.
+ */
 export function verifyWebhookSignature(
   rawBody: string,
+  timestamp: string | null,
   secret: string,
   signatureHeader: string | null,
+  nowMs = Date.now(),
 ) {
   const signature = normalizeSignatureHeader(signatureHeader);
-  if (!signature || !/^[a-f0-9]{64}$/i.test(signature)) return false;
+  if (!signature || !/^[a-f0-9]{64}$/i.test(signature) || !webhookTimestampFresh(timestamp, nowMs)) return false;
 
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+  const expected = createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
   const actualBuffer = Buffer.from(signature, 'hex');
   const expectedBuffer = Buffer.from(expected, 'hex');
   if (actualBuffer.length !== expectedBuffer.length) return false;

@@ -10,7 +10,7 @@ import type { SessionPromptDelivery, SessionPromptSteerFallback } from '@kortix/
  * derives that key from the command id. A row that goes back on the queue after
  * it has ALREADY BEEN POSTED — a redelivery, a released Stop, "send now" on a
  * stop-paused row — would re-POST under the same key and be answered
- * `200 {"deduplicated": true}`, which `postPrompt` reads as delivered. OpenCode
+ * `200 {"deduplicated": true}`, which `postPrompt` reads as delivered. The runtime
  * never receives the message and the row is force-closed ten minutes later with
  * nothing logged but "no proof it was consumed".
  *
@@ -51,7 +51,7 @@ export function withRemintedWireId(id: string): SQL {
     coalesce(${sessionLifecycleCommands.payload}->'redeliveredMessageIds', '[]'::jsonb) || ${JSON.stringify([id])}::jsonb)`;
 }
 
-/** One part of a prompt body, in OpenCode's own `/prompt_async` shape. */
+/** One part of a prompt body, as the box's OpenCode-shaped `/prompt_async` route takes it. */
 export interface PromptPartWire {
   type: 'text' | 'file' | 'agent';
   text?: string;
@@ -93,8 +93,6 @@ export interface QueuedContinueSessionPayload {
    *  dead-letter alert so "which automation lost its prompt" is answerable
    *  from the log line alone. */
   triggerSlug?: string | null;
-  /** Allow-listed env applied before delivery (email turns on connector MCP). */
-  opencodeEnv?: Record<string, string | null>;
   /**
    * Written by `deliverThroughQueue` for a producer that used to call
    * `continueSession` directly (a channel reply, a question answer). Two things
@@ -111,11 +109,11 @@ export interface QueuedContinueSessionPayload {
    *  what makes `prompt:<sessionId>:<clientMessageId>` a real idempotency key. */
   clientMessageId?: string;
   /**
-   * The CLIENT-minted OpenCode wire id, used VERBATIM on first delivery.
+   * The CLIENT-minted wire id, used VERBATIM on first delivery.
    *
    * The client mints it because the client is the process holding the
-   * transcript: OpenCode decides "has this prompt already been answered?" by id
-   * order, so an id has to be placed above everything already on record. The
+   * transcript: an OpenCode box decides "has this prompt already been answered?"
+   * by id order, so an id has to be placed above everything already on record. The
    * control plane mints one only on redelivery, where it re-reads the
    * transcript first (see `wire-message-id.ts`).
    */
@@ -165,7 +163,7 @@ export interface QueuedContinueSessionPayload {
   /** The turn token this prompt continues. Its delivery marks that turn
    *  resumed in the ledger (`markTurnResumed`). */
   resumesTurn?: string;
-  /** How many times this row has already been POSTed to OpenCode. Suffixes the
+  /** How many times this row has already been POSTed to the runtime. Suffixes the
    *  delivery's idempotency key — see `withNextDeliveryAttempt`. */
   deliveryAttempt?: number;
   /**
@@ -210,7 +208,7 @@ export interface QueuedContinueSessionPayload {
    *  row ends only a turn its own sender prompted (`turn-stop-authority.ts`).
    *  Absent on rows from before the rule. */
   mayStopAnyTurn?: boolean;
-  /** Deliver as OpenCode `noReply`: the message joins the transcript and no
+  /** Deliver as `noReply`: the message joins the transcript and no
    *  turn starts. The first message of a conversation with people. */
   noReply?: boolean;
 }

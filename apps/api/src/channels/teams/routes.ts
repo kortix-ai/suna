@@ -13,6 +13,7 @@ import type { TeamsActivity } from './types';
 import { MANAGED_TEAMS_INBOUND, scopeProjectTeamsActivity, type TeamsInbound } from './inbound';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
 import { runWebhookWork } from '../webhook-work';
+import { workspaceIdParam } from '../../shared/route-params';
 
 async function processActivity(
   c: Context,
@@ -41,7 +42,7 @@ async function processActivity(
   let inbound: TeamsInbound = MANAGED_TEAMS_INBOUND;
   if (byo) {
     const scoped = await scopeProjectTeamsActivity(byo.projectId, activity);
-    if (!scoped) return c.json({ error: 'This Teams tenant is not connected to this project' }, 403);
+    if (!scoped) return c.json({ error: 'This Teams tenant is not connected to this workspace' }, 403);
     inbound = scoped;
   }
   bindIntegrationPrincipal('microsoft_teams', byo ? { projectId: byo.projectId } : undefined);
@@ -94,8 +95,8 @@ export function registerTeamsWebhookRoutes(): void {
 
   // Bring-your-own-bot endpoint: the project is in the path. It answers only
   // for a project with its own bot app; the token's audience is that app.
-  teamsWebhookApp.post('/:projectId/messages', async (c) => {
-    const projectId = c.req.param('projectId');
+  teamsWebhookApp.post('/:workspaceId/messages', async (c) => {
+    const projectId = workspaceIdParam(c);
     // UNAUTHENTICATED surface: a path that names no project with its own bot is
     // a plain 404, the same answer for a project that does not exist. A 503 made
     // Bot Framework retry and paged on scanner noise.

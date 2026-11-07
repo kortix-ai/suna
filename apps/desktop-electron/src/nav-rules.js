@@ -17,8 +17,12 @@ function isPreviewHost(host) {
 // opens in the system browser on a full-page load, and the app window stays
 // where it was — a soft lock, because the shell has no Back.
 const APP_PATH_PREFIXES = [
+  '/workspaces',
+  // The pre-2026-11-06 workspace URLs. Old links and deep links still open
+  // them; next.config.ts redirects both to /workspaces, inside the window.
   '/projects',
   '/new',
+  '/inbox',
   '/settings',
   '/invites',
   '/admin',

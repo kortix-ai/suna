@@ -21,7 +21,6 @@ import { sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
 import { asc, eq, sql } from 'drizzle-orm';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { config } from '../config';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { db } from '../shared/db';
 import { sessionLogRestoreKeepsModelView } from './session-log-restore';
 
@@ -43,7 +42,6 @@ const SLIM_BLOCKS = sql<unknown[]>`COALESCE((
 
 export async function sessionLogSwitchPreflight(input: {
   sessionId: string;
-  projectMetadata: unknown;
   to: SessionLogHarness;
 }): Promise<SessionLogSwitchPreflight | null> {
   return db.transaction(
@@ -108,9 +106,7 @@ export async function sessionLogSwitchPreflight(input: {
         // Over the restore cap the new box gets what the model saw (413 `model_view`), or else the newest turns or
         // the note alone: then the earlier history does not restore.
         restore:
-          config.SESSION_LOG_RESTORE_ENABLED &&
-          resolveFeatureFlag(input.projectMetadata, 'session_log_restore') &&
-          (await sessionLogRestoreKeepsModelView(tx, input.sessionId)),
+          config.SESSION_LOG_RESTORE_ENABLED && (await sessionLogRestoreKeepsModelView(tx, input.sessionId)),
         deletedMessages: deleted,
       });
     },

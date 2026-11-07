@@ -11,11 +11,11 @@ import { bindProjectAccessSecurity } from './project-access-security';
 import { projectConnections } from './project-connections';
 import { connectorDataPlane, connectorHandle } from './project-connectors';
 import { bindProjectCore } from './project-core';
-import { bindProjectArtifacts } from './project-artifacts';
 import { bindProjectOperations } from './project-operations';
 import { bindProjectPlatformResources } from './project-platform-resources';
 import { bindProjectPlatformSecurity } from './project-platform-security';
 import { captureClient } from './capture';
+import { bindWorkspaceCore, bindWorkspaces } from './facade-workspaces';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -81,13 +81,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   const { auth, accounts, iam, accountInvites } = bindIdentity();
   const { billing, sandboxShares } = bindCommerce();
   const { projects, github, gitBackend, connectStatus, marketplace } = bindCatalog();
+  const workspaces = bindWorkspaces();
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function project(projectId: string) {
     const connections = projectConnections(projectId);
     return {
       ...bindProjectCore(projectId),
-      ...bindProjectArtifacts(projectId),
       ...bindProjectAccessResources(projectId),
       ...bindProjectAccessSecurity(projectId),
       ...bindProjectOperations(projectId, connections),
@@ -97,6 +97,27 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       connector: <S extends string>(slug: S) => connectorHandle(projectId, slug),
       session: (sessionId: string) =>
         session(projectId, sessionId, config, resolvePreviewOptsForSandbox),
+    };
+  }
+
+  /**
+   * Id-bound handle for one workspace. It carries every member of
+   * `project(id)` (sessions, secrets, connectors, agents: the workspace id IS
+   * the project id) plus the workspace itself: its record, lifecycle,
+   * members, billing, keys and IAM.
+   *
+   * Three project members have a workspace meaning here
+   * (`WORKSPACE_HANDLE_OVERRIDES`): `get` and `update` read and change the
+   * Workspace, and `tokens` manages workspace keys. The project's CLI tokens
+   * stay reachable as `cliTokens`.
+   */
+  function workspace(workspaceId: string) {
+    const { get: _projectGet, update: _projectUpdate, tokens: cliTokens, ...shared } = project(workspaceId);
+    return {
+      ...shared,
+      /** The project CLI tokens (`/workspaces/:id/cli-token`): `project(id).tokens`. */
+      cliTokens,
+      ...bindWorkspaceCore(workspaceId),
     };
   }
 
@@ -110,6 +131,11 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     iam,
     /** Account-invite lifecycle reached by invite token alone (accept/decline/describe). */
     accountInvites,
+    /** The caller's workspaces: `list`, `get`, `update`, `create`. */
+    workspaces,
+    /** One workspace by id. See `workspace()` above. */
+    workspace,
+    /** Project-named calls. Kept permanently; new code uses `workspaces` and `workspace(id)`. */
     projects,
     /** Connector calls scoped by an agent/session token when no project id is available. */
     connectors: connectorDataPlane(),
@@ -160,7 +186,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
 }
 
 export type Kortix = ReturnType<typeof createKortix>;
-/** The id-bound project handle returned by `kortix.project(id)`. */
+/**
+ * The id-bound project handle returned by `kortix.project(id)`.
+ *
+ * @deprecated Use `WorkspaceHandle` (`kortix.workspace(id)`): every member of this handle plus the workspace itself. Kept permanently.
+ */
 export type ProjectHandle = ReturnType<Kortix['project']>;
+/** The id-bound workspace handle returned by `kortix.workspace(id)`. */
+export type WorkspaceHandle = ReturnType<Kortix['workspace']>;
 /** The id-bound session handle returned by `kortix.session(pid, sid)`. */
 export type SessionHandle = ReturnType<Kortix['session']>;

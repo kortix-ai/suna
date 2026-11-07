@@ -5,7 +5,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 /**
- * `/new` name field: the too-long message must be reachable for TYPED input.
+ * `/workspaces/new` name field: the too-long message must be reachable for TYPED input.
  *
  * The field used to carry `maxLength={120}`, so the browser silently truncated
  * typed and pasted names at 120 characters — the documented "Name must be 120
@@ -20,7 +20,7 @@ mock.module('next/navigation', () => ({
   useRouter: () => ({ push: () => {}, replace: () => {}, back: () => {}, prefetch: () => {} }),
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
-  usePathname: () => '/new',
+  usePathname: () => '/workspaces/new',
 }));
 mock.module('@/features/providers/auth-provider', () => ({
   useAuth: () => ({
@@ -37,9 +37,18 @@ mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
     isLoading: false,
   }),
 }));
-mock.module('@kortix/ui/workspace/new/use-creatable-accounts', () => ({
-  useCreatableAccounts: (accounts: unknown[]) => accounts,
+// The owned empty account the create fills (`reusableEmptyAccount`).
+mock.module('@kortix/ui/workspace/sidebar/use-workspace-directory', () => ({
+  useWorkspaceDirectory: () => ({
+    accounts: [{ account_id: 'user-1', name: 'Personal', account_role: 'owner' }],
+    workspaces: [],
+    loading: false,
+    failedAccountIds: [],
+    reusableAccount: { account_id: 'user-1', name: 'Personal', account_role: 'owner' },
+    retryFailed: () => {},
+  }),
 }));
+mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
 // The quota pre-check is this file's sibling test's subject (`plan-cap.test.tsx`);
 // here it only has to stay out of the render — no data, no cap UI, no provider.
 mock.module('@kortix/ui/workspace/new/use-project-quota', () => ({

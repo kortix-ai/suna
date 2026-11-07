@@ -1,8 +1,8 @@
 /**
  * Changing the model a RUNNING session uses.
  *
- * `opencode_model` was create-only: the sandbox reads `KORTIX_OPENCODE_MODEL`
- * when it builds opencode's config at spawn, and nothing re-pushed it, so a live
+ * `model` was create-only: the sandbox read `KORTIX_MODEL`
+ * when it built OpenCode's config at spawn, and nothing re-pushed it, so a live
  * box kept its boot-time model forever. Worse, the stored value was reachable
  * through `PATCH /sessions/{id}` metadata WITHOUT the create-time validation, so
  * a retired or account-forbidden model could be planted and would be booted by
@@ -63,10 +63,11 @@ export function canChangeSessionModel(status: string): ModelChangeRejection | nu
 }
 
 /**
- * Does this change require restarting opencode inside a live sandbox?
+ * Does this change need a live push into a running sandbox?
  *
- * Only when the value actually differs AND a box is up. Restarting opencode
- * costs the user their in-flight turn, so a no-op PUT must not do it.
+ * Only when the value actually differs AND a box is up. On an old OpenCode box
+ * the push restarts the runtime and costs the user their in-flight turn, so a
+ * no-op PUT must not do it.
  */
 export function modelChangeNeedsLivePush(input: {
   current: string | null;
@@ -81,8 +82,6 @@ export function modelChangeNeedsLivePush(input: {
 /** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
 export interface ModelChangeResult {
   model: string;
-  /** @deprecated The pre-W4 name of `model`. Same value. */
-  opencode_model: string;
   /** True only when a live sandbox took the new model NOW. */
   applied_live: boolean;
   /**
@@ -120,7 +119,6 @@ export function modelChangeResult(input: {
   if (!input.needsPush) {
     return {
       model: input.model,
-      opencode_model: input.model,
       applied_live: false,
       detail:
         input.current === input.model
@@ -129,11 +127,10 @@ export function modelChangeResult(input: {
     };
   }
   if (input.push?.applied) {
-    return { model: input.model, opencode_model: input.model, applied_live: true };
+    return { model: input.model, applied_live: true };
   }
   return {
     model: input.model,
-    opencode_model: input.model,
     applied_live: false,
     push_failed: true,
     detail: `stored, but not pushed: ${input.push?.reason ?? 'unknown'}`,
@@ -145,8 +142,8 @@ export function modelChangeResult(input: {
  *
  * Being able to SEE a session is not permission to mutate it. A
  * `visibility: 'project'` session is readable by every project member, but
- * changing its model restarts opencode and destroys the owner's in-flight turn
- * — so this gates on the same owner-or-manager signal the sharing and stop
+ * changing its model re-points the owner's live session (on an old OpenCode
+ * box it also ends the owner's in-flight turn) — so this gates on the same owner-or-manager signal the sharing and stop
  * routes use (routes/project-sessions.ts) rather than on visibility.
  */
 export function mayChangeSessionModel(visible: { canManageLifecycle: boolean }): boolean {

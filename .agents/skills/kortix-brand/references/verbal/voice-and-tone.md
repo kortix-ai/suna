@@ -38,7 +38,7 @@ The in-product agent speaks as "I'm Kortix" in the first chat (`apps/web/transla
 
 **Rule.** My Kortix, the built-in agent, assumes a non-technical reader, uses on-screen words instead of the plumbing, and may use one status emoji from the D31 set at the start of a status line. — *Why:* D31 (2026-10-30, founder). — *Where:* app | Slack | Teams. — *When silent:* plain words, no emoji. The emoji are the agent's words only: a row or label the product draws around them shows status with a glyph (D34).
 
-**Rule.** The agent never claims a capability the session lacks. — *Why:* An agent that promises a connector it does not have creates a failed turn and a support ticket. — *Where:* app | Slack | Teams. — *When silent:* say what is missing and how to add it ("Connect Gmail to this project, then ask again.").
+**Rule.** The agent never claims a capability the session lacks. — *Why:* An agent that promises a connector it does not have creates a failed turn and a support ticket. — *Where:* app | Slack | Teams. — *When silent:* say what is missing and how to add it ("Connect Gmail to this workspace, then ask again.").
 
 ## 3. Vocabulary
 
@@ -53,7 +53,7 @@ The in-product agent speaks as "I'm Kortix" in the first chat (`apps/web/transla
 | GitHub | Github | Brand casing. The live homepage icon title says "Github". |
 | Microsoft Teams | MS Teams | Full name in copy. "Teams" after first use. |
 | Claude Cowork, ChatGPT Work | Claude Work, ChatGPT Cowork | See `positioning.md` section 4. |
-| OpenCode | Opencode, open code | The harness. |
+| OpenCode | Opencode, open code | The brand of the OpenCode Zen and OpenCode Go model providers. Never the Kortix harness (D39). |
 
 ### Product nouns
 
@@ -62,19 +62,19 @@ capitalized only at the start of a sentence or as a UI label.
 
 | Canonical noun | Means | Say | Never |
 | --- | --- | --- | --- |
-| project | A git repo that is the company: configuration plus accumulated state. | "Your project is a repo you own." | workspace |
-| account | The container of projects and people. A personal account becomes a team account when you invite someone. | "No projects in this account yet." | workspace, organization, tenant |
+| workspace | A company's place in Kortix: its people, agents, sessions, connectors, files and billing. One workspace = one company. Each workspace is independent, and a person can belong to several. A git repo backs it: configuration plus accumulated state. The code names it `workspace` (`workspace_id`, `/v1/workspaces`, `kortix workspaces`, `KORTIX_WORKSPACE_ID`); the older `project` and `account` names stay as aliases, in mono only (D40, D41). | "Create a workspace." | project, account, organization, tenant (as the container); "Kortix workspace" beside a Slack workspace is the one place to add "Kortix" |
+| Owner, Admin, Manager, Member | The one role a person holds in a workspace, highest first. Owner: billing, people, delete. Admin: all but delete and transfer. Manager: Customize (agents, skills, connectors, secrets, triggers). Member: works in sessions with the agents granted to them (D41). | "Invite people to Acme as Members." | account owner, account admin, account member, project member, project manager, access role |
+| Workspace settings, Preferences | Workspace settings: the workspace's one Settings panel. Preferences: the person's own settings. Never two rows labelled "Settings" on one surface (D41). | "Open Workspace settings › Members." | Settings (alone, for either), account settings, project admin, user settings |
 | session | One unit of agent work on its own cloud computer and branch, owned by whoever or whatever started it. | "Start a session." | chat, thread, conversation |
 | cloud computer | The disposable, isolated machine a session runs on. Use when the point is that agents work on a real machine. | "Every session gets its own cloud computer." | container, VM |
 | sandbox | The same machine. Use when the point is isolation. | "One isolated sandbox per session." | container, blanket microVM |
 | Agent Computer | The name of one marketing page and nav item. Not a product noun. | "Agent Computer" (page name only) | "agent computer" in prose, "Kortix Agent Computer" |
-| `kortix.yaml` | The Kortix layer of a project: sandbox image, triggers, connectors, secret names and grants, where agent config lives. | `kortix.yaml` in mono | kortix config, manifest file (in marketing) |
-| OpenCode config | The runtime config: agents, skills, commands, tools, plugins, models, providers. | "the OpenCode config" | — |
+| `kortix.yaml` | The one config file of a workspace's repo: sandbox image, agents, skills, tools, commands, triggers, connectors, secret names and grants. It names the files that hold prompts and skills. | `kortix.yaml` in mono | kortix config, manifest file (in marketing), OpenCode config |
 | change request | The reviewed merge back toward `main`. CLI: `kortix cr`. | "The agent opens a change request you approve." | PR, pull request (in product copy), "the agent deploys" |
 | agent | A markdown persona with a prompt and a scoped reach into tools and resources. | "an agent", "install an agent" | bot, assistant, worker, AI worker |
 | skill | Markdown plus scripts that encode how the company does one job. | "a skill" | plugin, prompt template |
 | connector | One-click reach into an app, an API or an MCP server. Noun "connector", verb "connect". | "Connect Gmail." | integration (as headline noun), plugin |
-| secret | An encrypted, per-project credential. It has an exposure: `environment`, `egress-enforced`, `none`. In prose write "egress-enforced". As a CLI argument write `enforced` (the CLI also accepts `egress-enforced`). `none` means no sandbox presence: a Kortix service spends the value, or the secret is stored and disabled (`kortix secrets --help`). | "Environment is the default exposure." | key (generic), "delivery mode" |
+| secret | An encrypted, per-workspace credential. It has an exposure: `environment`, `egress-enforced`, `none`. In prose write "egress-enforced". As a CLI argument write `enforced` (the CLI also accepts `egress-enforced`). `none` means no sandbox presence: a Kortix service spends the value, or the secret is stored and disabled (`kortix secrets --help`). | "Environment is the default exposure." | key (generic), "delivery mode" |
 | Who can use it | The audience choice on a secret or connector account. | "Who can use it" (UI label, sentence case after the first word) | permissions (for this choice) |
 | channel | A chat surface where a bot starts sessions: Slack, Microsoft Teams, email. | "Add Kortix to Slack." | integration, "Telegram channel" |
 | trigger | A cron schedule or a signed webhook that starts sessions. | "A trigger starts a session." | automation (as the noun for one trigger) |
@@ -84,16 +84,20 @@ capitalized only at the start of a sentence or as a UI label.
 | memory | The living company brain. Plain files today. | "company memory" | vector database (external copy) |
 | `kortix-sandbox-agent-server` | The daemon a sandbox boots with: it clones the repo, cuts the branch, loads config into a live runtime, and exposes prompting, streaming, files and terminal. Internal: do not use it in customer copy. | `kortix-sandbox-agent-server` in mono, in engineering text only | "agent server", "runtime" |
 | LLM gateway | The server-side path that authenticates model-provider requests. | "the LLM gateway" | Kortix Gateway |
-| member, people | Humans in an account. Humans and agents are both principals. | "Invite people." | users |
+| member, people | Humans in a workspace. Humans and agents are both principals. | "Invite people." | users |
 | Allow, Ask, Block | The three connector policy actions as the UI labels them. The code names are `always_run`, `require_approval`, `block`. | "Set Ask on the step that matters." | always_run (in UI), allow/ask/deny |
 
-**Rule.** Use the canonical noun in the table, every time, in every surface. — *Why:* Live copy mixed "workspace" and "account", "thread" and "session", "PR" and "change request", "Kortix Gateway" and "LLM gateway" (`apps/web/translations/en.json:19993,20028,413,1689,10582,11732`). One term per concept is STE-100 and it keeps search and support consistent. — *Where:* every surface. — *When silent:* search the code for the name the code uses and write that. If two names exist, ask.
+**Rule.** Use the canonical noun in the table, every time, in every surface. — *Why:* Live copy mixed "workspace", "project" and "account" for one container (D40), "thread" and "session", "PR" and "change request", "Kortix Gateway" and "LLM gateway" (`apps/web/translations/en.json:19993,20028,413,1689,10582,11732`). One term per concept is STE-100 and it keeps search and support consistent. — *Where:* every surface. — *When silent:* search the code for the name the code uses and write that. If two names exist, ask.
 
 **Rule.** Write "computer" for a person's own machine and "cloud computer" or "sandbox" for a session's machine. Never write one to define the other, and never contrast them in a sentence. — *Why:* the two rows name different machines. A sentence that says "a computer is not a sandbox" puts the other row's word into the first row's copy (Q13). — *Where:* every surface. — *When silent:* describe the computer by what it is (a person's own machine) and by what runs on it. Omit the contrast.
 
 **Rule.** Write "sandbox" or "cloud computer" for a session's computer. Write "machine" only inside a sanctioned row of [claims.md](claims.md), word for word. — *Why:* one noun per concept. A deck caption said "isolated machine" outside any row (Q25). — *Where:* every surface. — *When silent:* "sandbox".
 
-**Rule.** Write "session ID", "change request", "project" exactly as the code names them (`session_id`). — *Why:* CLAUDE.md: "match the codebase's existing names exactly". — *Where:* app | CLI | docs. — *When silent:* read the API field name and use its words.
+**Rule.** Write "session ID" and "change request" exactly as the code names them (`session_id`). — *Why:* CLAUDE.md: "match the codebase's existing names exactly". — *Where:* app | CLI | docs. — *When silent:* read the API field name and use its words.
+
+**Rule.** Write "workspace" in prose. Cite the workspace code name in mono: a command (`kortix workspaces use`), a flag (`--workspace`), a variable (`KORTIX_WORKSPACE_ID`), a route (`/v1/workspaces/:workspaceId`), a field (`workspace_id`). The older `project` and `account` names (`kortix projects`, `--project`, `KORTIX_PROJECT_ID`, `/v1/projects`, `project.gitops.merge`) stay valid aliases: cite one only where the reader's tool still prints it, and add "(a workspace)" once on first use. — *Why:* D40, D41. The API and the CLI have `workspace` names since the `workspaces` branch. — *Where:* app | CLI | docs | marketing. — *When silent:* "workspace" in the sentence, the workspace code name in mono.
+
+**Rule.** Qualify every other platform's unit: "Slack workspace", "Teams tenant", "GitHub organization". Write "your Kortix account" only for a person's sign-in identity (sign in, profile, delete my account). Write "sandbox" for a session's machine, never "workspace" ("The sandbox went to sleep"). A filesystem path stays as it is (`/workspace`). — *Why:* D40. Before it, "workspace" meant four things in `en.json`: the account, the project, a Slack workspace and the sandbox. — *Where:* every surface. — *When silent:* "workspace" means the Kortix workspace only.
 
 **Rule.** Write a Slack thread as "Slack thread", a Teams chat as "Teams chat", and a Kortix unit of work as "session". Never write "conversation" for either. — *Why:* "thread" is a Slack noun and "chat" is a Teams noun. A Kortix session started from either is still a session (Q41). — *Where:* Slack | Teams | docs. — *When silent:* "session" unless you mean the platform's own object. A Teams command that picks a model says "Pick the model for this chat."
 
@@ -122,13 +126,13 @@ capitalized only at the start of a sentence or as a UI label.
 | Please (in UI) | Say what to do: "Try again." | Section 4. |
 | Source-available, Elastic License, Apache, MIT | open source | Never name a license. |
 | more powerful, fully extensible, seamless, revolutionary, unlock productivity, next-gen, AI-powered magic, transformative, AI transformation | A concrete mechanism | Banned hype. The old brand guide banned "AI transformation" by name (Q41). Exception: "AI Transformation" is the service name on `/services` (D15). |
-| preview, beta (for email) | experimental, per project | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
+| preview, beta (for email) | experimental, per workspace | The claim word is "experimental" ([claims.md](claims.md)). The one exception is the sanctioned Companies pitch line in [positioning.md](positioning.md), word for word (Q41). |
 
 ### Capitalization and mechanics
 
 **Rule.** Use sentence case for every title, heading, label, button, tab, menu item and table header. Capitalize only the first word and proper nouns. — *Why:* Jay's shipped UI is sentence case ("Copy install command", "Revoke this API key?"; mobile `design.md` rule "sentence case", "Sound pack", not "SOUND PACK"). The live site mixes title case ("Keep Account", "Cancel Account Deletion", `en.json:1225-1228`). — *Where:* app | mobile | marketing | docs | email | CLI. — *When silent:* sentence case. Brand and product names keep their own casing.
 
-**Rule.** Write product objects in lowercase in prose: project, session, agent, skill, connector, secret, channel, trigger, change request. — *Why:* They are common nouns. — *Where:* every surface. — *When silent:* capitalize only at the start of a sentence or as a standalone UI label.
+**Rule.** Write product objects in lowercase in prose: workspace, session, agent, skill, connector, secret, channel, trigger, change request. — *Why:* They are common nouns. — *Where:* every surface. — *When silent:* capitalize only at the start of a sentence or as a standalone UI label.
 
 **Rule.** Write config tokens, commands, paths, IDs and keys in mono: `kortix.yaml`, `kortix init`, `kortix ship`, `kortix cr`, `main`, `secrets_egress`. — *Why:* Mono marks a literal the reader can type or search for (see `typography.md`). — *Where:* every surface. — *When silent:* if the reader can type it, set it in mono.
 
@@ -159,11 +163,11 @@ capitalized only at the start of a sentence or as a UI label.
 Sources: `apps/web/translations/en.json` (line numbers below), `apps/mobile/design.md`, and the commits
 named in each rule. A rule here applies to `apps/web`, `apps/mobile`, and Electron (same web copy).
 
-**Rule.** Name the object in a button or menu label: "Copy install command", "Copy session ID", "Create project", "Revoke key", "Request access". Do not write a bare "Copy", "Connect" or "Submit". — *Why:* A label that names its object is unambiguous out of context, in a screen reader and in a translation. Shipped in #8491, #8207 and #8419 (`en.json:20228`, `1091`; `command-palette.tsx:1661`). — *Where:* app | mobile. — *When silent:* verb first, then the object, in sentence case.
+**Rule.** Name the object in a button or menu label: "Copy install command", "Copy session ID", "Create workspace", "Revoke key", "Request access". Do not write a bare "Copy", "Connect" or "Submit". — *Why:* A label that names its object is unambiguous out of context, in a screen reader and in a translation. Shipped in #8491, #8207 and #8419 (`en.json:20228`, `1091`; `command-palette.tsx:1661`). — *Where:* app | mobile. — *When silent:* verb first, then the object, in sentence case.
 
-**Rule.** Start a button label with a verb: Save, Create project, Revoke, Delete session, Request access, Try again. — *Why:* The label tells the person what happens. Mobile design rules the same ("Labels name the destination or setting in 1–2 words, sentence case"). — *Where:* app | mobile. — *When silent:* one to three words. "Cancel" is the only non-verb-object label for a dismiss.
+**Rule.** Start a button label with a verb: Save, Create workspace, Revoke, Delete session, Request access, Try again. — *Why:* The label tells the person what happens. Mobile design rules the same ("Labels name the destination or setting in 1–2 words, sentence case"). — *Where:* app | mobile. — *When silent:* one to three words. "Cancel" is the only non-verb-object label for a dismiss.
 
-**Rule.** State the consequence in plain present tense, second person: "New sessions will use the new repository. Existing sessions cannot restart after the change." and "You go back to the project when it is done." — *Why:* A person decides faster when the result is stated, not implied (`en.json:7`, `19112`; commits 8b3aed8efd, a92fcabd6d). — *Where:* app | mobile. — *When silent:* write what changes, for whom, and when.
+**Rule.** State the consequence in plain present tense, second person: "New sessions will use the new repository. Existing sessions cannot restart after the change." and "You go back to the workspace when it is done." — *Why:* A person decides faster when the result is stated, not implied (`en.json:7`, `19112`; commits 8b3aed8efd, a92fcabd6d). — *Where:* app | mobile. — *When silent:* write what changes, for whom, and when.
 
 **Rule.** Write an error as what failed, then the next action. Use the pattern "Could not {verb} {object}. {Next action}." — *Why:* "Could not load repositories. Try again." gives the person both facts (`en.json:229-230`; commits 48b76b23dc, f4f04cf03d). `en.json` still has about 274 "Failed to…", "Something went wrong" and "An error occurred" strings (count from the verbal audit, 2026-10-01), which name neither. — *Where:* app | mobile | CLI. — *When silent:* name the object that failed, then one action the person can take. If no action exists, say what happened and stop.
 
@@ -171,7 +175,7 @@ named in each rule. A rule here applies to `apps/web`, `apps/mobile`, and Electr
 
 **Rule.** Do not blame the person and do not apologize. — *Why:* "Something went wrong" and "Sorry" give no fact. "The request failed before we could check your access." gives the fact (`en.json:2933`). — *Where:* app | mobile | email | CLI. — *When silent:* state the system event in the active voice.
 
-**Rule.** Write an empty state as one title and one sentence. Describe the future state, not the absence: "Sessions you start will show up here". Layout (`EmptyState` + `EmptyArt`, outline buttons with icons, D14): [layout.md](../visual/layout.md) section States. — *Why:* `en.json:1449` and mobile `design.md:115` ("No projects yet" plus one "Create project" button). — *Where:* app | mobile. — *When silent:* "{Plural noun you create} will show up here." plus, if the person can act, one button with the verb-first label.
+**Rule.** Write an empty state as one title and one sentence. Describe the future state, not the absence: "Sessions you start will show up here". Layout (`EmptyState` + `EmptyArt`, outline buttons with icons, D14): [layout.md](../visual/layout.md) section States. — *Why:* `en.json:1449` and mobile `design.md:115` ("No workspaces yet" plus one "Create workspace" button). — *Where:* app | mobile. — *When silent:* "{Plural noun you create} will show up here." plus, if the person can act, one button with the verb-first label.
 
 **Rule.** Write a toast as the result in past tense with the object first and no period when it is three words or fewer: "Secret saved", "Labels saved", "Prompt copied", "App access revoked", "Session deleted". — *Why:* A toast reports a finished action beside the page the person stays on (`en.json:74,1586,1693,921`; mobile `design.md:424`). — *Where:* app | mobile. — *When silent:* "{Object} {past participle}". A longer result gets a second line (description) and a period.
 
@@ -179,13 +183,13 @@ named in each rule. A rule here applies to `apps/web`, `apps/mobile`, and Electr
 
 **Rule.** Write a confirmation dialog as: a question title that names the object, one description that states the effect, then the verb button and "Cancel". — *Why:* "Revoke this app?" / "{name} loses access to your Kortix account at once. To use it again, you approve it again." / "Revoke" (`en.json:918-920`). The button repeats the verb in the title. — *Where:* app | mobile. — *When silent:* title "{Verb} this {object}?", description in the second person with the effect and its permanence.
 
-**Rule.** Write a destructive confirmation with the exact effect, who it hits, and "This cannot be undone." State the effect before the permanence. — *Why:* "Removes this project and everything inside it, for every member. This cannot be undone." (`en.json:652`). A person reads the cost before the irreversibility. A delete that can be restored states the restore window instead: "You can restore the session for 30 days." (session delete, KRTX-1734). — *Where:* app | mobile. — *When silent:* name what disappears and for whom. Use a typed confirmation only for an account or project delete. The destructive button repeats the verb ("Delete session"), with "Deleting…" while it runs.
+**Rule.** Write a destructive confirmation with the exact effect, who it hits, and "This cannot be undone." State the effect before the permanence. — *Why:* "Removes this workspace and everything inside it, for every member. This cannot be undone." (`en.json:652`). A person reads the cost before the irreversibility. A delete that can be restored states the restore window instead: "You can restore the session for 30 days." (session delete, KRTX-1734). — *Where:* app | mobile. — *When silent:* name what disappears and for whom. Use a typed confirmation only for a workspace delete or the deletion of a person's own Kortix account. The destructive button repeats the verb ("Delete session"), with "Deleting…" while it runs.
 
 **Rule.** Write a permission or approval prompt so it shows what is decided: the action, its arguments, and exactly two choices, "Deny" and "Approve this action". — *Why:* A prompt without arguments asks an unanswerable question. The shipped card shows redacted parameters in place and offers one decision per call (`session-approval-prompt.tsx` header comment). The shipped label today is "Approve this call" (tests assert it), and "call" is an engine noun. Change the label in a UI PR, not in copy. — *Where:* app | mobile | Slack | Teams | email. — *When silent:* "Approve this {connector} action" with the action and arguments visible. Never add a blanket "always allow" button to a prompt.
 
-**Rule.** Write a waiting state as the state plus who acts: "Waiting on approval." with "Anyone who manages this project can approve your request." — *Why:* The person learns the state and who can change it (`en.json:2927,2942`). — *Where:* app | mobile. — *When silent:* "{State}." then one sentence on who acts next.
+**Rule.** Write a waiting state as the state plus who acts: "Waiting on approval." with "Anyone who manages this workspace can approve your request." — *Why:* The person learns the state and who can change it (`en.json:2927,2942`). — *Where:* app | mobile. — *When silent:* "{State}." then one sentence on who acts next.
 
-**Rule.** Write an access-denied or not-found state as a short fact and a way back: "This project is gone." / "The link may be wrong, or someone deleted the project." / "Back to projects". — *Why:* `en.json:2930-2931,2939`. — *Where:* app | mobile. — *When silent:* one fact, one possible cause, one action.
+**Rule.** Write an access-denied or not-found state as a short fact and a way back: "This workspace is gone." / "The link may be wrong, or someone deleted the workspace." / "Back to workspaces". — *Why:* `en.json:2930-2931,2939`. — *Where:* app | mobile. — *When silent:* one fact, one possible cause, one action.
 
 **Rule.** Write a loading state as the object plus "…" only when the wait can exceed one second. For page-level loading, see [layout.md](../visual/layout.md) section States. — *Why:* "Loading earlier messages…" names the wait (mobile `design.md:272`). A skeleton or a spinner needs no word. — *Where:* app | mobile. — *When silent:* no text.
 
@@ -199,7 +203,7 @@ named in each rule. A rule here applies to `apps/web`, `apps/mobile`, and Electr
 
 **Rule.** Write an expired connector as "The {app} connection expired." with the button "Reconnect {app}". Write "token" only inside the details fold. "Reconnect" re-authorizes. "Disconnect" removes. — *Why:* one noun per concept, and a person fixes a connection, not a token (Q14). — *Where:* app | mobile. — *When silent:* name the app and the object the person can fix.
 
-**Rule.** Write a refused action in two parts: the cause and who can fix it. Name the grant in mono once and write "Anyone who manages this project can grant it." Name the role as "people who manage this project", never "project admin". Branch the cause: "does not have the merge grant" and "cannot merge a change request it opened" are two messages, and only the first names a grant. — *Why:* a grant does not fix the second cause ([claims.md](claims.md) merge rule). The code and the permission example in section 5.3 use this wording (Q14). — *Where:* app | mobile | CLI. — *When silent:* the first message with `project.gitops.merge`. Never write `project.cr.merge`. Add no button unless the app has a screen where the viewer can fix the cause (Q25).
+**Rule.** Write a refused action in two parts: the cause and who can fix it. Name the grant in mono once and write "Anyone who manages this workspace can grant it." Name the role as "people who manage this workspace", never "workspace admin" (Admin is a different role). Branch the cause: "does not have the merge grant" and "cannot merge a change request it opened" are two messages, and only the first names a grant. — *Why:* a grant does not fix the second cause ([claims.md](claims.md) merge rule). The code and the permission example in section 5.3 use this wording (Q14). — *Where:* app | mobile | CLI. — *When silent:* the first message with `project.gitops.merge`. Never write `project.cr.merge`. Add no button unless the app has a screen where the viewer can fix the cause (Q25).
 
 **Rule.** Use one noun for one object inside one error, in the title and in the description. — *Why:* switching from "sandbox" to "session" reads as a second object (Q14). — *Where:* every surface. — *When silent:* the noun in the title.
 
@@ -207,13 +211,13 @@ named in each rule. A rule here applies to `apps/web`, `apps/mobile`, and Electr
 
 **Rule.** Label the fold for raw error text "Show details". Label its rows "Message", "Code" and "Request ID". — *Why:* one label for one action across every state ([layout.md](../visual/layout.md) error rule) (Q14). — *Where:* app | mobile. — *When silent:* verb and object, sentence case.
 
-**Rule.** Write a confirmation for "Remove" as the effect and the way back: "{name} loses access to this project at once. To add them again, you invite them again." Use "This cannot be undone." only for "Delete". — *Why:* "Remove" keeps the object, so a claim of permanence is false (Q15). — *Where:* app | mobile. — *When silent:* effect plus the way back.
+**Rule.** Write a confirmation for "Remove" as the effect and the way back: "{name} loses access to this workspace at once. To add them again, you invite them again." Use "This cannot be undone." only for "Delete". — *Why:* "Remove" keeps the object, so a claim of permanence is false (Q15). — *Where:* app | mobile. — *When silent:* effect plus the way back.
 
 **Rule.** End every mutation with a result. A mutation that closes its dialog reports with a success toast. A failure stays in the dialog, or shows a failure toast when the control has no inline place. — *Why:* the row or the list changes, and the person needs the result ([layout.md](../visual/layout.md) in-place copy rule). — *Where:* app | mobile. — *When silent:* "Invite sent", "Member removed": object first, past tense.
 
 **Rule.** Label the primary action of a page as verb plus object: "Invite people", "Create trigger". Keep the label that ships today. Do not rename a shipped label in a task that is not about the label. — *Why:* a rename is a separate change and breaks screenshots, docs and support macros (Q16). — *Where:* app. — *When silent:* keep the shipped label and list a mismatch under Guesses.
 
-**Rule.** Write a confirmation for removing an agent as: "{name} loses access to this project at once. To restore access, add the agent to the project again." — *Why:* an agent is not invited by email, so the person-copy way back is wrong (Q25). — *Where:* app | mobile. — *When silent:* effect plus the way back, naming adding the agent. Use "This cannot be undone." only for "Delete".
+**Rule.** Write a confirmation for removing an agent as: "{name} loses access to this workspace at once. To restore access, add the agent to the workspace again." — *Why:* an agent is not invited by email, so the person-copy way back is wrong (Q25). — *Where:* app | mobile. — *When silent:* effect plus the way back, naming adding the agent. Use "This cannot be undone." only for "Delete".
 
 **Rule.** Write the invite form as email-only with the role defaulting to the lowest-privilege role the list offers. An agent is not invited here. "Kortix emails an invite" is a true sentence (`apps/api/src/accounts/email.ts`). — *Why:* the invite route sends an email. The first role in the list is an accident of array order, not a policy (Q15). — *Where:* app. — *When silent:* email, lowest-privilege role. The host owns validation and role names (intentional freedom).
 
@@ -263,14 +267,14 @@ Tone: plain, quiet, exact. The person is mid-task. Use section 4 for every strin
 
 | String type | Approved | Rejected |
 | --- | --- | --- |
-| Button | "Create project", "Revoke key", "Request access" | "Submit", "OK", "Click here" |
+| Button | "Create workspace", "Revoke key", "Request access" | "Submit", "OK", "Click here" |
 | Error | "Could not load API keys. Try again." | "Something went wrong. Please try again." |
 | Empty state | "Sessions you start will show up here" | "No sessions found!" |
 | Toast | "Secret saved" | "Success! Your secret was saved successfully!" |
 | Confirm | "Revoke this app?" with "{name} loses access to your Kortix account at once." | "Are you sure you want to do this?" |
-| Destructive confirm | "Removes this project and everything inside it, for every member. This cannot be undone." | "Warning: this action is irreversible and may result in data loss." |
+| Destructive confirm | "Removes this workspace and everything inside it, for every member. This cannot be undone." | "Warning: this action is irreversible and may result in data loss." |
 | Approval prompt | "Approve this Gmail action" with the recipient and subject shown; "Deny" and "Approve this action" | "Allow this tool to run?" with no arguments |
-| Permission explanation | "Anyone who manages this project can approve your request." | "Contact your administrator." |
+| Permission explanation | "Anyone who manages this workspace can approve your request." | "Contact your administrator." |
 | Mobile permission prompt (draft, not shipped) | "Kortix needs camera access so you can attach photos to a session." | "Kortix needs camera access to bring you saved conversations with the AI Worker." |
 
 ### 5.4 CLI help and errors
@@ -279,7 +283,7 @@ Tone: terse, technical, scannable. The reader is in a terminal and may pipe the 
 
 **Rule.** Write the first help line as "Usage: kortix {command} <subcommand> [options]", then one plain sentence on what the command does, then the subcommand list with a verb-first fragment and no trailing period, then global options, then two or three real examples when the command's help has them. — *Why:* That is the structure of `kortix accounts --help` and `kortix secrets --help` (`apps/cli/src/commands/accounts.ts:15-34`). — *Where:* CLI. — *When silent:* copy the structure of an existing help block. The `kortix secrets --help` block has no examples section: that is the shipped text, not a debt to fill (Q56).
 
-**Rule.** Write a CLI error as one sentence that says what is wrong and what to pass, with the status prefix from `style.ts`: "Pass at least one KEY=VALUE pair." — *Why:* `kortix secrets set` with no arguments prints exactly that after the `✗` prefix. The unknown-command error adds one hint line: "Run kortix --help for the full list, or kortix init <name> to start a new project." — *Where:* CLI. — *When silent:* what is wrong, then the fix, in one or two lines. No stack trace, no apology, no emoji.
+**Rule.** Write a CLI error as one sentence that says what is wrong and what to pass, with the status prefix from `style.ts`: "Pass at least one KEY=VALUE pair." — *Why:* `kortix secrets set` with no arguments prints exactly that after the `✗` prefix. The unknown-command error adds one hint line: "Run kortix --help for the full list, or kortix workspaces create <name> to create a workspace." — *Where:* CLI. — *When silent:* what is wrong, then the fix, in one or two lines. No stack trace, no apology, no emoji.
 
 **Rule.** Write a CLI success line as the object and the new state: "removed STRIPE_API_KEY", "{agent} now receives {identifier}". Use the `✓` prefix only through `status.ok`. — *Why:* One style from `style.ts:41-44`. — *Where:* CLI. — *When silent:* what changed, with names in bold or mono.
 
@@ -314,7 +318,7 @@ Tone: calm, short, safe. The reader did not expect it and may be anxious (securi
 
 **Rule.** Build the body as kicker (two or three words, sentence case), title (the action), one lead sentence, one button with a verb label, and one closing note on what to do if the reader did not ask: "If you did not request this link, you can ignore this email." — *Why:* Every auth email follows it (`templates.ts:60-100`). — *Where:* email. — *When silent:* never more than one button and one note.
 
-**Rule.** Name the inviter, the object and the role in an invite, name the address the invitation is for, and say what happens if the reader has no account. Without an inviter email, name the account. — *Why:* `apps/api/src/accounts/email.ts` `sendAccountInviteEmail`: subject "You're invited to {collaborate on "{project}" | join "{account}"} on Kortix", lead "{inviter} invited you to join …", one "Review invite" button, and the note "This invitation is for {email}. Sign in with that address, or sign up with it if you don't have a Kortix account yet — … If you were not expecting this invitation, you can ignore this email." Accepting requires the invited address (`email_matches_caller`), so a reader who signs in with another address cannot accept. — *Where:* email. — *When silent:* who, what, role, for whom, one button, one note.
+**Rule.** Name the inviter, the object and the role in an invite, name the address the invitation is for, and say what happens if the reader has no account. Without an inviter email, name the workspace. — *Why:* `apps/api/src/accounts/email.ts` `sendAccountInviteEmail`: subject "You're invited to {collaborate on "{project}" | join "{account}"} on Kortix", lead "{inviter} invited you to join …", one "Review invite" button, and the note "This invitation is for {email}. Sign in with that address, or sign up with it if you don't have a Kortix account yet — … If you were not expecting this invitation, you can ignore this email." Accepting requires the invited address (`email_matches_caller`), so a reader who signs in with another address cannot accept. — *Where:* email. — *When silent:* who, what, role, for whom, one button, one note.
 
 **Rule.** Keep the HTML part of an email that shows the logo above 3,200 bytes. — *Why:* SpamAssassin's `html_image_only` scores an HTML part that contains an `<img>` by its raw length, markup included: 0.726 to 2.799 points between 2,400 and 2,800 bytes (`HTML_IMAGE_ONLY_28`). A dev seed test on 2026-10-02 found every Kortix email between 2,253 and 2,795 bytes. The logo must stay (`visual/brandmark.md`), so the content carries the length. `apps/api/src/__tests__/unit-notifications.test.ts` holds the invite above the window. — *Where:* email. — *When silent:* measure `html.length` of the shortest variant before you cut copy.
 
@@ -356,7 +360,7 @@ Tone: a colleague in a thread. One short message. The agent speaks as "I".
 **Rule.** Write the app description and the home tab with the Standard line and one sentence on what the app does in Slack. — *Why:* The Slack manifest and home view still carry "AI command center" (`slack-manifest.ts:170`, `slack/home.ts:78,89`). — *Where:* Slack | Teams. — *When silent:* "Start a session from any Slack thread."
 
 - Approved: "Connected. Mention me with a task."
-- Approved: "I need access to Gmail to send this. Connect Gmail to this project, then ask again."
+- Approved: "I need access to Gmail to send this. Connect Gmail to this workspace, then ask again."
 - Rejected: "⚡ Kortix commands" (emoji header)
 - Rejected: "Your AI command center, right here in Slack." (D1)
 

@@ -72,8 +72,8 @@ const port = (
 beforeAll(async () => {
   project = await seedProject(`access-${crypto.randomUUID().slice(0, 8)}`);
   await db.insert(chatInstalls).values([
-    { platform: 'telegram', workspaceId: SCOPE, projectId: project.project_id },
-    { platform: FAKE, workspaceId: SCOPE, projectId: project.project_id },
+    { platform: 'telegram', platformTeamId: SCOPE, projectId: project.project_id },
+    { platform: FAKE, platformTeamId: SCOPE, projectId: project.project_id },
   ]);
 });
 
@@ -122,14 +122,14 @@ describe('channel access store — a second platform beside Telegram', () => {
   test("a request is stored only while the project has that platform's install with that scope", async () => {
     const other = `W${crypto.randomUUID().slice(0, 8)}`;
     // Telegram has an install with `other`; the fake platform does not.
-    await db.insert(chatInstalls).values({ platform: 'telegram', workspaceId: other, projectId: project.project_id });
+    await db.insert(chatInstalls).values({ platform: 'telegram', platformTeamId: other, projectId: project.project_id });
     try {
       expect(await recordChannelAccessRequest(FAKE, project.project_id, { scopeId: other, accessRequests: [] }, requester('51'))).toBe(false);
       expect((await metadata())[FAKE]).toBeUndefined();
       expect(await recordChannelAccessRequest('telegram', project.project_id, { scopeId: other, accessRequests: [] }, requester('51'))).toBe(true);
       expect((await lists('telegram')).accessRequests.map((r) => r.id)).toContain('51');
     } finally {
-      await db.delete(chatInstalls).where(eq(chatInstalls.workspaceId, other));
+      await db.delete(chatInstalls).where(eq(chatInstalls.platformTeamId, other));
     }
   });
 
@@ -179,16 +179,16 @@ describe('channel access store — a second platform beside Telegram', () => {
       );
     expect(await gate('90', true)).toBeNull();
     expect(await gate('91', false)).toBe(
-      'This bot belongs to a Kortix project, and your Fakechat account is not allowed to use it yet. Ask a project admin to allow your Fakechat user ID 91 under Customize → Connectors → Channels → Fakechat, or message this bot privately to ask for access.',
+      'This bot belongs to a Kortix workspace, and your Fakechat account is not allowed to use it yet. Ask a workspace admin to allow your Fakechat user ID 91 under Customize → Connectors → Channels → Fakechat, or message this bot privately to ask for access.',
     );
     expect((await lists(FAKE)).accessRequests).toEqual([]);
     expect(await gate('91', true)).toBe(
-      'This bot belongs to a Kortix project, and your Fakechat account is not allowed to use it yet. Your request is waiting for a project admin, who can allow it in Kortix under Customize → Connectors → Channels → Fakechat. Your Fakechat user ID is 91.',
+      'This bot belongs to a Kortix workspace, and your Fakechat account is not allowed to use it yet. Your request is waiting for a workspace admin, who can allow it in Kortix under Customize → Connectors → Channels → Fakechat. Your Fakechat user ID is 91.',
     );
     expect((await lists(FAKE)).accessRequests.map((r) => r.id)).toEqual(['91']);
     expect((await metadata()).telegram).toEqual(TELEGRAM);
     expect(refusedPressText(port(FAKE, 'Fakechat'), '91')).toBe(
-      'Your Fakechat account is not allowed to use this bot. Ask a project admin to allow user ID 91 under Customize → Connectors → Channels → Fakechat.',
+      'Your Fakechat account is not allowed to use this bot. Ask a workspace admin to allow user ID 91 under Customize → Connectors → Channels → Fakechat.',
     );
   });
 });

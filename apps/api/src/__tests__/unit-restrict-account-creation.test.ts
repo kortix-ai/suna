@@ -1,13 +1,10 @@
 /**
  * Self-host account-creation restriction: KORTIX_RESTRICT_ACCOUNT_CREATION=true
  * must block POST /v1/accounts (creating an ADDITIONAL/org account) with 403
- * for everyone except a platform admin — while GET /v1/accounts (which
- * bootstraps the caller's own personal account on first login via
- * bootstrapPersonalAccount) stays completely unaffected.
- *
- * This is deliberately narrower than the removed KORTIX_SINGLE_ACCOUNT_MODE:
- * it only gates the "create a brand-new organization" path, never the
- * personal-account bootstrap every user needs to land in the app.
+ * for everyone except a platform admin. A new workspace that needs a new
+ * account (`new_workspace: true` on provision) follows the same rule
+ * (projects/new-workspace.ts). No account is created at sign-up, so on such a
+ * deployment a new user joins through an invite.
  *
  * Exercises the REAL config module (env var set before any app module is
  * imported) so the test also proves the schema/config wiring in
@@ -50,6 +47,8 @@ let insertedAccount: { name: string } | null = null;
 mockIamAssignments();
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: async <T>(action: () => Promise<T>) => action(),
+  afterDbCommit: (action: () => void) => action(),
   hasDatabase: () => true,
   db: {
     insert: (table: any) => ({

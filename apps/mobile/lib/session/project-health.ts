@@ -4,7 +4,7 @@ import { isRuntimeReady, type SessionHealthResult } from '@kortix/sdk';
  * Probe a session sandbox's runtime health THROUGH the backend proxy — the same
  * `${sandboxUrl}/kortix/health` the web's useSandboxConnection polls. Beyond
  * reporting readiness, hitting the proxy keeps the sandbox routed/warm; the
- * backend's ensure-opencode probe alone doesn't, so without this a freshly-woken
+ * backend's own readiness probe alone doesn't, so without this a freshly-woken
  * sandbox can stay unreachable. Returns 'ready' once the runtime reports up.
  */
 
@@ -23,7 +23,6 @@ export function mapSandboxHealth({ status, ok, health }: SessionHealthResult): S
   if (status === 503) return { status: 'starting' }; // sandbox up, runtime still booting
   if (!ok) return { status: 'unreachable' };
   const bootError = typeof health?.boot_error === 'string' && health.boot_error ? health.boot_error : null;
-  if (health?.runtimeReady === true || health?.opencode === 'ok' || health?.opencode === true ||
-      (health?.status && isRuntimeReady(health))) return { status: 'ready' };
+  if (health?.runtimeReady === true || (health?.status && isRuntimeReady(health))) return { status: 'ready' };
   return { status: 'starting', bootError };
 }

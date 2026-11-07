@@ -30,7 +30,7 @@ import {
   useToolRowVariant,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
-import { TURN_SPACE, TURN_TYPE, fg, monoFont, muted, useTurnPalette } from '../shared/styles';
+import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
 function GlobTrigger({ label, isPathLike, badge }: { label: string; isPathLike: boolean; badge?: string }) {

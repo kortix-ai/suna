@@ -4,34 +4,28 @@ import {
   getArtifact,
   getLinkPreview,
   readArtifactFile,
-  type ArtifactCommentSnapshot,
-  type ArtifactCommentThread,
   type ArtifactDetail,
 } from '@kortix/sdk';
 import { useArtifactMutations, useArtifactText } from '@kortix/sdk/react';
-import { ARTIFACT_TEXT_QUOTE_MAX, type ArtifactTextAnchor } from '@kortix/shared/artifact-comments';
 import { ARTIFACT_DOC_CSS } from '@kortix/shared/artifact-doc';
 import { canEmbed, fetchEmbed } from '@kortix/ui/markdown/doc-editor/doc-embed';
 import { docExtensions } from '@kortix/ui/markdown/doc-editor/doc-extensions';
 import { DocMenus } from '@kortix/ui/markdown/doc-editor/doc-menus';
 import { htmlToMarkdown, markdownToHtml } from '@kortix/ui/markdown/doc-editor/markdown';
+import { Button } from '@kortix/ui/button';
+import { ButtonGroup } from '@kortix/ui/button-group';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { ErrorState } from '@kortix/ui/error-state';
+import { InfoBanner } from '@kortix/ui/info-banner';
 import Loading from '@kortix/ui/loading';
 import { MENU_PANEL_STATIC, menuRow } from '@kortix/ui/menu-recipe';
-import { dismissToast, errorToast } from '@kortix/ui/toast';
-import { CardsIcon, LinkSimpleIcon } from '@phosphor-icons/react';
+import { errorToast, infoToast } from '@kortix/ui/toast';
+import { CardsIcon, LinkSimpleIcon, WarningIcon } from '@phosphor-icons/react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { createDocSaver, pendingSave, type DocSaveStatus, type DocSaver, type Known } from './doc-autosave';
-import { captureDocComment } from './doc-comment-capture';
-import {
-  DocCommentDecorations,
-  docCommentPluginKey,
-  scrollDocCommentHighlight,
-  type DocCommentHighlights,
-} from './doc-comment-decorations';
-import { docMarkdownPositions, docSelectionAnchor } from './doc-comment-positions';
 import { fileBase64, isMedia, mediaPath, mediaUrls, tooLarge } from './doc-media';
 import { SlashCommand, SlashMenu, type SlashState } from './doc-slash-menu';
 
@@ -42,7 +36,9 @@ export type { DocSaveStatus };
 const isConflict = (err: unknown) =>
   (err as { status?: number }).status === 409 &&
   (err as { code?: string }).code === 'version_conflict';
-const NO_COMMENTS: readonly ArtifactCommentThread[] = [];
+
+/** What the editor opened on: the doc's HTML and the file version it came from. */
+type Loaded = { html: string; start: Known };
 
 /**
  * A doc artifact, edited in place: its Markdown file in Files, shown with the
@@ -57,19 +53,10 @@ const NO_COMMENTS: readonly ArtifactCommentThread[] = [];
 export function DocEditor({
   projectId,
   artifact,
-  editable: mayEdit,
+  editable,
   onStatus,
   onReload,
-  comments = NO_COMMENTS,
-  focusedThreadId,
-  focusRevision,
-  onFocusThread,
-  canComment = false,
-  onComment,
-  onCommentStart,
-  historical = false,
-  readCommentSnapshot,
-  commentEntryVersion,
+  onReady,
 }: {
   projectId: string;
   artifact: ArtifactDetail;
@@ -77,58 +64,21 @@ export function DocEditor({
   onStatus: (status: DocSaveStatus) => void;
   /** Open the doc again at its current version (the conflict's Reload). */
   onReload: () => void;
-  comments?: readonly ArtifactCommentThread[];
-  focusedThreadId?: string | null;
-  focusRevision?: number;
-  onFocusThread?: (threadId: string) => void;
-  canComment?: boolean;
-  onComment?: (anchor: ArtifactTextAnchor) => void;
-  onCommentStart?: () => () => void;
-  historical?: boolean;
-  readCommentSnapshot?: () => Promise<ArtifactCommentSnapshot>;
-  commentEntryVersion?: string | null;
+  /** The doc's text is on screen (once per editor): the viewer restores its scroll position. */
+  onReady?: () => void;
 }) {
   const t = useTranslations('artifacts');
-  const editable = mayEdit && !historical;
   const { save: saveMutation } = useArtifactMutations(projectId);
-  const [loaded, setLoaded] = useState<{ html: string; start: Known } | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const saver = useRef<DocSaver | null>(null);
-  const sourceMarkdown = useRef('');
-  const [revision, setRevision] = useState(0);
-  const [commenting, setCommenting] = useState(false);
-  const commentCapture = useRef<{ cancel: () => void } | null>(null);
-  const latest = useRef({
-    save: saveMutation,
-    onStatus,
-    onReload,
-    artifact,
-    t,
-    onFocusThread,
-    onComment,
-    onCommentStart,
-    readCommentSnapshot,
-    canComment,
-    historical,
-  });
+  // Another writer changed the file under unsaved edits: autosave waits for the person's choice,
+  // shown above the doc until they make it (a toast could be closed and take the choice with it).
+  const [conflict, setConflict] = useState(false);
+  const [confirmReload, setConfirmReload] = useState(false);
+  const latest = useRef({ save: saveMutation, onStatus, onReload, artifact, onReady });
   useLayoutEffect(() => {
-    latest.current = {
-      save: saveMutation,
-      onStatus,
-      onReload,
-      artifact,
-      t,
-      onFocusThread,
-      onComment,
-      onCommentStart,
-      readCommentSnapshot,
-      canComment,
-      historical,
-    };
+    latest.current = { save: saveMutation, onStatus, onReload, artifact, onReady };
   });
-  // eslint-disable-next-line react-hooks/refs -- configure stores this callback; editor events read the ref after render.
-  const [commentExtension] = useState(() =>
-    DocCommentDecorations.configure({ onFocus: (id) => latest.current.onFocusThread?.(id) }),
-  );
   // Relative media paths in the Markdown ↔ absolute URLs in the editor (the page URL of this version).
   const [media] = useState(() => mediaUrls(artifact.version.view_url));
   /** Single-file docs serve only themselves: their media must be absolute URLs. */
@@ -159,12 +109,8 @@ export function DocEditor({
       : null);
   if (loaded === null && start)
     setLoaded({ html: media.resolveHtml(markdownToHtml(start.text)), start });
-  useEffect(() => {
-    if (text.error) errorToast(text.error.message);
-  }, [text.error]);
-  useEffect(() => {
-    if (loaded) sourceMarkdown.current = loaded.start.text;
-  }, [loaded]);
+  // The text did not load: the doc area says so and offers a retry (below), never a spinner forever.
+  const textFailed = loaded === null && handoff === null && text.isError;
 
   const markdownOf = (editor: Editor) => htmlToMarkdown(media.restore(editor.getHTML()));
   const readNow = async (current: ArtifactDetail): Promise<Known> => {
@@ -175,16 +121,19 @@ export function DocEditor({
     return { version: detail.entry_version, text: await file.text() };
   };
 
-  const showConflict = () => {
-    const { t: t, artifact: current } = latest.current;
-    errorToast(t('conflict'), {
-      id: `artifact-conflict-${current.artifact_id}`,
-      duration: Infinity,
-      actions: [
-        { label: t('conflictReload'), onClick: () => latest.current.onReload() },
-        { label: t('conflictKeepMine'), onClick: () => saver.current?.keepMine() },
-      ],
+  const writeEntry = async (current: ArtifactDetail, markdown: string, base: string | null) => {
+    const next = await latest.current.save.mutateAsync({
+      artifactId: current.artifact_id,
+      ...(base ? { base_version: base } : {}),
+      files: { [current.entry]: { content: markdown } },
     });
+    return next.entry_version;
+  };
+
+  const showConflict = () => setConflict(true);
+  const keepMine = () => {
+    setConflict(false);
+    saver.current?.keepMine();
   };
 
   /**
@@ -260,7 +209,6 @@ export function DocEditor({
           placeholder: (node) =>
             node.type.name === 'codeBlock' ? '' : node.type.name === 'heading' ? t('placeholderHeading') : t('placeholder'),
         }),
-        commentExtension,
         slashExtension,
       ],
       content: loaded?.html ?? '',
@@ -301,146 +249,23 @@ export function DocEditor({
         },
       },
       onUpdate: ({ editor: updated }) => {
-        if (editable) {
-          sourceMarkdown.current = markdownOf(updated);
-          setRevision((value) => value + 1);
-          saver.current?.edited();
-        }
+        if (editable && !updated.isDestroyed) saver.current?.edited();
       },
     },
     [loaded, editable],
   );
   const editorRef = useRef<Editor | null>(null);
-  const handledFocus = useRef('');
   useEffect(() => {
     editorRef.current = editor;
-    handledFocus.current = '';
     return () => {
-      if (editorRef.current === editor) {
-        editorRef.current = null;
-        commentCapture.current?.cancel();
-        commentCapture.current = null;
-      }
+      if (editorRef.current === editor) editorRef.current = null;
     };
   }, [editor]);
-  useEffect(() => {
-    if (!editor || !loaded) return;
-    const highlights: DocCommentHighlights = {
-      markdown: sourceMarkdown.current,
-      comments,
-      focusedThreadId,
-      version: historical ? artifact.version.id : undefined,
-      entryVersion: historical ? commentEntryVersion : undefined,
-      label: t('discussion.commentSelection'),
-      focusable: !editable,
-    };
-    editor.view.dispatch(editor.state.tr.setMeta(docCommentPluginKey, highlights));
-  }, [
-    editor,
-    loaded,
-    comments,
-    focusedThreadId,
-    historical,
-    editable,
-    artifact.version.id,
-    commentEntryVersion,
-    revision,
-    t,
-  ]);
-  useEffect(() => {
-    if (!editor) return;
-    handledFocus.current = scrollDocCommentHighlight(
-      editor.view.dom,
-      focusedThreadId,
-      focusRevision,
-      handledFocus.current,
-    );
-  }, [editor, focusedThreadId, focusRevision, comments, commentEntryVersion, revision]);
 
-  // A passage longer than a quote can hold is refused with the limit, never cut.
-  const selectionError = (error: 'unmapped' | 'ambiguous' | 'too_long') =>
-    error === 'too_long'
-      ? t('discussion.selectionTooLong', { max: ARTIFACT_TEXT_QUOTE_MAX })
-      : t('discussion.selectionUnavailable');
-  const commentSelection = async () => {
-    const current = editorRef.current;
-    const context = latest.current;
-    if (
-      !current ||
-      !loaded ||
-      commenting ||
-      commentCapture.current ||
-      !context.canComment ||
-      context.historical ||
-      !context.onComment ||
-      !context.readCommentSnapshot
-    )
-      return;
-    const document = current.state.doc;
-    const { from, to } = current.state.selection;
-    const readSnapshot = context.readCommentSnapshot;
-    setCommenting(true);
-    let operation: ReturnType<typeof captureDocComment<ArtifactTextAnchor>> | undefined;
-    try {
-      operation = captureDocComment(
-        context.onCommentStart,
-        async () => {
-          const candidate = docSelectionAnchor(
-            docMarkdownPositions(sourceMarkdown.current, document),
-            from,
-            to,
-            'pending',
-          );
-          if ('error' in candidate) {
-            errorToast(selectionError(candidate.error));
-            return;
-          }
-          let saved: Known;
-          try {
-            saved = editable ? await saver.current!.snapshot() : loaded.start;
-          } catch {
-            errorToast(t('discussion.commentSaveFailed'));
-            return;
-          }
-          if (editorRef.current !== current || current.isDestroyed) return;
-          const snapshot = await readSnapshot();
-          if (editorRef.current !== current || current.isDestroyed) return;
-          if (
-            snapshot.text !== saved.text ||
-            editorRef.current !== current ||
-            current.state.doc !== document ||
-            current.state.selection.from !== from ||
-            current.state.selection.to !== to ||
-            latest.current.historical ||
-            !latest.current.canComment
-          ) {
-            errorToast(t('discussion.snapshotChanged'));
-            return;
-          }
-          const result = docSelectionAnchor(
-            docMarkdownPositions(saved.text, document),
-            from,
-            to,
-            snapshot.version,
-          );
-          if ('error' in result) errorToast(selectionError(result.error));
-          else return result.anchor;
-        },
-        (anchor) => {
-          latest.current.onComment?.(anchor);
-          // The passage now lives in the composer: collapse the selection so the formatting bubble hides.
-          if (editorRef.current === current && !current.isDestroyed) current.commands.setTextSelection(to);
-        },
-      );
-      commentCapture.current = operation;
-      await operation.done;
-    } catch {
-      if (editorRef.current === current && !current.isDestroyed) errorToast(t('discussion.snapshotChanged'));
-    } finally {
-      if (commentCapture.current === operation) commentCapture.current = null;
-      setCommenting(false);
-    }
-  };
+  // The text is on screen: once per editor.
+  useEffect(() => {
+    if (editor && loaded) latest.current.onReady?.();
+  }, [editor, loaded]);
 
   // The file moved (an agent wrote it, the artifact says so): an editor with nothing unsaved shows the new text.
   const fileVersion = artifact.entry_version;
@@ -450,11 +275,9 @@ export function DocEditor({
     let live = true;
     void docSaver.refresh(fileVersion).then((now) => {
       if (!live || !now || editor.isDestroyed) return;
-      sourceMarkdown.current = now.text;
       editor.commands.setContent(media.resolveHtml(markdownToHtml(now.text)), {
         emitUpdate: false,
       });
-      setRevision((value) => value + 1);
     });
     return () => {
       live = false;
@@ -464,18 +287,11 @@ export function DocEditor({
 
   // One saver per editor; save now on ⌘S, warn before the page goes away with changes not in the file.
   useEffect(() => {
-    if (!editor || !editable || !loaded) return;
+    if (!editor || editor.isDestroyed || !editable || !loaded) return;
     const current = latest.current.artifact;
     const docSaver = createDocSaver(loaded.start, {
       artifactId: current.artifact_id,
-      write: async (markdown, base) => {
-        const next = await latest.current.save.mutateAsync({
-          artifactId: current.artifact_id,
-          ...(base ? { base_version: base } : {}),
-          files: { [current.entry]: { content: markdown } },
-        });
-        return next.entry_version;
-      },
+      write: (markdown, base) => writeEntry(current, markdown, base),
       read: () => readNow(current),
       text: () => markdownOf(editor),
       onStatus: (status) => latest.current.onStatus(status),
@@ -497,8 +313,7 @@ export function DocEditor({
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('beforeunload', onLeave);
-      const conflictToastId = `artifact-conflict-${current.artifact_id}`;
-      dismissToast(conflictToastId);
+      setConflict(false);
       docSaver.close();
       if (saver.current === docSaver) saver.current = null;
     };
@@ -508,23 +323,32 @@ export function DocEditor({
   return (
     <div className="kx-doc min-h-full">
       <style>{ARTIFACT_DOC_CSS}</style>
-      {loaded === null || !editor ? (
+      {textFailed ? (
+        <div className="grid min-h-60 place-items-center">
+          <ErrorState
+            size="sm"
+            title={t('docLoadError')}
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={text.isFetching}
+                onClick={() => void text.refetch()}
+              >
+                {text.isFetching ? <Loading className="size-4 shrink-0" /> : null}
+                {t('retry')}
+              </Button>
+            }
+          />
+        </div>
+      ) : loaded === null || !editor ? (
         // One quiet spinner while the text loads (usually cached: no wait at all).
         <div className="grid min-h-60 place-items-center">
           <Loading className="size-4" />
         </div>
       ) : (
         <>
-          {editable || (canComment && !historical) ? (
-            <DocMenus
-              editor={editor}
-              blockMenu={false}
-              editable={editable}
-              canComment={canComment && !historical && !!onComment && !!readCommentSnapshot}
-              commenting={commenting}
-              onComment={() => void commentSelection()}
-            />
-          ) : null}
+          {editable ? <DocMenus editor={editor} blockMenu={false} editable /> : null}
           {editable && slash ? (
             <SlashMenu
               editor={editor}
@@ -541,6 +365,40 @@ export function DocEditor({
               onClose={() => setOffer(null)}
             />
           ) : null}
+          {editable && conflict ? (
+            // Pinned to the top of the doc while it scrolls: the choice stays in reach.
+            <div className="bg-background sticky top-0 z-10 mb-6 pt-2">
+              <InfoBanner
+                tone="warning"
+                icon={WarningIcon}
+                title={t('conflictTitle')}
+                action={
+                  <ButtonGroup>
+                    <Button size="xs" variant="outline" onClick={keepMine}>
+                      {t('conflictKeepMine')}
+                    </Button>
+                    <Button size="xs" variant="outline" onClick={() => setConfirmReload(true)}>
+                      {t('conflictReload')}
+                    </Button>
+                  </ButtonGroup>
+                }
+              >
+                {t('conflict')}
+              </InfoBanner>
+            </div>
+          ) : null}
+          <ConfirmDialog
+            open={confirmReload && conflict}
+            onOpenChange={setConfirmReload}
+            title={t('conflictReloadTitle')}
+            description={t('conflictReloadHint')}
+            confirmLabel={t('conflictReload')}
+            confirmVariant="destructive"
+            onConfirm={() => {
+              setConfirmReload(false);
+              latest.current.onReload();
+            }}
+          />
           <EditorContent editor={editor} />
           <input
             ref={picker}
@@ -616,6 +474,13 @@ function EmbedOffer({
   };
   const close = useRef(onClose);
   const pick = useRef<(choice: number) => void>(() => {});
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
     const onTransaction = ({
       transaction,
@@ -650,13 +515,16 @@ function EmbedOffer({
   const embed = async () => {
     setLoading(true);
     const meta = await fetchEmbed(offer.href, (url) => getLinkPreview(projectId, url));
+    // Closed while the preview loaded (Escape, typing, Keep as link): the link stays a link.
+    if (!mounted.current) return;
+    if (!meta) {
+      infoToast(t('embedUnavailable'));
+      close.current();
+      return;
+    }
     const { doc } = editor.state;
     // The link must still be where it was pasted.
-    if (
-      meta &&
-      offer.to <= doc.content.size &&
-      doc.textBetween(offer.from, offer.to) === offer.href
-    ) {
+    if (offer.to <= doc.content.size && doc.textBetween(offer.from, offer.to) === offer.href) {
       const $from = doc.resolve(offer.from);
       // A top-level paragraph that holds only the link becomes the card; otherwise the card splits it
       // (a list item must start with a paragraph).

@@ -4,11 +4,12 @@
  * `kortix.project_user_marks`; the routes are in `routes/project-spaces.ts`.
  */
 import type { ChannelsOnboarding, ChannelsOnboardingMark, SpaceGeneralNotice } from '@kortix/api-contract';
-import { projectSpaces, projectUserMarks, projects } from '@kortix/db';
+import { projectSpaces, projectUserMarks } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isPlainObject } from '../../shared/json';
 import { loadProjectRosterIds } from './project-access-view';
+import { projectsView, updateProjectRows } from '../../workspaces/rows';
 
 const NOTICE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Marks per INSERT: 3 bind parameters each, far below the 65,535 limit. */
@@ -68,14 +69,11 @@ export async function recordChannelsReenabled(
 ): Promise<void> {
   const { projectId } = project;
   const at = writtenAt.toISOString();
-  const channels = sql`coalesce(${projects.metadata} -> 'channels', '{}'::jsonb)`;
+  const channels = sql`coalesce(${projectsView.metadata} -> 'channels', '{}'::jsonb)`;
   const earlier = sql`case when ${channels} ->> 'reenabled_at' = ${at} then coalesce((${channels} ->> 'reenabled_count')::int, 0) else 0 end`;
-  await db
-    .update(projects)
-    .set({
-      metadata: sql`coalesce(${projects.metadata}, '{}'::jsonb) || jsonb_build_object('channels', ${channels} || jsonb_build_object('reenabled_at', ${at}::text, 'reenabled_count', ${filed}::int + ${earlier}))`,
-    })
-    .where(eq(projects.projectId, projectId));
+  await updateProjectRows(eq(projectsView.projectId, projectId), {
+    metadata: sql`coalesce(${projectsView.metadata}, '{}'::jsonb) || jsonb_build_object('channels', ${channels} || jsonb_build_object('reenabled_at', ${at}::text, 'reenabled_count', ${filed}::int + ${earlier}))`,
+  });
   const { ids } = await loadProjectRosterIds({ row: project });
   for (let i = 0; i < ids.length; i += MARK_BATCH) {
     await db

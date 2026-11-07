@@ -19,7 +19,7 @@ describe('denialReasonMessage', () => {
   test('agent_scope_insufficient names the agent grant, not the role', () => {
     const message = denialReasonMessage('project.session.start', 'agent_scope_insufficient');
     expect(message).toBe(
-      'This agent session is not granted "project.session.start". Add it to the agent\'s kortix_permissions in kortix.yaml and merge the change.',
+      'This agent session is not granted "workspace.session.start". Add it to the agent\'s kortix_permissions in kortix.yaml and merge the change.',
     );
     // The bug being fixed: this must NEVER read as a role problem.
     expect(message).not.toContain('role');
@@ -31,7 +31,7 @@ describe('denialReasonMessage', () => {
       'service_account_scope_insufficient',
     );
     expect(message).toBe(
-      'This agent runs as its own service account, and the role assigned to it does not allow "project.session.start". Ask an account admin to update that role.',
+      'This agent runs as its own service account, and the role assigned to it does not allow "workspace.session.start". Ask a workspace admin to update that role.',
     );
     // The launching user's own role is irrelevant once the SA is activated, so
     // the remedy must point at the SA's role, not the caller's.
@@ -40,7 +40,7 @@ describe('denialReasonMessage', () => {
 
   test('token_out_of_scope names the token binding', () => {
     expect(denialReasonMessage('project.write', 'token_out_of_scope')).toBe(
-      'This token is scoped to a single project and cannot be used for this request.',
+      'This key is bound to one workspace and cannot be used for this request.',
     );
   });
 
@@ -102,6 +102,9 @@ describe('buildDenialError uses the reason message', () => {
   test('a role denial still falls back to the humanized action phrase', async () => {
     const err = buildDenialError('project.write', 'project_role_insufficient');
     const text = await err.getResponse().text();
-    expect(text).toContain("don't have permission to change this project");
+    expect(text).toContain("don't have permission to change this workspace");
+    const body = JSON.parse(text) as { action: string; workspace_action: string };
+    expect(body.action).toBe('project.write');
+    expect(body.workspace_action).toBe('workspace.write');
   });
 });

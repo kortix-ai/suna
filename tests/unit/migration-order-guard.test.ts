@@ -3,12 +3,13 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/fixtures/repo';
 
 // On 2026-10-07 a migration older than dev's newest merged, and every Deploy Dev
 // stopped at migrate (checkOrder). pre-push runs scripts/check-migration-order.sh,
 // which refuses a branch whose new migration sorts at or before origin/dev's newest.
 
-const SCRIPT = join(import.meta.dirname, '..', '..', 'scripts', 'check-migration-order.sh');
+const SCRIPT = join(REPO_ROOT, 'scripts', 'check-migration-order.sh');
 const DIR = 'packages/db/migrations';
 
 function repo(devRef = 'refs/remotes/origin/dev') {
@@ -87,5 +88,33 @@ describe('migration-order guard', () => {
 
   it('allows a branch with no new migration', () => {
     expect(repo().push('HEAD').status).toBe(0);
+  });
+
+  it('--head checks a commit at merge time, after dev got a newer migration than the last push saw', () => {
+    // The gap the pre-push hook cannot see: the branch pushed while it sorted
+    // last, then dev moved, then `gh pr merge` ran no hook.
+    const { add, push, git } = repo();
+    const head = add('20261007100000000_branch.sql');
+    expect(push(head).status).toBe(0);
+    git('switch', '-q', 'dev');
+    git('update-ref', 'refs/remotes/origin/dev', add('20261007140000000_newer_on_dev.sql'));
+    const check = (rev: string) =>
+      spawnSync('sh', [SCRIPT, '--head', rev], {
+        cwd: git('rev-parse', '--show-toplevel').stdout.trim(),
+        encoding: 'utf8',
+        env: { ...process.env, MIGRATION_ORDER_NO_FETCH: '1' },
+      });
+    const r = check(head);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`${DIR}/20261007100000000_branch.sql`);
+    expect(check('dev').status).toBe(0);
+  });
+
+  it('--head and --pr need a value', () => {
+    const { git } = repo();
+    const dir = git('rev-parse', '--show-toplevel').stdout.trim();
+    for (const flag of ['--head', '--pr']) {
+      expect(spawnSync('sh', [SCRIPT, flag], { cwd: dir, encoding: 'utf8' }).status).toBe(2);
+    }
   });
 });

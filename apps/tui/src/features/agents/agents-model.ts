@@ -11,13 +11,14 @@
  * Pure: no React, no SDK client, `now` is a parameter.
  */
 
-import type {
-  PeerMessage,
-  ProjectSession,
-  SessionBoardState,
-  SessionTask,
-  WorkflowRunAgent,
-  WorkflowRunMetadata,
+import {
+  heldMessages as heldOldestFirst,
+  type PeerMessage,
+  type ProjectSession,
+  type SessionBoardState,
+  type SessionTask,
+  type WorkflowRunAgent,
+  type WorkflowRunMetadata,
 } from '@kortix/sdk';
 
 import { printable } from '../../lib/printable.ts';
@@ -210,9 +211,7 @@ export function heldMessages(
   sessionId: string,
 ): PeerMessage[] {
   if (!Array.isArray(messages)) return [];
-  return messages
-    .filter((message) => message?.status === 'held' && message.to_session_id === sessionId)
-    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  return heldOldestFirst(messages.filter((message) => message?.to_session_id === sessionId));
 }
 
 /** The tray's view: settled agents and ended runs of the last hour, live ones always. */

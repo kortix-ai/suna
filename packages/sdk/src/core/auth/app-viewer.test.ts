@@ -137,13 +137,13 @@ describe('a viewer token the API rejects', () => {
     }) as typeof fetch;
     createKortix({ backendUrl: 'https://api.example.test/v1', getToken: kortixAppViewerToken({ fetch: fetchImpl }), fetch: api });
 
-    const response = await authenticatedFetch('https://api.example.test/v1/projects');
+    const response = await authenticatedFetch('https://api.example.test/v1/workspaces');
 
     expect(response.status).toBe(200);
     expect(sent).toEqual(['Bearer kortix_oat_1', 'Bearer kortix_oat_2']);
     expect(calls).toEqual(['/_kortix/viewer', '/_kortix/viewer']);
     // The replacement is cached like any other: the next call asks the gate nothing.
-    await authenticatedFetch('https://api.example.test/v1/projects');
+    await authenticatedFetch('https://api.example.test/v1/workspaces');
     expect(calls).toHaveLength(2);
     expect(sent.at(-1)).toBe('Bearer kortix_oat_2');
   });

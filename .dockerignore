@@ -30,14 +30,17 @@
 # ── Test files ──
 tests
 **/tests
-!core/tests
-!core/tests/**
-!core/kortix-master/tests
-!core/kortix-master/tests/**
+# Docker matches a bare *.test.ts at the context root only. The **/ forms keep
+# colocated tests (src/lib/x.test.ts) out of every image: an image typecheck
+# that reads one fails on its imports of files the Dockerfile never copies.
 *.test.ts
 *.test.tsx
 *.spec.ts
 *.spec.tsx
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
 __tests__
 **/__tests__
 coverage
@@ -49,7 +52,6 @@ dist
 docs
 **/docs
 *.md
-!core/kortix-master/opencode/**/*.md
 
 # ── Node modules (exclude all EXCEPT standalone output) ──
 # The standalone output is self-contained and MUST keep its node_modules.

@@ -316,6 +316,7 @@ export interface GatewayModelGenerationConfig {
   maxOutputTokens?: number;
 }
 
+/** @deprecated Use `GatewayWorkspaceRoutingPolicy`. Kept permanently. */
 export interface GatewayProjectRoutingPolicy {
   defaultModel: string | null;
   visionModel: string | null;
@@ -325,6 +326,9 @@ export interface GatewayProjectRoutingPolicy {
    *  the server defaults it to `{}` when omitted. */
   modelGenerationConfig?: Record<string, GatewayModelGenerationConfig>;
 }
+
+/** The workspace name of {@link GatewayProjectRoutingPolicy}: the same type. */
+export type GatewayWorkspaceRoutingPolicy = GatewayProjectRoutingPolicy;
 
 export interface GatewayRoutingPolicyDocument {
   version: 1;
@@ -364,7 +368,7 @@ export async function getGatewayRoutingPolicy(
 ): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
     await backendApi.get<GatewayRoutingPolicyDocument>(
-      `/projects/${projectId}/gateway/routing-policy`,
+      `/workspaces/${projectId}/gateway/routing-policy`,
     ),
     'Gateway routing policy request failed',
   );
@@ -376,7 +380,7 @@ export async function setGatewayRoutingPolicy(
 ): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
     await backendApi.put<GatewayRoutingPolicyDocument>(
-      `/projects/${projectId}/gateway/routing-policy`,
+      `/workspaces/${projectId}/gateway/routing-policy`,
       policy,
     ),
     'Gateway routing policy request failed',
@@ -388,7 +392,7 @@ export async function resetGatewayRoutingPolicy(
 ): Promise<GatewayRoutingPolicyDocument> {
   return unwrap(
     await backendApi.delete<GatewayRoutingPolicyDocument>(
-      `/projects/${projectId}/gateway/routing-policy`,
+      `/workspaces/${projectId}/gateway/routing-policy`,
     ),
     'Gateway routing policy request failed',
   );
@@ -400,7 +404,7 @@ export async function previewGatewayRoute(
 ): Promise<GatewayRoutePreview> {
   return unwrap(
     await backendApi.post<GatewayRoutePreview>(
-      `/projects/${projectId}/gateway/routing-policy/preview`,
+      `/workspaces/${projectId}/gateway/routing-policy/preview`,
       input,
     ),
     'Gateway route preview failed',
@@ -432,7 +436,7 @@ export async function listGatewayLogs(
   const qs = q.toString();
   return unwrap(
     await backendApi.get<GatewayLogsResponse>(
-      `/projects/${projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
+      `/workspaces/${projectId}/gateway/logs${qs ? `?${qs}` : ''}`,
     ),
     'Gateway request failed',
   );
@@ -444,14 +448,14 @@ export async function getGatewayLogFacets(
 ): Promise<GatewayLogFacets> {
   const qs = opts?.hours ? `?hours=${opts.hours}` : '';
   return unwrap(
-    await backendApi.get<GatewayLogFacets>(`/projects/${projectId}/gateway/logs/facets${qs}`),
+    await backendApi.get<GatewayLogFacets>(`/workspaces/${projectId}/gateway/logs/facets${qs}`),
     'Gateway request failed',
   );
 }
 
 export async function getGatewayLog(projectId: string, logId: string): Promise<GatewayLogDetail> {
   return unwrap(
-    await backendApi.get<GatewayLogDetail>(`/projects/${projectId}/gateway/logs/${logId}`),
+    await backendApi.get<GatewayLogDetail>(`/workspaces/${projectId}/gateway/logs/${logId}`),
     'Gateway request failed',
   );
 }
@@ -462,7 +466,7 @@ export async function getGatewayOverview(
 ): Promise<GatewayOverview> {
   return unwrap(
     await backendApi.get<GatewayOverview>(
-      `/projects/${projectId}/gateway/overview${days ? `?days=${days}` : ''}`,
+      `/workspaces/${projectId}/gateway/overview${days ? `?days=${days}` : ''}`,
     ),
     'Gateway request failed',
   );
@@ -471,7 +475,7 @@ export async function getGatewayOverview(
 export async function getGatewaySeries(projectId: string, days?: number): Promise<GatewaySeries> {
   return unwrap(
     await backendApi.get<GatewaySeries>(
-      `/projects/${projectId}/gateway/series${days ? `?days=${days}` : ''}`,
+      `/workspaces/${projectId}/gateway/series${days ? `?days=${days}` : ''}`,
     ),
     'Gateway request failed',
   );
@@ -483,7 +487,7 @@ export async function getGatewayBreakdown(
 ): Promise<GatewayBreakdown> {
   return unwrap(
     await backendApi.get<GatewayBreakdown>(
-      `/projects/${projectId}/gateway/breakdown${days ? `?days=${days}` : ''}`,
+      `/workspaces/${projectId}/gateway/breakdown${days ? `?days=${days}` : ''}`,
     ),
     'Gateway request failed',
   );
@@ -495,7 +499,7 @@ export async function getGatewaySessions(
 ): Promise<GatewaySessions> {
   return unwrap(
     await backendApi.get<GatewaySessions>(
-      `/projects/${projectId}/gateway/sessions${days ? `?days=${days}` : ''}`,
+      `/workspaces/${projectId}/gateway/sessions${days ? `?days=${days}` : ''}`,
     ),
     'Gateway request failed',
   );
@@ -507,7 +511,7 @@ export async function getGatewayErrors(
 ): Promise<GatewayErrorsResponse> {
   return unwrap(
     await backendApi.get<GatewayErrorsResponse>(
-      `/projects/${projectId}/gateway/errors${days ? `?days=${days}` : ''}`,
+      `/workspaces/${projectId}/gateway/errors${days ? `?days=${days}` : ''}`,
     ),
     'Gateway request failed',
   );
@@ -515,7 +519,7 @@ export async function getGatewayErrors(
 
 export async function getGatewayBudgets(projectId: string): Promise<GatewayBudgetsResponse> {
   return unwrap(
-    await backendApi.get<GatewayBudgetsResponse>(`/projects/${projectId}/gateway/budgets`),
+    await backendApi.get<GatewayBudgetsResponse>(`/workspaces/${projectId}/gateway/budgets`),
     'Gateway request failed',
   );
 }
@@ -525,7 +529,7 @@ export async function setGatewayBudget(
   input: SetGatewayBudgetInput,
 ): Promise<{ ok: boolean }> {
   return unwrap(
-    await backendApi.put<{ ok: boolean }>(`/projects/${projectId}/gateway/budgets`, input),
+    await backendApi.put<{ ok: boolean }>(`/workspaces/${projectId}/gateway/budgets`, input),
     'Gateway request failed',
   );
 }
@@ -535,7 +539,7 @@ export async function deleteGatewayBudget(
   budgetId: string,
 ): Promise<{ ok: boolean }> {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/gateway/budgets/${budgetId}`),
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${projectId}/gateway/budgets/${budgetId}`),
     'Gateway request failed',
   );
 }
@@ -545,7 +549,7 @@ export async function getGatewayKeys(
 ): Promise<{ keys: GatewayKeyRow[]; gateway_url?: string | null }> {
   return unwrap(
     await backendApi.get<{ keys: GatewayKeyRow[]; gateway_url?: string | null }>(
-      `/projects/${projectId}/gateway/keys`,
+      `/workspaces/${projectId}/gateway/keys`,
     ),
     'Gateway request failed',
   );
@@ -556,14 +560,14 @@ export async function createGatewayKey(
   name: string,
 ): Promise<CreatedGatewayKey> {
   return unwrap(
-    await backendApi.post<CreatedGatewayKey>(`/projects/${projectId}/gateway/keys`, { name }),
+    await backendApi.post<CreatedGatewayKey>(`/workspaces/${projectId}/gateway/keys`, { name }),
     'Gateway request failed',
   );
 }
 
 export async function revokeGatewayKey(projectId: string, keyId: string): Promise<{ ok: boolean }> {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/gateway/keys/${keyId}`),
+    await backendApi.delete<{ ok: boolean }>(`/workspaces/${projectId}/gateway/keys/${keyId}`),
     'Gateway request failed',
   );
 }
@@ -600,7 +604,7 @@ export async function runGatewayPlayground(
   generationConfig?: Record<string, GatewayModelGenerationConfig>,
 ): Promise<GatewayPlaygroundResponse> {
   return unwrap(
-    await backendApi.post<GatewayPlaygroundResponse>(`/projects/${projectId}/gateway/playground`, {
+    await backendApi.post<GatewayPlaygroundResponse>(`/workspaces/${projectId}/gateway/playground`, {
       prompt,
       models,
       ...(system ? { system } : {}),
@@ -634,7 +638,7 @@ export async function verifyGatewayProvider(
 ): Promise<GatewayProviderVerifyResult> {
   return unwrap(
     await backendApi.post<GatewayProviderVerifyResult>(
-      `/projects/${projectId}/gateway/providers/${encodeURIComponent(providerId)}/verify`,
+      `/workspaces/${projectId}/gateway/providers/${encodeURIComponent(providerId)}/verify`,
       {},
     ),
     'Gateway provider verification failed',

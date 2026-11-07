@@ -305,7 +305,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
   }
 
   function startFireServer(opts: { triggersEndpoint?: 'down' } = {}): string {
-    const base = `/v1/projects/${PROJECT}/triggers`;
+    const base = `/v1/workspaces/${PROJECT}/triggers`;
     server = Bun.serve({
       port: 0,
       fetch: async (req) => {
@@ -349,7 +349,7 @@ describe('kortix triggers fire — reports the run outcome', () => {
         if (url.pathname === base && req.method === 'GET') {
           return Response.json({ triggers: state.triggers, triggers_paused: false, errors: [] });
         }
-        if (url.pathname === `/v1/projects/${PROJECT}/sessions/${SESSION_ID}`) {
+        if (url.pathname === `/v1/workspaces/${PROJECT}/sessions/${SESSION_ID}`) {
           if (req.method === 'GET') {
             if (!state.session) return Response.json({ error: 'Not found' }, { status: 404 });
             return Response.json(state.session);
@@ -534,10 +534,12 @@ describe('kortix triggers info — webhook signing', () => {
     const parsed = JSON.parse(result.stdout);
     expect(parsed.webhook_signing).toEqual({
       header: 'X-Kortix-Signature',
-      algorithm: 'HMAC-SHA256 over the exact raw request body',
+      algorithm: 'HMAC-SHA256 over `<X-Kortix-Timestamp>.<exact raw request body>`',
       sample_request: expect.stringContaining(`curl -X POST ${WEBHOOK_TRIGGER.webhook_url}`),
     });
     expect(parsed.webhook_signing.sample_request).toContain('X-Kortix-Signature: sha256=');
+    // KRTX-4098: the sample sends the timestamp it signed.
+    expect(parsed.webhook_signing.sample_request).toContain('X-Kortix-Timestamp: $TS');
   });
 
   test('a cron trigger carries no signing metadata', async () => {
@@ -750,7 +752,7 @@ describe('kortix triggers — events', () => {
       },
     });
     const cfg = writeConfig(`http://127.0.0.1:${server.port}`);
-    const line = 'Composio event triggers are off for this project. Turn them on: kortix projects features enable event_triggers';
+    const line = 'Composio event triggers are off for this workspace. Turn them on: kortix workspaces features enable event_triggers';
     for (const args of [
       ['triggers', 'events', '--apps'],
       ['triggers', 'events', '--connector', 'github'],
@@ -801,7 +803,7 @@ describe('kortix triggers — events', () => {
     expect(info.stdout).toContain('needs connection');
     expect(info.stdout).toContain('No connected account');
     expect(info.stdout).toContain('last_event');
-    expect(info.stdout).toContain('kortix connectors connect github --owner project');
+    expect(info.stdout).toContain('kortix connectors connect github --owner workspace');
   });
 
   test('ls shows connector/account and info shows connected as', async () => {
@@ -911,7 +913,7 @@ describe('kortix triggers — events', () => {
       expect(r.stdout).toMatch(/docs-search\s+1 event\s+connected/);
       expect(r.stdout).toContain('No connector yet, source mcp (2): linear (0), notes (1, add as notes-events)');
       expect(r.stdout).toContain(
-        'Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the project: kortix connectors authorize <slug>.',
+        'Add an MCP app (its read-only list tools become events too): kortix connectors add <slug> --provider mcp --url <mcp_url> --apply, then sign it in for the workspace: kortix connectors authorize <slug>.',
       );
       // Apps come from the MCP catalogue: no Composio add line.
       expect(r.stdout).not.toContain('--provider composio');
@@ -926,7 +928,7 @@ describe('kortix triggers — events', () => {
       const one = await runCli(['triggers', 'events', '--app', 'notes', '--event', 'gmail.message.received', '--project', PROJECT], cfg);
       expect(one.code).toBe(0);
       expect(one.stdout).toContain(`1. kortix connectors add notes-events --provider mcp --url ${NOTES_URL} --apply`);
-      expect(one.stdout).toContain('2. kortix connectors authorize notes-events  (a person signs in; the account is shared with the project)');
+      expect(one.stdout).toContain('2. kortix connectors authorize notes-events  (a person signs in; the account is shared with the workspace)');
       expect(one.stdout).toContain('3. kortix triggers add <slug> --type event --connector notes-events --event gmail.message.received --prompt "…" --apply');
       expect(one.stdout).not.toContain('--provider composio');
       const list = await runCli(['triggers', 'events', '--app', 'notes', '--project', PROJECT], cfg);
@@ -1089,7 +1091,7 @@ describe('eventNextStep on an error', () => {
     const { lines } = eventNextStep(
       errored({ source: 'composio', provider: 'composio', error: 'App event triggers are off for this project. Turn them on in Settings → Feature flags.' }),
     );
-    expect(lines.join('\n')).toContain('kortix projects features enable event_triggers');
+    expect(lines.join('\n')).toContain('kortix workspaces features enable event_triggers');
     expect(lines.join('\n')).not.toContain('--config');
   });
 
@@ -1105,7 +1107,7 @@ describe('eventNextStep on an error', () => {
  * output, and the HTTP request the CLI sent.
  */
 describe('kortix triggers — runs, payload fires, dry runs, replay', () => {
-  const base = `/v1/projects/${PROJECT}/triggers`;
+  const base = `/v1/workspaces/${PROJECT}/triggers`;
   const RUN_ID = '11111111-0000-4000-8000-000000000001';
   const NEW_RUN_ID = '11111111-0000-4000-8000-000000000002';
   const SESSION_ID = '22222222-0000-4000-8000-000000000001';
@@ -1327,7 +1329,7 @@ describe('kortix triggers — runs, payload fires, dry runs, replay', () => {
 });
 
 describe('kortix triggers add --apply — the webhook-secret 409 and the signing pointer', () => {
-  const base = `/v1/projects/${PROJECT}/triggers`;
+  const base = `/v1/workspaces/${PROJECT}/triggers`;
   const WEBHOOK_SECRET_409 = {
     error: 'Webhook secret is not available to the connector consumer',
     code: 'webhook_secret_delivery_mismatch',

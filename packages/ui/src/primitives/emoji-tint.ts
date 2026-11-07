@@ -4,7 +4,7 @@
  * In the picker (emoji-picker.tsx) a cell takes a pale fill and a stronger 1px
  * inset ring while it is hovered or keyboard-active. That treatment is what a
  * project's icon now wears AT REST everywhere it appears: the card tile in
- * /projects, the switcher row in the sidebar, and the picker's own trigger
+ * /workspaces, the switcher row in the sidebar, and the picker's own trigger
  * button in the create/edit modals.
  *
  * WHERE THE HUE COMES FROM. The picker rotates its six hues by GRID POSITION —
@@ -112,12 +112,12 @@ export function emojiHue(emoji: string): EmojiHue {
  * picker cell has no border at all, and matching it is the point.
  */
 const TINT: Record<EmojiHue, string> = {
-  red: 'border-0 bg-emoji-fill-red inset-ring-1 inset-ring-emoji-ring-red',
-  amber: 'border-0 bg-emoji-fill-amber inset-ring-1 inset-ring-emoji-ring-amber',
-  green: 'border-0 bg-emoji-fill-green inset-ring-1 inset-ring-emoji-ring-green',
-  teal: 'border-0 bg-emoji-fill-teal inset-ring-1 inset-ring-emoji-ring-teal',
-  blue: 'border-0 bg-emoji-fill-blue inset-ring-1 inset-ring-emoji-ring-blue',
-  violet: 'border-0 bg-emoji-fill-violet inset-ring-1 inset-ring-emoji-ring-violet',
+  red: 'border-0 bg-emoji-ring-red/15 dark:bg-emoji-ring-red/30',
+  amber: 'border-0 bg-emoji-ring-amber/15 dark:bg-emoji-ring-amber/30',
+  green: 'border-0 bg-emoji-ring-green/15 dark:bg-emoji-ring-green/30',
+  teal: 'border-0 bg-emoji-ring-teal/15 dark:bg-emoji-ring-teal/30',
+  blue: 'border-0 bg-emoji-ring-blue/15 dark:bg-emoji-ring-blue/30',
+  violet: 'border-0 bg-emoji-ring-violet/15 dark:bg-emoji-ring-violet/30',
 };
 
 /**
@@ -129,12 +129,12 @@ const TINT: Record<EmojiHue, string> = {
  * to a neutral wash. Restating the fill at the same modifier is what holds it.
  */
 const TINT_HOVER: Record<EmojiHue, string> = {
-  red: 'hover:bg-emoji-fill-red',
-  amber: 'hover:bg-emoji-fill-amber',
-  green: 'hover:bg-emoji-fill-green',
-  teal: 'hover:bg-emoji-fill-teal',
-  blue: 'hover:bg-emoji-fill-blue',
-  violet: 'hover:bg-emoji-fill-violet',
+  red: 'hover:bg-emoji-ring-red/15 dark:hover:bg-emoji-ring-red/30',
+  amber: 'hover:bg-emoji-ring-amber/15 dark:hover:bg-emoji-ring-amber/30',
+  green: 'hover:bg-emoji-ring-green/15 dark:hover:bg-emoji-ring-green/30',
+  teal: 'hover:bg-emoji-ring-teal/15 dark:hover:bg-emoji-ring-teal/30',
+  blue: 'hover:bg-emoji-ring-blue/15 dark:hover:bg-emoji-ring-blue/30',
+  violet: 'hover:bg-emoji-ring-violet/15 dark:hover:bg-emoji-ring-violet/30',
 };
 
 /** The picker's active-cell treatment, at rest: fill + 1px inset ring. */

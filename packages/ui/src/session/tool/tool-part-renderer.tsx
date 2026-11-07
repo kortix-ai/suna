@@ -23,7 +23,7 @@ import { type InlinePermissionReply, replyToInlinePermission } from './inline-pe
 import { errorToast } from '../../primitives/toast';
 import { cn } from '../../lib/utils';
 import { partError, partMetadata, partStreamingInput } from './shared/infrastructure-parts';
-import { kortixCardTool, parseKortixToolResult } from './tools/kortix-tool-card';
+import { kortixCardTool, multiAgentTool, parseKortixToolResult } from './tools/kortix-tool-card';
 import { isWorkflowTool, parseWorkflowRun } from './tools/workflow-run';
 import {
   PERMISSION_LABELS,
@@ -139,9 +139,14 @@ function ToolPartRendererImpl({
   }, [call]);
 
   const onActivate = useContext(ToolActivateContext);
+  // An agent's work (a sub-agent call, a workflow, an agent message, the team tools) opens in
+  // place, failed or not: never in the side panel. Its row and the agent dialog say it all.
+  const opensInPlace = isAgentTool(call.name);
   const boundActivate = useMemo(
-    () => (onActivate ? () => onActivate(call.call_id) : null),
-    [onActivate, call.call_id],
+    // `disableNavigation`: a call that is not this session's (a sub-agent's step) has no
+    // view in this session's panel; opening the panel on it showed an empty panel.
+    () => (onActivate && !opensInPlace && !disableNavigation ? () => onActivate(call.call_id) : null),
+    [onActivate, opensInPlace, disableNavigation, call.call_id],
   );
 
   const surface = useContext(ToolSurfaceContext);
@@ -299,6 +304,18 @@ function ToolPartRendererImpl({
         </ToolOutcomeContext.Provider>
       </ToolRunningContext.Provider>
     </ToolNavigationContext.Provider>
+  );
+}
+
+
+/** The tools whose rows are an agent's work: they open in place, never in the side panel. */
+export function isAgentTool(name: string): boolean {
+  return (
+    toolKind(name) === 'task' ||
+    isWorkflowTool(name) ||
+    multiAgentTool(name) !== undefined ||
+    name === 'agent_spawn' ||
+    name === 'kortix_agents'
   );
 }
 

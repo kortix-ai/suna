@@ -90,7 +90,7 @@ export interface GroupRow {
 
 /** `/accounts/<id>/iam` — the base every canonical RBAC route hangs off. */
 export function iamBase(accountId: string): string {
-  return `/accounts/${encodeURIComponent(accountId)}/iam`;
+  return `/workspaces/${encodeURIComponent(accountId)}/iam`;
 }
 
 export async function fetchRoles(client: ApiClient, accountId: string): Promise<IamRole[]> {
@@ -135,13 +135,13 @@ export async function resolveUserId(
 ): Promise<string | null> {
   if (UUID_RE.test(who)) return who;
   const members = await client.get<AccountMemberRow[]>(
-    `/accounts/${encodeURIComponent(accountId)}/members`,
+    `/workspaces/${encodeURIComponent(accountId)}/members`,
   );
   const needle = who.trim().toLowerCase();
   const hit = members.find((m) => (m.email ?? '').toLowerCase() === needle);
   if (!hit) {
     process.stderr.write(
-      `${status.err(`No member with email "${who}" in this account.`)} ` +
+      `${status.err(`No member with email "${who}" in this workspace.`)} ` +
         `Invite them first, or pass a user id.\n`,
     );
     return null;
@@ -164,7 +164,7 @@ export async function resolveGroupId(
   const hit = groups.find((g) => g.name.toLowerCase() === needle);
   if (!hit) {
     process.stderr.write(
-      `${status.err(`No group named "${ref}" in this account.`)} ` +
+      `${status.err(`No group named "${ref}" in this workspace.`)} ` +
         `List them with \`kortix groups ls\`, or pass a group id.\n`,
     );
     return null;
@@ -202,7 +202,7 @@ export async function principalLabels(
   const labels = new Map<string, string>();
   const [members, groups] = await Promise.all([
     client
-      .get<AccountMemberRow[]>(`/accounts/${encodeURIComponent(accountId)}/members`)
+      .get<AccountMemberRow[]>(`/workspaces/${encodeURIComponent(accountId)}/members`)
       .catch(() => [] as AccountMemberRow[]),
     client
       .get<{ groups: GroupRow[] }>(`${iamBase(accountId)}/groups`)

@@ -146,7 +146,7 @@ export function AuditScreen({
     void timeline.fetchNextPage().catch((error: unknown) => onToast(errorText(error), 'error'));
   }, [timeline.fetchNextPage, timeline.isFetchingNextPage, onToast]);
 
-  if (!projectId) return <text fg={theme.faint}>No project selected.</text>;
+  if (!projectId) return <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>;
   if (!sessionId) return <text fg={theme.faint}>Open a session first.</text>;
 
   const error = approvals.error ?? timeline.error;

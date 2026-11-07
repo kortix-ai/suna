@@ -9,17 +9,18 @@ import {
 import { ApiError, clientFromAuth } from '../api/client.ts';
 import { selectFromList } from '../tui-select.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, fail, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
+import { emitJson, fail, isNoWorkspaceError, noWorkspace, takeFlagBool, takeFlagValue, tokenRejectedLine } from '../command-helpers.ts';
+import { NO_WORKSPACE_LINE } from '../api/no-workspace.ts';
 import { C, help, pad, status } from '../style.ts';
 import type { AccountMembership, MeResponse } from '../api/types.ts';
 
 const HELP = help`Usage: kortix accounts <subcommand> [options]
 
-Switch the active account within the current host. One Kortix login can
-belong to many accounts (your personal account, a company account, …);
-exactly one is "active" — every account-scoped command (\`projects ls\`,
-\`ship\`, …) operates on it unless overridden. To switch instance instead,
-use \`kortix hosts use\`; to sign in, \`kortix hosts login\`.
+Read and switch the account behind a workspace: the record that holds its
+members, billing and plan. Each workspace has one account. To switch
+workspace, use \`kortix workspaces use\` — it switches the account too. This
+command stays for scripts. To switch instance instead, use
+\`kortix hosts use\`; to sign in, \`kortix hosts login\`.
 
 Inside a Kortix sandbox, plain commands use the delegated session identity,
 not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the
@@ -41,7 +42,7 @@ Global options:
 Examples:
   kortix accounts ls
   kortix accounts use 1a2b3c4d
-  kortix projects ls          # lists the active account's projects
+  kortix workspaces ls        # lists every workspace you belong to
 `;
 
 export async function runAccounts(argv: string[]): Promise<number> {
@@ -96,7 +97,7 @@ async function fetchAccounts(hostArg?: string): Promise<{ me: MeResponse } | num
   if (!auth) return 1;
   const client = clientFromAuth(auth);
   try {
-    const me = await client.get<MeResponse>('/accounts/me');
+    const me = await client.get<MeResponse>('/me');
     return { me };
   } catch (err) {
     return surface(err);
@@ -127,7 +128,7 @@ async function accountsLs(json = false, hostArg?: string): Promise<number> {
   }
 
   if (me.accounts.length === 0) {
-    process.stdout.write(`${C.dim}You don't belong to any accounts.${C.reset}\n`);
+    process.stdout.write(`${C.dim}${NO_WORKSPACE_LINE}${C.reset}\n`);
     return 0;
   }
 
@@ -160,10 +161,7 @@ async function accountsUse(arg?: string, hostArg?: string): Promise<number> {
   const result = await fetchAccounts(hostArg);
   if (typeof result === 'number') return result;
   const { me } = result;
-  if (me.accounts.length === 0) {
-    process.stderr.write(`${status.err('You don\'t belong to any accounts.')}\n`);
-    return 1;
-  }
+  if (me.accounts.length === 0) return noWorkspace();
 
   let target: AccountMembership | undefined;
   if (arg) {
@@ -193,7 +191,7 @@ async function accountsUse(arg?: string, hostArg?: string): Promise<number> {
     target = picked;
   }
 
-  // Capture whether switching will orphan the current default project.
+  // Capture whether switching will orphan the current default workspace.
   const prevDefault = hostArg ? getHost(hostArg)?.default_project : defaultProject();
   setActiveAccount({ id: target.account_id, slug: target.slug, name: target.name }, hostArg);
 
@@ -202,8 +200,8 @@ async function accountsUse(arg?: string, hostArg?: string): Promise<number> {
   );
   if (prevDefault && prevDefault.account_id !== target.account_id) {
     process.stdout.write(
-      `  ${C.dim}Cleared default project ${prevDefault.name ?? prevDefault.project_id} (it lived in another account).${C.reset}\n` +
-        `  ${C.dim}Set a new one with ${C.reset}${C.cyan}kortix projects use <id>${C.reset}\n`,
+      `  ${C.dim}Cleared the default workspace ${prevDefault.name ?? prevDefault.project_id} (it belongs to another account).${C.reset}\n` +
+        `  ${C.dim}Set a new one with ${C.reset}${C.cyan}kortix workspaces use <id>${C.reset}\n`,
     );
   }
   return 0;
@@ -222,7 +220,7 @@ function accountsCurrent(json = false, hostArg?: string): number {
     // Both forms fail together: stdout stays valid JSON (null), exit 1, diagnostic on stderr.
     if (json) emitJson(null);
     process.stderr.write(
-      `${status.err('No active account.')} Run ${C.cyan}kortix accounts use <slug>${C.reset}.\n`,
+      `${status.err('No active account.')} Run ${C.cyan}kortix workspaces use${C.reset}.\n`,
     );
     return 1;
   }
@@ -265,6 +263,7 @@ async function accountsInfo(arg?: string, json = false, hostArg?: string): Promi
 // ── error surface ──────────────────────────────────────────────────────────
 
 function surface(err: unknown): number {
+  if (isNoWorkspaceError(err)) return noWorkspace();
   if (err instanceof ApiError) {
     if (err.status === 401) {
       process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);

@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { View, type ViewStyle } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { useColorScheme } from 'nativewind';

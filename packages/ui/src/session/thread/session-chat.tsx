@@ -74,7 +74,10 @@ import {
   viewerAuthor,
 } from '../turn/message-author';
 import { stopRefusalMessage } from '../status/stop-refusal';
+import { createStopLatch, runStopSequence, stopLeftTurnRunning } from './stop-sequence';
 import { QueuedPromptList } from '../composer/queued-prompt-list';
+import { ComposerAutoFocusContext } from '../composer/composer-focus-context';
+import { ChatQueueLines } from '../composer/chat-queue-lines';
 import { runtimePermissionLocksComposer } from '../composer/send-blockers';
 import { SessionPrintHeader } from '../print/session-print-header';
 import { useSessionPrint } from '../print/use-session-print';
@@ -126,7 +129,6 @@ import {
 } from './first-prompt-handover';
 import { CompactModal } from '../header/compact-modal';
 import { SessionSiteHeader } from '../header/session-site-header';
-import { VoiceCallSlot } from '../voice/voice-call';
 import { claimFirstTurnRow } from '../composer/inbox-row-claims';
 import { type ModelDefaultControls } from '../models/model-selector';
 import { OptimisticTurn } from './optimistic-turn';
@@ -134,12 +136,13 @@ import { inboxHoldsLivePrompt } from '../composer/inbox-live-prompt';
 import { type TurnSpan } from '../outcomes/anchor-outcomes';
 import type { Outcome } from '../../internal/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '../outcomes/session-outcomes-provider';
-import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn } from './message-link';
+import { deleteMessageLinkParams, readMessageLinkParams, resolveMessageLinkTurn } from '../../internal/lib/navigation/message-link';
 
 /** How long a message link waits for the transcript's turns to mount before it jumps anyway. */
 const MESSAGE_LINK_MOUNT_WAIT_MS = 8_000;
 import { TurnOutcomes } from '../outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
+import { inheritedModelFor } from '../composer/chat-input/chat-input-summary';
 import {
   type QuestionAction,
   QuestionPrompt,
@@ -176,6 +179,7 @@ import type { DraftScope } from '../composer/draft/composer-draft';
 import { usePlanInChat } from './plan-surface';
 import { SessionStartingLoader } from '../status/session-starting-loader';
 import { ToolActivateContext } from '../tool/tool-renderers';
+import { AgentActivateContext } from '../tool/shared/infrastructure-contexts';
 import { ReadOnlySessionContext } from '../tool/shared/infrastructure-contexts';
 import {
   firstPromptAttachments,
@@ -217,7 +221,7 @@ import {
 } from '../composer/stores/session-composer-prefill-store';
 import { openTabAndNavigate, useTabStore } from '../../internal/stores/tab-store';
 import { projectSessionHref } from '../../internal/lib/navigation/session-href';
-import { type Command, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
+import { type Command, type PermissionRequest, type QuestionRequest, getRetryInfo } from '../../internal/session-types';
 import { useModelPricingLookup } from '../../internal/lib/model-pricing';
 import { isAbortError, latestPromptModel, SESSION_NOTICE, turnEndNotice } from '@kortix/sdk';
 import {
@@ -272,6 +276,8 @@ import {
   useSessionTurnOutcome,
   useSessionWorking,
   useSessionWorkingStore,
+  useAnswerSessionAsk,
+  useSessionNeedsYou,
 } from '@kortix/sdk/react';
 import { useStableCallback } from '../../internal/hooks/use-stable-callback';
 import { useReloadForensics } from '../status/reload-forensics';
@@ -402,6 +408,8 @@ interface SessionChatProps {
   headerLeadingAction?: React.ReactNode;
   /** Hide the session site header entirely */
   hideHeader?: boolean;
+  /** Paint no background: the host's surface shows through (an agent in the side panel's card). */
+  transparent?: boolean;
   /** Read-only mode — hides the chat input bar (used for sub-session modal viewer) */
   readOnly?: boolean;
   /** The composer's placeholder (a channel thread says "Reply…"). Default: the composer's own. */
@@ -425,7 +433,7 @@ interface SessionChatProps {
    * the not-found card — rather than its own "starting" loader.
    *
    * The project-session route crossfades the instant boot shell into this
-   * component over 300ms. It used to start that fade as soon as an OpenCode
+   * component over 300ms. It used to start that fade as soon as a runtime
    * session id existed, which is earlier than this component has anything to
    * show: the fade landed on the compact `SessionStartingLoader` below, which
    * then swapped to the transcript. Two handovers where the user asked for one.
@@ -481,6 +489,7 @@ export function SessionChat({
   boundAgentName,
   headerLeadingAction,
   hideHeader,
+  transparent = false,
   readOnly,
   composerPlaceholder,
   inputReplacement,
@@ -493,6 +502,7 @@ export function SessionChat({
   const tHardcodedUi = useTranslations('hardcodedUi');
   // A channel's thread panel: turns are message rows, full width, end-anchored.
   const rowsContext = useContext(TranscriptRowsContext);
+  const composerAutoFocus = useContext(ComposerAutoFocusContext);
   const transcriptRows = rowsContext !== null;
   const isMobile = useIsMobile();
   const isPhone = useIsPhone();
@@ -505,7 +515,7 @@ export function SessionChat({
   // only the visible tab may be treated as "active" — otherwise every busy
   // session would react to global shortcuts (ESC-to-stop, auto question
   // handling) at the same time. The standalone project session route
-  // (/projects/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
+  // (/workspaces/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
   // is never registered in this tab store; there it's the only chat mounted, so
   // it's always active.
   //
@@ -537,6 +547,20 @@ export function SessionChat({
     [sessionId, setSidePanelView, focusToolCall],
   );
   const toolActivate = readOnly || disableToolNavigation ? null : handleToolActivate;
+
+  // Clicking an agent (a sub-agent row, its finish notice, a workflow agent, the
+  // agents line) opens that agent's session in the side panel, beside the chat.
+  const focusAgent = useKortixComputerStore((s) => s.focusAgent);
+  const handleAgentActivate = useCallback(
+    (agent: { sessionId: string; title: string; handle: string; task?: string; failure?: string }) => {
+      const wasOpen = useKortixComputerStore.getState().isSidePanelOpen;
+      setSidePanelView(sessionId, 'actions');
+      focusAgent(agent);
+      if (!wasOpen) track('panel_opened', { source: 'chat_agent' });
+    },
+    [sessionId, setSidePanelView, focusAgent],
+  );
+  const agentActivate = readOnly || disableToolNavigation ? null : handleAgentActivate;
 
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -875,9 +899,8 @@ export function SessionChat({
    */
   const issueSessionCancel = useCallback((): Promise<AbortSettlement> => {
     // The stop's own receipt, taken before the cancel goes out and settled
-    // when it is acknowledged. `applyOptimisticAbort` writes an idle status
-    // frame, which invalidates the `/turn` query — and the read that comes
-    // back still shows the turn, because the cancel needs ~1.6s to reach the
+    // when it is acknowledged. A `/turn` read issued inside the abort round
+    // trip still shows the turn, because the cancel needs ~1.6s to reach the
     // daemon. Without this the composer flipped Send back to Stop ~120ms after
     // the click and stayed there for the whole abort. See `AbortReceipt`.
     useSessionWorkingStore.getState().noteAbortReceipt(projectSessionId ?? '', Date.now());
@@ -915,9 +938,9 @@ export function SessionChat({
     () =>
       channelRunnableAgents(
         projectSpaces?.find((space) => space.space_id === projectSessionRow?.space_id),
-        projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+        projectConfig?.default_agent,
       ),
-    [projectSpaces, projectSessionRow?.space_id, projectConfig?.default_agent, projectConfig?.open_code_default_agent],
+    [projectSpaces, projectSessionRow?.space_id, projectConfig?.default_agent],
   );
   const agents = useMemo(() => withChannelAgents(rosterAgents, threadChannelAgents), [rosterAgents, threadChannelAgents]);
   // Edit-and-rewind only on the viewer's own message with nobody else's after it.
@@ -936,7 +959,7 @@ export function SessionChat({
     config,
     sessionId,
     boundAgentName,
-    defaultAgentName: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    defaultAgentName: projectConfig?.default_agent,
     projectSession: projectSessionRow,
     lastPromptModel: latestPromptModel(messages),
   });
@@ -952,7 +975,7 @@ export function SessionChat({
   const composerAgent = resolveComposerAgent({
     agents,
     boundAgent: boundAgentName,
-    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    defaultAgent: projectConfig?.default_agent,
     selectedAgent: local.agent.current?.name ?? null,
   });
   const composerAgentName = composerAgent.selected;
@@ -1168,7 +1191,7 @@ export function SessionChat({
   // every other session of the same agent, and was skipped whenever the
   // account had a default model.
   // A NEW user bubble in the transcript is a queue row that just landed —
-  // OpenCode persisted a forwarded prompt. Re-read the inbox NOW so the row
+  // the runtime persisted a forwarded prompt. Re-read the inbox NOW so the row
   // leaves the strip in the same beat its bubble appears, instead of on the
   // next poll: the two were visible together for up to a poll interval.
   const newestUserBubbleId = lastUserMessage?.message_id;
@@ -1219,7 +1242,7 @@ export function SessionChat({
   const canStop = sessionState?.canStop ?? true;
 
   // The one transcript-derived gate that survives, and the only one that
-  // carries proof: during a provider 429 OpenCode stamps `info.error` with
+  // carries proof: during a provider 429 the runtime stamps `info.error` with
   // `data.isRetryable === true` and keeps writing the SAME assistant message,
   // while the status frame this tab holds can read non-busy for all of it. The
   // projection cannot substitute — a frame stamped after the last `/turn` read
@@ -1262,17 +1285,28 @@ export function SessionChat({
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
   // UI doesn't flicker between agentic steps. NOT a 2s debounce.
-  const [isBusy, setIsBusy] = useState(effectiveBusy);
+  const [debouncedBusy, setDebouncedBusy] = useState(effectiveBusy);
   const busyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (effectiveBusy) {
       clearTimeout(busyTimerRef.current);
-      setIsBusy(true);
+      setDebouncedBusy(true);
     } else {
-      busyTimerRef.current = setTimeout(() => setIsBusy(false), 300);
+      busyTimerRef.current = setTimeout(() => setDebouncedBusy(false), 300);
     }
     return () => clearTimeout(busyTimerRef.current);
   }, [effectiveBusy]);
+  // A Stop the server refused, or never confirmed (`timed-out`, `failed`).
+  // The abort receipt can hold `effectiveBusy` false for up to
+  // OPTIMISTIC_ABORT_MAX_MS while the turn runs, and Stop and Esc×3 are gated
+  // on `isBusy`. So the Stop control stays while the server still reports an
+  // open turn (`serverOpenTurnToken`), and clears when it reports none.
+  const [stopUnconfirmed, setStopUnconfirmed] = useState(false);
+  const serverHoldsTurn = working.serverOpenTurnToken !== null;
+  useEffect(() => {
+    if (stopUnconfirmed && !serverHoldsTurn) setStopUnconfirmed(false);
+  }, [stopUnconfirmed, serverHoldsTurn]);
+  const isBusy = debouncedBusy || (stopUnconfirmed && serverHoldsTurn);
 
   // Read by `handleSend` for its ANCHORING decision only (a send into a running
   // turn must not yank the viewport). Refs, not the values: `handleSend` is a stable callback
@@ -1557,7 +1591,7 @@ export function SessionChat({
         undoLabel: tHardcodedUi.raw('i18nComplete.texta737e54996f8'),
         // The SAME `clientMessageId`, so an undo re-creates ONE row and a
             // double-click cannot create two. A FRESH wire id, because
-            // OpenCode orders by id and the original one was minted before the
+            // the runtime orders by id and the original one was minted before the
             // turn that has been writing higher ids since. The parts and
             // overrides are the ORIGINALS, straight from the delete's own
             // response — see `createQueueUndoAction`.
@@ -1794,12 +1828,37 @@ export function SessionChat({
   // ---- Pending permissions & questions ----
   const allPermissions = useRuntimePendingStore((s) => s.permissions);
   const allQuestions = useRuntimePendingStore((s) => s.questions);
-  const pendingPermissions = useMemo(
+  const livePermissions = useMemo(
     () =>
       sessionState?.permissions ??
       Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
     [sessionState?.permissions, allPermissions, sessionId],
   );
+  // Asks that parked: nobody answered live, the agent went on, and the ask
+  // waits server-side (Review, "Needs you"). They render with the same cards
+  // and are decided through the asks API, which resumes the session that
+  // asked (a hidden worker's asks show here too). Live asks keep their cards.
+  const parkedAsks = useSessionNeedsYou(projectId ?? '', projectSessionId ?? '', {
+    enabled: Boolean(projectId && projectSessionId),
+  }).asks;
+  const parkedAskIdByRequest = useMemo(
+    () => new Map(parkedAsks.filter((ask) => ask.kind !== 'approval').map((ask) => [ask.request_id, ask.id])),
+    [parkedAsks],
+  );
+  const pendingPermissions = useMemo(() => {
+    const live = new Set(livePermissions.map((p) => p.id));
+    const parked = parkedAsks
+      .filter((ask) => ask.kind === 'permission' && ask.permission && !live.has(ask.request_id))
+      .map((ask): PermissionRequest => ({
+        id: ask.request_id,
+        sessionID: sessionId,
+        permission: ask.permission!.permission,
+        patterns: ask.permission!.patterns,
+        metadata: ask.permission!.args && typeof ask.permission!.args === 'object' ? (ask.permission!.args as Record<string, unknown>) : {},
+        always: ['*'],
+      }));
+    return parked.length ? [...livePermissions, ...parked] : livePermissions;
+  }, [livePermissions, parkedAsks, sessionId]);
   const suppressedQuestionIdsRef = useRef<Map<string, number>>(new Map());
   const suppressQuestionFor = useCallback((requestId: string, ms = 15000) => {
     suppressedQuestionIdsRef.current.set(requestId, Date.now() + ms);
@@ -1813,7 +1872,7 @@ export function SessionChat({
     }
     return true;
   }, []);
-  const pendingQuestions = useMemo(
+  const liveQuestions = useMemo(
     () =>
       (
         sessionState?.questions ??
@@ -1821,10 +1880,17 @@ export function SessionChat({
       ).filter((q) => !isQuestionSuppressed(q.id)),
     [sessionState?.questions, allQuestions, sessionId, isQuestionSuppressed],
   );
+  const pendingQuestions = useMemo(() => {
+    const live = new Set(liveQuestions.map((q) => q.id));
+    const parked = parkedAsks
+      .filter((ask) => ask.kind === 'question' && ask.question && !live.has(ask.request_id) && !isQuestionSuppressed(ask.request_id))
+      .map((ask): QuestionRequest => ({ id: ask.request_id, sessionID: sessionId, questions: ask.question!.questions as QuestionRequest['questions'] }));
+    return parked.length ? [...liveQuestions, ...parked] : liveQuestions;
+  }, [liveQuestions, parkedAsks, sessionId, isQuestionSuppressed]);
   /**
    * The runtime is parked on an answer only the user can give.
    *
-   * Both lists are already session-scoped above. Either one means OpenCode has
+   * Both lists are already session-scoped above. Either one means the runtime has
    * stopped inside the turn and is blocked on a reply — the `question` tool, or
    * a tool asking for permission — so the turn row stays `active` and every
    * observer keeps reporting `working` with nothing to bound it but the reader.
@@ -1836,7 +1902,8 @@ export function SessionChat({
    * come back the instant the agent is running again, not a third of a second
    * later.
    */
-  const awaitingUserInput = pendingQuestions.length > 0 || pendingPermissions.length > 0;
+  // Live asks only: a parked ask no longer holds the turn.
+  const awaitingUserInput = liveQuestions.length > 0 || livePermissions.length > 0;
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
   // A new question docks over the bottom of the transcript, and answering it
@@ -2440,8 +2507,16 @@ export function SessionChat({
   const removePermission = useRuntimePendingStore((s) => s.removePermission);
   const removeQuestion = useRuntimePendingStore((s) => s.removeQuestion);
 
+  const answerParkedAsk = useAnswerSessionAsk(projectId ?? '');
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: 'once' | 'always' | 'reject') => {
+      // A parked ask: the call no longer waits, so the decision goes through
+      // the asks API (it reaches the agent as a message).
+      const parkedAskId = livePermissions.some((p) => p.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        await answerParkedAsk.mutateAsync({ askId: parkedAskId, answer: { reply } });
+        return;
+      }
       // No optimistic remove: only drop the card once the runtime accepted the
       // reply — a failed reply must stay answerable. Rethrow so callers
       // (prompt buttons) reset their busy state and surface the error.
@@ -2452,7 +2527,7 @@ export function SessionChat({
         removePermission(requestId);
       }
     },
-    [sessionState, removePermission],
+    [sessionState, removePermission, livePermissions, parkedAskIdByRequest, answerParkedAsk],
   );
 
   const handleQuestionReply = useCallback(
@@ -2466,6 +2541,12 @@ export function SessionChat({
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
+      const parkedAskId = liveQuestions.some((q) => q.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        // Parked: the answer reaches the agent as a message that quotes the question.
+        answerParkedAsk.mutate({ askId: parkedAskId, answer: { answers } });
+        return;
+      }
 
       // Save the answers in the optimistic cache keyed by the question call's
       // block id. This cache survives updates that may overwrite the call
@@ -2495,7 +2576,7 @@ export function SessionChat({
         // ignore — SSE "question.replied" event will also remove it
       }
     },
-    [sessionState, removeQuestion, suppressQuestionFor],
+    [sessionState, removeQuestion, suppressQuestionFor, liveQuestions, parkedAskIdByRequest, answerParkedAsk],
   );
 
   const handleQuestionReject = useCallback(
@@ -2503,6 +2584,12 @@ export function SessionChat({
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
       removeQuestion(requestId);
+      const parkedAskId = liveQuestions.some((q) => q.id === requestId) ? undefined : parkedAskIdByRequest.get(requestId);
+      if (parkedAskId) {
+        // Dismissing a parked question closes it; nothing runs, so nothing is stopped.
+        answerParkedAsk.mutate({ askId: parkedAskId, answer: { dismiss: true } });
+        return;
+      }
       try {
         if (sessionState) await sessionState.rejectQuestion(requestId);
         else await rejectQuestion(requestId);
@@ -2627,7 +2714,7 @@ export function SessionChat({
   // ============================================================================
   // Billing: DISABLED — billing is handled server-side by the LLM gateway
   // (it deducts credits per LLM call).
-  // This frontend useEffect was causing double-billing once opencode.jsonc
+  // This frontend useEffect was causing double-billing once the runtime config
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
 
@@ -2983,13 +3070,13 @@ export function SessionChat({
         // actual response body still arrives via the sync store.
         //
         // Don't send part IDs. `ascendingId` encodes the HIGH bits of the id
-        // clock where opencode encodes the LOW 48 (see the warning on it in the
+        // clock where the wire id encodes the LOW 48 (see the warning on it in the
         // SDK), so a client id of that shape sorts before EVERY server id: the
         // server's "has this prompt already been answered?" ordering check reads
         // a stale assistant reply as the answer and the turn never runs.
         //
         // The `messageID` is a different matter and IS sent — by the SDK, not
-        // from here. `promptOpenCodeMessage` mints it in opencode's own wire
+        // from here. `promptRuntimeMessage` mints it in the Kortix message id
         // format and places it above everything already in this session's
         // transcript, which is what makes it safe; without one, two identical
         // prompts inside 60s hash to a single proxy delivery and the second is
@@ -3036,7 +3123,7 @@ export function SessionChat({
 
         // THE ONE SEND PATH: the server-side prompt inbox.
         //
-        // This used to POST straight into the sandbox's OpenCode server, and
+        // This used to POST straight into the sandbox's runtime server, and
         // anything the user typed while the agent was busy went into a browser
         // queue instead — which meant a closed tab, a second device, or a crash
         // lost it silently, and two tabs on one session disagreed about what was
@@ -3046,7 +3133,7 @@ export function SessionChat({
         // guess whether a turn is in flight.
         //
         // The WIRE id is minted here, by the SDK, and never by the control plane:
-        // OpenCode resolves "has this prompt already been answered?" by id ORDER,
+        // The runtime resolves "has this prompt already been answered?" by id ORDER,
         // and only this process holds the transcript to place one against. It is
         // `messageID` above. `clientMessageId` is only the inbox idempotency key.
         // The prompt is out of this tab's hands the moment the row lands, so the
@@ -3068,9 +3155,9 @@ export function SessionChat({
               // the two, and the server orders racing sends by THIS.
               clientSentAtMs: sentAtMs,
               overrides: {
-                // Pass the session's directory so opencode resolves project-scoped
-                // agents (.opencode/agent/*.md under the project) and applies them
-                // when the user picked a project agent from the picker.
+                // Pass the session's directory so the runtime resolves project-scoped
+                // agents and applies them when the user picked a project agent
+                // from the picker.
                 ...(session?.directory ? { directory: session.directory } : {}),
                 ...(selectedAgent ? { agent: selectedAgent } : {}),
                 ...(selectedModel ? { model: formatPromptModel(selectedModel) } : {}),
@@ -3104,7 +3191,7 @@ export function SessionChat({
             // A kept send is settled below: its painted message stays.
             if (keepsPainted) return { ok: false, cause, error: null } as const;
             // Ask the INBOX, not the runtime. This prompt's home is a durable
-            // control-plane row; OpenCode's transcript cannot see it until the
+            // control-plane row; the runtime's transcript cannot see it until the
             // admission gate delivers it, so a rehydrate always reports it
             // missing and the recovery used to delete the bubble on that answer —
             // while the row was already running. Reported from a live self-host:
@@ -3200,7 +3287,7 @@ export function SessionChat({
   // "Changes" side panel's "Ask agent to open a change request" button) can
   // drive the agent through the SAME robust path the input uses — optimistic
   // message, SSE wiring, error propagation — instead of copying a prompt to the
-  // clipboard. Keyed by the OpenCode chat session id (`sessionId`).
+  // clipboard. Keyed by the runtime chat session id (`sessionId`).
   const registerSender = useChatSendStore((s) => s.registerSender);
   const unregisterSender = useChatSendStore((s) => s.unregisterSender);
   useEffect(() => {
@@ -3321,83 +3408,56 @@ export function SessionChat({
     [sessionState, promptInbox.prompts, promptInbox.remove, handleSend, tHardcodedUi],
   );
 
+  // One Stop = one inbox hold + one abort. `runStopSequence` (stop-sequence.ts)
+  // owns the order: with `sessionState` the SDK's `cancel()` holds the inbox
+  // and aborts; without it the host holds, then aborts. `stopLatch` is the
+  // synchronous double-Stop guard: a click, then Esc×3, then a click sends one
+  // stop, not three. It stays closed until the abort settles.
+  const [stopLatch] = useState(createStopLatch);
   const handleStop = useCallback(async () => {
-    // Guard against rapid clicks — ignore if an abort is already in flight
-    if (abortSession.isPending) {
-      console.log(`[handleStop] Ignoring - abort already in flight for session ${sessionId}`);
-      return;
-    }
-    // Stop means stop: a held command would otherwise start a new turn the
-    // moment this one ends.
-    setHeldCommands([]);
-    console.log(`[handleStop] Stopping session ${sessionId}`);
-    // Optimistically mark the session idle + patch an abort error onto the
-    // last assistant message (so the turn reads as stopped instantly — no
-    // waiting for the SSE session.error round-trip, and no error row in the
-    // gap: `TurnErrorDisplay` renders nothing for an abort). Also clear the
-    // busy debounce timer to bypass the 2s delay.
-    applyOptimisticAbort(sessionId);
-    clearTimeout(busyTimerRef.current);
-    setIsBusy(false);
-    // Stop means the send this tab was still waiting on is over too.
-    clearSendReceipt();
-
-    // Stopping means stop doing things, and that includes the queue. Without
-    // this the interrupt is followed a beat later by exactly the message the
-    // user was trying to get ahead of.
-    //
-    // ONE hold, on the server, because the queue is not in this tab any more.
-    // Pausing a browser drain left every OTHER tab's view of the queue running
-    // and never reached the server at all.
-    //
-    // AWAITED, and BEFORE the abort. A prompt is now forwarded to OpenCode the
-    // moment it is admitted, so at stop time the session's queue can hold rows
-    // that OpenCode already has. The abort drops OpenCode's in-memory queue,
-    // and the reaper then sees those messages unanswered and hands them back —
-    // due now — unless the hold has already marked them stop-paused. Ordering
-    // the two calls makes "the hold precedes the abort" a fact instead of an
-    // argument about reaper cadence. The user sees no delay: the optimistic
-    // paint above already ran, so only the network abort moves one hop later.
-    //
-    // BOUNDED, because the abort is now sequenced behind a network call and
-    // `holdSessionPrompts` carries no client timeout of its own. A stalled
-    // socket can hang for minutes, and every one of those is the agent still
-    // running, still calling tools and still spending tokens under a UI that
-    // says it stopped. Past the bound the abort goes out anyway and the hold
-    // finishes on its own — the ordering is a preference, the abort is not.
-    let refusal = null as string | null;
-    await Promise.race([
-      promptInbox.hold(true).catch((error) => {
-        // The server refused the stop: this viewer did not start the run and
-        // does not own or manage the session. The abort would be refused for
-        // the same reason, so none goes out; the run goes on.
-        refusal = stopRefusalMessage(error);
-        if (refusal) return;
-        // Caught, never rethrown: a failed hold must not also cost the user
-        // their abort. The cost of that path is the one this ordering removes —
-        // a stopped prompt can still come back a reaper pass later.
-        //
-        // SURFACED, not swallowed. A failed hold means the queue is NOT paused,
-        // so a prompt the user pressed Stop to get ahead of can still be
-        // delivered a reaper pass later — silently. The user has to know the
-        // stop did not also pause the queue, and that pressing Stop again (or
-        // Resume/Send-now) is how they recover.
-        console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
-        errorToast(tHardcodedUi.raw('i18nComplete.text57a524b52549'), {
-          description: tHardcodedUi.raw('i18nComplete.text45eca4a01ff2'),
-        });
-      }),
-      new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
-    ]);
-
-    if (refusal) {
-      errorToast(refusal);
-      setIsBusy(isBusyRef.current);
-      return;
-    }
-    issueSessionCancel();
+    if (stopLatch.inFlight) return;
+    await stopLatch.run(async () => {
+      // Stop means stop: a held command would otherwise start a new turn the
+      // moment this one ends.
+      setHeldCommands([]);
+      // The composer reads idle at once; `stopUnconfirmed` brings Stop back
+      // if the server never confirms the abort.
+      clearTimeout(busyTimerRef.current);
+      setDebouncedBusy(false);
+      setStopUnconfirmed(false);
+      // Why the hold goes out before the abort, and why it is bounded: a
+      // prompt admitted mid-turn is already on the wire, the abort drops the
+      // runtime's queue, and the reaper redelivers it unless the hold marked
+      // it stop-paused first. A stalled hold must not delay the abort by more
+      // than STOP_HOLD_DEADLINE_MS.
+      const outcome = await runStopSequence({
+        ...(sessionState ? { sdkCancel: issueSessionCancel } : {}),
+        holdInbox: () => promptInbox.hold(true),
+        fallbackCancel: issueSessionCancel,
+        paintOptimisticAbort: () => {
+          // "Interrupted" on the newest assistant message, before the
+          // round trip. The SDK path paints it inside `cancel()`.
+          applyOptimisticAbort(sessionId);
+          clearSendReceipt();
+        },
+        refusalOf: stopRefusalMessage,
+        onHoldFailed: (error) => {
+          // The queue is NOT paused: a prompt the user stopped to get ahead
+          // of can still go out. Say so; Stop again or Resume recovers.
+          console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
+          errorToast(tHardcodedUi.raw('i18nComplete.text57a524b52549'), {
+            description: tHardcodedUi.raw('i18nComplete.text45eca4a01ff2'),
+          });
+        },
+        holdDeadlineMs: STOP_HOLD_DEADLINE_MS,
+      });
+      if (outcome.kind === 'refused') errorToast(outcome.message);
+      // A refused, failed or timed-out stop leaves the turn running: keep
+      // Stop and Esc×3 on screen while the server still holds the turn.
+      if (stopLeftTurnRunning(outcome)) setStopUnconfirmed(true);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, abortSession, issueSessionCancel, promptInbox.hold]);
+  }, [sessionId, sessionState, stopLatch, issueSessionCancel, promptInbox.hold]);
 
   // Release the Stop hold for the WHOLE queue at once. `hold(false)` un-pauses
   // every held row on the server (shared across tabs), and the hook clears the
@@ -3608,7 +3668,7 @@ export function SessionChat({
       const handleCommandError = (err?: unknown) => {
         // A command that was DELIVERED and then lost its connection is not a
         // failed command. `/command` blocks for the whole turn, so both proxy
-        // hops routinely stop waiting while opencode is still working — and the
+        // hops routinely stop waiting while the runtime is still working — and the
         // request was already on the wire when they did. Clearing the session
         // to `idle` and painting an error here told the user their message had
         // not sent while the agent was actively answering it, and invited the
@@ -3792,15 +3852,15 @@ export function SessionChat({
     [local.model],
   );
 
-  // Only the ACCOUNT default is settable from the picker now — it is the one
-  // scope with no screen of its own. The project default lives in the provider
-  // modal's Models tab and the agent default on the agent's detail page, both
-  // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
+  // The picker's star sets the WORKSPACE default — the project default, since
+  // a workspace is one account and its project (Workspaces, PR 1). An
+  // account-wide default set earlier still applies as the fallback. See
+  // ModelDefaultControls.
   const chatModelDefaultControls: ModelDefaultControls = useMemo(
     () => ({
-      accountDefault: local.model.defaults.accountDefault ?? null,
+      accountDefault: local.model.defaults.projectDefault ?? null,
       onSetAccountDefault: (m) => {
-        void local.model.defaults.setAccountDefault(m);
+        void local.model.defaults.setProjectDefault(m);
       },
     }),
     [local.model.defaults],
@@ -3827,7 +3887,7 @@ export function SessionChat({
   /**
    * Where this session's unsent draft is persisted.
    *
-   * `projectSessionId` — the KORTIX session id — not the OpenCode `sessionId`:
+   * `projectSessionId` — the KORTIX session id — not the runtime `sessionId`:
    * it is the id the boot shell also keys on, so a draft typed in the instant
    * shell is still there after the crossfade into this component, and it is
    * the same id every other per-session handoff store uses
@@ -3948,13 +4008,51 @@ export function SessionChat({
     [projectId, projectSessionId, agentsLineCompact],
   );
 
+  // A space's thread lists only the queue's live messages in its card: failed
+  // ones and a Stop hold read as calm lines (`ChatQueueLines`), reports wait behind Resume.
+  const calmRest = useMemo(
+    () => [...queueRows.rows, ...heldCommandRows(heldCommands)].filter((row) => row.state !== 'failed' && !row.synthetic),
+    [queueRows.rows, heldCommands],
+  );
   // The queued messages and the one Resume while a Stop holds the queue: their
-  // own full-width card above the composer stack, not inside the strip. A live
-  // voice call is the card above them (nothing unless a call is open).
+  // own full-width card above the composer stack, not inside the strip.
   const chatAboveSlot = useMemo(
     () => (
       <>
-        <VoiceCallSlot sessionId={projectSessionId} />
+        {rowsContext?.messagesOnly ? (
+          // A space's thread: calm lines ("Not sent · Retry", "Stopped · Resume"), the card only for queued messages.
+          <ChatQueueLines
+            rows={queueRows.rows}
+            heldCount={queueRows.heldCount}
+            resumePending={resumePending}
+            onResume={() => void handleResumeQueue()}
+            onRetry={handleRetryQueuedMessage}
+          >
+            {calmRest.length > 0 ? (
+          <QueuedPromptList
+            rows={calmRest}
+            heldCount={0}
+            resumePending={resumePending}
+            onResume={() => void handleResumeQueue()}
+            onEdit={(id) => {
+              queueEdit.takeBack(id);
+            }}
+            onRemove={(id) => {
+              if (id.startsWith(HELD_COMMAND_ROW_PREFIX)) {
+                const heldId = id.slice(HELD_COMMAND_ROW_PREFIX.length);
+                setHeldCommands((held) => held.filter((entry) => entry.id !== heldId));
+                return;
+              }
+              void handleRemoveQueuedMessage(id);
+            }}
+            onRetry={handleRetryQueuedMessage}
+            onStopAndSend={effectiveBusy && canStop ? handleStopAndSendQueuedMessage : undefined}
+            editing={queueEdit.editing}
+            onCancelEdit={queueEdit.cancel}
+          />
+            ) : null}
+          </ChatQueueLines>
+        ) : (
         <QueuedPromptList
           rows={heldCommands.length > 0 ? [...queueRows.rows, ...heldCommandRows(heldCommands)] : queueRows.rows}
           heldCount={queueRows.heldCount}
@@ -3976,10 +4074,12 @@ export function SessionChat({
           editing={queueEdit.editing}
           onCancelEdit={queueEdit.cancel}
         />
+        )}
       </>
     ),
     [
-      projectSessionId,
+      rowsContext?.messagesOnly,
+      calmRest,
       heldCommands,
       queueEdit.editing,
       queueEdit.cancel,
@@ -4096,7 +4196,7 @@ export function SessionChat({
   // `SessionComposerReadiness`.
   const runtimePhase = useRuntimePhase();
   // Covers the one gap `unreachable` can't: a sandbox proxy that keeps
-  // answering with a 503 (OpenCode wedged mid-boot) resets the probe's
+  // answering with a 503 (a runtime wedged mid-boot) resets the probe's
   // failure counter every tick, so `unreachable` never fires no matter how
   // long it stays wedged. See `useRuntimeBootStalled`.
   const runtimeStalled = useRuntimeBootStalled();
@@ -4208,7 +4308,7 @@ export function SessionChat({
       // already resolved client-side, so there is no server data to fetch.
       // Under Next.js `router.replace` would run a COLD RSC FETCH on every
       // open/close of this dialog, on the hottest route in the app (see
-      // app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:1309); Next
+      // app/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx:1309); Next
       // observes `history.replaceState`, which `useUiShallowNavigate` writes
       // when the host router observes history and routes through it otherwise.
       shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });
@@ -4308,7 +4408,7 @@ export function SessionChat({
     // screen, staleness is repaired in the background instead.
     if (transcriptFreshness === 'error' && !hasMessages) {
       return (
-        <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+        <div className={cn('relative flex h-full flex-col', !transparent && 'bg-background')} data-testid="session-chat">
           <div
             className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
             data-testid="session-transcript-error"
@@ -4324,7 +4424,7 @@ export function SessionChat({
       );
     }
     return (
-      <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
+      <div className={cn('relative flex h-full flex-col', !transparent && 'bg-background')} data-testid="session-chat">
         {/* `projectId`/`sessionId` are what arm the loader's restart offer
             (`canRestart`). Without them a session wedged in this state spun
             forever with no way out but a page reload. */}
@@ -4339,6 +4439,7 @@ export function SessionChat({
   return (
     // A read-only view (the sub-session modal) offers no fix inside a tool card.
     <ReadOnlySessionContext.Provider value={!!readOnly}>
+    <AgentActivateContext.Provider value={agentActivate}>
     <SessionPromptContext.Provider value={readOnly ? null : sendSessionPrompt}>
     {/* Outcomes' cache coherence and the shareable `?cr=` link both hinge on
         ONE `ProjectFilesProvider`: `useChangeRequests` inside
@@ -4356,7 +4457,7 @@ export function SessionChat({
           // Transparent in the welcome state so the root-level full-bleed wallpaper
           // (portaled into SessionLayout) reads through; solid once real content
           // takes over. Same base color either way, so non-welcome is unchanged.
-          shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+          shouldShowWelcomeOverlay || transparent ? 'bg-transparent' : 'bg-background',
         )}
         data-testid="session-chat"
       >
@@ -4394,7 +4495,7 @@ export function SessionChat({
           />
         )}
 
-        <ModelSwitchHistory history={projectSessionRow?.metadata?.model_switches} current={projectSessionRow?.metadata?.opencode_model} />
+        <ModelSwitchHistory history={projectSessionRow?.metadata?.model_switches} current={projectSessionRow?.metadata?.model} />
 
         {/* Context modal — triple-click the session title area to open */}
         <SessionContextModal
@@ -4475,7 +4576,7 @@ export function SessionChat({
                   // teleport: ours restores the reader's position, then the
                   // native one nudges it again.
                   'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] [overflow-anchor:none]',
-                  shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+                  shouldShowWelcomeOverlay || transparent ? 'bg-transparent' : 'bg-background',
                 )}
                 onMouseUp={handleChatMouseUp}
                 onMouseDown={handleChatMouseDown}
@@ -5020,7 +5121,8 @@ export function SessionChat({
                 // `undefined`, not `true`, once released: the composer's own
                 // viewport rule (>= 640px) still decides, so this never forces
                 // focus onto a phone keyboard.
-                autoFocus={deferComposerFocus ? false : undefined}
+                // A thread a space's chat opened by itself does not take the focus (`ComposerAutoFocusContext`).
+                autoFocus={deferComposerFocus || !composerAutoFocus ? false : undefined}
                 onSend={async (text, files, mentions, attachments, placement) => {
                   if (await queueEdit.save(text)) return;
                   // Enter while a turn runs steers it (D9.1); Cmd/Ctrl+Enter is Queue List.
@@ -5080,6 +5182,7 @@ export function SessionChat({
                 selectedModel={local.model.currentKey ?? null}
                 onModelChange={handleModelChange}
                 modelDefaultControls={chatModelDefaultControls}
+                inheritedModel={inheritedModelFor(local.model, composerAgentName)}
                 variants={local.model.variant.list}
                 selectedVariant={local.model.variant.current ?? null}
                 onVariantChange={handleVariantChange}
@@ -5103,7 +5206,7 @@ export function SessionChat({
                 // Same dead-prompt guard as questions: only lock while the agent is
                 // actually paused on the decision (isBusy), so a stale card can't
                 // swallow the composer on an idle session.
-                lockForApproval={runtimePermissionLocksComposer(pendingPermissions.length, isBusy)}
+                lockForApproval={runtimePermissionLocksComposer(livePermissions.length, isBusy)}
                 onCustomAnswer={handleCustomAnswer}
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
                 questionActive={!!renderedQuestion || approvalDocked}
@@ -5143,6 +5246,7 @@ export function SessionChat({
       </ComposerDropZone>
     </ProjectFilesProvider>
     </SessionPromptContext.Provider>
+    </AgentActivateContext.Provider>
     </ReadOnlySessionContext.Provider>
   );
 }

@@ -29,7 +29,7 @@ describe('repository_disconnected in the CLI', () => {
     const out = stripAnsi(lines.join(''));
     expect(code).toBe(1);
     expect(out).toContain(message);
-    expect(out).toContain('kortix projects info');
+    expect(out).toContain('kortix workspaces info');
     expect(out).not.toContain('HTTP 409');
   });
 

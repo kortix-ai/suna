@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import {
   type ManifestImportReaderSync,
   type ResolvedManifest,
@@ -32,6 +32,13 @@ function walk(root: string, dir: string, out: string[]): void {
       out.push(toRepoPath(root, abs));
     }
   }
+}
+
+/** Every file under `root`, repo-relative, without `.git` and `node_modules`. */
+export function repoPaths(root: string): string[] {
+  const out: string[] = [];
+  walk(root, root, out);
+  return out.filter((path) => !SKIPPED_DIRS.has(basename(path)));
 }
 
 export function localImportReader(root: string): ManifestImportReaderSync {

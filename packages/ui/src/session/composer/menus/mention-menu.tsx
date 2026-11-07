@@ -11,6 +11,9 @@ import { useFileSearch } from '../hooks/use-file-search';
 import type { MentionSection, MenuRow } from './menu-items';
 import { buildMentionSections } from './menu-items';
 import { MenuCard, MenuRow as MenuRowButton, MenuSectionHeading } from './menu-shell';
+import { AgentMark } from '../../../internal/components/agent-mark';
+import { UserAvatar } from '../../../primitives/user-avatar';
+import { buildSpaceMentionSections, type SpaceMentionSource } from './space-mentions';
 
 /**
  * Purely presentational — every prop is already the final thing to render.
@@ -24,10 +27,13 @@ export function MentionMenu({
   loading,
   onSelect,
   onHover,
+  space = false,
 }: {
   sections: MentionSection[];
   selectedIndex: number;
   loading: boolean;
+  /** A space's menu: each row is a face, a name and a quiet second line. */
+  space?: boolean;
   onSelect: (row: MenuRow) => void;
   /** Hovering a row makes it the selection — see `MenuRow`'s own comment for
    *  why that is `pointermove` and not `pointerenter`. Keeps this menu's one
@@ -43,7 +49,7 @@ export function MentionMenu({
     return (
       <MenuCard className="w-[min(26rem,calc(100vw-1.5rem))] rounded-lg">
         <p role="status" className="text-muted-foreground px-3 py-2.5 text-sm">
-          {t('noMatches')}
+          {space ? t('noOneMatches') : t('noMatches')}
         </p>
       </MenuCard>
     );
@@ -76,12 +82,28 @@ export function MentionMenu({
                 onSelect={() => onSelect(row)}
                 onHover={() => onHover?.(row)}
               >
-                <RowIcon row={row} />
-                <span className="min-w-0 truncate text-sm">{rowTitle(row)}</span>
-                {row.description && (
-                  <span className="text-muted-foreground ml-auto shrink-0 truncate text-xs">
-                    {row.description}
-                  </span>
+                {space && row.avatar ? (
+                  <>
+                    <RowAvatar avatar={row.avatar} />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm">{row.label}</span>
+                      {row.description ? (
+                        <span className="text-muted-foreground truncate text-xs" title={row.description}>
+                          {row.description}
+                        </span>
+                      ) : null}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <RowIcon row={row} />
+                    <span className="min-w-0 truncate text-sm">{rowTitle(row)}</span>
+                    {row.description && (
+                      <span className="text-muted-foreground ml-auto shrink-0 truncate text-xs">
+                        {row.description}
+                      </span>
+                    )}
+                  </>
                 )}
               </MenuRowButton>
             ))}
@@ -104,6 +126,17 @@ function rowTitle(row: MenuRow): string {
   return clean.split('/').pop() || clean;
 }
 
+/** A space row's face: the shared avatars (a person round, an agent its mark), one 22px slot. */
+function RowAvatar({ avatar }: { avatar: NonNullable<MenuRow['avatar']> }) {
+  return avatar.kind === 'agent' ? (
+    <AgentMark slug={avatar.key} size={14} tile={22} />
+  ) : (
+    <span className="flex shrink-0 [&_[data-slot=avatar]]:rounded-full">
+      <UserAvatar email="" name={avatar.name} avatarUrl={avatar.url} colorKey={avatar.key} size="sm" />
+    </span>
+  );
+}
+
 function RowIcon({ row }: { row: MenuRow }) {
   if (row.kind === 'agent') {
     return (
@@ -123,6 +156,8 @@ export interface MentionMenuHostProps {
   agents: Agent[];
   sessions: Session[];
   currentSessionId: string | undefined;
+  /** Inside a space: People and Agents only. */
+  spaceMentions?: SpaceMentionSource | null;
   /** Fixed at the moment the menu opened (`Date.now()`, computed in
    *  `mention-controller.ts`'s `onStart` — never inside this component's
    *  render, and never refreshed on every keystroke) so this prop's identity
@@ -150,6 +185,7 @@ export function MentionMenuHost({
   agents,
   sessions,
   currentSessionId,
+  spaceMentions = null,
   now,
   selectedIndex,
   onSelect,
@@ -157,10 +193,11 @@ export function MentionMenuHost({
   onRowsChange,
 }: MentionMenuHostProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const { files, isLoading } = useFileSearch(query, true);
+  // A space's menu lists no files.
+  const { files, isLoading } = useFileSearch(query, !spaceMentions);
   const sections = useMemo(
     () =>
-      buildMentionSections({
+      spaceMentions ? buildSpaceMentionSections(spaceMentions, query) : buildMentionSections({
         agents,
         sessions,
         files,
@@ -169,7 +206,7 @@ export function MentionMenuHost({
         now,
         tI18nComplete,
       }),
-    [agents, sessions, files, query, currentSessionId, now, tI18nComplete],
+    [agents, sessions, files, query, currentSessionId, now, tI18nComplete, spaceMentions],
   );
   const rows = useMemo(() => sections.flatMap((s) => s.items), [sections]);
 
@@ -181,9 +218,10 @@ export function MentionMenuHost({
     <MentionMenu
       sections={sections}
       selectedIndex={selectedIndex}
-      loading={isLoading}
+      loading={spaceMentions ? false : isLoading}
       onSelect={onSelect}
       onHover={onHover}
+      space={!!spaceMentions}
     />
   );
 }

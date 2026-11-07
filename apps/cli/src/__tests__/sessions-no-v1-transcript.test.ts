@@ -25,7 +25,6 @@ const row = {
   name: 'Synthetic session',
   agent_name: 'default',
   status: 'stopped',
-  opencode_session_id: 'ses_synthetic_root',
   runtime_session_id: 'ses_synthetic_root',
   created_at: '2026-10-28T00:00:00Z',
   updated_at: '2026-10-28T00:00:00Z',
@@ -67,13 +66,13 @@ async function run(args: string[], log: () => Response) {
     fetch(request) {
       const path = new URL(request.url).pathname;
       paths.push(path);
-      if (path === '/v1/accounts/me') return Response.json({ accounts: [] });
-      if (path === `/v1/projects/${projectId}/sessions`) return Response.json([row]);
-      if (path === `/v1/projects/${projectId}/sessions/${sessionId}`) return Response.json(row);
-      if (path === `/v1/projects/${projectId}/sessions/${sessionId}/log`) return log();
+      if (path === '/v1/me') return Response.json({ accounts: [] });
+      if (path === `/v1/workspaces/${projectId}/sessions`) return Response.json([row]);
+      if (path === `/v1/workspaces/${projectId}/sessions/${sessionId}`) return Response.json(row);
+      if (path === `/v1/workspaces/${projectId}/sessions/${sessionId}/log`) return log();
       // A session-bound token cannot read the project detail.
-      if (path === `/v1/projects/${projectId}/detail`) return Response.json({ error: 'Forbidden' }, { status: 403 });
-      if (path === `/v1/projects/${projectId}/sessions/${sessionId}/transcript`) {
+      if (path === `/v1/workspaces/${projectId}/detail`) return Response.json({ error: 'Forbidden' }, { status: 403 });
+      if (path === `/v1/workspaces/${projectId}/sessions/${sessionId}/transcript`) {
         return Response.json({ available: true, reason: null, source: 'mirror', complete: true, message_count: 0, messages: [] });
       }
       return Response.json({ error: 'Not found' }, { status: 404 });

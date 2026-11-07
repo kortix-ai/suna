@@ -46,7 +46,7 @@ function startServer(): string {
     fetch: async (req) => {
       const url = new URL(req.url);
       calls.push(url.pathname + url.search);
-      const ex = `/v1/connectors/projects/${PROJECT}`;
+      const ex = `/v1/connectors/workspaces/${PROJECT}`;
 
       // A category listing answers a different shape: `toolkits` + `total` +
       // `hasMore` (apps/api/src/connectors/composio.ts, the category branch).
@@ -96,7 +96,7 @@ function startServer(): string {
           hasMore: false,
         });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT}`) {
         return Response.json({ project_id: PROJECT, account_id: 'account_1', name: 'Toolkits' });
       }
       return new Response('not found', { status: 404 });
@@ -142,7 +142,7 @@ describe('connectors apps → Composio toolkits', () => {
     const config = writeConfig(startServer());
     const res = await runCli(['connectors', 'apps', 'outlook', '--project', PROJECT], config);
     expect(res.code).toBe(0);
-    expect(calls.some((c) => c.startsWith(`/v1/connectors/projects/${PROJECT}/connect/toolkits?`))).toBe(true);
+    expect(calls.some((c) => c.startsWith(`/v1/connectors/workspaces/${PROJECT}/connect/toolkits?`))).toBe(true);
     expect(calls.some((c) => c.includes('/pipedream/apps'))).toBe(false);
     expect(res.stdout).toContain('outlook');
     expect(res.stdout).not.toContain('microsoft_outlook');

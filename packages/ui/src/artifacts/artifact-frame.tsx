@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useLayoutEffect, useState } from 'react';
 
 import { claimFrame, ensureFrame } from '../apps/app-preview-pool';
 import { ARTIFACT_FRAME_ALLOW, ARTIFACT_IFRAME_SANDBOX } from './frame-policy';
@@ -30,14 +30,9 @@ export const ArtifactFrame = forwardRef<
     title: string;
     className?: string;
     preview?: boolean;
-    onFrame?: (frame: HTMLIFrameElement | null) => void;
   }
->(function ArtifactFrame({ frameKey, src, title, className, preview, onFrame }, ref) {
+>(function ArtifactFrame({ frameKey, src, title, className, preview }, ref) {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
-  const latestOnFrame = useRef(onFrame);
-  useLayoutEffect(() => {
-    latestOnFrame.current = onFrame;
-  });
   const interactive = !preview;
   const frameClass = `${className ?? ''} ${preview ? PREVIEW_CANVAS : ARTIFACT_CANVAS}`;
 
@@ -54,10 +49,20 @@ export const ArtifactFrame = forwardRef<
       Array.from(slot.querySelectorAll('iframe')).find(
         (candidate) => candidate.dataset.frameKey === frameKey,
       ) ?? null;
-    if (interactive) claimed?.focus({ preventScroll: true });
-    latestOnFrame.current?.(claimed);
+    // A page that reloads under the person (a new version saved by someone else) keeps the
+    // keyboard where it was: it takes it only if the page it replaces had it, and never from a
+    // field the person types in.
+    const page = artifactOf(frameKey);
+    const previous = releasedFocus.get(page);
+    releasedFocus.delete(page);
+    const reload = !!previous && Date.now() - previous.at < RELOAD_MS;
+    if (interactive && (!reload || previous.focused) && !typingElsewhere())
+      claimed?.focus({ preventScroll: true });
     return () => {
-      latestOnFrame.current?.(null);
+      releasedFocus.set(page, {
+        at: Date.now(),
+        focused: !!claimed && claimed.ownerDocument.activeElement === claimed,
+      });
       release();
     };
     // The URL is read once per key: a refetch must not reload the page.
@@ -76,6 +81,22 @@ export const ArtifactFrame = forwardRef<
   );
 });
 
+/** A frame claimed this soon after the same artifact's frame left is a reload in place. */
+const RELOAD_MS = 15_000;
+// One browser tab: whether each artifact's last released frame had the keyboard.
+const releasedFocus = new Map<string, { at: number; focused: boolean }>();
+/** `artifact:<id>` of a frame key (`artifact:<id>:<version>`). */
+const artifactOf = (frameKey: string) => frameKey.split(':').slice(0, 2).join(':');
+
+/** The keyboard is in a text field or an editor of this document. */
+function typingElsewhere(): boolean {
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  return (
+    active instanceof HTMLElement &&
+    (active.isContentEditable || active.matches('input, textarea, select'))
+  );
+}
+
 /** Create (and park) the pooled frame for an artifact page; a no-op when it exists. */
 export function ensureArtifactFrame(key: string, src: string, title: string): void {
   ensureFrame(key, src, {
@@ -83,6 +104,7 @@ export function ensureArtifactFrame(key: string, src: string, title: string): vo
     sandbox: ARTIFACT_IFRAME_SANDBOX,
     allow: ARTIFACT_FRAME_ALLOW,
     testid: 'artifact-frame',
-    referrerPolicy: 'no-referrer',
+    // The page sees this app's origin, never the path with project ids.
+    referrerPolicy: 'strict-origin',
   });
 }

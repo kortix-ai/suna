@@ -124,11 +124,15 @@ export function chargeTts(model: string, text: string) {
 }
 
 /** One search or page read at a provider's per-request price. */
+// Through the Kortix router (a box) a search is billed at its prices (apps/api config.ts proxy_*): a Firecrawl scrape
+// is $0.01 there, twelve times the vendor's own credit, and a call's cost read it at the vendor's.
+const ROUTER: Record<string, number> = { tavily: 0.005, serper: 0.001, firecrawl: 0.01, 'firecrawl-scrape': 0.01 }
 export function chargeSearch(provider: 'tavily' | 'serper' | 'firecrawl' | 'tavily-extract' | 'firecrawl-scrape') {
-  charge('search', price(provider).call ?? 0, provider.includes('-') ? '1 page' : '1 search', provider)
+  const routed = !!(process.env.KORTIX_API_URL?.trim() && process.env.KORTIX_TOKEN?.trim()) && provider in ROUTER
+  charge('search', routed ? ROUTER[provider]! : price(provider).call ?? 0, provider.includes('-') ? '1 page' : '1 search', provider)
 }
 
-/** The agent's reply, as its session reports it (kortixd/pi and OpenCode assistant messages: cost in USD, tokens). */
+/** The agent's reply, as its session reports it (a kortixd assistant message: cost in USD, tokens). */
 export function chargeAgent(info: { cost?: number; modelID?: string; providerID?: string; tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } } }) {
   const t = info.tokens
   if (!t && !info.cost) return

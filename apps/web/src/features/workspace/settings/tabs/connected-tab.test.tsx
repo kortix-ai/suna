@@ -75,7 +75,7 @@ describe('ConnectedAccountsTabView', () => {
 
   test('the row states which scope it writes to', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
-    expect(out).toMatch(/for this account/i);
+    expect(out).toMatch(/for this workspace/i);
   });
 
   /**
@@ -87,11 +87,11 @@ describe('ConnectedAccountsTabView', () => {
    * model selector. This pins the deletion: neither the row nor
    * any of its copy may come back to this pane.
    */
-  test('carries no ChatGPT row and no workspace-scoped copy', () => {
+  test('carries no ChatGPT row and no project-scoped copy', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
     expect(rowLabels(out)).not.toContain('ChatGPT');
     expect(out).not.toMatch(/ChatGPT/i);
-    expect(out).not.toMatch(/for this workspace/i);
+    expect(out).not.toMatch(/for this project/i);
   });
 
   /**
@@ -103,7 +103,7 @@ describe('ConnectedAccountsTabView', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount={false} />);
     expect(rowLabels(out)).toEqual([]);
     expect(out).not.toContain('data-slot="settings-row-group"');
-    expect(out).toMatch(/Only an account owner or admin can connect GitHub/);
+    expect(out).toMatch(/Only a workspace owner or admin can connect GitHub/);
   });
 
   test('the row carries exactly one action button', () => {
@@ -161,7 +161,7 @@ describe('ConnectedAccountsTabView', () => {
         <ConnectedAccountsTabView canManageAccount githubStatus="loading" />,
       );
       expect(out).not.toMatch(/Install the GitHub App/);
-      expect(out).toMatch(/Checking this account/);
+      expect(out).toMatch(/Checking this workspace/);
     });
   });
 

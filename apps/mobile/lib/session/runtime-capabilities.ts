@@ -1,7 +1,6 @@
 /**
- * What the session's runtime serves (E1). A pi session has no rewind, compact,
- * or slash commands; an OpenCode session has all of them. The runtime lists
- * its features in `/kortix/health` `capabilities`, which
+ * What the session's runtime serves (E1): pi, for one, serves no rewind. The
+ * runtime lists its features in `/kortix/health` `capabilities`, which
  * `useSandboxReachability` (the pill's 10 s poller, the one health probe of
  * the open session) records here. A screen hides the control of a feature the
  * runtime does not serve (`useRuntimeSupports`).
