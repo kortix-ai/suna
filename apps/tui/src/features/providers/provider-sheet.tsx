@@ -145,7 +145,7 @@ export function ProviderSheet({
       push('Sessions stop using it right away. You can sign in again at any time.', theme.faint);
     } else {
       push('Remove key?', theme.danger);
-      push(`${entry.label}${entry.models.length ? ` and its ${entry.models.length} models` : ''} stop working in this project.`, theme.faint);
+      push(`${entry.label}${entry.models.length ? ` and its ${entry.models.length} models` : ''} stop working in this workspace.`, theme.faint);
     }
     hint = 'y confirm · Esc cancel';
   } else if (flow.kind === 'access') {
@@ -154,11 +154,11 @@ export function ProviderSheet({
       ...(flow.purpose === 'create'
         ? [{ id: 'private' as const, label: 'Only you', detail: 'Only you can select it in a session.' }]
         : []),
-      { id: 'project', label: 'Everyone in this project', detail: 'Any project member can select it in a session.' },
+      { id: 'project', label: 'Everyone in this workspace', detail: 'Any workspace member can select it in a session.' },
       {
         id: 'members',
         label: 'Specific members',
-        detail: 'Only selected project members and the connection owner can use it.',
+        detail: 'Only selected workspace members and the connection owner can use it.',
       },
     ];
     choices.forEach((choice, index) => {
@@ -167,12 +167,12 @@ export function ProviderSheet({
       push(`${on ? '●' : '○'} ${index + 1} ${choice.label}`, locked ? theme.faint : on ? theme.fg : theme.fg);
       push(`    ${choice.detail}`, theme.faint);
     });
-    if (!canShare) push('Sharing with others requires permission to manage project secrets.', theme.faint);
+    if (!canShare) push('Sharing with others requires permission to manage workspace secrets.', theme.faint);
     hint = `1-${choices.length} or j/k choose · Enter ${flow.choice === 'members' ? 'pick members' : flow.purpose === 'manage' ? 'save' : 'continue'} · Esc cancel`;
   } else if (flow.kind === 'members') {
     const others = data.members.filter((member) => member.userId !== data.viewerId);
     push('Specific members');
-    if (others.length === 0) push('No other members in this project.', theme.faint);
+    if (others.length === 0) push('No other members in this workspace.', theme.faint);
     others.forEach((member, index) => {
       const on = flow.selected.includes(member.userId);
       const pointer = index === flow.cursor ? '›' : ' ';
@@ -188,8 +188,8 @@ export function ProviderSheet({
       push(sheet === 'pooled-claude' ? 'Claude accounts' : 'ChatGPT accounts');
       push(
         sheet === 'pooled-claude'
-          ? 'Use your Claude Pro or Max plan for Claude models in this project. New accounts are private to you until you share them.'
-          : 'Use your ChatGPT Plus or Pro plan in this project. New accounts are private to you until you share them.',
+          ? 'Use your Claude Pro or Max plan for Claude models in this workspace. New accounts are private to you until you share them.'
+          : 'Use your ChatGPT Plus or Pro plan in this workspace. New accounts are private to you until you share them.',
         theme.faint,
       );
     } else {
@@ -257,7 +257,7 @@ export function ProviderSheet({
   } else {
     if (keyConnected) push(layoutRow(`API key  ${entry.envVars.join(' · ')}`, '••••••••••••', inner));
     else if (data.canWrite) push(`API key  ${entry.envVars.join(' · ')}`, theme.faint);
-    else push('Ask an owner of this project to add a key.', theme.faint);
+    else push('Ask an owner of this workspace to add a key.', theme.faint);
     if (entry.helpUrl) push(`Get a key from ${entry.label}: ${entry.helpUrl}`, theme.faint);
     push('Stored encrypted. Kortix never shows it again.', theme.faint);
     hint = data.canWrite ? (keyConnected ? 'K replace · d remove key · Esc back' : 'K add key · Esc back') : 'Esc back';
@@ -275,7 +275,7 @@ export function ProviderSheet({
     );
     push(
       isDefault && enabled
-        ? '  Choose a project default from another provider before disabling this provider.'
+        ? '  Choose a workspace default from another provider before disabling this provider.'
         : '  Disable inference without removing credentials.',
       theme.faint,
     );

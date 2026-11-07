@@ -159,15 +159,22 @@ and the body types of `@kortix/api-contract/runtime-relay`. An adapter decides
 WHEN a turn begins or ends and what its identity is; the shared module owns the
 route, the body, the credential, the retries and the dead-token breaker.
 
+Every route is the canonical workspace name (`/v1/workspaces/:id/…`). The
+fetch goes through `lib/kortix-api/workspace-routes.ts`: an API older than the
+rename answers the unknown-route 404, and the daemon sends the same request
+once more on the legacy name (`/v1/projects/:id/…`) and remembers that API
+base. A daemon released before the rename calls the legacy names, which the
+API serves permanently.
+
 | Module | Callback |
 | --- | --- |
-| `shared/turn-relay.ts` | `POST /projects/:id/turn-stream` (initial-turn claim, `turn_accepted`, `turn_abandoned`, `runtime_session` pin, `turn_begin`, `end`, `steer_read`, memory-guard end), `/turn-question`, `/turn-permission` |
+| `shared/turn-relay.ts` | `POST /workspaces/:id/turn-stream` (initial-turn claim, `turn_accepted`, `turn_abandoned`, `runtime_session` pin, `turn_begin`, `end`, `steer_read`, memory-guard end), `/turn-question`, `/turn-permission` |
 | `shared/projection-relay.ts` | `POST /platform/runtime-projection`; the adapter registers its state reader |
-| `shared/audit-relay.ts` | `POST /projects/:id/sessions/:id/audit/events`: sanitize, batch, spool; batches carry `source: 'runtime'` and the harness id. pi feeds it every frame it publishes (`PiRuntimeHooks.onFrame`), so pi sessions have a tool audit trail |
+| `shared/audit-relay.ts` | `POST /workspaces/:id/sessions/:id/audit/events`: sanitize, batch, spool; batches carry `source: 'runtime'` and the harness id. pi feeds it every frame it publishes (`PiRuntimeHooks.onFrame`), so pi sessions have a tool audit trail |
 | `shared/boot-timeline-relay.ts` | `POST /platform/boot-timeline` |
-| `shared/session-log-journal.ts` | `POST /projects/:id/sessions/:id/log/journal`: the session log (`kortix.session/2`, `@kortix/api-contract/session-log`), and `GET`/`PUT …/log/blobs/:sha256`: the bytes of each attachment it names (P2.13), see below |
-| `shared/session-log-restore.ts` | `GET /projects/:id/sessions/:id/attachments/:id`: the full text of each text a restore answer (P6.1) stores by reference (`sessionLogFromRestore`, `apiTextReader`), see "Restore" below |
-| `shared/session-log-boot.ts` | `GET /projects/:id/sessions/:id/log/manifest` and `POST …/log/restore`: the boot reconcile (P6.4), see "When the boot restores" below |
+| `shared/session-log-journal.ts` | `POST /workspaces/:id/sessions/:id/log/journal`: the session log (`kortix.session/2`, `@kortix/api-contract/session-log`), and `GET`/`PUT …/log/blobs/:sha256`: the bytes of each attachment it names (P2.13), see below |
+| `shared/session-log-restore.ts` | `GET /workspaces/:id/sessions/:id/attachments/:id`: the full text of each text a restore answer (P6.1) stores by reference (`sessionLogFromRestore`, `apiTextReader`), see "Restore" below |
+| `shared/session-log-boot.ts` | `GET /workspaces/:id/sessions/:id/log/manifest` and `POST …/log/restore`: the boot reconcile (P6.4), see "When the boot restores" below |
 
 The API accepts only these names. Since 0.15.0 it no longer reads the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`): the runtime floor
@@ -1291,7 +1298,7 @@ rules; a `deny` from either wins, so delegating never unlocks a denied call.
 **Separate sessions** (`session: "separate"`, the default; no project
 setting, the model picks per call). The
 call is a real child session (`harness/pi/cloud-subagent.ts`):
-`POST /v1/projects/:id/sessions` with the
+`POST /v1/workspaces/:id/sessions` with the
 box token, which links the child to this session and authorizes every later
 read of it. A named agent runs as itself; `general`, `explore` and an inline
 spec run as the parent's resolved agent (never the `default` sentinel; the
@@ -1643,7 +1650,7 @@ process.
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
 | `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `show` (an entry whose `path` is an image file of at most 32 MiB gains `sha256`, hashed streamed and concurrently within 2 s; a read error or the deadline leaves it out), `image_gen` (any image model the project can use). Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. `image_gen` takes 1–4 `prompts` and posts one request per prompt, all at once (`n: 1` each), to the LLM gateway (`KORTIX_LLM_BASE_URL` + `/images/{generations,edits}`, `KORTIX_TOKEN`); the platform picks the image model (`auto` or the one asked for) and resolves its credential. Each image is written under `<checkout>/output/images/<prompt slug>-<time>.{png,jpg,webp}` (the bytes decide the type; never overwriting). The output is `{ action, model, provider, images: [{ path, size, prompt, sha256 }], failed?: [{ prompt, error }] }` (`sha256`: hex digest of the saved bytes); when every prompt fails the call throws the first failure (`… [<code>]`). Code caps it at 10 images per turn and 50 per session, counted before the first await (a batch that would pass a cap is refused whole). The turn is `context.turnId` (pi: the turn's message id, `ToolContext.turnId` in `services/tools/tool.ts`), so direct, parallel, script, retried and subagent calls of one turn share the 10; a call that names no turn keys the turn cap on its abort signal; a reference image must be a real png/jpeg/webp inside the checkout. |
 | `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
-| `services/tools/platform/<name>.ts` | The My Kortix platform tools, loaded only when `kortix_tools` names them (the platform's My Kortix config does). `kortix_agents`, `kortix_sessions`, `kortix_schedules`, `kortix_connectors`, `kortix_people`, `kortix_access`, `kortix_usage` run the in-box `kortix` CLI (`platform.ts`). `kortix_schedules` keeps a long task alive: `follow_up` is a loop on this session (`kortix loop`), `wake_on` wakes this session on a merged change request, a webhook, a connector event or an App event (`kortix triggers add --on …`), `events` lists a connector's event types, `list` shows this session's follow-ups and wake-ons plus the project schedules, and `remove` routes `reminder.<hex>` to `kortix loops rm` and `trigger.<hex>` to `kortix triggers rm`. `kortix_memory` (`list`, `view`, `save`, `delete`) calls `/v1/projects/:id/memory/me/agent/mykortix[/pages/:name]` with `KORTIX_TOKEN`: one page per slug name in the session person's `/Users/<person>/Memory/mykortix`, refused in plain words when Files is off. `memory` was a Kortix tool until 2026-10-30; a project's ejected `tools/memory.ts` loads as a project tool. |
+| `services/tools/platform/<name>.ts` | The My Kortix platform tools, loaded only when `kortix_tools` names them (the platform's My Kortix config does). `kortix_agents`, `kortix_sessions`, `kortix_schedules`, `kortix_connectors`, `kortix_people`, `kortix_access`, `kortix_usage` run the in-box `kortix` CLI (`platform.ts`). `kortix_schedules` keeps a long task alive: `follow_up` is a loop on this session (`kortix loop`), `wake_on` wakes this session on a merged change request, a webhook, a connector event or an App event (`kortix triggers add --on …`), `events` lists a connector's event types, `list` shows this session's follow-ups and wake-ons plus the project schedules, and `remove` routes `reminder.<hex>` to `kortix loops rm` and `trigger.<hex>` to `kortix triggers rm`. `kortix_memory` (`list`, `view`, `save`, `delete`) calls `/v1/workspaces/:id/memory/me/agent/mykortix[/pages/:name]` with `KORTIX_TOKEN`: one page per slug name in the session person's `/Users/<person>/Memory/mykortix`, refused in plain words when Files is off. `memory` was a Kortix tool until 2026-10-30; a project's ejected `tools/memory.ts` loads as a project tool. |
 
 pi loads them at `start()` and registers each as an `AgentTool`
 (`pi/tools.ts` `createWorkspaceTools`); subagents get them too. A release that

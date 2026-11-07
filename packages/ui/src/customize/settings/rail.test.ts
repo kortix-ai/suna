@@ -14,7 +14,7 @@ const tabsOf = (): string[] => railGroups().flatMap((g) => g.items.map((i) => i.
  * Audit log, API keys) for `/accounts/[id]`, and thirteen project-scoped ones
  * (General, Members, Secrets, Channels, Repositories, Models, Sandbox
  * templates, Snapshots, Marketplace, Review, Voice, Feature flags, Upgrades)
- * for `/projects/[id]/admin/general`. These tests pin that they are gone from HERE —
+ * for `/workspaces/[id]/admin/general`. These tests pin that they are gone from HERE —
  * `capabilities/project-settings/project-settings-sections.test.ts` pins that
  * they arrived THERE.
  */
@@ -25,8 +25,8 @@ describe('railGroups', () => {
     expect(translated[0]?.label).toBe('translated:groups.personal');
     expect(translated[0]?.items[0]?.label).toBe('translated:items.profile.label');
     expect(translated[0]?.items[0]?.description).toBe('translated:items.profile.description');
-    expect(translated[0]?.items.find((entry) => entry.tab === 'tokens')?.description).toBe(
-      'translated:items.tokens.description',
+    expect(translated[0]?.items.find((entry) => entry.tab === 'mcp')?.description).toBe(
+      'translated:items.mcp.description',
     );
   });
 
@@ -53,7 +53,8 @@ describe('railGroups', () => {
       'sessions',
       'preferences',
       'chrome',
-      'tokens',
+      // The person's keys bound to no workspace (`GET /v1/me/tokens`).
+      'personal-keys',
       'mcp',
       'computer',
     ]);

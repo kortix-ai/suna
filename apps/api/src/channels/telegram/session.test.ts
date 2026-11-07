@@ -136,7 +136,7 @@ describe('telegram notices for a session (run errors)', () => {
 
   const cases: Array<[TurnErrorInfo | undefined, string, string]> = [
     [{ name: 'APIError', statusCode: 402, message: 'Payment Required: Insufficient credits. Balance: -6 credits' }, 'Out of credits', 'A workspace admin can top up credits in Kortix. Then send your message again.'],
-    [{ name: 'APIError', statusCode: 429, message: 'rate limited' }, 'Usage limit reached', 'Wait, then send your message again. A project admin can also pick another model in Kortix.'],
+    [{ name: 'APIError', statusCode: 429, message: 'rate limited' }, 'Usage limit reached', 'Wait, then send your message again. A workspace admin can also pick another model in Kortix.'],
     [{ name: 'MessageOutputLengthError', message: '' }, 'Response too long', 'Ask the agent to continue, or narrow the request.'],
     [{ name: 'ContextOverflowError', message: '' }, 'Conversation too long', 'Send /new to start a new conversation.'],
     [{ name: 'APIError', statusCode: 503, message: 'upstream unavailable' }, 'Provider unavailable', 'Send your message again to retry.'],
@@ -157,7 +157,7 @@ describe('telegram notices for a session (run errors)', () => {
 
   test('a failed start says so, with the classified reason when there is one, and asks for /new', () => {
     const reason = "Couldn't access the project's Git repository. Check the project's Git credentials and try again.";
-    const tail = ['Send /new, then send your message again. If it fails again, a project admin can check the session in Kortix.', details];
+    const tail = ['Send /new, then send your message again. If it fails again, a workspace admin can check the session in Kortix.', details];
     expect(telegramNotice(target, { kind: 'start_failed', sessionId: 's1', reason })).toBe(
       [`Kortix could not start this chat's session, so the agent did not run. ${reason}`, ...tail].join('\n'),
     );

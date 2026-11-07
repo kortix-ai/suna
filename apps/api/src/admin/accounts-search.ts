@@ -1,9 +1,9 @@
-import { accounts } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
 import { accountIdsWithMemberEmailLikeSql } from '../iam/membership-read';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { escapeLike } from '../shared/sql-like';
 import { isUuid } from '../shared/validate';
+import { accountsView } from '../workspaces/rows';
 
 /**
  * The `search` filter of the admin accounts list: the account's name or any
@@ -26,7 +26,7 @@ import { isUuid } from '../shared/validate';
 export function adminAccountsSearchCondition(search: string): SQL {
   const pattern = `%${escapeLike(search)}%`;
   const id = search.trim();
-  const byId = isUuid(id) ? sql` or ${qualifiedColumn(accounts.accountId)} = ${id}::uuid` : sql``;
-  return sql`(${qualifiedColumn(accounts.name)} ilike ${pattern}${byId} or ${qualifiedColumn(accounts.accountId)} IN (
+  const byId = isUuid(id) ? sql` or ${qualifiedColumn(accountsView.accountId)} = ${id}::uuid` : sql``;
+  return sql`(${qualifiedColumn(accountsView.name)} ilike ${pattern}${byId} or ${qualifiedColumn(accountsView.accountId)} IN (
     ${accountIdsWithMemberEmailLikeSql(pattern)}))`;
 }

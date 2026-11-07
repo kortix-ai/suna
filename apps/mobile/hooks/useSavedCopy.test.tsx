@@ -31,7 +31,7 @@ function serve(route: (url: string) => unknown) {
     // later. A retry from an earlier test's other backend is not this test's read.
     if (!url.startsWith(BACKEND)) throw new TypeError('Network request failed');
     urls.push(url);
-    if (url.endsWith('/projects/p1/detail')) return Response.json({ project: { project_id: 'p1', experimental: { session_log: true } }, config: {} });
+    if (/\/(projects|workspaces)\/p1\/detail$/.test(url)) return Response.json({ project: { project_id: 'p1', experimental: { session_log: true } }, config: {} });
     const answer = route(url);
     return answer instanceof Response ? answer : Response.json(answer);
   }) as unknown as typeof fetch;
@@ -39,7 +39,7 @@ function serve(route: (url: string) => unknown) {
 /** Every read but the project detail. */
 const reads = () => urls.filter((url) => !url.endsWith('/detail'));
 /** No project detail is read: the `session_log` flag decides nothing. */
-const details = () => urls.filter((url) => url.endsWith('/projects/p1/detail'));
+const details = () => urls.filter((url) => /\/(projects|workspaces)\/p1\/detail$/.test(url));
 /** A server older than the session log: `GET …/log` answers 404. */
 const noLog = (route: (url: string) => unknown) => (url: string) =>
   url.includes('/log?') ? Response.json({ error: 'Not found' }, { status: 404 }) : route(url);
@@ -110,7 +110,7 @@ describe('useSavedCopy when the session log answers 404: no v1 copy', () => {
     serve(noLog(() => copy(ROOT, 2)));
     const view = await mount(target());
     expect(view).toEqual({ thread: undefined, empty: false });
-    expect(reads()).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+    expect(reads()).toEqual(['http://test.local/v1/workspaces/p1/sessions/s1/log?limit=40']);
     expect(details()).toHaveLength(0);
   });
 
@@ -118,7 +118,7 @@ describe('useSavedCopy when the session log answers 404: no v1 copy', () => {
     serve(noLog(() => copy(CHILD, 1)));
     const view = await mount(target({ rootId: CHILD, child: true }));
     expect(view).toEqual({ thread: undefined, empty: false });
-    expect(reads()).toEqual(['http://test.local/v1/projects/p1/sessions/s1/log?limit=40']);
+    expect(reads()).toEqual(['http://test.local/v1/workspaces/p1/sessions/s1/log?limit=40']);
   });
 
   test('an empty v1 copy no longer proves the root empty: no /transcript read, no composer claim', async () => {
@@ -168,7 +168,7 @@ describe('useSavedCopy reads the session log first (P8)', () => {
     const view = await mount(target({ sessionId: 's-log-root', rootId: root!.thread_id }));
     expect(view.thread?.messages.map((message) => message.message_id)).toEqual(root!.messages.map((message) => message.message_id));
     expect(view.empty).toBe(false);
-    expect(reads()).toEqual(['http://test.local/v1/projects/p1/sessions/s-log-root/log?limit=40']);
+    expect(reads()).toEqual(['http://test.local/v1/workspaces/p1/sessions/s-log-root/log?limit=40']);
     expect(details()).toHaveLength(0);
   });
 
@@ -178,8 +178,8 @@ describe('useSavedCopy reads the session log first (P8)', () => {
     expect(view.thread?.messages.map((message) => message.message_id)).toEqual(child!.messages.map((message) => message.message_id));
     expect(view.empty).toBe(false);
     expect(reads()).toEqual([
-      'http://test.local/v1/projects/p1/sessions/s-log-child/log?limit=40',
-      `http://test.local/v1/projects/p1/sessions/s-log-child/log?thread=${child!.thread_id}&limit=40`,
+      'http://test.local/v1/workspaces/p1/sessions/s-log-child/log?limit=40',
+      `http://test.local/v1/workspaces/p1/sessions/s-log-child/log?thread=${child!.thread_id}&limit=40`,
     ]);
   });
 
@@ -195,7 +195,7 @@ describe('useSavedCopy reads the session log first (P8)', () => {
     serve((url) => (url.includes('/log') ? Response.json({ error: 'No session log for this session' }, { status: 404 }) : copy(root!.thread_id, 2)));
     const view = await mount(target({ sessionId: 's-log-none', rootId: root!.thread_id }));
     expect(view.thread).toBeUndefined();
-    expect(reads()).toEqual(['http://test.local/v1/projects/p1/sessions/s-log-none/log?limit=40']);
+    expect(reads()).toEqual(['http://test.local/v1/workspaces/p1/sessions/s-log-none/log?limit=40']);
   });
 });
 

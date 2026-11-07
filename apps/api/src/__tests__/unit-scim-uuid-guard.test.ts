@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realDb from '@kortix/db';
 
 // KRTX-211 (Better Stack pattern 97669531): SCIM's `:accountId` path param is
 // the tenant the IdP configures into its base URL; a malformed one reached
@@ -40,15 +41,30 @@ const tables = [
   // scim/app.ts imports the iam membership/group read models (dev's directory
   // sync), and membership-read.ts reads the accounts view.
   'accounts',
+  // The SCIM chain resolves `/scim/v2/workspaces/:workspaceId` through the
+  // kortix.workspaces view (middleware/workspace-account.ts).
+  'workspaces',
+  // The canonical gate (same file) asks the IAM engine whether the caller may
+  // read the workspace, so the engine's tables are in the graph too.
+  'serviceAccounts',
+  'accountTokens',
+  'permissions',
+  'objectPolicies',
+  // workspaces/lifecycle.ts and person-deletion.ts (the workspaces store).
+  'accountDeletionRequests',
 ] as const;
 const tableStubs = Object.fromEntries(tables.map((name) => [name, { __table: name }]));
 
 mock.module('@kortix/db', () => ({
+  // Every real table object (schema only, no connection) so a new import in the
+  // graph never breaks this suite; the stubs below win where the suite needs them.
+  ...realDb,
   ...tableStubs,
   readStoredAgentGrant: (raw: unknown) => raw ?? null,
   eq: (a: unknown, b: unknown) => ({ a, b }),
   and: (...parts: unknown[]) => parts,
   isNull: (a: unknown) => ({ a }),
+  inArray: (a: unknown, b: unknown) => ({ a, b }),
   sql: (...args: unknown[]) => ({ args }),
   // Imported by shared/pg-broadcast.ts (#10934); a stub without it breaks a later file in the same process.
   requiresTls: () => false,
@@ -61,8 +77,12 @@ mock.module('../shared/db', () => ({
     insert: () => ({ values: () => ({ returning: async () => [] }) }),
     update: () => ({ set: () => ({ where: () => ({ limit: async () => [] }) }) }),
     delete: () => ({ where: () => ({ limit: async () => [] }) }),
-    execute: async () => ({ rows: [] }),
+    // postgres-js: `execute` resolves to the row array.
+    execute: async () => [],
   },
+  // workspaces/lifecycle.ts (in the graph through workspaces/surface) imports these.
+  withDbTransaction: async (fn: (tx: unknown) => unknown) => fn(undefined),
+  afterDbCommit: (fn: () => unknown) => fn(),
 }));
 
 mock.module('../shared/audit', () => ({ recordAuditEvent: async () => undefined }));

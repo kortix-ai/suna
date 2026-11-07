@@ -74,7 +74,7 @@ describe('relayPermission', () => {
 
     expect(requests).toHaveLength(1)
     expect(requests[0]!.method).toBe('POST')
-    expect(requests[0]!.path).toBe('/v1/projects/proj-1/turn-permission')
+    expect(requests[0]!.path).toBe('/v1/workspaces/proj-1/turn-permission')
     expect(requests[0]!.auth).toBe('Bearer sandbox-token')
     expect(requests[0]!.body).toEqual({
       session_id: 'sess-1',

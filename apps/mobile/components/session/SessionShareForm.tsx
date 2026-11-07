@@ -45,7 +45,7 @@ type ShareMode = 'project' | 'private' | 'members';
 // Labels match web's SESSION_SHARING_COPY.
 const MODE_OPTIONS: Array<{ mode: ShareMode; icon: AppIcon; label: string }> = [
   { mode: 'private', icon: LockIcon, label: 'Only you' },
-  { mode: 'project', icon: GlobeIcon, label: 'Whole project' },
+  { mode: 'project', icon: GlobeIcon, label: 'Whole workspace' },
   { mode: 'members', icon: UsersIcon, label: 'Specific people' },
 ];
 

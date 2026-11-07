@@ -62,7 +62,10 @@ beforeAll(async () => {
     name: 'Northwind',
     repoUrl: 'https://example.test/n.git',
     metadata: { experimental: { chat: true } },
+    splitPending: true,
   });
+  // A second active project makes the account a split_pending legacy account: there a member reaches a project only through a grant, which is what this suite tests (on a 1:1 workspace membership is access, design.md C3).
+  await db.insert(projects).values({ projectId: crypto.randomUUID(), accountId: ACCOUNT, name: 'Second', repoUrl: 'https://example.test/s.git', splitPending: true });
   for (const [id, name] of USERS) {
     await db.execute(sql`
       insert into auth.users (id, email, instance_id, aud, role, raw_user_meta_data)

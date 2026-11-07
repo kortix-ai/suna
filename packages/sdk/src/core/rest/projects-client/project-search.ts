@@ -10,7 +10,11 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-/** One file or folder that matched. */
+/**
+ * One file or folder that matched.
+ *
+ * @deprecated Use `WorkspaceSearchHit`. Kept permanently.
+ */
 export interface ProjectSearchHit {
   /** The path in the project's Files, e.g. `/Company/plans/q3.md`. */
   path: string;
@@ -25,7 +29,14 @@ export interface ProjectSearchHit {
   access: 'read' | 'write' | 'manage';
 }
 
-/** What `searchProject` sends. */
+/** The workspace name of {@link ProjectSearchHit}: the same type. */
+export type WorkspaceSearchHit = ProjectSearchHit;
+
+/**
+ * What `searchProject` sends.
+ *
+ * @deprecated Use `WorkspaceSearchInput`. Kept permanently.
+ */
 export interface ProjectSearchInput {
   /** 1-200 characters. Every word must match, as a prefix of a word in the name, path or text. */
   q: string;
@@ -37,7 +48,14 @@ export interface ProjectSearchInput {
   cursor?: string;
 }
 
-/** What `searchProject` resolves. */
+/** The workspace name of {@link ProjectSearchInput}: the same type. */
+export type WorkspaceSearchInput = ProjectSearchInput;
+
+/**
+ * What `searchProject` resolves.
+ *
+ * @deprecated Use `WorkspaceSearchResult`. Kept permanently.
+ */
 export interface ProjectSearchResult {
   /** Name hits first, then by text rank. */
   hits: ProjectSearchHit[];
@@ -45,17 +63,23 @@ export interface ProjectSearchResult {
   next_cursor: string | null;
 }
 
+/** The workspace name of {@link ProjectSearchResult}: the same type. */
+export type WorkspaceSearchResult = ProjectSearchResult;
+
 /**
  * Search the project's Files by name and text, with the caller's folder
  * access. A file written in the last ~20 s may not be found yet. A
  * background read: a refusal rejects without an app-wide error.
  */
-export async function searchProject(projectId: string, input: ProjectSearchInput): Promise<ProjectSearchResult> {
+export async function searchWorkspace(projectId: string, input: ProjectSearchInput): Promise<ProjectSearchResult> {
   const query = new URLSearchParams({ q: input.q });
   if (input.path) query.set('path', input.path);
   if (input.limit !== undefined) query.set('limit', String(input.limit));
   if (input.cursor) query.set('cursor', input.cursor);
   return unwrap(
-    await backendApi.get<ProjectSearchResult>(`/projects/${encodeURIComponent(projectId)}/search?${query}`, { showErrors: false }),
+    await backendApi.get<ProjectSearchResult>(`/workspaces/${encodeURIComponent(projectId)}/search?${query}`, { showErrors: false }),
   );
 }
+
+/** @deprecated Use `searchWorkspace`. Kept permanently. */
+export const searchProject = searchWorkspace;

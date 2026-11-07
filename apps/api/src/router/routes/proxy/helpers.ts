@@ -3,6 +3,7 @@ import { wallet } from '../../../billing/wallet';
 import { config, getToolCost } from '../../../config';
 import { getTraceHeaders } from '../../../lib/request-context';
 import { validateAccountToken } from '../../../repositories/account-tokens';
+import { keyScopeAllows } from '../../../iam/key-scope';
 import { validateSecretKey } from '../../../repositories/api-keys';
 import type { ActorContext } from '../../../shared/actor-context';
 import { isAccountToken, isKortixToken } from '../../../shared/crypto';
@@ -34,6 +35,9 @@ export { matchAllowedRoute };
 export async function resolveKortixAccount(token: string): Promise<string | null> {
   if (isAccountToken(token)) {
     const pat = await validateAccountToken(token);
+    // A scoped workspace key that may not run work (read, or a custom list
+    // without session start) spends no proxy credits, as on the LLM gateway.
+    if (pat.isValid && !keyScopeAllows(pat.scopes ?? null, 'project.session.start')) return null;
     return pat.isValid && pat.accountId ? pat.accountId : null;
   }
   const key = await validateSecretKey(token);

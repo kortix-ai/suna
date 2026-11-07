@@ -1138,20 +1138,20 @@ function OpenAsAccountButton({ account }: { account: AdminAccount }) {
           // impersonation confines the operator to one account.
           clearLastProjectId();
           // Open the customer's account hub, NOT the landing door. The
-          // landing door is `/projects/start`, which AUTO-PROVISIONS a first
+          // landing door is `/workspaces/start`, which AUTO-PROVISIONS a first
           // project for an account that has none — so simply opening a quiet
           // customer's account would silently create a project inside it. The
           // hub creates nothing and is where a support question about billing,
           // members or entitlements actually lives.
           //
           // The hub has no route of its own any more: it is `?accountId=` over
-          // an app page, and `/projects` is the one app page that is a list
+          // an app page, and `/workspaces` is the one app page that is a list
           // rather than a redirect, so it is the host. A HARD load,
           // deliberately — a router push would keep the React Query cache this
           // console filled with the operator's own data.
           // eslint-disable-next-line @next/next/no-location-assign-relative-destination
           window.location.assign(
-            `/projects?${ACCOUNT_PANEL_PARAM}=${encodeURIComponent(account.accountId)}`,
+            `/workspaces?${ACCOUNT_PANEL_PARAM}=${encodeURIComponent(account.accountId)}`,
           );
         },
         onError: (error) => errorToast(error.message || tI18nComplete.raw('text32d3603f57c7')),
@@ -1608,7 +1608,7 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
   title: string;
   description: string;
 }[] = [
-  { key: 'sso', title: 'SSO', description: 'SAML / OIDC single sign-on for the account.' },
+  { key: 'sso', title: 'SSO', description: 'SAML / OIDC single sign-on for the workspace.' },
   { key: 'scim', title: 'SCIM', description: 'Directory-driven user provisioning.' },
   {
     key: 'rbac',
@@ -1618,11 +1618,11 @@ const OVERRIDE_ENTITLEMENT_ROWS: {
   {
     key: 'auditAccess',
     title: 'Audit log access',
-    description: "Read access to the account's own audit trail.",
+    description: "Read access to the workspace's own audit trail.",
   },
   {
     key: 'branding',
-    title: 'Organization branding',
+    title: 'Workspace branding',
     description: 'Own logo, icon, favicon, and product name for every member.',
   },
   {
@@ -1982,7 +1982,7 @@ function ProjectsTab({
       {projects.map((project) => (
         <a
           key={project.projectId}
-          href={`/projects/${project.projectId}`}
+          href={`/workspaces/${project.projectId}`}
           target="_blank"
           rel="noopener noreferrer"
           className="hover:bg-hover flex flex-col gap-2 px-4 py-3 text-sm transition-colors"

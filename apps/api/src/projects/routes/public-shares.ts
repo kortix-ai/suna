@@ -20,6 +20,7 @@ import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const TurnShareSchema = z.object({
   share_id: z.string(),
@@ -31,7 +32,7 @@ const TurnShareSchema = z.object({
   stale: z.boolean().openapi({ description: 'The live response text differs from the published snapshot.' }),
   include_prompt: z.boolean().openapi({ description: 'The snapshot also publishes the prompt text.' }),
 });
-const TurnParams = z.object({ projectId: z.string(), sessionId: z.string(), turnId: z.string().min(1).max(200) });
+const TurnParams = z.object({ workspaceId: z.string(), sessionId: z.string(), turnId: z.string().min(1).max(200) });
 
 /**
  * A public link must never carry a member's PERSONAL data: a session bound to a
@@ -64,12 +65,12 @@ export function registerPublicSharesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/previews',
+      path: '/{workspaceId}/sessions/{sessionId}/previews',
       tags: ['sessions'],
       summary: 'List preview URLs of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'Preview candidates'),
@@ -77,7 +78,7 @@ export function registerPublicSharesRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -100,12 +101,12 @@ export function registerPublicSharesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/public-shares',
+      path: '/{workspaceId}/sessions/{sessionId}/public-shares',
       tags: ['sessions'],
       summary: 'List public shares of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'Public shares'),
@@ -113,7 +114,7 @@ export function registerPublicSharesRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -131,12 +132,12 @@ export function registerPublicSharesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/public-shares',
+      path: '/{workspaceId}/sessions/{sessionId}/public-shares',
       tags: ['sessions'],
       summary: 'Create a public share of a session',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             preview_id: z.string().optional().openapi({ description: 'Share a session preview by id (from the previews list).' }),
             file: z.record(z.string(), z.any()).optional().openapi({ description: 'Share a workspace file: { path }.' }),
@@ -151,7 +152,7 @@ export function registerPublicSharesRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
@@ -188,12 +189,12 @@ export function registerPublicSharesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/sessions/{sessionId}/public-shares/{shareId}',
+      path: '/{workspaceId}/sessions/{sessionId}/public-shares/{shareId}',
       tags: ['sessions'],
       summary: 'Revoke a public session share',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string(), shareId: z.string() }),
+        params: z.object({ workspaceId: z.string(), sessionId: z.string(), shareId: z.string() }),
       },
       responses: {
         200: json(z.any(), 'Revoked'),
@@ -201,7 +202,7 @@ export function registerPublicSharesRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       const shareId = c.req.param('shareId');
       if (!isUuid(sessionId) || !isUuid(shareId)) {
@@ -226,7 +227,7 @@ export function registerPublicSharesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      path: '/{workspaceId}/sessions/{sessionId}/turns/{turnId}/share',
       tags: ['sessions'],
       summary: 'Read the public share of one assistant response',
       ...auth,
@@ -237,7 +238,7 @@ export function registerPublicSharesRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, sessionId, turnId } = c.req.valid('param');
+      const { workspaceId: projectId, sessionId, turnId } = c.req.valid('param');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -255,7 +256,7 @@ export function registerPublicSharesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      path: '/{workspaceId}/sessions/{sessionId}/turns/{turnId}/share',
       tags: ['sessions'],
       summary: 'Share one assistant response publicly, or refresh its snapshot',
       description:
@@ -276,7 +277,7 @@ export function registerPublicSharesRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, sessionId, turnId } = c.req.valid('param');
+      const { workspaceId: projectId, sessionId, turnId } = c.req.valid('param');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -304,7 +305,7 @@ export function registerPublicSharesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/sessions/{sessionId}/turns/{turnId}/share',
+      path: '/{workspaceId}/sessions/{sessionId}/turns/{turnId}/share',
       tags: ['sessions'],
       summary: 'Revoke the public share of one assistant response',
       ...auth,
@@ -315,7 +316,7 @@ export function registerPublicSharesRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, sessionId, turnId } = c.req.valid('param');
+      const { workspaceId: projectId, sessionId, turnId } = c.req.valid('param');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

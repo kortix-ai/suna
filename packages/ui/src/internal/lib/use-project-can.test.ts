@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { PermissionProbeInput } from '@kortix/sdk';
-import { projectPermissionProbes, projectPermissionTarget } from './use-project-can';
+import { projectPermissionTarget } from './use-project-can';
 
 // @ts-expect-error Project-scoped probes require resourceId.
 const invalidProjectProbe: PermissionProbeInput = {
@@ -19,18 +19,5 @@ describe('projectPermissionTarget', () => {
       resourceType: 'project',
       resourceId: 'project-1',
     });
-  });
-});
-
-describe('projectPermissionProbes', () => {
-  test('sends no probes while the project id is absent', () => {
-    expect(projectPermissionProbes(undefined, ['project.read'])).toEqual([]);
-  });
-
-  test('adds the project id to every scoped probe', () => {
-    expect(projectPermissionProbes('project-1', ['project.read', 'project.write'])).toEqual([
-      { action: 'project.read', resourceType: 'project', resourceId: 'project-1' },
-      { action: 'project.write', resourceType: 'project', resourceId: 'project-1' },
-    ]);
   });
 });

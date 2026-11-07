@@ -1,6 +1,6 @@
 ---
 name: kortix-computer
-description: How to reach a user's CONNECTED COMPUTER (their laptop, desktop, or server) from a Kortix session — read/write files, run shell commands, and drive the desktop (click/type/screenshot) on that machine. A connected computer is an ACCOUNT of the project's `computer` connector, called through the same `kortix connectors` path as every other connector, with `--account` picking the machine. Load this when the task is about acting ON a specific physical computer the user has connected ("on my laptop…", "read ~/Downloads on my machine", "run this on my desktop", "click the button on my screen"), or when the user asks how the agent reaches their computer. ALSO load it when the user mentions their own machine or its files and no computer may be connected yet ("my local files", "my Desktop", a path like `~/…`, `/Users/…`, "the repo on my laptop") — this sandbox cannot see their disk, and the skill says how to tell them to connect it. For files INSIDE this sandbox, use normal shell/fs — not this. Load it too whenever the user says "my desktop" or "put it on my desktop" — it says which of three desktops they mean (their Drive folder, this session's screen, their own computer).
+description: How to reach a user's CONNECTED COMPUTER (their laptop, desktop, or server) from a Kortix session — read/write files, run shell commands, and drive the desktop (click/type/screenshot) on that machine. A connected computer is an ACCOUNT of the workspace's `computer` connector, called through the same `kortix connectors` path as every other connector, with `--account` picking the machine. Load this when the task is about acting ON a specific physical computer the user has connected ("on my laptop…", "read ~/Downloads on my machine", "run this on my desktop", "click the button on my screen"), or when the user asks how the agent reaches their computer. ALSO load it when the user mentions their own machine or its files and no computer may be connected yet ("my local files", "my Desktop", a path like `~/…`, `/Users/…`, "the repo on my laptop") — this sandbox cannot see their disk, and the skill says how to tell them to connect it. For files INSIDE this sandbox, use normal shell/fs — not this. Load it too whenever the user says "my desktop" or "put it on my desktop" — it says which of three desktops they mean (their Drive folder, this session's screen, their own computer).
 ---
 
 <skill name="kortix-computer">
@@ -11,7 +11,7 @@ description: How to reach a user's CONNECTED COMPUTER (their laptop, desktop, or
 - **Their Drive folder,** `~/Desktop` (= `/drives/me`). Kortix mounts it as
   their desktop in every session. It holds files: the user sees them in
   **Files**, and they last (the `kortix-drives` skill).
-- **Your session desktop.** A project agent's microVM runs a Linux screen
+- **Your session desktop.** A workspace agent's microVM runs a Linux screen
   the user watches live in the session's **Desktop** panel. A program runs
   there: install it, then open it on display `:1` so the window shows
   (`/MACHINE.md` → Desktop).
@@ -37,16 +37,16 @@ installer file in `~/Desktop` is not installed anywhere.
 <overview>
 A member connects their own computer to Kortix (desktop app, or
 `npx @kortix/agent-tunnel connect`). Each connected computer is one
-**account** of the project's **`computer`** connector — exactly like one Gmail
+**account** of the workspace's **`computer`** connector — exactly like one Gmail
 mailbox is one account of the Gmail connector. You reach it with the normal
 connector path (`kortix connectors accounts` → `show` → `call`); there is no
 token and no tunnel client in the sandbox. The live connection is the
 credential, resolved server-side.
 
 - A **private** computer (the default) follows its owner: it is an account in
-  every project they belong to, reachable only in their own private sessions.
-- A **shared** computer (shared with the project) is reachable by everyone in
-  the project, including unattended runs (triggers, schedules, Slack).
+  every workspace they belong to, reachable only in their own private sessions.
+- A **shared** computer (shared with the workspace) is reachable by everyone in
+  the workspace, including unattended runs (triggers, schedules, Slack).
 - The owner decides **on the computer** who may use it: *Ask each time* (a
   prompt on their screen, allowed for up to 24 hours; the default for a
   computer connected in the desktop app), *Always allowed* (the default for a
@@ -81,7 +81,7 @@ Tools on the `computer` connector:
 kortix connectors accounts computer
 ```
 
-The slug is `computer` in most projects. An older project may use another
+The slug is `computer` in most workspaces. An older workspace may use another
 slug for its computer connector; `kortix connectors ls` shows it.
 
 If there is no account, no computer is connected yet. This sandbox cannot see
@@ -89,14 +89,14 @@ the user's disk, so never guess at a local path or pretend to read it. Say so
 in one line and tell the human how to connect it:
 
 - **In the Kortix desktop app:** click **"Connect this computer"** at the
-  bottom of the project sidebar. One click; macOS then asks for the
+  bottom of the workspace sidebar. One click; macOS then asks for the
   permissions it needs.
 - **In the browser:** click **"Connect your computer"** at the bottom of the
-  project sidebar, then install the desktop app or run the command it shows
+  workspace sidebar, then install the desktop app or run the command it shows
   (`npx @kortix/agent-tunnel@latest connect`) on that computer.
 
 Then ask them to tell you when it is connected, and continue from step 2.
-There is no feature flag to turn on, and nothing to set up per project. For a
+There is no feature flag to turn on, and nothing to set up per workspace. For a
 single file, uploading it into the chat is the faster path; offer both.
 
 **2. Check the machine before real work.** Read `online` and `access`.
@@ -170,7 +170,7 @@ Treat these as real outcomes; do not retry blind:
   call; do not ask for re-pairing.
 - `connector_not_connected` — no computer is reachable from this session.
   None is connected, or every connected computer is private to someone else
-  (an unattended run reaches only computers shared with the project). With
+  (an unattended run reaches only computers shared with the workspace). With
   `--account`, the error lists `available_accounts`. Say so; do not look for
   another way in.
 - `denied` — a connector policy or a grant blocks this call. Report the

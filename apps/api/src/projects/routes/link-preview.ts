@@ -20,18 +20,18 @@ export function registerLinkPreviewRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/link-preview',
+      path: '/{workspaceId}/link-preview',
       tags: ['projects'],
       summary: 'Read a web page’s title, description and image for a link card',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid() }),
         query: z.object({ url: z.string().url().max(2048).refine((value) => /^https?:\/\//i.test(value), 'http(s) only') }),
       },
       responses: { 200: json(LinkPreviewSchema, 'The page'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const { url } = c.req.valid('query');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);

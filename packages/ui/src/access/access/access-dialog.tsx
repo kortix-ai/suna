@@ -1536,7 +1536,7 @@ function PrincipalAccessDialog({
                   ? scope.projectName
                   : scope.kind === 'group'
                     ? scope.groupName
-                    : (accountName ?? 'this account'),
+                    : (accountName ?? 'this workspace'),
               inherited: inheritedFrom,
             },
             tI18nComplete,
@@ -1774,7 +1774,7 @@ function parseDateValue(value: string): Date | undefined {
 
 /** The expiry field: the Kortix `Calendar` in a popover, not the browser's
  *  native date input. Empty reads "Never"; past days can't be picked. */
-function ExpiryPicker({
+export function ExpiryPicker({
   id,
   value,
   onChange,
@@ -1844,7 +1844,7 @@ function ExpiryPicker({
  * blocks a close while a save is in flight; the sheet is the body of the
  * account hub's `useAccountHubSheet`, which owns open and close.
  */
-interface AccessChrome {
+export interface AccessChrome {
   Root: ComponentType<{ open: boolean; onOpenChange: (open: boolean) => void; children?: ReactNode }>;
   Content: ComponentType<{ children?: ReactNode }>;
   Header: ComponentType<{ children?: ReactNode }>;
@@ -1854,7 +1854,7 @@ interface AccessChrome {
   Footer: ComponentType<{ children?: ReactNode }>;
 }
 
-const MODAL_CHROME: AccessChrome = {
+export const MODAL_CHROME: AccessChrome = {
   Root: Modal,
   Content: ({ children }: { children?: ReactNode }) => (
     <ModalContent className="sm:max-w-md">{children}</ModalContent>
@@ -1875,7 +1875,7 @@ const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
 /** Inside the account hub's sheet: the host draws the title row and the
  *  scrolling body, so this draws only the fields and a footer that sticks to
  *  the bottom of that scroll. */
-const SHEET_CHROME: AccessChrome = {
+export const SHEET_CHROME: AccessChrome = {
   Root: Passthrough,
   // Fills the sheet body's height so `mt-auto` can push the footer to the
   // bottom edge even when the form is short.

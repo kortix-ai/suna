@@ -15,7 +15,7 @@ import {
 } from './support/account-cli-harness.ts';
 
 const PROJECT = 'proj_1';
-const BASE = `/v1/projects/${PROJECT}`;
+const BASE = `/v1/workspaces/${PROJECT}`;
 const SHA = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
 
 /** Four bytes of a real zip local-file header — proves the body was written

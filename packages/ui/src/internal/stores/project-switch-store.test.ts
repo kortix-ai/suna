@@ -28,16 +28,16 @@ describe('shouldShowProjectSwitchLoading', () => {
 
 describe('projectIdFromPathname', () => {
   test('reads the workspace out of every route inside it', () => {
-    expect(projectIdFromPathname('/projects/proj-a')).toBe('proj-a');
-    expect(projectIdFromPathname('/projects/proj-a/sessions/sess-1')).toBe('proj-a');
-    expect(projectIdFromPathname('/projects/proj-a/files')).toBe('proj-a');
+    expect(projectIdFromPathname('/workspaces/proj-a')).toBe('proj-a');
+    expect(projectIdFromPathname('/workspaces/proj-a/sessions/sess-1')).toBe('proj-a');
+    expect(projectIdFromPathname('/workspaces/proj-a/files')).toBe('proj-a');
   });
 
   test('returns null off a workspace route', () => {
     expect(projectIdFromPathname('/accounts/acct-a')).toBeNull();
-    expect(projectIdFromPathname('/projects')).toBeNull();
-    expect(projectIdFromPathname('/projects/start')).toBeNull();
-    expect(projectIdFromPathname('/projects/new')).toBeNull();
+    expect(projectIdFromPathname('/workspaces')).toBeNull();
+    expect(projectIdFromPathname('/workspaces/start')).toBeNull();
+    expect(projectIdFromPathname('/workspaces/new')).toBeNull();
     expect(projectIdFromPathname(null)).toBeNull();
     expect(projectIdFromPathname('')).toBeNull();
   });

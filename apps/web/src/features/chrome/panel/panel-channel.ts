@@ -98,7 +98,7 @@ export function readExtensionMessage(
 
 /** The session a panel path shows, for the extension's Act hand-off. */
 export function sessionIdFromPath(pathname: string): string | undefined {
-  return /\/projects\/[^/]+\/sessions\/([^/?#]+)/.exec(pathname)?.[1];
+  return /\/(?:workspaces|projects)\/[^/]+\/sessions\/([^/?#]+)/.exec(pathname)?.[1];
 }
 
 function post(message: Record<string, unknown>) {

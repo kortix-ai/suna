@@ -62,17 +62,27 @@ export interface AgentCapabilities {
   extensions: AgentCapabilityExtension[];
 }
 
-/** The project's catalog: every tool, skill and extension any of its agents can be given. */
+/**
+ * The project's catalog: every tool, skill and extension any of its agents can be given.
+ *
+ * @deprecated Use `WorkspaceCapabilities`. Kept permanently.
+ */
 export type ProjectCapabilities = Omit<AgentCapabilities, 'agent'>;
 
-export async function getProjectCapabilities(projectId: string) {
-  return unwrap(await backendApi.get<ProjectCapabilities>(`/projects/${projectId}/capabilities`, { showErrors: false }));
+/** The workspace name of {@link ProjectCapabilities}: the same type. */
+export type WorkspaceCapabilities = ProjectCapabilities;
+
+export async function getWorkspaceCapabilities(projectId: string) {
+  return unwrap(await backendApi.get<ProjectCapabilities>(`/workspaces/${projectId}/capabilities`, { showErrors: false }));
 }
+
+/** @deprecated Use `getWorkspaceCapabilities`. Kept permanently. */
+export const getProjectCapabilities = getWorkspaceCapabilities;
 
 export async function getAgentCapabilities(projectId: string, agentName: string) {
   return unwrap(
     await backendApi.get<AgentCapabilities>(
-      `/projects/${projectId}/agents/${encodeURIComponent(agentName)}/capabilities`,
+      `/workspaces/${projectId}/agents/${encodeURIComponent(agentName)}/capabilities`,
       { showErrors: false },
     ),
   );

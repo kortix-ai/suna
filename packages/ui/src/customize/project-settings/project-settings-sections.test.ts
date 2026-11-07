@@ -6,15 +6,15 @@ import {
   ALL_PROJECT_SETTINGS_SECTIONS,
   DEFAULT_PROJECT_SETTINGS_SECTION,
   parseProjectSettingsSection,
-  projectSettingsSection,
   projectSettingsSectionHref,
   projectSettingsSections,
 } from './project-settings-sections';
 
 const keys = () => projectSettingsSections().map((s) => s.key);
+const sectionOf = (key: string) => ALL_PROJECT_SETTINGS_SECTIONS.find((s) => s.key === key);
 
 /**
- * The sections of `/projects/[id]/admin/general` — the Customize bar's Settings
+ * The sections of `/workspaces/[id]/admin/general` — the Customize bar's Settings
  * tab. None is flag-gated. They arrived here from the settings
  * overlay's `Workspace` and `Agent` rail groups, plus its `experimental`
  * row; `rail.test.ts` pins that they left there.
@@ -27,7 +27,7 @@ const keys = () => projectSettingsSections().map((s) => s.key);
  */
 describe('projectSettingsSections', () => {
   test('it holds every section, in order', () => {
-    expect(keys()).toEqual(['general', 'git', 'sandbox', 'feature-flags']);
+    expect(keys()).toEqual(['general', 'danger-zone', 'git', 'sandbox', 'feature-flags']);
   });
 
   test('Review is not a section — it is a capability tab', () => {
@@ -56,7 +56,7 @@ describe('projectSettingsSections', () => {
   });
 
   test('the Experimental tab is called Feature flags here, and keys on the id it already gated on', () => {
-    const section = projectSettingsSection('feature-flags');
+    const section = sectionOf('feature-flags');
     expect(section?.label).toBe('Feature flags');
     expect(section?.gate).toBe('feature-flags');
     expect(parseProjectSettingsSection('experimental')).toBeNull();
@@ -64,7 +64,7 @@ describe('projectSettingsSections', () => {
 
   test('Sandbox templates and Snapshots merged into one section', () => {
     expect(parseProjectSettingsSection('snapshots')).toBeNull();
-    expect(projectSettingsSection('sandbox')?.label).toBe('Sandbox templates');
+    expect(sectionOf('sandbox')?.label).toBe('Sandbox templates');
   });
 
   test('Marketplace is gone, not merely hidden', () => {
@@ -106,14 +106,14 @@ describe('parseProjectSettingsSection', () => {
 describe('projectSettingsSectionHref', () => {
   test('the default section carries no query, so /config is a stable link', () => {
     expect(projectSettingsSectionHref('p1', DEFAULT_PROJECT_SETTINGS_SECTION)).toBe(
-      '/projects/p1/admin/general',
+      '/workspaces/p1/admin/general',
     );
   });
 
   test('every other section names itself in the query', () => {
-    expect(projectSettingsSectionHref('p1', 'sandbox')).toBe('/projects/p1/admin/sandbox');
+    expect(projectSettingsSectionHref('p1', 'sandbox')).toBe('/workspaces/p1/admin/sandbox');
     expect(projectSettingsSectionHref('p1', 'feature-flags')).toBe(
-      '/projects/p1/admin/feature-flags',
+      '/workspaces/p1/admin/feature-flags',
     );
   });
 
@@ -146,7 +146,7 @@ describe('the sub-nav is flat', () => {
   });
 
   test('the list order IS the rail order — one pass, nothing re-sorted', () => {
-    expect(projectSettingsSections().map((s) => s.key)).toEqual(['general', 'git', 'sandbox',
+    expect(projectSettingsSections().map((s) => s.key)).toEqual(['general', 'danger-zone', 'git', 'sandbox',
       'feature-flags',
     ]);
   });

@@ -160,16 +160,16 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     // stale query key the shell already ignores, so there is no server data to
     // fetch. Dropping a param changes the router cache key, so `router.replace`
     // would miss the segment cache and run a cold RSC fetch for nothing — on
-    // the component every `/projects/*` page mounts. Next patches
+    // the component every `/workspaces/*` page mounts. Next patches
     // `replaceState` and updates its own canonical URL, so `useSearchParams`
     // still reports the stripped URL. Same mechanism as `openTabAndNavigate` in
     // `packages/ui/src/internal/stores/tab-store.ts`.
     //
     // The path comes from `window.location.pathname`, never a hardcoded
-    // `/projects/<id>`. This shell is mounted by
-    // `app/(app)/projects/[id]/layout.tsx`, so the effect runs on EVERY route
+    // `/workspaces/<id>`. This shell is mounted by
+    // `app/(app)/workspaces/[id]/layout.tsx`, so the effect runs on EVERY route
     // beneath it, and rewriting the address bar to the project root while
-    // `/projects/<id>/files` is still the rendered view desyncs the two: the
+    // `/workspaces/<id>/files` is still the rendered view desyncs the two: the
     // sidebar's active-row test stops matching, Back leaves for somewhere the
     // user never was, and a reload lands on a different screen. Only the query
     // key is being dropped here — the path must not move.

@@ -93,6 +93,7 @@ function fakeRepo(name: string): GitHubRepo {
 // registerLinkedProject only reads `.installationId` / `.permissions` off it,
 // never fetches or persists this row itself, so it needs no DB row of its own.
 const fakeInstallation = {
+  workspaceId: null,
   installationRowId: '00000000-0000-4000-a000-000000009903',
   accountId: ACCOUNT_ID,
   installationId: '123456',

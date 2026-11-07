@@ -130,7 +130,7 @@ describe('host notice', () => {
       const notice = renderHostNotice(['whoami']);
       expect(notice).toContain('host sandbox');
       expect(notice).toContain('https://dev-api.kortix.com/v1');
-      expect(notice).toContain('authenticated (project token)');
+      expect(notice).toContain('authenticated (workspace token)');
       expect(notice).not.toContain('https://api.kortix.com');
       expect(notice).not.toContain('not logged in');
     } finally {
@@ -182,7 +182,7 @@ describe('host notice', () => {
       const notice = renderHostNotice(['whoami']);
       expect(notice).toContain('host sandbox');
       expect(notice).toContain('authenticated (session token)');
-      expect(notice).not.toContain('authenticated (project token)');
+      expect(notice).not.toContain('authenticated (workspace token)');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -244,7 +244,7 @@ describe('host notice', () => {
       expect(notice).toContain('https://dev-api.kortix.com/v1');
       expect(notice).toContain('dev@example.com (user)');
       expect(notice).not.toContain('https://sandbox-api.kortix.test/v1');
-      expect(notice).not.toContain('project token');
+      expect(notice).not.toContain('workspace token');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -266,9 +266,9 @@ describe('host notice', () => {
       const notice = renderHostNotice(['sessions', 'restart', 'sess_5e5a1e03']);
       expect(notice).toContain('authenticated (session token)');
       expect(notice).not.toContain('not logged in');
-      // The link still supplies account + project; only the auth state moved.
-      expect(notice).toContain('account acct_ac5');
-      expect(notice).toContain('project proj_9a5');
+      // The link still supplies the workspace; only the auth state moved.
+      expect(notice).toContain('workspace proj_9a5');
+      expect(notice).not.toContain('account');
       expect(notice).toContain('session sess_5e5');
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
@@ -312,4 +312,13 @@ describe('host notice', () => {
       rmSync(configDir, { recursive: true, force: true });
     }
   });
+});
+
+test('findWorkspaceArg: the notice names the workspace --workspace/--project selects, never a grant', async () => {
+  const { findWorkspaceArg } = await import('../host-notice.ts');
+  expect(findWorkspaceArg(['ls', '--workspace', 'w2'])).toBe('w2');
+  expect(findWorkspaceArg(['ls', '--project=w3'])).toBe('w3');
+  expect(findWorkspaceArg(['invite', 'a@b.c', '--workspace', 'p1:manager'])).toBeUndefined();
+  expect(findWorkspaceArg(['ls', '--workspace', '--json'])).toBeUndefined();
+  expect(findWorkspaceArg(['ls'])).toBeUndefined();
 });

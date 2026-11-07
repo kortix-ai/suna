@@ -88,7 +88,7 @@ function bakedDefaultUrl() {
 //   2. value baked into package.json at build time (CI dev vs prod)
 //   3. production kortix.com
 // A runtime KORTIX_DESKTOP_URL / the Frontend-URL menu still overrides this.
-const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() || 'https://kortix.com/projects';
+const DEFAULT_URL = process.env.KORTIX_DESKTOP_DEFAULT_URL || bakedDefaultUrl() || 'https://kortix.com/workspaces';
 
 // The update channel baked into the bundle decides whether the frontend-URL
 // menu is the developer preset switcher or the single production
@@ -594,7 +594,7 @@ function createMainWindow() {
         defaultId: 0,
         cancelId: 0,
         message: 'Kortix stopped unexpectedly',
-        detail: 'Reload to return to this page, or go home to your latest project.',
+        detail: 'Reload to return to this page, or go home to your latest workspace.',
       })
       .then(({ response }) => {
         if (!mainWindow || mainWindow.isDestroyed()) return;

@@ -25,7 +25,7 @@ describe('getLinkPreview', () => {
 
   test('reads the project route with the URL encoded, and returns the page', async () => {
     const page = await getLinkPreview('p1', 'https://example.com/a?b=1');
-    expect(seen).toBe('http://test.local/projects/p1/link-preview?url=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1');
+    expect(seen).toBe('http://test.local/workspaces/p1/link-preview?url=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1');
     expect(page).toEqual({ url: 'https://example.com/a?b=1', title: 'Art', description: 'Paintings', site_name: null, image_url: null });
   });
 });

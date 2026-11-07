@@ -14,7 +14,7 @@
  * selectors and the connector hook are stubbed — those are collaborators, not
  * the subject. The transport is the real SDK: `updateProjectTrigger` runs
  * against a `configureKortix` fetch override, so every payload below is the
- * body that would hit `PATCH /projects/:id/triggers/:slug`.
+ * body that would hit `PATCH /workspaces/:id/triggers/:slug`.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -216,7 +216,7 @@ function patches() {
 function expectPatch(body: unknown) {
   expect(patches()).toEqual([
     {
-      url: 'http://api.test/v1/projects/proj-1/triggers/triage',
+      url: 'http://api.test/v1/workspaces/proj-1/triggers/triage',
       method: 'PATCH',
       body,
     },

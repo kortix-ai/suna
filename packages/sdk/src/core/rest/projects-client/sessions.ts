@@ -17,6 +17,7 @@ import { type ConnectorSharing, unwrap } from './shared';
 // /instances/{session_id}/dashboard.
 // ---------------------------------------------------------------------------
 
+/** @deprecated Use `WorkspaceSessionStatus`. Kept permanently. */
 export type ProjectSessionStatus =
   | 'queued'
   | 'branching'
@@ -25,6 +26,9 @@ export type ProjectSessionStatus =
   | 'stopped'
   | 'failed'
   | 'completed';
+
+/** The workspace name of {@link ProjectSessionStatus}: the same type. */
+export type WorkspaceSessionStatus = ProjectSessionStatus;
 
 /**
  * The session's `metadata` jsonb bag.
@@ -35,6 +39,8 @@ export type ProjectSessionStatus =
  * Declaring a key here is NOT breaking: a `Record<string, unknown>` still
  * assigns to this in both directions (an optional property is not satisfied by
  * a source index signature, so TypeScript skips it).
+ *
+ * @deprecated Use `WorkspaceSessionMetadata`. Kept permanently.
  */
 export interface ProjectSessionMetadata {
   /**
@@ -51,12 +57,21 @@ export interface ProjectSessionMetadata {
   [key: string]: unknown;
 }
 
+/** The workspace name of {@link ProjectSessionMetadata}: the same type. */
+export type WorkspaceSessionMetadata = ProjectSessionMetadata;
+
+/** @deprecated Use `WorkspaceSessionInitiatorType`. Kept permanently. */
 export type ProjectSessionInitiatorType = 'member' | 'trigger' | 'channel' | 'api' | 'system';
+
+/** The workspace name of {@link ProjectSessionInitiatorType}: the same type. */
+export type WorkspaceSessionInitiatorType = ProjectSessionInitiatorType;
 
 /**
  * Who started the RUN (the whole session tree). Server-derived at create and
  * immutable; a child copies its parent's. `null` on the row means the backfill
  * could not classify it — treat that as a `member` of `created_by`.
+ *
+ * @deprecated Use `WorkspaceSessionInitiator`. Kept permanently.
  */
 export interface ProjectSessionInitiator {
   type: ProjectSessionInitiatorType;
@@ -66,7 +81,13 @@ export interface ProjectSessionInitiator {
   label: string | null;
 }
 
+/** The workspace name of {@link ProjectSessionInitiator}: the same type. */
+export type WorkspaceSessionInitiator = ProjectSessionInitiator;
+
+/** @deprecated Use `WorkspaceSession`. Kept permanently. */
 export interface ProjectSession {
+  /** The workspace id: the same value as `project_id`. Absent on older APIs. */
+  workspace_id?: string;
   /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
   model?: string | null;
   /** The space (channel or DM) the session is filed in; null outside every space. Absent on older APIs. */
@@ -203,6 +224,9 @@ export interface ProjectSession {
   updated_at: string;
 }
 
+/** The workspace name of {@link ProjectSession}: the same type. */
+export type WorkspaceSession = ProjectSession;
+
 /**
  * The session that spawned `session`, or `null` when it is a root session.
  *
@@ -268,6 +292,8 @@ export interface PendingSessionPrompt {
  * metadata-only create. Callers that rotate project secrets or connector
  * credentials for the new session must await those writes before creating it.
  * The later `/start` call is an idempotent readiness/resume operation.
+ *
+ * @deprecated Use `CreateWorkspaceSessionInput`. Kept permanently.
  */
 export interface CreateProjectSessionInput {
   /** Visible same-project parent. Does not change the authenticated caller or inherit sharing. */
@@ -340,6 +366,9 @@ export interface CreateProjectSessionInput {
   secrets?: string[];
 }
 
+/** The workspace name of {@link CreateProjectSessionInput}: the same type. */
+export type CreateWorkspaceSessionInput = CreateProjectSessionInput;
+
 /** @deprecated Warm sessions were removed. Removed in the next major. */
 export interface WarmProjectSessionWorkspaceRefresh {
   status: 'skipped' | 'unchanged' | 'updated' | 'failed';
@@ -363,7 +392,11 @@ export interface ClaimWarmProjectSessionInput {
   pending_prompt?: PendingSessionPrompt;
 }
 
-/** One conversation in the session runtime's tree (the root and its subagent children). */
+/**
+ * One conversation in the session runtime's tree (the root and its subagent children).
+ *
+ * @deprecated Use `WorkspaceRuntimeSession`. Kept permanently.
+ */
 export interface ProjectRuntimeSession {
   id: string;
   /** Explicit server-registered fork provenance, never inferred from titles. */
@@ -376,11 +409,27 @@ export interface ProjectRuntimeSession {
   archived_at: number | null;
 }
 
+/** The workspace name of {@link ProjectRuntimeSession}: the same type. */
+export type WorkspaceRuntimeSession = ProjectRuntimeSession;
+
 /** Default page size the API applies when `limit` is omitted. Mirrors
- *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`. */
+ *  `SESSION_PAGE_DEFAULT_LIMIT` in `apps/api/src/projects/lib/session-inventory.ts`.
+ *
+ * @deprecated Use `WORKSPACE_SESSION_PAGE_DEFAULT_LIMIT`. Kept permanently.
+ */
 export const PROJECT_SESSION_PAGE_DEFAULT_LIMIT = 50;
-/** Largest page the API will serve. A bigger `limit` is rejected with 400. */
+
+/** The workspace name of {@link PROJECT_SESSION_PAGE_DEFAULT_LIMIT}: the same value. */
+export const WORKSPACE_SESSION_PAGE_DEFAULT_LIMIT = PROJECT_SESSION_PAGE_DEFAULT_LIMIT;
+/**
+ * Largest page the API will serve. A bigger `limit` is rejected with 400.
+ *
+ * @deprecated Use `WORKSPACE_SESSION_PAGE_MAX_LIMIT`. Kept permanently.
+ */
 export const PROJECT_SESSION_PAGE_MAX_LIMIT = 200;
+
+/** The workspace name of {@link PROJECT_SESSION_PAGE_MAX_LIMIT}: the same value. */
+export const WORKSPACE_SESSION_PAGE_MAX_LIMIT = PROJECT_SESSION_PAGE_MAX_LIMIT;
 
 /**
  * The window used by surfaces that read this list only to resolve a session id
@@ -394,9 +443,15 @@ export const PROJECT_SESSION_PAGE_MAX_LIMIT = 200;
  * so two of them asking for different limits would silently hand one the
  * other's page. Beyond this window a label falls back to the id, which is the
  * pre-existing behaviour for any session the list did not return.
+ *
+ * @deprecated Use `WORKSPACE_SESSION_NAME_LOOKUP_LIMIT`. Kept permanently.
  */
 export const PROJECT_SESSION_NAME_LOOKUP_LIMIT = PROJECT_SESSION_PAGE_MAX_LIMIT;
 
+/** The workspace name of {@link PROJECT_SESSION_NAME_LOOKUP_LIMIT}: the same value. */
+export const WORKSPACE_SESSION_NAME_LOOKUP_LIMIT = PROJECT_SESSION_NAME_LOOKUP_LIMIT;
+
+/** @deprecated Use `ListWorkspaceSessionsOptions`. Kept permanently. */
 export interface ListProjectSessionsOptions {
   /** `project` asks for the manager-only lifecycle inventory. Both scopes omit
    *  sessions the caller cannot open. */
@@ -437,12 +492,22 @@ export interface ListProjectSessionsOptions {
   teamLead?: string;
 }
 
-/** One keyset page of a project's sessions. */
+/** The workspace name of {@link ListProjectSessionsOptions}: the same type. */
+export type ListWorkspaceSessionsOptions = ListProjectSessionsOptions;
+
+/**
+ * One keyset page of a project's sessions.
+ *
+ * @deprecated Use `WorkspaceSessionPage`. Kept permanently.
+ */
 export interface ProjectSessionPage {
   items: ProjectSession[];
   /** Pass as `cursor` for the next page. `null` means this was the last page. */
   next_cursor: string | null;
 }
+
+/** The workspace name of {@link ProjectSessionPage}: the same type. */
+export type WorkspaceSessionPage = ProjectSessionPage;
 
 function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   const params = new URLSearchParams();
@@ -476,12 +541,12 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
  * To resolve ONE session, call `getProjectSession` — do not page the list
  * looking for it.
  */
-export async function listProjectSessionsPage(
+export async function listWorkspaceSessionsPage(
   projectId: string,
   options?: ListProjectSessionsOptions,
 ): Promise<ProjectSessionPage> {
   const response = await backendApi.get<ProjectSession[]>(
-    `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+    `/workspaces/${projectId}/sessions${projectSessionListQuery(options)}`,
     // A background read (shell prefetch, 5s sidebar poll): its query state
     // reports a failure. The host toast would announce a 403 over the access
     // gate that already explains it.
@@ -496,6 +561,9 @@ export async function listProjectSessionsPage(
   };
 }
 
+/** @deprecated Use `listWorkspaceSessionsPage`. Kept permanently. */
+export const listProjectSessionsPage = listWorkspaceSessionsPage;
+
 /**
  * The first page of a project's sessions as a bare array.
  *
@@ -503,30 +571,36 @@ export async function listProjectSessionsPage(
  * nothing had to learn an envelope. It returns ONE page — use
  * `listProjectSessionsPage` when you need to know whether more follow.
  */
-export async function listProjectSessions(projectId: string, options?: ListProjectSessionsOptions) {
+export async function listWorkspaceSessions(projectId: string, options?: ListProjectSessionsOptions) {
   return unwrap(
     await backendApi.get<ProjectSession[]>(
-      `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+      `/workspaces/${projectId}/sessions${projectSessionListQuery(options)}`,
     ),
   );
 }
+
+/** @deprecated Use `listWorkspaceSessions`. Kept permanently. */
+export const listProjectSessions = listWorkspaceSessions;
 
 /**
  * Set who can see/open a session (private | project | members). Owner or
  * project manager only. Reuses the connector/secret sharing intent shape.
  */
-export async function setProjectSessionSharing(
+export async function setWorkspaceSessionSharing(
   projectId: string,
   sessionId: string,
   intent: ConnectorSharing,
 ) {
   return unwrap(
     await backendApi.put<ProjectSession>(
-      `/projects/${projectId}/sessions/${sessionId}/sharing`,
+      `/workspaces/${projectId}/sessions/${sessionId}/sharing`,
       intent,
     ),
   );
 }
+
+/** @deprecated Use `setWorkspaceSessionSharing`. Kept permanently. */
+export const setProjectSessionSharing = setWorkspaceSessionSharing;
 
 /** One person who can open a session. */
 export interface SessionParticipant {
@@ -554,7 +628,7 @@ export interface SessionParticipants {
 export async function getSessionParticipants(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<SessionParticipants>(
-      `/projects/${projectId}/sessions/${sessionId}/participants`,
+      `/workspaces/${projectId}/sessions/${sessionId}/participants`,
       { showErrors: false },
     ),
   );
@@ -567,7 +641,7 @@ export async function getSessionParticipants(projectId: string, sessionId: strin
  */
 export async function getSessionWatch(projectId: string, sessionId: string) {
   return unwrap(
-    await backendApi.get<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+    await backendApi.get<{ watching: boolean }>(`/workspaces/${projectId}/sessions/${sessionId}/watch`, {
       showErrors: false,
     }),
   );
@@ -580,7 +654,7 @@ export async function getSessionWatch(projectId: string, sessionId: string) {
  */
 export async function setSessionWatch(projectId: string, sessionId: string, watching: boolean) {
   return unwrap(
-    await backendApi.put<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+    await backendApi.put<{ watching: boolean }>(`/workspaces/${projectId}/sessions/${sessionId}/watch`, {
       watching,
     }),
   );
@@ -599,7 +673,7 @@ export interface SessionListState {
  */
 export async function setSessionPinned(projectId: string, sessionId: string, pinned: boolean) {
   return unwrap(
-    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/pin`, { pinned }),
+    await backendApi.put<SessionListState>(`/workspaces/${projectId}/sessions/${sessionId}/pin`, { pinned }),
   );
 }
 
@@ -610,7 +684,7 @@ export async function setSessionPinned(projectId: string, sessionId: string, pin
  */
 export async function setSessionArchived(projectId: string, sessionId: string, archived: boolean) {
   return unwrap(
-    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/archive`, { archived }),
+    await backendApi.put<SessionListState>(`/workspaces/${projectId}/sessions/${sessionId}/archive`, { archived }),
   );
 }
 
@@ -734,7 +808,7 @@ export function findActiveTranscriptShare(
 export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<{ candidates: SessionPreviewCandidate[] }>(
-      `/projects/${projectId}/sessions/${sessionId}/previews`,
+      `/workspaces/${projectId}/sessions/${sessionId}/previews`,
     ),
   );
 }
@@ -742,7 +816,7 @@ export async function getSessionPreviewCandidates(projectId: string, sessionId: 
 export async function listSessionPublicShares(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.get<{ shares: SessionPublicShare[] }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      `/workspaces/${projectId}/sessions/${sessionId}/public-shares`,
       { showErrors: false },
     ),
   );
@@ -760,7 +834,7 @@ export async function createSessionPublicShare(
 ) {
   return unwrap(
     await backendApi.post<{ share: SessionPublicShare }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      `/workspaces/${projectId}/sessions/${sessionId}/public-shares`,
       input,
     ),
   );
@@ -773,7 +847,7 @@ export async function revokeSessionPublicShare(
 ) {
   return unwrap(
     await backendApi.delete<{ share: SessionPublicShare }>(
-      `/projects/${projectId}/sessions/${sessionId}/public-shares/${shareId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/public-shares/${shareId}`,
     ),
   );
 }
@@ -798,7 +872,7 @@ export interface TurnShare {
 }
 
 function turnSharePath(projectId: string, sessionId: string, turnId: string): string {
-  return `/projects/${projectId}/sessions/${sessionId}/turns/${encodeURIComponent(turnId)}/share`;
+  return `/workspaces/${projectId}/sessions/${sessionId}/turns/${encodeURIComponent(turnId)}/share`;
 }
 
 /** The live share of one turn, or `{ share: null }`. */
@@ -845,9 +919,9 @@ export async function unshareTurn(projectId: string, sessionId: string, turnId: 
  * establish a commit barrier for writes raced against this request; it only
  * provisions/resumes idempotently and reports readiness.
  */
-export async function createProjectSession(projectId: string, input?: CreateProjectSessionInput) {
+export async function createWorkspaceSession(projectId: string, input?: CreateProjectSessionInput) {
   const session = unwrap(
-    await backendApi.post<ProjectSession>(`/projects/${projectId}/sessions`, input ?? {}),
+    await backendApi.post<ProjectSession>(`/workspaces/${projectId}/sessions`, input ?? {}),
   );
   // Mark freshly-created EMPTY sessions so the session page shows the instant
   // typeable shell instead of the resume loader. THE chokepoint for every empty
@@ -860,6 +934,9 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   }
   return session;
 }
+
+/** @deprecated Use `createWorkspaceSession`. Kept permanently. */
+export const createProjectSession = createWorkspaceSession;
 
 /** @deprecated Warm sessions were removed. Removed in the next major. */
 export interface EnsureWarmProjectSessionOptions {
@@ -892,17 +969,20 @@ export async function claimWarmProjectSession(
   throw retiredEndpointError('claimWarmProjectSession', WARM_SESSIONS_REMOVED);
 }
 
-export async function getProjectSession(
+export async function getWorkspaceSession(
   projectId: string,
   sessionId: string,
   options?: { showErrors?: boolean },
 ) {
   return unwrap(
-    await backendApi.get<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, {
+    await backendApi.get<ProjectSession>(`/workspaces/${projectId}/sessions/${sessionId}`, {
       showErrors: options?.showErrors,
     }),
   );
 }
+
+/** @deprecated Use `getWorkspaceSession`. Kept permanently. */
+export const getProjectSession = getWorkspaceSession;
 
 /** One governed action an agent took in a session (from the connector audit). */
 export interface SessionAuditAction {
@@ -982,7 +1062,7 @@ export async function getSessionAudit(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionAudit>(
-      `/projects/${projectId}/sessions/${sessionId}/audit${qs ? `?${qs}` : ''}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/audit${qs ? `?${qs}` : ''}`,
       {
         showErrors: options?.showErrors,
       },
@@ -1099,7 +1179,7 @@ export async function getSessionTranscript(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionTranscript>(
-      `/projects/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/transcript${qs ? `?${qs}` : ''}`,
     ),
   );
 }
@@ -1146,7 +1226,7 @@ export async function getSessionTranscriptSync(
   if (options?.child) search.set('child', options.child);
   return unwrap(
     await backendApi.get<SessionTranscriptSyncEnvelope>(
-      `/projects/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/transcript?${search.toString()}`,
       { showErrors: false, signal: options?.signal },
     ),
   );
@@ -1258,7 +1338,7 @@ export async function getSessionTurn(
 ): Promise<SessionTurnStatus> {
   return unwrap(
     await backendApi.get<SessionTurnStatus>(
-      `/projects/${projectId}/sessions/${sessionId}/turn`,
+      `/workspaces/${projectId}/sessions/${sessionId}/turn`,
       options?.showErrors === false ? { showErrors: false } : undefined,
     ),
   );
@@ -1413,7 +1493,7 @@ export async function getSessionOpenBundle(
       // client kept requesting `/open-bundle`, so every session open 404'd the
       // bundle and silently fell back to 6-8 serial reads. (The API keeps an
       // `/open-bundle` alias for SDKs published before the rename.)
-      `/projects/${projectId}/sessions/${sessionId}/snapshot${qs ? `?${qs}` : ''}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/snapshot${qs ? `?${qs}` : ''}`,
       // A 404 here is an EXPECTED race: the session exists but the control
       // plane has not marked it visible yet. `openSessionBundle` already
       // resolves `null` and every consumer falls back to its direct read
@@ -1615,7 +1695,7 @@ export async function createSessionPrompt(
   const placement = input.placement ?? placementForDelivery(input.delivery);
   return unwrap(
     await backendApi.post<CreateSessionPromptResult>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts`,
       {
         client_message_id: input.clientMessageId,
         message_id: input.messageId,
@@ -1659,7 +1739,7 @@ export async function listSessionPrompts(
 ): Promise<{ prompts: SessionPrompt[]; sent?: SessionSentPrompt[]; observed_at?: string }> {
   return unwrap(
     await backendApi.get<{ prompts: SessionPrompt[]; sent?: SessionSentPrompt[]; observed_at?: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts`,
       // A background poll: a failed tick must not toast every second.
       { showErrors: false },
     ),
@@ -1700,7 +1780,7 @@ export async function deleteSessionPrompt(
 ): Promise<RemovedSessionPrompt> {
   const body = unwrap(
     await backendApi.delete<{ removed: RemovedSessionPrompt }>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
     ),
@@ -1724,7 +1804,7 @@ export async function editSessionPrompt(
 ): Promise<SessionPrompt> {
   return unwrap(
     await backendApi.patch<SessionPrompt>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
       { text },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
@@ -1744,7 +1824,7 @@ export async function interruptSessionPrompt(
 ): Promise<SessionPrompt> {
   return unwrap(
     await backendApi.patch<SessionPrompt>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
       { delivery: 'interrupt' },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
@@ -1768,7 +1848,7 @@ export async function retrySessionPrompt(
 ): Promise<SessionPrompt> {
   return unwrap(
     await backendApi.post<SessionPrompt>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/${promptId}/retry`,
       {},
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
@@ -1796,7 +1876,7 @@ export async function holdSessionPrompts(
 ): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
   return unwrap(
     await backendApi.post<{ prompts: SessionPrompt[]; observed_at?: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/prompts/hold`,
+      `/workspaces/${projectId}/sessions/${sessionId}/prompts/hold`,
       { held },
       // The caller toasts its own message; the host sink would add a second.
       { showErrors: false },
@@ -1804,7 +1884,11 @@ export async function holdSessionPrompts(
   );
 }
 
-/** Body of `updateProjectSession`. Every field is optional; send only what changes. */
+/**
+ * Body of `updateProjectSession`. Every field is optional; send only what changes.
+ *
+ * @deprecated Use `UpdateWorkspaceSessionInput`. Kept permanently.
+ */
 export interface UpdateProjectSessionInput {
   /** New display name. `""` or `null` clears it and reverts to the auto title. */
   name?: string | null;
@@ -1820,15 +1904,21 @@ export interface UpdateProjectSessionInput {
   metadata?: Record<string, unknown>;
 }
 
-export async function updateProjectSession(
+/** The workspace name of {@link UpdateProjectSessionInput}: the same type. */
+export type UpdateWorkspaceSessionInput = UpdateProjectSessionInput;
+
+export async function updateWorkspaceSession(
   projectId: string,
   sessionId: string,
   input: UpdateProjectSessionInput,
 ) {
   return unwrap(
-    await backendApi.patch<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, input),
+    await backendApi.patch<ProjectSession>(`/workspaces/${projectId}/sessions/${sessionId}`, input),
   );
 }
+
+/** @deprecated Use `updateWorkspaceSession`. Kept permanently. */
+export const updateProjectSession = updateWorkspaceSession;
 
 /**
  * Delete a session. It stays restorable until `restore_until` (30 days):
@@ -1836,10 +1926,10 @@ export async function updateProjectSession(
  * stored files and branch are deleted. `restore_until` is
  * absent from an API that predates restore.
  */
-export async function deleteProjectSession(projectId: string, sessionId: string) {
+export async function deleteWorkspaceSession(projectId: string, sessionId: string) {
   const result = unwrap(
     await backendApi.delete<{ ok: boolean; restore_until?: string }>(
-      `/projects/${projectId}/sessions/${sessionId}`,
+      `/workspaces/${projectId}/sessions/${sessionId}`,
     ),
   );
   // The device's saved copy of a deleted session would only take space.
@@ -1847,6 +1937,9 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
   noteSessionDeleted(sessionId);
   return result;
 }
+
+/** @deprecated Use `deleteWorkspaceSession`. Kept permanently. */
+export const deleteProjectSession = deleteWorkspaceSession;
 
 /**
  * Continue a lost session on a new computer (KRTX-2419). A session is lost when
@@ -1858,16 +1951,19 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
  * `session_sandbox_removal_pending` (retry in a minute), 503
  * `session_log_restore_off`.
  */
-export async function recoverProjectSession(projectId: string, sessionId: string) {
+export async function recoverWorkspaceSession(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ ok: true }>(
-      `/projects/${projectId}/sessions/${sessionId}/recover`,
+      `/workspaces/${projectId}/sessions/${sessionId}/recover`,
       {},
       // The caller shows the refusal in place (the lost-session banner).
       { showErrors: false },
     ),
   );
 }
+
+/** @deprecated Use `recoverWorkspaceSession`. Kept permanently. */
+export const recoverProjectSession = recoverWorkspaceSession;
 
 /**
  * Restore a deleted session before its `restore_until`. Its messages, stored
@@ -1877,10 +1973,10 @@ export async function recoverProjectSession(projectId: string, sessionId: string
  * is still being removed: retry in a minute), 410 `session_purged` (past
  * `restore_until`). Public links the delete revoked stay revoked.
  */
-export async function restoreProjectSession(projectId: string, sessionId: string) {
+export async function restoreWorkspaceSession(projectId: string, sessionId: string) {
   return unwrap(
     await backendApi.post<{ ok: boolean }>(
-      `/projects/${projectId}/sessions/${sessionId}/restore`,
+      `/workspaces/${projectId}/sessions/${sessionId}/restore`,
       {},
       // The caller reports the outcome itself (an Undo toast, a CLI line).
       { showErrors: false },
@@ -1888,8 +1984,11 @@ export async function restoreProjectSession(projectId: string, sessionId: string
   );
 }
 
+/** @deprecated Use `restoreWorkspaceSession`. Kept permanently. */
+export const restoreProjectSession = restoreWorkspaceSession;
+
 /** Restart a session's sandbox. */
-export async function restartProjectSession(
+export async function restartWorkspaceSession(
   projectId: string,
   sessionId: string,
   /** @deprecated Withdrawn with persistent machines. Ignored. Removed in the next major. */
@@ -1904,21 +2003,27 @@ export async function restartProjectSession(
       state_carried?: boolean | null;
       /** @deprecated Never sent: persistent machines left the product. Removed in the next major. */
       warning?: string;
-    }>(`/projects/${projectId}/sessions/${sessionId}/restart`, {}),
+    }>(`/workspaces/${projectId}/sessions/${sessionId}/restart`, {}),
   );
 }
 
+/** @deprecated Use `restartWorkspaceSession`. Kept permanently. */
+export const restartProjectSession = restartWorkspaceSession;
+
 /** Manual pause: stops the running sandbox in place, resumable via start(). */
-export async function stopProjectSession(projectId: string, sessionId: string) {
+export async function stopWorkspaceSession(projectId: string, sessionId: string) {
   const stopped = unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/stop`,
+      `/workspaces/${projectId}/sessions/${sessionId}/stop`,
       {},
     ),
   );
   noteSessionStopped(sessionId);
   return stopped;
 }
+
+/** @deprecated Use `stopWorkspaceSession`. Kept permanently. */
+export const stopProjectSession = stopWorkspaceSession;
 
 /**
  * The config release state of one session: which config release the box runs,
@@ -2027,17 +2132,20 @@ export interface SessionConfigState {
  * merely opened a new session, on every focus, forever. A failure here already
  * has a meaning ("could not tell"), and that is the caller's to render.
  */
-export async function getProjectSessionConfigState(
+export async function getWorkspaceSessionConfigState(
   projectId: string,
   sessionId: string,
 ): Promise<SessionConfigState> {
   return unwrap(
     await backendApi.get<SessionConfigState>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/config`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/config`,
       { showErrors: false },
     ),
   );
 }
+
+/** @deprecated Use `getWorkspaceSessionConfigState`. Kept permanently. */
+export const getProjectSessionConfigState = getWorkspaceSessionConfigState;
 
 /**
  * The outcome of a reload.
@@ -2148,33 +2256,36 @@ function parseSessionReloadStreamFrame(frame: string): SessionReloadStreamEvent 
  * Letting the host's global handler toast it too would talk over that dialog,
  * and would double up on every other failure the caller already reports.
  */
-export async function reloadProjectSessionConfig(
+export async function reloadWorkspaceSessionConfig(
   projectId: string,
   sessionId: string,
   input: { refresh_repo?: boolean; force?: boolean } = {},
 ): Promise<SessionReloadResult> {
   return unwrap(
     await backendApi.post<SessionReloadResult>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload`,
       input,
       { showErrors: false },
     ),
   );
 }
 
+/** @deprecated Use `reloadWorkspaceSessionConfig`. Kept permanently. */
+export const reloadProjectSessionConfig = reloadWorkspaceSessionConfig;
+
 /**
  * Reload a running session while reporting server-observed progress.
  *
- * This runs the same reload core as {@link reloadProjectSessionConfig}. The
+ * This runs the same reload core as {@link reloadWorkspaceSessionConfig}. The
  * separate route preserves the existing JSON contract used by CLI clients.
  * The `applying-config` phase includes the daemon's verified runtime swap. The
  * server cannot observe its internal boot and promotion steps separately, so
  * this method does not fabricate them.
  *
  * Requires a `fetch` implementation with a readable response body. React Native
- * callers must use {@link reloadProjectSessionConfig} instead.
+ * callers must use {@link reloadWorkspaceSessionConfig} instead.
  */
-export async function reloadProjectSessionConfigStream(
+export async function reloadWorkspaceSessionConfigStream(
   projectId: string,
   sessionId: string,
   input: { refresh_repo?: boolean; force?: boolean },
@@ -2182,7 +2293,7 @@ export async function reloadProjectSessionConfigStream(
   options: ApiClientOptions = {},
 ): Promise<SessionReloadResult> {
   const response = await backendApi.postStream(
-    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload-stream`,
+    `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/reload-stream`,
     input,
     options,
   );
@@ -2239,6 +2350,9 @@ export async function reloadProjectSessionConfigStream(
   if (!settled) throw new Error('Reload stream ended without a result');
   return settled;
 }
+
+/** @deprecated Use `reloadWorkspaceSessionConfigStream`. Kept permanently. */
+export const reloadProjectSessionConfigStream = reloadWorkspaceSessionConfigStream;
 
 /**
  * Change the model a session uses, mid-flight.
@@ -2326,33 +2440,39 @@ export interface SessionScope {
 /** @deprecated Use `SessionScope`. */
 export type SessionScopeResult = SessionScope;
 
-export async function getProjectSessionScope(
+export async function getWorkspaceSessionScope(
   projectId: string,
   sessionId: string,
 ): Promise<SessionScope> {
   return unwrap(
     await backendApi.get<SessionScope>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
     ),
   );
 }
+
+/** @deprecated Use `getWorkspaceSessionScope`. Kept permanently. */
+export const getProjectSessionScope = getWorkspaceSessionScope;
 
 /**
  * Re-scope a RUNNING session. Set semantics: what you send replaces what was
  * there, and takes effect from the next prompt.
  */
-export async function setProjectSessionScope(
+export async function setWorkspaceSessionScope(
   projectId: string,
   sessionId: string,
   scope: SessionScopeInput,
 ): Promise<SessionScope> {
   return unwrap(
     await backendApi.put<SessionScope>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/scope`,
       scope,
     ),
   );
 }
+
+/** @deprecated Use `setWorkspaceSessionScope`. Kept permanently. */
+export const setProjectSessionScope = setWorkspaceSessionScope;
 
 export interface SessionModelChangeResult {
   /** The stored model. Served by APIs since W4. */
@@ -2386,36 +2506,45 @@ export interface SessionModelSwitchResult extends SessionModelChangeResult {
 }
 
 /** Atomically persist a model and queue a continuation after the current turn. */
-export async function switchProjectSessionModel(
+export async function switchWorkspaceSessionModel(
   projectId: string,
   sessionId: string,
   input: SessionModelSwitchInput,
 ): Promise<SessionModelSwitchResult> {
   return unwrap(await backendApi.put<SessionModelSwitchResult>(
-    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`, input,
+    `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`, input,
   ));
 }
 
+/** @deprecated Use `switchWorkspaceSessionModel`. Kept permanently. */
+export const switchProjectSessionModel = switchWorkspaceSessionModel;
+
 /** Read the durable model pin. Null means this session follows its configured default. */
-export async function getProjectSessionModel(
+export async function getWorkspaceSessionModel(
   projectId: string,
   sessionId: string,
 ): Promise<{ model: string | null }> {
-  return { model: sessionModelPin(await getProjectSession(projectId, sessionId)) };
+  return { model: sessionModelPin(await getWorkspaceSession(projectId, sessionId)) };
 }
 
-export async function setProjectSessionModel(
+/** @deprecated Use `getWorkspaceSessionModel`. Kept permanently. */
+export const getProjectSessionModel = getWorkspaceSessionModel;
+
+export async function setWorkspaceSessionModel(
   projectId: string,
   sessionId: string,
   model: string,
 ): Promise<SessionModelChangeResult> {
   return unwrap(
     await backendApi.put<SessionModelChangeResult>(
-      `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
+      `/workspaces/${projectId}/sessions/${encodeURIComponent(sessionId)}/model`,
       { model },
     ),
   );
 }
+
+/** @deprecated Use `setWorkspaceSessionModel`. Kept permanently. */
+export const setProjectSessionModel = setWorkspaceSessionModel;
 
 /**
  * The `provider/model` a session is pinned to, or null when it follows the
@@ -2461,7 +2590,7 @@ export async function getSessionMessageAuthors(
 ): Promise<SessionMessageAuthors> {
   return unwrap(
     await backendApi.get<SessionMessageAuthors>(
-      `/projects/${projectId}/sessions/${sessionId}/message-authors`,
+      `/workspaces/${projectId}/sessions/${sessionId}/message-authors`,
       { showErrors: false },
     ),
   );
@@ -2511,7 +2640,7 @@ export async function getSessionModelUsage(
 ): Promise<SessionModelUsage> {
   return unwrap(
     await backendApi.get<SessionModelUsage>(
-      `/projects/${projectId}/sessions/${sessionId}/model-usage`,
+      `/workspaces/${projectId}/sessions/${sessionId}/model-usage`,
       { showErrors: false },
     ),
   );
@@ -2564,6 +2693,6 @@ export interface SessionUsage {
  *  itself, so its cost is in the session's own entry. */
 export async function getSessionUsage(projectId: string, sessionId: string): Promise<SessionUsage> {
   return unwrap(
-    await backendApi.get<SessionUsage>(`/projects/${projectId}/sessions/${sessionId}/usage`, { showErrors: false }),
+    await backendApi.get<SessionUsage>(`/workspaces/${projectId}/sessions/${sessionId}/usage`, { showErrors: false }),
   );
 }

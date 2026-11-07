@@ -9,7 +9,7 @@
  * refuses a `denied` row and rolls the token write back.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accounts, captureDevices, captureEnrollments, captureWorkspaces } from '@kortix/db';
+import { accounts, captureDevices, captureEnrollments, captureTenants } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { createEnrollmentToken, denyEnrollment, enroll, type EnrollInput } from '../capture/enrollment';
 import { db } from '../shared/db';
@@ -37,7 +37,7 @@ async function enrollmentOf(machine: string) {
 
 beforeAll(async () => {
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'capture-deny-race-test' });
-  await db.insert(captureWorkspaces).values({ accountId: ACCOUNT, enabled: true });
+  await db.insert(captureTenants).values({ accountId: ACCOUNT, enabled: true });
   const created = await createEnrollmentToken(
     ACCOUNT,
     { name: 'deny race', emailDomains: [], maxDevices: null, requireApproval: false, expiresAt: null, userId: null },

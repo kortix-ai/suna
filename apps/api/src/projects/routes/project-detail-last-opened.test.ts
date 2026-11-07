@@ -49,7 +49,8 @@ let releaseWrite: (() => void) | null = null;
 /** Whether the pending write should reject when released. */
 let rejectWrite = false;
 
-mock.module('../../shared/db', () => ({ withDbTransaction: async <T>(action: () => Promise<T>) => action(),
+mock.module('../../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   hasDatabase: true,
   db: {
     update: () => ({

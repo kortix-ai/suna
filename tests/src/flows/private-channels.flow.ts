@@ -46,21 +46,21 @@ const R = {
   triggers: 'GET /v1/projects/:projectId/triggers',
   createTrigger: 'POST /v1/projects/:projectId/triggers',
 } as const;
-const SPACES = '/v1/projects/:projectId/spaces';
-const SPACE = '/v1/projects/:projectId/spaces/:spaceId';
-const LINKS = '/v1/projects/:projectId/spaces/:spaceId/links';
-const APPS = '/v1/projects/:projectId/spaces/:spaceId/apps';
-const MEMBERS = '/v1/projects/:projectId/spaces/:spaceId/members';
-const MEMBER = '/v1/projects/:projectId/spaces/:spaceId/members/:userId';
-const JOIN = '/v1/projects/:projectId/spaces/:spaceId/join';
-const SESSIONS = '/v1/projects/:projectId/sessions';
-const LAYER = '/v1/projects/:projectId/memory/layers/:layerKey';
-const PAGES = '/v1/projects/:projectId/memory/layers/:layerKey/pages';
-const NOTES = '/v1/projects/:projectId/memory/layers/:layerKey/notes';
-const SEARCH = '/v1/projects/:projectId/memory/search';
+const SPACES = '/v1/workspaces/:projectId/spaces';
+const SPACE = '/v1/workspaces/:projectId/spaces/:spaceId';
+const LINKS = '/v1/workspaces/:projectId/spaces/:spaceId/links';
+const APPS = '/v1/workspaces/:projectId/spaces/:spaceId/apps';
+const MEMBERS = '/v1/workspaces/:projectId/spaces/:spaceId/members';
+const MEMBER = '/v1/workspaces/:projectId/spaces/:spaceId/members/:userId';
+const JOIN = '/v1/workspaces/:projectId/spaces/:spaceId/join';
+const SESSIONS = '/v1/workspaces/:projectId/sessions';
+const LAYER = '/v1/workspaces/:projectId/memory/layers/:layerKey';
+const PAGES = '/v1/workspaces/:projectId/memory/layers/:layerKey/pages';
+const NOTES = '/v1/workspaces/:projectId/memory/layers/:layerKey/notes';
+const SEARCH = '/v1/workspaces/:projectId/memory/search';
 const DRIVES = '/v1/drives';
 const FILES = '/v1/drives/:driveId/files';
-const TRIGGERS = '/v1/projects/:projectId/triggers';
+const TRIGGERS = '/v1/workspaces/:projectId/triggers';
 
 type Space = { space_id: string; slug: string | null; is_default: boolean; visibility?: 'public' | 'private'; is_member?: boolean };
 type MemberList = { members: { user_id: string }[]; can_add: boolean };
@@ -158,12 +158,12 @@ flow(
       });
 
       await ctx.step('the manager outside P finds it in GET /spaces/private (name and member count, no content); bob → 403 forbidden', async () => {
-        const r = (await as(people.manager).get('/v1/projects/:projectId/spaces/private', { params })).status(200);
+        const r = (await as(people.manager).get('/v1/workspaces/:projectId/spaces/private', { params })).status(200);
         r.body().schema(PrivateChannelListSchema);
         const found = r.json<{ channels: { space_id: string; slug: string; member_count: number }[] }>().channels.find((c) => c.space_id === p.space_id);
         if (found?.slug !== p.slug || found.member_count !== 2) throw new Error(`P in /spaces/private: ${JSON.stringify(found)}`);
-        (await as(people.alice).get('/v1/projects/:projectId/spaces/private', { params })).status(403).body().has('$.code', 'forbidden');
-        (await as(people.bob).get('/v1/projects/:projectId/spaces/private', { params })).status(403).body().has('$.code', 'forbidden');
+        (await as(people.alice).get('/v1/workspaces/:projectId/spaces/private', { params })).status(403).body().has('$.code', 'forbidden');
+        (await as(people.bob).get('/v1/workspaces/:projectId/spaces/private', { params })).status(403).body().has('$.code', 'forbidden');
       });
 
       // Owner decision 2026-10-26: a manager adds people (never themself), so a channel its last member left is not stuck.

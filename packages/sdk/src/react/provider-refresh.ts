@@ -2,7 +2,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 
-import { listProjectSecrets } from '../core/rest/projects-client';
+import { listWorkspaceSecrets } from '../core/rest/projects-client';
 import { connectedGatewayProviderIdsFromSecretNames } from './provider-selection';
 import { configKeys } from './use-runtime-config';
 import { runtimeKeys } from './use-runtime-sessions';
@@ -93,11 +93,14 @@ function invalidateProviderQueries(
  * project's secrets version move (`kortix.control.session`), on this device or
  * another. Keeps a read already in flight.
  */
-export function invalidateProjectProviderQueries(queryClient: QueryClient, projectId: string): void {
+export function invalidateWorkspaceProviderQueries(queryClient: QueryClient, projectId: string): void {
   invalidateProviderQueries(queryClient, projectId, false);
 }
 
-export function refreshProjectProviderState(
+/** @deprecated Use `invalidateWorkspaceProviderQueries`. Kept permanently. */
+export const invalidateProjectProviderQueries = invalidateWorkspaceProviderQueries;
+
+export function refreshWorkspaceProviderState(
   queryClient: QueryClient,
   projectId: string,
   opts: RefreshProjectProviderStateOptions = {},
@@ -146,7 +149,7 @@ export function refreshProjectProviderState(
       // too, not only from the `refetchQueries` burst below.
       const secrets = await queryClient.fetchQuery({
         queryKey: qk.project.secrets(projectId),
-        queryFn: () => listProjectSecrets(projectId),
+        queryFn: () => listWorkspaceSecrets(projectId),
         staleTime: 0,
       });
       connected = providerConnectedInSecrets(secrets, expected);
@@ -162,3 +165,6 @@ export function refreshProjectProviderState(
   };
   schedule(() => void poll(), CONVERGE_POLL_MS);
 }
+
+/** @deprecated Use `refreshWorkspaceProviderState`. Kept permanently. */
+export const refreshProjectProviderState = refreshWorkspaceProviderState;

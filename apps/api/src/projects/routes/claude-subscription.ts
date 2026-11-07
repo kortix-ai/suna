@@ -39,7 +39,7 @@ import { checkNamedConnection } from '../../secrets/provider-accounts';
 import { captureProductEvent } from '../../shared/product-analytics';
 import { analyticsSource } from '../../middleware/analytics-source';
 
-const Params = z.object({ projectId: z.string() });
+const Params = z.object({ workspaceId: z.string() });
 
 const StatusSchema = z
   .object({
@@ -138,12 +138,12 @@ async function accountTarget(c: ProjectContext, who: Caller, body: { resource_la
 
 export function registerClaudeSubscriptionRoutes(): void {
   // The pattern also matches `/:projectId/claude-subscription` itself.
-  projectsApp.use('/:projectId/claude-subscription/*', createProjectSecretWriteRateLimitMiddleware());
+  projectsApp.use('/:workspaceId/claude-subscription/*', createProjectSecretWriteRateLimitMiddleware());
 
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/claude-subscription',
+      path: '/{workspaceId}/claude-subscription',
       tags: ['secrets'],
       summary: 'Read whether you may use a Claude account here',
       description: 'Whether you may use at least one Claude account in this project: your own or one shared with you. No token is returned.',
@@ -152,7 +152,7 @@ export function registerClaudeSubscriptionRoutes(): void {
       responses: { 200: json(StatusSchema, 'Login status'), ...errors(403, 404) },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
       return c.json(await status(who), 200);
@@ -162,7 +162,7 @@ export function registerClaudeSubscriptionRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/claude-subscription/login/start',
+      path: '/{workspaceId}/claude-subscription/login/start',
       tags: ['secrets'],
       summary: 'Start a Claude subscription sign-in',
       description:
@@ -172,7 +172,7 @@ export function registerClaudeSubscriptionRoutes(): void {
       responses: { 200: json(StartSchema, 'The sign-in link'), ...errors(400, 403, 404, 429, 502, 503) },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const body = c.req.valid('json');
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
@@ -192,7 +192,7 @@ export function registerClaudeSubscriptionRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/claude-subscription/login/complete',
+      path: '/{workspaceId}/claude-subscription/login/complete',
       tags: ['secrets'],
       summary: 'Finish a Claude subscription sign-in',
       description:
@@ -202,7 +202,7 @@ export function registerClaudeSubscriptionRoutes(): void {
       responses: { 200: json(ConnectedSchema, 'Signed in'), ...errors(400, 403, 404, 409, 410, 502) },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const body = c.req.valid('json');
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
@@ -229,7 +229,7 @@ export function registerClaudeSubscriptionRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/claude-subscription/token',
+      path: '/{workspaceId}/claude-subscription/token',
       tags: ['secrets'],
       summary: 'Store a Claude subscription token you made',
       description:
@@ -239,7 +239,7 @@ export function registerClaudeSubscriptionRoutes(): void {
       responses: { 200: json(ConnectedSchema, 'Stored'), ...errors(400, 403, 404) },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const body = c.req.valid('json');
       const token = body.token.trim();
       const who = await caller(c, projectId);
@@ -268,7 +268,7 @@ export function registerClaudeSubscriptionRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/claude-subscription',
+      path: '/{workspaceId}/claude-subscription',
       tags: ['secrets'],
       summary: 'Delete your own Claude accounts in this project',
       description: 'Deletes every Claude account you added to this project and stops your running Claude sign-ins. Accounts others shared with you stay.',
@@ -277,7 +277,7 @@ export function registerClaudeSubscriptionRoutes(): void {
       responses: { 200: json(StatusSchema, 'Disconnected'), ...errors(403, 404) },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const who = await caller(c, projectId);
       if ('body' in who) return c.json(who.body, who.status);
       await cancelClaudeLogins(who.accountId, who.userId);

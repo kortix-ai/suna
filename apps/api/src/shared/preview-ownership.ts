@@ -14,7 +14,6 @@
 
 import { db } from './db';
 import { isPlatformAdmin } from './platform-roles';
-import { resolveAccountId } from './resolve-account';
 import {
   isProjectSessionVisibleTo,
   isTriggerRunSession,
@@ -469,7 +468,9 @@ async function computeEntry(
   // A caller that just read the sandbox row (the proxy) passes it, and the
   // membership read then starts with the admin read: one round trip, not two.
   const refRead = known ? Promise.resolve(known) : resolveSandboxRef(previewSandboxId);
-  const adminRead = resolveAccountId(userId).then(isPlatformAdmin);
+  // Platform roles are keyed by the person's id (`platform_user_roles`), not
+  // by any account: a person with no workspace can still be staff.
+  const adminRead = isPlatformAdmin(userId);
   adminRead.catch(() => undefined);
   const ref = await refRead;
   const memberRead = ref ? isAccountMember(userId, ref.accountId) : null;

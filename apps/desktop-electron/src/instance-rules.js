@@ -50,7 +50,7 @@ function normalizeInstanceUrl(raw) {
   url.search = '';
   url.hash = '';
   // Same landing path as the Production / Dev / Local presets.
-  if (url.pathname === '/') url.pathname = '/projects';
+  if (url.pathname === '/') url.pathname = '/workspaces';
   return { ok: true, url: url.toString() };
 }
 

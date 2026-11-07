@@ -70,7 +70,7 @@ function startServer(opts: ServerOpts = {}): string {
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json();
       calls.push({ method: req.method, path: url.pathname, body });
       const p = url.pathname;
-      if (p === `/v1/projects/${PROJECT}` && req.method === 'GET') {
+      if (p === `/v1/workspaces/${PROJECT}` && req.method === 'GET') {
         return Response.json({
           project_id: PROJECT,
           name: 'Provider',
@@ -78,7 +78,7 @@ function startServer(opts: ServerOpts = {}): string {
           available_sandbox_providers: ['platinum', 'daytona'],
         });
       }
-      if (p === `/v1/projects/${PROJECT}/sandbox-provider` && req.method === 'PATCH') {
+      if (p === `/v1/workspaces/${PROJECT}/sandbox-provider` && req.method === 'PATCH') {
         const wanted = (body as { provider: string | null }).provider;
         if (wanted !== null && !['platinum', 'daytona'].includes(wanted)) {
           return Response.json(
@@ -99,7 +99,7 @@ function startServer(opts: ServerOpts = {}): string {
           available_sandbox_providers: ['platinum', 'daytona'],
         });
       }
-      if (p === `/v1/projects/${PROJECT}/sandbox-provider/transition` && req.method === 'GET') {
+      if (p === `/v1/workspaces/${PROJECT}/sandbox-provider/transition` && req.method === 'GET') {
         const status = statuses.length > 1 ? statuses.shift()! : statuses[0]!;
         const latest = transitionView(status, target, status === 'failed' ? 'build_failed' : null);
         return Response.json({
@@ -181,7 +181,7 @@ describe('kortix sandboxes provider', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('pinned     daytona');
     expect(r.stdout).toContain('available  platinum, daytona');
-    expect(calls).toEqual([{ method: 'GET', path: `/v1/projects/${PROJECT}`, body: null }]);
+    expect(calls).toEqual([{ method: 'GET', path: `/v1/workspaces/${PROJECT}`, body: null }]);
 
     const j = await runCli(['sandboxes', 'provider', '--project', PROJECT, '--json'], config);
     expect(JSON.parse(j.stdout)).toEqual({
@@ -197,7 +197,7 @@ describe('kortix sandboxes provider', () => {
     expect(calls).toEqual([
       {
         method: 'PATCH',
-        path: `/v1/projects/${PROJECT}/sandbox-provider`,
+        path: `/v1/workspaces/${PROJECT}/sandbox-provider`,
         body: { provider: 'platinum' },
       },
     ]);
@@ -210,7 +210,7 @@ describe('kortix sandboxes provider', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'PATCH',
-      path: `/v1/projects/${PROJECT}/sandbox-provider`,
+      path: `/v1/workspaces/${PROJECT}/sandbox-provider`,
       body: { provider: null },
     });
     expect(r.stdout).toContain('Pin cleared');
@@ -248,7 +248,7 @@ describe('kortix sandboxes provider', () => {
     expect(calls).toEqual([
       {
         method: 'GET',
-        path: `/v1/projects/${PROJECT}/sandbox-provider/transition`,
+        path: `/v1/workspaces/${PROJECT}/sandbox-provider/transition`,
         body: null,
       },
     ]);

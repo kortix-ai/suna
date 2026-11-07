@@ -2,11 +2,11 @@
  * kortix.yaml owns `connectors[].auth.secret`: binding a secret to a connector
  * (or clearing it) commits the change to the file before the row changes.
  */
-import { projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { withProjectGitAuth } from '../projects/surface';
 import { db } from '../shared/db';
 import { mutateManifestWithRetry, type ManifestCommitResult } from './manifest-mutation';
+import { projectsView } from '../workspaces/rows';
 
 type Row = Record<string, unknown>;
 const isRow = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -21,7 +21,7 @@ export function withAuthSecret(entry: Row, secret: string | null): Row {
 }
 
 export async function commitConnectorAuthSecret(projectId: string, slug: string, secret: string | null): Promise<ManifestCommitResult> {
-  const [row] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   if (!row) return { ok: false, error: 'project not found', status: 404 };
   let project: Awaited<ReturnType<typeof withProjectGitAuth>>;
   try {

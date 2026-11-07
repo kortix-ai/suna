@@ -58,10 +58,10 @@ function startServer(): string {
       const url = new URL(req.url);
       const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => null);
       calls.push({ method: req.method, path: url.pathname + url.search, body });
-      const ex = `/v1/connectors/projects/${PROJECT}`;
+      const ex = `/v1/connectors/workspaces/${PROJECT}`;
 
       // ── Pipedream → Kortix moves ──────────────────────────────────────────
-      if (url.pathname === `/v1/projects/${PROJECT}/connector-moves` && req.method === 'GET') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connector-moves` && req.method === 'GET') {
         return Response.json({
           moves: [
             { slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'hubspot', to: null, connection_id: null, signed_in: false, accounts: 1 },
@@ -71,11 +71,11 @@ function startServer(): string {
           ].filter((move) => !switched.has(move.slug)),
         });
       }
-      if (/^\/v1\/projects\/proj_connectors\/connectors\/[^/]+\/move$/.test(url.pathname) && req.method === 'POST') {
+      if (/^\/v1\/workspaces\/proj_connectors\/connectors\/[^/]+\/move$/.test(url.pathname) && req.method === 'POST') {
         const answer = moveAnswers.length > 1 ? moveAnswers.shift()! : moveAnswers[0]!;
         return Response.json(answer.body, { status: answer.status });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/discover-resource`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connections/conn_move/oauth2/discover-resource`) {
         return Response.json({
           discovery: {
             resource_url: 'https://mcp.linear.test/mcp',
@@ -89,13 +89,13 @@ function startServer(): string {
           },
         });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/register`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connections/conn_move/oauth2/register`) {
         return Response.json({ application: { client_id: 'cli_move' } });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/authorize`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connections/conn_move/oauth2/authorize`) {
         return Response.json({ authorization_url: 'https://auth.linear.test/authorize?state=s1', expires_at: '2026-10-19T12:00:00.000Z' });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/status`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connections/conn_move/oauth2/status`) {
         if (switchOnSignIn) switched.add('linear');
         return Response.json({ status: 'active', scopes: [] });
       }
@@ -131,7 +131,7 @@ function startServer(): string {
         });
       }
       if (
-        url.pathname.startsWith(`/v1/projects/${PROJECT}/connections/`) &&
+        url.pathname.startsWith(`/v1/workspaces/${PROJECT}/connections/`) &&
         url.pathname.endsWith('/default') &&
         req.method === 'PUT'
       ) {
@@ -215,10 +215,10 @@ function startServer(): string {
         return Response.json({ ok: true, sync: { synced: 1, errors: [] } });
       }
       // ── OAuth 2.1 device flow ────────────────────────────────────────────
-      if (url.pathname === `/v1/projects/${PROJECT}/connectors/gmail/oauth2/connection` && req.method === 'POST') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connectors/gmail/oauth2/connection` && req.method === 'POST') {
         return Response.json({ connection_id: 'conn_1' });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_1/oauth2/discover-resource`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connections/conn_1/oauth2/discover-resource`) {
         return Response.json({
           discovery: {
             resource_url: 'https://mail.test/mcp',
@@ -236,10 +236,10 @@ function startServer(): string {
           },
         });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_1/oauth2/register`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connections/conn_1/oauth2/register`) {
         return Response.json({ application: { client_id: 'cli_1' } });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_1/oauth2/device` && req.method === 'POST') {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connections/conn_1/oauth2/device` && req.method === 'POST') {
         return Response.json({
           session_id: 'sess_dev',
           user_code: 'WDJB-MJHT',
@@ -249,7 +249,7 @@ function startServer(): string {
           interval_seconds: 1,
         });
       }
-      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_1/oauth2/device/sess_dev`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT}/connections/conn_1/oauth2/device/sess_dev`) {
         return Response.json({ status: 'active', scopes: ['mail.read'] });
       }
       if (url.pathname === `${ex}/connect/toolkits`) {
@@ -358,7 +358,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(ls.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'GET',
-      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=false`,
+      path: `/v1/connectors/workspaces/${PROJECT}/connectors?include_schemas=false`,
       body: null,
     });
 
@@ -367,7 +367,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(show.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'GET',
-      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=false`,
+      path: `/v1/connectors/workspaces/${PROJECT}/connectors?include_schemas=false`,
       body: null,
     });
 
@@ -380,7 +380,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(showJson.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'GET',
-      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=true`,
+      path: `/v1/connectors/workspaces/${PROJECT}/connectors?include_schemas=true`,
       body: null,
     });
   });
@@ -391,7 +391,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(on.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'PUT',
-      path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/sensitive`,
+      path: `/v1/connectors/workspaces/${PROJECT}/connectors/gmail/sensitive`,
       body: { sensitive: true },
     });
     expect(on.stdout).toContain('every call needs approval');
@@ -419,7 +419,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(calls).toEqual([]);
     expect(r.stdout).toContain('ownership is per account now');
-    expect(r.stdout).toContain('kortix connectors connect gmail --owner me|project');
+    expect(r.stdout).toContain('kortix connectors connect gmail --owner me|workspace');
     expect(r.stdout).toContain('kortix connectors accounts gmail');
   });
 
@@ -439,7 +439,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
-      path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/connect`,
+      path: `/v1/connectors/workspaces/${PROJECT}/connectors/gmail/connect`,
       body: {},
     });
     expect(JSON.parse(r.stdout)).toMatchObject({
@@ -458,10 +458,10 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'POST',
-      path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/connect`,
+      path: `/v1/connectors/workspaces/${PROJECT}/connectors/gmail/connect`,
       body: { owner: 'project' },
     });
-    expect(r.stdout).toContain('shared with every project member');
+    expect(r.stdout).toContain('shared with every workspace member');
   });
 
   test('connect --owner rejects anything but me|project before any request', async () => {
@@ -471,14 +471,14 @@ describe('kortix connectors — capability-page parity', () => {
       config,
     );
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('--owner must be me or project');
+    expect(r.stderr).toContain('--owner must be me or workspace');
     expect(calls).toEqual([]);
   });
 
   test.each([
     [['--mine', '--owner', 'project'], '--mine cannot be combined with --owner or --owner-id'],
-    [['--owner', 'everyone'], '--owner must be project, agent, member, subject, or external'],
-    [['--owner', 'project', '--owner-id', 'agent_1'], '--owner-id is not valid for a project connection'],
+    [['--owner', 'everyone'], '--owner must be workspace, agent, member, subject, or external'],
+    [['--owner', 'project', '--owner-id', 'agent_1'], '--owner-id is not valid for a workspace connection'],
     [['--metadata', 'not-json'], '--metadata must be valid JSON'],
   ])('connections add %p exits 2 before any request', async (flags, message) => {
     const config = writeConfig(startServer());
@@ -497,7 +497,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'GET',
-      path: `/v1/connectors/projects/${PROJECT}/connectors/gmail/accounts`,
+      path: `/v1/connectors/workspaces/${PROJECT}/connectors/gmail/accounts`,
       body: null,
     });
     const lines = r.stdout.split('\n').map((line) => line.trim());
@@ -520,7 +520,7 @@ describe('kortix connectors — capability-page parity', () => {
       'kortix connectors call gmail <action> --account "user@example.test"',
     );
     expect(r.stdout).toContain('kortix connectors call gmail <action> --account me');
-    expect(r.stdout).toContain('kortix connectors call gmail <action> --account project');
+    expect(r.stdout).toContain('kortix connectors call gmail <action> --account workspace');
     // A default IS pinned here (Sales inbox), so no account_required warning.
     expect(r.stdout).not.toContain('No default pinned');
   });
@@ -559,7 +559,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.stdout).toContain('user@example.test');
     expect(calls.at(-1)).toEqual({
       method: 'PUT',
-      path: `/v1/projects/${PROJECT}/connections/22222222-2222-4222-8222-222222222222/default`,
+      path: `/v1/workspaces/${PROJECT}/connections/22222222-2222-4222-8222-222222222222/default`,
       body: {},
     });
   });
@@ -608,7 +608,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(human.code).toBe(0);
     expect(human.stdout).toContain('No connected accounts.');
     expect(human.stdout).toContain('kortix connectors connect gmail --owner me');
-    expect(human.stdout).toContain('kortix connectors connect gmail --owner project');
+    expect(human.stdout).toContain('kortix connectors connect gmail --owner workspace');
 
     const json = await runCli(['connectors', 'accounts', 'gmail', '--project', PROJECT, '--json'], config);
     expect(json.code).toBe(0);
@@ -643,7 +643,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'pay', '--cursor', 'cur_1', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&cursor=cur_1`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/discover/connectors?q=pay&cursor=cur_1`);
     expect(r.stdout).toContain('stripe');
     expect(r.stdout).toContain('--cursor cur_2');
     expect(r.stdout).toContain('catalog show <id>');
@@ -653,14 +653,14 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'pay', '--kind', 'mcp,composio', '--one-click', '--category', 'finance', '--limit', '10', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors?q=pay&category=finance&limit=10&kind=mcp%2Ccomposio&oneClick=1`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/discover/connectors?q=pay&category=finance&limit=10&kind=mcp%2Ccomposio&oneClick=1`);
   });
 
   test('catalog categories lists the keys --category takes, with the same filters', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'categories', '--kind', 'composio', '--one-click', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/sections?perCategory=1&maxCategories=40&kind=composio&oneClick=1`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/discover/sections?perCategory=1&maxCategories=40&kind=composio&oneClick=1`);
     expect(r.stdout).toContain('finance');
     expect(r.stdout).toContain('71');
     const j = await runCli(['connectors', 'catalog', 'categories', '--json', '--project', PROJECT], config);
@@ -671,7 +671,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'tools', 'stripe', '--way', 'composio:stripe', '--json', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/tools?id=stripe&way=composio%3Astripe`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/discover/connectors/tools?id=stripe&way=composio%3Astripe`);
     expect(JSON.parse(r.stdout).tools[0].name).toBe('list_customers');
   });
 
@@ -679,7 +679,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'install', 'kortix:stripe', '--way', 'composio:stripe', '--name', 'Billing', '--slug', 'billing', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)).toMatchObject({ method: 'POST', path: `/v1/connectors/projects/${PROJECT}/discover/install`, body: { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing', slug: 'billing' } });
+    expect(calls.at(-1)).toMatchObject({ method: 'POST', path: `/v1/connectors/workspaces/${PROJECT}/discover/install`, body: { id: 'kortix:stripe', way: 'composio:stripe', name: 'Billing', slug: 'billing' } });
     expect(r.stdout).toContain('connector profile');
     expect(r.stdout).toContain('kortix connectors connect billing');
   });
@@ -734,7 +734,7 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toMatchObject({
       method: 'PUT',
-      path: `/v1/connectors/projects/${PROJECT}/connectors/billing/oauth2/connection`,
+      path: `/v1/connectors/workspaces/${PROJECT}/connectors/billing/oauth2/connection`,
       body: { token_url: 'https://auth.example.test/token', client_id: 'abc', client_secret: 's3cret', scopes: ['read', 'write'] },
     });
     expect(r.stdout).not.toContain('s3cret');
@@ -761,7 +761,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'policy', 'billing', 'effective', '--policy-set', 'readonly', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/connectors/billing/policies?policy_set=readonly`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/connectors/billing/policies?policy_set=readonly`);
     expect(r.stdout).toMatch(/create_charge +write +blocked +rule set \(create_\* → block\)/);
     expect(r.stdout).toMatch(/list_charges +read +runs +default mode/);
   });
@@ -770,8 +770,8 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'show', 'stripe', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-2)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/detail?id=stripe`);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/discover/connectors/tools?id=stripe&way=stripe-mcp`);
+    expect(calls.at(-2)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/discover/connectors/detail?id=stripe`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/discover/connectors/tools?id=stripe&way=stripe-mcp`);
     expect(r.stdout).toContain('stripe-mcp');
     expect(r.stdout).toContain('(recommended, 1-click)');
     expect(r.stdout).toContain('Composio');
@@ -808,7 +808,7 @@ describe('kortix connectors — capability-page parity', () => {
     );
     expect(r.code).toBe(0);
     const put = calls.find((c) => c.method === 'PUT')!;
-    expect(put.path).toBe(`/v1/connectors/projects/${PROJECT}/policies`);
+    expect(put.path).toBe(`/v1/connectors/workspaces/${PROJECT}/policies`);
     expect(put.body).toEqual({
       policies: [
         { match: 'send_*', action: 'require_approval' },
@@ -866,7 +866,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'policy', 'rm', 'never_*', '--project', PROJECT], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('No project rule matching "never_*"');
+    expect(r.stderr).toContain('No workspace rule matching "never_*"');
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
   });
 
@@ -887,7 +887,7 @@ describe('kortix connectors — capability-page parity', () => {
       policies: [{ match: 'send_*', action: 'require_approval' }],
       defaultMode: 'allow_all',
     });
-    expect(r.stdout).toContain('Project default mode → allow_all');
+    expect(r.stdout).toContain('Workspace default mode → allow_all');
   });
 
   test('policy set --apply rejects an invalid default mode', async () => {
@@ -903,7 +903,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'apps', 'sl', '--category', 'comms', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/connect/toolkits?q=sl&category=comms`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/connect/toolkits?q=sl&category=comms`);
     expect(r.stdout).toContain('slack');
   });
 
@@ -911,7 +911,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'apps', 'sl', '--category', 'comms', '--pipedream', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/pipedream/apps?q=sl&category=comms`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/pipedream/apps?q=sl&category=comms`);
     expect(r.stdout).toContain('slack');
   });
 
@@ -920,11 +920,11 @@ describe('kortix connectors — capability-page parity', () => {
     const r = await runCli(['connectors', 'authorize', 'gmail', '--device', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls.map((c) => c.path)).toEqual([
-      `/v1/projects/${PROJECT}/connectors/gmail/oauth2/connection`,
-      `/v1/projects/${PROJECT}/connections/conn_1/oauth2/discover-resource`,
-      `/v1/projects/${PROJECT}/connections/conn_1/oauth2/register`,
-      `/v1/projects/${PROJECT}/connections/conn_1/oauth2/device`,
-      `/v1/projects/${PROJECT}/connections/conn_1/oauth2/device/sess_dev`,
+      `/v1/workspaces/${PROJECT}/connectors/gmail/oauth2/connection`,
+      `/v1/workspaces/${PROJECT}/connections/conn_1/oauth2/discover-resource`,
+      `/v1/workspaces/${PROJECT}/connections/conn_1/oauth2/register`,
+      `/v1/workspaces/${PROJECT}/connections/conn_1/oauth2/device`,
+      `/v1/workspaces/${PROJECT}/connections/conn_1/oauth2/device/sess_dev`,
     ]);
     expect(calls.at(-2)!.body).toEqual({ scopes: ['mail.read'] });
     expect(r.stdout).toContain('WDJB-MJHT');
@@ -946,7 +946,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'moves', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v1/projects/${PROJECT}/connector-moves`]);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v1/workspaces/${PROJECT}/connector-moves`]);
     const lines = r.stdout.split('\n').map((line) => line.trim());
     expect(lines).toContain('SLUG     PROVIDER    APP          MOVES TO   STATE               ACCOUNTS');
     expect(lines).toContain('crm      pipedream   hubspot      —          no Kortix app yet   1');
@@ -970,7 +970,7 @@ describe('kortix connectors — capability-page parity', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'move', 'linear', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls).toEqual([{ method: 'POST', path: `/v1/projects/${PROJECT}/connectors/linear/move`, body: {} }]);
+    expect(calls).toEqual([{ method: 'POST', path: `/v1/workspaces/${PROJECT}/connectors/linear/move`, body: {} }]);
     expect(r.stdout).toContain('linear already uses its Kortix app (provider mcp). Nothing to move.');
     expect(r.stdout).not.toContain('sign in again');
   });
@@ -983,15 +983,15 @@ describe('kortix connectors — capability-page parity', () => {
     ];
     const r = await runCli(['connectors', 'move', 'linear', '--connection', 'conn_move', '--no-open', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    const oauth2 = `/v1/projects/${PROJECT}/connections/conn_move/oauth2`;
+    const oauth2 = `/v1/workspaces/${PROJECT}/connections/conn_move/oauth2`;
     // The server switches on the sign-in by itself: the CLI waits for it, no second write.
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
-      `POST /v1/projects/${PROJECT}/connectors/linear/move`,
+      `POST /v1/workspaces/${PROJECT}/connectors/linear/move`,
       `POST ${oauth2}/discover-resource`,
       `POST ${oauth2}/register`,
       `POST ${oauth2}/authorize`,
       `GET ${oauth2}/status`,
-      `GET /v1/projects/${PROJECT}/connector-moves`,
+      `GET /v1/workspaces/${PROJECT}/connector-moves`,
     ]);
     expect(calls[0]!.body).toEqual({ connection_id: 'conn_move' });
     expect(r.stdout).toContain('https://auth.linear.test/authorize?state=s1');
@@ -1014,7 +1014,7 @@ describe('kortix connectors — capability-page parity', () => {
     const r = await runCli(['connectors', 'policy', 'gmail', 'ls', '--project', PROJECT], config);
     // The fake API has no per-connector policies route, so this 404s — what
     // matters is that the slug form still routes to the connector path.
-    expect(calls.at(-1)!.path).toBe(`/v1/connectors/projects/${PROJECT}/connectors/gmail/policies`);
+    expect(calls.at(-1)!.path).toBe(`/v1/connectors/workspaces/${PROJECT}/connectors/gmail/policies`);
     expect(r.code).toBe(1);
   });
 });

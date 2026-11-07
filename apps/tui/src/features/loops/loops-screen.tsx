@@ -159,12 +159,12 @@ export function LoopsScreen({
       .finally(() => setBusy(null));
   }, [loops.refetch, onToast]);
 
-  if (!projectId) return <text fg={theme.faint}>No project selected.</text>;
+  if (!projectId) return <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>;
   if (!sessionId) return <text fg={theme.faint}>Open a session first.</text>;
   if (flag.isLoading) return <Spinner label="checking Loops" />;
   if (!flag.enabled) {
     return (
-      <text fg={theme.faint}>Loops are off: the project's reminders feature is not enabled.</text>
+      <text fg={theme.faint}>Loops are off: the workspace's reminders feature is not enabled.</text>
     );
   }
 

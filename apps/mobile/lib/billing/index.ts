@@ -47,5 +47,6 @@ export {
   presentPaywall,
   presentCustomerInfo,
   isRevenueCatInitialized,
+  REVENUECAT_WORKSPACE_ATTRIBUTE,
 } from './revenuecat';
 export type { RevenueCatProduct } from './revenuecat';

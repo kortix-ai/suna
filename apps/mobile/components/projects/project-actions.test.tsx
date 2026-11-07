@@ -4,7 +4,7 @@
  * "Archiving…" while the request runs, refuses to close while pending, and
  * shows a failure in place with the confirm button re-enabled.
  *
- * KRTX-1720: Archive project offers only what `DELETE /projects/:id` allows.
+ * KRTX-1720: Archive workspace offers only what `DELETE /projects/:id` allows.
  * The row follows one `useCans` probe of `project.write` + `project.delete`,
  * and hides while the probe is unresolved. It used to show whenever the role
  * was unknown.
@@ -112,6 +112,15 @@ mock.module('@/components/kortix/settings-list', () => ({
   },
 }));
 mock.module('@/components/kortix/toast-provider', () => ({ useToast: () => ({ success: (m: string) => toastSuccess.push(m) }) }));
+// English defaults with `{{name}}` interpolation, like the app's i18n.
+mock.module('@/contexts', () => ({
+  useLanguage: () => ({
+    t: (_key: string, opt?: string | { defaultValue?: string; [k: string]: unknown }) =>
+      typeof opt === 'string'
+        ? opt
+        : (opt?.defaultValue ?? _key).replace(/\{\{(\w+)\}\}/g, (_m, k) => String(opt?.[k] ?? '')),
+  }),
+}));
 mock.module('@/lib/haptics', () => ({ haptics: { tap: none, warning: none, medium: none, success: none } }));
 mock.module('@/lib/projects/hooks', () => ({ useArchiveProject: () => archive }));
 // The permission probe, per test: `cans` is what `useCans` answers.
@@ -189,7 +198,7 @@ afterEach(() => {
   probes.length = 0;
 });
 
-describe('who gets Archive project', () => {
+describe('who gets Archive workspace', () => {
   test('one probe of project.write + project.delete on the row project, its account passed along', () => {
     cans = MANAGER;
     renderIt();
@@ -199,35 +208,35 @@ describe('who gets Archive project', () => {
     });
   });
 
-  test('a manager gets Open project and Archive project', () => {
+  test('a manager gets Open workspace and Archive workspace', () => {
     cans = MANAGER;
     renderIt();
-    expect(rows.map((r) => r.label)).toEqual(['Open project', 'Archive project']);
+    expect(rows.map((r) => r.label)).toEqual(['Open workspace', 'Archive workspace']);
   });
 
-  test('a built-in member gets Open project only', () => {
+  test('a built-in member gets Open workspace only', () => {
     cans = { 'project.write': can(false), 'project.delete': can(false) };
     renderIt();
-    expect(rows.map((r) => r.label)).toEqual(['Open project']);
+    expect(rows.map((r) => r.label)).toEqual(['Open workspace']);
   });
 
-  test('project.delete without project.write gets no Archive project: the route loads the project for write', () => {
+  test('project.delete without project.write gets no Archive workspace: the route loads the project for write', () => {
     cans = { 'project.write': can(false), 'project.delete': can(true) };
     renderIt();
-    expect(row('Archive project')).toBeUndefined();
+    expect(row('Archive workspace')).toBeUndefined();
   });
 
-  test('a custom role with project.write but not project.delete gets no Archive project', () => {
+  test('a custom role with project.write but not project.delete gets no Archive workspace', () => {
     cans = { 'project.write': can(true), 'project.delete': can(false) };
     renderIt();
-    expect(row('Archive project')).toBeUndefined();
+    expect(row('Archive workspace')).toBeUndefined();
   });
 
-  test('while the probe is unresolved, Archive project stays hidden (fail closed)', () => {
+  test('while the probe is unresolved, Archive workspace stays hidden (fail closed)', () => {
     cans = {};
     renderIt();
-    expect(row('Archive project')).toBeUndefined();
-    expect(row('Open project')).toBeTruthy();
+    expect(row('Archive workspace')).toBeUndefined();
+    expect(row('Open workspace')).toBeTruthy();
   });
 });
 
@@ -235,24 +244,24 @@ describe('the ProjectActions archive confirm dialog', () => {
   test('archive opens the dialog after the sheet closes, naming the project', async () => {
     renderIt();
     expect(sheetOpen).toHaveLength(1);
-    act(() => row('Archive project')!.onPress!());
+    act(() => row('Archive workspace')!.onPress!());
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    expect(texts()).toContain('Archive project');
+    expect(texts()).toContain('Archive workspace');
     expect(texts()).toContain('Archive “Apollo”?');
-    expect(buttonByLabel('Archive project'));
+    expect(buttonByLabel('Archive workspace'));
   });
 
   test('while the archive request runs both buttons disable, the label becomes "Archiving…", and the dialog refuses to close', async () => {
     renderIt();
-    act(() => row('Archive project')!.onPress!());
+    act(() => row('Archive workspace')!.onPress!());
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(archive.calls).toBe(0);
     await act(async () => {
-      buttonByLabel('Archive project').props.onPress!();
+      buttonByLabel('Archive workspace').props.onPress!();
       await Promise.resolve();
     });
     expect(archive.calls).toBe(1);
@@ -269,18 +278,18 @@ describe('the ProjectActions archive confirm dialog', () => {
       archive.deferred!.resolve();
       await Promise.resolve();
     });
-    expect(texts()).not.toContain('Archive project');
-    expect(toastSuccess).toEqual(['Project archived']);
+    expect(texts()).not.toContain('Archive workspace');
+    expect(toastSuccess).toEqual(['Workspace archived']);
   });
 
   test('a failed archive keeps the dialog open with the failure text and a re-enabled confirm', async () => {
     renderIt();
-    act(() => row('Archive project')!.onPress!());
+    act(() => row('Archive workspace')!.onPress!());
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     await act(async () => {
-      buttonByLabel('Archive project').props.onPress!();
+      buttonByLabel('Archive workspace').props.onPress!();
       await Promise.resolve();
     });
     await act(async () => {
@@ -288,9 +297,9 @@ describe('the ProjectActions archive confirm dialog', () => {
       await Promise.resolve();
     });
     expect(texts()).toContain('Unable to archive. Check your connection and try again.');
-    expect(buttonByLabel('Archive project').props.disabled).toBe(false);
+    expect(buttonByLabel('Archive workspace').props.disabled).toBe(false);
     // Retrying runs the mutation again.
-    act(() => buttonByLabel('Archive project').props.onPress!());
+    act(() => buttonByLabel('Archive workspace').props.onPress!());
     expect(archive.calls).toBe(2);
   });
 });

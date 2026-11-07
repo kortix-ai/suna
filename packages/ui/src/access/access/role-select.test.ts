@@ -102,10 +102,15 @@ describe('built-in role lists', () => {
     expect(builtinRolesForScope('project')).toEqual(['member', 'manager']);
   });
 
-  test('labels come from the descriptors', () => {
-    expect(builtinRoleLabel('account', 'owner')).toBe('Account owner');
-    expect(builtinRoleLabel('project', 'manager')).toBe('Project manager');
-    expect(builtinRoleLabel('project', 'member')).toBe('Project member');
+  test('one ladder: no label names an account or a project', () => {
+    expect(builtinRoleLabel('account', 'owner')).toBe('Owner');
+    expect(builtinRoleLabel('project', 'manager')).toBe('Manager');
+    expect(builtinRoleLabel('project', 'member')).toBe('Member');
+    for (const scope of ['account', 'project'] as const) {
+      for (const r of builtinRolesForScope(scope)) {
+        expect(builtinRoleLabel(scope, r)).not.toMatch(/account|project/i);
+      }
+    }
   });
 });
 
@@ -130,7 +135,7 @@ describe('roleValueLabel', () => {
   const roles = [role({ role_id: 'r_proj', name: 'Support' })];
 
   test('built-in → display name', () => {
-    expect(roleValueLabel('project', builtinRole('manager'), roles)).toBe('Project manager');
+    expect(roleValueLabel('project', builtinRole('manager'), roles)).toBe('Manager');
   });
 
   test('custom → the role name', () => {
@@ -153,10 +158,10 @@ describe('project role terminology across access surfaces', () => {
     const value = selectValueToRoleValue('builtin:manager');
     expect(value).toEqual(builtinRole('manager'));
     expect(baselineBuiltinRole('project', value)).toBe('manager');
-    expect(builtinRoleLabel('project', 'manager')).toBe('Project manager');
-    expect(roleValueLabel('project', value)).toBe('Project manager');
-    expect(builtinRoleLabel('project', 'manager', testUiTranslator)).toBe('Project manager');
-    expect(roleValueLabel('project', value, [], testUiTranslator)).toBe('Project manager');
-    expect(builtinRoleLabel('account', 'admin', testUiTranslator)).toBe('Account admin');
+    expect(builtinRoleLabel('project', 'manager')).toBe('Manager');
+    expect(roleValueLabel('project', value)).toBe('Manager');
+    expect(builtinRoleLabel('project', 'manager', testUiTranslator)).toBe('Manager');
+    expect(roleValueLabel('project', value, [], testUiTranslator)).toBe('Manager');
+    expect(builtinRoleLabel('account', 'admin', testUiTranslator)).toBe('Admin');
   });
 });

@@ -17,12 +17,13 @@ import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
 import { auditIam, requireEntitlement } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
+import { accountIdParam } from '../../shared/route-params';
 
 export function registerIamScimTokensRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/scim/tokens',
+      path: '/{workspaceId}/iam/scim/tokens',
       tags: ['iam'],
       summary: 'List SCIM provisioning tokens',
       ...auth,
@@ -33,7 +34,7 @@ export function registerIamScimTokensRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
@@ -56,7 +57,7 @@ export function registerIamScimTokensRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/iam/scim/tokens',
+      path: '/{workspaceId}/iam/scim/tokens',
       tags: ['iam'],
       summary: 'Mint a SCIM provisioning token',
       ...auth,
@@ -68,11 +69,15 @@ export function registerIamScimTokensRoutes(): void {
     }),
     async (c: any) => {
     const userId = c.get('userId') as string;
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     // A connected app's revocable `kortix_oat_` token must not mint a durable credential.
     if (c.get('authType') === 'oauth') return c.json({ error: 'Connected apps cannot mint SCIM tokens.' }, 403);
     if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const actor = await actorOf(c, accountId);
+    await assertAuthorized(actor, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    // A SCIM token is a credential: minting it is HUMAN_ONLY (design.md C8), so
+    // no agent session mints one, whatever its grant.
+    await assertAuthorized(actor, ACCOUNT_ACTIONS.TOKEN_CREATE);
     const denied = await requireEntitlement(c, accountId, 'scim');
     if (denied) return denied;
 
@@ -138,18 +143,18 @@ export function registerIamScimTokensRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/iam/scim/tokens/{tokenId}',
+      path: '/{workspaceId}/iam/scim/tokens/{tokenId}',
       tags: ['iam'],
       summary: 'Revoke a SCIM provisioning token',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), tokenId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string(), tokenId: z.string() }) },
       responses: {
         200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
         ...errors(401, 403),
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
     const tokenId = c.req.param('tokenId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);

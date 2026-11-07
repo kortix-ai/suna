@@ -39,27 +39,27 @@ flow(
   "CHN-2",
   {
     domain: "channels",
-    routes: ["GET /v1/projects/:projectId/channels/slack/installation"],
+    routes: ["GET /v1/workspaces/:projectId/channels/slack/installation"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER reads install status → 200 (null when not connected)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/slack/installation", { params: { projectId: p.id } });
       // The run-scoped shared project is never connected, so the body is null.
       r.status(200).body().has("$", null);
     });
     await ctx.step("NONMEMBER → 404 (loadProjectForUser denies)", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/slack/installation", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/slack/installation", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -70,7 +70,7 @@ flow(
   "CHN-14",
   {
     domain: "channels",
-    routes: ["GET /v1/projects/:projectId/channels/email/installation"],
+    routes: ["GET /v1/workspaces/:projectId/channels/email/installation"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
@@ -79,20 +79,20 @@ flow(
       for (const id of [p.id, on.id]) {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: id } });
+          .get("/v1/workspaces/:projectId/channels/email/installation", { params: { projectId: id } });
         r.status(200).body().has("$", null);
       }
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/email/installation", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/email/installation", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -103,7 +103,7 @@ flow(
   "CHN-17",
   {
     domain: "channels",
-    routes: ["GET /v1/projects/:projectId/channels/email/mode"],
+    routes: ["GET /v1/workspaces/:projectId/channels/email/mode"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
@@ -111,11 +111,11 @@ flow(
     await ctx.step("OWNER reads mode → resend; enabled follows email_channel (off by default, on when set)", async () => {
       const off = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/email/mode", { params: { projectId: p.id } });
       off.status(200).body().has("$.provider", "resend").has("$.enabled", false);
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: on.id } });
+        .get("/v1/workspaces/:projectId/channels/email/mode", { params: { projectId: on.id } });
       r.status(200).body().has("$.provider", "resend").has("$.enabled", true);
       const mode = r.json<{ managed_available: boolean; managed_domain: string | null }>();
       // Managed inboxes are the operator's switch: available ⇔ a managed domain.
@@ -126,13 +126,13 @@ flow(
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/email/mode", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/email/mode", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -143,13 +143,13 @@ flow(
   "CHN-13",
   {
     domain: "channels",
-    routes: ["POST /v1/projects/:projectId/channels/email/connect"],
+    routes: ["POST /v1/workspaces/:projectId/channels/email/connect"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     const on = await emailProject(ctx);
     const connect = (projectId: string, body: Record<string, unknown>) =>
-      ctx.client.as(ctx.P.OWNER).post("/v1/projects/:projectId/channels/email/connect", body, { params: { projectId } });
+      ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/:projectId/channels/email/connect", body, { params: { projectId } });
 
     await ctx.step("flag off → 403 feature_disabled email_channel, before anything else", async () => {
       const r = await connect(p.id, { api_key: "re_bogus", username: "e2e", domain: "mail.example.com" });
@@ -165,7 +165,7 @@ flow(
     });
     await ctx.step("flag on, no key: managed off → 400 email_key_required (with the Resend links); managed on → another domain is 400 email_domain_not_managed", async () => {
       const mode = (
-        await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/channels/email/mode", { params: { projectId: on.id } })
+        await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/channels/email/mode", { params: { projectId: on.id } })
       ).json<{ managed_available: boolean }>();
       const r = await connect(on.id, { username: "e2e", domain: "mail.example.com" });
       if (mode.managed_available) {
@@ -177,7 +177,7 @@ flow(
     await ctx.step("NONMEMBER cannot connect → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/channels/email/connect", { api_key: "re_bogus" }, { params: { projectId: on.id } });
+        .post("/v1/workspaces/:projectId/channels/email/connect", { api_key: "re_bogus" }, { params: { projectId: on.id } });
       r.status([403, 404]);
     });
   },
@@ -188,7 +188,7 @@ flow(
   "CHN-15",
   {
     domain: "channels",
-    routes: ["DELETE /v1/projects/:projectId/channels/email/installation"],
+    routes: ["DELETE /v1/workspaces/:projectId/channels/email/installation"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
@@ -197,14 +197,14 @@ flow(
       for (const id of [p.id, on.id]) {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .del("/v1/projects/:projectId/channels/email/installation", { params: { projectId: id } });
+          .del("/v1/workspaces/:projectId/channels/email/installation", { params: { projectId: id } });
         r.status(200).body().has("$.status", "disconnected");
       }
     });
     await ctx.step("NONMEMBER cannot disconnect → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .del("/v1/projects/:projectId/channels/email/installation", { params: { projectId: p.id } });
+        .del("/v1/workspaces/:projectId/channels/email/installation", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -215,20 +215,20 @@ flow(
   "CHN-10",
   {
     domain: "channels",
-    routes: ["GET /v1/projects/:projectId/channels/slack/mode"],
+    routes: ["GET /v1/workspaces/:projectId/channels/slack/mode"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER reads mode → 200 with oauth_available + install_url", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/slack/mode", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/slack/mode", { params: { projectId: p.id } });
       r.status(200).body().exists("$.oauth_available");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/channels/slack/mode", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/slack/mode", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -240,16 +240,16 @@ flow(
   {
     domain: "channels",
     routes: [
-      "GET /v1/accounts/me",
-      "GET /v1/projects/:projectId/channels/slack/mode",
-      "GET /v1/projects/:projectId/channels/slack/installation",
+      "GET /v1/me",
+      "GET /v1/workspaces/:projectId/channels/slack/mode",
+      "GET /v1/workspaces/:projectId/channels/slack/installation",
     ],
   },
   async (ctx) => {
     const project = await ctx.fixtures.sharedProject();
     const modeResponse = await ctx.client
       .as(ctx.P.OWNER)
-      .get("/v1/projects/:projectId/channels/slack/mode", {
+      .get("/v1/workspaces/:projectId/channels/slack/mode", {
         params: { projectId: project.id },
       });
     modeResponse.status(200);
@@ -308,21 +308,21 @@ flow(
   "CHN-1",
   {
     domain: "channels",
-    routes: ["POST /v1/projects/:projectId/channels/slack/connect"],
+    routes: ["POST /v1/workspaces/:projectId/channels/slack/connect"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("missing/blank bot_token → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/slack/connect", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/channels/slack/connect", {}, { params: { projectId: p.id } });
       r.status(400);
     });
     await ctx.step("non-xoxb token → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/channels/slack/connect",
+          "/v1/workspaces/:projectId/channels/slack/connect",
           { bot_token: "not-a-bot-token", signing_secret: "s3cr3t" },
           { params: { projectId: p.id } },
         );
@@ -332,7 +332,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/channels/slack/connect",
+          "/v1/workspaces/:projectId/channels/slack/connect",
           { bot_token: "xoxb-not-a-real-token" },
           { params: { projectId: p.id } },
         );
@@ -342,7 +342,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/channels/slack/connect",
+          "/v1/workspaces/:projectId/channels/slack/connect",
           { bot_token: "xoxb-0000-0000-fakefakefake", signing_secret: "s3cr3t" },
           { params: { projectId: p.id } },
         );
@@ -352,7 +352,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          "/v1/projects/:projectId/channels/slack/connect",
+          "/v1/workspaces/:projectId/channels/slack/connect",
           { bot_token: "xoxb-x", signing_secret: "y" },
           { params: { projectId: p.id } },
         );
@@ -366,20 +366,20 @@ flow(
   "CHN-3",
   {
     domain: "channels",
-    routes: ["DELETE /v1/projects/:projectId/channels/slack/installation"],
+    routes: ["DELETE /v1/workspaces/:projectId/channels/slack/installation"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER disconnect → 200 (idempotent)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
+        .del("/v1/workspaces/:projectId/channels/slack/installation", { params: { projectId: p.id } });
       r.status(200).body().has("$.status", "disconnected");
     });
     await ctx.step("NONMEMBER cannot disconnect → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .del("/v1/projects/:projectId/channels/slack/installation", { params: { projectId: p.id } });
+        .del("/v1/workspaces/:projectId/channels/slack/installation", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },
@@ -448,9 +448,9 @@ flow(
     timeoutMs: 180_000,
     requires: ["database", "sandbox", "funded"],
     routes: [
-      "POST /v1/projects/:projectId/secrets",
+      "POST /v1/workspaces/:projectId/secrets",
       "POST /v1/webhooks/telegram/:projectId",
-      "GET /v1/projects/:projectId/sessions",
+      "GET /v1/workspaces/:projectId/sessions",
     ],
   },
   async (ctx) => {
@@ -470,7 +470,7 @@ flow(
 
     await ctx.step("a project manager stores the Telegram webhook secret for connector-only use", async () => {
       const response = await ctx.client.as(ctx.P.OWNER).post(
-        "/v1/projects/:projectId/secrets",
+        "/v1/workspaces/:projectId/secrets",
         {
           name: "TELEGRAM_WEBHOOK_SECRET",
           value: webhookSecret,
@@ -516,7 +516,7 @@ flow(
         async () => {
           const read = await ctx.client
             .as(ctx.P.OWNER)
-            .get("/v1/projects/:projectId/sessions", { params: { projectId: project.id } });
+            .get("/v1/workspaces/:projectId/sessions", { params: { projectId: project.id } });
           read.status(200);
           const body = read.json<any>();
           return Array.isArray(body) ? body : (body.sessions ?? []);
@@ -623,26 +623,26 @@ flow(
   "CHN-18",
   {
     domain: "channels",
-    routes: ["GET /v1/projects/:projectId/channels/bindings"],
+    routes: ["GET /v1/workspaces/:projectId/channels/bindings"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER lists bindings → 200 (empty when no channel is bound)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/bindings", { params: { projectId: p.id } });
       r.status(200).body().exists("$.bindings");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/bindings", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/bindings", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -656,7 +656,7 @@ flow(
   "CHN-19",
   {
     domain: "channels",
-    routes: ["PATCH /v1/projects/:projectId/channels/bindings/:bindingId"],
+    routes: ["PATCH /v1/workspaces/:projectId/channels/bindings/:bindingId"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
@@ -664,7 +664,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/channels/bindings/:bindingId",
+          "/v1/workspaces/:projectId/channels/bindings/:bindingId",
           { conversationPolicy: "owner_only" },
           { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
         );
@@ -674,7 +674,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
-          "/v1/projects/:projectId/channels/bindings/:bindingId",
+          "/v1/workspaces/:projectId/channels/bindings/:bindingId",
           {},
           { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
         );
@@ -684,7 +684,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .patch(
-          "/v1/projects/:projectId/channels/bindings/:bindingId",
+          "/v1/workspaces/:projectId/channels/bindings/:bindingId",
           { conversationPolicy: "owner_only" },
           { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
         );
@@ -694,7 +694,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .patch(
-          "/v1/projects/:projectId/channels/bindings/:bindingId",
+          "/v1/workspaces/:projectId/channels/bindings/:bindingId",
           { conversationPolicy: "owner_only" },
           { params: { projectId: p.id, bindingId: UNKNOWN_BINDING } },
         );
@@ -723,7 +723,7 @@ flow(
   {
     domain: "channels",
     routes: [
-      "POST /v1/projects/:projectId/channels/slack/file/upload",
+      "POST /v1/workspaces/:projectId/channels/slack/file/upload",
     ],
   },
   async (ctx) => {
@@ -796,27 +796,27 @@ flow(
   "CHN-T1",
   {
     domain: "channels",
-    routes: ["GET /v1/projects/:projectId/channels/teams/installation"],
+    routes: ["GET /v1/workspaces/:projectId/channels/teams/installation"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER reads install status → 200 (null when not connected)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/teams/installation", { params: { projectId: p.id } });
       // The run-scoped shared project is never connected, so the body is null.
       r.status(200).body().has("$", null);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/teams/installation", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/teams/installation", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -827,20 +827,20 @@ flow(
   "CHN-T2",
   {
     domain: "channels",
-    routes: ["GET /v1/projects/:projectId/channels/teams/mode"],
+    routes: ["GET /v1/workspaces/:projectId/channels/teams/mode"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER reads mode → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/teams/mode", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/teams/mode", { params: { projectId: p.id } });
       r.status(200);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/channels/teams/mode", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/teams/mode", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -854,7 +854,7 @@ flow(
   "CHN-T3",
   {
     domain: "channels",
-    routes: ["POST /v1/projects/:projectId/channels/teams/connect", "PATCH /v1/projects/:projectId/experimental"],
+    routes: ["POST /v1/workspaces/:projectId/channels/teams/connect", "PATCH /v1/workspaces/:projectId/experimental"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
@@ -862,26 +862,26 @@ flow(
     await ctx.step("OWNER, a new project with no flag set, invalid tenant_id → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: own.id } });
+        .post("/v1/workspaces/:projectId/channels/teams/connect", { tenant_id: "not a tenant" }, { params: { projectId: own.id } });
       r.status(400);
     });
     await ctx.step("the graduated `teams` flag key is refused as unknown → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/experimental", { feature: "teams", enabled: false }, { params: { projectId: own.id } });
+        .patch("/v1/workspaces/:projectId/experimental", { feature: "teams", enabled: false }, { params: { projectId: own.id } });
       r.status(400);
       r.body().has("$.error", "Unknown feature flag 'teams'");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "contoso.onmicrosoft.com" }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/channels/teams/connect", { tenant_id: "contoso.onmicrosoft.com" }, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: "contoso.onmicrosoft.com" }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/channels/teams/connect", { tenant_id: "contoso.onmicrosoft.com" }, { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -898,11 +898,11 @@ flow(
   {
     domain: "channels",
     routes: [
-      "GET /v1/projects/:projectId/channels/teams/conversations",
-      "POST /v1/projects/:projectId/channels/teams/message",
-      "POST /v1/projects/:projectId/channels/teams/message/edit",
-      "POST /v1/projects/:projectId/channels/teams/message/delete",
-      "POST /v1/projects/:projectId/channels/teams/file/upload",
+      "GET /v1/workspaces/:projectId/channels/teams/conversations",
+      "POST /v1/workspaces/:projectId/channels/teams/message",
+      "POST /v1/workspaces/:projectId/channels/teams/message/edit",
+      "POST /v1/workspaces/:projectId/channels/teams/message/delete",
+      "POST /v1/workspaces/:projectId/channels/teams/file/upload",
     ],
   },
   async (ctx) => {
@@ -917,16 +917,16 @@ flow(
     await ctx.step("a project with no Teams conversations lists none, with no flag set", async () => {
       const r = await ctx.client
         .as(editor)
-        .get("/v1/projects/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
       r.status(200);
       r.body().has("$.conversations", []);
     });
     await ctx.step("MEMBER without connector.write → 403 at the floor", async () => {
-      const r = await ctx.client.as(memberOnly).post("/v1/projects/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
+      const r = await ctx.client.as(memberOnly).post("/v1/workspaces/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
       r.status(403);
     });
     await ctx.step("EDITOR passes the floor, but the conversation is not this project's → 404", async () => {
-      const r = await ctx.client.as(editor).post("/v1/projects/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
+      const r = await ctx.client.as(editor).post("/v1/workspaces/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
       r.status(404);
     });
     // The file upload sends into a conversation the same way. It used to take
@@ -943,13 +943,13 @@ flow(
     await ctx.step("MEMBER without connector.write cannot upload a file → 403 at the floor", async () => {
       const r = await ctx.client
         .as(memberOnly)
-        .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
       r.status(403);
     });
     await ctx.step("EDITOR uploading into a conversation that is not this project's → 404, whatever service_url it sends", async () => {
       const r = await ctx.client
         .as(editor)
-        .post("/v1/projects/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/channels/teams/file/upload", upload, { params: { projectId: p.id } });
       r.status(404);
     });
     // Editing or deleting a bot message is the same send primitive: the same
@@ -974,15 +974,15 @@ flow(
     await ctx.step("EDITOR with nothing to say → 400", async () => {
       const r = await ctx.client
         .as(editor)
-        .post("/v1/projects/:projectId/channels/teams/message", { conversation_id: body.conversation_id }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/channels/teams/message", { conversation_id: body.conversation_id }, { params: { projectId: p.id } });
       r.status(400);
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/workspaces/:projectId/channels/teams/message", body, { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces/:projectId/channels/teams/conversations", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -1091,7 +1091,7 @@ flow(
   {
     domain: "channels",
     requires: ["sandbox"],
-    routes: ["POST /v1/projects/:projectId/channels/slack/bind-thread"],
+    routes: ["POST /v1/workspaces/:projectId/channels/slack/bind-thread"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -1100,7 +1100,7 @@ flow(
     await ctx.step("OWNER, missing session_id/channel/thread_ts → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/slack/bind-thread", {}, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/channels/slack/bind-thread", {}, { params: { projectId: p.id } });
       r.status(400);
     });
 
@@ -1108,7 +1108,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
           { params: { projectId: p.id } },
         );
@@ -1119,7 +1119,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
           { params: { projectId: p.id } },
         );
@@ -1130,7 +1130,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: session.id, channel: "C_KE2E_UNBOUND", thread_ts: "1700000000.000100" },
           { params: { projectId: p.id } },
         );
@@ -1201,7 +1201,7 @@ flow(
     domain: "channels",
     requires: ["database"],
     routes: [
-      "POST /v1/projects/:projectId/secrets",
+      "POST /v1/workspaces/:projectId/secrets",
       "POST /v1/webhooks/slack/:projectId",
       "POST /v1/webhooks/slack/:projectId/commands",
       "POST /v1/webhooks/slack/:projectId/interactivity",
@@ -1232,7 +1232,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/secrets",
+          "/v1/workspaces/:projectId/secrets",
           // Connector-delivered, as the install paths store it.
           { name: "SLACK_SIGNING_SECRET", value: secret, strategy: "broker", consumer: "connector" },
           { params: { projectId: byo.id } },
@@ -1392,7 +1392,7 @@ flow(
   {
     domain: "channels",
     requires: ["database"],
-    routes: ["POST /v1/accounts/tokens", "POST /v1/projects/:projectId/channels/slack/bind-thread"],
+    routes: ["POST /v1/accounts/tokens", "POST /v1/workspaces/:projectId/channels/slack/bind-thread"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
@@ -1455,7 +1455,7 @@ flow(
 
       await ctx.step("the session token binds a thread to a SIBLING session → 403, and no mapping is written", async () => {
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: sibling, channel: "CKE2E", thread_ts: "1700000000.000200", workspace_id: team },
           { params: { projectId: p.id } },
         );
@@ -1469,7 +1469,7 @@ flow(
       await ctx.step("a workspace the project's install never proved → 400 SLACK_WORKSPACE_NOT_CONNECTED, and no mapping is written", async () => {
         const foreignTeam = `${team}X`;
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000250", workspace_id: foreignTeam },
           { params: { projectId: p.id } },
         );
@@ -1483,7 +1483,7 @@ flow(
 
       await ctx.step("a thread in another project's channel → 403 CONVERSATION_NOT_IN_PROJECT, and no mapping is written", async () => {
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: own, channel: "CKE2EOTHER", thread_ts: "1700000000.000260", workspace_id: team },
           { params: { projectId: p.id } },
         );
@@ -1501,7 +1501,7 @@ flow(
 
       await ctx.step("the session token binds a thread to ITS OWN session → 200, and the mapping names that session", async () => {
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000300", workspace_id: team },
           { params: { projectId: p.id } },
         );
@@ -1519,7 +1519,7 @@ flow(
 
       await ctx.step("the same session binds a second thread; both replies resolve to its project and session", async () => {
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000301", workspace_id: team },
           { params: { projectId: p.id } },
         );
@@ -1537,7 +1537,7 @@ flow(
 
       await ctx.step("the session token binds the same thread again → 200, bound to the same session (idempotent)", async () => {
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000300", workspace_id: team },
           { params: { projectId: p.id } },
         );
@@ -1553,7 +1553,7 @@ flow(
           );
         });
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000400", workspace_id: team },
           { params: { projectId: p.id } },
         );
@@ -1571,7 +1571,7 @@ flow(
 
       await ctx.step("force moves the sibling's thread (same creator) → 200 with rebound_from, and the mapping names this session", async () => {
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000400", workspace_id: team, force: true },
           { params: { projectId: p.id } },
         );
@@ -1596,7 +1596,7 @@ flow(
           );
         });
         const r = await agent.post(
-          "/v1/projects/:projectId/channels/slack/bind-thread",
+          "/v1/workspaces/:projectId/channels/slack/bind-thread",
           { session_id: own, channel: "CKE2E", thread_ts: "1700000000.000500", workspace_id: team, force: true },
           { params: { projectId: p.id } },
         );
@@ -1635,9 +1635,9 @@ flow(
     domain: "channels",
     requires: ["database"],
     routes: [
-      "POST /v1/projects/:projectId/channels/teams/connect",
-      "GET /v1/projects/:projectId/channels/teams/installation",
-      "GET /v1/projects/:projectId/channels/teams/file",
+      "POST /v1/workspaces/:projectId/channels/teams/connect",
+      "GET /v1/workspaces/:projectId/channels/teams/installation",
+      "GET /v1/workspaces/:projectId/channels/teams/file",
     ],
   },
   async (ctx) => {
@@ -1647,14 +1647,14 @@ flow(
     await ctx.step("manual connect with a tenant id and no bot credentials → 400 TEAMS_TENANT_UNVERIFIED", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/teams/connect", { tenant_id: tenant }, { params: { projectId: p.id } });
+        .post("/v1/workspaces/:projectId/channels/teams/connect", { tenant_id: tenant }, { params: { projectId: p.id } });
       r.status(400).body().has("$.code", "TEAMS_TENANT_UNVERIFIED");
     });
 
     await ctx.step("read-back: no Teams install was written for the unproven tenant", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/teams/installation", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/channels/teams/installation", { params: { projectId: p.id } });
       r.status([200, 404]);
       const installed = await withDb(ctx, async (db) =>
         (await db.query("SELECT 1 FROM kortix.chat_installs WHERE platform = 'teams' AND project_id = $1", [p.id])).rowCount,
@@ -1677,7 +1677,7 @@ flow(
         await ctx.step(`download proxy refuses a non-attachment Graph path → 400 (${new URL(url).pathname})`, async () => {
           const r = await ctx.client
             .as(ctx.P.OWNER)
-            .get(`/v1/projects/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
+            .get(`/v1/workspaces/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
           r.status(400);
         });
       }
@@ -1685,7 +1685,7 @@ flow(
         const url = "https://ke2e-profile.trafficmanager.net/v3/attachments/1/views/original";
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .get(`/v1/projects/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
+          .get(`/v1/workspaces/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
         r.status(400);
       });
 
@@ -1707,8 +1707,8 @@ flow(
           "https://graph.microsoft.com/v1.0/teams/ke2e-team/channels/19:ke2echan@thread.tacv2/messages/171/hostedContents/aWQ9/$value";
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .get(`/v1/projects/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
-        r.status(403).body().matches("$.error", /belongs to another Kortix project/);
+          .get(`/v1/workspaces/:projectId/channels/teams/file?url=${encodeURIComponent(url)}`, { params: { projectId: p.id } });
+        r.status(403).body().matches("$.error", /belongs to another Kortix workspace/);
       });
     } finally {
       await withDb(ctx, async (db) => {
@@ -1781,7 +1781,7 @@ flow(
   {
     domain: "channels",
     requires: ["database"],
-    routes: ["GET /v1/projects/:projectId/channels/bindings"],
+    routes: ["GET /v1/workspaces/:projectId/channels/bindings"],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
@@ -1831,7 +1831,7 @@ flow(
       await ctx.step("OWNER lists bindings: each channel thread carries its session title, without the bot's mention", async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+          .get("/v1/workspaces/:projectId/channels/bindings", { params: { projectId: p.id } });
         r.status(200);
         const rows = new Map((r.json<{ bindings: Row[] }>().bindings).map((b) => [b.channelId, b]));
         const expectRow = (id: string, want: Partial<Row>) => {
@@ -1849,7 +1849,7 @@ flow(
       await ctx.step("a personal chat gets no thread title; an unnamed thread stays unnamed with no Teams service URL to ask", async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+          .get("/v1/workspaces/:projectId/channels/bindings", { params: { projectId: p.id } });
         r.status(200);
         const rows = new Map((r.json<{ bindings: Row[] }>().bindings).map((b) => [b.channelId, b]));
         const personal = rows.get(ids.personal);
@@ -1865,7 +1865,7 @@ flow(
       await ctx.step("NONMEMBER cannot list them → 403/404", async () => {
         const r = await ctx.client
           .as(ctx.P.NONMEMBER)
-          .get("/v1/projects/:projectId/channels/bindings", { params: { projectId: p.id } });
+          .get("/v1/workspaces/:projectId/channels/bindings", { params: { projectId: p.id } });
         r.status([403, 404]);
       });
     } finally {
@@ -1886,15 +1886,15 @@ flow(
   {
     domain: "channels",
     routes: [
-      "GET /v1/projects/:projectId/channels/telegram/installation",
-      "POST /v1/projects/:projectId/channels/telegram/connect",
-      "PUT /v1/projects/:projectId/channels/telegram/allowed-users",
-      "DELETE /v1/projects/:projectId/channels/telegram",
-      "GET /v1/projects/:projectId/channels/telegram/users",
-      "GET /v1/projects/:projectId/channels/telegram/users/:user_id/photo",
-      "POST /v1/projects/:projectId/channels/telegram/allowed-users",
-      "DELETE /v1/projects/:projectId/channels/telegram/allowed-users/:user_id",
-      "DELETE /v1/projects/:projectId/channels/telegram/access-requests/:user_id",
+      "GET /v1/workspaces/:projectId/channels/telegram/installation",
+      "POST /v1/workspaces/:projectId/channels/telegram/connect",
+      "PUT /v1/workspaces/:projectId/channels/telegram/allowed-users",
+      "DELETE /v1/workspaces/:projectId/channels/telegram",
+      "GET /v1/workspaces/:projectId/channels/telegram/users",
+      "GET /v1/workspaces/:projectId/channels/telegram/users/:user_id/photo",
+      "POST /v1/workspaces/:projectId/channels/telegram/allowed-users",
+      "DELETE /v1/workspaces/:projectId/channels/telegram/allowed-users/:user_id",
+      "DELETE /v1/workspaces/:projectId/channels/telegram/access-requests/:user_id",
     ],
   },
   async (ctx) => {
@@ -1903,7 +1903,7 @@ flow(
     await ctx.step("a project that once stored connectors_v2 off (now graduated) reads a null installation with no bot", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/telegram/installation", { params: { projectId: on.id } });
+        .get("/v1/workspaces/:projectId/channels/telegram/installation", { params: { projectId: on.id } });
       r.status(200);
       if (r.json<unknown>() !== null) throw new Error(`expected null installation, got ${JSON.stringify(r.json())}`);
     });
@@ -1911,32 +1911,32 @@ flow(
     await ctx.step("a malformed bot token is refused with 400 before any call to Telegram", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "not-a-token" }, { params: { projectId: on.id } });
+        .post("/v1/workspaces/:projectId/channels/telegram/connect", { bot_token: "not-a-token" }, { params: { projectId: on.id } });
       r.status(400).body().has("$.code", "telegram_token_invalid");
     });
 
     await ctx.step("allowed users: non-numeric ids → 400; valid ids without a bot → 404 telegram_not_connected", async () => {
       const bad = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/channels/telegram/allowed-users", { user_ids: ["@someone"] }, { params: { projectId: on.id } });
+        .put("/v1/workspaces/:projectId/channels/telegram/allowed-users", { user_ids: ["@someone"] }, { params: { projectId: on.id } });
       bad.status(400).body().has("$.code", "telegram_user_ids_invalid");
       const missing = await ctx.client
         .as(ctx.P.OWNER)
-        .put("/v1/projects/:projectId/channels/telegram/allowed-users", { user_ids: ["12345"] }, { params: { projectId: on.id } });
+        .put("/v1/workspaces/:projectId/channels/telegram/allowed-users", { user_ids: ["12345"] }, { params: { projectId: on.id } });
       missing.status(404).body().has("$.code", "telegram_not_connected");
     });
 
     await ctx.step("disconnect is idempotent → 200 ok", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del("/v1/projects/:projectId/channels/telegram", { params: { projectId: on.id } });
+        .del("/v1/workspaces/:projectId/channels/telegram", { params: { projectId: on.id } });
       r.status(200).body().has("$.ok", true);
     });
 
     await ctx.step("a non-member cannot connect a bot → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .post("/v1/projects/:projectId/channels/telegram/connect", { bot_token: "not-a-token" }, { params: { projectId: on.id } });
+        .post("/v1/workspaces/:projectId/channels/telegram/connect", { bot_token: "not-a-token" }, { params: { projectId: on.id } });
       r.status([403, 404]);
     });
 
@@ -1944,24 +1944,24 @@ flow(
       const owner = ctx.client.as(ctx.P.OWNER);
       const params = { projectId: on.id };
       const userParams = { projectId: on.id, user_id: "12345" };
-      (await owner.get("/v1/projects/:projectId/channels/telegram/users", { params })).status(404).body().has("$.code", "telegram_not_connected");
-      (await owner.get("/v1/projects/:projectId/channels/telegram/users/:user_id/photo", { params: userParams }))
+      (await owner.get("/v1/workspaces/:projectId/channels/telegram/users", { params })).status(404).body().has("$.code", "telegram_not_connected");
+      (await owner.get("/v1/workspaces/:projectId/channels/telegram/users/:user_id/photo", { params: userParams }))
         .status(404)
         .body()
         .has("$.code", "telegram_not_connected");
-      (await owner.post("/v1/projects/:projectId/channels/telegram/allowed-users", { user_id: "@someone" }, { params }))
+      (await owner.post("/v1/workspaces/:projectId/channels/telegram/allowed-users", { user_id: "@someone" }, { params }))
         .status(400)
         .body()
         .has("$.code", "telegram_user_ids_invalid");
-      (await owner.post("/v1/projects/:projectId/channels/telegram/allowed-users", { user_id: "12345" }, { params }))
+      (await owner.post("/v1/workspaces/:projectId/channels/telegram/allowed-users", { user_id: "12345" }, { params }))
         .status(404)
         .body()
         .has("$.code", "telegram_not_connected");
-      (await owner.del("/v1/projects/:projectId/channels/telegram/allowed-users/:user_id", { params: userParams }))
+      (await owner.del("/v1/workspaces/:projectId/channels/telegram/allowed-users/:user_id", { params: userParams }))
         .status(404)
         .body()
         .has("$.code", "telegram_not_connected");
-      (await owner.del("/v1/projects/:projectId/channels/telegram/access-requests/:user_id", { params: userParams }))
+      (await owner.del("/v1/workspaces/:projectId/channels/telegram/access-requests/:user_id", { params: userParams }))
         .status(404)
         .body()
         .has("$.code", "telegram_not_connected");
@@ -1980,13 +1980,13 @@ flow(
     domain: "channels",
     requires: ["database"],
     routes: [
-      "GET /v1/projects/:projectId/channels/telegram/installation",
-      "GET /v1/projects/:projectId/channels/telegram/users",
-      "GET /v1/projects/:projectId/channels/telegram/users/:user_id/photo",
-      "POST /v1/projects/:projectId/channels/telegram/allowed-users",
-      "DELETE /v1/projects/:projectId/channels/telegram/allowed-users/:user_id",
-      "DELETE /v1/projects/:projectId/channels/telegram/access-requests/:user_id",
-      "GET /v1/projects/:projectId",
+      "GET /v1/workspaces/:projectId/channels/telegram/installation",
+      "GET /v1/workspaces/:projectId/channels/telegram/users",
+      "GET /v1/workspaces/:projectId/channels/telegram/users/:user_id/photo",
+      "POST /v1/workspaces/:projectId/channels/telegram/allowed-users",
+      "DELETE /v1/workspaces/:projectId/channels/telegram/allowed-users/:user_id",
+      "DELETE /v1/workspaces/:projectId/channels/telegram/access-requests/:user_id",
+      "GET /v1/workspaces/:projectId",
     ],
   },
   async (ctx) => {
@@ -2010,13 +2010,13 @@ flow(
 
       await ctx.step("the installation counts the waiting request; the user list names it from the stored request", async () => {
         const owner = ctx.client.as(ctx.P.OWNER);
-        (await owner.get("/v1/projects/:projectId/channels/telegram/installation", { params }))
+        (await owner.get("/v1/workspaces/:projectId/channels/telegram/installation", { params }))
           .status(200)
           .body()
           .has("$.bot_id", botId)
           .has("$.allowed_user_ids", ["700001"])
           .has("$.access_request_count", 1);
-        (await owner.get("/v1/projects/:projectId/channels/telegram/users", { params }))
+        (await owner.get("/v1/workspaces/:projectId/channels/telegram/users", { params }))
           .status(200)
           .body()
           .has("$.allowed", [
@@ -2030,7 +2030,7 @@ flow(
       });
 
       await ctx.step("a project read never carries the Telegram lists in its metadata", async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params });
+        const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId", { params });
         r.status(200);
         const metadata = r.json<{ metadata?: Record<string, unknown> }>().metadata ?? {};
         if ("telegram" in metadata) throw new Error(`project metadata exposes telegram: ${JSON.stringify(metadata.telegram)}`);
@@ -2038,18 +2038,18 @@ flow(
 
       await ctx.step("allow moves the request to the allowed list; remove and dismiss are idempotent", async () => {
         const owner = ctx.client.as(ctx.P.OWNER);
-        (await owner.post("/v1/projects/:projectId/channels/telegram/allowed-users", { user_id: "700002" }, { params }))
+        (await owner.post("/v1/workspaces/:projectId/channels/telegram/allowed-users", { user_id: "700002" }, { params }))
           .status(200)
           .body()
           .has("$.allowed_user_ids", ["700001", "700002"])
           .has("$.access_request_count", 0);
-        (await owner.get("/v1/projects/:projectId/channels/telegram/users", { params })).status(200).body().has("$.requests", []);
+        (await owner.get("/v1/workspaces/:projectId/channels/telegram/users", { params })).status(200).body().has("$.requests", []);
         for (let i = 0; i < 2; i++) {
-          (await owner.del("/v1/projects/:projectId/channels/telegram/allowed-users/:user_id", { params: { ...params, user_id: "700002" } }))
+          (await owner.del("/v1/workspaces/:projectId/channels/telegram/allowed-users/:user_id", { params: { ...params, user_id: "700002" } }))
             .status(200)
             .body()
             .has("$.allowed_user_ids", ["700001"]);
-          (await owner.del("/v1/projects/:projectId/channels/telegram/access-requests/:user_id", { params: { ...params, user_id: "700002" } }))
+          (await owner.del("/v1/workspaces/:projectId/channels/telegram/access-requests/:user_id", { params: { ...params, user_id: "700002" } }))
             .status(200)
             .body()
             .has("$.access_request_count", 0);
@@ -2058,9 +2058,9 @@ flow(
 
       await ctx.step("a non-member reads no Telegram identities and allows no one → 403/404", async () => {
         const stranger = ctx.client.as(ctx.P.NONMEMBER);
-        (await stranger.get("/v1/projects/:projectId/channels/telegram/users", { params })).status([403, 404]);
-        (await stranger.get("/v1/projects/:projectId/channels/telegram/users/:user_id/photo", { params: { ...params, user_id: "700001" } })).status([403, 404]);
-        (await stranger.post("/v1/projects/:projectId/channels/telegram/allowed-users", { user_id: "700003" }, { params })).status([403, 404]);
+        (await stranger.get("/v1/workspaces/:projectId/channels/telegram/users", { params })).status([403, 404]);
+        (await stranger.get("/v1/workspaces/:projectId/channels/telegram/users/:user_id/photo", { params: { ...params, user_id: "700001" } })).status([403, 404]);
+        (await stranger.post("/v1/workspaces/:projectId/channels/telegram/allowed-users", { user_id: "700003" }, { params })).status([403, 404]);
       });
     } finally {
       await withDb(ctx, (db) =>
@@ -2079,9 +2079,9 @@ flow(
   {
     domain: "channels",
     routes: [
-      "POST /v1/projects/:projectId/channels/email/domains",
-      "POST /v1/projects/:projectId/channels/email/domains/add",
-      "POST /v1/projects/:projectId/channels/email/domains/verify",
+      "POST /v1/workspaces/:projectId/channels/email/domains",
+      "POST /v1/workspaces/:projectId/channels/email/domains/add",
+      "POST /v1/workspaces/:projectId/channels/email/domains/verify",
     ],
   },
   async (ctx) => {
@@ -2089,17 +2089,17 @@ flow(
     const p = await emailProject(ctx);
     const params = { params: { projectId: p.id } };
     const mode = (
-      await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/channels/email/mode", params)
+      await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/channels/email/mode", params)
     ).json<{ managed_available: boolean; managed_domain: string | null }>();
 
     await ctx.step("flag off → 403 feature_disabled email_channel", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/email/domains", {}, { params: { projectId: off.id } });
+        .post("/v1/workspaces/:projectId/channels/email/domains", {}, { params: { projectId: off.id } });
       r.status(403).body().has("$.feature", "email_channel");
     });
     await ctx.step("no key → the one managed domain, or 400 email_key_required when managed is off", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/workspaces/:projectId/channels/email/domains", {}, params);
       if (mode.managed_available) {
         r.status(200).body().has("$.managed", true).has("$.domains[0].domain", mode.managed_domain ?? "");
         const domains = r.json<{ domains: unknown[] }>().domains;
@@ -2111,25 +2111,25 @@ flow(
     await ctx.step("adding a domain without your own key → 400 email_key_required", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/email/domains/add", { domain: "mail.example.com" }, params);
+        .post("/v1/workspaces/:projectId/channels/email/domains/add", { domain: "mail.example.com" }, params);
       r.status(400).body().has("$.code", "email_key_required");
     });
     await ctx.step("a malformed domain → 400 invalid_domain before any Resend call", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/email/domains/add", { api_key: "re_bogus", domain: "nope" }, params);
+        .post("/v1/workspaces/:projectId/channels/email/domains/add", { api_key: "re_bogus", domain: "nope" }, params);
       r.status(400).body().has("$.code", "invalid_domain");
     });
     await ctx.step("verify without a domain_id → 400 invalid_domain", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/email/domains/verify", { api_key: "re_bogus" }, params);
+        .post("/v1/workspaces/:projectId/channels/email/domains/verify", { api_key: "re_bogus" }, params);
       r.status(400).body().has("$.code", "invalid_domain");
     });
     await ctx.step("NONMEMBER → 403/404; ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/workspaces/:projectId/channels/email/domains", {}, params);
       r.status([403, 404]);
-      const anon = await ctx.client.as(ctx.P.ANON).post("/v1/projects/:projectId/channels/email/domains", {}, params);
+      const anon = await ctx.client.as(ctx.P.ANON).post("/v1/workspaces/:projectId/channels/email/domains", {}, params);
       anon.status(401);
     });
   },
@@ -2143,10 +2143,10 @@ flow(
   {
     domain: "channels",
     routes: [
-      "GET /v1/projects/:projectId/channels/email/inboxes",
-      "POST /v1/projects/:projectId/channels/email/inboxes",
-      "PATCH /v1/projects/:projectId/channels/email/inboxes/:connectionId",
-      "DELETE /v1/projects/:projectId/channels/email/inboxes/:connectionId",
+      "GET /v1/workspaces/:projectId/channels/email/inboxes",
+      "POST /v1/workspaces/:projectId/channels/email/inboxes",
+      "PATCH /v1/workspaces/:projectId/channels/email/inboxes/:connectionId",
+      "DELETE /v1/workspaces/:projectId/channels/email/inboxes/:connectionId",
     ],
   },
   async (ctx) => {
@@ -2158,45 +2158,45 @@ flow(
     await ctx.step("flag off → the list is empty and an add is 403 feature_disabled email_channel", async () => {
       const list = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/channels/email/inboxes", { params: { projectId: off.id } });
+        .get("/v1/workspaces/:projectId/channels/email/inboxes", { params: { projectId: off.id } });
       list.status(200).body().has("$.inboxes", []);
       const add = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help" }, { params: { projectId: off.id } });
+        .post("/v1/workspaces/:projectId/channels/email/inboxes", { username: "help" }, { params: { projectId: off.id } });
       add.status(403).body().has("$.feature", "email_channel");
     });
     await ctx.step("flag on, no inbox yet → GET answers an empty list", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/channels/email/inboxes", params);
       r.status(200).body().has("$.inboxes", []);
     });
     await ctx.step("share must be me or project → 400 invalid_share before any Resend call", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", share: "team", api_key: "re_bogus" }, params);
+        .post("/v1/workspaces/:projectId/channels/email/inboxes", { username: "help", share: "team", api_key: "re_bogus" }, params);
       r.status(400).body().has("$.code", "invalid_share");
     });
     await ctx.step("own key without a domain → 400 invalid_domain; blank agent → 400 invalid_agent", async () => {
       const noDomain = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", api_key: "re_bogus" }, params);
+        .post("/v1/workspaces/:projectId/channels/email/inboxes", { username: "help", api_key: "re_bogus" }, params);
       noDomain.status(400).body().has("$.code", "invalid_domain");
       const blank = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/channels/email/inboxes", { username: "help", api_key: "re_bogus", agent_name: "  " }, params);
+        .post("/v1/workspaces/:projectId/channels/email/inboxes", { username: "help", api_key: "re_bogus", agent_name: "  " }, params);
       blank.status(400).body().has("$.code", "invalid_agent");
     });
     await ctx.step("PATCH and DELETE of an unknown inbox → 404 email_inbox_not_found", async () => {
       const patch = await ctx.client
         .as(ctx.P.OWNER)
-        .patch("/v1/projects/:projectId/channels/email/inboxes/:connectionId", { label: "x" }, missing);
+        .patch("/v1/workspaces/:projectId/channels/email/inboxes/:connectionId", { label: "x" }, missing);
       patch.status(404).body().has("$.code", "email_inbox_not_found");
-      const del = await ctx.client.as(ctx.P.OWNER).del("/v1/projects/:projectId/channels/email/inboxes/:connectionId", missing);
+      const del = await ctx.client.as(ctx.P.OWNER).del("/v1/workspaces/:projectId/channels/email/inboxes/:connectionId", missing);
       del.status(404).body().has("$.code", "email_inbox_not_found");
     });
     await ctx.step("NONMEMBER → 403/404; ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/workspaces/:projectId/channels/email/inboxes", params);
       r.status([403, 404]);
-      const anon = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/channels/email/inboxes", params);
+      const anon = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces/:projectId/channels/email/inboxes", params);
       anon.status(401);
     });
   },

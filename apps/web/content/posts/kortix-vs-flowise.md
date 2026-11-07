@@ -35,7 +35,7 @@ A team can keep a fork alive, and the license allows it. That fork then carries 
 
 ## A repo your team can read and review
 
-Kortix takes the route a canvas cannot: the system is a repository. `kortix.yaml` sits at the project root. It declares the agents, what each one may reach and the triggers, and the reference calls it the file people write and review by hand ([kortix.yaml reference](https://kortix.com/docs/project/manifest)).
+Kortix takes the route a canvas cannot: the system is a repository. `kortix.yaml` sits at the workspace root. It declares the agents, what each one may reach and the triggers, and the reference calls it the file people write and review by hand ([kortix.yaml reference](https://kortix.com/docs/project/manifest)).
 
 ```yaml
 kortix_version: 2
@@ -56,7 +56,7 @@ The difference shows up on the day an agent gets a change wrong. One isolated sa
 
 ## What the machine costs
 
-Kortix bills compute and model calls by usage. Nothing is charged per seat. On the Free plan an account pays $0: 500 credits a month, every feature and one project, on your own provider keys or a ChatGPT subscription ([Plans and credits](https://kortix.com/docs/credits)).
+Kortix bills compute and model calls by usage. Nothing is charged per seat. On the Free plan an account pays $0: 500 credits a month on your first workspace and every feature, on your own provider keys or a ChatGPT subscription ([Plans and credits](https://kortix.com/docs/credits)).
 
 The paid plan is credits. You choose a monthly amount, 5,000 credits a month costs $50, and every tier buys credits at 100 credits per dollar ([Kortix pricing](https://kortix.com/pricing)). Members are unlimited and free, the account shares one wallet, and unused monthly credits roll over one month.
 

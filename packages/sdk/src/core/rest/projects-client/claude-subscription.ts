@@ -42,7 +42,7 @@ export interface ClaudeAccountTarget {
   resourceId?: string;
 }
 
-const base = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/claude-subscription`;
+const base = (projectId: string) => `/workspaces/${encodeURIComponent(projectId)}/claude-subscription`;
 
 /** Every caller shows a refused sign-in, code or token beside the control: no app-wide error report. */
 const quiet = { showErrors: false } as const;

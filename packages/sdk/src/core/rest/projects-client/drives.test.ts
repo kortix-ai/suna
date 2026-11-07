@@ -113,7 +113,7 @@ test('versions, restore and session drives', async () => {
 
   respond(200, { drives: [{ driveId: D, name: 'Users / ana', kind: 'project', mountPath: '/drives/me', readOnly: false, subdir: '/Users/ana', role: 'me' }] });
   const mounted = await listSessionDrives('p1', 's1');
-  expect(last().url).toBe('http://test.local/projects/p1/sessions/s1/drives');
+  expect(last().url).toBe('http://test.local/workspaces/p1/sessions/s1/drives');
   expect(mounted[0]!.mountPath).toBe('/drives/me');
 });
 

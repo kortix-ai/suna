@@ -117,7 +117,7 @@ describe('manifest file compare-and-swap', () => {
           'blocked local write',
         ),
       ).toEqual({
-        error: 'No git credentials available to write to the project repo',
+        error: 'No git credentials available to write to the workspace repo',
         status: 502,
       });
 

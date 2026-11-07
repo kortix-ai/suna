@@ -670,7 +670,7 @@ export function SnapshotsTabView({
         {/* No `SettingsTabHeader` here any more. Snapshots merged INTO the
             Sandbox templates section — a snapshot is the build history of a
             sandbox template, not a separate pane — and `SandboxTabView`,
-            mounted directly above this one on `/projects/[id]/config`, already
+            mounted directly above this one on `/workspaces/[id]/config`, already
             renders the shared pane heading (title, description, and its own
             `docsHref` to the same `/docs/developers#sandbox-templates` page). A second
             top-level heading here would be a duplicate, not a fix for the

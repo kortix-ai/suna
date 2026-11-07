@@ -55,13 +55,13 @@ GitHub.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the leaderboard skill and the weekly trigger, and opens a change request for you to review. Prefer
 clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a weekly shipping brief agent in this project.
+  code={`Set up a weekly shipping brief agent in this workspace.
 
 1. Create the agent agents/leaderboard.md. Its job is to post a weekly shipping brief to Slack and open the async standup thread. It may use the GH_TOKEN secret and the Slack channel.
 
@@ -83,7 +83,7 @@ clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Add a GitHub token as a project secret, and connect Slack as a channel so the
+Add a GitHub token as a workspace secret, and connect Slack as a channel so the
 agent can post the brief and the standup thread. The token is encrypted and
 injected into the session at runtime, scoped to this agent.
 
@@ -120,7 +120,7 @@ take over.
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every Monday at 09:00. It reads last week's entry in memory before it
 counts, so deltas and streaks carry from week to week. To change the time, edit
-the cron line, or open **Triggers** in the project.
+the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

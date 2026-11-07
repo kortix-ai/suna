@@ -157,7 +157,7 @@ async function models(context: PlatformToolContext) {
   if ('error' in read) return fail(TOOL, 'models', 'Could not list the models', read.error, context)
   const usable = usableModels(read.value)
   if (usable.length === 0) {
-    return fail(TOOL, 'models', 'No models to run', { kind: 'failed', message: 'This project offers no model you can run. A project admin connects a provider or turns a model on under Project admin → Models.' }, context)
+    return fail(TOOL, 'models', 'No models to run', { kind: 'failed', message: 'This workspace offers no model you can run. A workspace admin connects a provider or turns a model on in Workspace settings → Models.' }, context)
   }
   const fallback = usable.find((model) => model.default)?.id ?? null
   return ok(
@@ -241,7 +241,7 @@ async function save(action: 'create' | 'update', name: string, args: Record<stri
     action,
     {
       title: action === 'create' ? `Created ${name}` : changes.length > 0 ? `Changed ${name}` : `${name} is unchanged`,
-      subtitle: 'Saved to the project settings.',
+      subtitle: 'Saved to the workspace settings.',
       changes,
       links: [{ label: 'Open agent', href: agentHref(context.env, name) }],
     },

@@ -11,5 +11,5 @@ const resolved: NextConfig = await config(PHASE_DEVELOPMENT_SERVER);
 test('/dashboard redirects to the signed-in home', async () => {
   const redirects = (await resolved.redirects?.()) ?? [];
   const rule = redirects.find((candidate) => candidate.source === '/dashboard');
-  expect(rule).toMatchObject({ destination: '/projects', permanent: false });
+  expect(rule).toMatchObject({ destination: '/workspaces', permanent: false });
 });

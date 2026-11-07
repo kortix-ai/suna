@@ -31,7 +31,6 @@ let serviceAccountRow: Record<string, unknown> | null = null;
 // A gate holds a read open so a test can look at what else has started.
 let sandboxRefReads = 0;
 let accountMemberReads = 0;
-let resolveAccountCalls = 0;
 let sandboxRefGate: Promise<void> | null = null;
 let sandboxRefFailure: Error | null = null;
 let platformAdminGate: Promise<void> | null = null;
@@ -71,6 +70,7 @@ async function unlimitedRows(table: unknown): Promise<unknown[]> {
 }
 
 mock.module('./db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: () => ({
       from: (table: unknown) => ({
@@ -118,13 +118,6 @@ mock.module('../iam', () => ({
     }
     const allowed = heldActions.has(action);
     return { allowed, reason: allowed ? 'role' : 'project_role_insufficient' };
-  },
-}));
-
-mock.module('./resolve-account', () => ({
-  resolveAccountId: async (userId: string) => {
-    resolveAccountCalls += 1;
-    return userId;
   },
 }));
 
@@ -177,7 +170,6 @@ beforeEach(() => {
   serviceAccountRow = null;
   sandboxRefReads = 0;
   accountMemberReads = 0;
-  resolveAccountCalls = 0;
   sandboxRefGate = null;
   sandboxRefFailure = null;
   platformAdminGate = null;
@@ -309,7 +301,6 @@ describe('cold ownership check — one check per (sandbox, user), reads in paral
     const [first, second, allowedA, allowedB, last] = await Promise.all(checks);
 
     expect(sandboxRefReads).toBe(1);
-    expect(resolveAccountCalls).toBe(1);
     expect(accountMemberReads).toBe(1);
     expect(first).toEqual({
       userId: 'user-human-1',
@@ -341,7 +332,6 @@ describe('cold ownership check — one check per (sandbox, user), reads in paral
     });
     expect(await stranger).toBeNull();
     expect(sandboxRefReads).toBe(2);
-    expect(resolveAccountCalls).toBe(2);
   });
 
   test('a failed check is not kept: every waiter gets the error, the next call reads again', async () => {
@@ -394,7 +384,6 @@ describe('cold ownership check — one check per (sandbox, user), reads in paral
     await settle();
     // The sandbox row is still out; the caller's account is already resolved.
     expect(sandboxRefReads).toBe(1);
-    expect(resolveAccountCalls).toBe(1);
     expect(accountMemberReads).toBe(0);
 
     sandboxRow.release();

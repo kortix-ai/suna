@@ -51,7 +51,7 @@ const rateLimitBody = (retryAfterSeconds: number) => ({
 export function registerAppEventRoutes(): void {
   appEventsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/events', tags: ['apps'],
+      method: 'post', path: '/{workspaceId}/apps/{appId}/events', tags: ['apps'],
       summary: 'Emit App events',
       description:
         'Fires every enabled `type: app` trigger that names this App. Send one event, or `{ "events": [...] }` (at most 50). ' +
@@ -62,7 +62,7 @@ export function registerAppEventRoutes(): void {
         'requests a minute per App.',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: AppEvent.or(z.object({ events: z.array(AppEvent) })) } } },
       },
       responses: {
@@ -82,7 +82,7 @@ export function registerAppEventRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, appId } = c.req.valid('param');
+      const { workspaceId: projectId, appId } = c.req.valid('param');
       const app = await tokenApp(c.req.header('authorization'), projectId, appId);
       if (app === 401) return c.json(TOKEN_ERROR, 401);
       const limited = appEventRateLimited(c, projectId, appId);
@@ -97,16 +97,16 @@ export function registerAppEventRoutes(): void {
 
   appEventsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/runs', tags: ['apps'], summary: 'Ask Kortix to call the App later',
+      method: 'post', path: '/{workspaceId}/apps/{appId}/runs', tags: ['apps'], summary: 'Ask Kortix to call the App later',
       description:
         'Kortix calls `method path` on this App once, after `run_after` or at `run_at`, waking it first. The call goes through ' +
         'the trigger engine: a failed call (no answer, 429 or 5xx) is retried. At most 1000 pending runs per App. Authenticate with `$KORTIX_APP_TOKEN`.',
       ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: RunRequest } } } },
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: RunRequest } } } },
       responses: { 201: json(z.object({ run_id: z.string(), run_at: z.string() }), 'Scheduled'), ...errors(400, 401, 404, 409, 429) },
     }),
     async (c) => {
-      const { projectId, appId } = c.req.valid('param');
+      const { workspaceId: projectId, appId } = c.req.valid('param');
       const app = await tokenApp(c.req.header('authorization'), projectId, appId);
       if (app === 401) return c.json(TOKEN_ERROR, 401);
       const limited = appEventRateLimited(c, projectId, appId);
@@ -129,14 +129,14 @@ export function registerAppEventRoutes(): void {
 
   appEventsApp.openapi(
     createRoute({
-      method: 'delete', path: '/{projectId}/apps/{appId}/runs/{runId}', tags: ['apps'], summary: 'Cancel a pending App run',
+      method: 'delete', path: '/{workspaceId}/apps/{appId}/runs/{runId}', tags: ['apps'], summary: 'Cancel a pending App run',
       description: 'Cancels a run this App scheduled that has not fired. Authenticate with `$KORTIX_APP_TOKEN`.',
       ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid(), runId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string().uuid(), appId: z.string().uuid(), runId: z.string() }) },
       responses: { 200: json(z.object({ cancelled: z.literal(true) }), 'Cancelled'), ...errors(401, 404, 429) },
     }),
     async (c) => {
-      const { projectId, appId, runId } = c.req.valid('param');
+      const { workspaceId: projectId, appId, runId } = c.req.valid('param');
       const app = await tokenApp(c.req.header('authorization'), projectId, appId);
       if (app === 401) return c.json(TOKEN_ERROR, 401);
       const limited = appEventRateLimited(c, projectId, appId);

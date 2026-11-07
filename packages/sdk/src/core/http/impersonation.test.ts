@@ -87,11 +87,11 @@ describe('impersonation session store', () => {
   test('every other route is impersonated', () => {
     setImpersonationSession(session());
     for (const url of [
-      'http://localhost:8008/v1/projects',
+      'http://localhost:8008/v1/workspaces',
       'http://localhost:8008/v1/accounts',
       // Not the admin console: an account whose name contains "admin" and a
       // project path segment must not be exempted by a loose match.
-      'http://localhost:8008/v1/projects/admin/sessions',
+      'http://localhost:8008/v1/workspaces/admin/sessions',
       '/v1/badminton',
     ]) {
       expect(shouldAttachImpersonation(url)).toBe(true);

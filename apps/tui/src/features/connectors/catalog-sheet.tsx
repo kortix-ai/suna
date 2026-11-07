@@ -175,7 +175,7 @@ export function CatalogSheet({
         return;
       }
       if (!data.canWrite) {
-        onToast('Installing a connector needs permission to manage the project’s connectors.', 'error');
+        onToast('Installing a connector needs permission to manage the workspace’s connectors.', 'error');
         return;
       }
       setNaming({ value: entry.name });

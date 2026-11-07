@@ -2,6 +2,7 @@ import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validateOAuthAccessToken, oauthScopeAllowsPath } from '../oauth/access-token';
 import { auditLoginFail, auditLoginSuccess } from './auth-audit';
+import { enforceTokenProjectScope } from './auth-scope';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 
@@ -25,6 +26,13 @@ export async function applyOAuthAccessTokenPrincipal(c: Context, token: string):
         ? `insufficient_scope: an OAuth token cannot ${c.req.method} ${c.req.path} (credentials, sign-in and account deletion need the user's own session or PAT)`
         : `insufficient_scope: this OAuth token was not granted the "kortix" scope, so it cannot reach ${c.req.path}`,
     });
+  }
+  // A token whose consent named a workspace reaches that workspace only: the
+  // same fence a workspace key passes (middleware/workspace-binding.ts). An
+  // unbound token (issued before 2026-11-06) acts as the person, as before.
+  if (result.boundWorkspaceId) {
+    await enforceTokenProjectScope(c, result.boundWorkspaceId, { principal: 'oauth-workspace-token' });
+    c.set('tokenProjectId', result.boundWorkspaceId);
   }
   c.set('userId', result.userId);
   c.set('userEmail', '');

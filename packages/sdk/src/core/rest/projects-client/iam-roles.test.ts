@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { listProjectAgentIdentities, type AgentIdentity } from './iam-roles';
+import { listWorkspaceAgentIdentities, type AgentIdentity } from './iam-roles';
 
 let calls: string[] = [];
 
@@ -18,7 +18,7 @@ beforeEach(() => {
 configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 
 test("listProjectAgentIdentities reads one project's agents, readable by any project member", async () => {
-  const agents: AgentIdentity[] = await listProjectAgentIdentities('P1');
-  expect(calls[0]).toBe('http://test.local/projects/P1/agent-identities');
+  const agents: AgentIdentity[] = await listWorkspaceAgentIdentities('P1');
+  expect(calls[0]).toBe('http://test.local/workspaces/P1/agent-identities');
   expect(agents).toEqual([{ service_account_id: 'SA1', name: 'kortix', project_id: 'P1', agent_name: 'kortix' }]);
 });

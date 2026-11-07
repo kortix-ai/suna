@@ -7,6 +7,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { loadProjectForUser, projectCapabilityAllowed } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { loadMutableConnection } from '../lib/connection-mutation';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const ConnectorMoveSchema = z.object({
   slug: z.string(),
@@ -40,16 +41,16 @@ export function registerConnectorMoveRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'get',
-      path: '/{projectId}/connector-moves',
+      path: '/{workspaceId}/connector-moves',
       summary: 'List Pipedream and Composio connectors and the Kortix app each moves to',
-      request: { params: z.object({ projectId: z.string() }) },
+      request: { params: z.object({ workspaceId: z.string() }) },
       responses: {
         200: json(z.object({ moves: z.array(ConnectorMoveSchema) }), 'Pipedream and Composio connectors'),
         ...errors(403, 404),
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       return c.json({ moves: await listConnectorMoves(projectId) }, 200);
@@ -61,12 +62,12 @@ export function registerConnectorMoveRoutes(): void {
       tags: ['connectors'],
       ...auth,
       method: 'post',
-      path: '/{projectId}/connectors/{slug}/move',
+      path: '/{workspaceId}/connectors/{slug}/move',
       summary: 'Move a Pipedream or Composio connector to its Kortix app',
       description:
         'Starts a move: marks an account and returns it with `status: sign_in`. Sign in on that account with the OAuth2 routes; the connector switches to `provider: mcp` when the sign-in completes, and keeps its slug. Calling again after the sign-in finishes a move whose switch failed.',
       request: {
-        params: z.object({ projectId: z.string(), slug: z.string() }),
+        params: z.object({ workspaceId: z.string(), slug: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody(MoveInputSchema.shape) } } },
       },
       responses: {
@@ -75,7 +76,7 @@ export function registerConnectorMoveRoutes(): void {
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const mayWrite = await projectCapabilityAllowed(
@@ -104,7 +105,7 @@ export function registerConnectorMoveRoutes(): void {
           PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
         ))
       ) {
-        return c.json({ error: "Only a connections manager can move the project's account" }, 403);
+        return c.json({ error: "Only a connections manager can move the workspace's account" }, 403);
       }
       const result = await moveConnector({
         projectId,

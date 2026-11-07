@@ -9,7 +9,7 @@ import {
   writePersistedSessionPin,
 } from './initial-session-pin';
 import { useRuntimeSessions, type Session } from './use-runtime-sessions';
-import { useProjectSession } from './use-project-session';
+import { useWorkspaceSession } from './use-project-session';
 
 // SSR-safe: `localStorage` does not exist on the server, and reading it
 // during render (rather than an effect) would make the client's FIRST
@@ -102,7 +102,7 @@ export function useCanonicalRuntimeSession(params: {
   // so freshness and error-toast behaviour both came down to which surface
   // mounted first. `enabled` is the one thing that stays local: on a warm
   // start /start already handed us the pin, so this read is pure overhead.
-  const projectSessionQuery = useProjectSession(projectId, sessionId, {
+  const projectSessionQuery = useWorkspaceSession(projectId, sessionId, {
     enabled: !pinFromStart && !initialPin,
   });
   const networkPin =

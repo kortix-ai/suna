@@ -129,7 +129,7 @@ them: You want to compose LLM applications and retrieval pipelines on a canvas, 
 kortix: You want a governed system where agents, memory and connector rules are code in a repo you own, each session runs on its own computer, and every change lands through a review.
 ```
 
-Kortix bills in credits. Free is $0 with 500 credits per month, every feature and 1 project, on your own provider keys or a ChatGPT subscription. The paid plan runs from $50 a month at 100 credits per dollar, and self-host is free ([Kortix pricing](https://kortix.com/pricing)). Dify Cloud starts on a free Sandbox plan and moves to a paid Professional plan per workspace, with Enterprise priced per deal ([Dify pricing](https://dify.ai/pricing)).
+Kortix bills in credits. Free is $0 with 500 credits per month on your first workspace and every feature, on your own provider keys or a ChatGPT subscription. The paid plan runs from $50 a month at 100 credits per dollar, and self-host is free ([Kortix pricing](https://kortix.com/pricing)). Dify Cloud starts on a free Sandbox plan and moves to a paid Professional plan per workspace, with Enterprise priced per deal ([Dify pricing](https://dify.ai/pricing)).
 
 Next reads: [the best self-hosted AI workspace](/blog/best-self-hosted-ai-workspace), [Kortix vs n8n](/blog/kortix-vs-n8n), and [how to choose an open-source AI agent platform](/blog/open-source-ai-agent-platform).
 

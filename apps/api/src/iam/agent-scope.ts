@@ -1,4 +1,5 @@
 import { DEPRECATED_KORTIX_PERMISSION_ALIASES } from '@kortix/manifest-schema';
+import { toLegacyAction } from '@kortix/shared/workspace-actions';
 import { canonicalConnectorAlias } from '../shared/connector-alias';
 /**
  * Agent-session scope enforcement — the `kortix_permissions` half of per-agent
@@ -60,7 +61,9 @@ const MANIFEST_ACTION_ALIASES = DEPRECATED_KORTIX_PERMISSION_ALIASES;
  */
 export function canonicalizeGrantActions(grant: AgentGrant | null): AgentGrant | null {
   if (!grant || grant.permissions === 'all') return grant;
-  const canonical = grant.permissions.flatMap((a) => MANIFEST_ACTION_ALIASES[a] ?? [a]);
+  // A workspace name (`workspace.gitops.push`) resolves to the legacy name the
+  // catalog stores, exactly like a renamed alias.
+  const canonical = grant.permissions.flatMap((a) => MANIFEST_ACTION_ALIASES[a] ?? [toLegacyAction(a)]);
   return { ...grant, permissions: [...new Set(canonical)] };
 }
 
@@ -73,7 +76,11 @@ export function canonicalizeGrantActions(grant: AgentGrant | null): AgentGrant |
 export function agentMayPerform(grant: AgentGrant | null, action: string): boolean {
   if (!grant) return true; // no grant = no restriction
   if (grant.permissions === 'all') return true;
-  return grant.permissions.includes(action);
+  // Both sides in the legacy spelling: a grant minted before
+  // `canonicalizeGrantActions` learned the workspace names, or a caller that
+  // asks with a workspace name, still compares like for like.
+  const legacy = toLegacyAction(action);
+  return grant.permissions.some((a) => toLegacyAction(a) === legacy);
 }
 
 /**

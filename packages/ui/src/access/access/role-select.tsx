@@ -72,50 +72,43 @@ interface RoleDescriptor {
 }
 
 /**
- * Single source of truth for how a built-in role is described in the UI.
- * Copy lifted verbatim from `components/iam/project-role-descriptors.ts`
- * so no wording changes as part of the unification.
+ * Single source of truth for how a built-in role is described in the UI. One
+ * workspace ladder (design.md C3): Owner > Admin > Manager > Member. The
+ * storage still has two scopes (owner/admin/member on the account, manager on
+ * the workspace's project), but a person reads one role per workspace, so the
+ * labels never say "account" or "project".
  */
 export const ACCOUNT_ROLE_DESCRIPTORS: Record<AccountRole, RoleDescriptor> = {
   owner: {
-    label: 'Account owner',
-    blurb: 'Full control of the account: billing, members, transfer or delete it.',
-    summary:
-      'Full control of the account — billing, members, transferring ownership, deleting it. Project manager on every project.',
+    label: 'Owner',
+    blurb: 'Full control: billing, people, and deleting the workspace.',
+    summary: 'Full control of the workspace: billing, people, transferring ownership and deleting it.',
   },
   admin: {
-    label: 'Account admin',
-    blurb: 'Everything except deleting the account or transferring ownership.',
-    summary:
-      'Everything an owner can do except deleting the account or transferring ownership. Project manager on every project.',
+    label: 'Admin',
+    blurb: 'Billing and people. Everything except deleting the workspace or transferring ownership.',
+    summary: 'Everything an owner can do except deleting the workspace or transferring ownership.',
   },
   member: {
-    label: 'Account member',
-    blurb: 'Sees only the projects they are added to, and only the agents granted there.',
+    label: 'Member',
+    blurb: 'Works in sessions with the agents they are granted.',
     summary:
-      'The floor role for the account. Sees only the projects they are added to, directly or through a group, and uses only the agents granted to them there.',
+      'The floor role. Works in sessions with the agents they are granted, directly or through a group. No Customize.',
   },
 };
 
 /**
- * The two project roles, and the whole difference between them (Marko,
- * 2026-09-03): a member USES agents — the ones they are granted — and a
- * project manager CONFIGURES the project, which is Customize. Nothing in
- * between. The keys stay `member` / `manager` (they are the API's role
- * keys and the URL vocabulary); only what a person reads changed.
+ * The two rungs a workspace's project row stores (Marko, 2026-09-03): a
+ * member USES agents — the ones they are granted — and a manager CONFIGURES
+ * the workspace, which is Customize. The keys stay `member` / `manager` (they
+ * are the API's role keys and the URL vocabulary).
  */
 export const PROJECT_ROLE_DESCRIPTORS: Record<OfferedProjectRole, RoleDescriptor> = {
-  member: {
-    label: 'Project member',
-    blurb: 'Starts and works in sessions with the agents they are granted. No Customize.',
-    summary:
-      'Starts and works in sessions with the agents they are granted — nothing else. No access to Customize. The project floor role.',
-  },
+  member: ACCOUNT_ROLE_DESCRIPTORS.member,
   manager: {
-    label: 'Project manager',
-    blurb: 'Customize and everything in it — every agent, skill, connector, secret, trigger, and member.',
-    summary:
-      'Customize and everything in it — every agent, skill, connector, secret and trigger, plus members and the project itself.',
+    label: 'Manager',
+    blurb: 'Customize and everything in it: every agent, skill, connector, secret and trigger.',
+    summary: 'Customize and everything in it: every agent, skill, connector, secret and trigger.',
   },
 };
 

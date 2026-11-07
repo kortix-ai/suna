@@ -81,6 +81,7 @@ import { sandboxRelayContext, type SandboxRelayContext } from '@/lib/kortix-api/
 import { logger } from '@/lib/log/logger'
 import type { SessionLogPort } from '../contract/session-log'
 import { apiBytesReader, apiTextReader, attachmentBytes, sessionLogFromRestore, type TruncatedText } from './session-log-restore'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 const ATTEMPTS = 3
 
@@ -200,7 +201,7 @@ async function attempts<T>(what: string, retryMs: number, run: () => Promise<T>)
   }
 }
 
-const url = (ctx: SandboxRelayContext, path: string) => `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/${path}`
+const url = (ctx: SandboxRelayContext, path: string) => `${ctx.apiRoot}/workspaces/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/${path}`
 
 /**
  * A 401 at a wake is the box racing its session lease: the API refuses a session credential until the
@@ -215,7 +216,7 @@ const LEASE_ATTEMPTS = 15
 /** The response, or null for an answer that says "no reconcile here" (403, 404, 503, another 4xx); throws on what a retry may fix. */
 async function call(ctx: SandboxRelayContext, path: string, method: 'GET' | 'POST', retryMs: number): Promise<Response | null> {
   const send = () =>
-    fetch(url(ctx, path), {
+    kortixApiFetch(url(ctx, path), {
       method,
       headers: { Authorization: `Bearer ${(sandboxRelayContext() ?? ctx).token}`, 'Accept-Encoding': 'gzip' },
       signal: AbortSignal.timeout(path === 'restore' ? 120_000 : 15_000),

@@ -110,7 +110,8 @@ export function isPrivatePath(pathname: string): boolean {
  * slug, an agent or file name, or a token, and becomes `:id`.
  */
 const ROUTE_WORDS = new Set([
-  // Route folders under app/[locale].
+  // Route folders under app/[locale]. `projects` is the pre-2026-11-06 name.
+  'workspaces',
   'projects',
   'sessions',
   'customize',
@@ -183,7 +184,7 @@ const ROUTE_WORDS = new Set([
   'shared',
 ]);
 
-/** `/de/projects/9f…/sessions/4a…` → `/projects/:id/sessions/:id`. */
+/** `/de/workspaces/9f…/sessions/4a…` → `/workspaces/:id/sessions/:id`. */
 export function routeTemplate(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length > 0 && (locales as readonly string[]).includes(segments[0]!)) {

@@ -153,7 +153,7 @@ describe('nav contract — every URL written to history is a real route', () => 
   // bar. `/sessions/<id>` and `/terminal/<id>` are leftovers of the
   // instance-scoped scheme (packages/sdk/.../instance-routes.ts) and have no
   // App Router page, so the tab looked fine while the URL 404'd on reload or
-  // Back. Live code must build `/projects/<id>/sessions/<id>` instead.
+  // Back. Live code must build `/workspaces/<id>/sessions/<id>` instead.
   //
   // The allow-list is exactly the paths proven unreachable: the palette's
   // no-projectId terminal action. The legacy right rail that also wrote these
@@ -183,6 +183,6 @@ describe('nav contract — every URL written to history is a real route', () => 
     expect(source).toContain('export function projectSessionHref');
     expect(source).toContain('uiRoutes().session(projectId, sessionId)');
     // apps/web serves the default route table: the session URL is project-scoped.
-    expect(defaultUiRoutes.session('p1', 's1')).toBe('/projects/p1/sessions/s1');
+    expect(defaultUiRoutes.session('p1', 's1')).toBe('/workspaces/p1/sessions/s1');
   });
 });

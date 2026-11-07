@@ -41,7 +41,7 @@ jobs:
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     env:
       # Baked into the app so the shell points at its deployment by default.
-      DESKTOP_URL: https://${{ inputs.channel || 'dev' }}.kortix.com/projects
+      DESKTOP_URL: https://${{ inputs.channel || 'dev' }}.kortix.com/workspaces
       # Distinct bundle id so dev, staging and prod installs sit side by side.
       DESKTOP_APP_ID: com.kortix.desktop.${{ inputs.channel || 'dev' }}
     strategy:
@@ -343,6 +343,6 @@ jobs:
           generate_release_notes: false
           body: |
             Mutable ${{ env.CHANNEL }} desktop build for `${{ github.sha }}`.
-            Defaults to `https://${{ env.CHANNEL }}.kortix.com/projects`.
+            Defaults to `https://${{ env.CHANNEL }}.kortix.com/workspaces`.
           files: |
             release/*

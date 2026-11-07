@@ -3,7 +3,7 @@
 /**
  * ProjectFilesContext — gives every hook in this feature access to the
  * current project's id and git ref. The route-level shell sets this once
- * (see `apps/web/src/app/projects/[id]/files/page.tsx`).
+ * (see `apps/web/src/app/[locale]/(app)/workspaces/[id]/files/page.tsx`).
  *
  * Hooks read context, then pass `projectId` / `ref` into the plain API
  * functions in `./api/runtime-files.ts`. The API functions themselves

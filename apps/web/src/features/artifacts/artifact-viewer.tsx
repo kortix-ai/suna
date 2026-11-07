@@ -112,7 +112,7 @@ function historyRows(versions: ArtifactVersion[]): Array<ArtifactVersion & { sav
 }
 
 /**
- * /projects/[id]/artifacts/[artifactId] — one artifact, full height. A doc is
+ * /workspaces/[id]/artifacts/[artifactId] — one artifact, full height. A doc is
  * its Markdown file in the doc editor (read-only without write access in
  * Files); an HTML page runs in a sandboxed frame. The history is the Files
  * commit log of its path.
@@ -288,7 +288,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                 </Button>
               ) : embedded ? undefined : (
                 <Button size="sm" variant="outline" asChild>
-                  <Link href={`/projects/${projectId}/artifacts`}>{t('back')}</Link>
+                  <Link href={`/workspaces/${projectId}/artifacts`}>{t('back')}</Link>
                 </Button>
               )
             }
@@ -344,7 +344,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
               <>
                 <BreadcrumbItem className="shrink-0">
                   <BreadcrumbLink asChild>
-                    <Link href={`/projects/${projectId}/artifacts`}>{t('title')}</Link>
+                    <Link href={`/workspaces/${projectId}/artifacts`}>{t('title')}</Link>
                   </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator>
@@ -577,7 +577,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link
-                      href={`/projects/${projectId}/drive?path=${encodeURIComponent(drivePathToParam(folder, null))}`}
+                      href={`/workspaces/${projectId}/drive?path=${encodeURIComponent(drivePathToParam(folder, null))}`}
                     >
                       <FolderOpenIcon /> {t('openInFiles')}
                     </Link>
@@ -619,7 +619,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
             {/* `data-no-panel`: the session's link interceptor would reopen it in this panel. */}
             <Hint label={t('openFullPage')} side="bottom">
               <Button size="icon-sm" variant="ghost" aria-label={t('openFullPage')} asChild>
-                <Link href={`/projects/${projectId}/artifacts/${artifactId}`} data-no-panel>
+                <Link href={`/workspaces/${projectId}/artifacts/${artifactId}`} data-no-panel>
                   <ArrowsOutSimpleIcon className="size-3.5" />
                 </Link>
               </Button>
@@ -753,7 +753,7 @@ function ArtifactViewerContent({ projectId, artifactId, onClose }: ArtifactViewe
           await mutations.remove.mutateAsync(artifactId);
           successToast(t('removed'));
           if (onClose) onClose();
-          else router.push(`/projects/${projectId}/artifacts`);
+          else router.push(`/workspaces/${projectId}/artifacts`);
         }}
       />
     </div>

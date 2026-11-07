@@ -34,8 +34,11 @@ import {
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
-export const projectAppsKey = (projectId: string | null | undefined) =>
+export const workspaceAppsKey = (projectId: string | null | undefined) =>
   qk.project.apps(projectId ?? '');
+
+/** @deprecated Use `workspaceAppsKey`. Kept permanently. */
+export const projectAppsKey = workspaceAppsKey;
 
 export const appDeploymentsKey = (
   projectId: string | null | undefined,
@@ -55,15 +58,15 @@ export const appEventsKey = (
 
 /** The project's App list, which also covers every channel's Apps (`qk.project.spaceApps`). */
 function invalidateProjectApps(queryClient: QueryClient, projectId: string | null | undefined) {
-  return queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) });
+  return queryClient.invalidateQueries({ queryKey: workspaceAppsKey(projectId) });
 }
 
 const SETTLED_DEPLOYMENT = new Set(['ready', 'failed', 'cancelled']);
 
 /** Project App inventory (only the Apps the caller may open; a project manager: every App) and lifecycle mutations. */
-export function useProjectApps(projectId: string | null | undefined) {
+export function useWorkspaceApps(projectId: string | null | undefined) {
   const queryClient = useQueryClient();
-  const queryKey = projectAppsKey(projectId);
+  const queryKey = workspaceAppsKey(projectId);
   const query = useQuery({
     queryKey,
     queryFn: () => listApps(projectId as string),
@@ -94,7 +97,7 @@ export function useProjectApps(projectId: string | null | undefined) {
     onSuccess: (_deleted: unknown, appId: string) => {
       // The deleted App's own queries (access, deployments, events) sit under
       // the list key; refetched, each answers 404 while its detail closes.
-      const list = projectAppsKey(projectId);
+      const list = workspaceAppsKey(projectId);
       void queryClient.invalidateQueries({ queryKey: list, predicate: (q) => q.queryKey[list.length] !== appId });
       // A delete takes the triggers that name the App.
       return queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId ?? '') });
@@ -103,6 +106,9 @@ export function useProjectApps(projectId: string | null | undefined) {
 
   return { ...query, create, update, start, stop, remove };
 }
+
+/** @deprecated Use `useWorkspaceApps`. Kept permanently. */
+export const useProjectApps = useWorkspaceApps;
 
 /**
  * The App's event log, newest first (`listAppEvents`): what it posted and what

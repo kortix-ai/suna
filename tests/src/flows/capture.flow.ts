@@ -472,8 +472,14 @@ flow(
         if (r.json<{ hits: Hit[] }>().hits.length === 0) throw new Error('no hits for the agent');
       });
 
-      await ctx.step('the agent cannot reach the account routes (its token is project-scoped); a shared or trigger session has no person → 403', async () => {
-        (await own.client.get(path(R.search), { params: { accountId: team.id }, query: { q: marker } })).status(403);
+      await ctx.step('the account route answers the agent exactly as /capture/me does: its own person only; a shared or trigger session has no person → 403', async () => {
+        // A workspace-bound credential reaches its own workspace's routes (design.md §3.2 K1). The
+        // route still reads only the person the private session acts for, never the whole account.
+        const viaAccount = await own.client.get(path(R.search), { params: { accountId: team.id }, query: { q: marker } });
+        viaAccount.status(200).body().has('$.user_id', member.userId!);
+        const foreign = viaAccount.json<{ hits: Hit[] }>().hits.filter((h) => (h as { user_id?: string }).user_id !== member.userId);
+        if (foreign.length > 0) throw new Error(`the account route returned ${foreign.length} hit(s) of another person`);
+        (await shared.client.get(path(R.search), { params: { accountId: team.id }, query: { q: marker } })).status(403).body().has('$.code', 'capture_no_human');
         (await shared.client.get(path(R.meSearch), { query: { q: marker } })).status(403).body().has('$.code', 'capture_no_human');
         (await trigger.client.get(path(R.meTimeline), { query: { day: '2026-10-01' } })).status(403).body().has('$.code', 'capture_no_human');
       });

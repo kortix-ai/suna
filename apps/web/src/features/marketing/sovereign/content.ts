@@ -266,7 +266,7 @@ export const updateTracks = [
 export const modelOrder = [
   'The session, channel or automation',
   'The agent',
-  'The project default',
+  'The workspace default',
   'The account default',
   'The platform default',
 ] as const;

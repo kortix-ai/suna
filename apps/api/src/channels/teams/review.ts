@@ -16,7 +16,7 @@ export async function postTeamsReviewCard(
   const ref = await prepareWaitingTurn(sessionId, 'Waiting for your decision');
   if (!ref) return { ok: false, error: 'No active Teams turn for this session.' };
   const viewUrl = ref.projectId
-    ? `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${ref.projectId}/review`
+    ? `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/workspaces/${ref.projectId}/review`
     : undefined;
 
   const posted = await sendCard(

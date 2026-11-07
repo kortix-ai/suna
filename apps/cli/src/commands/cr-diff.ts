@@ -90,7 +90,7 @@ export async function listAllChangeRequests(
       query.set('cursor', cursor);
     }
     const page = await ctx.client.get<ChangeRequestsListResponse>(
-      `/projects/${ctx.projectId}/change-requests?${query}`,
+      `/workspaces/${ctx.projectId}/change-requests?${query}`,
     );
     all.push(...page.change_requests);
     if (done?.(page.change_requests)) break;
@@ -114,7 +114,7 @@ export async function resolveCr(
   if (UUID_RE.test(ref)) {
     try {
       const resp = await ctx.client.get<ChangeRequestDetailResponse>(
-        `/projects/${ctx.projectId}/change-requests/${ref}`,
+        `/workspaces/${ctx.projectId}/change-requests/${ref}`,
       );
       return resp.change_request;
     } catch (err) {
@@ -133,7 +133,7 @@ export async function resolveCr(
     );
     const match = list.find((c) => c.number === n);
     if (!match) {
-      process.stderr.write(`${status.err(`No CR #${n} on this project.`)}\n`);
+      process.stderr.write(`${status.err(`No CR #${n} on this workspace.`)}\n`);
       return null;
     }
     return match;
@@ -153,7 +153,7 @@ export async function crDiff(argv: string[], opts: CtxOpts, json = false): Promi
   let diff: ChangeRequestDiffResponse;
   try {
     diff = await ctx.client.get<ChangeRequestDiffResponse>(
-      `/projects/${ctx.projectId}/change-requests/${cr.cr_id}/diff`,
+      `/workspaces/${ctx.projectId}/change-requests/${cr.cr_id}/diff`,
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -237,7 +237,7 @@ export async function crVersionDiff(argv: string[], opts: CtxOpts, json = false)
   let diff: VersionDiffPreview;
   try {
     diff = await ctx.client.get<VersionDiffPreview>(
-      `/projects/${ctx.projectId}/version-diff?${params.toString()}`,
+      `/workspaces/${ctx.projectId}/version-diff?${params.toString()}`,
     );
   } catch (err) {
     return surfaceApiError(err);

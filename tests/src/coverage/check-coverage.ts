@@ -31,6 +31,8 @@ export interface CoverageSummary {
 interface Route {
   method: string;
   path: string;
+  /** The canonical route this legacy name is a permanent alias of (dump-routes.ts). */
+  aliasOf?: string;
 }
 
 interface Baseline {
@@ -58,7 +60,11 @@ async function readManifest(): Promise<Route[]> {
   if (!(await file.exists())) throw new Error(`route manifest missing: ${MANIFEST}`);
   const data = JSON.parse(await file.text());
   const routes = Array.isArray(data?.routes) ? data.routes : [];
-  return routes.map((r: any) => ({ method: String(r.method), path: String(r.path) }));
+  return routes.map((r: any) => ({
+    method: String(r.method),
+    path: String(r.path),
+    ...(typeof r.aliasOf === "string" ? { aliasOf: r.aliasOf } : {}),
+  }));
 }
 
 async function readBaseline(): Promise<Baseline> {
@@ -108,11 +114,24 @@ export async function runCoverage(opts: CoverageOptions = {}): Promise<boolean> 
     }
   }
 
+  // A legacy alias and its canonical route run the same handler
+  // (unit-workspace-route-aliases.test.ts): one flow covers both names.
+  const twinOf = new Map<string, string>();
+  for (const r of manifest) {
+    if (!r.aliasOf) continue;
+    const legacy = normalize(r.method, r.path);
+    const canonical = normalize(r.method, r.aliasOf);
+    twinOf.set(legacy, canonical);
+    twinOf.set(canonical, legacy);
+  }
+  const isDeclared = (k: string) => declared.has(k) || (twinOf.has(k) && declared.has(twinOf.get(k)!));
+
   const manifestKeys = [...manifestSet.keys()];
-  const covered = manifestKeys.filter((k) => declared.has(k));
-  const allowlisted = manifestKeys.filter((k) => !declared.has(k) && allowUncovered.has(k));
+  const covered = manifestKeys.filter((k) => isDeclared(k));
+  const isAllowlisted = (k: string) => allowUncovered.has(k) || (twinOf.has(k) && allowUncovered.has(twinOf.get(k)!));
+  const allowlisted = manifestKeys.filter((k) => !isDeclared(k) && isAllowlisted(k));
   const uncovered = manifestKeys
-    .filter((k) => !declared.has(k) && !allowUncovered.has(k))
+    .filter((k) => !isDeclared(k) && !isAllowlisted(k))
     .sort();
   const external = [...declared.keys()]
     .filter((k) => !manifestSet.has(k) && !allowExternal.has(k))

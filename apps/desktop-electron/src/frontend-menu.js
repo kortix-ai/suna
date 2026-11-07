@@ -18,9 +18,9 @@
 
 const { isDevChannel } = require('./update-channel');
 
-const PRESET_PROD = 'https://kortix.com/projects';
-const PRESET_DEV = 'https://dev.kortix.com/projects';
-const PRESET_LOCAL = 'http://localhost:3000/projects';
+const PRESET_PROD = 'https://kortix.com/workspaces';
+const PRESET_DEV = 'https://dev.kortix.com/workspaces';
+const PRESET_LOCAL = 'http://localhost:3000/workspaces';
 
 const DEV_MENU_LABEL = 'Frontend URL';
 const PRODUCTION_MENU_LABEL = 'Change Kortix Instance…';

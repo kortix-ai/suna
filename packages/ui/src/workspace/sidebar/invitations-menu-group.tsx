@@ -19,12 +19,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useUiRouter } from '../../providers/ui-provider';
 
 /**
- * Pending invites at the top of the Switch Project menu. A user who already
- * has a project lands in it, not on the chooser, so this is where an invite
+ * Pending invites at the top of the Switch workspace menu. A user who already
+ * has a workspace lands in it, not on the chooser, so this is where an invite
  * that arrives later is found. Renders nothing when there are none.
  */
 export function InvitationsMenuGroup() {
-  const t = useTranslations('projectChooser');
+  const t = useTranslations('workspaces.chooser');
   const router = useUiRouter();
   const queryClient = useQueryClient();
   const setSelectedAccountId = useCurrentAccountStore((state) => state.setSelectedAccountId);
@@ -44,7 +44,7 @@ export function InvitationsMenuGroup() {
       router.push(inviteLandingPath(landing));
     },
     onError: (error: unknown) => {
-      errorToast(error instanceof Error ? error.message : t('joinError'));
+      errorToast(error instanceof Error && error.message ? error.message : t('joinError'));
     },
   });
 

@@ -1,4 +1,3 @@
-import { appendQuery } from './iam-query';
 // The canonical grant surface: ONE table, ONE write path.
 //
 // `role_assignments` replaced `account_members.account_role`,
@@ -13,6 +12,7 @@ import { appendQuery } from './iam-query';
 // browser enforced and that `Promise.allSettled` could leave half-applied.
 
 import { backendApi } from '../../http/api-client';
+import { assignmentBody, assignmentQuery } from './assignments-at';
 import { unwrap } from './shared';
 import { iamGet } from './iam-shared';
 
@@ -107,25 +107,12 @@ export interface Permission {
   implies: string[];
 }
 
-function query(filter: ListAssignmentsFilter | undefined) {
-  return appendQuery({
-    principal_type: filter?.principalType,
-    principal_id: filter?.principalId,
-    scope_type: filter?.scopeType,
-    scope_id: filter?.scopeId,
-    object_type: filter?.objectType,
-    object_id: filter?.objectId,
-    role_id: filter?.roleId,
-    include_expired: filter?.includeExpired ? 'true' : undefined,
-  });
-}
-
 /** Every assignment in the account, optionally narrowed. Live rows only unless
  *  `includeExpired` is set. */
 export async function listAssignments(accountId: string, filter?: ListAssignmentsFilter) {
   return unwrap(
     await iamGet<{ assignments: RoleAssignment[] }>(
-      `/accounts/${accountId}/iam/assignments${query(filter)}`,
+      `/accounts/${accountId}/iam/assignments${assignmentQuery(filter)}`,
     ),
   ).assignments;
 }
@@ -140,23 +127,9 @@ export async function listAssignments(accountId: string, filter?: ListAssignment
  * endpoint — which five parallel endpoints made possible.
  */
 export async function createAssignment(accountId: string, input: AssignmentInput) {
-  const body: Record<string, unknown> = {
-    principal_type: input.principal.type,
-    principal_id: input.principal.id,
-    scope_type: input.scope.type,
-    scope_id: input.scope.type === 'project' ? input.scope.id : null,
-  };
-  if (input.roleId) body.role_id = input.roleId;
-  else body.role_key = input.roleKey;
-  if (input.object) {
-    body.object_type = input.object.type;
-    body.object_id = input.object.id;
-  }
-  // Omitted means permanent; an explicit `null` says so on the wire. Both are
-  // permanent — the distinction matters only to a PATCH-shaped caller.
-  if (input.expiresAt !== undefined) body.expires_at = input.expiresAt;
-
-  return unwrap(await backendApi.post<RoleAssignment>(`/accounts/${accountId}/iam/assignments`, body));
+  return unwrap(
+    await backendApi.post<RoleAssignment>(`/accounts/${accountId}/iam/assignments`, assignmentBody(input)),
+  );
 }
 
 /** Revoke one assignment. The last-owner guard lives server-side in

@@ -4,7 +4,7 @@
  * `/settings/[tab]` — deep-link into the merged Settings overlay with NO
  * project context (e.g. `/settings/profile`, `/settings/billing`). This is
  * the account-scoped door into the same overlay the two
- * `/projects/[id]/settings*` routes open project-scoped — see the "You" and
+ * `/workspaces/[id]/settings*` routes open project-scoped — see the "You" and
  * "Organization" rail groups in `rail.ts`, which is why this route exists
  * with no `[id]` segment at all rather than defaulting to some remembered
  * project.
@@ -13,7 +13,7 @@
  * directly, which left a blank page once the overlay was closed (nothing sat
  * behind it). It was then changed to set store state and bounce to
  * `PROJECT_LANDING_PATH`, letting `ProjectShell` mount the panel. That fixed
- * the blank page but routed every visitor through `/projects/start`, the door
+ * the blank page but routed every visitor through `/workspaces/start`, the door
  * that PROVISIONS a first project — the exact opposite of what the sign-in
  * redirect for a user without app access needs. It now renders the panel
  * directly again, with the blank page fixed properly instead of avoided. The
@@ -73,12 +73,16 @@ export default function SettingsTabPage() {
     (tab ? !PALETTE_ACCOUNT_SCOPED_TABS.includes(tab) : isProjectGraduatedSection(params?.tab));
   const { user, isLoading: authLoading } = useAuth();
   const lastProjectId = needsProject && !authLoading ? readLastProjectId(user?.id) : null;
-  const href =
-    graduated && accountId && !accounts.isError
+  // A workspace section (`tokens`, `plan`, `credits`, `connected`, …) with no
+  // workspace to open it in goes to the chooser: create or join one first.
+  const noWorkspace = graduated && accounts.isSuccess && (accounts.data ?? []).length === 0;
+  const href = noWorkspace
+    ? '/workspaces'
+    : graduated && accountId && !accounts.isError
       ? legacySectionRedirect('', params?.tab, accountId)
       : needsProject && !authLoading
         ? (lastProjectId && legacySectionRedirect(lastProjectId, params?.tab)) ||
-          (tab === 'computer' ? null : '/projects')
+          (tab === 'computer' ? null : '/workspaces')
         : null;
 
   useEffect(() => {

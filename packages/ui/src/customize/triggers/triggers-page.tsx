@@ -5,7 +5,7 @@ import type { ComponentProps } from 'react';
 import { ScheduleView } from './schedule-view';
 
 /**
- * The page body for /projects/[id]/triggers — the capability tab that
+ * The page body for /workspaces/[id]/triggers — the capability tab that
  * graduated out of the Settings overlay. A trigger is one resource with two
  * ways to start it (schedule or webhook), so this mounts one `ScheduleView`
  * listing both, not two kind-locked pages.

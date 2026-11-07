@@ -69,7 +69,7 @@ function useShownArtifact(url: string): { artifact: ShownArtifact | null; failed
       type: detail.type,
       src: detail.version.view_url,
       frameKey: artifactFrameKey(detail),
-      href: `/projects/${detail.project_id}/artifacts/${detail.artifact_id}`,
+      href: `/workspaces/${detail.project_id}/artifacts/${detail.artifact_id}`,
     },
     failed: false,
   };

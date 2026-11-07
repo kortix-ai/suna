@@ -9,7 +9,7 @@ import {
   type ProviderListResponse,
   connectedGatewayProviderIdsFromSecretNames,
   mergeProviderLists,
-  mergeProjectSecretConnectedProviders,
+  mergeWorkspaceSecretConnectedProviders,
   projectLlmCatalogToProviderList,
 } from './provider-selection';
 
@@ -81,7 +81,7 @@ describe('mergeProjectSecretConnectedProviders', () => {
   }
 
   test('marks Bedrock connected from project secrets alone (bearer + region)', () => {
-    const merged = mergeProjectSecretConnectedProviders(
+    const merged = mergeWorkspaceSecretConnectedProviders(
       bareProviders(['amazon-bedrock']),
       new Set(['AWS_BEARER_TOKEN_BEDROCK', 'AWS_REGION']),
       LLM_PROVIDER_CREDENTIALS,
@@ -90,7 +90,7 @@ describe('mergeProjectSecretConnectedProviders', () => {
   });
 
   test('does not mark Bedrock connected from a partial secret set', () => {
-    const merged = mergeProjectSecretConnectedProviders(
+    const merged = mergeWorkspaceSecretConnectedProviders(
       bareProviders(['amazon-bedrock']),
       new Set(['AWS_REGION']),
       LLM_PROVIDER_CREDENTIALS,

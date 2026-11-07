@@ -1871,7 +1871,7 @@ export function UserMessage({
   const shallowNavigate = useUiShallowNavigate();
 
   const openSessionMention = (raw: string) => {
-    // `/projects/<id>/sessions/<id>`, not `/sessions/<id>`. The latter is not a
+    // `/workspaces/<id>/sessions/<id>`, not `/sessions/<id>`. The latter is not a
     // route — the tab stays mounted so the click looks fine, but the URL it
     // writes into history 404s on reload or Back. See `session-href.ts`.
     // Direct session ID (ses_...) — navigate without title lookup

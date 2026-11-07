@@ -30,6 +30,7 @@ import { config } from '../../config';
 import type { AppEnv } from '../../types';
 import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelReadContext, requireUserCredential } from './auth';
+import { noWorkspaceError } from '../../shared/no-workspace';
 import { isValidCapability } from '../core/scope-validator';
 import { ensureComputerConnector } from '../../connectors/sync';
 import { attachComputerConnection } from '../../connectors/computers';
@@ -432,7 +433,7 @@ function registerDeviceAuthApproveRoute(router: OpenAPIHono<AppEnv>): void {
       const share = parseConnectorConnectOwner(body.share);
       if (!share) return c.json({ error: "share must be 'me' or 'project'" }, 400);
       if (share === 'project' && !projectId) {
-        return c.json({ error: 'project_id is required to share a computer with a project' }, 400);
+        return c.json({ error: 'project_id is required to share a computer with a workspace' }, 400);
       }
       if (projectId !== null && !isUuid(projectId)) {
         return c.json({ error: 'project_id must be a UUID' }, 400);
@@ -467,6 +468,8 @@ function registerDeviceAuthApproveRoute(router: OpenAPIHono<AppEnv>): void {
       const userId = (loaded?.userId ?? context?.userId) as string;
       const accountId = (loaded?.row.accountId ?? context?.accountId) as string;
       if (!userId) return c.json({ error: 'A user credential is required' }, 403);
+      // A person with no workspace has no account to pair a machine into.
+      if (!accountId) throw noWorkspaceError();
       if (
         loaded &&
         share === 'project' &&
@@ -480,7 +483,7 @@ function registerDeviceAuthApproveRoute(router: OpenAPIHono<AppEnv>): void {
       ) {
         return c.json(
           {
-            error: 'Sharing a computer with the project requires permission to manage its connections',
+            error: 'Sharing a computer with the workspace requires permission to manage its connections',
             code: 'FORBIDDEN',
           },
           403,

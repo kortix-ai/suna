@@ -50,7 +50,13 @@ function database() {
   const query = vi.fn().mockResolvedValue({ rows: [] });
   const end = vi.fn().mockResolvedValue(undefined);
   const open: OpenProjectDb = vi.fn().mockResolvedValue({ query, end });
-  return { open, query, end };
+  /** The one INSERT of the project row (the create also locks and marks legacy rows). */
+  const projectInsert = () => {
+    const calls = query.mock.calls.filter(([sql]) => String(sql).includes("INSERT INTO kortix.projects"));
+    expect(calls).toHaveLength(1);
+    return calls[0]!;
+  };
+  return { open, query, end, projectInsert };
 }
 
 describe("database-only project fixture", () => {
@@ -84,12 +90,10 @@ describe("database-only project fixture", () => {
 
     expect(project.name).toBe("e2e-project");
     expect(project.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(db.query).toHaveBeenCalledOnce();
-    expect(db.query.mock.calls[0][0]).toContain("INSERT INTO kortix.projects");
-    expect(db.query.mock.calls[0][0]).toContain(
+    expect(db.projectInsert()[0]).toContain(
       "INSERT INTO kortix.project_members",
     );
-    expect(db.query.mock.calls[0][1]).toEqual([
+    expect(db.projectInsert()[1]).toEqual([
       project.id,
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",
@@ -100,6 +104,7 @@ describe("database-only project fixture", () => {
         experimental: { apps: true },
         onboarding_completed_at: "2026-01-01T00:00:00.000Z",
       }),
+      false,
     ]);
     expect(db.end).toHaveBeenCalledOnce();
   });
@@ -118,7 +123,7 @@ describe("database-only project fixture", () => {
       db.open,
     );
 
-    expect(db.query.mock.calls[0][1]).toEqual([
+    expect(db.projectInsert()[1]).toEqual([
       project.id,
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",
@@ -129,6 +134,7 @@ describe("database-only project fixture", () => {
         experimental: { apps: true },
         onboarding_completed_at: "2026-01-01T00:00:00.000Z",
       }),
+      false,
     ]);
   });
 
@@ -146,7 +152,7 @@ describe("database-only project fixture", () => {
       db.open,
     );
 
-    expect(JSON.parse(db.query.mock.calls[0][1][5])).toMatchObject({
+    expect(JSON.parse(db.projectInsert()[1][5])).toMatchObject({
       experimental: { apps: false },
     });
   });

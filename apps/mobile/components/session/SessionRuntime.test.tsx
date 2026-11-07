@@ -63,7 +63,7 @@ test('unbound: no request, and no runtime for the screens', async () => {
 
 test('bound: it starts that session and hands the screens its runtime', async () => {
   await render({ projectId: 'p1', sessionId: '11111111-1111-4111-8111-111111111111' });
-  expect(urls.some((url) => url.includes('/projects/p1/sessions/11111111-1111-4111-8111-111111111111/start'))).toBe(true);
+  expect(urls.some((url) => /\/(projects|workspaces)\/p1\/sessions\/11111111-1111-4111-8111-111111111111\/start/.test(url))).toBe(true);
   const runtime = seen.at(-1);
   expect(runtime).not.toBeNull();
   // Not ready yet: the screens wait, and nothing is bound.

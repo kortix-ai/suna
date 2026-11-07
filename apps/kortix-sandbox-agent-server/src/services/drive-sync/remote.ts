@@ -1,4 +1,5 @@
 import { download, upload, DriveSyncRefused, RemoteChanged } from './drive-transfer'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 export { DriveSyncRefused, RemoteChanged, SINGLE_PUT_MAX, BLOCK_BYTES, sha256File } from './drive-transfer'
 
 /**
@@ -70,11 +71,11 @@ export function createHttpDriveSyncApi(opts: {
 }): DriveSyncApi {
   // KORTIX_API_URL is the API's /v1 base (as the API sets it); accept a bare origin too.
   const origin = opts.apiUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '')
-  const base = `${origin}/v1/projects/${encodeURIComponent(opts.projectId)}/sessions/${encodeURIComponent(opts.sessionId)}/drive-sync`
+  const base = `${origin}/v1/workspaces/${encodeURIComponent(opts.projectId)}/sessions/${encodeURIComponent(opts.sessionId)}/drive-sync`
   const timeout = opts.fetchTimeoutMs ?? 120_000
 
   const req = async (path: string, init: RequestInit = {}, okStatuses: number[] = []): Promise<Response> => {
-    const res = await fetch(`${base}${path}`, {
+    const res = await kortixApiFetch(`${base}${path}`, {
       ...init,
       signal: init.signal ?? AbortSignal.timeout(timeout),
       headers: { Authorization: `Bearer ${opts.token}`, ...(init.headers as Record<string, string> | undefined) },

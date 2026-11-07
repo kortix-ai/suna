@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   type ProjectConfigSummary,
   type ProjectDetail,
-  getProjectDetail,
+  getWorkspaceDetail,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
@@ -24,12 +24,12 @@ import { qk } from './query-keys';
  * its own `getProjectDetail` fetch even though the response was
  * byte-identical to the one already cached under `qk.project.detail(id)`.
  */
-export function useProjectConfig(
+export function useWorkspaceConfig(
   projectId: string | null | undefined,
 ): ProjectConfigSummary | undefined {
   const { data } = useQuery({
     queryKey: qk.project.detail(projectId ?? ''),
-    queryFn: () => getProjectDetail(projectId as string),
+    queryFn: () => getWorkspaceDetail(projectId as string),
     select: (detail: ProjectDetail) => detail.config,
     enabled: !!projectId,
     ...contract('config'),
@@ -37,3 +37,6 @@ export function useProjectConfig(
   });
   return data;
 }
+
+/** @deprecated Use `useWorkspaceConfig`. Kept permanently. */
+export const useProjectConfig = useWorkspaceConfig;

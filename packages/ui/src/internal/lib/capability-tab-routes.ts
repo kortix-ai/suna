@@ -17,15 +17,15 @@ import { adminPath, customizePath, uiRoutes } from '../../lib/routes';
  *
  * Channels went the OTHER way: it was a tab here and is now a scope of the
  * Connectors page (`channelsHref` below). Unlike Schedules/Webhooks the two are
- * NOT one backend resource — `/projects/{id}/channels/*` is inbound reach
+ * NOT one backend resource — `/workspaces/{id}/channels/*` is inbound reach
  * (Slack, Teams, email installations and their per-channel bindings),
- * `/projects/{id}/connectors/*` is outbound tool access — and nothing merged
+ * `/workspaces/{id}/connectors/*` is outbound tool access — and nothing merged
  * them. What merged is the navigation: both answer "wire this project to
  * something outside it", and splitting that question across two top-level tabs
  * made the answer depend on knowing which direction the bytes travel.
  *
  * No `icon` field, on purpose. This module is pure data and is imported by
- * SERVER components (`/projects/[id]/channels/page.tsx` needs `channelsHref`);
+ * SERVER components (`/workspaces/[id]/channels/page.tsx` needs `channelsHref`);
  * a `@phosphor-icons/react` import here calls `createContext` at module load
  * and fails `next build` ("Failed to collect page data" — Deploy Dev
  * 2026-08-19). The tab bar is text-only anyway (Marko, 2026-08-19: eight mixed
@@ -65,12 +65,12 @@ export interface CapabilityTab {
  * resources an agent draws on — Skills first among them — follow behind a
  * seam. `PRIMARY_TABS` below names the leading group so the bar can draw it.
  *
- * Every tab lives under `/projects/<id>/customize/<segment>` (Marko,
+ * Every tab lives under `/workspaces/<id>/customize/<segment>` (Marko,
  * 2026-09-03); `CAPABILITY_SEGMENT` maps a key to its segment. The Agents key
  * stays singular for stability, its segment is `agents`, and one agent lives
- * one level deeper, at `agentHref` (`/projects/<id>/customize/agents/<name>`).
+ * one level deeper, at `agentHref` (`/workspaces/<id>/customize/agents/<name>`).
  *
- * There is no Settings tab. `/projects/<id>/config` — the bar's trailing
+ * There is no Settings tab. `/workspaces/<id>/config` — the bar's trailing
  * "Settings" tab, a sub-nav over General / Sandbox templates / Review /
  * Feature flags / Upgrades — was retired on 2026-09-02 (Jay). Its
  * configuration sections live in the Settings overlay's Workspace group
@@ -180,7 +180,7 @@ export function customizeHref(projectId: string): string {
 }
 
 /**
- * The libraries and settings that live in Project admin (`/projects/<id>/admin/<section>`),
+ * The libraries and settings that live in Project admin (`/workspaces/<id>/admin/<section>`),
  * by Customize key. Customize keeps only Agents and Review; every other tab is
  * one place, Project admin (Marko, 2026-10-27: "no duplications").
  */
@@ -222,7 +222,7 @@ export function capabilityLinkHref(projectId: string, key: CapabilityTab['key'])
 }
 
 /**
- * Review: its own page at `/projects/<id>/review` (since 2026-11-04), or null
+ * Review: its own page at `/workspaces/<id>/review` (since 2026-11-04), or null
  * when the host serves no Review page. `/customize/review`, its address from
  * 2026-10-17, redirects there.
  */
@@ -232,7 +232,7 @@ export function reviewHref(projectId: string): string | null {
 
 /**
  * The Reminders page: the Customize Reminders tab, or null when the host
- * serves no customize pages. `/projects/<id>/reminders`, its address until
+ * serves no customize pages. `/workspaces/<id>/reminders`, its address until
  * 2026-10-19, redirects here.
  */
 export function remindersHref(projectId: string): string | null {
@@ -252,14 +252,14 @@ export function agentHref(projectId: string, agentName: string): string {
 /**
  * The scope value the Connectors page reads out of `?scope=` to show Channels.
  * Exported so the three places that link to Channels — the retired
- * `/projects/<id>/channels` route, the `GRADUATED` map in `settings-tabs.ts`,
+ * `/workspaces/<id>/channels` route, the `GRADUATED` map in `settings-tabs.ts`,
  * and the project-home setup tile — cannot drift from the page that parses it.
  */
 export const CHANNELS_SCOPE = 'channels';
 
 /**
  * Where Channels lives now: a scope of the Connectors page, not a route of its
- * own. `/projects/<id>/channels` still resolves — it redirects here — so every
+ * own. `/workspaces/<id>/channels` still resolves — it redirects here — so every
  * bookmark taken while it was a tab keeps working.
  */
 export function channelsHref(projectId: string): string {
@@ -268,38 +268,38 @@ export function channelsHref(projectId: string): string {
 
 /**
  * The tab a pathname is on, matched against the shape `capabilityTabHref`
- * builds — `/projects/<id>/customize/<segment>` exactly — plus the deeper
- * shapes this group owns: `agentHref`'s `/projects/<id>/customize/agents/<name>`,
+ * builds — `/workspaces/<id>/customize/<segment>` exactly — plus the deeper
+ * shapes this group owns: `agentHref`'s `/workspaces/<id>/customize/agents/<name>`,
  * which lights the Agents tab (an agent's page is the Agents tab, opened on
  * one agent), and the app and connector pages under
- * `/projects/<id>/admin/connectors`, which light Connectors.
+ * `/workspaces/<id>/admin/connectors`, which light Connectors.
  *
  * The shape check is load-bearing, not defensive tidying. This used to match on
  * the LAST segment alone, which was harmless while every key was unique to this
  * route group. It stopped being harmless when Schedules and Webhooks arrived:
- * the Settings overlay is also routable, at `/projects/<id>/settings/<tab>`, so
- * a last-segment match reported `/projects/p1/settings/schedules` as the
+ * the Settings overlay is also routable, at `/workspaces/<id>/settings/<tab>`, so
+ * a last-segment match reported `/workspaces/p1/settings/schedules` as the
  * Schedules capability tab and lit the sidebar's Customize row from inside
  * Settings. The agent branch is therefore keyed on the THIRD segment being
  * `agent`, never on the last one.
  */
 export function activeCapabilityTab(pathname: string): CapabilityTab['key'] | null {
   const all = pathname.split('/').filter(Boolean);
-  // Tolerate a leading locale segment (`/en/projects/…`): anchor on `projects`
-  // wherever it sits, so the match works whether the host strips the locale or
-  // not. A project id is never the literal `projects`, so the first hit is the
-  // route segment.
-  const start = all.indexOf('projects');
+  // Tolerate a leading locale segment (`/en/workspaces/…`): anchor on `workspaces`
+  // (or the old `projects`) wherever it sits, so the match works whether the
+  // host strips the locale or not. A workspace id is never either literal, so
+  // the first hit is the route segment.
+  const start = all.findIndex((s) => s === 'workspaces' || s === 'projects');
   if (start === -1) return null;
   const segments = all.slice(start);
   // A Project admin library (`/admin/<section>`, and below Connectors an app
   // or a connector page) is that tab.
-  if (segments[0] === 'projects' && segments[2] === 'admin' && segments.length >= 4) {
+  if (segments[2] === 'admin' && segments.length >= 4) {
     const key = (Object.keys(ADMIN_SECTION) as CapabilityTab['key'][]).find((k) => ADMIN_SECTION[k] === segments[3]);
     if (!key) return null;
     return segments.length === 4 || (key === 'connectors' && segments.length <= 6) ? key : null;
   }
-  if (segments[0] !== 'projects' || segments[2] !== 'customize') return null;
+  if (segments[2] !== 'customize') return null;
   if (segments.length === 5 && segments[3] === CAPABILITY_SEGMENT.agent) return 'agent';
   // An app's page (`/connectors/<app>`) and a connector's page
   // (`/connectors/<app>/<connector>`) are the Connectors tab, opened on one.

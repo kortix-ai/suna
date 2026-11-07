@@ -146,7 +146,7 @@ const components: UiHostComponents = {
 
 const one = (value: string | string[] | undefined) => (typeof value === 'string' ? value : undefined);
 
-/** The session UI reads its ids from `/projects/[id]/sessions/[sessionId]`. */
+/** The session UI reads its ids from `/workspaces/[id]/sessions/[sessionId]`. */
 function RouteSessionIds({ children }: { children: ReactNode }) {
   const params = useParams<{ id?: string; sessionId?: string }>();
   return (

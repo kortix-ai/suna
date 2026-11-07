@@ -58,39 +58,39 @@ let configFile: string;
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'host-state-delegation-'));
   named = startFakeApi((req, url) => {
-    if (req.method === 'GET' && url.pathname === '/v1/accounts/me') {
+    if (req.method === 'GET' && url.pathname === '/v1/me') {
       return Response.json({
         user_id: 'user_1',
         email: 'user@example.test',
         accounts: memberships,
       });
     }
-    if (req.method === 'GET' && url.pathname === '/v1/projects/proj_1') {
+    if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj_1') {
       return Response.json(projectRow('proj_1', 'P1', 'account_1'));
     }
     return undefined;
   });
   other = startFakeApi((req, url) => {
-    if (req.method === 'GET' && url.pathname === '/v1/projects/proj_other') {
+    if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj_other') {
       return Response.json(projectRow('proj_other', 'PO', 'account_other'));
     }
-    if (req.method === 'DELETE' && url.pathname === '/v1/projects/proj_other') {
+    if (req.method === 'DELETE' && url.pathname === '/v1/workspaces/proj_other') {
       return Response.json({ ok: true, archived: true, repo_deleted: false });
     }
-    if (req.method === 'GET' && url.pathname === '/v1/accounts/account_other/iam/assignments') {
+    if (req.method === 'GET' && url.pathname === '/v1/workspaces/account_other/iam/assignments') {
       return Response.json({ assignments: otherAssignments });
     }
     return undefined;
   });
   delegated = startFakeApi((req, url) => {
-    if (req.method === 'GET' && url.pathname === '/v1/accounts/me') {
+    if (req.method === 'GET' && url.pathname === '/v1/me') {
       return Response.json({
         user_id: 'agent_1',
         email: 'agent@example.test',
         accounts: memberships,
       });
     }
-    if (req.method === 'GET' && url.pathname === '/v1/projects/proj_env') {
+    if (req.method === 'GET' && url.pathname === '/v1/workspaces/proj_env') {
       return Response.json(projectRow('proj_env', 'Env', 'account_1'));
     }
     return undefined;
@@ -177,7 +177,7 @@ test('accounts ls marks the stored host account inside the delegated identity li
     { ...memberships[0], active: true },
     { ...memberships[1], active: false },
   ]);
-  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/accounts/me']);
+  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/me']);
 });
 
 test('accounts use under the delegated env writes the stored active host and current follows', async () => {
@@ -212,7 +212,7 @@ test('token --json and whoami --json carry the stored host default project', asy
     });
   }
   // Both read the delegated identity over the network, nothing else.
-  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/accounts/me', '/v1/accounts/me']);
+  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/me', '/v1/me']);
 });
 
 // ── KRTX-1936: --host-pinned project resolution uses the host's own default ──
@@ -222,8 +222,8 @@ test('projects info --host resolves the named host own default, not the ambient 
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout).id).toBe('proj_other');
   expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
-    'GET /v1/projects/proj_other',
-    'GET /v1/projects/proj_other/git/connection',
+    'GET /v1/workspaces/proj_other',
+    'GET /v1/workspaces/proj_other/git/connection',
   ]);
 });
 
@@ -231,8 +231,8 @@ test('projects rm -y --host purges the named host own default without an id', as
   const result = await run(['projects', 'rm', '-y', '--host', 'other']);
   expect(result.code).toBe(0);
   expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
-    'GET /v1/projects/proj_other',
-    'DELETE /v1/projects/proj_other',
+    'GET /v1/workspaces/proj_other',
+    'DELETE /v1/workspaces/proj_other',
   ]);
 });
 
@@ -247,8 +247,8 @@ test('access assignments --host resolves the named host project, not the ambient
   expect(other.requests.map((r) => `${r.method} ${r.path}${r.query}`)).toEqual([
     // The project read takes its account from the project row, not a query
     // string; the IAM list is read under the project's own account.
-    'GET /v1/projects/proj_other',
-    'GET /v1/accounts/account_other/iam/assignments?scope_type=project&scope_id=proj_other&account_id=account_other',
+    'GET /v1/workspaces/proj_other',
+    'GET /v1/workspaces/account_other/iam/assignments?scope_type=project&scope_id=proj_other&account_id=account_other',
   ]);
 });
 
@@ -261,7 +261,7 @@ test('projects info --host --json keeps stdout machine-pure when it fails', asyn
   // Nothing on stdout: a failing --json command must not pollute the JSON
   // stream with host or error lines (KRTX-1936 source update).
   expect(result.stdout).toBe('');
-  expect(result.stderr).toContain('No project linked');
+  expect(result.stderr).toContain('No workspace selected');
   expect(result.stderr).not.toContain('proj_env');
 });
 
@@ -269,14 +269,14 @@ test('an explicit id still targets the named host exactly (guard)', async () => 
   const result = await run(['projects', 'info', 'proj_env', '--host', 'other']);
   expect(result.code).not.toBe(0);
   expect(result.stderr).toContain('not found on host "other"');
-  expect(other.requests.map((r) => r.path)).toEqual(['/v1/projects/proj_env']);
+  expect(other.requests.map((r) => r.path)).toEqual(['/v1/workspaces/proj_env']);
 });
 
 test('without --host the ambient session project still resolves (guard)', async () => {
   const result = await run(['projects', 'info', '--json']);
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout).id).toBe('proj_env');
-  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/projects/proj_env', '/v1/projects/proj_env/git/connection']);
+  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/workspaces/proj_env', '/v1/workspaces/proj_env/git/connection']);
 });
 
 // ── resolveProjectId unit contract (the shared resolver the four project

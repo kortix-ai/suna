@@ -47,7 +47,7 @@ test('accounts ls explicit host overrides delegation origin and token', async ()
   const result = await run(['ls', '--host', 'test', '--json']);
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual(accounts.map(a => ({ ...a, active: a.account_id === 'account_1' })));
-  expect(named.requests.map(r => r.path)).toEqual(['/v1/accounts/me']);
+  expect(named.requests.map(r => r.path)).toEqual(['/v1/me']);
   expect(delegated.requests).toEqual([]);
 });
 
@@ -92,5 +92,5 @@ test('omitting host preserves delegated identity precedence', async () => {
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual([]);
   expect(named.requests).toEqual([]);
-  expect(delegated.requests.map(r => r.path)).toEqual(['/v1/accounts/me']);
+  expect(delegated.requests.map(r => r.path)).toEqual(['/v1/me']);
 });

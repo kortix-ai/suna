@@ -1,3 +1,4 @@
+import { asLegacyWorkspaceRoute } from '@kortix/shared/workspace-routes';
 import { config } from './config';
 import { getRequestUrl } from './lib/request-url';
 import { runInboundAudit } from './shared/audit-edge';
@@ -129,7 +130,7 @@ function applyStreamTimeouts(req: Request, url: URL, server: any): void {
   // into a 502 with no CORS headers — the same shape as the gateway
   // idleTimeout incident. The global `idleTimeout: 0` above is necessary but
   // not sufficient: `server.timeout(req, …)` is the PER-REQUEST budget.
-  if (SECRET_RELAY_PATH.test(url.pathname)) {
+  if (SECRET_RELAY_PATH.test(asLegacyWorkspaceRoute(url.pathname))) {
     server.timeout(req, 0);
   }
 

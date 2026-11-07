@@ -186,7 +186,7 @@ export function lintDockerfile(text: string, opts: LintDockerfileOpts): Manifest
         message:
           `\`${ins.keyword} ${src}\` reads from the build context, but your repo is NOT in it — ` +
           `the cloud build fails with "Path does not exist: …/${src.replace(/^\.\//, '')}". Kortix ` +
-          `stages only its own artifacts there; your project source is git-cloned to /workspace ` +
+          `stages only its own artifacts there; your workspace source is git-cloned to /workspace ` +
           `when a session boots, so the image never bakes it in. Read it from /workspace at ` +
           `runtime, inline it with a RUN, or copy it from an earlier stage (\`COPY --from=<stage>\`).`,
       });

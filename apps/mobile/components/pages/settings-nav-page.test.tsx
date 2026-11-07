@@ -79,6 +79,15 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/lib/haptics': { haptics: { tap() {}, success() {}, warning() {}, medium() {}, selection() {} } },
   '@/lib/logger': { log: { error() {} } },
   '@/lib/utils/open-link': { openLink: async () => {} },
+  // English defaults with `{{name}}` interpolation, like the app's i18n.
+  '@/contexts': {
+    useLanguage: () => ({
+      t: (key: string, opt?: string | { defaultValue?: string; [k: string]: unknown }) =>
+        typeof opt === 'string'
+          ? opt
+          : (opt?.defaultValue ?? key).replace(/\{\{(\w+)\}\}/g, (_m, k) => String(opt?.[k] ?? '')),
+    }),
+  },
 };
 const real = new Set(['react', '@kortix/sdk', '@/lib/session/dock-menu', '@/lib/session/nav-access', '@/lib/session/project-stack']);
 const stubs: Record<string, Record<string, unknown>> = {};
@@ -138,7 +147,7 @@ describe('project Settings controls', () => {
     renderAs(MANAGER);
     for (const label of EDIT_ROWS) expect(editable(label)).toBe(true);
     expect(row('Add collaborator')).toBeTruthy();
-    expect(row('Delete project')).toBeTruthy();
+    expect(row('Delete workspace')).toBeTruthy();
   });
 
   test('a built-in member reads every field and edits none', () => {
@@ -148,14 +157,14 @@ describe('project Settings controls', () => {
       expect(editable(label)).toBe(false);
     }
     expect(row('Add collaborator')).toBeUndefined();
-    expect(row('Delete project')).toBeUndefined();
+    expect(row('Delete workspace')).toBeUndefined();
   });
 
   test('a custom role with project.write + project.settings.write edits the fields, and nothing else', () => {
     renderAs({ 'project.write': can(true), 'project.settings.write': can(true) });
     for (const label of EDIT_ROWS) expect(editable(label)).toBe(true);
     expect(row('Add collaborator')).toBeUndefined();
-    expect(row('Delete project')).toBeUndefined();
+    expect(row('Delete workspace')).toBeUndefined();
   });
 
   test('project.settings.write without project.write edits nothing: PATCH loads the project for write first', () => {
@@ -167,7 +176,7 @@ describe('project Settings controls', () => {
     renderAs({});
     for (const label of EDIT_ROWS) expect(editable(label)).toBe(false);
     expect(row('Add collaborator')).toBeUndefined();
-    expect(row('Delete project')).toBeUndefined();
+    expect(row('Delete workspace')).toBeUndefined();
   });
 });
 

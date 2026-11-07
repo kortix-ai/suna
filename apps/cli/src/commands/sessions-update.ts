@@ -23,7 +23,7 @@ Options:
   --clear-labels         Remove every label first.
   --meta <key>=<value>   Set a metadata key to a string (repeatable).
   --unmeta <key>         Remove a metadata key (repeatable).
-  --project <id>         Project of the session (default: linked).
+  --workspace <id>       Workspace of the session (default: linked).
   --host <name>          Host of the session.
   --json                 Print the updated session.
   -h, --help             Show this help.
@@ -47,7 +47,7 @@ export async function runSessionsUpdate(argv: string[]): Promise<number> {
     const parsed = {
       json: takeFlagBool(rest, ['--json']),
       clear: takeFlagBool(rest, ['--clear-labels']),
-      projectArg: takeFlagValue(rest, ['--project']),
+      projectArg: takeFlagValue(rest, ['--project', '--workspace']),
       hostArg: takeFlagValue(rest, ['--host']),
       add: takeFlagValues(rest, ['--label']),
       remove: takeFlagValues(rest, ['--unlabel']),
@@ -95,7 +95,7 @@ export async function runSessionsUpdate(argv: string[]): Promise<number> {
   let updated: ProjectSession;
   try {
     updated = await client.patch<ProjectSession>(
-      `/projects/${projectId}/sessions/${session.session_id}`,
+      `/workspaces/${projectId}/sessions/${session.session_id}`,
       body,
     );
   } catch (err) {

@@ -38,10 +38,11 @@ import { config, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import type { SessionStartImageState } from '@kortix/api-contract';
 import { and, desc, eq } from 'drizzle-orm';
-import { projects, sessionSandboxes } from '@kortix/db';
+import { sessionSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveSessionPlacement } from '../platform/services/sandbox-region';
 import { preparePlatinumTemplateRegion } from './providers/platinum-templates';
+import { projectsView } from '../workspaces/rows';
 
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 
@@ -627,9 +628,9 @@ export async function templateRegionResident(
 
 async function readProjectMetadata(projectId: string): Promise<unknown> {
   const [row] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
+    .select({ metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, projectId))
     .limit(1);
   return row?.metadata ?? null;
 }

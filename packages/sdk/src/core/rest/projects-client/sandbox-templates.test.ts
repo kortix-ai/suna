@@ -20,7 +20,7 @@ const last = () => calls[calls.length - 1];
 
 test('createSandboxTemplate sends residential_proxy (true or a country) with the template', async () => {
   await createSandboxTemplate('P1', { slug: 'web', image: 'ubuntu:24.04', residential_proxy: { country: 'us' } });
-  expect(last().url).toBe('http://test.local/projects/P1/sandbox-templates');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sandbox-templates');
   expect(last().method).toBe('POST');
   expect(last().body).toEqual({ slug: 'web', image: 'ubuntu:24.04', residential_proxy: { country: 'us' } });
 
@@ -30,7 +30,7 @@ test('createSandboxTemplate sends residential_proxy (true or a country) with the
 
 test('updateSandboxTemplate turns residential_proxy off with null', async () => {
   await updateSandboxTemplate('P1', 't1', { residential_proxy: null });
-  expect(last().url).toBe('http://test.local/projects/P1/sandbox-templates/t1');
+  expect(last().url).toBe('http://test.local/workspaces/P1/sandbox-templates/t1');
   expect(last().method).toBe('PATCH');
   expect(last().body).toEqual({ residential_proxy: null });
 });

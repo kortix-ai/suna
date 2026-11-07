@@ -80,7 +80,7 @@ A governance review asks something narrower: who enabled local computer access, 
 
 ## The control surface is a file
 
-In Kortix the same decisions sit in a manifest at the root of a project repository, next to the code they govern. This is a working excerpt:
+In Kortix the same decisions sit in a manifest at the root of a workspace repository, next to the code they govern. This is a working excerpt:
 
 ```yaml
 kortix_version: 2

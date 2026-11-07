@@ -59,8 +59,9 @@ import type { AppEnv } from '../../types';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { addChannelsMark } from '../lib/channels-onboarding';
+import { workspaceIdParam } from '../../shared/route-params';
 
-const projectParams = z.object({ projectId: z.string() });
+const projectParams = z.object({ workspaceId: z.string() });
 const layerParams = projectParams.extend({ layerKey: z.string() });
 const pageParams = projectParams.extend({ pageId: z.string() });
 
@@ -80,7 +81,7 @@ export async function withMemoryCaller<R>(
   run: (caller: Caller) => Promise<R>,
   options: { myKortixSession?: boolean } = {},
 ) {
-  const loaded = await loadProjectForUser(c, c.req.param('projectId')!, 'session');
+  const loaded = await loadProjectForUser(c, workspaceIdParam(c)!, 'session');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const { row } = loaded;
   let userId = loaded.userId;
@@ -150,7 +151,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/memory/layers/{layerKey}',
+      path: '/{workspaceId}/memory/layers/{layerKey}',
       tags: ['memory'],
       summary: 'Read a memory layer: its Drive folder and page counts',
       description: '`layerKey` is `company` or the space id of a channel or the caller’s DM. Another member’s DM is 404 `memory_not_found`.',
@@ -169,7 +170,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/memory/layers/{layerKey}/pages',
+      path: '/{workspaceId}/memory/layers/{layerKey}/pages',
       tags: ['memory'],
       summary: 'List the pages of a memory layer',
       description: 'One summary per Markdown file, newest first (a DM’s agent folder first), at most 500 (`truncated` past it).',
@@ -192,7 +193,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/memory/layers/{layerKey}/pages',
+      path: '/{workspaceId}/memory/layers/{layerKey}/pages',
       tags: ['memory'],
       summary: 'Create a memory page',
       description:
@@ -216,7 +217,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/memory/layers/{layerKey}/notes',
+      path: '/{workspaceId}/memory/layers/{layerKey}/notes',
       tags: ['memory'],
       summary: 'Save a note to a memory layer',
       description:
@@ -245,7 +246,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/memory/pages/{pageId}',
+      path: '/{workspaceId}/memory/pages/{pageId}',
       tags: ['memory'],
       summary: 'Read a memory page',
       description: '413 `page_too_large` (with `path`) for a file over 256 KiB: open it in Files.',
@@ -265,7 +266,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/memory/pages/{pageId}',
+      path: '/{workspaceId}/memory/pages/{pageId}',
       tags: ['memory'],
       summary: 'Edit the body of a memory page',
       description: 'The body only: front-matter and the `# ` title line are kept. 409 `version_conflict` when the file changed since `base_version`.',
@@ -286,7 +287,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/memory/pages/{pageId}',
+      path: '/{workspaceId}/memory/pages/{pageId}',
       tags: ['memory'],
       summary: 'Delete a memory page',
       description: 'Deletes the file for good (a Drive delete). Anyone who may write the layer.',
@@ -308,7 +309,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/memory/pages/{pageId}/history',
+      path: '/{workspaceId}/memory/pages/{pageId}/history',
       tags: ['memory'],
       summary: 'List the versions of a memory page',
       description: 'From the drive’s newest 100 Drive commits, one entry per distinct file version, newest first, at most 20. Older versions: Files → Versions.',
@@ -328,7 +329,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/memory/search',
+      path: '/{workspaceId}/memory/search',
       tags: ['memory'],
       summary: 'Search memory pages',
       description:
@@ -364,7 +365,7 @@ export function registerProjectMemoryRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/memory-usage',
+      path: '/{workspaceId}/sessions/{sessionId}/memory-usage',
       tags: ['memory'],
       summary: 'List the memory files a thread’s agent was listed',
       description:

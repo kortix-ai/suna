@@ -62,14 +62,14 @@ agent sends nothing and decides nothing about the candidate.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the interview-scheduling skill and the
 daily trigger, and opens a change request for you to review.
 Prefer clicks? Choose **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up a daily interview scheduling agent in this project.
+  code={`Set up a daily interview scheduling agent in this workspace.
 
 1. Create the agent agents/interview-scheduler.md. Its job is to draft interview slot proposals and calendar invites for the coordinator to review. It may use the Greenhouse and Google Calendar connectors and the coordinator review email channel.
 
@@ -90,7 +90,7 @@ Prefer clicks? Choose **Use this template** instead.
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect Greenhouse and Google
+Open **Connectors** in your workspace and connect Greenhouse and Google
 Calendar, then connect the coordinator review inbox under **Channels**.
 Credentials are brokered server-side and never enter the agent's machine.
 
@@ -129,7 +129,7 @@ calendars before you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every day at 08:00, each run in a new session on its own cloud computer.
-To change the time, edit the cron line, or open **Triggers** in the project.
+To change the time, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

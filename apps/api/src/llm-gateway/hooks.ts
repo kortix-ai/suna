@@ -22,6 +22,8 @@ import {
 } from '../projects/sandbox-deadline';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { tokenRefusalReason } from '../shared/session-lease-refusal';
+import { keyScopeAllows } from '../iam/key-scope';
+import { PROJECT_ACTIONS } from '../iam/actions';
 import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
@@ -31,6 +33,9 @@ import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { fallbackSwitchOf, switchSessionToFallback } from './resolution/session-model-fallback';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
+
+/** The permission a workspace key's scope must hold to call a model. */
+const GATEWAY_KEY_ACTION = PROJECT_ACTIONS.PROJECT_SESSION_START;
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //
@@ -80,6 +85,20 @@ async function resolvePrincipalWithReason(
   const yolo = await attributeYoloToken(token);
   if (yolo) return { principal: yolo, reason: null };
   const account = await validateAccountToken(token);
+  if (account.isValid && account.userId && account.accountId && !keyScopeAllows(account.scopes ?? null, GATEWAY_KEY_ACTION)) {
+    // A scoped workspace key (read, or a custom list without session start)
+    // runs no model: a model call is work the key was not granted
+    // (iam/key-scope.ts). Refused, attributed to the key's owner.
+    return {
+      principal: null,
+      reason: `This key's scope does not include "workspace.session.start", which model calls need.`,
+      refusedPrincipal: {
+        userId: account.userId,
+        accountId: account.accountId,
+        ...(account.projectId ? { projectId: account.projectId } : {}),
+      },
+    };
+  }
   if (account.isValid && account.userId && account.accountId) {
     // projectId/sessionId attribute usage to the calling session (the sandbox
     // connector token is minted per-session with session_id = sandbox_id) — the

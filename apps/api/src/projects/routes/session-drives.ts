@@ -5,6 +5,7 @@ import { isUuid } from '../../shared/validate';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { guardSession, sessionAccessDenied } from '../lib/http-session-access';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // The folders of the project's Files a session's sandbox mounts. What mounts
 // follows folder access (who the session acts for: its agent, the project,
@@ -57,7 +58,7 @@ const SessionDrivesBody = z.object({
   skippedMessage: z.string().nullable(),
 });
 
-const Params = z.object({ projectId: z.string(), sessionId: z.string() });
+const Params = z.object({ workspaceId: z.string(), sessionId: z.string() });
 
 async function sessionView(sessionId: string, callerId: string | undefined) {
   const [mounts, skipped] = await Promise.all([readSessionDriveMounts(sessionId), readSkippedSessionDrives(sessionId)]);
@@ -91,7 +92,7 @@ export function registerSessionDrivesRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/drives',
+      path: '/{workspaceId}/sessions/{sessionId}/drives',
       tags: ['sessions'],
       summary: 'List the folders a session mounts',
       description: 'The folders of the project’s Files the session’s sandbox mounts now, where, and with which access.',
@@ -100,7 +101,7 @@ export function registerSessionDrivesRoutes(): void {
       responses: { 200: json(SessionDrivesBody, 'Session drives'), ...errors(400, 404) },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const loaded = await loadProjectForUser(c, projectId, 'read');

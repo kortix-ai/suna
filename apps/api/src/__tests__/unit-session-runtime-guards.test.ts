@@ -125,6 +125,7 @@ const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
   accountId: ACCOUNT_ID,
   sandboxProviderGeneration: 0,
+  splitPending: false,
   secretDefaultStrategy: 'runtime' as const,
   name: 'Contract Project',
   repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
@@ -686,8 +687,6 @@ mock.module('../repositories/account-tokens', () => ({
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
-  maxProjectsForAccount: async () => 100,
-  FREE_TIER_PROJECT_LIMIT: 1,
   clearAccountLimitCache: () => undefined,
 }));
 

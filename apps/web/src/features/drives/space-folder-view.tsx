@@ -258,7 +258,7 @@ function SpaceExplorer({
         onOpenFolder={(p) =>
           router.push(
             driveUrlWithPath(
-              `${window.location.origin}/projects/${projectId}/drive`,
+              `${window.location.origin}/workspaces/${projectId}/drive`,
               drivePathToParam(p, drive.personalFolder),
             ),
           )

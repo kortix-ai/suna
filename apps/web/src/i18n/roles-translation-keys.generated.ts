@@ -84,7 +84,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'A report tells you what is wrong. A sales session hands you the rows and the drafted action for each one, waiting for a yes. That difference is the whole product.':
     'text5a7fbd0a11c4',
   'A review with a recommendation on every row.': 'text58d3ccb0ea54',
-  'A sales agent is only useful if it reaches the systems the pipeline lives in. Connect each one once for the project. Credentials are decrypted on our side and never enter the machine.':
+  'A sales agent is only useful if it reaches the systems the pipeline lives in. Connect each one once for the workspace. Credentials are decrypted on our side and never enter the machine.':
     'texta878c15f58b7',
   'A scheduled session reads what has publicly changed and reports what is genuinely new — and says plainly when nothing is. A weekly digest that invents a headline every week gets muted by week five.':
     'textc6d99a300de0',
@@ -167,7 +167,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Calendars, invitations and the mail thread with the candidate. Reading a calendar, booking on it and sending as you are separate actions with separate answers.':
     'text70bb18e2a653',
   'Call notes into the CRM, in your fields': 'text894bde8368c8',
-  'Choose one project-managed connection the whole team shares, or a personal authorization where every member acts as themselves — and an automated principal cannot act at all.':
+  'Choose one workspace-managed connection the whole team shares, or a personal authorization where every member acts as themselves — and an automated principal cannot act at all.':
     'text97c60c222a1a',
   Cites: 'textbbeb1185a5ff',
   Claims: 'text1c85c12229a4',
@@ -180,7 +180,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Cloud infrastructure': 'text4bba4ad3c2e5',
   'Cloud, your VPC, or on-prem': 'text9a4a0ce6a928',
   'Configuration drift, reported not fixed': 'text4c97eef02faf',
-  'Connect each source once for the whole project. Credentials are decrypted on our side and attached to the outgoing call. They never land in the machine the model is driving.':
+  'Connect each source once for the whole workspace. Credentials are decrypted on our side and attached to the outgoing call. They never land in the machine the model is driving.':
     'textde0a6db058a5',
   'Connect Slack and the shortlist lands in a thread you can argue with. Reply in the same thread and you are talking to the same session, not starting a new one.':
     'textfa4e10e03866',
@@ -293,7 +293,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Hand over the assembly. Keep the judgement.': 'text804367668473',
   'helpdesk · read': 'text2206b18e524f',
   'hiring/scorecards/platform.md': 'text5255b5685b02',
-  'How your close works — the matching rules, the coding conventions, the commentary style — is a skill file in the project. It is versioned, it is diffable, and improving it is a change someone reviews.':
+  'How your close works — the matching rules, the coding conventions, the commentary style — is a skill file in the workspace. It is versioned, it is diffable, and improving it is a change someone reviews.':
     'textf8ac0465d6a6',
   'Human-assisted': 'textc91c073984b4',
   'Identity, audit and where it runs': 'textb1f18214b68b',
@@ -309,7 +309,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'text69c063f8947f',
   'Illustration. The excluded domain is a placeholder — Kortix never names a real customer or tenant.':
     'text3cc0540830e1',
-  'Illustration. The paths are the real shape of a Kortix project, the copy is fictional.':
+  'Illustration. The paths are the real shape of a Kortix workspace repo, the copy is fictional.':
     'text97f1a47d1742',
   'Illustration. The principals are fictional. Note that one of them is an agent — both kinds of principal appear in the same review.':
     'textaf82e7e6c590',
@@ -318,15 +318,15 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Improves by': 'textb486892ff5b2',
   'In finance, "the AI said so" is not an answer. So every figure carries the source it came from, and the arithmetic sits in a file you can open.':
     'text0c419d6faab8',
-  'In finance, reading and writing are different risks. Connect each system once for the project. Credentials are decrypted on our side and never enter the machine.':
+  'In finance, reading and writing are different risks. Connect each system once for the workspace. Credentials are decrypted on our side and never enter the machine.':
     'text799c2993b99d',
   'In sales, a mistake is customer-visible. So the defaults below are stated precisely, not reassuringly.':
     'text68bb1b4dfcb0',
-  'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the project. Read accounts, opportunities and activity; write back the fields you allow it to write.':
+  'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the workspace. Read accounts, opportunities and activity; write back the fields you allow it to write.':
     'text0f8b05405598',
-  'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the project. Read the pipeline and the scorecard, write back stage and scheduling. Whether it may write at all is your grant to make.':
+  'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the workspace. Read the pipeline and the scorecard, write back stage and scheduling. Whether it may write at all is your grant to make.':
     'textd0e52a56b556',
-  'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the project. Support tickets are where the highest-signal feedback is and the lowest-signal summaries get made.':
+  'In the Easy connect catalogue: click through the OAuth screen and the connection belongs to the workspace. Support tickets are where the highest-signal feedback is and the lowest-signal summaries get made.':
     'text801c059e1253',
   'Initech Retail': 'text7fda2b723187',
   Installs: 'text527ee583427a',
@@ -408,7 +408,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Kortix for people and recruiting teams': 'text46c67c4b4a86',
   'Kortix for product teams': 'text246f2a6245a5',
   'Kortix for sales teams': 'text48de6f4846b1',
-  'Kortix has a real account, member, group and role model with per-resource permissions for people and for agents. An access review that covers your humans and not your automation is half a review.':
+  'Kortix has a real workspace, member, group and role model with per-resource permissions for people and for agents. An access review that covers your humans and not your automation is half a review.':
     'text895560302007',
   'Kortix is open source and self-hostable: Kortix Cloud, your own VPC, or your own on-prem network. If personal data may not leave your infrastructure, run the whole platform inside it. For deployment and compliance questions, talk to us rather than trusting a claim on a marketing page.':
     'textba3f27dd11a9',
@@ -460,7 +460,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'One long piece into the formats it should have been': 'textd7153709ba6f',
   'One machine per session': 'text6590dfdb580e',
   'One machine per session · one branch per session · merge is default-deny': 'text8e0e8d4bbd58',
-  'One project-managed connection the team shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all. For People systems the second is usually the right answer.':
+  'One workspace-managed connection the team shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all. For People systems the second is usually the right answer.':
     'text64c41c6adfa4',
   'One rename, one API move, one lint rule turned on — the kind of change that is trivial per file and unbearable at scale. It works file by file on its own branch and lands one reviewable diff.':
     'text2c0f44757d70',
@@ -468,7 +468,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'text8af666ebb4c8',
   'packages/export/': 'text7fec5f7bc46e',
   People: 'text7db20897053b',
-  'People systems hold the most sensitive data in the company, so the mechanism matters most here. Connect each one once for the project. Credentials never enter the machine.':
+  'People systems hold the most sensitive data in the company, so the mechanism matters most here. Connect each one once for the workspace. Credentials never enter the machine.':
     'text5c6660c5d3f6',
   'Permissions stop an agent doing something. A claims skill stops it saying something. Both live in the repo, and the second one is what actually keeps an unverifiable number off your homepage.':
     'textbb39dca99b35',
@@ -486,7 +486,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Prior art': 'text857be0b1fee8',
   Produces: 'texta68d63e3af6b',
   Product: 'textfb9ef894175c',
-  'Product feedback never lives in one system, which is the whole problem. Connect each source once for the project. Credentials are resolved on our side, never in the machine.':
+  'Product feedback never lives in one system, which is the whole problem. Connect each source once for the workspace. Credentials are resolved on our side, never in the machine.':
     'text722b64806bda',
   'Production work that sounds like you, because the voice is a file': 'texta8c4aee2e2e6',
   'Profile the dataset, plot the distributions, check for leakage and imbalance, and write the first honest paragraph about what is in the data. You start from a briefed position rather than from an empty cell.':
@@ -733,29 +733,29 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'The same figures, assembled into the format the board reads, with the commentary drafted from the variance work rather than written from scratch at midnight.':
     'textec4b346efc00',
   'The same loop for every candidate': 'textd29c02694ba8',
-  'The sandbox carries one project-scoped Kortix token and no third-party keys. The banking or ledger credential is decrypted server-side and attached to the outbound request, then thrown away.':
+  'The sandbox carries one workspace-scoped Kortix token and no third-party keys. The banking or ledger credential is decrypted server-side and attached to the outbound request, then thrown away.':
     'text40a3454eacbe',
-  'The sandbox carries one project-scoped Kortix token and no third-party keys. The credential for your campaign tool is decrypted server-side and attached to the outbound request.':
+  'The sandbox carries one workspace-scoped Kortix token and no third-party keys. The credential for your campaign tool is decrypted server-side and attached to the outbound request.':
     'text21d978d10cd9',
-  'The sandbox carries one project-scoped Kortix token and no third-party keys. The gateway decrypts the real credential server-side and attaches it to the outbound call. A runtime secret you deliberately grant is different — that one is a real environment value the agent can read, and it is meant to be.':
+  'The sandbox carries one workspace-scoped Kortix token and no third-party keys. The gateway decrypts the real credential server-side and attaches it to the outbound call. A runtime secret you deliberately grant is different — that one is a real environment value the agent can read, and it is meant to be.':
     'text58f7e09c0d5f',
-  'The sandbox carries one project-scoped Kortix token and no third-party keys. Your applicant-system credential is decrypted server-side and attached to the outbound request, then thrown away.':
+  'The sandbox carries one workspace-scoped Kortix token and no third-party keys. Your applicant-system credential is decrypted server-side and attached to the outbound request, then thrown away.':
     'text1b8f0674b970',
-  'The sandbox carries one project-scoped Kortix token and no third-party keys. Your CRM credential is decrypted server-side and attached to the outbound request. Turning a connector off takes effect on the next call — there is nothing in the sandbox to rotate.':
+  'The sandbox carries one workspace-scoped Kortix token and no third-party keys. Your CRM credential is decrypted server-side and attached to the outbound request. Turning a connector off takes effect on the next call — there is nothing in the sandbox to rotate.':
     'textd13a607ddf4b',
-  'The sandbox carries one project-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.':
+  'The sandbox carries one workspace-scoped Kortix token and no third-party keys. Your tracker and helpdesk credentials are decrypted server-side and attached to the outbound call.':
     'textd864380a766f',
   'The sandbox is a real Linux machine, so the agent installs, builds and runs the suite itself. A change request that arrives red says so in the description rather than claiming green.':
     'texte8957df16c6b',
   'The session clones the repo, so the spec can say what already exists. A draft that knows the serialisation is done and the pagination is not is worth an order of magnitude more than one written from tickets alone.':
     'text5fb3b3c8b69d',
-  'The shipped default is permissive — an action runs unless you have said otherwise. For a marketing project, setting every publish and every send to Ask is the first change you make. It is not already done for you, and we would rather say so.':
+  'The shipped default is permissive — an action runs unless you have said otherwise. For a marketing workspace, setting every publish and every send to Ask is the first change you make. It is not already done for you, and we would rather say so.':
     'text9c0d133e242c',
-  'The shipped default is permissive — an action runs unless you have said otherwise. For a People project, setting every message to a candidate or an employee to Ask is the first change to make. It is not already done for you.':
+  'The shipped default is permissive — an action runs unless you have said otherwise. For a People workspace, setting every message to a candidate or an employee to Ask is the first change to make. It is not already done for you.':
     'text3f0b69b39e1c',
-  'The shipped default is permissive — an action runs unless you have said otherwise. For a sales project the first thing to do is set the outbound actions to Ask and the destructive ones to Block. We are telling you this rather than letting you assume the safer default was chosen for you.':
+  'The shipped default is permissive — an action runs unless you have said otherwise. For a sales workspace the first thing to do is set the outbound actions to Ask and the destructive ones to Block. We are telling you this rather than letting you assume the safer default was chosen for you.':
     'text9d4b2eae7c42',
-  'The shipped default is permissive — an action runs unless you have said otherwise. In a finance project, setting Ask on every write to a system of record and Block on every delete is the first configuration change to make, not something already done for you.':
+  'The shipped default is permissive — an action runs unless you have said otherwise. In a finance workspace, setting Ask on every write to a system of record and Block on every delete is the first configuration change to make, not something already done for you.':
     'text2d9a37f092d5',
   'The shipped default is permissive: actions run unless you say otherwise. Set Ask on the ones that should pause and Block on the ones that should never happen, per action or with one pattern rule. We would rather tell you the default than let you assume the safer one.':
     'text7123e636dd02',
@@ -831,7 +831,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'What you pay for against what is assigned against what was opened this quarter. It writes the reclaim list per tool with the last-used date on every row.':
     'texta6621f47f55d',
   'Whatever the analysis needs': 'text373f4878fa90',
-  'When a draft comes back wrong, you edit the skill file, not the prompt. Every future session in every project that loads that skill inherits the correction — and you can see in the history exactly when the register changed.':
+  'When a draft comes back wrong, you edit the skill file, not the prompt. Every future session in every workspace that loads that skill inherits the correction — and you can see in the history exactly when the register changed.':
     'texta97afbb23437',
   'Where specs, research and the last six months of decisions live. It reads them as prior art so a new draft does not re-litigate something settled in March.':
     'text73c829ffdd54',

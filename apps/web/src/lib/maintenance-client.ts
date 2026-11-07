@@ -37,7 +37,7 @@ export function isMaintenanceProductRoute(pathname: string): boolean {
   // user straight past a blocking maintenance screen.
   // `/accounts` is absent on purpose: the account hub is a modal over one of
   // these paths (`?accountId=`), never a route of its own.
-  return ['/projects', '/invites', '/settings'].some(
+  return ['/workspaces', '/invites', '/settings'].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }

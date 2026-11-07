@@ -49,7 +49,7 @@ function startServer(): string {
     fetch: (req) => {
       const url = new URL(req.url);
       paths.push(url.pathname + url.search);
-      if (url.pathname !== `/v1/projects/${PROJECT}/change-requests`) {
+      if (url.pathname !== `/v1/workspaces/${PROJECT}/change-requests`) {
         return Response.json({ error: 'not found' }, { status: 404 });
       }
       const all = Array.from({ length: TOTAL }, (_, i) => changeRequest(TOTAL - i));
@@ -148,8 +148,8 @@ describe('kortix cr — a list longer than one page', () => {
     const numbers = JSON.parse(r.stdout).change_requests.map((cr: { number: number }) => cr.number);
     expect(numbers).toEqual(Array.from({ length: TOTAL }, (_, i) => TOTAL - i));
     expect(paths).toEqual([
-      `/v1/projects/${PROJECT}/change-requests?status=all`,
-      `/v1/projects/${PROJECT}/change-requests?status=all&limit=500&cursor=71`,
+      `/v1/workspaces/${PROJECT}/change-requests?status=all`,
+      `/v1/workspaces/${PROJECT}/change-requests?status=all&limit=500&cursor=71`,
     ]);
   });
 
@@ -168,8 +168,8 @@ describe('kortix cr — a list longer than one page', () => {
     expect(JSON.parse(r.stdout).change_request.number).toBe(60);
     // `show` also asks for the merge preview of an open CR: count list reads only.
     expect(paths.filter((path) => path.includes('/change-requests?'))).toEqual([
-      `/v1/projects/${PROJECT}/change-requests?status=all`,
-      `/v1/projects/${PROJECT}/change-requests?status=all&limit=500&cursor=71`,
+      `/v1/workspaces/${PROJECT}/change-requests?status=all`,
+      `/v1/workspaces/${PROJECT}/change-requests?status=all&limit=500&cursor=71`,
     ]);
   });
 
@@ -179,6 +179,6 @@ describe('kortix cr — a list longer than one page', () => {
     const r = await runCli(['cr', 'ls', '--status', 'all', '--json', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(JSON.parse(r.stdout).change_requests).toHaveLength(TOTAL);
-    expect(paths).toEqual([`/v1/projects/${PROJECT}/change-requests?status=all`]);
+    expect(paths).toEqual([`/v1/workspaces/${PROJECT}/change-requests?status=all`]);
   });
 });

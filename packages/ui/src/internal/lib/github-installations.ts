@@ -69,7 +69,7 @@ export function gitHubInstallationUnreachable(
 
 /**
  * GitHub's `account.type` for an installation owner, folded to the two kinds
- * the UI names. Lives here so the `/new` surface can label an owner without
+ * the UI names. Lives here so the `/workspaces/new` surface can label an owner without
  * spelling GitHub's own term for the second kind — that surface calls the
  * owning Kortix account "Account" and nothing else.
  */

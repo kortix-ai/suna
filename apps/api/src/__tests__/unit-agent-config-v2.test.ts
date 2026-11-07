@@ -129,8 +129,10 @@ describe('applyAgentBlockV2', () => {
   });
 
   test('rejects an ungrantable kortix_permissions action', () => {
+    // Every workspace action except HUMAN_ONLY is grantable (design.md C8);
+    // a name that is no action is not.
     const applied = applyAgentBlockV2(v2Manifest(), 'support', {
-      kortix_permissions: ['billing.read'],
+      kortix_permissions: ['workspace.teleport'],
     });
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
@@ -152,12 +154,12 @@ default_agent: support
 agents:
   support: {}
   other:
-    kortix_permissions: [billing.read]
+    kortix_permissions: [workspace.teleport]
 `);
     // `other` already carries an error: editing `support` still saves.
     expect(applyAgentBlockV2(broken, 'support', { connectors: ['github'] }).ok).toBe(true);
     // A new error on `support` is refused, and only the new one is reported.
-    const refused = applyAgentBlockV2(broken, 'support', { kortix_permissions: ['member.invite'] });
+    const refused = applyAgentBlockV2(broken, 'support', { kortix_permissions: ['member.teleport'] });
     expect(refused.ok).toBe(false);
     if (refused.ok) return;
     expect(refused.issues?.every((issue) => issue.path.startsWith('agents.support'))).toBe(true);

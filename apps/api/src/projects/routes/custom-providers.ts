@@ -40,7 +40,7 @@ const CustomLlmProviderSchema = z.object({
 }).openapi('CustomLlmProvider');
 type CustomLlmProviderView = z.infer<typeof CustomLlmProviderSchema>;
 
-const Params = z.object({ projectId: z.string(), providerId: z.string() });
+const Params = z.object({ workspaceId: z.string(), providerId: z.string() });
 
 function view(provider: CustomLlmProviderDefinition, secretNames: string[]): CustomLlmProviderView {
   const secretName = customProviderSecretName(provider.id);
@@ -55,12 +55,12 @@ function view(provider: CustomLlmProviderDefinition, secretNames: string[]): Cus
  */
 export function registerCustomProvidersRoutes(): void {
   projectsApp.openapi(createRoute({
-    method: 'get', path: '/{projectId}/custom-providers', tags: ['projects'],
+    method: 'get', path: '/{workspaceId}/custom-providers', tags: ['projects'],
     summary: 'List the custom LLM providers of a project', ...auth,
     request: { params: Params.omit({ providerId: true }) },
     responses: { 200: json(z.object({ providers: z.array(CustomLlmProviderSchema) }), 'Custom providers'), ...errors(403, 404) },
   }), async (c) => {
-    const { projectId } = c.req.valid('param');
+    const { workspaceId: projectId } = c.req.valid('param');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const { providers, secretNames } = await listProjectCustomProviders(projectId);
@@ -75,12 +75,12 @@ export function registerCustomProvidersRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'put', path: '/{projectId}/custom-providers/{providerId}', tags: ['projects'],
+    method: 'put', path: '/{workspaceId}/custom-providers/{providerId}', tags: ['projects'],
     summary: 'Create or replace a custom LLM provider', ...auth,
     request: { params: Params, body: { content: { 'application/json': { schema: CustomLlmProviderInputSchema } } } },
     responses: { 200: json(CustomLlmProviderSchema, 'The saved provider'), ...errors(400, 403, 404) },
   }), async (c) => {
-    const { projectId, providerId } = c.req.valid('param');
+    const { workspaceId: projectId, providerId } = c.req.valid('param');
     const input = c.req.valid('json');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -120,12 +120,12 @@ export function registerCustomProvidersRoutes(): void {
   });
 
   projectsApp.openapi(createRoute({
-    method: 'delete', path: '/{projectId}/custom-providers/{providerId}', tags: ['projects'],
+    method: 'delete', path: '/{workspaceId}/custom-providers/{providerId}', tags: ['projects'],
     summary: 'Remove a custom LLM provider', ...auth,
     request: { params: Params },
     responses: { 204: { description: 'Removed' }, ...errors(403, 404) },
   }), async (c) => {
-    const { projectId, providerId } = c.req.valid('param');
+    const { workspaceId: projectId, providerId } = c.req.valid('param');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MODEL_WRITE);

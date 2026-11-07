@@ -44,14 +44,14 @@ Options:
   --source <source>  cli | agent | web. Default: agent inside a Kortix
                      session ($KORTIX_SESSION_ID set), else cli.
   --context <json>   Extra context ids as JSON, e.g. '{"project_id":"…"}'.
-                     Inside a session the session and project ids are added
+                     Inside a session the session and workspace ids are added
                      automatically.
   --host <name>      File against a non-default Kortix host.
   --json             Machine-readable output (the raw receipt).
   -h, --help         Show this help.
 
 Examples:
-  kortix feedback "the CLI hangs on projects ls when offline" --kind bug
+  kortix feedback "the CLI hangs on workspaces ls when offline" --kind bug
   kortix feedback "a sessions --watch flag would save me a loop" --kind idea
   kortix feedback "the doctor output is hard to scan" --kind friction
 `;
@@ -60,7 +60,7 @@ Examples:
  *  unit-testable without a live host. */
 export function parseFeedbackInvocation(
   argv: string[],
-  env: { KORTIX_SESSION_ID?: string; KORTIX_PROJECT_ID?: string },
+  env: { KORTIX_SESSION_ID?: string; KORTIX_PROJECT_ID?: string; KORTIX_WORKSPACE_ID?: string },
 ): ParsedFeedbackInvocation | number {
   const rest = [...argv];
   let flags: Record<string, string | undefined>;
@@ -87,7 +87,7 @@ export function parseFeedbackInvocation(
 
   const message = rest.join(' ').trim();
   if (!message) {
-    return missing('the feedback message, e.g. kortix feedback "the CLI hangs on projects ls"');
+    return missing('the feedback message, e.g. kortix feedback "the CLI hangs on workspaces ls"');
   }
 
   let context: Record<string, string> = {};
@@ -106,7 +106,7 @@ export function parseFeedbackInvocation(
   }
   const sessionId = env.KORTIX_SESSION_ID?.trim();
   if (sessionId) context.session_id = sessionId;
-  const projectId = env.KORTIX_PROJECT_ID?.trim();
+  const projectId = env.KORTIX_WORKSPACE_ID?.trim() || env.KORTIX_PROJECT_ID?.trim();
   if (projectId) context.project_id = projectId;
 
   return { message, kind, source, context, json, host: flags.host };
@@ -158,7 +158,7 @@ export async function runFeedback(argv: string[]): Promise<number> {
   if (help !== null) return help;
   const parsed = parseFeedbackInvocation(
     argv,
-    process.env as { KORTIX_SESSION_ID?: string; KORTIX_PROJECT_ID?: string },
+    process.env as { KORTIX_SESSION_ID?: string; KORTIX_PROJECT_ID?: string; KORTIX_WORKSPACE_ID?: string },
   );
   if (typeof parsed === 'number') return parsed;
   return submit(parsed);

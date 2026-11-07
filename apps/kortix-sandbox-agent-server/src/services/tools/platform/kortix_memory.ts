@@ -12,6 +12,8 @@
  * replaces the page with that name, so the same fact is never saved twice.
  */
 import { fail, ok, type PlatformToolContext } from './platform'
+import { workspaceIdFromEnv } from '@/lib/config/workspace-id'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 const TOOL = 'kortix_memory' as const
 const ACTIONS = ['list', 'view', 'save', 'delete'] as const
@@ -21,7 +23,7 @@ const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const NAME_MAX = 64
 /** One call's limit. The API answers from one folder listing. */
 const CALL_TIMEOUT_MS = 15_000
-const FILES_OFF = 'Memory lives in Files, and Files is off in this project. Ask a project admin to turn Files on.'
+const FILES_OFF = 'Memory lives in Files, and Files is off in this workspace. Ask a workspace admin to turn Files on.'
 
 interface Entry {
   name: string
@@ -42,11 +44,11 @@ async function call(context: PlatformToolContext, method: 'GET' | 'PUT' | 'DELET
   const env = context.env
   const origin = (env.KORTIX_API_URL ?? '').trim().replace(/\/+$/, '').replace(/\/v1$/, '')
   const token = env.KORTIX_TOKEN?.trim() ?? ''
-  const project = env.KORTIX_PROJECT_ID?.trim() ?? ''
+  const project = workspaceIdFromEnv(env)
   if (!origin || !token || !project) return { status: 0, body: { error: 'This computer has no connection to Kortix.' } }
   const timeout = AbortSignal.timeout(CALL_TIMEOUT_MS)
   try {
-    const res = await fetch(`${origin}/v1/projects/${encodeURIComponent(project)}/memory/me/agent/mykortix${suffix}`, {
+    const res = await kortixApiFetch(`${origin}/v1/workspaces/${encodeURIComponent(project)}/memory/me/agent/mykortix${suffix}`, {
       method,
       headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -69,7 +71,7 @@ async function call(context: PlatformToolContext, method: 'GET' | 'PUT' | 'DELET
 function refused(action: string, title: string, answer: Answer, context: PlatformToolContext) {
   const code = typeof answer.body?.code === 'string' ? answer.body.code : ''
   const message = typeof answer.body?.error === 'string' && answer.body.error.trim() ? answer.body.error : `Kortix answered ${answer.status}.`
-  if (code === 'feature_disabled') return fail(TOOL, action, 'Memory is off in this project', { kind: 'failed', message: FILES_OFF }, context)
+  if (code === 'feature_disabled') return fail(TOOL, action, 'Memory is off in this workspace', { kind: 'failed', message: FILES_OFF }, context)
   if (code === 'drive_storage_unavailable') return fail(TOOL, action, title, { kind: 'failed', message: 'Files is not reachable right now. Try again in a minute.' }, context)
   if (code === 'secret_detected') return fail(TOOL, action, title, { kind: 'invalid', message: 'That looks like a password or a key. Never keep those in memory: save it as a secret in Kortix instead.' }, context)
   if (code === 'memory_not_found') return fail(TOOL, action, title, { kind: 'not_found', message: 'I have no memory with that name. `list` shows every name.' }, context)
@@ -160,7 +162,7 @@ async function remove(name: string, context: PlatformToolContext) {
 
 export default {
   description:
-    'Your memory of the person you talk to, kept across every session with them in this project. One fact per page. The person has no screen for it: they ask you what you remember, to change it, or to forget it. ' +
+    'Your memory of the person you talk to, kept across every session with them in this workspace. One fact per page. The person has no screen for it: they ask you what you remember, to change it, or to forget it. ' +
     'Your turn starts with the index of these pages. Actions: `list` (every page); `view` (name); `save` (name, type and title; description and body optional: creates the page, or replaces the page with that name); `delete` (name). One save per fact: when the answer says it is saved, it is done. Never save the same page again in the same turn.\n\n' +
     'Save when the person states a preference, corrects how you work, tells you something durable about themself, their role or their work, or asks you to remember something. ' +
     '"Forget …" deletes the page. Before you save, check the index: when a page covers it, `save` with that page\'s name to update it, never a second page. Delete a page that turned out wrong.\n\n' +

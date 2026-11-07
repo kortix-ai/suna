@@ -383,13 +383,13 @@ export function ensureManagedRepoSeeded(
 
 async function repairManagedRepo(projectId: string, trigger: string): Promise<SelfHealOutcome> {
   try {
-    const { projects } = await import('@kortix/db');
     const { eq } = await import('drizzle-orm');
     const { db } = await import('../shared/db');
+    const { metadataMerge, projectsView, updateProjectRows } = await import('../workspaces/rows');
     const [row] = await db
       .select()
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
+      .from(projectsView)
+      .where(eq(projectsView.projectId, projectId))
       .limit(1);
     if (!row) return { repaired: false, skipped: 'project_missing' };
 
@@ -475,27 +475,22 @@ async function repairManagedRepo(projectId: string, trigger: string): Promise<Se
       remoteHasBranch: () => remoteBranchExists(gitProject, row.defaultBranch),
     });
 
-    const { metadataMerge } = await import('./lib/metadata-merge');
     const defaultAgent = defaultAgentFromSeedFiles(seed.files, row.manifestPath);
-    await db
-      .update(projects)
-      .set({
-        metadata: metadataMerge({
-          ...(defaultAgent ? { default_agent: defaultAgent } : {}),
-          git: {
-            seed: buildManagedRepoSeedState({
-              seeded: true,
-              expected: true,
-              reason: 'self_healed',
-              at: new Date().toISOString(),
-              template: sourceItemId ?? template,
-            }),
-          },
-        }),
-        updatedAt: new Date(),
-      })
-      .where(eq(projects.projectId, projectId))
-      .catch(() => {});
+    await updateProjectRows(eq(projectsView.projectId, projectId), {
+      metadata: metadataMerge({
+        ...(defaultAgent ? { default_agent: defaultAgent } : {}),
+        git: {
+          seed: buildManagedRepoSeedState({
+            seeded: true,
+            expected: true,
+            reason: 'self_healed',
+            at: new Date().toISOString(),
+            template: sourceItemId ?? template,
+          }),
+        },
+      }),
+      updatedAt: new Date(),
+    }).catch(() => {});
     invalidateProjectMirror(projectId);
     console.warn(`[managed-repo-seed] repaired empty managed repo project=${projectId}`);
     return { repaired: true };

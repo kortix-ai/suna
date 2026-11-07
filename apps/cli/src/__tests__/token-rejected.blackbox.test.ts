@@ -85,12 +85,12 @@ function startApi(): void {
       const bearer = req.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
       if (bearer === PROJECT_TOKEN) {
         if (revoked) return revoked401();
-        if (new URL(req.url).pathname.endsWith('/accounts/me')) {
+        if (new URL(req.url).pathname.endsWith('/me')) {
           return Response.json(PROJECT_ME);
         }
         return Response.json({ items: [] });
       }
-      if (bearer === SESSION_TOKEN && new URL(req.url).pathname.endsWith('/accounts/me')) {
+      if (bearer === SESSION_TOKEN && new URL(req.url).pathname.endsWith('/me')) {
         return Response.json(SESSION_ME);
       }
       return Response.json({ error: 'unauthenticated' }, { status: 401 });

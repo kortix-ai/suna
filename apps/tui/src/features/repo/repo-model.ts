@@ -132,5 +132,5 @@ export function historyLabel(target: string | null): string {
 
 /** Web URL of the repository files page. */
 export function repoWebUrl(webBaseUrl: string, projectId: string): string {
-  return `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}/files`;
+  return `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}/files`;
 }

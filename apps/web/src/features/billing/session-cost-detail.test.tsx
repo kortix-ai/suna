@@ -90,6 +90,15 @@ const detail = {
 } satisfies SessionCostDetail;
 
 describe('SessionCostDetailContent', () => {
+  test('a session from before its project moved here says which part another workspace paid', () => {
+    const html = renderCostDetail(
+      <SessionCostDetailContent detail={{ ...detail, billed_elsewhere_cost: 1.75 }} isLoading={false} error={null} />,
+    );
+    expect(html).toContain('175 credits of this cost were billed to the workspace it moved from.');
+    const plain = renderCostDetail(<SessionCostDetailContent detail={detail} isLoading={false} error={null} />);
+    expect(plain).not.toContain('billed-elsewhere');
+  });
+
   test('renders totals, model usage, both ledger kinds, and the canonical session link', () => {
     const html = renderCostDetail(
       <SessionCostDetailContent detail={detail} isLoading={false} error={null} />,
@@ -107,7 +116,7 @@ describe('SessionCostDetailContent', () => {
     expect(html).toContain('request-1');
     expect(html).toContain('2m');
     expect(html).toContain('2 vCPU');
-    expect(html).toContain('href="/projects/project-detail/sessions/session-detail"');
+    expect(html).toContain('href="/workspaces/project-detail/sessions/session-detail"');
   });
 
   test('renders loading and error states without stale detail', () => {

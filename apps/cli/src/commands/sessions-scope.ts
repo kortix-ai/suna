@@ -20,12 +20,12 @@ replacement for that category.
 
 Options:
   --secret <identifier>          Replace the secret allowlist (repeatable).
-  --no-secrets                   Allow no project secrets.
+  --no-secrets                   Allow no workspace secrets.
   --inherit-secrets              Remove session narrowing; use the agent grant.
   --connector <alias>=<connection-id>  Replace connector bindings (repeatable).
   --no-connectors                Replace explicit connector bindings with none.
   --json                         Print the authoritative scope as JSON.
-  --project <id>                 Operate on this project id.
+  --workspace <id>               Operate on this workspace id.
   --host <name>                  Operate on this logged-in host.
   -h, --help                     Show this help.
 `;
@@ -65,7 +65,7 @@ function parseScopeCommand(argv: string[]): ScopeCommand | "help" {
   const rest = [...argv];
   if (takeFlagBool(rest, ["-h", "--help"])) return "help";
 
-  const project = takeFlagValue(rest, ["--project"]);
+  const project = takeFlagValue(rest, ['--project', '--workspace']);
   const host = takeFlagValue(rest, ["--host"]);
   const json = takeFlagBool(rest, ["--json"]);
   const secrets = takeFlagValues(rest, ["--secret"]);

@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { setProjectOnboardingProfile } from './projects';
+import { setWorkspaceOnboardingProfile } from './projects';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 
@@ -21,11 +21,11 @@ beforeEach(() => {
 });
 
 test('PATCHes the onboarding route with a profile envelope', async () => {
-  await setProjectOnboardingProfile('p1', { use_case: 'sales', company_size: '51-200' });
+  await setWorkspaceOnboardingProfile('p1', { use_case: 'sales', company_size: '51-200' });
 
   expect(calls).toHaveLength(1);
   expect(calls[0]?.method).toBe('PATCH');
-  expect(calls[0]?.url).toContain('/projects/p1/onboarding');
+  expect(calls[0]?.url).toContain('/workspaces/p1/onboarding');
   expect(calls[0]?.body).toEqual({ profile: { use_case: 'sales', company_size: '51-200' } });
 });
 
@@ -33,7 +33,7 @@ test('PATCHes the onboarding route with a profile envelope', async () => {
 // Leaking a `completed` flag out of a survey save would end onboarding the
 // moment the user answered the first question.
 test('never sends a completed flag', async () => {
-  await setProjectOnboardingProfile('p1', { company_domain: 'acme.com' });
+  await setWorkspaceOnboardingProfile('p1', { company_domain: 'acme.com' });
 
   expect(calls[0]?.body).toEqual({ profile: { company_domain: 'acme.com' } });
   expect(JSON.stringify(calls[0]?.body)).not.toContain('completed');
@@ -42,7 +42,7 @@ test('never sends a completed flag', async () => {
 // Onboarding saves each answer as it is given, so a one-field profile is the
 // normal case, not an error case.
 test('accepts a partial profile', async () => {
-  await setProjectOnboardingProfile('p1', { use_case: 'engineering' });
+  await setWorkspaceOnboardingProfile('p1', { use_case: 'engineering' });
 
   expect(calls[0]?.body).toEqual({ profile: { use_case: 'engineering' } });
 });
@@ -50,7 +50,7 @@ test('accepts a partial profile', async () => {
 // "Something else" on the work question carries the typed answer alongside
 // `use_case: 'other'`.
 test('sends the free-form use-case note', async () => {
-  await setProjectOnboardingProfile('p1', { use_case: 'other', use_case_note: 'Research' });
+  await setWorkspaceOnboardingProfile('p1', { use_case: 'other', use_case_note: 'Research' });
 
   expect(calls[0]?.body).toEqual({ profile: { use_case: 'other', use_case_note: 'Research' } });
 });

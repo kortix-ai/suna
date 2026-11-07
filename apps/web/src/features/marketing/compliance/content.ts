@@ -30,7 +30,7 @@ export const hero = {
   title: 'Compliance and control.',
   titleMuted: 'Your sign-in, your roles, your audit trail.',
   sub: 'What IT and compliance reviewers ask about: how people sign in, who may run which agent, which actions wait for a person, and what gets recorded.',
-  caption: 'One account for the whole company.',
+  caption: 'One workspace for the whole company.',
   captionMuted: 'Owners and admins set it up in Account settings.',
 } as const;
 
@@ -138,7 +138,7 @@ export const pillars = {
     {
       id: 'access',
       name: 'Your roles and groups',
-      line: 'Who opens which project, and runs which agent.',
+      line: 'Who opens which workspace, and runs which agent.',
       facts: [
         'Account and project roles',
         'Groups and custom roles',
@@ -193,7 +193,7 @@ export const topics = {
     {
       id: 'access',
       title: 'Roles, groups and agents',
-      description: 'Who opens which project, and runs which agent.',
+      description: 'Who opens which workspace, and runs which agent.',
       body: [
         'Each person holds an account role and a role in each project. Grant a project to a group, and everyone in it gets it.',
         'Each grant names the agents its people may run. Custom roles allow only the actions you pick.',
@@ -232,7 +232,7 @@ export const groupMappings = [
 /** guide.mdx "Teams": account and project roles. */
 export const roleTable = [
   { scope: 'Account', roles: ['Owner', 'Admin', 'Member'] },
-  { scope: 'Project', roles: ['Manager', 'Member'] },
+  { scope: 'Workspace', roles: ['Manager', 'Member'] },
   { scope: 'Custom', roles: ['Your own actions'] },
 ] as const;
 
@@ -240,7 +240,7 @@ export const roleTable = [
 export const policyYaml = {
   title: 'kortix.yaml',
   lines: [
-    '# project rules run first',
+    '# workspace rules run first',
     'policies:',
     '  - match: gmail.send_email',
     '    action: require_approval',

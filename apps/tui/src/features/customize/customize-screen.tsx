@@ -177,7 +177,7 @@ export function CustomizeScreen({
   if (!projectId) {
     return (
       <box flexDirection="column" width={width}>
-        <text fg={theme.faint}>No project selected.</text>
+        <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>
       </box>
     );
   }

@@ -1,10 +1,12 @@
 /**
- * Account detail (web parity: app/accounts/[id]/page.tsx). Mobile does not
- * maintain settings parity with web (COR-120): this screen is a small plan +
- * web handoff, not a rebuild of the web admin tabs. See apps/mobile/design.md
+ * Workspace billing and admin (web parity: app/accounts/[id]/page.tsx). The
+ * route keeps its `accounts/[id]` path; the account is the workspace's
+ * billing and people side (Workspaces ux.md §4). Mobile does not maintain
+ * settings parity with web (COR-120): this screen is a small plan + web
+ * handoff, not a rebuild of the web admin tabs. See apps/mobile/design.md
  * → Account page and account screens.
  *
- * Native back header titled with the account name, one Billing row (plan ·
+ * Native back header titled with the workspace name, one Billing row (plan ·
  * balance as its value, opens `/billing` for this account), then "On
  * kortix.com" — Members, Git, Audit log — each opening the matching web tab
  * in the in-app browser. Git and Audit log are hidden when the signed-in
@@ -27,7 +29,7 @@ import { formatUsdAsCredits } from '@kortix/shared';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SettingsGroup, SettingsHeader, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
 import { useEffectiveAccountCaps } from '@/components/accounts/account-shared';
-import { useAuthContext } from '@/contexts';
+import { useAuthContext, useLanguage } from '@/contexts';
 import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { useAccountState } from '@/lib/billing';
 import { accountHubUrl } from '@/lib/accounts/web-account-links';
@@ -38,6 +40,7 @@ export default function AccountDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const accountId = params.id;
   const router = useRouter();
+  const { t } = useLanguage();
   const { user } = useAuthContext();
 
   const { accountQuery, account, can } = useEffectiveAccountCaps(accountId ?? null, user?.id ?? null);
@@ -73,19 +76,19 @@ export default function AccountDetailScreen() {
   return (
     <View className="flex-1 bg-background">
       <Stack.Screen options={{ headerShown: false }} />
-      <SettingsHeader title={account?.name ?? 'Account'} />
+      <SettingsHeader title={account?.name ?? t('account.workspace', 'Workspace')} />
 
       {accountQuery.isError ? (
         <SettingsPage>
           <SettingsGroup>
             <SettingsRow
               icon={AlertCircle}
-              label={(accountQuery.error as Error)?.message || "Couldn't load this account"}
+              label={(accountQuery.error as Error)?.message || t('workspace.loadOneFailed', "Couldn't load this workspace")}
               destructive
             />
             <SettingsRow
               icon={RotateCw}
-              label="Try again"
+              label={t('common.retry', 'Try again')}
               onPress={() => {
                 haptics.tap();
                 void accountQuery.refetch();
@@ -100,16 +103,16 @@ export default function AccountDetailScreen() {
       ) : (
         <SettingsPage>
           <SettingsGroup>
-            <SettingsRow label="Billing" value={billingSummary} onPress={openBilling} />
+            <SettingsRow label={t('workspace.billing', 'Billing')} value={billingSummary} onPress={openBilling} />
           </SettingsGroup>
 
-          <SettingsGroup title="On kortix.com">
-            <SettingsRow icon={Users} label="Members" external onPress={() => openWebTab('members')} />
+          <SettingsGroup title={t('workspace.onWeb', 'On kortix.com')}>
+            <SettingsRow icon={Users} label={t('workspace.members', 'Members')} external onPress={() => openWebTab('members')} />
             {can['account.write'] && (
-              <SettingsRow icon={GitBranch} label="Git" external onPress={() => openWebTab('git')} />
+              <SettingsRow icon={GitBranch} label={t('workspace.git', 'Git')} external onPress={() => openWebTab('git')} />
             )}
             {can['audit.read'] && (
-              <SettingsRow icon={List} label="Audit log" external onPress={() => openWebTab('audit')} />
+              <SettingsRow icon={List} label={t('workspace.auditLog', 'Audit log')} external onPress={() => openWebTab('audit')} />
             )}
           </SettingsGroup>
         </SettingsPage>

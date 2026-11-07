@@ -51,7 +51,7 @@ export const DECKS: readonly DeckDef[] = [
     slug: 'platform',
     title: 'Product deck',
     description:
-      'The in-depth platform walkthrough — the full Kortix surface, from projects and sessions to connectors, channels and change requests.',
+      'The in-depth platform walkthrough — the full Kortix surface, from workspaces and sessions to connectors, channels and change requests.',
     kind: 'Product',
     useSlides: usePlatformSlides,
   },

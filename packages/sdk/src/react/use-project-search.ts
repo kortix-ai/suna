@@ -1,7 +1,7 @@
 'use client';
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { type ProjectSearchInput, searchProject } from '../core/rest/projects-client/project-search';
+import { type ProjectSearchInput, searchWorkspace } from '../core/rest/projects-client/project-search';
 import { contract } from './query-contracts';
 import { qk } from './query-keys';
 
@@ -15,13 +15,16 @@ type Id = string | null | undefined;
  * `q` is one request. Pass `enabled: false` while the project's Files
  * (`drives`) are off: the route answers 403 then.
  */
-export function useProjectSearch(projectId: Id, input: ProjectSearchInput, options?: { enabled?: boolean }) {
+export function useWorkspaceSearch(projectId: Id, input: ProjectSearchInput, options?: { enabled?: boolean }) {
   const query = { ...input, q: input.q.trim() };
   return useQuery({
     queryKey: qk.project.search(projectId ?? '', query),
-    queryFn: () => searchProject(projectId as string, query),
+    queryFn: () => searchWorkspace(projectId as string, query),
     enabled: !!projectId && (options?.enabled ?? true) && query.q.length >= 1 && query.q.length <= 200,
     placeholderData: keepPreviousData,
     ...contract('inventory'),
   });
 }
+
+/** @deprecated Use `useWorkspaceSearch`. Kept permanently. */
+export const useProjectSearch = useWorkspaceSearch;

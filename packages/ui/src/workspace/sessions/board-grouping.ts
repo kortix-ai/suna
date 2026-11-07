@@ -1,5 +1,5 @@
 /**
- * The agent board (`/projects/<id>/sessions?view=board`): every session of the
+ * The agent board (`/workspaces/<id>/sessions?view=board`): every session of the
  * project grouped by what it needs from the person, as Claude Code's agent view
  * groups background sessions. Pure functions; the board component renders them.
  */

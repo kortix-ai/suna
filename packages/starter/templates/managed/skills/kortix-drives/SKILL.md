@@ -1,12 +1,12 @@
 ---
 name: kortix-drives
-description: "The project's Drive under `/drives`: the user's own folder (their desktop, also at `~/Desktop`) and any other folder `/drives/README.md` lists, synced with the Kortix web app and every other session. A program the user wants \"on my desktop\" is not a file: the `kortix-computer` skill says where it goes. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions (with `kortix-user-memory`), or when you see a file named `... (conflict <date> <time>)...`."
+description: "The workspace's Drive under `/drives`: the user's own folder (their desktop, also at `~/Desktop`) and any other folder `/drives/README.md` lists, synced with the Kortix web app and every other session. A program the user wants \"on my desktop\" is not a file: the `kortix-computer` skill says where it goes. Load before you read or save a file the user should keep, look for the user's notes, preferences or context, keep memory across sessions (with `kortix-user-memory`), or when you see a file named `... (conflict <date> <time>)...`."
 ---
 
 <skill name="kortix-drives">
 
 <overview>
-**Drive** is the project's folder tree. It lives outside this sandbox,
+**Drive** is the workspace's folder tree. It lives outside this sandbox,
 syncs both ways within seconds with the Kortix web app and with every other
 session that mounts it, keeps a version history, and outlives this session.
 Each folder under `/drives` is one folder of Drive that this session may use.
@@ -31,11 +31,11 @@ rewrites it whenever access changes. Read it first; never edit it.
 | `/drives/me/Memory` | what you keep about this user across sessions (the `kortix-user-memory` skill) | read-write |
 | the private channel's folder | in a private channel's thread only: its files and `Memory/`, at the path `/drives/README.md` names | read-write |
 | the space's folder | in a thread of a channel or DM (with Spaces on): its files, `Memory/`, `context.md` and `threads/` | read-write |
-| `/drives/<name>` | any other folder a project admin granted to this agent | as granted |
+| `/drives/<name>` | any other folder a workspace admin granted to this agent | as granted |
 
 - Look in `/drives/me` for the user's context before you ask them for it.
 - Save files you make for the user in `/drives/me`. Only the user sees it.
-- Nothing in Drive is shared with the whole project. Another folder the README
+- Nothing in Drive is shared with the whole workspace. Another folder the README
   lists is seen by others: put work there only when it is meant for them, and
   never copy the user's own files there unless the user asks.
 - Access can change while you run. Re-read `/drives/README.md` when a path you
@@ -52,7 +52,7 @@ where a durable fact goes:
 | this user: preferences, corrections, their work | `/drives/me/Memory/` (the `kortix-user-memory` skill) |
 | what you learn in a DM with this user | `/drives/me/Memory/<your agent name>/` (the `kortix-channel-memory` skill) |
 | this channel's work: decisions, people, workstreams, playbooks | the channel's `Memory/` folder, at the path `/drives/README.md` names |
-| what the project is and how it is built | the repo `memory/` (the `kortix-memory` skill, through a change request) |
+| what the workspace is and how it is built | the repo `memory/` (the `kortix-memory` skill, through a change request) |
 
 **In a private channel's thread** (`/drives/README.md` says the channel is
 private) every fact you learn there, team facts included, goes only in that

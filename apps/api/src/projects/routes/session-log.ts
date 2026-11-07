@@ -64,11 +64,12 @@ import { readSessionLogPage } from '../session-log-read';
 import { claimSessionLog } from '../session-log-restore';
 import { sessionLogSwitchPreflight } from '../session-log-switch';
 import { resolveSessionBinding } from './lib/route-bindings';
+import { workspaceIdParam } from '../../shared/route-params';
 
 const MAX_GZIP_BYTES = 2 * 1024 * 1024;
 const MAX_RAW_BYTES = 16 * 1024 * 1024;
 
-const params = z.object({ projectId: z.string(), sessionId: z.string() });
+const params = z.object({ workspaceId: z.string(), sessionId: z.string() });
 const blobParams = params.extend({ sha256: z.string().regex(/^[0-9a-f]{64}$/) });
 const BlobRefSchema = z.object({ ref: z.string().nullable() });
 const TOO_LARGE = 'Session-log attachments must be 50 MiB or smaller';
@@ -128,7 +129,7 @@ function sandboxScope(c: Context<AppEnv>): SessionLogScope | null {
   const sessionId = c.req.param('sessionId') ?? '';
   const accountId = c.get('accountId');
   if (!isSessionSandboxCredential(c) || c.get('sessionId') !== sessionId || !accountId) return null;
-  return { sessionId, projectId: c.req.param('projectId') ?? '', accountId };
+  return { sessionId, projectId: workspaceIdParam(c) ?? '', accountId };
 }
 
 type BodyRead = { ok: true; body: unknown } | { ok: false; status: 400 | 413; error: string };
@@ -186,7 +187,7 @@ export function registerSessionLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/log/blobs/{sha256}',
+      path: '/{workspaceId}/sessions/{sessionId}/log/blobs/{sha256}',
       tags: ['projects'],
       summary: 'Find the stored object of a session-log attachment by its sha256',
       description: 'Session sandbox credential only. `{ ref }`: the `kortix-attachment://` ref of the object, or null when the session has none.',
@@ -206,7 +207,7 @@ export function registerSessionLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/sessions/{sessionId}/log/blobs/{sha256}',
+      path: '/{workspaceId}/sessions/{sessionId}/log/blobs/{sha256}',
       tags: ['projects'],
       summary: 'Store the bytes of a session-log attachment',
       description:
@@ -246,7 +247,7 @@ export function registerSessionLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/log/journal',
+      path: '/{workspaceId}/sessions/{sessionId}/log/journal',
       tags: ['projects'],
       summary: 'Journal session-log records from the session daemon',
       description:
@@ -265,7 +266,7 @@ export function registerSessionLogRoutes(): void {
       const scope = sandboxScope(c);
       if (!scope) {
         // kortixd keeps the batch and backs off: a credential that regains access sends it.
-        journalRejected({ projectId: c.req.param('projectId') ?? '', sessionId: c.req.param('sessionId') ?? '' }, 403, 'not_session_credential');
+        journalRejected({ projectId: workspaceIdParam(c) ?? '', sessionId: c.req.param('sessionId') ?? '' }, 403, 'not_session_credential');
         return c.json({ error: 'The session log takes the session sandbox credential' }, 403);
       }
       if (!config.SESSION_LOG_INGEST_ENABLED) return c.json({ error: 'Session log ingest is off' }, 503);
@@ -306,7 +307,7 @@ export function registerSessionLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/log/manifest',
+      path: '/{workspaceId}/sessions/{sessionId}/log/manifest',
       tags: ['projects'],
       summary: 'Read the session-log manifest for the daemon boot reconcile',
       ...auth,
@@ -329,7 +330,7 @@ export function registerSessionLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/log/restore',
+      path: '/{workspaceId}/sessions/{sessionId}/log/restore',
       tags: ['projects'],
       summary: 'Claim the session and read its whole session log, for a fresh box',
       description:
@@ -362,7 +363,7 @@ export function registerSessionLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/sessions/{sessionId}/log',
+      path: '/{workspaceId}/sessions/{sessionId}/log',
       tags: ['sessions'],
       summary: 'Read a page of the session log',
       description:
@@ -382,7 +383,7 @@ export function registerSessionLogRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, sessionId } = c.req.valid('param');
+      const { workspaceId: projectId, sessionId } = c.req.valid('param');
       const query = c.req.valid('query');
       const limit = parseBoundedPositiveInt(query.limit, 40, 1, 500, 'limit');
       if (!limit.ok) return c.json({ error: limit.error }, 400);
@@ -409,7 +410,7 @@ export function registerSessionLogRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/sessions/{sessionId}/log/switch-preflight',
+      path: '/{workspaceId}/sessions/{sessionId}/log/switch-preflight',
       tags: ['sessions'],
       summary: 'List what a session would lose on another harness',
       description:
@@ -428,7 +429,7 @@ export function registerSessionLogRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, sessionId } = c.req.valid('param');
+      const { workspaceId: projectId, sessionId } = c.req.valid('param');
       const { to } = c.req.valid('json');
       const gate = await sessionReadGate(c, projectId, sessionId);
       if (gate.denied) return gate.denied as never;
