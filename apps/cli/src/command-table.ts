@@ -89,9 +89,14 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Group people so a role follows a team, not a person',
           },
           {
+            name: 'keys',
+            args: '<subcommand>',
+            blurb: 'API keys that act as you, an agent or a bot',
+          },
+          {
             name: 'tokens',
             args: '<subcommand>',
-            blurb: 'Mint and revoke API keys + service accounts for this workspace',
+            blurb: 'Older key commands: personal keys, service accounts, connected apps',
           },
           {
             name: 'billing',

@@ -51,6 +51,7 @@ import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
 import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
+import { runKeys } from './commands/keys.ts';
 import { runTools } from './commands/tools.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runChrome } from './commands/chrome.ts';
@@ -238,6 +239,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   accounts: (rest) => runAccounts(rest),
   members: (rest) => runMembers(rest),
   groups: (rest) => runGroups(rest),
+  keys: (rest) => runKeys(rest),
   tokens: (rest) => runTokens(rest),
   billing: (rest) => runBilling(rest),
   workspaces: (rest) => runProjects(rest),

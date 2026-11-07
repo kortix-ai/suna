@@ -34,7 +34,8 @@ const COMMANDS = {
   'self-host': ['Set up, start, update and stop your own Kortix instance from Docker images.', '[Self-hosting](/docs/developers#self-hosting)'],
   members: ['Invite and remove people, and change their roles.', '[Teams](/docs/guide#teams)'],
   groups: ['Groups of people that share a role.', '[Teams](/docs/guide#teams)'],
-  tokens: ['Personal access keys, service accounts and connected apps.', '[Security](/docs/guide#security)'],
+  keys: ['API keys of the workspace: create a key that acts as you, an agent or a bot, list and revoke them.', '[Get an API key](/docs/developers#get-an-api-key)'],
+  tokens: ['Older key commands: personal keys, service accounts and connected apps.', '[Security](/docs/guide#security)'],
   billing: ['The plan, credits, transactions, and costs per project and per session.', '[Billing](/docs/guide#billing)'],
   init: ['Create a project directory from the starter, with its `kortix.yaml`.', '[The everyday loop](#the-everyday-loop)'],
   workspaces: [

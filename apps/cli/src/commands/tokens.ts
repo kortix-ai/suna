@@ -112,6 +112,8 @@ interface ConnectedApp {
 
 const HELP = help`Usage: kortix tokens <subcommand> [options]
 
+A key that acts as you, an agent or a bot: \`kortix keys\`.
+
 Non-interactive credentials for this workspace. Reads need token.read. Every
 member may mint and revoke their OWN personal keys (token.personal.create,
 token.personal.revoke). Service accounts and other people's keys need

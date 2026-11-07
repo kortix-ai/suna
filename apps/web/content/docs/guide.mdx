@@ -1387,6 +1387,16 @@ Owners and admins set the workspace's sign-in rules under **Workspace settings**
 
 Each person can see and sign out their own devices under **Settings** → **Security**.
 
+### API keys
+
+Scripts, CI jobs and integrations use API keys. **Workspace settings** → **API keys** lists every key of the workspace in one place. **New key** asks who the key acts as:
+
+- **You**: your role in this workspace. The key stops working when you leave.
+- **An agent**: one of the workspace's agents, with exactly what it may do. Its actions are audited as the agent, and the key keeps working when the person who created it leaves.
+- **A bot**: an identity for CI or an integration, with its own role (Member when Kortix creates it).
+
+Every member creates and revokes their own keys. Keys that act as an agent or a bot need the permission to manage credentials. A key can be narrowed to **Read only** or to a custom list of permissions, never beyond the rights of who it acts as. It expires after 90 days unless you pick another date. The CLI is `kortix keys`; the API is in [Get an API key](/docs/developers#get-an-api-key).
+
 ### Single sign-on and directory sync
 
 With single sign-on (SAML), your team signs in through your company's identity provider. Turn on **Enforce SSO for this domain**, and other ways to sign in stop working for that email domain.

@@ -2080,7 +2080,8 @@ Every command prints its subcommands and flags with `kortix <command> --help`, o
 | `workspaces <subcommand>` | Create, list, switch, link, open, rename, configure and delete workspaces. Also feature flags (`features`) and workspace CLI tokens (`cli-tokens`). `kortix projects` is the older name. | [Which workspace a command uses](#which-workspace-a-command-uses) |
 | `members <subcommand>` | Invite and remove people, and change their roles. | [Teams](/docs/guide#teams) |
 | `groups <subcommand>` | Groups of people that share a role. | [Teams](/docs/guide#teams) |
-| `tokens <subcommand>` | Personal access keys, service accounts and connected apps. | [Security](/docs/guide#security) |
+| `keys <subcommand>` | API keys of the workspace: create a key that acts as you, an agent or a bot, list and revoke them. | [Get an API key](/docs/developers#get-an-api-key) |
+| `tokens <subcommand>` | Older key commands: personal keys, service accounts and connected apps. | [Security](/docs/guide#security) |
 | `billing <subcommand>` | The plan, credits, transactions, and costs per project and per session. | [Billing](/docs/guide#billing) |
 | `init [name]` | Create a project directory from the starter, with its `kortix.yaml`. | [The everyday loop](#the-everyday-loop) |
 
@@ -4647,16 +4648,26 @@ The client's handles (`kortix.projects`, `kortix.project(projectId)`, `kortix.se
 
 ### Get an API key
 
-A script, a CI job or a server authenticates with a personal access key. The key starts with `kortix_pat_`. Create one in the web app under **Settings → Personal access keys**, or with the CLI:
+A script, a CI job or a server authenticates with an API key. The key starts with `kortix_pat_` and works in one workspace. Create one in the web app under **Workspace settings → API keys → New key**, or with the CLI:
 
 ```bash
-kortix tokens new my-script --expires 90d
+kortix keys create my-script --expires 90d
 ```
 
-Kortix shows the key once. Store it as a secret and return it from `getToken`. Unattended automation that acts for no single person uses a service account key (`kortix_sa_`, **Workspace settings → API keys**).
+**Acts as** decides whose rights the key carries:
+
+| Acts as | The key's rights | It stops working when | Who can create it |
+|---|---|---|---|
+| You (`--as me`, the default) | Your current role in the workspace | You leave the workspace, or it expires | Every member |
+| An agent (`--as agent:<name>`) | The agent's `kortix_permissions` in `kortix.yaml`, inside its role. Its requests are audited as the agent. | It expires or is revoked. The person who created it leaving changes nothing. | People with `token.create` |
+| A bot (`--as bot:<name>`) | The bot's roles. A new name creates the bot with the Member role; change it in **People → Roles**. | It expires or is revoked | People with `token.create` |
+
+**Access** narrows any key further: `Full` (all of the principal's rights), `Read only` (every `*.read` permission, GET requests only) or `Custom` (a permission list). A key never holds more than its principal: a custom list outside the principal's rights is refused with `403 key_scope_exceeds_principal`. A key expires after 90 days by default and after 365 days at most. No key that acts as an agent or a bot can create a key, move money or delete the workspace.
+
+Kortix shows the key once. Store it as a secret and return it from `getToken`. The same list is `GET /v1/workspaces/{workspaceId}/keys`, and the SDK reads it with `kortix.workspace(id).keys.list()`.
 
 <Callout type="warning">
-A personal access key acts as you. Keep it on a server. Never put it in a browser bundle, a mobile app or a public repository. A browser app signs people in with [Sign in with Kortix](/docs/developers#sign-in-with-kortix) instead. Every credential and where it runs: [Choose a credential](/docs/developers#choose-a-credential).
+An API key carries real access. Keep it on a server. Never put it in a browser bundle, a mobile app or a public repository. A browser app signs people in with [Sign in with Kortix](/docs/developers#sign-in-with-kortix) instead. Every credential and where it runs: [Choose a credential](/docs/developers#choose-a-credential).
 </Callout>
 
 ### Your first session
@@ -4745,16 +4756,16 @@ A credential holds the roles of the principal it acts as, and nothing more.
 
 | Caller | Credential | Runs in | `getToken` returns | Read |
 |---|---|---|---|---|
-| A script, a CI job, your own backend | Personal access key, `kortix_pat_` | Server only | The key from an environment variable | [getToken and 401 recovery](#gettoken-and-401-recovery) |
+| A script, a CI job, your own backend | API key, `kortix_pat_` (acts as you, an agent or a bot) | Server only | The key from an environment variable | [getToken and 401 recovery](#gettoken-and-401-recovery) |
 | A web app that signs people in through the instance's Supabase | Supabase JWT | Browser or server | `(await supabase.auth.getSession()).data.session?.access_token ?? null` | [Sign users in headlessly](#sign-users-in-headlessly) for new code |
 | Your own web app with a "Sign in with Kortix" button | OAuth access token, `kortix_oat_` (1 hour; refresh token `kortix_ort_`, 30 days) | Server holds it; the browser sends a placeholder | `auth.kortix(request)` on the server; `'kortix-session'` in the browser | [Sign in with Kortix](#sign-in-with-kortix) |
 | Code inside a Kortix App | App viewer token | Browser of the App, or the App's server | `kortixAppViewerToken()` in the browser; `createAppViewerKortix(request, …)` on the server | [Know the viewer in a Kortix App](#know-the-viewer-in-a-kortix-app) |
 | One server process that acts for many users at the same time | Any of the above, per request | Server only | A function of the current request | [Serve many users from one backend](#serve-many-users-from-one-backend) |
 
-Two more credentials exist. A service account key, `kortix_sa_`, acts as a
-service account for unattended automation. It has no access until you assign
-it a role. Create one under **Workspace settings → API keys**, or with
-`kortix tokens service-accounts new`. Kortix sets `KORTIX_TOKEN` and
+An API key acts as you, an agent or a bot (see
+[Get an API key](#get-an-api-key)). A bot created before workspace keys
+also holds its own service account key, `kortix_sa_`: it keeps working and is
+listed as a bot key under **Workspace settings → API keys**. Kortix sets `KORTIX_TOKEN` and
 `KORTIX_API_URL` inside a session sandbox. They act as the session's agent,
 limited to that workspace and session. Their permissions are the agent's
 `kortix_permissions`, capped by its ceiling role (see
