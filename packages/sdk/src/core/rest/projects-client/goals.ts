@@ -566,7 +566,11 @@ async function goalWrite(send: () => Promise<{ data?: { goal: ProjectGoalRecord 
 }
 
 const goalsPath = (projectId: string) => `/workspaces/${encodeURIComponent(projectId)}/goals`;
-const goalPath = (projectId: string, goalId: string) => `${goalsPath(projectId)}/${encodeURIComponent(goalId)}`;
+function goalPath(projectId: string, goalId: string): string {
+  // `encodeURIComponent` keeps "." and "..", and the URL parser resolves them: `goals/..` would reach `/workspaces/:projectId`.
+  if (goalId === '.' || goalId === '..') throw new Error(`Refused the request path ${goalsPath(projectId)}/${goalId}: a "." or ".." segment would send it to another endpoint. Pass ids exactly as Kortix prints them.`);
+  return `${goalsPath(projectId)}/${encodeURIComponent(goalId)}`;
+}
 
 /** The route is not there for this caller: no such project route (404) or the `goals` flag is off (403 `feature_disabled`). */
 function routeOff(error: unknown): boolean {
@@ -581,7 +585,7 @@ function routeOff(error: unknown): boolean {
 export async function listWorkspaceGoals(projectId: string, options?: { now?: number }): Promise<ProjectGoal[]> {
   let records: ProjectGoalRecord[];
   try {
-    records = unwrap(await backendApi.get<{ goals: ProjectGoalRecord[] }>(goalsPath(projectId)), 'Goals request failed').goals;
+    records = await listWorkspaceGoalRecords(projectId);
   } catch (error) {
     if (routeOff(error)) return [];
     throw error;
@@ -592,6 +596,12 @@ export async function listWorkspaceGoals(projectId: string, options?: { now?: nu
 
 /** @deprecated Use `listWorkspaceGoals`. Kept permanently. */
 export const listProjectGoals = listWorkspaceGoals;
+
+/** The goal records the caller may read, as the API returns them; with `filter`, the goals that session owns or verifies. Unlike `listWorkspaceGoals` it throws when the route is off. */
+export async function listWorkspaceGoalRecords(projectId: string, filter?: { role: 'owner' | 'verifier'; sessionId: string }): Promise<ProjectGoalRecord[]> {
+  const query = filter ? `?${filter.role}_session_id=${encodeURIComponent(filter.sessionId)}` : '';
+  return unwrap(await backendApi.get<{ goals: ProjectGoalRecord[] }>(`${goalsPath(projectId)}${query}`), 'Goals request failed').goals;
+}
 
 /** One goal by its `goal_id`. Throws `ApiError` 404 (no such goal) or 403 (no access). */
 export async function getWorkspaceGoal(projectId: string, goalId: string, options?: { now?: number }): Promise<ProjectGoal> {
@@ -721,7 +731,23 @@ export async function restartWorkspaceGoal(projectId: string, goal: GoalTarget, 
 /** @deprecated Use `restartWorkspaceGoal`. Kept permanently. */
 export const restartProjectGoal = restartWorkspaceGoal;
 
-const MAX_GOAL_CRITERIA = 8;
+/** A record write addresses the goal by its id and the revision the caller read. */
+type RecordTarget = Pick<ProjectGoalRecord, 'goal_id' | 'revision'>;
+/** The owner's lifecycle moves, and the verifier's `verdict`. Who may send which is the server's call. */
+type GoalAction = 'activate' | 'wait' | 'progress' | 'request-verification' | 'handover' | 'verdict';
+
+/** A goal session's lifecycle write (`POST …/goals/:goalId/<action>`): the record as the server holds it now. A stale `revision` throws `WorkspaceGoalConflictError`. */
+export async function postWorkspaceGoalAction(projectId: string, goal: RecordTarget, action: GoalAction, body: Record<string, unknown>): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goal_id)}/${action}`, { revision: goal.revision, ...body }));
+}
+
+/** The owner sets a draft goal's done criteria (`PUT …/criteria`), sent as given. A stale `revision` throws `WorkspaceGoalConflictError`. */
+export async function setWorkspaceGoalCriteria(projectId: string, goal: RecordTarget, criteria: string[]): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.put<{ goal: ProjectGoalRecord }>(`${goalPath(projectId, goal.goal_id)}/criteria`, { revision: goal.revision, criteria }));
+}
+
+/** The most done criteria a goal has (the API's limit). */
+export const MAX_GOAL_CRITERIA = 8;
 /** My Kortix's sandbox slugs (current and legacy): a session on one mounts no Files, so it cannot run `kortix goals`. */
 const NO_FILES_SANDBOXES = new Set(['mykortix', 'meta']);
 
@@ -803,6 +829,13 @@ export interface CreatedProjectGoal {
 /** The workspace name of {@link CreatedProjectGoal}: the same type. */
 export type CreatedWorkspaceGoal = CreatedProjectGoal;
 
+type GoalCreateBody = { goal_id: string; brief: string; criteria?: string[]; agent?: string; assigned_user_id?: string };
+
+/** The create (`POST /workspaces/:projectId/goals`) sent as given, no trim or limit check: `createWorkspaceGoal` is the person flow on top. `goal_id` is the idempotency key. */
+export async function createWorkspaceGoalRecord(projectId: string, body: GoalCreateBody): Promise<ProjectGoalRecord> {
+  return goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(goalsPath(projectId), body));
+}
+
 /**
  * A person creates a goal (`POST /workspaces/:projectId/goals`). The API puts
  * it in the caller's own folder, writes GOAL.md and log.md, starts the owner
@@ -820,11 +853,11 @@ export async function createWorkspaceGoal(projectId: string, input: CreateProjec
   const criteria = (input.criteria ?? []).map((c) => c.trim()).filter(Boolean);
   if (criteria.length > MAX_GOAL_CRITERIA) throw new Error(`A goal has at most ${MAX_GOAL_CRITERIA} done criteria.`);
   const goalId = input.goalId ?? input.sessionId ?? generateSessionId();
-  const payload: Record<string, unknown> = { goal_id: goalId, brief };
+  const payload: GoalCreateBody = { goal_id: goalId, brief };
   if (criteria.length) payload.criteria = criteria;
   if (input.agent) payload.agent = input.agent;
   if (input.assignedUser) payload.assigned_user_id = input.assignedUser;
-  const goal = toProjectGoal(await goalWrite(() => backendApi.post<{ goal: ProjectGoalRecord }>(goalsPath(projectId), payload)));
+  const goal = toProjectGoal(await createWorkspaceGoalRecord(projectId, payload));
   return {
     slug: goal.slug,
     scope: 'personal',
