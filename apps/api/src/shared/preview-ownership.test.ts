@@ -674,6 +674,13 @@ describe('canAccessSandboxSession — a session token reads the log of a session
     expect(takeSessionAccessRefusal(parentRead('child-b', false))?.boundCredentialSessionId).toBe('child-b');
   });
 
+  test('a log-read allow is not reused for the same caller\'s next non-read request', async () => {
+    projectSessionRow = privateTriggerParent();
+    spawnAncestorIds = ['sess-parent'];
+    expect(await canAccessSandboxSession(parentRead('child-c', true))).toBe(true);
+    expect(await canAccessSandboxSession(parentRead('child-c', false))).toBe(false);
+  });
+
   test('a session that did not spawn the target stays refused even for a log read', async () => {
     projectSessionRow = privateTriggerParent();
     spawnAncestorIds = ['some-other-session'];
