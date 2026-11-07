@@ -30,11 +30,37 @@ describe('readWeeklyBriefs', () => {
         '2026-W41': { highlights: [] },
       },
     });
-    expect(await readWeeklyBriefs(g.impl)).toEqual({ '2026-W42': ['One credits plan for every account', 'Enterprise SSO'] });
+    expect(await readWeeklyBriefs(g.impl)).toEqual({ '2026-W42': { highlights: ['One credits plan for every account', 'Enterprise SSO'], media: undefined } });
     expect(g.urls).toEqual([
       'https://api.github.com/repos/kortix-ai/CompanyOS/git/ref/kortix/changelog-weekly',
       'https://api.github.com/repos/kortix-ai/CompanyOS/contents/briefs.json?ref=c0ffee',
     ]);
+  });
+
+  test('retains old highlights alongside reviewed, draft and malformed media', async () => {
+    const cover = {
+      url: 'https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/changelog/cover.png',
+      alt: 'Reviewed cover',
+      width: 1200,
+      height: 630,
+    };
+    const g = github({
+      version: 1,
+      weeks: {
+        '2026-W42': { highlights: [{ text: 'Approved' }], media: { reviewed: true, cover } },
+        '2026-W41': { highlights: [{ text: 'Draft' }], media: { reviewed: false, cover } },
+        '2026-W40': {
+          highlights: [{ text: 'Invalid' }],
+          media: { reviewed: true, cover: { ...cover, alt: '' } },
+        },
+        '2026-W39': { highlights: 'junk' },
+      },
+    });
+    expect(await readWeeklyBriefs(g.impl)).toEqual({
+      '2026-W42': { highlights: ['Approved'], media: { cover } },
+      '2026-W41': { highlights: ['Draft'], media: undefined },
+      '2026-W40': { highlights: ['Invalid'], media: undefined },
+    });
   });
 
   test('no ref yet (404) is no summaries, and briefs.json is never requested', async () => {

@@ -1,3 +1,5 @@
+import type { WeeklyMedia } from './weekly-media';
+
 export interface GitHubRelease {
   tag_name: string;
   name: string | null;
@@ -54,6 +56,7 @@ export interface ChangelogWeek {
   /** The week's 1–5 agent-written summary lines (`weekly-briefs.ts`), or
    *  `null` until the Monday trigger has written them. Shown instead of `highlights`. */
   summary: string[] | null;
+  media?: WeeklyMedia;
   /** Every New / Improved / Fixed bullet across the week's releases. */
   counts: { new: number; improved: number; fixed: number };
 }
