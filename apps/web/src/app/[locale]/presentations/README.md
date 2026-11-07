@@ -1,8 +1,8 @@
 # Presentations
 
-Internal decks, as code. Every deck is a route under `/presentations`, styled
-like the marketing site, driven by the keyboard, and built to be screen
-recorded.
+Internal decks, as code. Every deck is a route under `/presentations`, drawn in
+the landing page's frame (rails, a two-tone title, one band; decision D40),
+driven by the keyboard, and built to be screen recorded.
 
 There are no `.pptx` files here and there should never be one. A deck is a
 component: it themes correctly, it stays sharp at any projection size, it is
@@ -17,8 +17,8 @@ presentations/
   decks/<slug>.tsx    a deck: `useSlides(): SlideDef[]`
   engine/
     deck.tsx          keyboard engine, build steps, presenter notes, overview
-    parts.tsx         Slide, SectionHead, Panel, RowList, Shot, Rise…
-    diagram.tsx       build-aware mechanism diagrams (Stage, Box, Link, Wall…)
+    frame.tsx         the slide frame: Slide, Band, Cells, Cell, Rows, Code, Shot, Reveal
+    diagram.tsx       build-aware mechanism diagrams (Stage, Box, Link, LoopRing…)
 ```
 
 ## Add a deck
@@ -34,7 +34,7 @@ counts, the length estimate and the page metadata are all derived.
 ```tsx
 type SlideDef = {
   id: string; // stable, unique within the deck
-  label: string; // shown bottom-left on the stage
+  label: string; // the chapter name, shown in the bottom bar
   node: ReactNode | ((step: number) => ReactNode);
   steps?: number; // extra build steps. Total → presses = steps + 1
   notes?: string | readonly string[]; // the spoken script
@@ -56,7 +56,7 @@ to give each build step its own line; the drawer follows the step you are on.
   the first frame, ghosted, and a step raises it to full opacity. If parts
   appeared instead, every press would reflow the slide and the viewer would lose
   the thread. `engine/diagram.tsx` does this for you; if you hand-roll, use
-  `opacity` transitions, not conditional rendering.
+  `Reveal` from `engine/frame.tsx`, not conditional rendering.
 - **The title should not move.** On a build slide the words that change belong
   in the diagram's caption, not the heading.
 - **One build, one idea.** If a step needs two sentences of setup, it is two

@@ -543,7 +543,7 @@ async function finishShip(
   env: EnvSpec,
   flags: ShipFlags,
 ): Promise<number> {
-  const committed = commitIfNeeded(flags);
+  const committed = commitIfNeeded(flags, auth.user_email || undefined);
   if (committed === 'error') return 1;
 
   await ensureProjectEnv(client, projectId, env, flags);

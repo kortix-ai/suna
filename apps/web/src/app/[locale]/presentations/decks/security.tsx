@@ -1,14 +1,14 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 /**
  * The security walkthrough.
  *
  * ── STRUCTURE ────────────────────────────────────────────────────────────
  * Four answers to one question, and nothing else. The deck says "four things"
- * on slide 2 and then runs exactly four chapters, with the spine on screen the
- * whole time so a viewer always knows where they are:
+ * on slide 2 and then runs exactly four chapters. The bottom bar names the
+ * chapter (each slide's `label`), so a viewer always knows where they are:
  *
  *   01 Isolation    a mistake cannot spread
  *   02 Credentials  the agent never holds the key
@@ -37,12 +37,12 @@ import { useTranslations } from '@/i18n/use-translations';
  *     false of a granted runtime secret. Slide 05 says so out loud.
  *  4. "I approve it, only now does it reach main" — merge is default-deny for
  *     agents, not human-only.
+ *
+ * Frame: engine/frame.tsx, the landing page at 16:9. No eyebrow, no kicker.
  */
 
-import { Badge } from '@kortix/ui/badge';
 import { getLocalizedConnectorsContent } from '@/features/marketing/connectors/content';
 import { getLocalizedSecurityContent } from '@/features/marketing/security-page/content';
-import type { ReactNode } from 'react';
 import type { SlideDef } from '../engine/deck';
 import {
   BrokerDiagram,
@@ -51,11 +51,8 @@ import {
   LedgerDiagram,
   PrincipalDiagram,
 } from '../engine/diagram';
-import { Dim, Panel, Rise, Shot, Slide, Spine } from '../engine/parts';
+import { Cell, Cells, Shot, Slide } from '../engine/frame';
 import { useSecurityDiagramContent } from './security-diagram-content';
-
-/** The whole deck, in four words. Nothing here is decoration — see the header. */
-const CHAPTERS = ['Isolation', 'Credentials', 'The gate', 'The record'] as const;
 
 const ANSWERS = [
   {
@@ -73,30 +70,6 @@ const ANSWERS = [
   { title: 'The record', body: 'Every action, human or agent, is written down — on every plan.' },
 ] as const;
 
-/**
- * A chapter slide: the spine, one short title, and the machine. No lead
- * paragraph — on a build slide the words that change are the diagram's caption,
- * and a second block of prose above it just competes with the narration.
- */
-function Chapter({ n, title, children }: { n: number; title: ReactNode; children: ReactNode }) {
-  const chapters = useLocalizedUiCatalog(CHAPTERS);
-  return (
-    <Slide innerClassName="py-14 sm:py-16">
-      <Rise i={0}>
-        <Spine chapters={chapters} active={n} />
-      </Rise>
-      <Rise i={1}>
-        <h2 className="text-foreground mt-6 max-w-3xl text-3xl font-medium tracking-tight text-balance">
-          {title}
-        </h2>
-      </Rise>
-      <Rise i={2}>
-        <div className="mt-8">{children}</div>
-      </Rise>
-    </Slide>
-  );
-}
-
 export function useSlides(): SlideDef[] {
   const diagramContent = useSecurityDiagramContent();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -110,25 +83,7 @@ export function useSlides(): SlideDef[] {
       label: tI18nComplete.raw('text8f6fb4eb7f42'),
       notes:
         'If you are going to run a hundred agents inside your company, only one question really matters: what happens when one of them goes wrong?\n\nAn agent that can install anything, call anything and write anywhere is only safe if the walls are real. In Kortix those walls sit below the agent, in the platform, where a prompt cannot talk its way past them.\n\nLet me show you.',
-      node: (
-        <Slide>
-          <Rise i={0}>
-            <Badge variant="kortix" className="rounded">
-              {hero.eyebrow}
-            </Badge>
-          </Rise>
-          <Rise i={1}>
-            <h1 className="text-foreground mt-6 max-w-4xl text-4xl font-medium tracking-tight text-balance sm:text-5xl lg:text-6xl">
-              {hero.title}
-            </h1>
-          </Rise>
-          <Rise i={2}>
-            <p className="text-muted-foreground mt-6 max-w-2xl text-lg leading-relaxed">
-              {tI18nComplete.raw('texte72c487b0696')}
-            </p>
-          </Rise>
-        </Slide>
-      ),
+      node: <Slide size="cover" title={hero.title} sub={tI18nComplete.raw('texte72c487b0696')} />,
     },
 
     /* ── the map ─────────────────────────────────────────────────────────── */
@@ -138,33 +93,18 @@ export function useSlides(): SlideDef[] {
       notes:
         'Four answers. Isolation, so a mistake cannot spread. Credentials the agent is never handed. A person in front of anything that lands. And a record of all of it.\n\nThat is the whole model. I am going to draw each one.',
       node: (
-        <Slide>
-          <Rise i={0}>
-            <h2 className="text-foreground max-w-3xl text-3xl font-medium tracking-tight text-balance sm:text-4xl">
-              {tI18nComplete.raw('textbbeaa7427c41')}{' '}
-              <Dim>{tI18nComplete.raw('texta9177245615b')}</Dim>
-            </h2>
-          </Rise>
-          <Rise i={1}>
-            <p className="text-muted-foreground mt-5 max-w-2xl text-base leading-relaxed">
-              {tI18nComplete.raw('text6ac15e9ca232')}
-            </p>
-          </Rise>
-          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Slide
+          title={tI18nComplete.raw('textbbeaa7427c41')}
+          titleMuted={tI18nComplete.raw('texta9177245615b')}
+          sub={tI18nComplete.raw('text6ac15e9ca232')}
+        >
+          <Cells className="sm:grid-cols-2 lg:grid-cols-4">
             {answers.map((a, i) => (
-              <Rise key={a.title} i={i + 2}>
-                <Panel className="flex h-full flex-col p-6">
-                  <span className="text-muted-foreground/45 font-mono text-xs tabular-nums">
-                    {`0${i + 1}`}
-                  </span>
-                  <h3 className="text-foreground mt-5 text-lg font-medium tracking-tight">
-                    {a.title}
-                  </h3>
-                  <p className="text-muted-foreground mt-2.5 text-sm leading-relaxed">{a.body}</p>
-                </Panel>
-              </Rise>
+              <Cell key={a.title} label={`0${i + 1}`} title={a.title}>
+                {a.body}
+              </Cell>
             ))}
-          </div>
+          </Cells>
         </Slide>
       ),
     },
@@ -181,9 +121,9 @@ export function useSlides(): SlideDef[] {
         'The machine is not precious. A bad install goes away with it, and the box is destroyed at the end anyway.\n\nOnly what the session commits survives, as a change request.',
       ],
       node: (step) => (
-        <Chapter n={0} title={tI18nComplete.raw('text9045e34e96f2')}>
+        <Slide title={tI18nComplete.raw('text9045e34e96f2')}>
           <IsolationDiagram step={step} content={diagramContent} />
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -200,9 +140,9 @@ export function useSlides(): SlideDef[] {
         'So watch what never crossed. API keys, OAuth tokens, refresh tokens, client secrets — none of them were ever in the box.\n\nWhich means turning a connector off takes effect on the next call, and there is nothing in the sandbox to rotate.',
       ],
       node: (step) => (
-        <Chapter n={1} title={broker.title}>
+        <Slide title={broker.title}>
           <BrokerDiagram step={step} content={diagramContent} />
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -213,18 +153,13 @@ export function useSlides(): SlideDef[] {
       notes:
         'And here is the slide most vendors leave out.\n\nA runtime secret you deliberately grant a session is a real environment value inside that session, readable by any command the agent runs. That is how a tool uses it.\n\nWe would rather say that than tell you it is invisible and have you disprove it in one command. The controls that matter are the two gates — the person’s role and the agent’s declared grant, intersected — and the fact that the machine is destroyed with it.',
       node: (
-        <Chapter n={1} title={tI18nComplete.raw('textb21fad12493d')}>
-          <Panel className="p-8 sm:p-10">
-            <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-              {credentials.rows[3].k}
-            </p>
-            {/* The page's own wording, unabridged — paraphrasing the one claim
-                we deliberately refuse to make would defeat the point. */}
-            <p className="text-foreground mt-6 max-w-3xl text-xl leading-relaxed">
-              {credentials.rows[3].v}
-            </p>
-          </Panel>
-        </Chapter>
+        <Slide title={tI18nComplete.raw('textb21fad12493d')}>
+          {/* The page's own wording, unabridged — paraphrasing the one claim
+              we deliberately refuse to make would defeat the point. */}
+          <p className="text-foreground max-w-3xl text-xl leading-relaxed text-pretty">
+            {credentials.rows[3].v}
+          </p>
+        </Slide>
       ),
     },
 
@@ -240,9 +175,9 @@ export function useSlides(): SlideDef[] {
         'A person approves it. Now it reaches main.\n\nAnd to be precise, because a reviewer will push on this: merge is default-deny for agents. Nothing merges itself, unless an admin granted the merge capability.\n\nRun a thousand agents in parallel and every one funnels through this gate.',
       ],
       node: (step) => (
-        <Chapter n={2} title={tI18nComplete.raw('text74d1f5c328ca')}>
+        <Slide title={tI18nComplete.raw('text74d1f5c328ca')}>
           <ChangeRequestDiagram step={step} content={diagramContent} />
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -253,22 +188,15 @@ export function useSlides(): SlideDef[] {
       notes:
         'The same idea one level down, on a real connector. Google Drive, fifty-one tools, one answer each — allow, ask, or block.\n\nReads run. Uploading and sharing ask. Trashing a file is blocked outright, and no approval in the moment can lift a block.\n\nAnd when a call is gated the run does not fail, it holds. The agent is still mid-task when you answer, with the arguments in front of you.',
       node: (
-        <Chapter
-          n={2}
-          title={
-            <>
-              {tI18nComplete.raw('text06029fe800d0')}{' '}
-              <Dim>{tI18nComplete.raw('text0b6c75c4d533')}</Dim>
-            </>
-          }
+        <Slide
+          title={tI18nComplete.raw('text06029fe800d0')}
+          titleMuted={tI18nComplete.raw('text0b6c75c4d533')}
         >
           <Shot
             src="/media/connectors/connector-permissions.webp"
             alt={tI18nComplete.raw('text169a667df8ce')}
-            url="kortix.com — Connectors → Permissions"
-            imgClassName="max-h-[48vh] object-cover object-top"
           />
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -284,9 +212,9 @@ export function useSlides(): SlideDef[] {
         'So what a session can touch is the intersection: what the person may do, and what the agent was declared to be allowed. Never the union.\n\nAn agent is a principal, not a loophole.',
       ],
       node: (step) => (
-        <Chapter n={3} title={tI18nComplete.raw('textbc346bfb5269')}>
+        <Slide title={tI18nComplete.raw('textbc346bfb5269')}>
           <PrincipalDiagram step={step} content={diagramContent} />
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -302,9 +230,9 @@ export function useSlides(): SlideDef[] {
         'And the headline: recording is never the thing you pay for. Every plan writes this. The plan decides who may read, export or stream it — not whether it exists.\n\nIf a reviewer asks you to prove it, you do not tell them. You show them the log.',
       ],
       node: (step) => (
-        <Chapter n={3} title={tI18nComplete.raw('text7387eb9a3a98')}>
+        <Slide title={tI18nComplete.raw('text7387eb9a3a98')}>
           <LedgerDiagram step={step} content={diagramContent} />
-        </Chapter>
+        </Slide>
       ),
     },
 
@@ -315,33 +243,19 @@ export function useSlides(): SlideDef[] {
       notes:
         'That is the whole model. Isolation, so a mistake cannot spread. Credentials the agent never holds. A human gate before anything ships. A full trail of everything.\n\nIt is built to survive a security review, not slip past one. On-prem, in your VPC, or fully isolated if that is what you need.\n\nAnd because it is open source, you do not have to take my word for any of it. Read the code.\n\nKortix. Your CompanyOS.',
       node: (
-        <Slide>
-          <Rise i={0}>
-            <h2 className="text-foreground max-w-4xl text-3xl leading-tight font-medium tracking-tight text-balance sm:text-5xl">
-              {tI18nComplete.raw('textcf895a4d5cb7')}{' '}
-              <Dim>{tI18nComplete.raw('textc1a5d4982c10')}</Dim>
-            </h2>
-          </Rise>
-          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Slide
+          title={tI18nComplete.raw('textcf895a4d5cb7')}
+          titleMuted={tI18nComplete.raw('textc1a5d4982c10')}
+        >
+          <Cells className="sm:grid-cols-2 lg:grid-cols-4">
             {answers.map((a, i) => (
-              <Rise key={a.title} i={i + 1}>
-                <Panel className="flex flex-col gap-1.5 p-6">
-                  <span className="text-muted-foreground/45 font-mono text-xs tabular-nums">
-                    {`0${i + 1}`}
-                  </span>
-                  <span className="text-foreground mt-3 text-lg font-medium tracking-tight">
-                    {a.title}
-                  </span>
-                </Panel>
-              </Rise>
+              <Cell key={a.title} label={`0${i + 1}`} title={a.title} />
             ))}
-          </div>
-          <Rise i={5}>
-            <p className="text-muted-foreground mt-12 max-w-2xl text-base leading-relaxed">
-              {tI18nComplete.raw('text65c55e442922')}{' '}
-              <span className="text-foreground">{tI18nComplete.raw('text9888c8324cb5')}</span>
-            </p>
-          </Rise>
+          </Cells>
+          <p className="text-muted-foreground mt-8 max-w-2xl text-base leading-relaxed text-pretty">
+            {tI18nComplete.raw('text65c55e442922')}{' '}
+            <span className="text-foreground">{tI18nComplete.raw('text9888c8324cb5')}</span>
+          </p>
         </Slide>
       ),
     },

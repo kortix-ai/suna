@@ -19,6 +19,7 @@
 import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
+import { useSlides as useHowToKortixSlides } from './decks/how-to-kortix';
 import { useSlides as usePlatformSlides } from './decks/platform';
 import { useSlides as useSalesSlides } from './decks/sales';
 import { useSlides as useSecuritySlides } from './decks/security';
@@ -46,6 +47,15 @@ export const DECKS: readonly DeckDef[] = [
     kind: 'Product',
     tags: ['Built to present', 'Diagram-led'],
     useSlides: useSecuritySlides,
+  },
+  {
+    slug: 'how-to-kortix',
+    title: 'How to Kortix',
+    description:
+      'A technical walkthrough: kortix init makes one git repo for agents, skills, memory and kortix.yaml, kortix ship deploys it, connectors give agents reach, and triggers run them in a loop.',
+    kind: 'Product',
+    tags: ['Technical', 'Diagram-led'],
+    useSlides: useHowToKortixSlides,
   },
   {
     slug: 'platform',

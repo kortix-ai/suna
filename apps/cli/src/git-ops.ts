@@ -132,8 +132,26 @@ export function ensureOrigin(url: string): void {
   if (!detectOrigin()) run(['remote', 'add', 'origin', url]);
 }
 
+/**
+ * The identity a commit falls back to when git has none: the Kortix login.
+ * A fresh machine (a new laptop, a container, a CI box) often has no
+ * `user.email`, and `git commit` then refuses with "Author identity unknown".
+ * The CLI already knows who is shipping, so it commits as that person and
+ * says so. A configured git identity is never overridden.
+ */
+export function fallbackCommitIdentity(email: string | undefined): string[] {
+  const configured = run(['config', 'user.email']);
+  if (configured.ok && configured.stdout.trim()) return [];
+  if (!email) return [];
+  const name = email.split('@')[0] || email;
+  return ['-c', `user.email=${email}`, '-c', `user.name=${name}`];
+}
+
 /** Returns 'ok' (committed or clean) or 'error'. */
-export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 'ok' | 'error' {
+export function commitIfNeeded(
+  flags: { noCommit: boolean; message?: string },
+  loginEmail?: string,
+): 'ok' | 'error' {
   const dirty =
     !run(['diff', '--quiet']).ok || !run(['diff', '--cached', '--quiet']).ok;
   const untracked = run(['ls-files', '--others', '--exclude-standard']);
@@ -167,7 +185,13 @@ export function commitIfNeeded(flags: { noCommit: boolean; message?: string }): 
     }
     return 'error';
   }
-  const commit = run(['commit', '-m', msg]);
+  const identity = fallbackCommitIdentity(loginEmail);
+  if (identity.length) {
+    process.stdout.write(
+      `  ${C.dim}git has no user.email here: committing as ${loginEmail} (your Kortix login). Set yours with${C.reset} ${C.cyan}git config --global user.email <you@example.com>${C.reset}\n`,
+    );
+  }
+  const commit = run([...identity, 'commit', '-m', msg]);
   if (!commit.ok && !/nothing to commit/i.test(commit.stdout + commit.stderr)) {
     process.stderr.write(
       `${status.err('git commit failed.')}\n${commit.stderr || commit.stdout}\n`,

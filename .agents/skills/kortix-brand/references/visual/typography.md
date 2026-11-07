@@ -79,7 +79,7 @@ Web redefines the small end. `text-xs` is 13px here, not 12px.
 
 **Rule.** Do not set uppercase or letter-spaced micro-headings in app chrome. The mono-uppercase `Badge` chip is the one exception (D4e, #6952). — *Why:* all-caps eyebrows are an LLM default. The chip is a deliberate Jay primitive: a tight mono label with an inset ring. Its colors must still come from tokens (the raw palette in `badge.tsx` is tracked debt). A command inside a badge keeps its own case: `font-mono tracking-normal normal-case` (#8421 `CopyCommandBadge`). — *Where:* app, mobile (never letter-spaced eyebrows). — *When silent:* write a sentence-case label in `text-xs text-muted-foreground`.
 
-**Rule.** Marketing and decks may set a mono-uppercase eyebrow: one per section, at `text-xs`. The `/design-system` route is a marketing-profile page: its `BrandSection` micro-label is that eyebrow, not app chrome (Q35). — *Why:* the homepage and the deck engine (`engine/parts.tsx`, `SectionHead`) ship it. D4e allows decks. The kit extends D4e to marketing for the same reason (K3 in `decisions.md`). — *Where:* marketing, deck. Not app, not mobile. — *When silent:* skip the eyebrow. The title can carry the section.
+**Rule.** Marketing may set a mono-uppercase eyebrow: one per section, at `text-xs`. The `/design-system` route is a marketing-profile page: its `BrandSection` micro-label is that eyebrow, not app chrome (Q35). Decks set none: a deck slide is the landing frame, a two-tone title and one band (D40). — *Why:* D4e allowed it and the kit extended it to marketing (K3). D40 removes it from decks, because the landing page they match carries no eyebrow. — *Where:* marketing. Not deck, not app, not mobile. — *When silent:* skip the eyebrow. The title can carry the section.
 
 ## Per surface
 
@@ -127,6 +127,6 @@ A route deck (`/presentations/<slug>`) uses the web rungs: titles `text-3xl` to 
 | "13px is too big for this caption" | The scale has no rung below `text-xs`. Change the layout. |
 | "Bold makes the title pop" | The ladder stops at semibold. Increase the rung. |
 | "I will use mono so it looks technical" | Mono marks literal text. Decoration is a rejected default. |
-| "An eyebrow helps scanning" | In app chrome the title does that job. Marketing and decks may. |
+| "An eyebrow helps scanning" | In app chrome and decks the title does that job (D40). Marketing may. |
 | "Stock Tailwind `text-xs` is 12px" | Not here. It is 13px on web and 12px on mobile. |
 

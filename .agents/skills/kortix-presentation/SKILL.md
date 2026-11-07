@@ -32,13 +32,13 @@ apps/web/src/app/[locale]/presentations/
   decks/<slug>.tsx  a deck: `useSlides(): SlideDef[]`
   engine/
     deck.tsx        keyboard engine, build steps, presenter notes, overview
-    parts.tsx       Slide, SectionHead, Spine, Panel, RowList, Shot, Rise…
-    diagram.tsx     build-aware mechanism diagrams
+    frame.tsx       Slide, Band, Cells, Cell, Rows, Code, Shot, Reveal, Mono, Dim
+    diagram.tsx     build-aware mechanism diagrams (LoopDiagram, LoopRing, …)
   README.md         the authoring guide this skill summarises
 ```
 
-Shipped decks: `security` (diagram-led — **the reference implementation, read it
-first**), `platform`, `sales`. Legacy `/presentation` paths 307 to their new
+Shipped decks: `how-to-kortix` (**the reference implementation of the frame, read it
+first**), `security` (diagram-led), `platform`, `sales`. Legacy `/presentation` paths 307 to their new
 homes via `next.config.ts`. The tree is allowlisted public in `src/middleware.ts`
 — decks are link-shared and `noindex`, never behind a login.
 
@@ -91,7 +91,7 @@ storyboard, the motion rules, the sound pipeline and the verification bar:
 'use client';
 
 import type { SlideDef } from '../engine/deck';
-import { Slide, Rise, Spine, Panel, Dim } from '../engine/parts';
+import { Code, Slide } from '../engine/frame';
 
 export function useSlides(): SlideDef[] {
   return [
@@ -100,12 +100,8 @@ export function useSlides(): SlideDef[] {
       label: 'Chapter name',
       notes: 'What you say while this is on screen.',
       node: (
-        <Slide>
-          <Rise i={0}>
-            <h1 className="text-foreground text-5xl font-medium tracking-tight">
-              The claim
-            </h1>
-          </Rise>
+        <Slide title="The claim." titleMuted="The second line, muted.">
+          <Code title="kortix.yaml" lines={['agents:', '  builder: …']} />
         </Slide>
       ),
     },
@@ -201,8 +197,9 @@ Shipped machines: `IsolationDiagram`, `BrokerDiagram`, `ChangeRequestDiagram`,
 promised "four answers" and originally ran seven chapters; rebuilding it to four,
 with a `Spine` on every chapter slide, did more for it than any visual work.
 
-- Name the chapters in a `const` at the top of the deck file and render them
-  through `<Spine chapters={CHAPTERS} active={n} />`.
+- Name the chapters in the deck file's header comment, and make each slide's
+  `label` its chapter name: the bottom bar shows it. There is no on-stage spine
+  (D40).
 - One diagram per chapter, one supporting slide at most.
 - A fifth idea belongs on the marketing page, not the deck. State the rule in the
   deck's file header so the next edit does not quietly grow one.
@@ -230,26 +227,28 @@ Read [`voice-and-tone.md`](../kortix-brand/references/verbal/voice-and-tone.md)
 
 ## Visual language
 
-Values, type, color and the deck column live in
-[`layout.md`](../kortix-brand/references/visual/layout.md),
-[`typography.md`](../kortix-brand/references/visual/typography.md) and
-[`color.md`](../kortix-brand/references/visual/color.md). Do not restate them
-here. Compose from `engine/parts.tsx` before you invent chrome: `SectionHead`,
-`Panel`, `RowList`, `KortixAsterisk` bullets and real product screenshots in
-`Shot`. A deck may set a mono-uppercase eyebrow (decision D4e in
-[`decisions.md`](../kortix-brand/references/decisions.md)). App chrome may not.
+A slide is the landing page at 16:9 (decision D40 in
+[`decisions.md`](../kortix-brand/references/decisions.md)). `engine/frame.tsx`
+draws it: the 1440px column between two hairline rails, a two-tone `Slide`
+title (`title` in ink, `titleMuted` muted, same size and weight), an optional
+one-sentence `sub`, and one band whose hairlines cross the page. The band holds
+the artifact: `Cells` of hairline-split `Cell`s, `Rows`, `Code`, a `Shot`, or a
+diagram. `size="cover"` sets the opener at the hero scale.
 
-Theme-following always: semantic tokens and `kortix-*` accents, never a forced
-palette and never a `dark:` hack.
+- No eyebrow, no chapter spine, no mono-uppercase label, no badge above a title,
+  no rounded panel inside the band. The landing has none of them.
+- A build step changes opacity only (`Reveal`, `Cell on`, `Rows upTo`). Slide
+  changes, the overview and the notes drawer are instant: they are keyboard
+  actions (`motion.md`).
+- Values, type and color come from
+  [`layout.md`](../kortix-brand/references/visual/layout.md),
+  [`typography.md`](../kortix-brand/references/visual/typography.md) and
+  [`color.md`](../kortix-brand/references/visual/color.md). Theme-following
+  always: semantic tokens and `kortix-*` accents, never a forced palette and
+  never a `dark:` hack.
 
-A slide is one viewport and must never scroll. Cap screenshots in `vh`:
-
-```tsx
-<Shot src="/media/…" alt="…" imgClassName="max-h-[48vh] object-cover object-top" />
-```
-
-`object-top` keeps the top of the screen, where the product is, and crops the
-empty bottom rather than letterboxing it.
+A slide is one viewport and must never scroll. `Shot` caps a screenshot in `vh`
+with `object-top`, which keeps the top of the screen, where the product is.
 
 ## QA before delivery — do not skip
 

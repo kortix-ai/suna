@@ -2,82 +2,50 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 /**
- * `/presentations` — every internal deck, one card each.
+ * `/presentations`: every deck, in the landing page's frame. The 1440px
+ * column between two rails, the hero's two-tone title, then one band of
+ * hairline cells, one cell per deck. No eyebrow, no reveal motion.
  *
  * Slide and build counts are read from the decks themselves rather than typed
- * into the registry, so a card can never drift from the deck it describes. The
- * minute estimate is deliberately coarse (≈20s per build step) — it is there to
- * answer "do I have time to run this before the call", nothing finer.
+ * into the registry, so a cell can never drift from the deck it describes. The
+ * minute estimate is deliberately coarse (≈20s per build step): it answers "do
+ * I have time to run this before the call", nothing finer.
  */
 
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@kortix/ui/badge';
-import { m } from 'motion/react';
+import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { countBuilds, localizedDecks, type DeckDef } from './registry';
 
 /** Seconds of narration a single build step is worth, for the length estimate. */
 const SECONDS_PER_BUILD = 20;
 
-function DeckCard({ deck, i }: { deck: DeckDef; i: number }) {
+function DeckCell({ deck }: { deck: DeckDef }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const slides = deck.useSlides();
   const builds = countBuilds(slides);
   const minutes = Math.max(1, Math.round((builds * SECONDS_PER_BUILD) / 60));
 
   return (
-    <m.div
-      initial={{ opacity: 0, y: 18, filter: 'blur(6px)' }}
-      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      transition={{ duration: 0.6, delay: 0.06 * i, ease: [0.16, 1, 0.3, 1] }}
+    <Link
+      href={`/presentations/${deck.slug}`}
+      className="bg-background hover:bg-card outline-ring group flex flex-col gap-3 p-6 transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 lg:p-8"
     >
-      <Link
-        href={`/presentations/${deck.slug}`}
-        className="border-border bg-card hover:border-muted-foreground/40 group flex h-full flex-col rounded-sm border p-6 transition-colors sm:p-7"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-            {deck.kind}
-          </span>
-          <span className="text-muted-foreground/60 group-hover:text-foreground font-mono text-xs transition-colors">
-            ↗
-          </span>
-        </div>
-
-        <h2 className="text-foreground mt-5 text-xl font-medium tracking-tight">{deck.title}</h2>
-        <p className="text-muted-foreground mt-3 flex-1 text-sm leading-relaxed">
-          {deck.description}
-        </p>
-
-        {deck.tags?.length ? (
-          <div className="mt-5 flex flex-wrap gap-1.5">
-            {deck.tags.map((t) => (
-              <Badge key={t} variant="outline" size="sm" className="rounded-sm font-normal">
-                {t}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
-
-        <dl className="border-border text-muted-foreground mt-6 flex items-center gap-5 border-t pt-4 font-mono text-[11px] tracking-wider tabular-nums">
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground/50">{tI18nComplete.raw('textfd2c8f1dc03c')}</dt>
-            <dd>{slides.length}</dd>
-          </div>
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground/50">{tI18nComplete.raw('text8459419d4cfe')}</dt>
-            <dd>{builds}</dd>
-          </div>
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground/50">≈</dt>
-            <dd>
-              {minutes} {tI18nComplete.raw('text1f6fa6f69d18')}
-            </dd>
-          </div>
-        </dl>
-      </Link>
-    </m.div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-muted-foreground text-sm">{deck.kind}</span>
+        <ArrowUpRightIcon
+          aria-hidden
+          className="text-muted-foreground group-hover:text-foreground size-4 transition-colors"
+        />
+      </div>
+      <h2 className="text-foreground text-lg font-medium tracking-tight">{deck.title}</h2>
+      <p className="text-muted-foreground flex-1 text-sm text-pretty">{deck.description}</p>
+      <p className="text-muted-foreground pt-3 text-sm tabular-nums">
+        {slides.length} {tI18nComplete.raw('textfd2c8f1dc03c')} · {builds}{' '}
+        {tI18nComplete.raw('text8459419d4cfe')} · ≈{minutes} {tI18nComplete.raw('text1f6fa6f69d18')}
+      </p>
+    </Link>
   );
 }
 
@@ -86,48 +54,63 @@ export function PresentationsIndex() {
   const decks = localizedDecks(tI18nComplete);
   return (
     <div className="bg-background text-foreground h-full w-full overflow-y-auto">
-      <div className="pointer-events-none sticky top-0 z-10 flex items-center justify-between px-6 py-5 sm:px-8">
-        <KortixLogo variant="logomark" size={22} className="text-foreground" />
-        <div className="pointer-events-auto">
+      <main className="relative mx-auto min-h-full w-full max-w-[1440px]">
+        <div
+          aria-hidden
+          className="bg-border pointer-events-none absolute inset-y-0 left-4 z-10 w-px lg:left-17"
+        />
+        <div
+          aria-hidden
+          className="bg-border pointer-events-none absolute inset-y-0 right-4 z-10 w-px lg:right-17"
+        />
+
+        <div className="flex h-16 items-center justify-between px-4 lg:px-24">
+          <Link
+            href="/"
+            className="text-foreground outline-ring flex h-16 items-center rounded-sm focus-visible:outline-2"
+          >
+            <KortixLogo size={15} variant="logomark" />
+          </Link>
           <ThemeToggle />
         </div>
-      </div>
 
-      <div className="mx-auto w-full max-w-6xl px-6 pb-24">
-        <m.div
-          initial={{ opacity: 0, y: 18, filter: 'blur(6px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-          className="max-w-2xl pt-12 pb-14 sm:pt-16"
-        >
-          <p className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-            {tI18nComplete.raw('text2ea1842b445b')}
-          </p>
-          <h1 className="text-foreground mt-4 text-4xl font-medium tracking-tight sm:text-5xl">
+        {/* The landing hero's type: two-tone title, one sentence. */}
+        <div className="flex flex-col gap-5 px-8 pt-20 pb-16 lg:px-28 lg:pt-28">
+          <h1 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl lg:text-5xl">
             {tI18nComplete.raw('textcf31f39501ec')}
           </h1>
-          <p className="text-muted-foreground mt-5 text-base leading-relaxed">
+          <p className="text-muted-foreground max-w-2xl text-base text-pretty sm:text-lg">
             {tI18nComplete.raw('text8fc09bfec5dd')}{' '}
             <span className="text-foreground font-mono">F</span>{' '}
             {tI18nComplete.raw('text1bffac0197ca')}{' '}
             <span className="text-foreground font-mono">N</span>{' '}
             {tI18nComplete.raw('text584dabe853a5')}
           </p>
-        </m.div>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {decks.map((deck, i) => (
-            <DeckCard key={deck.slug} deck={deck} i={i} />
-          ))}
         </div>
 
-        <p className="text-muted-foreground/60 mt-12 font-mono text-xs">
+        <div className="kx-rail-fade border-y px-4 lg:px-17">
+          <div className="bg-border grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-3">
+            {decks.map((deck) => (
+              <DeckCell key={deck.slug} deck={deck} />
+            ))}
+            {/* Fill the last row, so the hairline grid never shows a bare
+                border-coloured block: 2 columns from `sm`, 3 from `lg`. */}
+            {Array.from({ length: (3 - (decks.length % 3)) % 3 }, (_, i) => (
+              <div key={`lg-${i}`} aria-hidden className="bg-background hidden lg:block" />
+            ))}
+            {Array.from({ length: (2 - (decks.length % 2)) % 2 }, (_, i) => (
+              <div key={`sm-${i}`} aria-hidden className="bg-background hidden sm:block lg:hidden" />
+            ))}
+          </div>
+        </div>
+
+        <p className="text-muted-foreground px-8 pt-8 pb-24 text-sm lg:px-28">
           {tI18nComplete.raw('text68af88a17bcb')}{' '}
-          <span className="text-muted-foreground">{tI18nComplete.raw('text2cf3f78e80d0')}</span>
-          {tI18nComplete.raw('text4d1f460178d9')}
-          <span className="text-muted-foreground">{tI18nComplete.raw('text58f42611a053')}</span>.
+          <span className="text-foreground font-mono">{tI18nComplete.raw('text2cf3f78e80d0')}</span>
+          {tI18nComplete.raw('text4d1f460178d9')}{' '}
+          <span className="text-foreground font-mono">{tI18nComplete.raw('text58f42611a053')}</span>.
         </p>
-      </div>
+      </main>
     </div>
   );
 }
