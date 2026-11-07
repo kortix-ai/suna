@@ -1442,3 +1442,70 @@ describe("another member's queued prompt", () => {
     expect(commandTable).toEqual([]);
   });
 });
+
+// KRTX-4437: DELETE, PATCH, retry and hold share one gate — floor 'session',
+// the session-start agent scope and capability, a visible session, no tombstone.
+// Pinned per route so collapsing the four copies into one helper moves nothing.
+describe('the runnable-session gate of DELETE, PATCH, retry and hold', () => {
+  const routes: Array<[string, () => Response | Promise<Response>]> = [
+    ['DELETE', () => app().request(`${base()}/${PROMPT_ID}`, { method: 'DELETE' })],
+    [
+      'PATCH',
+      () =>
+        app().request(`${base()}/${PROMPT_ID}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: 'x' }),
+        }),
+    ],
+    ['retry', () => app().request(`${base()}/${PROMPT_ID}/retry`, { method: 'POST' })],
+    [
+      'hold',
+      () =>
+        app().request(`${base()}/hold`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ held: true }),
+        }),
+    ],
+  ];
+
+  for (const [name, call] of routes) {
+    test(`${name}: loads the project at floor 'session' and asserts session-start`, async () => {
+      commandTable = [row()];
+      await call();
+      expect(loadProjectCalls).toEqual([{ projectId: PROJECT_ID, action: 'session' }]);
+      expect(capabilityCalls).toEqual(['project.session.start']);
+    });
+
+    test(`${name}: 404s an unknown project before any capability check`, async () => {
+      loadedProject = null;
+      const response = await call();
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: 'Not found' });
+      expect(capabilityCalls).toEqual([]);
+    });
+
+    test(`${name}: 404s a session that is not visible, touching no row`, async () => {
+      commandTable = [row()];
+      visibleSession = null;
+      const response = await call();
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: 'Not found' });
+      expect(commandTable).toEqual([row()]);
+      expect(edits).toEqual([]);
+      expect(interrupts).toEqual([]);
+    });
+
+    test(`${name}: 404s a tombstoned session, touching no row`, async () => {
+      commandTable = [row()];
+      visibleSession = { row: { sessionId: SESSION_ID, metadata: { deletedAt: '2026-08-17T00:00:00Z' } } };
+      const response = await call();
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: 'Not found' });
+      expect(commandTable).toEqual([row()]);
+      expect(edits).toEqual([]);
+      expect(interrupts).toEqual([]);
+    });
+  }
+});

@@ -54,6 +54,7 @@ import { accountMayUseManagedModels } from '../../billing/services/entitlements'
 import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { loadLifecycleSession } from './lib/route-bindings';
 import { getImpersonationContext } from '../../shared/impersonation';
 import { peekSessionListPollEtag, storeSessionListPollEtag } from '../lib/session-list-poll-memo';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
@@ -1090,14 +1091,15 @@ export function registerProjectSessionsRoutes(): void {
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
     // Stopping a session is reserved for its owner or a project manager.
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageLifecycle) {
-        return c.json(
-          { error: 'Only the session owner or a workspace manager can stop this session' },
-          403,
-        );
-    }
+    const gate = await loadLifecycleSession(
+      c,
+      loaded,
+      sessionId,
+      'Only the session owner or a workspace manager can stop this session',
+      { rejectTombstoned: false },
+    );
+    if (gate.kind === 'error') return gate.response as never;
+    const { visible } = gate;
     // A repeated delete (the SDK retries one whose response was lost) answers
     // with the first stamp: the restore window never moves.
     const restoreUntil = sessionIsTombstoned(visible.row) ? sessionRestoreUntil(visible.row.metadata?.deletedAt) : null;
@@ -1144,14 +1146,14 @@ export function registerProjectSessionsRoutes(): void {
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
 
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (!visible.canManageLifecycle) {
-        return c.json(
-          { error: 'Only the session owner or a workspace manager can restore this session' },
-          403,
-        );
-    }
+    const gate = await loadLifecycleSession(
+      c,
+      loaded,
+      sessionId,
+      'Only the session owner or a workspace manager can restore this session',
+      { rejectTombstoned: false },
+    );
+    if (gate.kind === 'error') return gate.response as never;
 
     const result = await restoreSession({ projectId, sessionId, accountId: loaded.row.accountId });
     if ('error' in result) return c.json({ error: result.error, code: result.code }, result.status);

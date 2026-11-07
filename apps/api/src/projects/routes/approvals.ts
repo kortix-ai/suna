@@ -32,6 +32,26 @@ import { workspaceIdParam } from '../../shared/route-params';
 
 const APPROVAL_EXPIRED_BODY = { error: 'This approval expired', code: 'APPROVAL_EXPIRED' };
 
+const pendingApprovalWhere = (projectId: string) =>
+  and(
+    eq(connectorCalls.projectId, projectId),
+    eq(connectorCalls.status, 'pending_approval'),
+    isNull(connectorCalls.approvedBy),
+    isNull(connectorCalls.resolvedAt),
+    approvalNotExpired,
+  );
+
+const pendingAskWhere = (
+  projectId: string,
+  table: typeof sessionPendingQuestions | typeof sessionPendingPermissions,
+  resolvedColumn: typeof sessionPendingQuestions.answeredAt | typeof sessionPendingPermissions.decidedAt,
+) =>
+  and(
+    eq(table.projectId, projectId),
+    isNull(resolvedColumn),
+    or(isNull(table.expiresAt), gt(table.expiresAt, sql`NOW()`)),
+  );
+
 export function registerApprovalsRoutes(): void {
   // GET /v1/projects/:projectId/approvals
   // The approval inbox: connector actions a policy gated as `require_approval` that
@@ -83,15 +103,7 @@ export function registerApprovalsRoutes(): void {
           expiresAt: connectorCalls.expiresAt,
         })
         .from(connectorCalls)
-        .where(
-          and(
-            eq(connectorCalls.projectId, projectId),
-            eq(connectorCalls.status, 'pending_approval'),
-            isNull(connectorCalls.approvedBy),
-            isNull(connectorCalls.resolvedAt),
-            approvalNotExpired,
-          ),
-        )
+        .where(pendingApprovalWhere(projectId))
         .orderBy(desc(connectorCalls.createdAt))
         .limit(limit.value);
       // Calls of a private channel's threads the manager is not in are not listed.
@@ -173,15 +185,7 @@ export function registerApprovalsRoutes(): void {
       const pendingRows = await db
         .select({ sessionId: connectorCalls.sessionId })
         .from(connectorCalls)
-        .where(
-          and(
-            eq(connectorCalls.projectId, projectId),
-            eq(connectorCalls.status, 'pending_approval'),
-            isNull(connectorCalls.approvedBy),
-            isNull(connectorCalls.resolvedAt),
-            approvalNotExpired,
-          ),
-        );
+        .where(pendingApprovalWhere(projectId));
 
       // Open agent questions (`question` tool) and permission asks wait on a
       // human too, and survive their sandbox (lib/session-asks.ts). Counted
@@ -189,23 +193,11 @@ export function registerApprovalsRoutes(): void {
       const questionRows = await db
         .select({ sessionId: sessionPendingQuestions.sessionId, surfaceSessionId: sessionPendingQuestions.surfaceSessionId })
         .from(sessionPendingQuestions)
-        .where(
-          and(
-            eq(sessionPendingQuestions.projectId, projectId),
-            isNull(sessionPendingQuestions.answeredAt),
-            or(isNull(sessionPendingQuestions.expiresAt), gt(sessionPendingQuestions.expiresAt, sql`NOW()`)),
-          ),
-        );
+        .where(pendingAskWhere(projectId, sessionPendingQuestions, sessionPendingQuestions.answeredAt));
       const permissionRows = await db
         .select({ sessionId: sessionPendingPermissions.sessionId, surfaceSessionId: sessionPendingPermissions.surfaceSessionId })
         .from(sessionPendingPermissions)
-        .where(
-          and(
-            eq(sessionPendingPermissions.projectId, projectId),
-            isNull(sessionPendingPermissions.decidedAt),
-            or(isNull(sessionPendingPermissions.expiresAt), gt(sessionPendingPermissions.expiresAt, sql`NOW()`)),
-          ),
-        );
+        .where(pendingAskWhere(projectId, sessionPendingPermissions, sessionPendingPermissions.decidedAt));
 
       // Count per (Kortix) session id: the session that asked, and the
       // session a person opens for it when that differs (a hidden worker's
