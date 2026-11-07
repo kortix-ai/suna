@@ -398,6 +398,7 @@ describe('SessionsLevelTable', () => {
   test('renders session, owner and cost cells', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={page}
         isLoading={false}
         error={null}
@@ -422,6 +423,7 @@ describe('SessionsLevelTable', () => {
   test('renders columns in order: Session, Owner, Requests, LLM, Compute, Total', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={page}
         isLoading={false}
         error={null}
@@ -450,6 +452,7 @@ describe('SessionsLevelTable', () => {
   test('the totals footer equals the sum of the rendered rows', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={page}
         isLoading={false}
         error={null}
@@ -476,6 +479,7 @@ describe('SessionsLevelTable', () => {
   test('the footer row is labelled "Page total", never a bare "Total"', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={{ ...page, total: 55, next_offset: 25 }}
         isLoading={false}
         error={null}
@@ -502,6 +506,7 @@ describe('SessionsLevelTable', () => {
   test('the whole row is clickable and calls onSelectSession with that session id', () => {
     const selected: string[] = [];
     const tree = SessionsLevelTable({
+      ownerFiltered: false,
       data: page,
       isLoading: false,
       error: null,
@@ -537,6 +542,7 @@ describe('SessionsLevelTable', () => {
   function headerHtml(sort: SessionCostSort = 'total_desc'): string {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={page}
         isLoading={false}
         error={null}
@@ -603,6 +609,7 @@ describe('SessionsLevelTable', () => {
   test('clicking a sortable header reports which column was clicked', () => {
     const clicked: string[] = [];
     const tree = SessionsLevelTable({
+      ownerFiltered: false,
       data: page,
       isLoading: false,
       error: null,
@@ -624,6 +631,7 @@ describe('SessionsLevelTable', () => {
   test('shows the loading skeleton, not an empty table, while the first fetch is in flight', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={undefined}
         isLoading={true}
         error={null}
@@ -640,6 +648,7 @@ describe('SessionsLevelTable', () => {
   test('renders the error banner instead of the table on failure', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={undefined}
         isLoading={false}
         error={new Error('upstream unavailable')}
@@ -657,6 +666,7 @@ describe('SessionsLevelTable', () => {
   test('renders an explicit empty state', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={{ ...page, sessions: [], total: 0 }}
         isLoading={false}
         error={null}
@@ -684,6 +694,7 @@ describe('SessionsLevelTable', () => {
   test('renders the loading state, not "No sessions", when no page has been read and nothing is in flight', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={undefined}
         isLoading={false}
         error={null}
@@ -705,6 +716,7 @@ describe('SessionsLevelTable', () => {
   test('a failed refetch over an already-read empty page shows the error, not the empty state', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={{ ...page, sessions: [], total: 0 }}
         isLoading={false}
         error={new Error('upstream unavailable')}
@@ -723,6 +735,7 @@ describe('SessionsLevelTable', () => {
   test('disables Previous on the first page and Next on the last page', () => {
     const html = renderToStaticMarkup(
       <SessionsLevelTable
+        ownerFiltered={false}
         data={page}
         isLoading={false}
         error={null}
@@ -738,6 +751,111 @@ describe('SessionsLevelTable', () => {
     // next_offset: null disables Next.
     const disabledCount = html.split('disabled=""').length - 1;
     expect(disabledCount).toBe(2);
+  });
+});
+
+// ── KRTX-4428: the spend no session owns ───────────────────────────────────
+//
+// The dogfood journey `usage-costs-after-session` read 7 requests / 2.27
+// credits on the summary tiles and 6 / 2.26 on the table, because one
+// request matched no session. `/usage/session-costs` returns exactly that
+// remainder as `reconciliation`; the table dropped it.
+describe('SessionsLevelTable unattributed spend', () => {
+  const unattributed = {
+    llm_cost: 0.25,
+    compute_cost: 0.75,
+    total_cost: 1,
+    request_count: 2,
+    compute_window_count: 1,
+    compute_seconds: 60,
+  };
+  const withRemainder: SessionCostsPage = { ...page, reconciliation: unattributed };
+
+  function render(data: SessionCostsPage, ownerFiltered = false): string {
+    return renderToStaticMarkup(
+      <SessionsLevelTable
+        data={data}
+        ownerFiltered={ownerFiltered}
+        isLoading={false}
+        error={null}
+        sort="total_desc"
+        onSort={noop}
+        onSelectSession={noop}
+        onPreviousPage={noop}
+        onNextPage={noop}
+      />,
+    );
+  }
+
+  function footer(html: string): string {
+    return html.match(/<tfoot[^>]*>[\s\S]*?<\/tfoot>/)?.[0] ?? '';
+  }
+
+  test('renders the remainder as its own row, and the page total includes it', () => {
+    const html = render(withRemainder);
+    const body = html.match(/<tbody[^>]*>[\s\S]*?<\/tbody>/)?.[0] ?? '';
+    expect(body).toContain('Not attributed to a session');
+    expect(body).toContain('>25<'); // 0.25 LLM
+    expect(body).toContain('>75<'); // 0.75 compute
+    // 3 + 5 + 2 requests; 1.10 + 2.20 + 0.25 LLM; 0.40 + 1.30 + 0.75
+    // compute; 1.50 + 3.50 + 1.00 total.
+    expect(footer(html)).toContain('>10<');
+    expect(footer(html)).toContain('>355<');
+    expect(footer(html)).toContain('>245<');
+    expect(footer(html)).toContain('>600<');
+  });
+
+  test('the remainder row opens nothing — only session rows are clickable', () => {
+    const tree = SessionsLevelTable({
+      data: withRemainder,
+      ownerFiltered: false,
+      isLoading: false,
+      error: null,
+      sort: 'total_desc',
+      onSort: noop,
+      onSelectSession: noop,
+      onPreviousPage: noop,
+      onNextPage: noop,
+    });
+    const clickable = collectElementsByType(tree, TableRow).filter(
+      (row) => typeof row.props?.onClick === 'function',
+    );
+    expect(clickable).toHaveLength(twoSessions.length);
+  });
+
+  test('no row when everything is attributed', () => {
+    const html = render(page);
+    expect(html).not.toContain('Not attributed to a session');
+    expect(footer(html)).toContain('>500<');
+  });
+
+  // The remainder is window-wide, not per page: it shows once, on the last.
+  test('no row on a page that is not the last', () => {
+    const html = render({ ...withRemainder, total: 30, next_offset: 25 });
+    expect(html).not.toContain('Not attributed to a session');
+    expect(footer(html)).toContain('>500<');
+  });
+
+  // Spend with no session has no owner either.
+  test('no row under an owner filter', () => {
+    const html = render(withRemainder, true);
+    expect(html).not.toContain('Not attributed to a session');
+  });
+
+  test('a request with zero cost still shows: the counts must add up too', () => {
+    const html = render({
+      ...page,
+      reconciliation: { ...page.reconciliation, request_count: 1 },
+    });
+    expect(html).toContain('Not attributed to a session');
+    expect(footer(html)).toContain('>9<');
+  });
+
+  test('a project with no sessions but unattributed spend shows the row, not "No sessions"', () => {
+    const html = render({ ...withRemainder, sessions: [], total: 0 });
+    expect(html).not.toContain('No sessions');
+    expect(html).toContain('Not attributed to a session');
+    expect(footer(html)).toContain('>100<');
   });
 });
 
@@ -818,6 +936,7 @@ describe('the state a failed /usage/session-costs request hands the table', () =
 
       const html = renderToStaticMarkup(
         <SessionsLevelTable
+          ownerFiltered={false}
           data={result.data}
           isLoading={result.isLoading}
           // The narrowing `SessionsLevel` applies at the call site. It is not
@@ -880,6 +999,7 @@ describe('the state a failed /usage/session-costs request hands the table', () =
 
       const html = renderToStaticMarkup(
         <SessionsLevelTable
+          ownerFiltered={false}
           data={result.data}
           isLoading={result.isLoading}
           error={result.error instanceof Error ? result.error : null}
