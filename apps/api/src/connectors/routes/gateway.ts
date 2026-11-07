@@ -26,6 +26,7 @@ import {
   ProjectParam,
   featureNotSupportedResponse,
 } from './shared';
+import { workspaceIdParam } from '../../shared/route-params';
 
 function decodedAttachmentHeader(c: Context, name: string): string {
   const value = c.req.header(name);
@@ -490,7 +491,7 @@ export function registerProjectAttachmentRoutes(app: OpenAPIHono, deps: Connecto
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/attachments',
+      path: '/projects/{workspaceId}/attachments',
       tags: ['connector'],
       summary: 'Stage a private attachment in a project from raw bytes',
       description:
@@ -507,7 +508,7 @@ export function registerProjectAttachmentRoutes(app: OpenAPIHono, deps: Connecto
       },
     }),
     async (c: Context) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       if (!projectId) return c.json({ error: 'forbidden' }, 403);
       const p = await deps.resolveProjectPrincipal(c, projectId);
       if (!p) return c.json({ error: 'forbidden' }, 403);
@@ -584,7 +585,7 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/catalog',
+      path: '/projects/{workspaceId}/catalog',
       tags: ['connector'],
       summary: 'List the connectors usable in a project (any valid principal)',
       ...auth,
@@ -595,7 +596,7 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const p = await deps.resolveProjectPrincipal(c, projectId);
       if (!p) return c.json({ error: 'forbidden' }, 403);
       return catalogResponse(deps, c, p);
@@ -606,7 +607,7 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/call',
+      path: '/projects/{workspaceId}/call',
       tags: ['connector'],
       summary: 'Run a connector action in a project (any valid principal)',
       ...auth,
@@ -644,7 +645,7 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const p = await deps.resolveProjectPrincipal(c, projectId);
       if (!p) return c.json({ error: 'forbidden' }, 403);
       return callResponse(deps, c, p);
@@ -661,7 +662,7 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/connectors/{slug}/accounts',
+      path: '/projects/{workspaceId}/connectors/{slug}/accounts',
       tags: ['connector'],
       summary: 'Accounts this principal may run a connector as',
       ...auth,
@@ -674,7 +675,7 @@ export function registerGatewayCallRoutes(app: OpenAPIHono, deps: ConnectorRoute
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const p = await deps.resolveProjectPrincipal(c, projectId);
       if (!p) return c.json({ error: 'forbidden' }, 403);

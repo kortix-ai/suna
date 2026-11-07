@@ -11,13 +11,13 @@ const isHelpArg = (arg: string) => arg === '-h' || arg === '--help';
 
 /**
  * The per-invocation flags that may lead the line (KRTX-2603): the same
- * `--host` / `--project` every command documents under its own Global
+ * `--host` / `--project` (alias `--workspace`) every command documents under its own Global
  * options. `liftLeadingGlobalFlags` moves them after the command token, so
  * `kortix --host <name> sessions ls` reaches `sessions` instead of reporting
  * `unknown command "--host"`. Anything else flag-shaped in command position
  * stays untouched for the caller to name in its error.
  */
-const LEADING_GLOBAL_FLAGS = new Set(['--host', '--project']);
+const LEADING_GLOBAL_FLAGS = new Set(['--host', '--project', '--workspace']);
 
 export function liftLeadingGlobalFlags(argv: readonly string[]): {
   argv: string[];
@@ -112,4 +112,19 @@ export function takeFlags<T extends object>(
     return 0;
   }
   return flags;
+}
+
+/**
+ * `workspace` is the user-facing word for what the API calls a `project`
+ * (the Workspaces rename). A flag value the user types as `workspace`
+ * (`--owner workspace`, `--scope workspace`, `--visibility workspace`) is sent
+ * as the API's `project`. `project` keeps working as a deprecated alias.
+ */
+export function fromWorkspaceAlias<T extends string | undefined>(value: T): T {
+  return (value === 'workspace' ? 'project' : value) as T;
+}
+
+/** The reverse of {@link fromWorkspaceAlias}, for output: the API's `project` prints as `workspace`. */
+export function toWorkspaceAlias(value: string): string {
+  return value === 'project' ? 'workspace' : value;
 }

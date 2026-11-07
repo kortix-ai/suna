@@ -72,7 +72,7 @@ function fakeApi() {
     fetch(request) {
       const url = new URL(request.url)
       requests.push({ path: url.pathname, auth: request.headers.get('authorization') })
-      const n = [0, 1, 2, 3].find((i) => url.pathname === `/v1/projects/${PROJECT}/sessions/${SESSION}/attachments/${id(i)}`)
+      const n = [0, 1, 2, 3].find((i) => url.pathname === `/v1/workspaces/${PROJECT}/sessions/${SESSION}/attachments/${id(i)}`)
       if (n === undefined) return new Response('not found', { status: 404 })
       return new Response(n === 3 ? 'tampered' : FULL[n], { headers: { 'content-type': 'text/plain; charset=utf-8' } })
     },
@@ -103,7 +103,7 @@ describe('sessionLogFromRestore (P6.2)', () => {
     expect(answer.log.threads[0]!.messages[0]!.blocks[0]).toMatchObject({ ref: ref(0) })
 
     // One GET per listed text, with the sandbox credential; the unlisted one is never read.
-    expect(api.requests.map((r) => r.path).sort()).toEqual([0, 1, 3].map((n) => `/v1/projects/${PROJECT}/sessions/${SESSION}/attachments/${id(n)}`).sort())
+    expect(api.requests.map((r) => r.path).sort()).toEqual([0, 1, 3].map((n) => `/v1/workspaces/${PROJECT}/sessions/${SESSION}/attachments/${id(n)}`).sort())
     for (const r of api.requests) expect(r.auth).toBe('Bearer sandbox-token')
   })
 
@@ -120,7 +120,7 @@ describe('sessionLogFromRestore (P6.2)', () => {
       ['msg_unlisted', 'not_listed'],
       ['msg_corrupt', 'sha256_mismatch'],
     ])
-    expect(api.requests.map((r) => r.path)).toEqual([`/v1/projects/${PROJECT}/sessions/${SESSION}/attachments/${id(3)}`])
+    expect(api.requests.map((r) => r.path)).toEqual([`/v1/workspaces/${PROJECT}/sessions/${SESSION}/attachments/${id(3)}`])
   })
 })
 

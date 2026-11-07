@@ -21,7 +21,7 @@
 
 import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
-import { type AccountBrandingRecord, accounts } from '@kortix/db';
+import { type AccountBrandingRecord } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { accountHasEntitlement } from '../billing/services/entitlements';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
@@ -34,6 +34,8 @@ import { getSupabase } from '../shared/supabase';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
 import { auditIam, requireEntitlement } from './iam/http-helpers';
+import { accountIdParam } from '../shared/route-params';
+import { accountsView, updateAccountRowsReturning } from '../workspaces/rows';
 
 export const BRANDING_BUCKET = 'branding';
 /** Same ceiling the bucket enforces (`storage.buckets.file_size_limit`). */
@@ -87,7 +89,7 @@ const AccountBrandingStateSchema = z
   .openapi('AccountBrandingState');
 
 const AssetKindParam = z.object({
-  accountId: z.string(),
+  workspaceId: z.string(),
   kind: z.enum(BRANDING_ASSET_KINDS),
 });
 
@@ -284,9 +286,9 @@ async function removeObjects(paths: Array<string | null>): Promise<void> {
 
 async function loadBrandingRow(accountId: string) {
   const [row] = await db
-    .select({ branding: accounts.branding })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
+    .select({ branding: accountsView.branding })
+    .from(accountsView)
+    .where(eq(accountsView.accountId, accountId))
     .limit(1);
   return row ?? null;
 }
@@ -298,11 +300,10 @@ async function writeBranding(accountId: string, next: AccountBrandingRecord): Pr
   for (const [key, value] of Object.entries(next) as Array<[keyof AccountBrandingRecord, unknown]>) {
     if (typeof value === 'string' && value.length > 0) compact[key] = value;
   }
-  const [row] = await db
-    .update(accounts)
-    .set({ branding: compact, updatedAt: new Date() })
-    .where(eq(accounts.accountId, accountId))
-    .returning({ branding: accounts.branding });
+  const [row] = await updateAccountRowsReturning(eq(accountsView.accountId, accountId), {
+    branding: compact,
+    updatedAt: new Date(),
+  });
   return normalizeBranding(row?.branding);
 }
 
@@ -332,7 +333,7 @@ export function registerBrandingRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/branding',
+      path: '/{workspaceId}/branding',
       tags: ['accounts'],
       summary: 'Get organization branding',
       ...auth,
@@ -344,7 +345,7 @@ export function registerBrandingRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
@@ -362,7 +363,7 @@ export function registerBrandingRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'put',
-      path: '/{accountId}/branding',
+      path: '/{workspaceId}/branding',
       tags: ['accounts'],
       summary: 'Update organization branding (product name)',
       ...auth,
@@ -385,7 +386,7 @@ export function registerBrandingRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+      const accountId = accountIdParam(c);
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
       const denied = await requireEntitlement(c, accountId, 'branding');
@@ -419,7 +420,7 @@ export function registerBrandingRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'post',
-      path: '/{accountId}/branding/assets/{kind}',
+      path: '/{workspaceId}/branding/assets/{kind}',
       tags: ['accounts'],
       summary: 'Upload a branding asset (logo, icon, or favicon)',
       ...auth,
@@ -442,7 +443,7 @@ export function registerBrandingRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId') as string;
+      const accountId = accountIdParam(c) as string;
       const kind = c.req.param('kind') as BrandingAssetKind;
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -511,7 +512,7 @@ export function registerBrandingRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/branding/assets/{kind}',
+      path: '/{workspaceId}/branding/assets/{kind}',
       tags: ['accounts'],
       summary: 'Remove a branding asset',
       ...auth,
@@ -523,7 +524,7 @@ export function registerBrandingRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId') as string;
+      const accountId = accountIdParam(c) as string;
       const kind = c.req.param('kind') as BrandingAssetKind;
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -553,7 +554,7 @@ export function registerBrandingRoutes(): void {
   accountsRouter.openapi(
     createRoute({
       method: 'delete',
-      path: '/{accountId}/branding',
+      path: '/{workspaceId}/branding',
       tags: ['accounts'],
       summary: 'Reset organization branding to defaults',
       ...auth,
@@ -565,7 +566,7 @@ export function registerBrandingRoutes(): void {
     }),
     async (c: any) => {
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId') as string;
+      const accountId = accountIdParam(c) as string;
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 

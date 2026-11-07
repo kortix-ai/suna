@@ -3,7 +3,7 @@
  * account-deletion.ts so its unit test can stub this step and keep testing the
  * sandbox reclaim; integration-account-erasure-stores.test.ts runs it for real.
  */
-import { projectSessions, sessionSandboxes, projects } from '@kortix/db';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { tryGetProvider } from '../../platform/providers';
@@ -15,6 +15,7 @@ import {
 } from '../../projects/surface';
 import { markKortixRemovalIntent } from '../../projects/surface';
 import { db } from '../../shared/db';
+import { projectsView } from '../../workspaces/rows';
 
 /** Provider calls in flight at once, the same bound as the sandbox reclaim. */
 const REMOVE_CONCURRENCY = 8;
@@ -107,7 +108,7 @@ export async function deleteAccountExternalStores(
     );
   }
 
-  const accountProjects = await db.select().from(projects).where(eq(projects.accountId, accountId));
+  const accountProjects = await db.select().from(projectsView).where(eq(projectsView.accountId, accountId));
   for (let i = 0; i < accountProjects.length; i += REMOVE_CONCURRENCY) {
     await Promise.all(
       accountProjects.slice(i, i + REMOVE_CONCURRENCY).map(async (project) => {

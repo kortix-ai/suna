@@ -48,6 +48,13 @@ mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
 mock.module('@kortix/ui/workspace/projects/modal/project-icon-field', () => ({
   ProjectIconField: Passthrough,
 }));
+// Radix tooltips read `window`, which this renderer has none of.
+mock.module('@kortix/ui/tooltip', () => ({
+  Tooltip: Passthrough,
+  TooltipContent: Passthrough,
+  TooltipProvider: Passthrough,
+  TooltipTrigger: Passthrough,
+}));
 
 // Only the DOM-dependent Select primitives are replaced. Keep their value,
 // disabled and onValueChange contract visible to the component test.
@@ -107,7 +114,7 @@ beforeEach(() => {
     fetch: async (url, init = {}) => {
       const path = String(url).split('?')[0];
       const method = init.method ?? 'GET';
-      if (method === 'PUT' && path.endsWith('/projects/proj-1/default-reasoning-effort')) {
+      if (method === 'PUT' && /\/(projects|workspaces)\/proj-1\/default-reasoning-effort$/.test(path)) {
         const body = JSON.parse(String(init.body));
         calls.push({ url: path, method, body, status: failWrite ? 500 : 200 });
         await new Promise<void>((resolve) => { releaseWrite = resolve; });
@@ -118,7 +125,7 @@ beforeEach(() => {
           { status: failWrite ? 500 : 200 },
         );
       }
-      if (method === 'GET' && path.endsWith('/projects/proj-1')) {
+      if (method === 'GET' && /\/(projects|workspaces)\/proj-1$/.test(path)) {
         return Response.json(savedProject);
       }
       throw new Error(`Unexpected request: ${method} ${path}`);
@@ -195,7 +202,7 @@ describe('GeneralTab default reasoning effort', () => {
     const { renderer, client } = await mount();
     await choose(renderer, 'high');
     expect(calls).toEqual([{
-      url: 'http://api.test/v1/projects/proj-1/default-reasoning-effort',
+      url: 'http://api.test/v1/workspaces/proj-1/default-reasoning-effort',
       method: 'PUT', body: { effort: 'high' }, status: 200,
     }]);
     expect(picker(renderer).props.disabled).toBe(true);

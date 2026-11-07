@@ -171,6 +171,6 @@ test('unmount deletes a listed completed upload and keeps the one a send holds',
   await new Promise((resolve) => setTimeout(resolve, 10));
   // A draft keeps no handle, so the listed upload can never be sent: it stops using the budget.
   expect(requests.filter((request) => request.startsWith('DELETE'))).toEqual([
-    'DELETE https://api.test/projects/p/attachments/server-kept.txt',
+    'DELETE https://api.test/workspaces/p/attachments/server-kept.txt',
   ]);
 });

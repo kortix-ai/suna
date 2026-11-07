@@ -51,14 +51,14 @@ test("uploads bytes to the session API without binding or starting a runtime", a
   );
   expect(result.url).toBe(ref);
   expect(requests).toEqual([
-    `https://api.test/v1/projects/${projectId}/sessions/${sessionId}/attachments`,
+    `https://api.test/v1/workspaces/${projectId}/sessions/${sessionId}/attachments`,
   ]);
 });
 
 test("reads saved attachment bytes with authentication and no runtime", async () => {
   globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
     expect(String(url)).toBe(
-      `https://api.test/v1/projects/${projectId}/sessions/${sessionId}/attachments/${attachmentId}`,
+      `https://api.test/v1/workspaces/${projectId}/sessions/${sessionId}/attachments/${attachmentId}`,
     );
     expect(new Headers(init?.headers).get("authorization")).toBe(
       "Bearer test-token",

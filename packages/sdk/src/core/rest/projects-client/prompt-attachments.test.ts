@@ -85,9 +85,9 @@ test('direct handle uploads a 10 MiB file with exactly 1 begin, 1 PUT, 1 complet
   });
   expect(result).toEqual({ ...metadata, size });
   expect(calls).toEqual([
-    'POST https://api.test/v1/projects/p/attachments',
+    'POST https://api.test/v1/workspaces/p/attachments',
     `PUT ${signedUrl}`,
-    'POST https://api.test/v1/projects/p/attachments/attachment-1/complete',
+    'POST https://api.test/v1/workspaces/p/attachments/attachment-1/complete',
   ]);
   expect(put?.bytes).toBe(size);
   expect(Object.fromEntries(put!.headers)).toEqual(directHeaders);
@@ -154,8 +154,8 @@ test('direct PUT carries no Authorization header and reports XHR-acknowledged by
     expect(sent[0]).toEqual({ method: 'PUT', url: signedUrl, headers: directHeaders, body: file });
     expect(progress).toEqual([0, 1, 3]);
     expect(platform).toEqual([
-      'POST https://api.test/projects/p/attachments Bearer token',
-      'POST https://api.test/projects/p/attachments/attachment-1/complete Bearer token',
+      'POST https://api.test/workspaces/p/attachments Bearer token',
+      'POST https://api.test/workspaces/p/attachments/attachment-1/complete Bearer token',
     ]);
   } finally {
     if (original) Object.defineProperty(globalThis, 'XMLHttpRequest', original);
@@ -194,9 +194,9 @@ test('expired direct URL re-signs the same attachment_id before its single PUT',
     size: 3,
   });
   expect(calls).toEqual([
-    'POST https://api.test/projects/p/attachments',
+    'POST https://api.test/workspaces/p/attachments',
     `PUT ${freshUrl}`,
-    'POST https://api.test/projects/p/attachments/attachment-1/complete',
+    'POST https://api.test/workspaces/p/attachments/attachment-1/complete',
   ]);
 });
 
@@ -225,11 +225,11 @@ test('a rejected direct token re-signs once; an already stored object goes strai
     size: 3,
   });
   expect(calls).toEqual([
-    'POST https://api.test/projects/p/attachments',
+    'POST https://api.test/workspaces/p/attachments',
     `PUT ${signedUrl}`,
-    'POST https://api.test/projects/p/attachments',
+    'POST https://api.test/workspaces/p/attachments',
     `PUT ${freshUrl}`,
-    'POST https://api.test/projects/p/attachments/attachment-1/complete',
+    'POST https://api.test/workspaces/p/attachments/attachment-1/complete',
   ]);
 });
 
@@ -436,10 +436,10 @@ test('chunked handle with chunk_size 8 MiB uploads 10 MiB in exactly 2 PUTs', as
     onProgress: (received) => progress.push(received),
   });
   expect(calls).toEqual([
-    'POST https://api.test/v1/projects/p/attachments',
-    'PUT https://api.test/v1/projects/p/attachments/attachment-1/chunks/0',
-    'PUT https://api.test/v1/projects/p/attachments/attachment-1/chunks/1',
-    'POST https://api.test/v1/projects/p/attachments/attachment-1/complete',
+    'POST https://api.test/v1/workspaces/p/attachments',
+    'PUT https://api.test/v1/workspaces/p/attachments/attachment-1/chunks/0',
+    'PUT https://api.test/v1/workspaces/p/attachments/attachment-1/chunks/1',
+    'POST https://api.test/v1/workspaces/p/attachments/attachment-1/complete',
   ]);
   expect(progress).toEqual([chunkSize, size]);
 });
@@ -476,10 +476,10 @@ test('sequential raw chunks report only acknowledged bytes and retain canonical 
   expect(result).toEqual(metadata);
   expect(progress).toEqual([65536, 65539]);
   expect(calls).toEqual([
-    'POST https://api.test/v1/projects/project%201/attachments',
-    'PUT https://api.test/v1/projects/project%201/attachments/attachment-1/chunks/0',
-    'PUT https://api.test/v1/projects/project%201/attachments/attachment-1/chunks/1',
-    'POST https://api.test/v1/projects/project%201/attachments/attachment-1/complete',
+    'POST https://api.test/v1/workspaces/project%201/attachments',
+    'PUT https://api.test/v1/workspaces/project%201/attachments/attachment-1/chunks/0',
+    'PUT https://api.test/v1/workspaces/project%201/attachments/attachment-1/chunks/1',
+    'POST https://api.test/v1/workspaces/project%201/attachments/attachment-1/complete',
   ]);
 });
 
@@ -606,8 +606,8 @@ test('chunk TIMEOUT is retried with the same index', async () => {
   try {
     await uploadPromptAttachment('p', new File(['abc'], 'a.bin'));
     expect(puts).toEqual([
-      'https://api.test/projects/p/attachments/attachment-1/chunks/0',
-      'https://api.test/projects/p/attachments/attachment-1/chunks/0',
+      'https://api.test/workspaces/p/attachments/attachment-1/chunks/0',
+      'https://api.test/workspaces/p/attachments/attachment-1/chunks/0',
     ]);
   } finally {
     timer.mockRestore();

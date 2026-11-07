@@ -64,7 +64,7 @@ describe('ConnectorPolicySetBar', () => {
     const markup = render('read_only');
     expect(markup).toContain('Read and search, never send · Used by');
     expect(markup).toContain('2 rules');
-    expect(markup).toContain('href="/projects/p1/customize/agents/support?section=connectors"');
+    expect(markup).toContain('href="/workspaces/p1/customize/agents/support?section=connectors"');
     expect(markup).toMatch(/aria-label="Delete rule set"[^>]*disabled=""|disabled=""[^>]*aria-label="Delete rule set"/);
   });
 

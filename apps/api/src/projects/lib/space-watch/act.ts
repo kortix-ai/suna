@@ -20,7 +20,7 @@
  *   The answer's message id is claimed first (`claimDecision`): a repeated
  *   turn-end report acts once.
  */
-import { projects, projectSessions } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../../lib/logger';
 import { db } from '../../../shared/db';
@@ -34,6 +34,7 @@ import { resolveUserIdentities } from '../user-identity';
 import { WATCHER_POST_METADATA_KEY } from './keys';
 import { askOf, eventLine, parseWatcherDecision, type WatcherDecision } from './policy';
 import { claimDecision, proactiveOn, readWatcher, recordSpaceEvent, watcherOfSession, type WatcherRow } from './store';
+import { projectsView } from '../../../workspaces/rows';
 
 /** A thread title from a post: its first line, at most 60 characters. */
 function postTitle(text: string): string {
@@ -79,7 +80,7 @@ async function recordThreadTurn(sessionId: string): Promise<void> {
 
 /** Carry out the watcher's answer. */
 async function actOnWatcherAnswer(watch: WatcherRow, sessionId: string): Promise<void> {
-  const [project] = await db.select().from(projects).where(eq(projects.projectId, watch.projectId)).limit(1);
+  const [project] = await db.select().from(projectsView).where(eq(projectsView.projectId, watch.projectId)).limit(1);
   if (!watch.enabled || !project || !proactiveOn(project.metadata)) {
     logger.info('[space-watch] answer ignored: the watcher is off', { space_id: watch.spaceId, session_id: sessionId });
     return;

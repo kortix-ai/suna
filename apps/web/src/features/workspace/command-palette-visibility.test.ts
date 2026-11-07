@@ -54,6 +54,6 @@ describe('paletteRowPermitted', () => {
       expect(paletteRowPermitted(byId(id), { ...member, rows: { [id]: true } })).toBe(true);
     }
     expect(paletteRowPermitted(byId('proj-sessions'), member)).toBe(true);
-    expect(paletteRowPermitted(byId('nav-accounts'), member)).toBe(true);
+    expect(paletteRowPermitted(byId('nav-workspace-settings'), member)).toBe(true);
   });
 });

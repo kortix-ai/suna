@@ -90,7 +90,7 @@ export function connectorRows(
 
 /** The web page a user must open to connect this connector. */
 export function connectorWebUrl(projectId: string, slug: string, webBaseUrl?: string): string {
-  const path = `/projects/${projectId}/connectors?c=${encodeURIComponent(slug)}`;
+  const path = `/workspaces/${projectId}/connectors?c=${encodeURIComponent(slug)}`;
   if (!webBaseUrl) return path;
   return `${webBaseUrl.replace(/\/$/, '')}${path}`;
 }

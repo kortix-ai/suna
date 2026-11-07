@@ -3,7 +3,7 @@
  *
  * The API encrypts one JSON message per notification:
  *   { title, body, tag, url, notificationId, kind, type, projectId, sessionId, triggerSlug }
- * `url` is an app path ("/projects/<id>/sessions/<id>?notification=<id>"). It
+ * `url` is an app path ("/projects/<id>/sessions/<id>?notification=<id>", opened as /workspaces/...). It
  * resolves against this origin, and any other origin falls back to "/".
  *
  * No fetch handler: nothing is cached and every request goes to the network.
@@ -18,7 +18,11 @@ function appUrl(path) {
   const origin = self.location.origin;
   try {
     const url = new URL(typeof path === 'string' && path ? path : '/', origin);
-    return url.origin === origin ? url : new URL('/', origin);
+    if (url.origin !== origin) return new URL('/', origin);
+    // Payloads keep the pre-2026-11-06 `/projects/…` path (push-payload.ts);
+    // the page is `/workspaces/…`, so an open tab on it is found and focused.
+    url.pathname = url.pathname.replace(/^\/projects(?=\/|$)/, '/workspaces');
+    return url;
   } catch {
     return new URL('/', origin);
   }

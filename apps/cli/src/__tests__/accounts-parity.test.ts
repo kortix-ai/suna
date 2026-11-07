@@ -63,10 +63,10 @@ const ROLES = [
 
 const roleRoutes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;
-  if (p === `/v1/accounts/${ACCOUNT}/iam/roles` && req.method === 'GET') {
+  if (p === `/v1/workspaces/${ACCOUNT}/iam/roles` && req.method === 'GET') {
     return Response.json({ roles: ROLES });
   }
-  if (p === `/v1/accounts/${ACCOUNT}/iam/roles/${ROLE_ID}` && req.method === 'PATCH') {
+  if (p === `/v1/workspaces/${ACCOUNT}/iam/roles/${ROLE_ID}` && req.method === 'PATCH') {
     const b = body as { name?: string; description?: string | null };
     return Response.json({
       ...ROLES[1],
@@ -100,8 +100,8 @@ describe('kortix roles edit', () => {
     );
     expect(r.code).toBe(0);
     expect(api!.requests.map((q) => `${q.method} ${q.path}`)).toEqual([
-      `GET /v1/accounts/${ACCOUNT}/iam/roles`,
-      `PATCH /v1/accounts/${ACCOUNT}/iam/roles/${ROLE_ID}`,
+      `GET /v1/workspaces/${ACCOUNT}/iam/roles`,
+      `PATCH /v1/workspaces/${ACCOUNT}/iam/roles/${ROLE_ID}`,
     ]);
     expect(api!.requests[1]!.body).toEqual({ name: 'Tier 1 Support' });
     expect(r.stdout).toContain('Updated role support_agent — Tier 1 Support');
@@ -139,7 +139,7 @@ describe('kortix roles edit', () => {
 
 // ── audit webhooks ─────────────────────────────────────────────────────────
 
-const WEBHOOKS_BASE = `/v1/accounts/${ACCOUNT}/audit/webhooks`;
+const WEBHOOKS_BASE = `/v1/workspaces/${ACCOUNT}/audit/webhooks`;
 
 const auditRoutes: Parameters<typeof startFakeApi>[0] = (req, url, body) => {
   const p = url.pathname;

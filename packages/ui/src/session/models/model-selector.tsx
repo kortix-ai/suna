@@ -92,7 +92,12 @@ import { Tag } from '../../primitives/tag';
 type ModelRef = { providerID: string; modelID: string };
 
 /**
- * The one default this picker sets: the ACCOUNT default model, from the star on
+ * The one default this picker sets: the WORKSPACE default model (the project
+ * default — a workspace is one account and its project), from the star on a
+ * row. `accountDefault` / `onSetAccountDefault` keep their names (a public
+ * prop contract); the host passes the project default through them.
+ *
+ * History: it set the ACCOUNT default, from the star on
  * a row. It is the default for every member of the account, so it needs
  * `project.model.write` and the star is hidden without it.
  *
@@ -160,6 +165,9 @@ function ModelRow({
   connectLabel: string;
 }) {
   const t = useTranslations('modelSelector');
+  // The star sets the WORKSPACE default (the project default): a workspace
+  // is one account and its project (Workspaces, PR 1).
+  const tDefault = useTranslations('workspaces.models');
   // Kept in the list so a default stays visible, but not runnable: the row
   // reads "Connect" and selecting it opens the connection (KRTX-3011).
   const unavailable = model.available === false;
@@ -279,10 +287,10 @@ function ModelRow({
             type="button"
             aria-label={
               isAccountDefault
-                ? t('defaultAria', { model: model.modelName })
-                : t('setDefaultAria', { model: model.modelName })
+                ? tDefault('defaultAria', { model: model.modelName })
+                : tDefault('setDefaultAria', { model: model.modelName })
             }
-            title={isAccountDefault ? t('defaultTitle') : t('setDefaultTitle')}
+            title={isAccountDefault ? tDefault('defaultTitle') : tDefault('setDefaultTitle')}
             /* No `aria-pressed`: that promises a toggle, and clicking the
                filled star does nothing. Clearing an account default is a real
                action with a real fallback behind it, and it belongs where the
@@ -420,6 +428,7 @@ export function ModelSelector({
   onOpenChange,
 }: ModelSelectorProps) {
   const tModel = useTranslations('modelSelector');
+  const tDefault = useTranslations('workspaces.models');
   const t = useTranslations('threads');
 
   // Controlled when `open` is supplied, uncontrolled otherwise — Radix's own
@@ -691,7 +700,7 @@ export function ModelSelector({
                     that section is never missing a model, and the star
                     in both places is the same fact. */}
                 <CommandGroup
-                  heading={<GroupHeading>{tModel('yourDefault')}</GroupHeading>}
+                  heading={<GroupHeading>{tDefault('yourDefault')}</GroupHeading>}
                   forceMount
                 >
                   <ModelRow

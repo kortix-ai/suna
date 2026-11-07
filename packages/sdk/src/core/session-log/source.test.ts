@@ -11,7 +11,7 @@ const page = () => {
   return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }) => head), thread_id: threads[0]!.thread_id, messages: threads[0]!.messages, has_more: true };
 };
 
-describe('loadSessionLogPage: GET /v1/projects/:p/sessions/:s/log', () => {
+describe('loadSessionLogPage: GET /v1/workspaces/:p/sessions/:s/log', () => {
   const realFetch = globalThis.fetch;
   afterEach(() => {
     globalThis.fetch = realFetch;
@@ -29,7 +29,7 @@ describe('loadSessionLogPage: GET /v1/projects/:p/sessions/:s/log', () => {
   test('asks the route with thread, before_seq and limit, and returns the body', async () => {
     const urls = serve(200, page());
     expect(await loadSessionLogPage!('proj 1', 'kses_1', { thread: 'ses_a', before_seq: 12, limit: 40 })).toEqual(page());
-    expect(urls).toEqual(['http://test.local/v1/projects/proj%201/sessions/kses_1/log?thread=ses_a&before_seq=12&limit=40']);
+    expect(urls).toEqual(['http://test.local/v1/workspaces/proj%201/sessions/kses_1/log?thread=ses_a&before_seq=12&limit=40']);
   });
 
   test('a 404 (no stored log, or an unknown thread) reads as no page: the session stays on v1', async () => {

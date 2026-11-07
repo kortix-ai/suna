@@ -56,10 +56,19 @@ export function auditLoginSuccess(args: {
 }): void {
   const credential = credentialFromContext((key) => args.c.get(key));
   if (!firstLoginInWindow(`${args.userId}|${args.authType}|${credential.credentialId ?? ''}`)) return;
+  // A service-account principal (its bearer, or a workspace key that acts as a
+  // bot or an agent) is not a person: an agent key names the agent.
+  const agentName = args.authType === 'service_account' ? (args.c.get('agentGrant') as { agent?: string } | null | undefined)?.agent : undefined;
+  const principal =
+    args.authType !== 'service_account'
+      ? { actorUserId: args.userId }
+      : agentName
+        ? { actorType: 'agent' as const, actorUserId: null, agentId: args.userId, agentName }
+        : { actorType: 'service_account' as const, actorUserId: args.userId };
   fireAndForget(
     recordAuditEvent({
       accountId: args.accountId ?? null,
-      actorUserId: args.userId,
+      ...principal,
       action: 'auth.login.success',
       ...credential,
       resourceType: 'session',

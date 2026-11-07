@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
 import { Button } from '@kortix/ui/button';
 import { ModalClose } from '@kortix/ui/modal';
@@ -8,6 +10,7 @@ import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
 import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
 import { cn } from '@kortix/ui';
 import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import type { SettingsRailChromeCopy } from '@kortix/ui/customize/settings/rail-copy-context';
 import {
   accountRoleLabel,
@@ -83,34 +86,45 @@ export function RailNav({
             {organizationCopy.title}
           </div>
           <ul className="flex flex-col gap-0.5">
-            {organizations.map((account) => (
-              <li key={account.account_id}>
-                <ModalClose asChild>
-                  <HubLink
-                    to={hubTarget(account.account_id)}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-md px-2.5 pt-1 pb-1.5 text-sm font-medium',
-                      'text-sidebar-foreground/75 hover:bg-hover hover:text-sidebar-foreground transition-colors',
-                    )}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate">
-                        {workspaceAccountLabel(
-                          account.name,
-                          organizationCopy.fallbackAccountName,
-                          false,
-                        )}
-                      </span>
-                      {accountRoleLabel(account.account_role, organizationCopy) ? (
-                        <span className="text-muted-foreground block truncate text-xs font-normal">
-                          {accountRoleLabel(account.account_role, organizationCopy)}
-                        </span>
-                      ) : null}
-                    </span>
-                  </HubLink>
-                </ModalClose>
-              </li>
-            ))}
+            {organizations.map((account) => {
+              const rowClass = cn(
+                'flex w-full items-center gap-2 rounded-md px-2.5 pt-1 pb-1.5 text-sm font-medium',
+                'text-sidebar-foreground/75 hover:bg-hover hover:text-sidebar-foreground transition-colors',
+              );
+              const role = accountRoleLabel(account.account_role, organizationCopy);
+              const body = (
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">
+                    {workspaceAccountLabel(account.name, organizationCopy.fallbackAccountName, false)}
+                  </span>
+                  {role ? (
+                    <span className="text-muted-foreground block truncate text-xs font-normal">{role}</span>
+                  ) : null}
+                </span>
+              );
+              return (
+                <li key={account.workspace_id ?? account.account_id}>
+                  {/* A workspace row opens that workspace's settings. It closes
+                      the panel with its destination: on /settings, a plain
+                      close would send the route back to the last workspace. */}
+                  {account.workspace_id ? (
+                    <Link
+                      href={`/workspaces/${account.workspace_id}/admin`}
+                      className={rowClass}
+                      onClick={() => useSettingsPanelStore.getState().closeTo(`/workspaces/${account.workspace_id}/admin`)}
+                    >
+                      {body}
+                    </Link>
+                  ) : (
+                    <ModalClose asChild>
+                      <HubLink to={hubTarget(account.account_id)} className={rowClass}>
+                        {body}
+                      </HubLink>
+                    </ModalClose>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

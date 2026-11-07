@@ -15,9 +15,9 @@ import { callerKortixSessionId } from "../../middleware/caller-session";
 import { sessionAttachmentStore } from "../lib/session-attachments";
 import { isUuid } from '../../shared/validate';
 
-const path = "/{projectId}/sessions/{sessionId}/attachments";
+const path = "/{workspaceId}/sessions/{sessionId}/attachments";
 const params = z.object({
-  projectId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
   sessionId: z.string().uuid(),
 });
 const attachmentSchema = z.object({
@@ -30,7 +30,7 @@ const attachmentSchema = z.object({
 
 export function registerSessionAttachmentsRoutes(): void {
   projectsApp.use(
-    "/:projectId/sessions/:sessionId/attachments",
+    "/:workspaceId/sessions/:sessionId/attachments",
     bodyLimit({
       maxSize: MAX_SESSION_ATTACHMENT_BYTES + 64 * 1024,
       onError: (c) =>
@@ -65,7 +65,7 @@ export function registerSessionAttachmentsRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, sessionId } = c.req.valid("param");
+      const { workspaceId: projectId, sessionId } = c.req.valid("param");
       const loaded = await loadProjectForUser(c, projectId, "session");
       if (!loaded) return c.json({ error: "Not found" }, 404);
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
@@ -160,7 +160,7 @@ export function registerSessionAttachmentsRoutes(): void {
       },
     }),
     async (c) => {
-      const { projectId, sessionId, attachmentId } = c.req.valid("param");
+      const { workspaceId: projectId, sessionId, attachmentId } = c.req.valid("param");
       const loaded = await loadProjectForUser(c, projectId, "read");
       if (!loaded) return c.json({ error: "Not found" }, 404);
       await assertProjectCapability(

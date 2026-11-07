@@ -18,7 +18,7 @@ test('a relative backendUrl sends the connector call to the same-origin path wit
   const result = await connectorDataPlane('p1').call('crm.list_deals', {});
 
   expect(seen).toEqual([
-    { url: '/_kortix/api/v1/connectors/projects/p1/call', auth: 'Bearer kortix_oat_viewer' },
+    { url: '/_kortix/api/v1/connectors/workspaces/p1/call', auth: 'Bearer kortix_oat_viewer' },
   ]);
   expect(result.ok).toBe(true);
 });

@@ -379,7 +379,7 @@ function MixedScenario() {
 
       <Modal open={modal} onOpenChange={setModal}>
         <DemoModalContent
-          title="Project settings"
+          title="Workspace settings"
           description="The sheet and confirm below are not inside this modal's JSX."
           treeDepth={1}
           widthLevel={0}
@@ -411,7 +411,7 @@ function MixedScenario() {
       <ConfirmDialog
         open={confirm}
         onOpenChange={setConfirm}
-        title="Delete project?"
+        title="Delete workspace?"
         description="Demo only. Nothing is deleted."
         confirmLabel="Delete"
         confirmVariant="destructive"

@@ -8,7 +8,7 @@
  * and access requests are `projects.metadata.discord`
  * (channels/core/channel-access.ts), scoped to the guild id.
  */
-import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
+import { chatChannelBindings, chatInstalls, chatThreads } from '@kortix/db';
 import { CHANNELS } from '@kortix/shared/channel-descriptors';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
@@ -22,6 +22,7 @@ import {
 } from '../core/channel-access';
 import { deleteProjectSecrets, readSecret, upsertSecret } from '../install-store';
 import { discordCall, discordConfigured } from './api';
+import { projectsView } from '../../workspaces/rows';
 
 export const DISCORD_GUILD_NAME = 'DISCORD_GUILD_NAME';
 
@@ -58,10 +59,10 @@ export async function saveDiscordInstall(input: { projectId: string; guildId: st
   const [previous] = await db
     .delete(chatInstalls)
     .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.projectId, input.projectId)))
-    .returning({ guildId: chatInstalls.workspaceId });
+    .returning({ guildId: chatInstalls.platformTeamId });
   await db
     .insert(chatInstalls)
-    .values({ platform: 'discord', workspaceId: input.guildId, projectId: input.projectId })
+    .values({ platform: 'discord', platformTeamId: input.guildId, projectId: input.projectId })
     .onConflictDoNothing();
   const replaced = previous && previous.guildId !== input.guildId ? previous.guildId : null;
   if (replaced) {
@@ -77,9 +78,9 @@ export async function saveDiscordInstall(input: { projectId: string; guildId: st
 /** Null when the project has no Discord server, or is deleted (its tombstone keeps the row). */
 export async function loadDiscordInstall(projectId: string): Promise<DiscordInstall | null> {
   const [row] = await db
-    .select({ guildId: chatInstalls.workspaceId, metadata: projects.metadata })
+    .select({ guildId: chatInstalls.platformTeamId, metadata: projectsView.metadata })
     .from(chatInstalls)
-    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active')))
     .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.projectId, projectId)))
     .limit(1);
   if (!row) return null;
@@ -95,8 +96,8 @@ export async function discordGuildProjects(guildId: string): Promise<string[]> {
   const rows = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
-    .innerJoin(projects, and(eq(projects.projectId, chatInstalls.projectId), eq(projects.status, 'active')))
-    .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, guildId)))
+    .innerJoin(projectsView, and(eq(projectsView.projectId, chatInstalls.projectId), eq(projectsView.status, 'active')))
+    .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.platformTeamId, guildId)))
     .orderBy(chatInstalls.connectedAt);
   return rows.map((r) => r.projectId);
 }
@@ -111,7 +112,7 @@ export async function releaseDiscordInstall(projectId: string): Promise<void> {
   const [removed] = await db
     .delete(chatInstalls)
     .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.projectId, projectId)))
-    .returning({ guildId: chatInstalls.workspaceId });
+    .returning({ guildId: chatInstalls.platformTeamId });
   await deleteDiscordBindings(projectId);
   // Its sessions' threads and DMs: no longer this project's conversations (the connector gate reads them).
   await db.delete(chatThreads).where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.projectId, projectId)));
@@ -135,13 +136,13 @@ export async function leaveDiscordGuild(guildId: string): Promise<void> {
 export async function forgetDiscordGuild(guildId: string): Promise<string[]> {
   const removed = await db
     .delete(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, guildId)))
+    .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.platformTeamId, guildId)))
     .returning({ projectId: chatInstalls.projectId });
   for (const { projectId } of removed) {
     await deleteDiscordBindings(projectId);
     await clearChannelAccessRequests('discord', projectId);
   }
-  await db.delete(chatThreads).where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.workspaceId, guildId)));
+  await db.delete(chatThreads).where(and(eq(chatThreads.platform, 'discord'), eq(chatThreads.platformTeamId, guildId)));
   return removed.map((r) => r.projectId);
 }
 

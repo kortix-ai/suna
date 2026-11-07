@@ -6,11 +6,11 @@
 // registration order is byte-identical to the original file.
 import { accountsRouter } from './core/app';
 import { supabaseAuth } from '../middleware/auth';
-import { accountSessionGate } from '../iam/session-gate';
-import { accountSsoGate } from '../middleware/sso-gate';
+import { accountRequestGates } from './request-gates';
 import { iamRouter, registerIamRoutes } from './iam';
 import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
+import { registerWorkspaceKeyRoutes } from './core/workspace-keys';
 import { registerDeviceRoutes } from './core/devices';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
@@ -20,23 +20,11 @@ import { registerBrandingRoutes } from './branding';
 import { registerSecretResourceRoutes } from './secret-resources';
 import { registerCaptureRoutes } from '../capture/account-routes';
 import { registerCaptureEnrollmentRoutes } from '../capture/enrollment-routes';
-import { resolveAccountId } from '../shared/resolve-account';
 
 accountsRouter.use('/*', supabaseAuth);
-// Enforce per-account session policies (max lifetime / idle timeout /
-// force-logout) on every authenticated, account-scoped request. No-op
-// on routes without an :accountId param.
-accountsRouter.use('/*', async (c, next) => {
-  if (!c.req.param('accountId') && !c.get('accountId') && c.get('authType') === 'supabase') {
-    const userId = c.get('userId') as string | undefined;
-    const sessionId = c.get('sessionId') as string | undefined;
-    if (userId && sessionId) {
-      c.set('accountId', await resolveAccountId(userId));
-    }
-  }
-  return accountSessionGate()(c, next);
-});
-accountsRouter.use('/*', accountSsoGate());
+// Resolve the workspace in the path, then enforce its session policy (max
+// lifetime / idle timeout / force-logout) and its SSO rule (request-gates.ts).
+for (const gate of accountRequestGates()) accountsRouter.use('/*', gate);
 
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
@@ -55,6 +43,8 @@ accountsRouter.route('/', auditRouter);
 //   members + invites + leave         → registerMemberRoutes
 registerDeviceRoutes();
 registerTokenRoutes();
+// Workspace settings › API keys: one list, keys that act as you, an agent or a bot.
+registerWorkspaceKeyRoutes();
 registerAccountRoutes();
 registerMemberRoutes();
 // A member out of credits asks the owners: /:accountId/top-up-requests.

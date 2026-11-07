@@ -39,7 +39,7 @@ const LINE: Record<GoalNoticeKind, string> = {
 
 /** The web page of one goal. */
 export function goalDeepLink(goal: Pick<GoalRow, 'projectId' | 'goalId'>): string {
-  return `/projects/${goal.projectId}/goals/${goal.goalId}`;
+  return `/workspaces/${goal.projectId}/goals/${goal.goalId}`;
 }
 
 export type GoalNoticeSubject = Pick<

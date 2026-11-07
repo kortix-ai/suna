@@ -60,7 +60,7 @@ function startApi() {
     fetch(req) {
       const url = new URL(req.url);
       requests.push(`${req.method} ${url.pathname}`);
-      if (url.pathname === `/v1/projects/${PROJECT_ID}`) {
+      if (url.pathname === `/v1/workspaces/${PROJECT_ID}`) {
         if (req.headers.get('authorization') === `Bearer ${HOST_TOKEN}`) {
           return Response.json(projectRow());
         }
@@ -182,7 +182,7 @@ for (const linkHost of [undefined, 'ambient', HOST_NAME]) {
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout).project_id).toBe(PROJECT_ID);
     // `projects info` also reads the repository connection (#10544).
-  expect(requests).toEqual([`GET /v1/projects/${PROJECT_ID}`, `GET /v1/projects/${PROJECT_ID}/git/connection`]);
+  expect(requests).toEqual([`GET /v1/workspaces/${PROJECT_ID}`, `GET /v1/workspaces/${PROJECT_ID}/git/connection`]);
   });
 }
 
@@ -199,7 +199,7 @@ test('explicit project wins over the named host default and link', async () => {
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout).project_id).toBe(PROJECT_ID);
   // `projects info` also reads the repository connection (#10544).
-  expect(requests).toEqual([`GET /v1/projects/${PROJECT_ID}`, `GET /v1/projects/${PROJECT_ID}/git/connection`]);
+  expect(requests).toEqual([`GET /v1/workspaces/${PROJECT_ID}`, `GET /v1/workspaces/${PROJECT_ID}/git/connection`]);
 });
 
 for (const command of ['info', 'clone', 'open', 'rm']) {
@@ -211,6 +211,6 @@ for (const command of ['info', 'clone', 'open', 'rm']) {
     );
     const result = await runCli(['projects', command, '--host', HOST_NAME], 'foreign-env');
     expect(result.code).toBe(1);
-    expect(requests).toEqual(['GET /v1/projects/selected-link']);
+    expect(requests).toEqual(['GET /v1/workspaces/selected-link']);
   });
 }

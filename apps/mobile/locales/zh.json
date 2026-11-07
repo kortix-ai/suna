@@ -604,7 +604,6 @@
     "cancelRequestDescription": "你可以在删除日期前随时取消此请求。如果取消，你的所有数据将被保留。",
     "scheduledBadge": "已安排",
     "notAvailableTitle": "此服务器不支持",
-    "projectsAndSessions": "项目和会话",
     "credentialsAndConnections": "凭据和连接",
     "subscriptionAndBilling": "订阅",
     "when": "删除时间",
@@ -618,8 +617,9 @@
     "deleting": "正在删除…",
     "cancelling": "正在取消…",
     "finalTitle": "确定吗？",
-    "finalDescriptionNow": "你的项目、会话和凭据将立即删除，且无法撤销。账单记录将按法律要求的期限保留。",
-    "finalDescriptionScheduled": "你的项目、会话和凭据将在 14 天后删除，在此之前可以取消。账单记录将按法律要求的期限保留。"
+    "finalDescriptionNow": "你的工作区、会话和凭据将立即删除，且无法撤销。账单记录将按法律要求的期限保留。",
+    "finalDescriptionScheduled": "你的工作区、会话和凭据将在 14 天后删除，在此之前可以取消。账单记录将按法律要求的期限保留。",
+    "workspacesAndSessions": "工作区和会话"
   },
   "models": {
     "selectModel": "选择模型",
@@ -676,7 +676,7 @@
     "upgradeYourPlan": "升级你的套餐",
     "upgradeDescription": "获取更多积分并解锁高级功能",
     "topUp": "充值",
-    "topUpDescription": "为你的账户充值更多积分",
+    "topUpDescription": "为你的工作区充值更多积分",
     "upgrade": "升级",
     "totalUsage": "总使用量",
     "selectedPeriod": "所选期间",
@@ -1149,7 +1149,6 @@
     "sounds": "声音",
     "richAnswers": "丰富回答",
     "workspace": "工作区",
-    "accounts": "账户",
     "help": "帮助",
     "docs": "文档",
     "support": "支持",
@@ -1165,7 +1164,7 @@
     "current": "当前",
     "currentPlan": "当前套餐",
     "includes": "{{plan}} 包含",
-    "askOwner": "请账户所有者或管理员升级",
+    "askOwner": "请工作区所有者或管理员升级",
     "contactSales": "联系销售",
     "upgradeTo": "升级到 {{plan}}",
     "switchTo": "切换到 {{plan}}",
@@ -1176,7 +1175,8 @@
     "creditsPlan": "Kortix Credits",
     "pickAmount": "在网页上选择任意月度金额。不限成员数量，共用同一个额度池。",
     "includes": "包含",
-    "notNow": "以后再说"
+    "notNow": "以后再说",
+    "continueFree": "继续使用 Free"
   },
   "sessions": {
     "showMoreSubsessions_one": "再显示 {{count}} 个",
@@ -1200,7 +1200,7 @@
     "archivedView": "已归档",
     "archivedEmpty": "你归档的会话将显示在这里。",
     "stoppedBy": "由 {{name}} 停止",
-    "stopNotAllowed": "只有发起此次运行的成员、会话所有者或项目管理者可以停止它。"
+    "stopNotAllowed": "只有发起此次运行的成员、会话所有者或工作区管理者可以停止它。"
   },
   "genui": {
     "call": "致电",
@@ -1229,12 +1229,6 @@
   "invites": {
     "group": "邀请",
     "fallbackTitle": "邀请",
-    "invitedYouToProject": "{{inviter}} 邀请你加入一个项目。",
-    "invitedToProject": "你已受邀加入一个项目。",
-    "invitedYouToTeam": "{{inviter}} 邀请你加入一个团队。",
-    "invitedToTeam": "你已受邀加入一个团队。",
-    "joinProject": "你将以{{role}}身份加入 {{project}}。",
-    "joinAccount": "你将以{{role}}身份加入此账户，并可查看所有者授予你访问权限的项目。",
     "roleMember": "成员",
     "roleManager": "管理者",
     "roleAdmin": "管理员",
@@ -1253,15 +1247,19 @@
     "wrongAccountTitle": "切换账户",
     "wrongAccountBody": "此邀请发给的是另一个账户。你当前以 {{email}} 登录。",
     "directoryTitle": "使用单点登录",
-    "directoryBody": "你所在组织的目录已将你添加到此账户。请在浏览器中打开此邀请并使用组织的单点登录，或让账户管理员重新发送邀请。",
+    "directoryBody": "你所在组织的目录已将你添加到此工作区。请在浏览器中打开此邀请并使用组织的单点登录，或让工作区管理员重新发送邀请。",
     "ssoDomainUnverifiedBody": "你的单点登录提供方尚未验证此邮箱的域名。请退出，然后使用你的邮箱地址重新登录，以使用此邀请。",
     "signOutAndContinue": "退出并继续",
-    "backToProjects": "返回项目"
+    "invitedYouToWorkspace": "{{inviter}} 邀请你加入一个工作区。",
+    "invitedToWorkspace": "你已被邀请加入一个工作区。",
+    "joinWorkspace": "你将以{{role}}身份加入 {{workspace}}。",
+    "joinThisWorkspace": "你将以{{role}}身份加入此工作区。",
+    "backToWorkspaces": "返回工作区"
   },
   "approvals": {
-    "waitingManagers": "管理此项目的人可以批准或拒绝此次调用。",
+    "waitingManagers": "管理此工作区的人可以批准或拒绝此次调用。",
     "waitingTitle": "等待批准",
-    "waitingWho": "启动此会话的人或管理此项目的人可以批准或拒绝此次调用。"
+    "waitingWho": "启动此会话的人或管理此工作区的人可以批准或拒绝此次调用。"
   },
   "imageGen": {
     "generating": "正在生成图像",
@@ -1285,10 +1283,69 @@
     "states": {
       "resolving": "正在为此会话选择镜像。",
       "serving_last_ready": "从最近一个就绪的镜像启动。新镜像在后台构建。",
-      "waiting_for_build": "正在构建此项目的第一个镜像。镜像就绪后会话即会开始。",
-      "building": "正在构建此项目的第一个镜像。此过程只需一次，耗时几分钟。",
+      "waiting_for_build": "正在构建此工作区的第一个镜像。镜像就绪后会话即会开始。",
+      "building": "正在构建此工作区的第一个镜像。此过程只需一次，耗时几分钟。",
       "copying_to_region": "正在将镜像复制到此会话所在的区域。",
       "waiting_for_provider": "镜像即将完成。镜像就绪后会话即会开始。"
+    }
+  },
+  "workspace": {
+    "switcherTitle": "工作区",
+    "create": "创建工作区",
+    "createTitle": "创建工作区",
+    "createBody": "工作区是你的公司使用 Kortix 工作的地方：成员、智能体以及他们创建的一切。",
+    "createOnWebTitle": "在网页上创建工作区",
+    "createOnWebLine": "工作区在 kortix.com 上创建。",
+    "invitedHint": "收到邀请了吗？打开邮件中的邀请链接，或请管理员邀请 {{email}}。",
+    "yours": "你的工作区",
+    "openNamed": "打开 {{workspace}}",
+    "open": "打开工作区",
+    "settings": "工作区设置",
+    "search": "搜索工作区",
+    "loadFailed": "无法加载工作区",
+    "loadFailedBody": "请检查网络连接后重试。",
+    "loadOneFailed": "无法加载此工作区",
+    "emptyTitle": "还没有工作区",
+    "noMatches": "没有与“{{query}}”匹配的结果",
+    "noMatchesBody": "请尝试其他搜索词",
+    "allWorkspaces": "所有工作区",
+    "switch": "切换工作区",
+    "switchNamed": "切换工作区，{{workspace}}",
+    "actions": "工作区操作",
+    "actionsNamed": "工作区操作，{{workspace}}",
+    "archive": "归档工作区",
+    "archiveConfirm": "要归档“{{workspace}}”吗？",
+    "archiveFailed": "无法归档。请检查网络连接后重试。",
+    "archiving": "正在归档…",
+    "archived": "工作区已归档",
+    "delete": "删除工作区",
+    "deleteBody": "为所有成员删除“{{workspace}}”及其中的全部内容，且无法撤销。请输入工作区名称以确认。",
+    "deleteTypeName": "请输入工作区名称以确认",
+    "deleteConfirmTitle": "要删除此工作区吗？",
+    "deleteConfirmBody": "为所有成员删除“{{workspace}}”，且无法撤销。",
+    "deleteFailed": "无法删除工作区",
+    "name": "工作区名称",
+    "billing": "账单",
+    "billingAndMembers": "账单和成员",
+    "onWeb": "在 kortix.com 上",
+    "members": "成员",
+    "git": "Git",
+    "auditLog": "审计日志",
+    "join": "加入",
+    "joinNamed": "加入 {{workspace}}",
+    "inviteFrom": "{{inviter}} · {{role}}",
+    "roleOwner": "所有者",
+    "roleAdmin": "管理员",
+    "roleManager": "管理者",
+    "roleMember": "成员",
+    "startFailure": {
+      "sessionTitle": "你的会话已结束",
+      "sessionBody": "请重新登录以继续。",
+      "unreachableTitle": "无法连接到 Kortix",
+      "unreachableBody": "请检查网络连接，然后重试。",
+      "serverTitle": "无法打开你的工作区",
+      "serverBody": "请重试，或打开其他工作区。",
+      "signInAgain": "重新登录"
     }
   }
 }

@@ -141,11 +141,11 @@ describe('mappers', () => {
 
   test('spaceWebUrl builds /c/<slug> and /dm/<agent>', () => {
     expect(spaceWebUrl('https://kortix.com/', 'p1', BASE_SPACE)).toBe(
-      'https://kortix.com/projects/p1/c/general',
+      'https://kortix.com/workspaces/p1/c/general',
     );
     expect(
       spaceWebUrl('https://kortix.com', 'p1', { kind: 'dm', slug: null, dm_agent_name: 'kortix' }),
-    ).toBe('https://kortix.com/projects/p1/dm/kortix');
+    ).toBe('https://kortix.com/workspaces/p1/dm/kortix');
   });
 
   test('row text fits the width and carries the age', () => {

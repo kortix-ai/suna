@@ -14,10 +14,11 @@
  * imports only the database layer.
  */
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
-import { accountGroupMembers, accounts, iamRoles, roleAssignments } from '@kortix/db';
+import { accountGroupMembers, iamRoles, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
 import { isImpersonatingAccount } from '../shared/impersonation';
 import { ttlMemo } from '../shared/ttl-memo';
+import { accountsView } from '../workspaces/rows';
 
 /** The account roles oversight reaches. Same set as `isImplicitManager`. */
 export const OVERSIGHT_ACCOUNT_ROLES = ['owner', 'admin'] as const;
@@ -33,9 +34,9 @@ export function sessionOversightFrom(input: {
 /** Read the account policy. A missing account reads as off. */
 export async function readSessionOversightPolicy(accountId: string): Promise<boolean> {
   const [row] = await db
-    .select({ enabled: accounts.adminsSeeAllSessions })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
+    .select({ enabled: accountsView.adminsSeeAllSessions })
+    .from(accountsView)
+    .where(eq(accountsView.accountId, accountId))
     .limit(1);
   return row?.enabled === true;
 }

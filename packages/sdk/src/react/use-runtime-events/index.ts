@@ -20,7 +20,7 @@ import { openSessionStream, sessionStreamEventClient } from '../../core/session/
 
 /** The shared session stream has its own 45 s liveness bound. */
 const SESSION_STREAM_WATCHDOG_OFF_MS = 24 * 60 * 60_000;
-import { useKortixRouteProjectId } from '../route-project';
+import { useKortixRouteWorkspaceId } from '../route-project';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { resetPrefetchState } from '../use-session-prefetch';
 import { createEventHandler } from './handle-event';
@@ -69,7 +69,7 @@ export function useRuntimeEventStream(
   // `refetchKortixSessionMirrors` so a title/tree mirror refetch stays scoped
   // to the project actually being viewed instead of guessing at "every
   // project" (see that function's doc comment in `helpers.ts`).
-  const projectId = useKortixRouteProjectId();
+  const projectId = useKortixRouteWorkspaceId();
   const addPermission = useRuntimePendingStore((s) => s.addPermission);
   const removePermission = useRuntimePendingStore((s) => s.removePermission);
   const addQuestion = useRuntimePendingStore((s) => s.addQuestion);

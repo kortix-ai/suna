@@ -240,7 +240,7 @@ function parseScope(value: string | null): ConnectorScope | null {
 type Panel = 'custom' | 'mcp';
 
 /**
- * /projects/[id]/connectors — the standalone Connectors catalogue.
+ * /workspaces/[id]/connectors — the standalone Connectors catalogue.
  *
  * Reads the project's own connectors off `qk.project.connectors(projectId)`,
  * the same key `ConnectorsMasterDetail` uses, so the two surfaces cannot
@@ -261,7 +261,7 @@ type Panel = 'custom' | 'mcp';
  * custom-connector Add button off the header while it is up.
  *
  * `?scope=` is the tab, so every scope is linkable — which is what lets the
- * retired `/projects/<id>/channels` route redirect to a real destination
+ * retired `/workspaces/<id>/channels` route redirect to a real destination
  * instead of a page that lands on All and hides what was asked for.
  *
  * **What Add opens.** Only the custom-connector form (OpenAPI / Postman /
@@ -755,7 +755,7 @@ export function ConnectorsPage({
               ) : null}
             </div>
           ) : channelsActive ? (
-            /* The whole of what used to be `/projects/<id>/channels`, minus the
+            /* The whole of what used to be `/workspaces/<id>/channels`, minus the
            shell it used to bring — this page's `CapabilityPageShell` is the
            one column, the one heading and the one scroll container now. */
             <ChannelsSection projectId={projectId} />
@@ -872,7 +872,7 @@ function useConnectorNavigation(projectId: string) {
 
   // Which scope the strip is on, held in the URL rather than in state.
   //
-  // It has to be addressable: `/projects/<id>/channels` was a real route until
+  // It has to be addressable: `/workspaces/<id>/channels` was a real route until
   // Channels folded into this page, and every bookmark and every legacy nav id
   // pointing at it now redirects to `?scope=channels`. A tab that only local
   // state can reach is a tab nothing can link to.

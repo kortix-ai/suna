@@ -76,7 +76,7 @@ describe('audit HTTP route registry', () => {
         .title,
     ).toBe('Updated audit webhook');
     expect(describeAuditAction(`GET /v1/projects/${UID}/audit`, testUiTranslator).title).toBe(
-      'Viewed project audit log',
+      'Viewed workspace audit log',
     );
     expect(
       describeAuditAction(`GET /v1/projects/${UID}/sessions/${UID2}/audit`, testUiTranslator).title,
@@ -226,7 +226,7 @@ describe('describeAuditAction — IAM action codes', () => {
   });
   test('iam.project.group.detach → Detached…', () => {
     const r = describeAuditAction('iam.project.group.detach', testUiTranslator);
-    expect(r.title).toBe('Detached group from project');
+    expect(r.title).toBe('Detached group from workspace');
     expect(r.kind).toBe('detach');
   });
 });
@@ -234,7 +234,7 @@ describe('describeAuditAction — IAM action codes', () => {
 describe('describeAuditAction — HTTP routes', () => {
   test('POST /v1/projects/:id/group-grants → Attached group', () => {
     expect(describeAuditAction(`POST /v1/projects/${UID}/group-grants`, testUiTranslator)).toMatchObject({
-      title: 'Attached group to project',
+      title: 'Attached group to workspace',
       kind: 'attach',
     });
   });
@@ -243,7 +243,7 @@ describe('describeAuditAction — HTTP routes', () => {
     expect(
       describeAuditAction(`PATCH /v1/projects/${UID}/group-grants/${UID2}`, testUiTranslator),
     ).toMatchObject({
-      title: 'Changed group role on project',
+      title: 'Changed group role on workspace',
       kind: 'update',
     });
   });
@@ -252,7 +252,7 @@ describe('describeAuditAction — HTTP routes', () => {
     expect(
       describeAuditAction(`DELETE /v1/projects/${UID}/group-grants/${UID2}`, testUiTranslator),
     ).toMatchObject({
-      title: 'Detached group from project',
+      title: 'Detached group from workspace',
       kind: 'detach',
     });
   });
@@ -299,10 +299,10 @@ describe('describeAuditAction — HTTP routes', () => {
     });
   });
 
-  test('POST /v1/projects/:id/access/invite → Invited project member', () => {
+  test('POST /v1/projects/:id/access/invite → Invited workspace member', () => {
     expect(
       describeAuditAction(`POST /v1/projects/${UID}/access/invite`, testUiTranslator).title,
-    ).toBe('Invited project member');
+    ).toBe('Invited workspace member');
   });
 
   test('PATCH /v1/accounts/:id/members/:uid → Changed member role', () => {
@@ -351,7 +351,7 @@ describe('describeAuditAction — HTTP routes', () => {
 
   test('PATCH /v1/accounts/:id → Renamed account', () => {
     expect(describeAuditAction(`PATCH /v1/accounts/${UID}`, testUiTranslator).title).toBe(
-      'Renamed account',
+      'Renamed workspace',
     );
   });
 
@@ -384,14 +384,14 @@ describe('describeAuditAction — HTTP routes', () => {
       `DELETE /v1/projects/${UID}/access/pending-invites/${UID2}`,
       testUiTranslator,
     );
-    expect(r.title).toBe('Revoked pending project invitation');
+    expect(r.title).toBe('Revoked pending workspace invitation');
     expect(r.kind).toBe('revoke');
   });
 
   test('GET /v1/projects/:id/access/pending-invites → Listed pending invites', () => {
     expect(
       describeAuditAction(`GET /v1/projects/${UID}/access/pending-invites`, testUiTranslator).title,
-    ).toBe('Listed pending project invites');
+    ).toBe('Listed pending workspace invites');
   });
 
   test('POST /v1/projects/:id/sessions → Created session', () => {
@@ -421,7 +421,7 @@ describe('describeAuditAction — HTTP routes', () => {
 
   test('POST /v1/projects/:id/secrets (root, no name) → Set project secret', () => {
     expect(describeAuditAction(`POST /v1/projects/${UID}/secrets`, testUiTranslator)).toMatchObject({
-      title: 'Set project secret',
+      title: 'Set workspace secret',
       kind: 'update',
     });
   });
@@ -549,7 +549,7 @@ describe('describeAuditAction — catalog labels', () => {
       kind: 'revoke',
       mapped: true,
       method: 'DELETE',
-      route: '/v1/projects/:projectId/gateway/keys/:keyId',
+      route: '/v1/projects/:workspaceId/gateway/keys/:keyId',
       area: 'AI gateway',
     });
   });

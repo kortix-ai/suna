@@ -36,6 +36,7 @@ import {
   setServerPushPreferences,
   showInAppNotification,
 } from '@kortix/ui/internal/lib/web-notifications';
+import { canonicalAppPath } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { useTurnAttentionStore } from '@kortix/ui/internal/stores/turn-attention-store';
 import { useWebNotificationStore } from '@kortix/ui/internal/stores/web-notification-store';
 import type { InboxNotification } from '@kortix/sdk';
@@ -205,7 +206,7 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
       tag: notificationTag(row),
       sessionId: row.session_id ?? undefined,
       projectId: row.project_id,
-      href: row.session_id ? undefined : withoutNotificationParam(row.url),
+      href: row.session_id ? undefined : canonicalAppPath(withoutNotificationParam(row.url)),
       actionLabel: label(row),
       onClick: () => {
         markRead.current([row.id]).catch(() => {});

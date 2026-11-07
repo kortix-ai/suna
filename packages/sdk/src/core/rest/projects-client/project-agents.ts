@@ -39,7 +39,7 @@ export function isSelectableAgent(agent: SelectableAgentFields): boolean {
  * agent list also contains the runtime's built-in agents, which are not
  * project agents; do not use it for a picker.
  */
-export function selectableProjectAgents(
+export function selectableWorkspaceAgents(
   config: ProjectConfigSummary,
 ): ProjectConfigSummary['agents'] {
   const agents = config.agents.filter(isSelectableAgent);
@@ -51,3 +51,6 @@ export function selectableProjectAgents(
     return 0;
   });
 }
+
+/** @deprecated Use `selectableWorkspaceAgents`. Kept permanently. */
+export const selectableProjectAgents = selectableWorkspaceAgents;

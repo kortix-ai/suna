@@ -31,18 +31,18 @@ const TAB_ROUTES = {
   removeLink: 'DELETE /v1/projects/:projectId/spaces/:spaceId/links/:linkId',
   pinLink: 'PATCH /v1/projects/:projectId/spaces/:spaceId/links/:linkId',
 };
-const SPACE_APPS = '/v1/projects/:projectId/spaces/:spaceId/apps';
-const SPACE_LINKS = '/v1/projects/:projectId/spaces/:spaceId/links';
-const SPACE_LINK = '/v1/projects/:projectId/spaces/:spaceId/links/:linkId';
+const SPACE_APPS = '/v1/workspaces/:projectId/spaces/:spaceId/apps';
+const SPACE_LINKS = '/v1/workspaces/:projectId/spaces/:spaceId/links';
+const SPACE_LINK = '/v1/workspaces/:projectId/spaces/:spaceId/links/:linkId';
 const FEATURES_ROUTE = 'PATCH /v1/projects/:projectId/features';
 const SESSION_ROUTES = {
   create: 'POST /v1/projects/:projectId/sessions',
   list: 'GET /v1/projects/:projectId/sessions',
 };
-const SESSIONS = '/v1/projects/:projectId/sessions';
-const SPACES = '/v1/projects/:projectId/spaces';
-const SPACE = '/v1/projects/:projectId/spaces/:spaceId';
-const DM = '/v1/projects/:projectId/spaces/dm';
+const SESSIONS = '/v1/workspaces/:projectId/sessions';
+const SPACES = '/v1/workspaces/:projectId/spaces';
+const SPACE = '/v1/workspaces/:projectId/spaces/:spaceId';
+const DM = '/v1/workspaces/:projectId/spaces/dm';
 
 type Space = { space_id: string; kind: string; slug: string | null; name: string; is_default: boolean; archived_at: string | null; can_edit: boolean };
 type Session = {
@@ -859,8 +859,8 @@ const TRIGGER_ROUTES = {
   update: 'PATCH /v1/projects/:projectId/triggers/:slug',
   fire: 'POST /v1/projects/:projectId/triggers/:slug/fire',
 };
-const TRIGGERS = '/v1/projects/:projectId/triggers';
-const TRIGGER = '/v1/projects/:projectId/triggers/:slug';
+const TRIGGERS = '/v1/workspaces/:projectId/triggers';
+const TRIGGER = '/v1/workspaces/:projectId/triggers/:slug';
 type ListedTrigger = { slug: string; space_id?: string | null; session_access: { mode: string; memberIds: string[] } };
 
 /** A daily cron trigger body; `extra` adds `space_id` or `session_access`. */
@@ -1051,7 +1051,7 @@ flow(
       await world.fund();
       // A BYOK key gives the account a usable model, so the fire passes the no-usable-model gate.
       (await world.owner.post(
-        '/v1/projects/:projectId/secrets',
+        '/v1/workspaces/:projectId/secrets',
         { name: 'ANTHROPIC_API_KEY', value: 'sk-ant-ke2e-spaces', strategy: 'broker', consumer: 'llm_gateway' },
         { params },
       )).status(200);
@@ -1098,7 +1098,7 @@ flow(
   },
 );
 
-const PROMPTS = '/v1/projects/:projectId/sessions/:sessionId/prompts';
+const PROMPTS = '/v1/workspaces/:projectId/sessions/:sessionId/prompts';
 type Link = {
   link_id: string;
   url: string;
@@ -1386,9 +1386,9 @@ const MEMBER_ROUTES = {
   remove: 'DELETE /v1/projects/:projectId/spaces/:spaceId/members/:userId',
   join: 'POST /v1/projects/:projectId/spaces/:spaceId/join',
 };
-const SPACE_MEMBERS = '/v1/projects/:projectId/spaces/:spaceId/members';
-const SPACE_MEMBER = '/v1/projects/:projectId/spaces/:spaceId/members/:userId';
-const SPACE_JOIN = '/v1/projects/:projectId/spaces/:spaceId/join';
+const SPACE_MEMBERS = '/v1/workspaces/:projectId/spaces/:spaceId/members';
+const SPACE_MEMBER = '/v1/workspaces/:projectId/spaces/:spaceId/members/:userId';
+const SPACE_JOIN = '/v1/workspaces/:projectId/spaces/:spaceId/join';
 type MemberList = { members: { user_id: string; name: string; can_remove: boolean }[]; implicit: boolean; can_add: boolean };
 const memberIds = (list: MemberList) => list.members.map((m) => m.user_id).sort();
 
@@ -1399,7 +1399,8 @@ flow('SPACE-23', flowMeta('spaces', [...Object.values(MEMBER_ROUTES), ROUTES.lis
     await world.setFeature('chat', true);
     const priya = await team.addMember('member');
     const sam = await team.addMember('member');
-    const outsider = await team.addMember('member');
+    // Membership is access (design.md C3): the outsider is a person outside the workspace.
+    const outsider = await ctx.fixtures.user({ label: 'SPACE23-OUTSIDER' });
     await team.grantProjectRole(project.id, priya.userId!, 'member');
     await team.grantProjectRole(project.id, sam.userId!, 'member');
     const owner = world.ownerUserId;
@@ -1427,7 +1428,7 @@ flow('SPACE-23', flowMeta('spaces', [...Object.values(MEMBER_ROUTES), ROUTES.lis
       if (JSON.stringify(memberIds(a)) !== JSON.stringify(memberIds(b))) throw new Error('two viewers read different members');
     });
 
-    await ctx.step('an account member without project access and an unknown id → 400 not_project_member; nobody is added', async () => {
+    await ctx.step('a person outside the workspace and an unknown id → 400 not_project_member; nobody is added', async () => {
       for (const id of [outsider.userId, randomUUID()]) {
         (await world.owner.post(SPACE_MEMBERS, { user_ids: [id] }, { params: { ...params, spaceId: channelId } }))
           .status(400).body().has('$.code', 'not_project_member');
@@ -1466,7 +1467,7 @@ flow('SPACE-23', flowMeta('spaces', [...Object.values(MEMBER_ROUTES), ROUTES.lis
       const spaceParams = { ...params, spaceId: general.space_id };
       const list = (await ctx.client.as(sam).get(SPACE_MEMBERS, { params: spaceParams })).status(200).json<MemberList>();
       if (!list.implicit || list.can_add) throw new Error('#general is not implicit or offers add');
-      if (memberIds(list).includes(outsider.userId!)) throw new Error('#general lists an account member without project access');
+      if (memberIds(list).includes(outsider.userId!)) throw new Error('#general lists a person outside the workspace');
       (await world.owner.post(SPACE_MEMBERS, { user_ids: [sam.userId] }, { params: spaceParams })).status(400).body().has('$.code', 'default_channel');
       (await ctx.client.as(sam).post(SPACE_JOIN, undefined, { params: spaceParams })).status(400).body().has('$.code', 'default_channel');
       (await ctx.client.as(sam).del(SPACE_MEMBER, { params: { ...spaceParams, userId: 'me' } })).status(400).body().has('$.code', 'default_channel');

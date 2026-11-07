@@ -1,7 +1,7 @@
 # Designing an artifact
 
 Read this before you write the first line of an html artifact, and skim it
-before a doc. Precedence: the user's own words, then the project's existing
+before a doc. Precedence: the user's own words, then the workspace's existing
 design system (a tokens file, a brand skill, existing pages), then this file.
 
 ## 1. Decide the treatment

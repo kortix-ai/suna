@@ -11,8 +11,13 @@ const userId = crypto.randomUUID();
 let project: SeededProject;
 let bearer: string;
 
+// A legacy account that still holds two projects (split_pending): DELETE is the
+// immediate project delete this suite covers. Deleting the one project of a
+// 1:1 workspace closes the workspace instead (K2), and closing revokes every
+// credential of the account (workspaces/lifecycle.ts).
 beforeAll(async () => {
-  project = await seedProject('delete-token-regression');
+  const first = await seedProject('delete-token-sibling');
+  project = await seedProject('delete-token-regression', { accountId: first.account_id });
   await insertIntoView(db, accountMembers, [{ userId, accountId: project.account_id, accountRole: 'owner' }]);
   const pat = await createAccountToken({ accountId: project.account_id, userId, name: 'synthetic-caller' });
   bearer = `Bearer ${pat.secretKey}`;

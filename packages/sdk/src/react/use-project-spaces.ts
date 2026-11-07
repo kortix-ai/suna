@@ -2,28 +2,28 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  addProjectSpaceLink,
-  addProjectSpaceMembers,
-  joinProjectSpace,
-  leaveProjectSpace,
-  listProjectSpaceMembers,
-  removeProjectSpaceMember,
-  createProjectSpace,
+  addWorkspaceSpaceLink,
+  addWorkspaceSpaceMembers,
+  joinWorkspaceSpace,
+  leaveWorkspaceSpace,
+  listWorkspaceSpaceMembers,
+  removeWorkspaceSpaceMember,
+  createWorkspaceSpace,
   getChannelsOnboarding,
-  getOrCreateProjectDm,
-  getProjectSpaceGeneralNotice,
+  getOrCreateWorkspaceDm,
+  getWorkspaceSpaceGeneralNotice,
   getPrivateChannelsAvailable,
-  getProjectSpaceProactive,
+  getWorkspaceSpaceProactive,
   markChannelsOnboarding,
-  listProjectSpaceApps,
-  listProjectSpaceLinks,
-  pinProjectSpaceLink,
-  listProjectSpaces,
+  listWorkspaceSpaceApps,
+  listWorkspaceSpaceLinks,
+  pinWorkspaceSpaceLink,
+  listWorkspaceSpaces,
   listPrivateChannelsNotIn,
-  removeProjectSpaceLink,
-  setProjectSpaceProactive,
-  setProjectSpaceTabs,
-  updateProjectSpace,
+  removeWorkspaceSpaceLink,
+  setWorkspaceSpaceProactive,
+  setWorkspaceSpaceTabs,
+  updateWorkspaceSpace,
   type AddProjectSpaceLinkInput,
   type ChannelsOnboardingMark,
   type ProjectSpaceProactiveInput,
@@ -38,27 +38,33 @@ import { qk } from './query-keys';
  * channels, so this is the `inventory` tier. Pass `enabled: false` while the
  * project's `chat` flag is off: the route answers 403 then.
  */
-export function useProjectSpaces(projectId: string | null | undefined, options?: { enabled?: boolean }) {
+export function useWorkspaceSpaces(projectId: string | null | undefined, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: qk.project.spaces(projectId ?? ''),
-    queryFn: () => listProjectSpaces(projectId as string),
+    queryFn: () => listWorkspaceSpaces(projectId as string),
     enabled: !!projectId && (options?.enabled ?? true),
     ...contract('inventory'),
   });
 }
 
+/** @deprecated Use `useWorkspaceSpaces`. Kept permanently. */
+export const useProjectSpaces = useWorkspaceSpaces;
+
 /**
  * `#general`'s "turned on again" line (`kind`, `at`, `count`), or null. Reads
  * the spaces route; its key sits under the spaces key, so a spaces refresh refreshes it.
  */
-export function useProjectSpaceGeneralNotice(projectId: string | null | undefined, options?: { enabled?: boolean }) {
+export function useWorkspaceSpaceGeneralNotice(projectId: string | null | undefined, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: qk.project.spaceGeneralNotice(projectId ?? ''),
-    queryFn: () => getProjectSpaceGeneralNotice(projectId as string),
+    queryFn: () => getWorkspaceSpaceGeneralNotice(projectId as string),
     enabled: !!projectId && (options?.enabled ?? true),
     ...contract('inventory'),
   });
 }
+
+/** @deprecated Use `useWorkspaceSpaceGeneralNotice`. Kept permanently. */
+export const useProjectSpaceGeneralNotice = useWorkspaceSpaceGeneralNotice;
 
 /** Whether this deployment allows private channels; false until the spaces route says so. */
 export function usePrivateChannelsAvailable(projectId: string | null | undefined) {
@@ -100,90 +106,114 @@ function useInvalidateSpaces(projectId: string, completesGetStarted = false) {
 }
 
 /** Create a channel. A taken slug rejects with `ApiError` code `slug_taken` (see `createProjectSpace`). */
-export function useCreateProjectSpace(projectId: string) {
+export function useCreateWorkspaceSpace(projectId: string) {
   const invalidate = useInvalidateSpaces(projectId, true);
   return useMutation({
-    mutationFn: (input: Parameters<typeof createProjectSpace>[1]) => createProjectSpace(projectId, input),
+    mutationFn: (input: Parameters<typeof createWorkspaceSpace>[1]) => createWorkspaceSpace(projectId, input),
     onSuccess: invalidate,
   });
 }
 
+/** @deprecated Use `useCreateWorkspaceSpace`. Kept permanently. */
+export const useCreateProjectSpace = useCreateWorkspaceSpace;
+
 /** Rename, describe, archive or unarchive a channel: its creator or a project manager (`can_edit`), else 403 `forbidden`. */
-export function useUpdateProjectSpace(projectId: string) {
+export function useUpdateWorkspaceSpace(projectId: string) {
   const invalidate = useInvalidateSpaces(projectId);
   return useMutation({
     mutationFn: (args: { spaceId: string; input: UpdateProjectSpaceInput }) =>
-      updateProjectSpace(projectId, args.spaceId, args.input),
+      updateWorkspaceSpace(projectId, args.spaceId, args.input),
     onSuccess: invalidate,
   });
 }
+
+/** @deprecated Use `useUpdateWorkspaceSpace`. Kept permanently. */
+export const useUpdateProjectSpace = useUpdateWorkspaceSpace;
 
 /**
  * Replace a space's tabs after Chat (`setProjectSpaceTabs`): a channel's
  * editor or a DM's owner, else 403 `forbidden`. Resolves after the spaces
  * list refetched, so the tab row shows the new list.
  */
-export function useSetProjectSpaceTabs(projectId: string) {
+export function useSetWorkspaceSpaceTabs(projectId: string) {
   const invalidate = useInvalidateSpaces(projectId);
   return useMutation({
-    mutationFn: (args: { spaceId: string; tabs: ProjectSpaceTab[] }) => setProjectSpaceTabs(projectId, args.spaceId, args.tabs),
+    mutationFn: (args: { spaceId: string; tabs: ProjectSpaceTab[] }) => setWorkspaceSpaceTabs(projectId, args.spaceId, args.tabs),
     onSuccess: invalidate,
   });
 }
+
+/** @deprecated Use `useSetWorkspaceSpaceTabs`. Kept permanently. */
+export const useSetProjectSpaceTabs = useSetWorkspaceSpaceTabs;
 
 /**
  * A space's Proactive settings (flag `spaces_proactive`): whether its watcher
  * is on, and its daily brief. Pass `enabled: false` while the flag is off:
  * the route answers 403 then. `inventory` tier.
  */
-export function useProjectSpaceProactive(projectId: string | null | undefined, spaceId: string | null | undefined, options?: { enabled?: boolean }) {
+export function useWorkspaceSpaceProactive(projectId: string | null | undefined, spaceId: string | null | undefined, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: qk.project.spaceProactive(projectId ?? '', spaceId ?? ''),
-    queryFn: () => getProjectSpaceProactive(projectId as string, spaceId as string),
+    queryFn: () => getWorkspaceSpaceProactive(projectId as string, spaceId as string),
     enabled: !!projectId && !!spaceId && (options?.enabled ?? true),
     ...contract('inventory'),
   });
 }
 
+/** @deprecated Use `useWorkspaceSpaceProactive`. Kept permanently. */
+export const useProjectSpaceProactive = useWorkspaceSpaceProactive;
+
 /** Change a space's Proactive settings (see `setProjectSpaceProactive`); resolves after the settings refetched. */
-export function useSetProjectSpaceProactive(projectId: string, spaceId: string) {
+export function useSetWorkspaceSpaceProactive(projectId: string, spaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: ProjectSpaceProactiveInput) => setProjectSpaceProactive(projectId, spaceId, input),
+    mutationFn: (input: ProjectSpaceProactiveInput) => setWorkspaceSpaceProactive(projectId, spaceId, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: qk.project.spaceProactive(projectId, spaceId) }),
   });
 }
 
+/** @deprecated Use `useSetWorkspaceSpaceProactive`. Kept permanently. */
+export const useSetProjectSpaceProactive = useSetWorkspaceSpaceProactive;
+
 /** Open the caller's DM with an agent (created on the first call). Resolves the DM space. */
-export function useOpenProjectDm(projectId: string) {
+export function useOpenWorkspaceDm(projectId: string) {
   const invalidate = useInvalidateSpaces(projectId, true);
   return useMutation({
-    mutationFn: (agentName: string) => getOrCreateProjectDm(projectId, agentName),
+    mutationFn: (agentName: string) => getOrCreateWorkspaceDm(projectId, agentName),
     onSuccess: invalidate,
   });
 }
 
+/** @deprecated Use `useOpenWorkspaceDm`. Kept permanently. */
+export const useOpenProjectDm = useOpenWorkspaceDm;
+
 type Id = string | null | undefined;
 
 /** A channel's Apps (deployed from one of its threads). `inventory` tier, like the project's Apps. */
-export function useProjectSpaceApps(projectId: Id, spaceId: Id) {
+export function useWorkspaceSpaceApps(projectId: Id, spaceId: Id) {
   return useQuery({
     queryKey: qk.project.spaceApps(projectId ?? '', spaceId ?? ''),
-    queryFn: () => listProjectSpaceApps(projectId as string, spaceId as string),
+    queryFn: () => listWorkspaceSpaceApps(projectId as string, spaceId as string),
     enabled: !!projectId && !!spaceId,
     ...contract('inventory'),
   });
 }
 
+/** @deprecated Use `useWorkspaceSpaceApps`. Kept permanently. */
+export const useProjectSpaceApps = useWorkspaceSpaceApps;
+
 /** A channel's links, pinned and shared in its threads, the most recently shared first. */
-export function useProjectSpaceLinks(projectId: Id, spaceId: Id) {
+export function useWorkspaceSpaceLinks(projectId: Id, spaceId: Id) {
   return useQuery({
     queryKey: qk.project.spaceLinks(projectId ?? '', spaceId ?? ''),
-    queryFn: () => listProjectSpaceLinks(projectId as string, spaceId as string),
+    queryFn: () => listWorkspaceSpaceLinks(projectId as string, spaceId as string),
     enabled: !!projectId && !!spaceId,
     ...contract('inventory'),
   });
 }
+
+/** @deprecated Use `useWorkspaceSpaceLinks`. Kept permanently. */
+export const useProjectSpaceLinks = useWorkspaceSpaceLinks;
 
 function useInvalidateSpaceLinks(projectId: string, spaceId: string) {
   const queryClient = useQueryClient();
@@ -191,72 +221,96 @@ function useInvalidateSpaceLinks(projectId: string, spaceId: string) {
 }
 
 /** Pin a link to a channel. A bad URL rejects with `ApiError` status 400; a full channel rejects with 409 `link_limit` (see `addProjectSpaceLink`). */
-export function useAddProjectSpaceLink(projectId: string, spaceId: string) {
+export function useAddWorkspaceSpaceLink(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaceLinks(projectId, spaceId);
   return useMutation({
-    mutationFn: (input: AddProjectSpaceLinkInput) => addProjectSpaceLink(projectId, spaceId, input),
+    mutationFn: (input: AddProjectSpaceLinkInput) => addWorkspaceSpaceLink(projectId, spaceId, input),
     onSuccess: invalidate,
   });
 }
 
+/** @deprecated Use `useAddWorkspaceSpaceLink`. Kept permanently. */
+export const useAddProjectSpaceLink = useAddWorkspaceSpaceLink;
+
 /** Pin or unpin a link of a channel (see `pinProjectSpaceLink`): resolves to the link; unpinning never removes it. */
-export function usePinProjectSpaceLink(projectId: string, spaceId: string) {
+export function usePinWorkspaceSpaceLink(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaceLinks(projectId, spaceId);
   return useMutation({
     mutationFn: ({ linkId, pinned }: { linkId: string; pinned: boolean }) =>
-      pinProjectSpaceLink(projectId, spaceId, linkId, pinned),
+      pinWorkspaceSpaceLink(projectId, spaceId, linkId, pinned),
     onSuccess: invalidate,
   });
 }
+
+/** @deprecated Use `usePinWorkspaceSpaceLink`. Kept permanently. */
+export const usePinProjectSpaceLink = usePinWorkspaceSpaceLink;
 
 /** Remove a link from a channel. */
-export function useRemoveProjectSpaceLink(projectId: string, spaceId: string) {
+export function useRemoveWorkspaceSpaceLink(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaceLinks(projectId, spaceId);
   return useMutation({
-    mutationFn: (linkId: string) => removeProjectSpaceLink(projectId, spaceId, linkId),
+    mutationFn: (linkId: string) => removeWorkspaceSpaceLink(projectId, spaceId, linkId),
     onSuccess: invalidate,
   });
 }
 
+/** @deprecated Use `useRemoveWorkspaceSpaceLink`. Kept permanently. */
+export const useRemoveProjectSpaceLink = useRemoveWorkspaceSpaceLink;
+
 /** A channel's people: the same list for every viewer (the header roster, the Members tab). `inventory` tier. */
-export function useProjectSpaceMembers(projectId: Id, spaceId: Id) {
+export function useWorkspaceSpaceMembers(projectId: Id, spaceId: Id) {
   return useQuery({
     queryKey: qk.project.spaceMembers(projectId ?? '', spaceId ?? ''),
-    queryFn: () => listProjectSpaceMembers(projectId as string, spaceId as string),
+    queryFn: () => listWorkspaceSpaceMembers(projectId as string, spaceId as string),
     enabled: !!projectId && !!spaceId,
     ...contract('inventory'),
   });
 }
 
+/** @deprecated Use `useWorkspaceSpaceMembers`. Kept permanently. */
+export const useProjectSpaceMembers = useWorkspaceSpaceMembers;
+
 /** Add people to a channel in one request (see `addProjectSpaceMembers`); refetches the spaces list, the members under it. */
-export function useAddProjectSpaceMembers(projectId: string, spaceId: string) {
+export function useAddWorkspaceSpaceMembers(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaces(projectId);
   return useMutation({
-    mutationFn: (userIds: string[]) => addProjectSpaceMembers(projectId, spaceId, userIds),
+    mutationFn: (userIds: string[]) => addWorkspaceSpaceMembers(projectId, spaceId, userIds),
     onSuccess: invalidate,
   });
 }
+
+/** @deprecated Use `useAddWorkspaceSpaceMembers`. Kept permanently. */
+export const useAddProjectSpaceMembers = useAddWorkspaceSpaceMembers;
 
 /** Remove someone from a channel (see `removeProjectSpaceMember`). */
-export function useRemoveProjectSpaceMember(projectId: string, spaceId: string) {
+export function useRemoveWorkspaceSpaceMember(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaces(projectId);
   return useMutation({
-    mutationFn: (userId: string) => removeProjectSpaceMember(projectId, spaceId, userId),
+    mutationFn: (userId: string) => removeWorkspaceSpaceMember(projectId, spaceId, userId),
     onSuccess: invalidate,
   });
 }
 
+/** @deprecated Use `useRemoveWorkspaceSpaceMember`. Kept permanently. */
+export const useRemoveProjectSpaceMember = useRemoveWorkspaceSpaceMember;
+
 /** The caller joins a public channel; the spaces list then says `is_member`. */
-export function useJoinProjectSpace(projectId: string, spaceId: string) {
+export function useJoinWorkspaceSpace(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaces(projectId);
-  return useMutation({ mutationFn: () => joinProjectSpace(projectId, spaceId), onSuccess: invalidate });
+  return useMutation({ mutationFn: () => joinWorkspaceSpace(projectId, spaceId), onSuccess: invalidate });
 }
 
+/** @deprecated Use `useJoinWorkspaceSpace`. Kept permanently. */
+export const useJoinProjectSpace = useJoinWorkspaceSpace;
+
 /** The caller leaves a channel. Its creator gets 403 `creator_not_removable`. */
-export function useLeaveProjectSpace(projectId: string, spaceId: string) {
+export function useLeaveWorkspaceSpace(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaces(projectId);
-  return useMutation({ mutationFn: () => leaveProjectSpace(projectId, spaceId), onSuccess: invalidate });
+  return useMutation({ mutationFn: () => leaveWorkspaceSpace(projectId, spaceId), onSuccess: invalidate });
 }
+
+/** @deprecated Use `useLeaveWorkspaceSpace`. Kept permanently. */
+export const useLeaveProjectSpace = useLeaveWorkspaceSpace;
 
 /**
  * The caller's Channels onboarding state: `intro_seen` and the `#general`

@@ -123,7 +123,7 @@ function startServer(): string {
             : await req.json().catch(() => null);
       calls.push({ method: req.method, path, body });
 
-      if (path === `/v1/projects/${PROJECT}` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}` && req.method === 'GET') {
         return Response.json({
           project_id: PROJECT,
           account_id: 'account_1',
@@ -138,15 +138,15 @@ function startServer(): string {
           updated_at: '2026-01-01T00:00:00.000Z',
         });
       }
-      if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}/apps` && req.method === 'GET') {
         return Response.json({ apps: created.map((slug) => app({ slug, name: slug })) });
       }
-      if (path === `/v1/projects/${PROJECT}/apps` && req.method === 'POST') {
+      if (path === `/v1/workspaces/${PROJECT}/apps` && req.method === 'POST') {
         const input = body as { slug: string; name: string };
         created.push(input.slug);
         return Response.json(app({ slug: input.slug, name: input.name }));
       }
-      if (path === `/v1/projects/${PROJECT}/apps/artifacts` && req.method === 'POST') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/artifacts` && req.method === 'POST') {
         const input = body as { kind: string; image?: string };
         if (input.kind === 'oci_image') {
           return Response.json({
@@ -167,28 +167,28 @@ function startServer(): string {
         return new Response(null, { status: 200 });
       }
       if (
-        path === `/v1/projects/${PROJECT}/apps/artifacts/art-1/finalize` &&
+        path === `/v1/workspaces/${PROJECT}/apps/artifacts/art-1/finalize` &&
         req.method === 'POST'
       ) {
         return Response.json(artifact('archive', null));
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'POST') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}/deployments` && req.method === 'POST') {
         if (configIssues) return Response.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: configIssues }, { status: 400 });
         return Response.json(deployment());
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}` && req.method === 'GET') {
         return Response.json(app());
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
         return Response.json(app(body as Record<string, unknown>));
       }
-      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}/exec` && req.method === 'POST') {
+      if (path === `/v1/workspaces/${PROJECT}/apps/${APP_ID}/exec` && req.method === 'POST') {
         return Response.json({ exit_code: 0, stdout: 'Admin key:\nsynthetic-admin-key|0123\n', stderr: '', truncated: false });
       }
-      if (path === `/v1/projects/${PROJECT}/secrets` && req.method === 'GET') {
+      if (path === `/v1/workspaces/${PROJECT}/secrets` && req.method === 'GET') {
         return Response.json({ items: configuredSecrets.map((name) => ({ identifier: name, name, configured: true })), required: [], optional: [] });
       }
-      if (path === `/v1/projects/${PROJECT}/secrets` && req.method === 'POST') {
+      if (path === `/v1/workspaces/${PROJECT}/secrets` && req.method === 'POST') {
         return Response.json({ identifier: (body as { name: string }).name, name: (body as { name: string }).name, configured: true });
       }
       return Response.json({ error: 'not found' }, { status: 404 });
@@ -287,7 +287,7 @@ describe('kortix apps deploy (characterization)', () => {
     // No --manifest-app needed: a single apps block is the default. The App is
     // provisioned from the manifest's identity + resources.
     const create = calls.find(
-      (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
+      (c) => c.method === 'POST' && c.path === `/v1/workspaces/${PROJECT}/apps`,
     );
     expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4, uses: ['db'] });
     // --output-dir wins over the manifest's output_dir; env and secrets pass through.
@@ -417,11 +417,11 @@ describe('kortix apps deploy (characterization)', () => {
     const r = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     const create = calls.find(
-      (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
+      (c) => c.method === 'POST' && c.path === `/v1/workspaces/${PROJECT}/apps`,
     );
     expect(create?.body).toEqual({ slug: 'site', name: 'site' });
     const register = calls.find(
-      (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps/artifacts`,
+      (c) => c.method === 'POST' && c.path === `/v1/workspaces/${PROJECT}/apps/artifacts`,
     );
     expect(register?.body).toEqual({ kind: 'archive', media_type: 'application/gzip' });
     // The directory went up as a gzip archive, not raw.
@@ -478,7 +478,7 @@ describe('kortix apps deploy (characterization)', () => {
     );
     expect(r.code).toBe(0);
     const register = calls.find(
-      (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps/artifacts`,
+      (c) => c.method === 'POST' && c.path === `/v1/workspaces/${PROJECT}/apps/artifacts`,
     );
     expect(register?.body).toEqual({ kind: 'oci_image', image: 'registry.example.test/app:7' });
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
@@ -545,7 +545,7 @@ describe('kortix apps deploy (characterization)', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'deploy', '--budget', '20', 'site', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`);
+    const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/workspaces/${PROJECT}/apps`);
     expect(create?.body).toEqual({ slug: 'site', name: 'site' });
     expect(r.stderr).toContain('--budget is ignored: Apps have no budget');
     expect(r.stdout).toContain('deployment ready');

@@ -3,11 +3,15 @@
 import { backendApi, type ApiClientOptions } from '../../http/api-client';
 import { unwrap, type AccountRole, type ProjectRole } from './shared';
 
+/** @deprecated Use `WorkspaceGroupAccessSource`. Kept permanently. */
 export interface ProjectGroupAccessSource {
   group_id: string;
   group_name: string;
   role: ProjectRole;
 }
+
+/** The workspace name of {@link ProjectGroupAccessSource}: the same type. */
+export type WorkspaceGroupAccessSource = ProjectGroupAccessSource;
 
 type ProjectAccessPolicy = {
   policy_id: string;
@@ -31,6 +35,7 @@ type ProjectAccessSource = {
   group_name: string | null;
 };
 
+/** @deprecated Use `WorkspaceAccessMember`. Kept permanently. */
 export interface ProjectAccessMember {
   custom_role_policies?: (ProjectAccessPolicy & ProjectAccessSource)[];
   resource_grants?: (ProjectAccessResource & Omit<ProjectAccessSource, 'source'> & {
@@ -58,6 +63,10 @@ export interface ProjectAccessMember {
   expires_at?: string | null;
 }
 
+/** The workspace name of {@link ProjectAccessMember}: the same type. */
+export type WorkspaceAccessMember = ProjectAccessMember;
+
+/** @deprecated Use `WorkspaceAccessResponse`. Kept permanently. */
 export interface ProjectAccessResponse {
   project_id: string;
   account_id: string;
@@ -73,6 +82,10 @@ export interface ProjectAccessResponse {
   }[];
 }
 
+/** The workspace name of {@link ProjectAccessResponse}: the same type. */
+export type WorkspaceAccessResponse = ProjectAccessResponse;
+
+/** @deprecated Use `WorkspaceAccessRequest`. Kept permanently. */
 export interface ProjectAccessRequest {
   request_id: string;
   account_id: string;
@@ -87,31 +100,44 @@ export interface ProjectAccessRequest {
   updated_at: string;
 }
 
+/** The workspace name of {@link ProjectAccessRequest}: the same type. */
+export type WorkspaceAccessRequest = ProjectAccessRequest;
+
+/** @deprecated Use `RequestWorkspaceAccessResult`. Kept permanently. */
 export type RequestProjectAccessResult =
   | { status: 'created'; request: ProjectAccessRequest }
   | { status: 'pending'; request: ProjectAccessRequest }
   | { status: 'already_has_access'; project_id: string };
 
-export async function requestProjectAccess(projectId: string, message?: string) {
+/** The workspace name of {@link RequestProjectAccessResult}: the same type. */
+export type RequestWorkspaceAccessResult = RequestProjectAccessResult;
+
+export async function requestWorkspaceAccess(projectId: string, message?: string) {
   return unwrap(
     await backendApi.post<RequestProjectAccessResult>(
-      `/projects/${projectId}/access-requests`,
+      `/workspaces/${projectId}/access-requests`,
       { message: message?.trim() || undefined },
       { showErrors: false },
     ),
   );
 }
 
-export async function listProjectAccessRequests(projectId: string, options?: ApiClientOptions) {
+/** @deprecated Use `requestWorkspaceAccess`. Kept permanently. */
+export const requestProjectAccess = requestWorkspaceAccess;
+
+export async function listWorkspaceAccessRequests(projectId: string, options?: ApiClientOptions) {
   return unwrap(
     await backendApi.get<{ requests: ProjectAccessRequest[] }>(
-      `/projects/${projectId}/access-requests`,
+      `/workspaces/${projectId}/access-requests`,
       options,
     ),
   );
 }
 
-export async function approveProjectAccessRequest(
+/** @deprecated Use `listWorkspaceAccessRequests`. Kept permanently. */
+export const listProjectAccessRequests = listWorkspaceAccessRequests;
+
+export async function approveWorkspaceAccessRequest(
   projectId: string,
   requestId: string,
   role: ProjectRole = 'member',
@@ -120,54 +146,72 @@ export async function approveProjectAccessRequest(
     await backendApi.post<{
       request: ProjectAccessRequest;
       member: ProjectAccessMember;
-    }>(`/projects/${projectId}/access-requests/${requestId}/approve`, { role }),
+    }>(`/workspaces/${projectId}/access-requests/${requestId}/approve`, { role }),
   );
 }
 
-export async function rejectProjectAccessRequest(projectId: string, requestId: string) {
+/** @deprecated Use `approveWorkspaceAccessRequest`. Kept permanently. */
+export const approveProjectAccessRequest = approveWorkspaceAccessRequest;
+
+export async function rejectWorkspaceAccessRequest(projectId: string, requestId: string) {
   return unwrap(
     await backendApi.post<{ request: ProjectAccessRequest }>(
-      `/projects/${projectId}/access-requests/${requestId}/reject`,
+      `/workspaces/${projectId}/access-requests/${requestId}/reject`,
       {},
     ),
   );
 }
 
-export async function listProjectAccess(projectId: string) {
+/** @deprecated Use `rejectWorkspaceAccessRequest`. Kept permanently. */
+export const rejectProjectAccessRequest = rejectWorkspaceAccessRequest;
+
+export async function listWorkspaceAccess(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectAccessResponse>(
-      `/projects/${projectId}/access`,
+      `/workspaces/${projectId}/access`,
     ),
   );
 }
 
-export async function updateProjectAccess(
+/** @deprecated Use `listWorkspaceAccess`. Kept permanently. */
+export const listProjectAccess = listWorkspaceAccess;
+
+export async function updateWorkspaceAccess(
   projectId: string,
   userId: string,
   role: ProjectRole,
 ) {
   return unwrap(
     await backendApi.put<ProjectAccessMember>(
-      `/projects/${projectId}/access/${userId}`,
+      `/workspaces/${projectId}/access/${userId}`,
       { role },
     ),
   );
 }
 
-export async function revokeProjectAccess(projectId: string, userId: string) {
+/** @deprecated Use `updateWorkspaceAccess`. Kept permanently. */
+export const updateProjectAccess = updateWorkspaceAccess;
+
+export async function revokeWorkspaceAccess(projectId: string, userId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/access/${userId}`,
+      `/workspaces/${projectId}/access/${userId}`,
     ),
   );
 }
+
+/** @deprecated Use `revokeWorkspaceAccess`. Kept permanently. */
+export const revokeProjectAccess = revokeWorkspaceAccess;
 
 /** Two-shape response:
  *  - User had a Kortix account already → ProjectAccessMember row was
  *    inserted/updated; UI refreshes the access list and shows them.
  *  - User had no Kortix account → an account invitation was created
  *    with a bootstrap_grant. UI shows "invitation sent" and skips the
- *    access-list refresh (the user won't appear until they accept). */
+ *    access-list refresh (the user won't appear until they accept).
+ *
+ * @deprecated Use `InviteWorkspaceMemberResult`. Kept permanently.
+ */
 export type InviteProjectMemberResult =
   | ProjectAccessMember
   | {
@@ -183,12 +227,18 @@ export type InviteProjectMemberResult =
       email_skip_reason: string | null;
     };
 
+/** The workspace name of {@link InviteProjectMemberResult}: the same type. */
+export type InviteWorkspaceMemberResult = InviteProjectMemberResult;
+
 export function isInviteSent(
   r: InviteProjectMemberResult,
 ): r is Extract<InviteProjectMemberResult, { status: 'invited' }> {
   return 'status' in r && r.status === 'invited';
 }
 
+/**
+ * @deprecated Use `inviteWorkspaceMember`: membership is access. Kept permanently.
+ */
 export async function inviteProjectMember(
   projectId: string,
   email: string,
@@ -199,7 +249,7 @@ export async function inviteProjectMember(
 ) {
   return unwrap(
     await backendApi.post<InviteProjectMemberResult>(
-      `/projects/${projectId}/access/invite`,
+      `/workspaces/${projectId}/access/invite`,
       { email, role, ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}) },
     ),
   );
@@ -212,7 +262,10 @@ export async function inviteProjectMember(
  *
  *  `expires_at` here is the *grant's* time-bounded clock (auto-revoke once
  *  they're in). `invite_expires_at` is the *invitation* clock — after that
- *  the user can't redeem the link and needs a resend. */
+ *  the user can't redeem the link and needs a resend.
+ *
+ * @deprecated Use `PendingWorkspaceInvite`. Kept permanently.
+ */
 export interface PendingProjectInvite {
   invite_id: string;
   email: string;
@@ -224,22 +277,32 @@ export interface PendingProjectInvite {
   invite_expired: boolean;
 }
 
-export async function listPendingProjectInvites(projectId: string) {
+/** The workspace name of {@link PendingProjectInvite}: the same type. */
+export type PendingWorkspaceInvite = PendingProjectInvite;
+
+export async function listPendingWorkspaceInvites(projectId: string) {
   return unwrap(
     await backendApi.get<{ pending: PendingProjectInvite[] }>(
-      `/projects/${projectId}/access/pending-invites`,
+      `/workspaces/${projectId}/access/pending-invites`,
     ),
   );
 }
 
-export async function revokePendingProjectInvite(projectId: string, inviteId: string) {
+/** @deprecated Use `listPendingWorkspaceInvites`. Kept permanently. */
+export const listPendingProjectInvites = listPendingWorkspaceInvites;
+
+export async function revokePendingWorkspaceInvite(projectId: string, inviteId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean; invitation_cancelled: boolean }>(
-      `/projects/${projectId}/access/pending-invites/${inviteId}`,
+      `/workspaces/${projectId}/access/pending-invites/${inviteId}`,
     ),
   );
 }
 
+/** @deprecated Use `revokePendingWorkspaceInvite`. Kept permanently. */
+export const revokePendingProjectInvite = revokePendingWorkspaceInvite;
+
+/** @deprecated Use `ResendWorkspaceInviteResult`. Kept permanently. */
 export interface ResendProjectInviteResult {
   ok: boolean;
   expires_at: string;
@@ -248,16 +311,23 @@ export interface ResendProjectInviteResult {
   email_skip_reason: string | null;
 }
 
-export async function resendPendingProjectInvite(projectId: string, inviteId: string) {
+/** The workspace name of {@link ResendProjectInviteResult}: the same type. */
+export type ResendWorkspaceInviteResult = ResendProjectInviteResult;
+
+export async function resendPendingWorkspaceInvite(projectId: string, inviteId: string) {
   return unwrap(
     await backendApi.post<ResendProjectInviteResult>(
-      `/projects/${projectId}/access/pending-invites/${inviteId}/resend`,
+      `/workspaces/${projectId}/access/pending-invites/${inviteId}/resend`,
     ),
   );
 }
 
+/** @deprecated Use `resendPendingWorkspaceInvite`. Kept permanently. */
+export const resendPendingProjectInvite = resendPendingWorkspaceInvite;
+
 // ── IAM V2: project ⇄ group attachments ────────────────────────────────────
 
+/** @deprecated Use `WorkspaceGroupGrant`. Kept permanently. */
 export interface ProjectGroupGrant {
   group_id: string;
   group_name: string;
@@ -273,15 +343,21 @@ export interface ProjectGroupGrant {
   override_count?: number;
 }
 
-export async function listProjectGroupGrants(projectId: string) {
+/** The workspace name of {@link ProjectGroupGrant}: the same type. */
+export type WorkspaceGroupGrant = ProjectGroupGrant;
+
+export async function listWorkspaceGroupGrants(projectId: string) {
   return unwrap(
     await backendApi.get<{ grants: ProjectGroupGrant[] }>(
-      `/projects/${projectId}/group-grants`,
+      `/workspaces/${projectId}/group-grants`,
     ),
   );
 }
 
-export async function attachGroupToProject(
+/** @deprecated Use `listWorkspaceGroupGrants`. Kept permanently. */
+export const listProjectGroupGrants = listWorkspaceGroupGrants;
+
+export async function attachGroupToWorkspace(
   projectId: string,
   groupId: string,
   role: ProjectRole,
@@ -289,7 +365,7 @@ export async function attachGroupToProject(
 ) {
   return unwrap(
     await backendApi.post<{ project_id: string; group_id: string; role: ProjectRole }>(
-      `/projects/${projectId}/group-grants`,
+      `/workspaces/${projectId}/group-grants`,
       // undefined = field omitted (don't touch); null = clear expiry.
       expiresAt === undefined
         ? { group_id: groupId, role }
@@ -298,7 +374,10 @@ export async function attachGroupToProject(
   );
 }
 
-export async function updateProjectGroupGrant(
+/** @deprecated Use `attachGroupToWorkspace`. Kept permanently. */
+export const attachGroupToProject = attachGroupToWorkspace;
+
+export async function updateWorkspaceGroupGrant(
   projectId: string,
   groupId: string,
   role: ProjectRole,
@@ -306,25 +385,35 @@ export async function updateProjectGroupGrant(
 ) {
   return unwrap(
     await backendApi.patch<{ project_id: string; group_id: string; role: ProjectRole }>(
-      `/projects/${projectId}/group-grants/${groupId}`,
+      `/workspaces/${projectId}/group-grants/${groupId}`,
       expiresAt === undefined ? { role } : { role, expires_at: expiresAt },
     ),
   );
 }
 
-export async function detachGroupFromProject(projectId: string, groupId: string) {
+/** @deprecated Use `updateWorkspaceGroupGrant`. Kept permanently. */
+export const updateProjectGroupGrant = updateWorkspaceGroupGrant;
+
+export async function detachGroupFromWorkspace(projectId: string, groupId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/group-grants/${groupId}`,
+      `/workspaces/${projectId}/group-grants/${groupId}`,
     ),
   );
 }
+
+/** @deprecated Use `detachGroupFromWorkspace`. Kept permanently. */
+export const detachGroupFromProject = detachGroupFromWorkspace;
 
 // ─── Per-resource (agent/skill/secret) scoping ──────────────────────────────
 
 export type ResourceGrantType = 'agent' | 'skill' | 'secret';
 
-/** A grantable resource (agent name / skill slug) discovered from the repo. */
+/**
+ * A grantable resource (agent name / skill slug) discovered from the repo.
+ *
+ * @deprecated Use `WorkspaceResourceItem`. Kept permanently.
+ */
 export interface ProjectResourceItem {
   /** Stable grant key — agent name / skill slug. */
   id: string;
@@ -333,14 +422,24 @@ export interface ProjectResourceItem {
   description: string | null;
 }
 
+/** The workspace name of {@link ProjectResourceItem}: the same type. */
+export type WorkspaceResourceItem = ProjectResourceItem;
+
 /** An agent resource, enriched with its DECLARED scope so the grant UI can
  *  preview the blast radius of an assignment (the inheritance pyramid): assigning
  *  the agent also grants these secrets + connectors. `'all'` = every one the
- *  assignee can already see (nothing extra inherited). */
+ *  assignee can already see (nothing extra inherited).
+ *
+ * @deprecated Use `WorkspaceAgentResourceItem`. Kept permanently.
+ */
 export interface ProjectAgentResourceItem extends ProjectResourceItem {
   declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
 }
 
+/** The workspace name of {@link ProjectAgentResourceItem}: the same type. */
+export type WorkspaceAgentResourceItem = ProjectAgentResourceItem;
+
+/** @deprecated Use `WorkspaceResourceGrant`. Kept permanently. */
 export interface ProjectResourceGrant {
   grant_id: string;
   resource_type: ResourceGrantType;
@@ -359,6 +458,10 @@ export interface ProjectResourceGrant {
   orphaned?: boolean;
 }
 
+/** The workspace name of {@link ProjectResourceGrant}: the same type. */
+export type WorkspaceResourceGrant = ProjectResourceGrant;
+
+/** @deprecated Use `WorkspaceResourceGrantsResponse`. Kept permanently. */
 export interface ProjectResourceGrantsResponse {
   resources: {
     agents: ProjectAgentResourceItem[];
@@ -371,15 +474,21 @@ export interface ProjectResourceGrantsResponse {
   grants: ProjectResourceGrant[];
 }
 
-export async function listProjectResourceGrants(projectId: string) {
+/** The workspace name of {@link ProjectResourceGrantsResponse}: the same type. */
+export type WorkspaceResourceGrantsResponse = ProjectResourceGrantsResponse;
+
+export async function listWorkspaceResourceGrants(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectResourceGrantsResponse>(
-      `/projects/${projectId}/resource-grants`,
+      `/workspaces/${projectId}/resource-grants`,
     ),
   );
 }
 
-export async function createProjectResourceGrant(
+/** @deprecated Use `listWorkspaceResourceGrants`. Kept permanently. */
+export const listProjectResourceGrants = listWorkspaceResourceGrants;
+
+export async function createWorkspaceResourceGrant(
   projectId: string,
   input: {
     resourceType: ResourceGrantType;
@@ -390,7 +499,7 @@ export async function createProjectResourceGrant(
   },
 ) {
   return unwrap(
-    await backendApi.post<{ grant_id: string }>(`/projects/${projectId}/resource-grants`, {
+    await backendApi.post<{ grant_id: string }>(`/workspaces/${projectId}/resource-grants`, {
       resource_type: input.resourceType,
       resource_id: input.resourceId,
       principal_type: input.principalType,
@@ -400,13 +509,19 @@ export async function createProjectResourceGrant(
   );
 }
 
-export async function deleteProjectResourceGrant(projectId: string, grantId: string) {
+/** @deprecated Use `createWorkspaceResourceGrant`. Kept permanently. */
+export const createProjectResourceGrant = createWorkspaceResourceGrant;
+
+export async function deleteWorkspaceResourceGrant(projectId: string, grantId: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/resource-grants/${grantId}`,
+      `/workspaces/${projectId}/resource-grants/${grantId}`,
     ),
   );
 }
+
+/** @deprecated Use `deleteWorkspaceResourceGrant`. Kept permanently. */
+export const deleteProjectResourceGrant = deleteWorkspaceResourceGrant;
 
 // ─── Approvals (APPROVE / ASK / BLOCK inbox) ────────────────────────────────
 
@@ -433,7 +548,7 @@ export interface PendingApprovalsResponse {
 /** The manager inbox of gated actions awaiting approve/deny. */
 export async function listPendingApprovals(projectId: string, options?: { showErrors?: boolean }) {
   return unwrap(
-    await backendApi.get<PendingApprovalsResponse>(`/projects/${projectId}/approvals`, {
+    await backendApi.get<PendingApprovalsResponse>(`/workspaces/${projectId}/approvals`, {
       showErrors: options?.showErrors,
     }),
   );
@@ -453,7 +568,7 @@ export async function listSessionsNeedingInput(
 ) {
   return unwrap(
     await backendApi.get<SessionsNeedingInputResponse>(
-      `/projects/${projectId}/approvals/needs-input`,
+      `/workspaces/${projectId}/approvals/needs-input`,
       { showErrors: options?.showErrors },
     ),
   );
@@ -480,7 +595,7 @@ export async function resolveApproval(
 ) {
   const note = options.note?.trim();
   return unwrap(
-    await backendApi.post<{ ok: boolean }>(`/projects/${projectId}/approvals/${executionId}`, {
+    await backendApi.post<{ ok: boolean }>(`/workspaces/${projectId}/approvals/${executionId}`, {
       decision,
       ...(note ? { note } : {}),
     }),

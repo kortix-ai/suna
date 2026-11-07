@@ -1,4 +1,3 @@
-import { projects } from '@kortix/db';
 import { assertRepositoryConnected } from './git';
 import { REPOSITORY_DISCONNECTED_CODE, isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { eq } from 'drizzle-orm';
@@ -15,6 +14,7 @@ import { raiseTriggerAlert } from './trigger-alerts';
 import { pauseTriggerIfAlwaysFailing } from './trigger-failure-pause';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
 import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, mapWithConcurrency, schedulerSweepIsStale, automaticFirePauseReason, withTimeout } from './trigger-scheduler-state';
+import { projectsView } from '../../workspaces/rows';
 
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
@@ -126,8 +126,8 @@ async function executeTriggerExecution(
 ): Promise<'fired' | 'queued' | 'failed' | 'skipped'> {
   const [project] = await db
     .select()
-    .from(projects)
-    .where(eq(projects.projectId, row.projectId))
+    .from(projectsView)
+    .where(eq(projectsView.projectId, row.projectId))
     .limit(1);
   // The project's own pause, then the account's Pause all triggers (KRTX-1721).
   const paused = project && project.status === 'active' ? await automaticFirePauseReason(project) : null;

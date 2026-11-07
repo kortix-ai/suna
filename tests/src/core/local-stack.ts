@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -372,11 +373,80 @@ export function localMigrationPlan(
   };
 }
 
+/**
+ * The migration files this tree adds or changes against `origin/dev`
+ * (committed, staged, modified or untracked), relative to the repo root.
+ * `null` when git cannot answer (no `origin/dev`, not a checkout): the guard
+ * then has nothing to compare and does not refuse.
+ */
+export function branchOnlyMigrations(root: string): string[] | null {
+  const git = (args: string[]) => {
+    const out = spawnSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    return out.status === 0 ? out.stdout : null;
+  };
+  const changed = git(["diff", "--name-only", "--diff-filter=AMR", "origin/dev", "--", "packages/db/migrations"]);
+  const untracked = git(["ls-files", "--others", "--exclude-standard", "--", "packages/db/migrations"]);
+  if (changed === null || untracked === null) return null;
+  return [...new Set(`${changed}\n${untracked}`.split("\n").map((line) => line.trim()).filter(Boolean))].sort();
+}
+
+/** Set to `1` to migrate the shared database anyway (a person who means it). */
+export const SHARED_DB_MIGRATE_OVERRIDE = "KORTIX_SHARED_DB_MIGRATE";
+
+/**
+ * Why `ensureLocalMigrations` must not migrate this database, or null.
+ *
+ * A shared-mode worktree (and the primary checkout) migrates the primary
+ * database `127.0.0.1:54322/postgres`, which every other stack on the machine
+ * reads. A branch migration applied there changes the schema under every
+ * other session (learning 2026-11-06T040313Z: a unique index broke project
+ * creation for every stack on the machine). A worktree with its own database
+ * (`--db`: `kortix_wt_<slug>`, or `--full-supabase`) and CI (a fresh
+ * database per job) are never refused.
+ */
+export function sharedDatabaseMigrationRefusal(input: {
+  topology: Pick<LocalTopology, "marker" | "worktreeName">;
+  dbUrl: string;
+  branchOnly: string[] | null;
+  env: Record<string, string | undefined>;
+}): string | null {
+  const { topology, dbUrl, branchOnly, env } = input;
+  if (env.CI && env.CI !== "false" && env.CI !== "0") return null;
+  if (env[SHARED_DB_MIGRATE_OVERRIDE] === "1") return null;
+  const mode = topology.marker?.dbMode;
+  if (mode === "branch" || mode === "isolated") return null;
+  let database: string;
+  try {
+    database = decodeURIComponent(new URL(dbUrl).pathname.replace(/^\//, ""));
+  } catch {
+    return null;
+  }
+  if (database !== "postgres") return null;
+  if (!branchOnly || branchOnly.length === 0) return null;
+  const shown = branchOnly.slice(0, 5).map((file) => `  ${file}`).join("\n");
+  const more = branchOnly.length > 5 ? `\n  … and ${branchOnly.length - 5} more` : "";
+  const slug = topology.worktreeName ?? "<slug>";
+  return [
+    `refused: this tree has ${branchOnly.length} migration file(s) that origin/dev does not have, and the test database is the SHARED primary database (${dbUrl.replace(/\/\/[^@]*@/, "//")}).`,
+    shown + more,
+    "Applying them there changes the schema under every other stack on this machine.",
+    `Give the work its own database: create the worktree with --db (pnpm worktree create --name ${slug} --db --yes --no-start; the worktree skill), then run pnpm test there.`,
+    `(${SHARED_DB_MIGRATE_OVERRIDE}=1 migrates the shared database anyway.)`,
+  ].join("\n");
+}
+
 export async function ensureLocalMigrations(
   topology: LocalTopology,
   supabase: LocalSupabaseEnvironment,
 ): Promise<void> {
   const plan = localMigrationPlan(topology, supabase);
+  const refusal = sharedDatabaseMigrationRefusal({
+    topology,
+    dbUrl: plan.env.DATABASE_URL!,
+    branchOnly: branchOnlyMigrations(topology.root),
+    env: process.env,
+  });
+  if (refusal) throw new Error(refusal);
   const migrated = Bun.spawn(plan.command, {
     cwd: plan.cwd,
     env: plan.env,

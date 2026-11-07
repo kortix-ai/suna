@@ -59,7 +59,7 @@ The Open WebUI License is a permissive license with a branding clause attached. 
 
 ## When to pick which
 
-Choose Kortix if the company's setup has to sit in one repository you control, with a sandbox per session. A person decides what merges. Free is $0 with 500 credits per month, every feature and 1 project, on the user's own provider keys or ChatGPT subscription. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free, from a public server with a Platinum key. The paid plan is credits: you choose the monthly amount, and 5,000 credits a month costs $50 at 100 credits per dollar. Members are unlimited and free, and one credit pool is shared across the account. ([Kortix pricing](https://kortix.com/pricing))
+Choose Kortix if the company's setup has to sit in one repository you control, with a sandbox per session. A person decides what merges. Free is $0 with 500 credits per month on your first workspace and every feature, on your own provider keys or ChatGPT subscription. Run it on Kortix Cloud, in your VPC, or on your own on-prem network. Self-host is free, from a public server with a Platinum key. The paid plan is credits: you choose the monthly amount, and 5,000 credits a month costs $50 at 100 credits per dollar. Members are unlimited and free, and one credit pool is shared across the account. ([Kortix pricing](https://kortix.com/pricing))
 
 Choose Open WebUI if the work lives in conversations. It gives a team a quick, private chat surface over any model, retrieval across 13 vector databases, and enterprise identity ready when you need it.
 

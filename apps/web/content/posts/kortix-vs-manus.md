@@ -66,7 +66,7 @@ triggers:
 
 The whole system is open source, and the code is at [Kortix on GitHub](https://github.com/kortix-ai/CompanyOS).
 
-Both sell credits, and a credit buys different things. Kortix Free costs $0, carries 500 credits a month, allows one project, and runs on a key you supply or a ChatGPT subscription; managed models are on the Credits plan only ([Kortix pricing](https://kortix.com/pricing), October 2026). Paid means Credits: $50 a month buys 5,000 credits, members cost nothing and never cap out, the account draws on one pool, and whatever is left rolls into the next month. Manus Team starts at US$20 a month, or US$200 a year, for each member, on a base of 4,000 credits per member each month ([Manus for Teams](https://manus.im/team), October 2026). The real difference is what one credit pays for: a hosted task on Manus, compute for a system the team already owns on Kortix.
+Both sell credits, and a credit buys different things. Kortix Free costs $0, carries 500 credits a month on your first workspace, and runs on a key you supply or a ChatGPT subscription; managed models are on the Credits plan only ([Kortix pricing](https://kortix.com/pricing), October 2026). Paid means Credits: $50 a month buys 5,000 credits, members cost nothing and never cap out, the account draws on one pool, and whatever is left rolls into the next month. Manus Team starts at US$20 a month, or US$200 a year, for each member, on a base of 4,000 credits per member each month ([Manus for Teams](https://manus.im/team), October 2026). The real difference is what one credit pays for: a hosted task on Manus, compute for a system the team already owns on Kortix.
 
 ## Where Manus is the better pick
 

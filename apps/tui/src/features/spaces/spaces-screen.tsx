@@ -94,7 +94,7 @@ export function spaceWebUrl(
   projectId: string,
   space: Pick<ProjectSpace, 'kind' | 'slug' | 'dm_agent_name'>,
 ): string {
-  const base = `${webBaseUrl.replace(/\/+$/, '')}/projects/${projectId}`;
+  const base = `${webBaseUrl.replace(/\/+$/, '')}/workspaces/${projectId}`;
   if (space.kind === 'dm') return `${base}/dm/${encodeURIComponent(space.dm_agent_name ?? '')}`;
   return `${base}/c/${encodeURIComponent(space.slug ?? '')}`;
 }
@@ -176,12 +176,12 @@ export function SpacesScreen({
       .finally(() => setBusy(null));
   }, [spacesQuery.refetch, threadsQuery.refetch, openSpaceId, onToast]);
 
-  if (!projectId) return <text fg={theme.faint}>No project selected.</text>;
+  if (!projectId) return <text fg={theme.faint}>No workspace open. Type /workspaces to pick one.</text>;
   if (flag.isLoading) return <Spinner label="checking Spaces" />;
   if (!flag.enabled) {
     return (
       <text fg={theme.faint}>
-        Spaces are off: the project's Chat feature (chat) is not enabled.
+        Spaces are off: the workspace's Chat feature (chat) is not enabled.
       </text>
     );
   }

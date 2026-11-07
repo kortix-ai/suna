@@ -27,7 +27,7 @@ mock.module('../core/http/api-client', () => ({
   },
 }));
 
-const { useAdminProjects } = await import('./use-admin-projects');
+const { useAdminWorkspaces } = await import('./use-admin-projects');
 
 beforeEach(() => {
   calls = [];
@@ -43,7 +43,7 @@ function requestedQuery(): URLSearchParams {
 
 describe('useAdminProjects', () => {
   test('defaults to the most-active-first fleet view', async () => {
-    const hook = useAdminProjects() as any;
+    const hook = useAdminWorkspaces() as any;
     await hook.queryFn();
     const q = requestedQuery();
     expect(calls[0]!.path.startsWith('/admin/api/projects?')).toBe(true);
@@ -54,7 +54,7 @@ describe('useAdminProjects', () => {
   });
 
   test('omits every filter that is unset — no empty search/accountId/status', async () => {
-    const hook = useAdminProjects() as any;
+    const hook = useAdminWorkspaces() as any;
     await hook.queryFn();
     const q = requestedQuery();
     expect(q.has('search')).toBe(false);
@@ -63,7 +63,7 @@ describe('useAdminProjects', () => {
   });
 
   test('sends search, accountId, status (csv), sort and pagination', async () => {
-    const hook = useAdminProjects({
+    const hook = useAdminWorkspaces({
       search: 'acme',
       accountId: 'acct-1',
       status: ['active', 'archived'],
@@ -86,7 +86,7 @@ describe('useAdminProjects', () => {
   // The key must carry every input, or two different filter sets share one
   // cache entry and the table renders the previous query's rows.
   test('the query key carries every filter input', () => {
-    const hook = useAdminProjects({
+    const hook = useAdminWorkspaces({
       search: 'acme',
       accountId: 'acct-1',
       status: ['active'],
@@ -109,8 +109,8 @@ describe('useAdminProjects', () => {
   });
 
   test('different filters produce different query keys', () => {
-    const a = useAdminProjects({ sortBy: 'activity' }) as any;
-    const b = useAdminProjects({ sortBy: 'sessions' }) as any;
+    const a = useAdminWorkspaces({ sortBy: 'activity' }) as any;
+    const b = useAdminWorkspaces({ sortBy: 'sessions' }) as any;
     expect(a.queryKey).not.toEqual(b.queryKey);
   });
 
@@ -134,18 +134,18 @@ describe('useAdminProjects', () => {
       page: 1,
       limit: 50,
     };
-    const hook = useAdminProjects() as any;
+    const hook = useAdminWorkspaces() as any;
     await expect(hook.queryFn()).resolves.toEqual(nextData);
   });
 
   test('throws the API error message instead of returning it', async () => {
     nextError = { message: 'admin_required' };
-    const hook = useAdminProjects() as any;
+    const hook = useAdminWorkspaces() as any;
     await expect(hook.queryFn()).rejects.toThrow('admin_required');
   });
 
   test('keeps the previous page rendered while the next one loads', () => {
-    const hook = useAdminProjects() as any;
+    const hook = useAdminWorkspaces() as any;
     expect(hook.placeholderData({ total: 7 })).toEqual({ total: 7 });
   });
 });

@@ -1,59 +1,25 @@
 'use client';
 
 /**
- * The workspace-picker SUBMENU of the sidebar's account menu: search, the
- * current account's settings, every workspace in every account, and the create
- * row.
+ * The workspace list inside the sidebar's "Switch workspace" submenu: search,
+ * pending invitations, then every workspace the caller belongs to as ONE flat
+ * list, the current one checked. A workspace is one account and its project,
+ * so there are no account headings (`useWorkspaceDirectory`).
  *
- * Account settings appears twice, on purpose, and both are the same
- * destination:
- *
- * - as a labelled row above the list, which is how you FIND it;
- * - as what the already-active workspace row does when you click it, which is
- *   the click that used to do nothing at all (`resolveWorkspaceRowNavigation`).
- *
- * The second is not a hidden gesture — it is the row that carries the account
- * you are in, and the first row teaches the destination.
- *
- * Reached from "Switch Workspace" in that menu — a `DropdownMenuSub`, the same
- * shape as Theme and Help, so all three read as one family. Radix owns opening,
- * closing and the return path; this file is only what goes inside.
+ * The host passes the bottom actions ("Create workspace", "Workspace
+ * settings") as `actions`: whether the caller may create a workspace depends
+ * on the host's instance config. Nothing here reads until the submenu opens.
  *
  * Rendered INSIDE an open `DropdownMenuSubContent`, so it emits menu children
  * only: no `DropdownMenu`, no trigger, no portal of its own.
  */
 
-import { HubLink } from '../../internal/account-hub/account-hub-location';
-import { useTranslations } from '../../i18n';
-import { hubTarget } from '../../internal/stores/account-panel-store';
-import {
-  GearSixIcon as CogOne,
-  PlusIcon,
-  MagnifyingGlassIcon as Search,
-} from '@phosphor-icons/react';
-import { UiLink as Link, useUiPathname } from '../../providers/ui-provider';
-import { useSessionIds } from '../../providers/session-ids';
-import { isProjectPath } from '../../lib/routes';
-import { useState, type MouseEvent } from 'react';
+import { CheckIcon, MagnifyingGlassIcon, MonitorPlayIcon } from '@phosphor-icons/react';
+import { useCaptureWorkspace } from '@kortix/sdk/react';
+import { useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 
-import { Button } from '../../primitives/button';
-import {
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from '../../primitives/dropdown-menu';
-import { EntityAvatar } from '../../primitives/entity-avatar';
-import { Input } from '../../primitives/input';
-import Loading from '../../primitives/loading';
-import { Skeleton } from '../../primitives/skeleton';
+import { useLocale, useTranslations } from '../../i18n';
 import { captureHref } from '../../internal/capture/use-capture-area';
-import { newWorkspacePathForAccount } from '../new/account-param';
-import {
-  resolveWorkspaceRowNavigation,
-  type WorkspaceRowNavigation,
-} from './workspace-grouping';
-import { useWorkspaceMenuModel } from './workspace-menu-model';
 import { isModifiedClick } from '../../internal/lib/navigation/modified-click';
 import { cn } from '../../internal/lib/utils';
 import { useCurrentAccountStore } from '../../internal/stores/current-account-store';
@@ -61,293 +27,202 @@ import {
   shouldShowProjectSwitchLoading,
   useProjectSwitchStore,
 } from '../../internal/stores/project-switch-store';
-import { type KortixProject } from '@kortix/sdk';
-import { CheckCircleIcon as CheckCircleSolid, MonitorPlayIcon } from '@phosphor-icons/react';
+import { isProjectPath, uiRoutes } from '../../lib/routes';
+import { Button } from '../../primitives/button';
+import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '../../primitives/dropdown-menu';
+import { EntityAvatar } from '../../primitives/entity-avatar';
+import { Input } from '../../primitives/input';
+import Loading from '../../primitives/loading';
+import { Skeleton } from '../../primitives/skeleton';
+import { UiLink as Link, useUiPathname, useUiRouter } from '../../providers/ui-provider';
+import { errorToast } from '../../primitives/toast';
+import { useSessionIds } from '../../providers/session-ids';
+import { filterWorkspaceRows, formatWorkspaceDate, type WorkspaceRow } from '../project-selector/project-selector-model';
+import { useWorkspaceStateActions } from './use-workspace-list';
 import { InvitationsMenuGroup } from './invitations-menu-group';
+import { useWorkspaceDirectory, type WorkspaceDirectory } from './use-workspace-directory';
 
-export function WorkspaceMenuSection() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const t = useTranslations('sidebar');
+export function WorkspaceMenuSection({
+  actions,
+}: {
+  /** The bottom rows. A render prop: whether the caller may create a
+   *  workspace reads the directory this submenu already loaded. */
+  actions?: (directory: WorkspaceDirectory) => ReactNode;
+}) {
+  const t = useTranslations('workspaces.switcher');
+  const tCapture = useTranslations('capture.account');
   const pathname = useUiPathname();
   const { projectId: routeProjectId } = useSessionIds();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const beginSwitch = useProjectSwitchStore((s) => s.beginSwitch);
   const switchingToProjectId = useProjectSwitchStore((s) => s.targetProjectId);
   const [query, setQuery] = useState('');
-  const tCapture = useTranslations('capture.account');
+  const directory = useWorkspaceDirectory();
+  const tChooser = useTranslations('workspaces.chooser');
+  const locale = useLocale();
+  const router = useUiRouter();
+  const stateActions = useWorkspaceStateActions((workspaceId) => router.push(uiRoutes().project(workspaceId)));
 
   const activeProjectId =
     routeProjectId && isProjectPath(pathname, routeProjectId) ? routeProjectId : undefined;
+  const visible = useMemo(() => filterWorkspaceRows(directory.workspaces, query), [directory.workspaces, query]);
+  const activeAccountId =
+    directory.workspaces.find((row) => row.workspaceId === activeProjectId)?.accountId ?? selectedAccountId;
+  // Kortix Capture is a workspace feature: the menu links to it once it is on.
+  const captureOn = useCaptureWorkspace(activeAccountId ?? null).data?.enabled ?? false;
 
-  const {
-    workspacesLoading,
-    failedAccounts,
-    creatableAccountIds,
-    visibleGroups,
-    switcherAccountId,
-    isEmpty,
-    captureOn,
-  } = useWorkspaceMenuModel(activeProjectId, selectedAccountId, query);
-
-  // No explicit close: these are `DropdownMenuItem`s, and Radix closes the menu
-  // on select unless the handler calls `preventDefault`.
-  //
-  // Side effects only — the row IS the anchor now, so it carries the
-  // navigation itself. This handler must never call `preventDefault`: that
-  // cancels the anchor and the click goes nowhere.
-  //
-  // Two destinations, not one — see `resolveWorkspaceRowNavigation`. The row
-  // you are already in used to `return` here, so clicking the one row the menu
-  // marks with a checkmark spent the click and did nothing; it now opens that
-  // workspace's ACCOUNT settings. `beginSwitch` and the account-store write are
-  // switch-only: there is no project switch to narrate, and the account is
-  // already the selected one.
-  //
-  // It takes the click event because a modified click must NOT run any of this.
-  // Radix fires `onSelect` for every activation, but `next/link` deliberately
-  // bails out of the client navigation on a modified event
-  // (node_modules/next/dist/client/link.js — `isModifiedEvent`) and lets the
-  // browser open a new tab. Without this guard, cmd-clicking a row to open a
-  // workspace beside the current one repointed the CURRENT tab's account store
-  // at the other account and left its switch overlay spinning for a navigation
-  // that never happened here.
-  const startWorkspaceRow = (
-    event: MouseEvent<HTMLAnchorElement>,
-    project: KortixProject,
-    target: WorkspaceRowNavigation,
-  ) => {
-    if (target.kind !== 'switch') return;
-    if (isModifiedClick(event)) return;
-    beginSwitch(project.project_id);
-    // Keep the account store in step with the workspace actually being
-    // opened; otherwise account-scoped surfaces keep answering for the
-    // previous one.
-    if (project.account_id !== selectedAccountId) setSelectedAccountId(project.account_id);
+  // Side effects only: the row IS the anchor and carries the navigation. A
+  // modified click opens a new tab, so this tab's state must not move.
+  const startSwitch = (event: MouseEvent<HTMLAnchorElement>, row: WorkspaceRow) => {
+    if (row.workspaceId === activeProjectId || isModifiedClick(event)) return;
+    beginSwitch(row.workspaceId);
+    // Account-scoped surfaces answer for the workspace being opened.
+    if (row.accountId !== selectedAccountId) setSelectedAccountId(row.accountId);
   };
 
   return (
     <>
-      {/* Always mounted. The /projects index is gone, so this view is the whole
-          directory — a conditional search box would make workspace N+7
-          unreachable for anyone with more than a handful. */}
+      {/* Always mounted: this list is the whole directory, so a conditional
+          search box would make workspace N+7 unreachable. */}
       <div className="p-0.5">
         <div className="relative">
-          <Search className="text-muted-foreground/50 pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2" />
+          <MagnifyingGlassIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('workspace.find')}
-            // A Radix menu owns keyboard input: it runs typeahead on printable
-            // keys to jump between items, moving focus off whatever you are
-            // typing into. Stopping propagation keeps the keystrokes in the
-            // field. Without it, searching drives the menu's selection instead
-            // of this input — which is the whole reason a search box is here.
+            placeholder={t('find')}
+            aria-label={t('find')}
+            // A Radix menu runs typeahead on printable keys and moves focus off
+            // the field. Stopping propagation keeps the keystrokes here.
             onKeyDown={(e) => e.stopPropagation()}
-            className="placeholder:text-muted-foreground/50 h-8 pr-2 pl-8 text-sm"
+            className="h-8 pr-2 pl-8 text-sm"
           />
         </div>
       </div>
 
-      {/* Above the list, not in it. The account is what the workspaces below
-          hang off, so it reads first — and it is deliberately NOT dressed as a
-          workspace row: an icon where those carry an `EntityAvatar`, and a
-          separator under it, so nothing here looks like a workspace you could
-          switch to. Same icon + label dialect as the User Settings / Download
-          App rows one level up in `workspace-switcher.tsx`.
-
-          Withheld, not disabled, while the account id is unknown: a row that
-          exists but goes nowhere is worse than one that arrives with the rest
-          of the menu's content, and `selectedAccountId` is persisted so on a
-          returning visit it is there from the first paint. */}
-      {switcherAccountId ? (
-        <>
-          <div className="p-0.5">
-            {/* Still an anchor, so Cmd-click opens this page with the hub
-                already on that account — but a plain click opens the modal
-                over the page behind this menu, with no navigation at all and
-                the chunk warmed on hover. */}
-            <DropdownMenuItem asChild className="cursor-pointer px-1.5">
-              <HubLink to={hubTarget(switcherAccountId)}>
-                <CogOne />
-                <span className="min-w-0 flex-1 truncate">{t('workspace.accountSettings')}</span>
-              </HubLink>
-            </DropdownMenuItem>
-            {captureOn ? (
-              <DropdownMenuItem asChild className="cursor-pointer px-1.5">
-                <Link href={captureHref(switcherAccountId, 'devices')}>
-                  <MonitorPlayIcon className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{tCapture('open')}</span>
-                </Link>
-              </DropdownMenuItem>
-            ) : null}
-          </div>
-          <DropdownMenuSeparator />
-        </>
-      ) : null}
-
       <InvitationsMenuGroup />
 
       {/* Bounded so a long list scrolls inside the submenu rather than growing
-          it past the viewport. `min-h` stops the panel collapsing to a sliver on
-          an empty or one-workspace account, where a search box above a single
-          row would otherwise read as a rendering glitch. */}
-      <div className="max-h-[640px] min-h-[120px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        {workspacesLoading ? (
+          it past the viewport. */}
+      <div
+        className="max-h-[640px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        data-testid="switcher-workspaces"
+      >
+        {directory.loading ? (
           <div className="space-y-1 p-1">
             {Array.from({ length: 3 }, (_, i) => (
               <Skeleton key={i} className="h-7 rounded-md" />
             ))}
           </div>
-        ) : isEmpty ? (
-          <div className="text-muted-foreground/60 px-2 py-3 text-xs">
-            {query.trim() ? t('workspace.noMatches') : t('workspace.empty')}
-          </div>
+        ) : visible.length === 0 && query.trim() ? (
+          <div className="text-muted-foreground px-2 py-3 text-xs">{t('noMatches')}</div>
         ) : (
-          <>
-            {visibleGroups.map((group) => (
-              <DropdownMenuGroup key={group.accountId} className="p-0.5">
-                <DropdownMenuLabel className="px-1.5 text-sm">
-                  {group.accountName.replaceAll(tI18nComplete.raw('text78add5e83e0b'), '')}
-                </DropdownMenuLabel>
-                {group.workspaces.map((workspace) => {
-                  const active = workspace.project_id === activeProjectId;
-                  // Only the row you clicked, and only until the URL is on it.
-                  // Never the whole list — see `shouldShowProjectSwitchLoading`.
-                  const loading = shouldShowProjectSwitchLoading(
-                    switchingToProjectId,
-                    workspace.project_id,
-                    activeProjectId ?? null,
-                  );
-                  // Resolved during render, which is the whole point: the row
-                  // renders as an anchor instead of a button that discovers its
-                  // destination at click time. A `router.push` from a menu row
-                  // runs the RSC fetch cold, and that fetch degrades into a
-                  // full document load whenever it answers wrong — an auth
-                  // bounce, a build-id skew mid-deploy, a network blip.
-                  const target = resolveWorkspaceRowNavigation(workspace, activeProjectId);
-                  const rowBody = (
-                    <>
-                      {/* Same union as the trigger above — see `workspace-switcher.tsx`.
-                            Without `glyph`, every glyph-icon workspace in this
-                            list falls back to its initial. */}
-                      <EntityAvatar
-                        label={workspace.name}
-                        glyph={workspace.icon_glyph}
-                        emoji={workspace.icon}
-                        size="sm"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {workspace.name}
-                      </span>
-                      {loading ? (
-                        <Loading className="text-muted-foreground size-3.5" />
-                      ) : active ? (
-                        // The active row navigates to account settings rather
-                        // than switching, so pointing at it swaps the "you are
-                        // here" check for the destination's own icon. Stacked
-                        // rather than swapped in the tree so the trailing
-                        // column keeps one width and the label never reflows.
-                        <span className="relative size-4 shrink-0">
-                          <CheckCircleSolid
-                            weight="fill"
-                            className="text-kortix-green duration-normal absolute top-0 left-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-0"
-                          />
-                          <CogOne
-                            aria-hidden
-                            className="text-muted-foreground duration-normal absolute top-0 left-0 opacity-0 transition-opacity group-data-[highlighted]/workspace-row:opacity-100"
-                          />
+          <DropdownMenuGroup className="p-0.5">
+            {visible.map((row) => {
+              if (row.state !== 'active') {
+                const acting =
+                  (stateActions.setup.isPending && stateActions.setup.variables === row.workspaceId) ||
+                  (stateActions.restore.isPending && stateActions.restore.variables === row.workspaceId);
+                return (
+                  <DropdownMenuItem
+                    key={row.workspaceId}
+                    className="cursor-pointer px-1.5"
+                    disabled={acting}
+                    data-state={row.state}
+                    // Keep the menu open while the action runs; navigation closes it.
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      (row.state === 'deleting' ? stateActions.restore : stateActions.setup).mutate(row.workspaceId, {
+                        onError: (error: Error) => errorToast(error.message || tChooser('stateActionError')),
+                      });
+                    }}
+                  >
+                    <EntityAvatar label={row.project.name} glyph={row.project.icon_glyph} emoji={row.project.icon} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-muted-foreground block truncate text-sm font-medium">{row.project.name}</span>
+                      {row.state === 'deleting' ? (
+                        <span className="text-muted-foreground block truncate text-xs">
+                          {tChooser('deletingOn', { date: formatWorkspaceDate(row.deletionScheduledFor, locale) })}
                         </span>
                       ) : null}
-                    </>
-                  );
-                  return (
-                    <DropdownMenuItem
-                      key={workspace.project_id}
-                      asChild
-                      disabled={loading}
-                      className={cn(
-                        'group/workspace-row cursor-pointer px-1.5',
-                        active && 'bg-muted/80',
-                      )}
-                    >
-                      {/* Default `auto` prefetch, not `prefetch`. This list is
-                          every workspace in every account, so a forced full
-                          prefetch would render one `/projects/<id>` RSC payload
-                          per visible row on every submenu open. `auto` fills the
-                          segment cache to `projects/[id]/loading.tsx`, which is
-                          the boundary the click needs. */}
-                      {/* Two kinds of destination, one row body. A switch is
-                          a real navigation; the active row opens the account
-                          hub, which is a modal over this page and so must not
-                          be a `<Link>` at all. */}
-                      {target.kind === 'account-settings' ? (
-                        <HubLink to={target.to}>{rowBody}</HubLink>
-                      ) : (
-                        <Link
-                          href={target.href}
-                          onClick={(event) => startWorkspaceRow(event, workspace, target)}
-                        >
-                          {rowBody}
-                        </Link>
-                      )}
-                    </DropdownMenuItem>
-                  );
-                })}
-
-                {/* The only affordance in the product that says WHICH account a
-                    new project lands in. The global "Create a project…" row one
-                    level up (`workspace-switcher.tsx`) links to a bare `/new`,
-                    where the account picker renders `null` for anyone with a
-                    single creatable account (`account-picker.tsx`) — so the
-                    target account was never stated. Here the account is already
-                    the group's own heading, so the row can name it.
-
-                    An anchor, not a handler: `router.push` from a menu row runs
-                    the RSC fetch cold at click time, and that fetch degrades
-                    into a full document load whenever it answers wrong. */}
-                {creatableAccountIds.has(group.accountId) ? (
-                  <DropdownMenuItem asChild className="cursor-pointer px-1.5" size="sm">
-                    <Link href={newWorkspacePathForAccount(group.accountId)} prefetch>
-                      <PlusIcon />
-                      <span className="min-w-0 flex-1 truncate">
-                        {t('workspace.createIn', {
-                          account: group.accountName.replaceAll(
-                            tI18nComplete.raw('text78add5e83e0b'),
-                            '',
-                          ),
-                        })}
+                    </span>
+                    {acting ? (
+                      <Loading className="text-muted-foreground size-3.5" />
+                    ) : (
+                      <span className="text-muted-foreground text-xs">
+                        {row.state === 'deleting' ? tChooser('restore') : tChooser('setUp')}
                       </span>
-                    </Link>
+                    )}
                   </DropdownMenuItem>
-                ) : null}
-              </DropdownMenuGroup>
-            ))}
-            {/* Rendered after the successful groups, and NOT filtered by `query`:
-                a search match could be hiding inside the account that failed, so
-                hiding this on a search would tell the user something false. */}
-            {failedAccounts.map(({ account, result }) => (
-              <DropdownMenuGroup key={account.account_id}>
-                <DropdownMenuLabel>
-                  {account.name?.trim() || t('workspace.account')}
-                </DropdownMenuLabel>
-                <div className="text-muted-foreground flex w-full items-center gap-2 px-2.5 text-sm">
-                  <span className="min-w-0 flex-1 truncate">{t('workspace.loadError')}</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={result.isFetching}
-                    onClick={() => result.refetch()}
-                    className="shrink-0"
+                );
+              }
+              const active = row.workspaceId === activeProjectId;
+              // Only the row you clicked, and only until the URL is on it.
+              const loading = shouldShowProjectSwitchLoading(
+                switchingToProjectId,
+                row.workspaceId,
+                activeProjectId ?? null,
+              );
+              return (
+                <DropdownMenuItem
+                  key={row.workspaceId}
+                  asChild
+                  disabled={loading}
+                  className={cn('cursor-pointer px-1.5', active && 'bg-muted')}
+                >
+                  {/* Default `auto` prefetch: a forced full prefetch would
+                      render one RSC payload per row on every submenu open. */}
+                  <Link
+                    href={uiRoutes().project(row.workspaceId)}
+                    aria-current={active ? 'page' : undefined}
+                    onClick={(event) => startSwitch(event, row)}
                   >
-                    {result.isFetching ? <Loading className="size-3.5 shrink-0" /> : t('retry')}
-                  </Button>
-                </div>
-              </DropdownMenuGroup>
-            ))}
-          </>
+                    <EntityAvatar
+                      label={row.project.name}
+                      glyph={row.project.icon_glyph}
+                      emoji={row.project.icon}
+                      size="sm"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{row.project.name}</span>
+                    {loading ? (
+                      <Loading className="text-muted-foreground size-3.5" />
+                    ) : active ? (
+                      <CheckIcon className="text-foreground size-4 shrink-0" aria-hidden />
+                    ) : null}
+                  </Link>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuGroup>
         )}
+        {/* Not filtered by `query`: a match could be inside the account that
+            failed, so hiding this on a search would say something false. */}
+        {directory.failedAccountIds.length > 0 ? (
+          <div className="text-muted-foreground flex w-full items-center gap-2 px-2.5 text-xs">
+            <span className="min-w-0 flex-1 truncate">{t('loadError')}</span>
+            <Button type="button" variant="ghost" size="sm" onClick={directory.retryFailed} className="shrink-0">
+              {t('retry')}
+            </Button>
+          </div>
+        ) : null}
       </div>
+
+      {actions || (captureOn && activeAccountId) ? (
+        <>
+          <DropdownMenuSeparator />
+          <div className="p-0.5">
+            {actions?.(directory)}
+            {captureOn && activeAccountId ? (
+              <DropdownMenuItem asChild className="cursor-pointer px-1.5" size="sm">
+                <Link href={captureHref(activeAccountId, 'devices')}>
+                  <MonitorPlayIcon className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{tCapture('title')}</span>
+                </Link>
+              </DropdownMenuItem>
+            ) : null}
+          </div>
+        </>
+      ) : null}
     </>
   );
 }

@@ -4,8 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
 
-import { ProjectSelectorView, type ProjectSelectorViewProps } from './project-selector';
-import { buildAccountSections } from '@kortix/ui/workspace/project-selector/project-selector-model';
+import { ProjectSelectorView, type InlineCreateProps, type ProjectSelectorViewProps } from './project-selector';
+import { buildWorkspaceRows } from '@kortix/ui/workspace/project-selector/project-selector-model';
 
 function account(id: string, role: KortixAccount['account_role'], name: string): KortixAccount {
   return { account_id: id, name, account_role: role } as KortixAccount;
@@ -18,12 +18,12 @@ function project(id: string, accountId: string, name: string): KortixProject {
 const invite = {
   invite_id: 'inv-1',
   account_id: 'acc-x',
-  account_name: 'Mirkos Org',
-  initial_role: 'member',
-  inviter_email: 'marko@kortix.ai',
+  account_name: 'Example Org',
+  initial_role: 'admin',
+  inviter_email: 'inviter@example.com',
   created_at: '2026-09-21T00:00:00.000Z',
   expires_at: '2026-10-05T00:00:00.000Z',
-  projects: [{ project_id: 'p-x', name: 'Mirko Boss 900', role: 'member' }],
+  projects: [{ project_id: 'p-x', name: 'Example Workspace', role: 'member' }],
 } as MyAccountInvite;
 
 function render(overrides: Partial<ProjectSelectorViewProps>): string {
@@ -31,15 +31,14 @@ function render(overrides: Partial<ProjectSelectorViewProps>): string {
     email: 'user@example.com',
     loading: false,
     loadFailed: false,
-    sections: [],
+    workspaces: [],
     invites: [],
-    createHref: '/new?account=a',
+    createHref: '/workspaces/new',
     joiningInviteId: null,
     openingProjectId: null,
     signingOut: false,
     onJoin: () => {},
     onOpenProject: () => {},
-    onRetryAccount: () => {},
     onRetryAll: () => {},
     onLogOut: () => {},
     ...overrides,
@@ -47,91 +46,143 @@ function render(overrides: Partial<ProjectSelectorViewProps>): string {
   return renderToStaticMarkup(createElement(ProjectSelectorView, props));
 }
 
-describe('ProjectSelectorView', () => {
-  test('new user: welcome, one create card, no project form fields', () => {
-    const html = render({
-      sections: buildAccountSections({ creatableAccountIds: new Set(['a']), accounts: [account('a', 'owner', 'Me')], lists: [{ accountId: 'a', data: [], isError: false }] }),
-    });
-    expect(html).toContain('Welcome to Kortix CompanyOS');
+function inlineCreate(overrides: Partial<InlineCreateProps> = {}): InlineCreateProps {
+  return {
+    name: 'Amber Falcon',
+    nameError: null,
+    canSubmit: true,
+    submitting: false,
+    phase: null,
+    error: null,
+    canRetry: false,
+    onNameChange: () => {},
+    onNameBlur: () => {},
+    onSubmit: () => {},
+    onRetry: () => {},
+    ...overrides,
+  };
+}
+
+const twoAccounts = buildWorkspaceRows({
+  accounts: [account('a', 'owner', 'Acme'), account('b', 'member', 'Globex')],
+  lists: [
+    { accountId: 'a', data: [project('p1', 'a', 'Website'), project('p2', 'a', 'Billing')], isError: false },
+    { accountId: 'b', data: [project('p3', 'b', 'Support')], isError: false },
+  ],
+});
+
+describe('ProjectSelectorView — create or join', () => {
+  test('0 workspaces, 0 invites: "Create a workspace", one primary create button, the invite hint', () => {
+    const html = render({});
+    expect(html).toContain('Create a workspace');
+    expect(html).toContain('A workspace is where your company works with Kortix');
     expect(html).toContain('data-testid="selector-create"');
-    expect(html).toContain('href="/new?account=a"');
-    expect(html).not.toContain('Project name');
-    expect(html).not.toContain('or open an existing project');
-    // The empty account the card targets is not listed a second time.
-    expect(html).not.toContain('No projects in this workspace yet.');
+    expect(html).toContain('href="/workspaces/new"');
+    expect(html).toContain('Invited? Open the invite link from your email, or ask an admin to invite user@example.com.');
+    expect(html).not.toContain('data-testid="selector-project"');
   });
 
-  test('a second empty account the card does not target keeps its own create row', () => {
+  test('0 workspaces with the inline form: the name field, a submit button, More options to /workspaces/new', () => {
+    const html = render({ inlineCreate: inlineCreate() });
+    expect(html).toContain('Create a workspace');
+    expect(html).toContain('data-testid="selector-create-form"');
+    expect(html).toContain('value="Amber Falcon"');
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*data-testid="selector-create"/);
+    expect(html).toContain('href="/workspaces/new"');
+    expect(html).toContain('data-testid="selector-create-more"');
+    expect(html).toContain('Invited? Open the invite link from your email');
+  });
+
+  test('a create in flight replaces the page with the handoff', () => {
+    const html = render({ inlineCreate: inlineCreate({ submitting: true }) });
+    expect(html).not.toContain('data-testid="selector-create-form"');
+    expect(html).toContain('Amber Falcon');
+  });
+
+  // Finding 38: the create primes the list with the new workspace before the
+  // route changes; the handoff must stay up, not flash the chooser.
+  test('a create in flight keeps the handoff even after the new workspace joined the list', () => {
+    const html = render({ workspaces: twoAccounts, inlineCreate: inlineCreate({ submitting: true }) });
+    expect(html).not.toContain('Choose a workspace');
+    expect(html).not.toContain('data-testid="selector-workspaces"');
+  });
+
+  test('a deleting row offers Restore and a setup_required row offers Set up; neither is a link', () => {
+    const [first, second] = twoAccounts;
     const html = render({
-      sections: buildAccountSections({
-        creatableAccountIds: new Set(['a', 'b']),
-        accounts: [account('a', 'owner', 'Me'), account('b', 'owner', 'Team')],
-        lists: [
-          { accountId: 'a', data: [], isError: false },
-          { accountId: 'b', data: [], isError: false },
-        ],
-      }),
+      workspaces: [
+        { ...first!, state: 'deleting', deletionScheduledFor: '2026-11-20T00:00:00.000Z' },
+        { ...second!, state: 'setup_required' },
+      ],
     });
-    expect(html).toContain('href="/new?account=b"');
-    expect(html).toContain('No projects in this workspace yet.');
+    expect(html).toContain('data-state="deleting"');
+    expect(html).toContain('Restore');
+    expect(html).toContain('data-state="setup_required"');
+    expect(html).toContain('Set up');
+    expect(html).not.toContain(`href="/workspaces/${first!.workspaceId}"`);
   });
 
-  test('returning user: every project is a link to its page, grouped under the account', () => {
-    const html = render({
-      sections: buildAccountSections({
-        accounts: [account('a', 'owner', 'Acme')],
-        lists: [{ accountId: 'a', data: [project('p1', 'a', 'Website'), project('p2', 'a', 'Billing')], isError: false }],
-      }),
-    });
-    expect(html).toContain('Welcome back');
-    expect(html).toContain('Acme');
-    expect(html).toContain('Owner · 2 projects');
-    expect(html).toContain('href="/projects/p1"');
-    expect(html).toContain('href="/projects/p2"');
-    expect(html).toContain('or open an existing project');
+  test('with workspaces the inline form is not shown: one create link', () => {
+    const html = render({ workspaces: twoAccounts, inlineCreate: inlineCreate() });
+    expect(html).not.toContain('data-testid="selector-create-form"');
+    expect(html).toContain('href="/workspaces/new"');
   });
 
-  test('invites render first with Join and the recipient email', () => {
+  test('an owned empty account is not a workspace: the user still sees the create screen', () => {
+    const workspaces = buildWorkspaceRows({
+      accounts: [account('a', 'owner', 'Me')],
+      lists: [{ accountId: 'a', data: [], isError: false }],
+    });
+    const html = render({ workspaces });
+    expect(html).toContain('Create a workspace');
+    expect(html).not.toContain('Me');
+  });
+
+  test('invites render first with Join, the inviter and the role, then the create action', () => {
     const html = render({ invites: [invite] });
-    expect(html).toContain('data-testid="selector-invites"');
-    expect(html).toContain('Mirko Boss 900');
-    expect(html).toContain('Invited by marko@kortix.ai');
+    expect(html).toContain('You&#x27;re invited');
+    expect(html).toContain('Example Workspace');
+    expect(html).toContain('Invited by inviter@example.com');
+    expect(html).toContain('Admin');
     expect(html).toContain('Sent to user@example.com');
-    expect(html.indexOf('selector-invites')).toBeLessThan(html.indexOf('selector-account') === -1 ? Infinity : html.indexOf('selector-account'));
+    expect(html.indexOf('selector-invites')).toBeLessThan(html.indexOf('selector-create'));
+    expect(html).not.toContain('Invited? Open the invite link');
   });
 
-  test('account member without access: the account shows an ask-an-admin line, no create card', () => {
-    const html = render({
-      createHref: null,
-      sections: buildAccountSections({ accounts: [account('m', 'member', 'Acme')], lists: [{ accountId: 'm', data: [], isError: false }] }),
+  test('1+ workspaces: one flat list, no account heading, role on each row, one create action', () => {
+    const html = render({ workspaces: twoAccounts });
+    expect(html).toContain('Choose a workspace');
+    expect(html.split('data-testid="selector-project"').length - 1).toBe(3);
+    expect(html).toContain('href="/workspaces/p1"');
+    expect(html).toContain('href="/workspaces/p3"');
+    expect(html).not.toContain('Acme');
+    expect(html).not.toContain('Globex');
+    expect(html).toContain('Owner');
+    expect(html).toContain('Member');
+    expect(html.split('data-testid="selector-create"').length - 1).toBe(1);
+    expect(html).not.toContain('ask an admin');
+  });
+
+  test('search appears only above 8 workspaces', () => {
+    expect(render({ workspaces: twoAccounts })).not.toContain('Find a workspace');
+    const many = buildWorkspaceRows({
+      accounts: [account('a', 'owner', 'Acme')],
+      lists: [{ accountId: 'a', data: Array.from({ length: 9 }, (_, i) => project(`p${i}`, 'a', `P${i}`)), isError: false }],
     });
-    expect(html).toContain('data-testid="selector-empty-member"');
-    expect(html).toContain('Ask an owner or admin for access');
+    expect(render({ workspaces: many })).toContain('Find a workspace');
+  });
+
+  test('restricted self-host with no invite: no create action, ask an admin to invite the email', () => {
+    const html = render({ createHref: null });
+    expect(html).toContain('No workspace yet');
+    expect(html).toContain('Ask an admin to invite user@example.com.');
     expect(html).not.toContain('data-testid="selector-create"');
   });
 
-  test('no account, no invite, no create right: the no-access message names the email', () => {
-    const html = render({ createHref: null, sections: [] });
-    expect(html).toContain('No projects yet');
-    expect(html).toContain('Ask an owner or admin to invite user@example.com.');
-  });
-
-  test('more than five projects collapse behind "Show all N"', () => {
-    const projects = Array.from({ length: 7 }, (_, i) => project(`p${i}`, 'a', `P${i}`));
-    const html = render({
-      sections: buildAccountSections({ accounts: [account('a', 'owner', 'Acme')], lists: [{ accountId: 'a', data: projects, isError: false }] }),
-    });
-    expect(html.split('data-testid="selector-project"').length - 1).toBe(5);
-    expect(html).toContain('Show all 7');
-  });
-
-  test('a failed account offers Retry; a total failure replaces the list', () => {
-    const partial = render({
-      sections: buildAccountSections({ accounts: [account('a', 'owner', 'Acme')], lists: [{ accountId: 'a', data: undefined, isError: true }] }),
-    });
-    expect(partial).toContain('Could not load these projects.');
+  test('a failed list offers Try again; a total failure replaces the list', () => {
+    expect(render({ workspaces: twoAccounts, partialFailure: true })).toContain('Could not load every workspace.');
     const total = render({ loadFailed: true });
-    expect(total).toContain('Could not load your projects');
+    expect(total).toContain('Could not load your workspaces');
     expect(total).not.toContain('data-testid="selector-create"');
   });
 
@@ -139,33 +190,13 @@ describe('ProjectSelectorView', () => {
     expect(render({})).toContain('Logged in as');
     expect(render({ loading: true })).toContain('Logged in as');
     expect(render({ name: 'Dogfood Tester' })).toContain('>Dogfood Tester</span>');
-    expect(render({ name: 'Dogfood Tester' })).toContain('Logged in as Dogfood Tester');
     expect(render({ name: '  ' })).toContain('>user@example.com</span>');
   });
-});
 
-test('computer pairing selection preserves the destination for every project', () => {
-    const html = render({
-      connectComputer: true,
-      sections: buildAccountSections({
-        accounts: [account('a', 'owner', 'Personal')],
-        lists: [{ accountId: 'a', data: [project('p1', 'a', 'Website'), project('p2', 'a', 'Notes')], isError: false }],
-      }),
-    });
-    expect(html).toContain('href="/projects/p1/settings/computer"');
-    expect(html).toContain('href="/projects/p2/settings/computer"');
-    expect(html).not.toContain('href="/projects/p1"');
+  test('computer pairing keeps its destination on every row and on create', () => {
+    const html = render({ connectComputer: true, workspaces: twoAccounts });
+    expect(html).toContain('href="/workspaces/p1/settings/computer"');
+    expect(html).not.toContain('href="/workspaces/p1"');
+    expect(html).toContain('href="/workspaces/new?connect=computer"');
   });
-
-test('zero-project pairing entry carries intent on the create card and other empty accounts', () => {
-  const html = render({
-    connectComputer: true,
-    sections: buildAccountSections({
-      creatableAccountIds: new Set(['a', 'b']),
-      accounts: [account('a', 'owner', 'Personal'), account('b', 'owner', 'Team')],
-      lists: [{ accountId: 'a', data: [], isError: false }, { accountId: 'b', data: [], isError: false }],
-    }),
-  });
-  expect(html).toContain('href="/new?account=a&amp;connect=computer"');
-  expect(html).toContain('href="/new?account=b&amp;connect=computer"');
 });

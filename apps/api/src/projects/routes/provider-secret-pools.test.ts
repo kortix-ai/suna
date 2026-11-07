@@ -314,7 +314,7 @@ test('a selection is refused when the session owner cannot read the project', as
   const owner = await put('anthropic', [keyId(1)]);
   expect(owner.status).toBe(403);
   expect(await owner.json()).toEqual({
-    error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
+    error: 'The session owner can no longer read this workspace, so the session cannot use provider secrets',
     code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
   });
   expect(writes).toBe(0);
@@ -347,7 +347,7 @@ test('a shared session whose owner cannot read the project names that cause, not
   const response = await put('anthropic', [keyId(1)]);
   expect(response.status).toBe(403);
   expect(await response.json()).toEqual({
-    error: 'The session owner can no longer read this project, so the session cannot use provider secrets',
+    error: 'The session owner can no longer read this workspace, so the session cannot use provider secrets',
     code: 'SESSION_OWNER_NO_PROJECT_ACCESS',
   });
   expect(writes).toBe(0);

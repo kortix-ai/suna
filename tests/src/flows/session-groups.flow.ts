@@ -28,12 +28,12 @@ const SESSION_ROUTES = {
   list: 'GET /v1/projects/:projectId/sessions',
   read: 'GET /v1/projects/:projectId/sessions/:sessionId',
 };
-const GROUPS = '/v1/projects/:projectId/session-groups';
-const GROUP = '/v1/projects/:projectId/session-groups/:groupId';
-const ORDER = '/v1/projects/:projectId/session-groups/order';
-const ASSIGN = '/v1/projects/:projectId/sessions/:sessionId/group';
-const SESSIONS = '/v1/projects/:projectId/sessions';
-const SESSION = '/v1/projects/:projectId/sessions/:sessionId';
+const GROUPS = '/v1/workspaces/:projectId/session-groups';
+const GROUP = '/v1/workspaces/:projectId/session-groups/:groupId';
+const ORDER = '/v1/workspaces/:projectId/session-groups/order';
+const ASSIGN = '/v1/workspaces/:projectId/sessions/:sessionId/group';
+const SESSIONS = '/v1/workspaces/:projectId/sessions';
+const SESSION = '/v1/workspaces/:projectId/sessions/:sessionId';
 
 type Group = { group_id: string; name: string; position: number };
 type Session = { session_id: string; group_id: string | null; updated_at: string };
@@ -75,7 +75,8 @@ flow('SGRP-2', flowMeta('session-groups', [ROUTES.list, ROUTES.create, ROUTES.up
   const member = await team.addMember('member');
   await team.grantProjectRole(project.id, member.userId!, 'member');
   const asMember = ctx.client.as(member);
-  const outsider = ctx.client.as(await team.addMember('member'));
+  // Membership is access (design.md C3): the outsider is a person outside the workspace.
+  const outsider = ctx.client.as(ctx.P.NONMEMBER);
   const ids: Record<string, string> = {};
   try {
     await world.setFeature('session_groups', true);

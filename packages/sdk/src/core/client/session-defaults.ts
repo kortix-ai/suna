@@ -19,7 +19,7 @@ export function bindSessionDefaults(projectId: string, sessionId: string) {
     agent?: string;
   }> {
     if (!_persistedPromptDefaults) {
-      _persistedPromptDefaults = P.getProjectSession(projectId, sessionId, {
+      _persistedPromptDefaults = P.getWorkspaceSession(projectId, sessionId, {
         showErrors: false,
       }).then((projectSession) => {
         const modelReference = P.sessionModelPin(projectSession) ?? '';

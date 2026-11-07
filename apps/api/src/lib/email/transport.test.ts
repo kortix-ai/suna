@@ -179,6 +179,14 @@ describe('sendEmail', () => {
     expect(payload.tags).toEqual([{ name: 'category', value: 'unit-test' }]);
   });
 
+  test('resend leg sends the idempotency key as Idempotency-Key, so a retried email is dropped as a repeat', async () => {
+    mockConfig.RESEND_API_KEY = 're_test';
+    await sendEmail({ ...MSG, idempotencyKey: 'synthetic-key-1' });
+    expect((calls[0].init.headers as Record<string, string>)['Idempotency-Key']).toBe('synthetic-key-1');
+    await sendEmail(MSG);
+    expect((calls[1].init.headers as Record<string, string>)['Idempotency-Key']).toBeUndefined();
+  });
+
   test('resend leg substitutes RESEND_FROM_EMAIL and keeps the intended sender as reply_to', async () => {
     mockConfig.RESEND_API_KEY = 're_test';
     mockConfig.RESEND_FROM_EMAIL = 'noreply@fallback.test';

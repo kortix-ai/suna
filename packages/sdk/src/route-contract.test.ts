@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import ts from 'typescript';
+import { WORKSPACE_LEGACY_REPLACEMENTS, canonicalWorkspaceRoute } from '../../shared/src/workspace-routes';
 
 /**
  * Route contract: every Kortix API path the SDK sends a request to must exist
@@ -569,6 +570,27 @@ describe('route contract: SDK → routes.generated.json', () => {
       .filter((r) => !allowlistReason(r.path) && !isServed(r, manifest))
       .map((r) => `${r.method} /v1${r.path}  (${r.file}:${r.line})`);
     expect(missing).toEqual([]);
+  });
+
+  test('every workspace path the SDK calls uses its canonical name', () => {
+    // `/v1/workspaces`, `/v1/me`, `/v1/invites`, `/v1/connectors/workspaces`,
+    // `/v1/webhooks/workspaces` (`@kortix/shared/workspace-routes`). Two kinds
+    // of call keep the legacy name on purpose:
+    //   - an `Account*` helper holds an ACCOUNT id, and a canonical path takes
+    //     a workspace id only (an account id answers 404 workspace_not_found),
+    //     so it calls `/v1/accounts/:accountId/<family>`, which accepts either
+    //     id forever (README "Route names and older APIs");
+    //   - a legacy route with its own meaning or no canonical name
+    //     (`WORKSPACE_LEGACY_REPLACEMENTS`): GET/POST /v1/projects, provision,
+    //     quota.
+    const toTemplate = (path: string) => path.replace(/\/:param(?=\/|$)/g, '/:workspaceId');
+    const legacyMeaning = new Set(Object.keys(WORKSPACE_LEGACY_REPLACEMENTS));
+    const legacy = routes
+      .filter((r) => canonicalWorkspaceRoute(`/v1${r.path}`) !== null)
+      .filter((r) => !/^\/accounts\/:param\//.test(r.path))
+      .filter((r) => !legacyMeaning.has(`${r.method === 'ANY' ? 'GET' : r.method} ${toTemplate(`/v1${r.path}`)}`))
+      .map((r) => `${r.method} /v1${r.path} → ${canonicalWorkspaceRoute(`/v1${r.path}`)}  (${r.file}:${r.line})`);
+    expect(legacy).toEqual([]);
   });
 
   test('every allowlist entry is still needed', () => {

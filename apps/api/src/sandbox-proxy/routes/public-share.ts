@@ -4,6 +4,7 @@ import {
   PUBLIC_SHARE_BLOCKED_PORTS,
   PUBLIC_SHARE_VIEW_METHODS,
   STATIC_FILE_SHARE_PORT,
+  isViewOnlyShare,
   resolvePublicShare,
   resourceProxyPath,
   touchPublicShare,
@@ -151,17 +152,15 @@ async function forwardPublicShare(c: any, args: {
   redirectPrefix: string;
 }) {
   const method = c.req.method.toUpperCase();
-  if (args.share.resourceType === 'file' && !PUBLIC_SHARE_VIEW_METHODS.has(method)) {
-    return c.json({ error: 'This public share is view-only' }, 405);
-  }
-  // A view-mode PREVIEW share must also be view-only: without this gate a holder
-  // of a `mode:'view'` preview link could POST/PUT/DELETE to the sandboxed
-  // preview app. Mirrors the file branch above. See SSR-PV1 (weekly pentest #4).
-  if (
-    args.share.resourceType === 'preview' &&
-    args.share.mode === 'view' &&
-    !PUBLIC_SHARE_VIEW_METHODS.has(method)
-  ) {
+  // A view-only share must also be view-only on this path: without this gate a
+  // holder of a view link could POST/PUT/DELETE to the sandboxed preview app.
+  // See SSR-PV1 (weekly pentest #4).
+  //
+  // The predicate is the SHARED allowlist the preview origin asks, not
+  // `mode === 'view'`: `mode` is a free-form column, so an exact-string
+  // denylist would treat every value it has not heard of as writable while the
+  // preview origin refuses it. The two edges must agree on the same share.
+  if (isViewOnlyShare(args.share) && !PUBLIC_SHARE_VIEW_METHODS.has(method)) {
     return c.json({ error: 'This public share is view-only' }, 405);
   }
 

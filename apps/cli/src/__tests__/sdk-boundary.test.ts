@@ -22,7 +22,7 @@ function rules(source: string, options?: ScanOptions): string[] {
 
 describe('scanSource raw-kortix-fetch', () => {
   test('flags a fetch whose template base is interpolated', () => {
-    const source = 'const r = await fetch(`${base}/v1/projects`);';
+    const source = 'const r = await fetch(`${base}/v1/workspaces`);';
 
     expect(rules(source)).toContain('raw-kortix-fetch');
   });
@@ -47,7 +47,7 @@ describe('scanSource raw-kortix-fetch', () => {
 
   test("allows a self-host's own acme-dns API on its one loopback port, and no other loopback port", () => {
     expect(scanSource("await fetch('http://127.0.0.1:13750/register', { method: 'POST' })")).toEqual([]);
-    expect(scanSource("await fetch('http://127.0.0.1:8008/v1/projects')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
+    expect(scanSource("await fetch('http://127.0.0.1:8008/v1/workspaces')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
     expect(scanSource("await fetch('http://127.0.0.1:137500/x')").map((v) => v.rule)).toEqual(['raw-kortix-fetch']);
   });
 
@@ -58,13 +58,13 @@ describe('scanSource raw-kortix-fetch', () => {
   });
 
   test('is not applied to test files', () => {
-    const source = 'const r = await fetch(`${base}/v1/projects`);';
+    const source = 'const r = await fetch(`${base}/v1/workspaces`);';
 
     expect(scanSource(source, { test: true })).toEqual([]);
   });
 
   test('is not applied to the transport adapter', () => {
-    const source = 'const r = await fetch(`${base}/v1/projects`);';
+    const source = 'const r = await fetch(`${base}/v1/workspaces`);';
 
     expect(scanSource(source, { transport: true })).toEqual([]);
   });
@@ -190,7 +190,7 @@ describe('scanCliBoundary', () => {
       resolve(root, 'planted.ts'),
       [
         'export async function listProjects(base: string) {',
-        '  return fetch(`${base}/v1/projects`);',
+        '  return fetch(`${base}/v1/workspaces`);',
         '}',
         '',
       ].join('\n'),

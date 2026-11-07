@@ -27,6 +27,11 @@ type ResultClient = <T>(
  *
  * `createApiResultClient` already retries a transient 5xx, so reaching this
  * assertion means the outage outlasted the whole retry budget.
+ *
+ * No account is created at sign-up any more (Workspaces D3): a seeded user
+ * with no owned account gets one here, explicitly, through `POST /accounts`.
+ * The name stays for the callers; the account is the user's own, not a
+ * "personal" one whose id is the user id.
  */
 export async function resolvePersonalAccountId(
   api: ResultClient,
@@ -47,9 +52,37 @@ export async function resolvePersonalAccountId(
       account.is_primary_owner ||
       account.account_role === "owner",
   );
+  if (personalAccount?.account_id) return personalAccount.account_id;
+  const created = await api<AccountSummary>(token, "POST", "/accounts", {
+    name: "E2E workspace",
+  });
   expect(
-    personalAccount?.account_id,
-    "the seeded user must own a personal account",
-  ).toBeTruthy();
-  return personalAccount?.account_id as string;
+    created.status,
+    `POST /accounts answered ${created.status}: ${JSON.stringify(created.json)}`,
+  ).toBe(201);
+  expect(created.json?.account_id, "POST /accounts returned no account_id").toBeTruthy();
+  return created.json?.account_id as string;
+}
+
+type JsonClient = <T>(
+  token: string,
+  method: string,
+  path: string,
+  body?: Record<string, unknown>,
+  expectedStatus?: number | number[],
+) => Promise<T>;
+
+/**
+ * The account a freshly signed-in user owns, created through `POST /accounts`
+ * when there is none. No account exists at sign-up (Workspaces D3), so a
+ * journey that needs one makes it explicitly. For `createApiJsonClient`.
+ */
+export async function ensureOwnedAccount(api: JsonClient, token: string): Promise<string> {
+  const accounts = await api<AccountSummary[]>(token, "GET", "/accounts");
+  const own = accounts.find(
+    (a) => a.personal_account || a.is_primary_owner || a.account_role === "owner",
+  );
+  if (own) return own.account_id;
+  const created = await api<AccountSummary>(token, "POST", "/accounts", { name: "E2E workspace" }, 201);
+  return created.account_id;
 }

@@ -147,7 +147,7 @@ export function filterToNativeProviders(providers: ProviderListResponse): Provid
   };
 }
 
-export function mergeProjectSecretConnectedProviders(
+export function mergeWorkspaceSecretConnectedProviders(
   providers: ProviderListResponse,
   secretNames: Set<string>,
   providerCredentials: Array<{ id: string; authRequirement: ProviderAuthRequirement }>,
@@ -175,6 +175,9 @@ export function mergeProjectSecretConnectedProviders(
 
   return { ...normalized, connected: [...connected] };
 }
+
+/** @deprecated Use `mergeWorkspaceSecretConnectedProviders`. Kept permanently. */
+export const mergeProjectSecretConnectedProviders = mergeWorkspaceSecretConnectedProviders;
 
 export function connectedGatewayProviderIdsFromSecretNames(secretNames: Set<string>): Set<string> {
   const ids = new Set<string>();

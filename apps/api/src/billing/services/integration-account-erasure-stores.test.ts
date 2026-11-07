@@ -107,10 +107,10 @@ async function seed() {
   await db.insert(accounts).values({ accountId, name: 'erasure-stores' });
   await db.insert(creditAccounts).values({ accountId, stripeSubscriptionId: `sub_${accountId}` });
   await db.execute(sql`
-    INSERT INTO kortix.projects (project_id, account_id, name, repo_url, metadata) VALUES
+    INSERT INTO kortix.projects (project_id, account_id, name, repo_url, metadata, split_pending) VALUES
       (${managed}::uuid, ${accountId}::uuid, 'managed', 'https://git.example.test/managed.git',
-       ${JSON.stringify({ git: { managed: true, provider: 'local', name: `repo-${managed}` } })}::jsonb),
-      (${connected}::uuid, ${accountId}::uuid, 'connected', 'https://github.com/someone/theirs.git', '{}'::jsonb)`);
+       ${JSON.stringify({ git: { managed: true, provider: 'local', name: `repo-${managed}` } })}::jsonb, true),
+      (${connected}::uuid, ${accountId}::uuid, 'connected', 'https://github.com/someone/theirs.git', '{}'::jsonb, true)`);
   for (const [i, b] of boxes.entries()) {
     const sessionId = `erasure-${b.sandboxId}`;
     await db.execute(sql`

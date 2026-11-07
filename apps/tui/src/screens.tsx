@@ -42,7 +42,7 @@ export const SCREEN_TITLE: Record<ScreenRoute, string> = {
   providers: 'Model providers',
   connectors: 'Connectors',
   connect: 'Connect',
-  account: 'Account',
+  account: 'Workspace members',
   drive: 'Drive',
   repo: 'Repository',
   artifacts: 'Artifacts',

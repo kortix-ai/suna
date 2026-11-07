@@ -143,7 +143,7 @@ const QUICK_FILTERS: Array<{
 
 const RESOURCE_TYPES = [
   { label: 'Any resource', value: '' },
-  { label: 'Project', value: 'project' },
+  { label: 'Workspace', value: 'project' },
   { label: 'Session', value: 'project_session' },
   { label: 'Connector action', value: 'connector_action' },
   { label: 'Connector approval', value: 'connector_approval' },

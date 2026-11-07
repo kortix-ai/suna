@@ -62,14 +62,14 @@ schedules a payment or marks anything paid.
 <Steps>
 <Step title="Copy the setup prompt into a new session">
 
-Open your Kortix project, start a new session, paste this prompt and send it.
+Open your Kortix workspace, start a new session, paste this prompt and send it.
 The agent writes the agent file, the ap-invoice-match skill and the 15-minute
 trigger, and opens a change request for you to review. Prefer clicks? Choose
 **Use this template** instead.
 
 <CopyBlock
   title="Setup prompt"
-  code={`Set up an accounts payable invoice agent in this project.
+  code={`Set up an accounts payable invoice agent in this workspace.
 
 1. Create the agent agents/ap-invoice-processing.md. Its job is to record and match new vendor invoices. It may use the Gmail, Google Sheets and Slack connectors.
 
@@ -90,7 +90,7 @@ trigger, and opens a change request for you to review. Prefer clicks? Choose
 </Step>
 <Step title="Connect your tools">
 
-Open **Connectors** in your project and connect the inbox that receives
+Open **Connectors** in your workspace and connect the inbox that receives
 invoices, the sheet that holds your AP ledger and Slack. Credentials are brokered server-side and never enter the
 agent's machine.
 
@@ -129,7 +129,7 @@ before you let the schedule take over.
 
 The change request added this trigger to `kortix.yaml`. From now on the agent
 runs every 15 minutes, each run in a new session on its own cloud computer.
-To change the interval, edit the cron line, or open **Triggers** in the project.
+To change the interval, edit the cron line, or open **Triggers** in the workspace.
 
 <CopyBlock
   title="kortix.yaml"

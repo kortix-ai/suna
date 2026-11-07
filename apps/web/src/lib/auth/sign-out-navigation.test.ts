@@ -92,13 +92,13 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
     to: 'const handleSetTheme = useCallback(',
   },
   {
-    name: "/projects/start's stuck-state escape hatch",
-    file: 'app/[locale]/(app)/projects/start/page.tsx',
+    name: "/workspaces/start's stuck-state escape hatch",
+    file: 'app/[locale]/(app)/workspaces/start/page.tsx',
     from: 'function StartSignOutButton()',
     to: 'function ProjectStartError(',
   },
   {
-    name: "/new's Log out",
+    name: "/workspaces/new's Log out",
     file: 'features/workspace/new/new-workspace-page.tsx',
     // The control moved into `AccountTopBar` (#8286); the page owns only the
     // `onLogOut` handler it passes in, so the slice is that handler.
@@ -282,14 +282,11 @@ describe('the signed-out route guards do not race the exit', () => {
     // deletion of a guard reads as a failure rather than as a passing regex.
     for (const file of [
       'features/workspace/project-layout/project-shell.tsx',
-      // The `/accounts/**` routes were deleted on 2026-09-08 — the account hub
-      // is a modal over the current page now — so the two surfaces that
-      // survived them are the hub's own bodies. The two guided-setup pages
-      // went with the routes; their wizards are panes of the Identity section
-      // and inherit this guard from `account-hub-content.tsx`.
-      'features/accounts/hub/account-list-content.tsx',
+      // The account panes (Workspace settings › People, Billing, …). The
+      // guided-setup wizards are panes of the Identity section and inherit
+      // this guard from `account-hub-content.tsx`.
       'features/accounts/hub/account-hub-content.tsx',
-      'app/[locale]/(app)/projects/start/page.tsx',
+      'app/[locale]/(app)/workspaces/start/page.tsx',
       'features/workspace/new/new-workspace-page.tsx',
     ]) {
       expect({ file, calls: code(file).includes('useSignedOutRedirect();') }).toEqual({
@@ -433,7 +430,7 @@ describe('the three bare logout controls now say something is happening', () => 
       holdsDialog: true,
     },
     {
-      name: "/new's Log out",
+      name: "/workspaces/new's Log out",
       file: 'features/workspace/account-top-bar.tsx',
       handler: ['disabled={signingOut}', 'onSelect={onLogOut}'],
       control: ['disabled={signingOut}', '</button>'],

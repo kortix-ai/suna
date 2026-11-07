@@ -477,7 +477,7 @@ describe('readSessionPromptsInbox', () => {
     const stub = stubFetch();
     try {
       expect(await readSessionPromptsInbox('proj-1', 'sess-1', undefined)).toEqual([]);
-      expect(stub.urls).toEqual(['http://api.test/v1/projects/proj-1/sessions/sess-1/prompts']);
+      expect(stub.urls).toEqual(['http://api.test/v1/workspaces/proj-1/sessions/sess-1/prompts']);
     } finally {
       stub.restore();
       configureKortix({ backendUrl: '', getToken: async () => null });

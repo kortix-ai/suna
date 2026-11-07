@@ -239,7 +239,7 @@ function ProvisioningView({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pct = Math.max(0, Math.min(100, progress));
   const rawStageText =
-    stageLabel || (currentStage ? STAGE_LABELS[currentStage] : undefined) || 'Preparing workspace';
+    stageLabel || (currentStage ? STAGE_LABELS[currentStage] : undefined) || 'Preparing sandbox';
   const stageText = translateUiCatalogText(
     rawStageText,
     tI18nComplete,

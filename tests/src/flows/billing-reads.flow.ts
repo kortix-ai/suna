@@ -119,7 +119,9 @@ flow(
       r.status(OWNER_READ);
     });
     await ctx.step("a team member with no credit row of their own reads an all-zero breakdown, not an error", async () => {
-      const team = await ctx.fixtures.team();
+      // A team with no credit row: the member has no account of their own, so
+      // the breakdown reads the team's.
+      const team = await ctx.fixtures.team({ credits: false });
       const member = await team.addMember("member");
       const r = await ctx.client.as(member).get("/v1/billing/credit-breakdown");
       r.status(OWNER_READ);
@@ -181,7 +183,7 @@ flow(
 );
 
 // BILL-15 — a team's balance is read through account_id (KRTX-2989). The two
-// credit routes used the caller's personal account, so a team member saw their
+// credit routes used the caller's first account, so a team member saw their
 // own zero balance as the team's, and a non-member could not be refused.
 flow(
   "BILL-15",

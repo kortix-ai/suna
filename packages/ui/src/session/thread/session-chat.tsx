@@ -515,7 +515,7 @@ export function SessionChat({
   // only the visible tab may be treated as "active" — otherwise every busy
   // session would react to global shortcuts (ESC-to-stop, auto question
   // handling) at the same time. The standalone project session route
-  // (/projects/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
+  // (/workspaces/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
   // is never registered in this tab store; there it's the only chat mounted, so
   // it's always active.
   //
@@ -3852,15 +3852,15 @@ export function SessionChat({
     [local.model],
   );
 
-  // Only the ACCOUNT default is settable from the picker now — it is the one
-  // scope with no screen of its own. The project default lives in the provider
-  // modal's Models tab and the agent default on the agent's detail page, both
-  // of which also SHOW and can CLEAR what is set. See ModelDefaultControls.
+  // The picker's star sets the WORKSPACE default — the project default, since
+  // a workspace is one account and its project (Workspaces, PR 1). An
+  // account-wide default set earlier still applies as the fallback. See
+  // ModelDefaultControls.
   const chatModelDefaultControls: ModelDefaultControls = useMemo(
     () => ({
-      accountDefault: local.model.defaults.accountDefault ?? null,
+      accountDefault: local.model.defaults.projectDefault ?? null,
       onSetAccountDefault: (m) => {
-        void local.model.defaults.setAccountDefault(m);
+        void local.model.defaults.setProjectDefault(m);
       },
     }),
     [local.model.defaults],
@@ -4308,7 +4308,7 @@ export function SessionChat({
       // already resolved client-side, so there is no server data to fetch.
       // Under Next.js `router.replace` would run a COLD RSC FETCH on every
       // open/close of this dialog, on the hottest route in the app (see
-      // app/(app)/projects/[id]/sessions/[sessionId]/page.tsx:1309); Next
+      // app/(app)/workspaces/[id]/sessions/[sessionId]/page.tsx:1309); Next
       // observes `history.replaceState`, which `useUiShallowNavigate` writes
       // when the host router observes history and routes through it otherwise.
       shallowNavigate(qs ? `${pathname}?${qs}` : pathname, { replace: true });

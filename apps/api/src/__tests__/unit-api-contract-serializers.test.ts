@@ -25,6 +25,7 @@ function projectRow(
     accountId: ACCOUNT_ID,
     name: 'Demo Project',
     sandboxProviderGeneration: 0,
+    splitPending: false,
     secretDefaultStrategy: 'runtime' as const,
     repoUrl: 'https://github.com/acme/demo',
     defaultBranch: 'main',

@@ -90,16 +90,16 @@ export interface CreateRuntimeTriggerInput {
 }
 
 const runtimePath = (projectId: string, triggerId: string) =>
-  `/projects/${projectId}/triggers/runtime/${encodeURIComponent(triggerId)}`;
+  `/workspaces/${projectId}/triggers/runtime/${encodeURIComponent(triggerId)}`;
 
 /** Every trigger the caller can see: kortix.yaml triggers, loops, and runtime triggers. */
 export async function listUnifiedTriggers(projectId: string) {
-  return unwrap(await backendApi.get<UnifiedTriggerList>(`/projects/${projectId}/triggers/all`));
+  return unwrap(await backendApi.get<UnifiedTriggerList>(`/workspaces/${projectId}/triggers/all`));
 }
 
 /** Create a runtime trigger: stored in the database, no kortix.yaml commit. */
 export async function createRuntimeTrigger(projectId: string, input: CreateRuntimeTriggerInput) {
-  return unwrap(await backendApi.post<UnifiedTrigger>(`/projects/${projectId}/triggers/runtime`, input));
+  return unwrap(await backendApi.post<UnifiedTrigger>(`/workspaces/${projectId}/triggers/runtime`, input));
 }
 
 /** Pause or resume a runtime trigger. */

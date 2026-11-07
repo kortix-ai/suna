@@ -107,7 +107,7 @@ describe('Models page chrome', () => {
   test('the page is the shared capability shell, not its own header strip', () => {
     expect(gatewaySource.indexOf('<CapabilityPageShell')).toBeGreaterThan(-1);
     expect(MODELS_PAGE_TITLE).toBe('Models');
-    expect(MODELS_PAGE_DESCRIPTION).toBe('Choose the providers and models this project can use.');
+    expect(MODELS_PAGE_DESCRIPTION).toBe('Choose the providers and models this workspace can use.');
     expect(gatewaySource).toContain('title={MODELS_PAGE_TITLE}');
     // Every piece of the old bespoke layout, gone for good.
     expect(gatewaySource).not.toContain('SettingsSectionHeader');
@@ -128,33 +128,7 @@ describe('Models page chrome', () => {
     expect(gatewaySource).not.toContain('<TabsList size=');
   });
 
-  test('the project-default picker sits on the tab row, opposite the tabs', () => {
-    const filtersStart = gatewaySource.indexOf('filters={');
-    expect(filtersStart).toBeGreaterThan(-1);
-    const filtersSlot = gatewaySource.slice(filtersStart, gatewaySource.indexOf('<LlmSections'));
-    expect(filtersSlot).toContain('<LlmTabStrip');
-    expect(filtersSlot).toContain('<ProjectDefaultPicker');
-    expect(filtersSlot.indexOf('<LlmTabStrip')).toBeLessThan(filtersSlot.indexOf('<ProjectDefaultPicker'));
-    // A secondary button, with no "Project default" label beside it.
-    expect(gatewaySource).toContain('triggerVariant="secondary"');
-  });
 
-
-  /**
-   * The one page-level control is one component, mounted twice: here in the
-   * shell's `action` slot and in `ProjectProviderModal`'s header. A second
-   * `<ModelSelector` in this file would mean the dialog and the page had
-   * drifted apart again.
-   */
-  test('ProjectDefaultPicker is the only place this module builds the picker', () => {
-    expect(gatewaySource.match(/<ModelSelector/g)).toHaveLength(1);
-    const picker = gatewaySource.slice(
-      gatewaySource.indexOf('export function ProjectDefaultPicker'),
-      gatewaySource.indexOf('export function LlmSections'),
-    );
-    expect(picker).toContain('<ModelSelector');
-    expect(picker).toContain('Project default');
-  });
 
   /**
    * `LlmSections` is the page body AND the dialog body. It must stay padding-

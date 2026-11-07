@@ -32,15 +32,7 @@
  */
 import { timeStage } from '../lib/server-timing';
 import { and, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import {
-  accountGroupMembers,
-  accountMembers,
-  accounts,
-  iamRoleActions,
-  iamRoles,
-  roleAssignments,
-  serviceAccounts,
-} from '@kortix/db';
+import { accountGroupMembers, accountMembers, iamRoleActions, iamRoles, roleAssignments, serviceAccounts } from '@kortix/db';
 import { ssoProviderIdOf } from '../shared/auth-identity';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
@@ -48,8 +40,10 @@ import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
 import { isUuid } from '../shared/validate';
 import { isMyKortixAgentName } from '@kortix/shared';
+import { isHumanOnlyAction, toLegacyAction } from '@kortix/shared/workspace-actions';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
+import { keyScopeAllows } from './key-scope';
 import { AGENT_DEFAULT_CEILING, agentPrincipalDecision } from './agent-principal';
 import {
   loadPermissionCatalog,
@@ -60,21 +54,55 @@ import {
   type ScopeType,
 } from './catalog';
 import { registerPrincipalScopedMemo, registerProjectScopedMemo } from './cache-invalidation';
+import { clearWorkspaceFacts, workspaceFactsOf } from './workspace-facts';
 import { buildDenialError } from './denial-message';
+import type { WorkspaceRole } from './roles';
 import {
   actingPrincipal,
-  actingTokenId,
-  loadTokenBinding,
+  actingTokenBinding,
+  isAgentSessionToken,
   type Actor,
   type PrincipalRef,
 } from './actor';
+import { accountsView, projectsView } from '../workspaces/rows';
 
 // ─── Public surface ─────────────────────────────────────────────────────────
 
-/** The object a verdict is about. */
+/**
+ * The object a verdict is about.
+ *
+ * `workspace` is the one scope (Workspaces, design.md §5): its id is the
+ * workspace id (= `project_id`). `account` and `project` are the legacy shapes
+ * and stay accepted permanently; `normalizeObj` folds all three into one
+ * evaluation, so an old call site and a new one get the same verdict.
+ *
+ * Assignment reach is unchanged storage, read through one rule. An assignment
+ * reaches workspace W when it is
+ *   - `scope_type='project' AND scope_id=W`, or
+ *   - `scope_type='account' AND account_id=W.account`.
+ * For a 1:1 workspace that is today's semantics exactly. For a `split_pending`
+ * legacy account (2+ active projects) an account-scope grant reaches every
+ * project of the account, which is the permanently supported legacy state:
+ * actions on the shared account rows (billing, members, SSO) need an
+ * account-scope grant, i.e. a grant on every project of the account.
+ */
 export type Obj =
   | { type: 'account' }
+  | { type: 'project'; id: string; resource?: { type: ObjectType; id: string } }
+  | { type: 'workspace'; id: string; resource?: { type: ObjectType; id: string } };
+
+/** The evaluation shape of an `Obj`: workspace and project are one thing. */
+type EvalObj =
+  | { type: 'account' }
   | { type: 'project'; id: string; resource?: { type: ObjectType; id: string } };
+
+/** Fold the workspace shape onto the project shape the engine evaluates. */
+export function normalizeObj(obj: Obj): EvalObj {
+  if (obj.type === 'workspace') {
+    return obj.resource ? { type: 'project', id: obj.id, resource: obj.resource } : { type: 'project', id: obj.id };
+  }
+  return obj;
+}
 
 /**
  * Why. Denial reasons are byte-identical to the strings `denial-message.ts` is
@@ -104,9 +132,15 @@ export type Reason =
   /** Agent-principal model: the action is in the agent's kortix_permissions
    *  but outside the role(s) an admin bound to the agent's service account. */
   | 'agent_ceiling_insufficient'
-  /** Agent-principal model: a HUMAN_ONLY action (members.manage, delete,
-   *  credentials.issue). No grant or role can hand it to an agent. */
-  | 'agent_human_only_action';
+  /** A HUMAN_ONLY action (minting credentials, moving money; C8). No agent
+   *  session, inherited or governed, ever passes it. */
+  | 'agent_human_only_action'
+  /** A workspace key's scope (`read` or a custom list) does not hold the
+   *  action. The creator's role may; a key with that scope never does. */
+  | 'key_scope_insufficient'
+  /** The workspace is closing (a deletion request is open). Only its owners
+   *  keep reading it and restoring it (design.md §3.2 C3). */
+  | 'workspace_closed';
 
 export interface Verdict {
   allowed: boolean;
@@ -162,9 +196,12 @@ const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
  * order in which two rules can both apply:
  *
  *   1  impersonation act-as, then impersonation confinement
+ *   1b HUMAN_ONLY for every agent session
+ *   1c the workspace key's scope (read, custom), inside the creator's role
  *   2  the acting token's binding
  *   3  the acting principal (activated agent SA, else the launcher)
- *   4  token project scope
+ *   3b the closing workspace (owners keep read, billing read, restore)
+ *   4  token workspace scope
  *   5  super-admin bypass
  *   6  account-MFA gate (browser sessions only)
  *   7  scope containment + role expansion
@@ -174,7 +211,23 @@ const AGENT_GRANT_EXEMPT_ACTIONS: ReadonlySet<string> = new Set([
  */
 export function authorize(actor: Actor, action: string, obj: Obj = { type: 'account' }): Promise<Verdict> {
   // `Server-Timing: iam` — every capability decision on the request path.
-  return timeStage('iam', () => authorizeDecision(actor, action, obj));
+  // Both action names are accepted forever: a workspace name is evaluated as
+  // the legacy name it aliases (`@kortix/shared/workspace-actions`), because the
+  // catalog and every role row store the legacy name.
+  return timeStage('iam', () => authorizeObj(actor, toLegacyAction(action), obj));
+}
+
+async function authorizeObj(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
+  if (obj.type === 'workspace' && !isImpersonatingAccount(actor.userId, actor.accountId)) {
+    // The reach rule's account half: the actor was resolved for one account, and
+    // a workspace of another account is never reached by its assignments. Every
+    // legacy `project` call site already resolves the actor for the project's own
+    // account (`loadProjectForUser` → `actorOf(c, row.accountId)`); a workspace
+    // call site gets that guarantee checked instead of assumed.
+    const owner = await workspaceAccountOf(obj.id);
+    if (owner === null || owner !== actor.accountId) return deny('no_project_membership');
+  }
+  return authorizeDecision(actor, action, normalizeObj(obj));
 }
 
 /**
@@ -189,7 +242,7 @@ export async function ssoRequiredFor(actor: Actor): Promise<boolean> {
   return rec?.accountSsoRequired === true;
 }
 
-async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
+async function authorizeDecision(actor: Actor, action: string, obj: EvalObj): Promise<Verdict> {
   // 1. ACT-AS. Above everything, and above the principal memo in particular:
   // `resolvePrincipal` is a TTL memo shared across requests, so widening the
   // actor inside it would cache "owner" and serve it to this operator's own
@@ -201,23 +254,50 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
   // denied every OTHER account, their own included.
   if (isImpersonationBlockedAccount(actor.userId, actor.accountId)) return deny('impersonation_scope');
 
+  // 1b. HUMAN_ONLY (C8): minting credentials and moving money stay with
+  // people. Every agent session, inherited (it acts as its launcher) or
+  // governed (it acts as its service account), and above the super-admin
+  // bypass: the launcher's bypass is exactly the power that must not pass to
+  // the agent. This is the ONE agent wall; everything else is a grant.
+  // A session token that names no service account (My Kortix) reads as a PAT;
+  // its binding says it is a session, so the binding is read first.
+  // 2. The acting token's binding: project confinement, agent grant, standing
+  // identity — one memoized read, skipped entirely for browser requests.
+  const { tokenId, binding } = await actingTokenBinding(actor);
+  if (isHumanOnlyAction(action) && isAgentSessionToken(actor, binding)) {
+    return deny('agent_human_only_action');
+  }
+
+  // 1c. KEY SCOPE (design.md §3.2 C4a): a workspace key does what its scope
+  // allows, and the rest of this function still decides the creator's CURRENT
+  // role, so a key never exceeds it. Above the super-admin bypass: a read key
+  // the workspace creator minted stays read-only.
+  if (binding?.scopes && !keyScopeAllows(binding.scopes, action)) return deny('key_scope_insufficient');
+
   const catalog = await loadPermissionCatalog();
   const entry = catalog.byAction.get(action);
   const scope: ScopeType = entry?.scopeType ?? scopeForUncatalogedAction(action);
 
-  // 2. The acting token's binding: project confinement, agent grant, standing
-  // identity — one memoized read, skipped entirely for browser requests.
-  const tokenId = actingTokenId(actor);
-  const binding = tokenId ? await loadTokenBinding(tokenId) : null;
-
   // 3. The acting principal.
   const principal = actingPrincipal(actor);
-  const rec = await resolvePrincipal(principal, actor.accountId);
+  const [rec, facts] = await Promise.all([
+    resolvePrincipal(principal, actor.accountId),
+    workspaceFactsOf(actor.accountId),
+  ]);
   if (!rec) return deny('not_a_member');
 
-  // 4. A token bound to one project is refused on every other project and on
-  // every account-level action.
-  if (!tokenScopeAllows(binding, tokenId, rec.kind, scope, obj)) return deny('token_out_of_scope');
+  // 3b. A CLOSING workspace (its deletion request is open): everyone loses it
+  // at once except its owners, who keep reading it, reading its billing and
+  // restoring it until the grace ends. Above the super-admin bypass: the bypass
+  // must not keep a deleted workspace usable.
+  if (facts.closing && !(rec.accountRoleKey === 'owner' && CLOSING_OWNER_ACTIONS.has(action))) {
+    return deny('workspace_closed');
+  }
+
+  // 4. A token bound to one workspace is refused on every other workspace. An
+  // account-scope action is in scope when it names the token's own workspace:
+  // the account is the workspace's, and the workspace is not split_pending.
+  if (!tokenScopeAllows(binding, tokenId, rec.kind, scope, obj, facts.soleProjectId)) return deny('token_out_of_scope');
 
   // 4a. SSO only. Above the super-admin bypass: the account creator holds
   // `is_super_admin`, and enforcement exists to close exactly that person's
@@ -243,17 +323,20 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
     // including a zero-action custom role that pins the agent to deny. With
     // none bound, the built-in default ceiling applies.
     const bound = actor.credential.activated;
-    const roles = bound && target ? await loadSystemRoles() : null;
-    const systemRole = roles && target ? effectiveProjectRole(roles, rec, target) : null;
+    const roles = bound && (target || scope === 'account') ? await loadSystemRoles() : null;
+    const systemRole = roles && target ? effectiveProjectRole(roles, rec, target, facts.soleProjectId) : null;
     const verdict = agentPrincipalDecision({
       action,
       scope,
       targetProjectId: target,
       tokenProjectId: binding.projectId,
+      accountInScope: binding.projectId !== null && binding.projectId === facts.soleProjectId,
       grant,
       ceilingAllows: (a) =>
         bound
-          ? (systemRole !== null && systemRole.actions.has(a)) || customRoleAllows(rec, scope, a, obj)
+          ? scope === 'account'
+            ? rec.accountRoleActions.has(a) || customRoleAllows(rec, scope, a, obj)
+            : (systemRole !== null && systemRole.actions.has(a)) || customRoleAllows(rec, scope, a, obj)
           : AGENT_DEFAULT_CEILING.has(a),
     });
     return verdict.allowed ? allow('role') : deny(verdict.reason);
@@ -282,7 +365,7 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
   // roles here: binding `member` to an agent's service account activated it and
   // granted nothing, bricking the agent (spec §1.5).
   const roles = await loadSystemRoles();
-  const systemRole = effectiveProjectRole(roles, rec, obj.id);
+  const systemRole = effectiveProjectRole(roles, rec, obj.id, facts.soleProjectId);
   const granted =
     (systemRole !== null && systemRole.actions.has(action)) || customRoleAllows(rec, scope, action, obj);
 
@@ -367,9 +450,12 @@ export async function assertAuthorized(actor: Actor, action: string, obj: Obj = 
  */
 export async function listAccessible(
   actor: Actor,
-  action: string,
-  resourceType: 'project' | ObjectType,
+  rawAction: string,
+  resourceType: 'project' | 'workspace' | ObjectType,
 ): Promise<Accessible> {
+  const action = toLegacyAction(rawAction);
+  // A workspace IS a project row: listing workspaces lists projects.
+  if (resourceType === 'workspace') return listAccessibleProjects(actor, action);
   // Only projects are listable standalone. An object (an agent, a skill) is
   // always reached THROUGH its project, and the caller already holds the ids
   // the manifest declares — `filterAccessibleObjects` is that surface, and it
@@ -392,11 +478,17 @@ async function listAccessibleProjectsUntimed(actor: Actor, action: string): Prom
     return { mode: 'none', reason: 'impersonation' };
   }
 
-  const tokenId = actingTokenId(actor);
-  const binding = tokenId ? await loadTokenBinding(tokenId) : null;
+  const { tokenId, binding } = await actingTokenBinding(actor);
   const principal = actingPrincipal(actor);
-  const rec = await resolvePrincipal(principal, actor.accountId);
+  const [rec, facts] = await Promise.all([
+    resolvePrincipal(principal, actor.accountId),
+    workspaceFactsOf(actor.accountId),
+  ]);
   if (!rec) return { mode: 'none', reason: 'not_a_member' };
+
+  // A closing workspace lists for its owners only (the canonical list serves
+  // it to them as `deleting`); `authorize` below decides each action.
+  if (facts.closing && rec.accountRoleKey !== 'owner') return { mode: 'none', reason: 'workspace_closed' };
 
   // A token bound to one project narrows the listing to that project, for a
   // human PAT and an agent session alike. A direct service-account bearer has
@@ -438,6 +530,11 @@ async function listAccessibleProjectsUntimed(actor: Actor, action: string): Prom
   }
 
   const allowed = new Set<string>();
+  // Membership is access (C3): an account member reaches the account's one
+  // workspace at the member tier while it is not split_pending.
+  if (rec.accountRoleKey === 'member' && facts.soleProjectId && roles.byKey.get('project:member')?.actions.has(action)) {
+    allowed.add(facts.soleProjectId);
+  }
   for (const [projectId, roleIds] of rec.projectSystemRoleIds) {
     for (const roleId of roleIds) {
       if (roles.byId.get(roleId)?.actions.has(action)) {
@@ -474,14 +571,18 @@ export async function filterAccessibleObjects(
   if (isImpersonatingAccount(actor.userId, actor.accountId)) return [...objectIds];
   if (isImpersonationBlockedAccount(actor.userId, actor.accountId)) return [];
   const principal = actingPrincipal(actor);
-  const rec = await resolvePrincipal(principal, actor.accountId);
+  const [rec, facts] = await Promise.all([
+    resolvePrincipal(principal, actor.accountId),
+    workspaceFactsOf(actor.accountId),
+  ]);
   if (!rec) return [];
+  if (facts.closing && rec.accountRoleKey !== 'owner') return [];
   if (rec.isSuperAdmin) return [...objectIds];
   if (rec.kind !== 'member') return [...objectIds];
   if (isImplicitManager(rec.accountRoleKey)) return [...objectIds];
 
   const roles = await loadSystemRoles();
-  const systemRole = effectiveProjectRole(roles, rec, projectId);
+  const systemRole = effectiveProjectRole(roles, rec, projectId, facts.soleProjectId);
   // Step 8 before step 9, as in `authorize`: the Slack and Teams pickers reach
   // here with only an account member, and a `project` grant names everyone IN
   // the project, not everyone in the account.
@@ -536,20 +637,28 @@ export function objectGrantReaches(
  *                               which has no account_tokens row at all; a null
  *                               binding for anything else is a revoked token
  *   unscoped token           -> true, falls through to permissions
- *   account-level action     -> false, a project-bound token has no account reach
+ *   account-scope action     -> true only when the token's workspace IS the
+ *                               actor's account's one workspace (1:1, not
+ *                               split_pending): the account half of the token's
+ *                               own workspace (design.md §3.2 C4)
  *   any other project        -> false
+ *
+ * `accountWorkspaceId` is the actor's account's one live workspace, or null
+ * when it has none or is split_pending.
  */
 export function tokenScopeAllows(
   binding: { projectId: string | null } | null,
   tokenId: string | undefined,
   principalKind: 'member' | 'service_account',
   scope: ScopeType,
-  obj: Obj,
+  rawObj: Obj,
+  accountWorkspaceId: string | null = null,
 ): boolean {
   if (!tokenId) return true;
   if (!binding) return principalKind === 'service_account';
   if (!binding.projectId) return true;
-  if (scope === 'account') return false;
+  if (scope === 'account') return accountWorkspaceId !== null && binding.projectId === accountWorkspaceId;
+  const obj = normalizeObj(rawObj);
   if (obj.type !== 'project') return false;
   return obj.id === binding.projectId;
 }
@@ -679,7 +788,7 @@ async function resolvePrincipalUncached(
     db
       .select({
         isSuperAdmin: accountMembers.isSuperAdmin,
-        mfaRequired: accounts.mfaRequired,
+        mfaRequired: accountsView.mfaRequired,
         // SSO only: the account's IdP enforces sign-in for a domain it proved
         // control of, this person's email is in that domain, and this auth user
         // is not an identity of that IdP (a password, email-code or social
@@ -689,7 +798,7 @@ async function resolvePrincipalUncached(
           SELECT 1
             FROM kortix.account_sso_providers enforcing
             JOIN auth.users person ON person.id = ${pid}::uuid
-           WHERE enforcing.account_id = ${qualifiedColumn(accounts.accountId)}
+           WHERE enforcing.account_id = ${qualifiedColumn(accountsView.accountId)}
              AND enforcing.enforce_sso
              AND enforcing.domain_verified_at IS NOT NULL
              AND enforcing.primary_domain = split_part(lower(trim(person.email)), '@', 2)
@@ -697,7 +806,7 @@ async function resolvePrincipalUncached(
         )`,
       })
       .from(accountMembers)
-      .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
+      .innerJoin(accountsView, eq(accountsView.accountId, accountMembers.accountId))
       .where(and(eq(accountMembers.userId, pid), eq(accountMembers.accountId, accountId)))
       .limit(1),
     db
@@ -855,11 +964,19 @@ function effectiveProjectRole(
   roles: SystemRoleIndex,
   rec: PrincipalRecord,
   projectId: string,
+  /** The account's one live workspace (not split_pending), or null. */
+  soleProjectId: string | null,
 ): { key: string; actions: ReadonlySet<string> } | null {
   let best: { key: string; actions: ReadonlySet<string> } | null = null;
   if (isImplicitManager(rec.accountRoleKey)) {
     const manager = roles.byKey.get('project:manager');
     if (manager) best = manager;
+  } else if (rec.accountRoleKey === 'member' && soleProjectId !== null && projectId === soleProjectId) {
+    // MEMBERSHIP IS ACCESS (design.md §3.2 C3): an account member reaches the
+    // account's one workspace at the member tier. A split_pending account has
+    // no sole workspace, so its members keep per-project grants.
+    const member = roles.byKey.get('project:member');
+    if (member) best = member;
   }
   for (const roleId of rec.projectSystemRoleIds.get(projectId) ?? []) {
     const role = roles.byId.get(roleId);
@@ -884,10 +1001,12 @@ function projectRoleRank(key: string): number {
 export function customRoleAllows(
   rec: { customActions: CustomAction[] },
   scope: ScopeType,
-  action: string,
-  obj: Obj,
+  rawAction: string,
+  rawObj: Obj,
 ): boolean {
   if (rec.customActions.length === 0) return false;
+  const action = toLegacyAction(rawAction);
+  const obj = normalizeObj(rawObj);
   for (const ca of rec.customActions) {
     if (ca.action !== action) continue;
     if (ca.scopeType === 'account') return true;
@@ -998,8 +1117,81 @@ registerProjectScopedMemo(loadObjectGrants);
 
 export { loadObjectGrants };
 
+/**
+ * workspace id -> the account that owns it, or null for an unknown id. The
+ * account half of the workspace reach rule. Positive-only: a workspace that
+ * does not exist yet must resolve on the next request. A transfer moves a
+ * project to another account and busts this through the project-scoped
+ * invalidation every project write already calls.
+ */
+const workspaceAccountMemo = ttlMemo({
+  ttlMs: TTL_MS,
+  keyFn: (workspaceId: string) => `${workspaceId}|account`,
+  loader: async (workspaceId: string): Promise<string | null> => {
+    if (!isUuid(workspaceId)) return null;
+    const [row] = await db
+      .select({ accountId: projectsView.accountId })
+      .from(projectsView)
+      .where(eq(projectsView.projectId, workspaceId))
+      .limit(1);
+    return row?.accountId ?? null;
+  },
+  shouldCache: (accountId) => accountId !== null,
+});
+registerProjectScopedMemo(workspaceAccountMemo);
+
+function workspaceAccountOf(workspaceId: string): Promise<string | null> {
+  return workspaceAccountMemo(workspaceId);
+}
+
+/**
+ * The actions an OWNER keeps on a closing workspace: read it, read its billing,
+ * and restore it (restore and cancel-deletion assert `account.delete`).
+ */
+export const CLOSING_OWNER_ACTIONS: ReadonlySet<string> = new Set([
+  'project.read',
+  'account.read',
+  'billing.read',
+  'account.delete',
+]);
+
+/**
+ * The principal's role in workspace W, on the one ladder (design.md §3.2 C3):
+ *   owner / admin  the account-scope system role;
+ *   manager        project `manager` on W, directly or through a group;
+ *   member         an account member of a 1:1 (or project-less) workspace, or
+ *                  any project grant on W (a split_pending account), or a
+ *                  custom role that reads W;
+ *   null           no access, and on a closing workspace everyone but owners.
+ * The list, the record and the Members table all call this one function.
+ */
+export async function workspaceRoleFor(actor: Actor, workspaceId: string): Promise<WorkspaceRole | null> {
+  const id = workspaceId.toLowerCase();
+  // A project-less workspace's id is its account id (C1).
+  const accountId = (await workspaceAccountOf(id)) ?? id;
+  if (isImpersonatingAccount(actor.userId, accountId)) return 'owner';
+  if (isImpersonationBlockedAccount(actor.userId, accountId)) return null;
+  const [rec, facts] = await Promise.all([
+    resolvePrincipal(actingPrincipal(actor), accountId),
+    workspaceFactsOf(accountId),
+  ]);
+  if (!rec) return null;
+  if (rec.accountRoleKey === 'owner') return 'owner';
+  if (facts.closing) return null;
+  if (rec.accountRoleKey === 'admin') return 'admin';
+  const roles = await loadSystemRoles();
+  const projectRoleKeys = (rec.projectSystemRoleIds.get(id) ?? []).map((roleId) => roles.byId.get(roleId)?.key);
+  if (projectRoleKeys.includes('manager')) return 'manager';
+  if (rec.accountRoleKey === 'member' && (facts.soleProjectId === id || id === accountId)) return 'member';
+  if (projectRoleKeys.length > 0) return 'member';
+  if (customRoleAllows(rec, 'project', 'project.read', { type: 'project', id })) return 'member';
+  return null;
+}
+
 /** Test hook: drop the principal + object-grant memos. */
 export function clearAuthorizeCaches(): void {
   resolvePrincipalMemo.clear();
   loadObjectGrants.clear();
+  workspaceAccountMemo.clear();
+  clearWorkspaceFacts();
 }

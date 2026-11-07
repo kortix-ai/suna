@@ -36,7 +36,7 @@ Runtime source (add):
   --on event --connector <slug> --event <TYPE> [--config <json>]
                            A connector event.
   --on app --app <slug> [--expect-event-within <dur>]
-                           An event an App of this project emits. With
+                           An event an App of this workspace emits. With
                            --expect-event-within (5m to 30d, e.g. 1h), no event
                            for that long alerts this trigger's owner once.
   --on cr-merged [--cr <id>] [--base <branch>]
@@ -86,7 +86,7 @@ export function describeTarget(target: TriggerTarget): string {
 /** The runtime rows of `GET /triggers/all`, or null when the server has no such route. */
 export async function listRuntimeTriggers(client: ApiClient, projectId: string): Promise<UnifiedTrigger[] | null> {
   try {
-    const list = await client.get<UnifiedTriggerList>(`/projects/${projectId}/triggers/all`);
+    const list = await client.get<UnifiedTriggerList>(`/workspaces/${projectId}/triggers/all`);
     return list.triggers.filter((t) => t.origin === 'runtime');
   } catch {
     // ponytail: an older API has no /triggers/all; `ls` then shows kortix.yaml only.
@@ -173,7 +173,7 @@ export async function runRuntimeTriggers(argv: string[]): Promise<number> {
       session: takeFlagValue(rest, ['--session']),
       agent: takeFlagValue(rest, ['--agent']),
       name: takeFlagValue(rest, ['--name']),
-      project: takeFlagValue(rest, ['--project']),
+      project: takeFlagValue(rest, ['--project', '--workspace']),
       host: takeFlagValue(rest, ['--host']),
     };
     json = takeFlagBool(rest, ['--json']);
@@ -201,7 +201,7 @@ export async function runRuntimeTriggers(argv: string[]): Promise<number> {
   const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
   if (!ctx) return 1;
   const { client, projectId } = ctx;
-  const base = `/projects/${projectId}/triggers/runtime`;
+  const base = `/workspaces/${projectId}/triggers/runtime`;
   try {
     if (body) {
       const created = await client.post<UnifiedTrigger>(base, body);
@@ -246,7 +246,7 @@ export async function runRuntimeTriggers(argv: string[]): Promise<number> {
   } catch (err) {
     const code = surfaceApiError(err);
     if ((err as { body?: { code?: unknown } })?.body?.code === 'feature_disabled') {
-      process.stderr.write(`  ${C.dim}Turn it on: kortix projects features enable reminders${C.reset}\n`);
+      process.stderr.write(`  ${C.dim}Turn it on: kortix workspaces features enable reminders${C.reset}\n`);
     }
     return code;
   }

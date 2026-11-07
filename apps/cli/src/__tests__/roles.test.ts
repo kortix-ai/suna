@@ -188,7 +188,7 @@ describe('kortix roles', () => {
   test('ls lists system + custom roles, scoped to the active account', async () => {
     const code = await runRoles(['ls']);
     expect(code).toBe(0);
-    expect(requests[0].url).toContain('/v1/accounts/account_1/iam/roles');
+    expect(requests[0].url).toContain('/v1/workspaces/account_1/iam/roles');
     const out = stripAnsi(stdout);
     expect(out).toContain('support_agent');
     expect(out).toContain('system');
@@ -279,7 +279,7 @@ describe('kortix roles', () => {
   test('assign without --project and no linked project fails before any write', async () => {
     const code = await runRoles(['assign', 'support_agent', '--to', 'member:user-9']);
     expect(code).toBe(2);
-    expect(stripAnsi(stderr)).toContain('--project <id>');
+    expect(stripAnsi(stderr)).toContain('--workspace <id>');
     expect(requests.some((r) => r.method === 'POST')).toBe(false);
   });
 

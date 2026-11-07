@@ -28,14 +28,14 @@ function session(id: string, fields: Partial<ProjectSession> = {}): ProjectSessi
 
 describe('quickEntryProjectId', () => {
   test('the project the window shows wins, on its home and inside a session', () => {
-    expect(quickEntryProjectId('/projects/p1', 'p9')).toBe('p1');
-    expect(quickEntryProjectId('/projects/p1/sessions/s1', 'p9')).toBe('p1');
+    expect(quickEntryProjectId('/workspaces/p1', 'p9')).toBe('p1');
+    expect(quickEntryProjectId('/workspaces/p1/sessions/s1', 'p9')).toBe('p1');
   });
 
   test('off a project, the project this profile opened last', () => {
     expect(quickEntryProjectId('/settings', 'p9')).toBe('p9');
-    expect(quickEntryProjectId('/projects', 'p9')).toBe('p9');
-    expect(quickEntryProjectId('/projects/start', 'p9')).toBe('p9');
+    expect(quickEntryProjectId('/workspaces', 'p9')).toBe('p9');
+    expect(quickEntryProjectId('/workspaces/start', 'p9')).toBe('p9');
   });
 
   test('no project known: null, so the prompt goes through the door', () => {
@@ -78,7 +78,7 @@ describe('DesktopQuickEntry wiring', () => {
     expect(send).toContain('submit: quickEntryCanSubmit(files, composer)');
     expect(send).toContain('...(files.length ? { files } : {})');
     expect(send).toContain('...(composer ? { options: composer.overrides } : {})');
-    expect(source).toContain('router.push(`/projects/${target}`)');
+    expect(source).toContain('router.push(`/workspaces/${target}`)');
   });
 
   test("a prompt for a picked session is submitted by that session's composer", () => {
@@ -86,7 +86,7 @@ describe('DesktopQuickEntry wiring', () => {
       ".setPrefill(prompt.sessionId, prompt.text, files.length ? files : undefined, 'replace', { submit: true })",
     );
     expect(source).toContain(
-      '`/projects/${encodeURIComponent(prompt.projectId)}/sessions/${encodeURIComponent(prompt.sessionId)}`',
+      '`/workspaces/${encodeURIComponent(prompt.projectId)}/sessions/${encodeURIComponent(prompt.sessionId)}`',
     );
   });
 
@@ -100,7 +100,7 @@ describe('DesktopQuickEntry wiring', () => {
   test('without a project the prompt only fills the composer, through ?q=', () => {
     const start = source.indexOf('if (!target)');
     const fallback = source.slice(start, source.indexOf('return;', start));
-    expect(fallback).toContain('/projects/start?q=${encodeURIComponent(prompt.text)}');
+    expect(fallback).toContain('/workspaces/start?q=${encodeURIComponent(prompt.text)}');
     expect(fallback).not.toContain('submit');
   });
 

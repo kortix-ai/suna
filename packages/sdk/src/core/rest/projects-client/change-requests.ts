@@ -95,7 +95,7 @@ export async function getVersionDiff(
   const params = new URLSearchParams({ from: input.from, into: input.into });
   return unwrap(
     await backendApi.get<VersionDiffPreview>(
-      `/projects/${projectId}/version-diff?${params.toString()}`,
+      `/workspaces/${projectId}/version-diff?${params.toString()}`,
     ),
   );
 }
@@ -145,7 +145,7 @@ export async function listChangeRequests(
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(
     await backendApi.get<{ change_requests: ChangeRequest[]; next_cursor?: string | null }>(
-      `/projects/${projectId}/change-requests${query}`,
+      `/workspaces/${projectId}/change-requests${query}`,
       {
         // This is often a badge/background poll. Keep failures visible to the
         // query consumer without turning temporary poll misses into global API
@@ -160,7 +160,7 @@ export async function listChangeRequests(
 export async function getChangeRequest(projectId: string, crId: string) {
   return unwrap(
     await backendApi.get<ChangeRequestDetailResponse>(
-      `/projects/${projectId}/change-requests/${crId}`,
+      `/workspaces/${projectId}/change-requests/${crId}`,
     ),
   );
 }
@@ -168,7 +168,7 @@ export async function getChangeRequest(projectId: string, crId: string) {
 export async function getChangeRequestDiff(projectId: string, crId: string) {
   return unwrap(
     await backendApi.get<ChangeRequestDiffResponse>(
-      `/projects/${projectId}/change-requests/${crId}/diff`,
+      `/workspaces/${projectId}/change-requests/${crId}/diff`,
     ),
   );
 }
@@ -179,7 +179,7 @@ export async function getChangeRequestMergePreview(
 ) {
   return unwrap(
     await backendApi.get<ChangeRequestMergePreview>(
-      `/projects/${projectId}/change-requests/${crId}/merge-preview`,
+      `/workspaces/${projectId}/change-requests/${crId}/merge-preview`,
     ),
   );
 }
@@ -196,7 +196,7 @@ export async function openChangeRequest(
 ) {
   return unwrap(
     await backendApi.post<ChangeRequest>(
-      `/projects/${projectId}/change-requests`,
+      `/workspaces/${projectId}/change-requests`,
       input,
     ),
   );
@@ -209,7 +209,7 @@ export async function mergeChangeRequest(
 ) {
   return unwrap(
     await backendApi.post<ChangeRequestMergeResponse>(
-      `/projects/${projectId}/change-requests/${crId}/merge`,
+      `/workspaces/${projectId}/change-requests/${crId}/merge`,
       input ?? {},
       { showErrors: false },
     ),
@@ -219,7 +219,7 @@ export async function mergeChangeRequest(
 export async function closeChangeRequest(projectId: string, crId: string) {
   return unwrap(
     await backendApi.post<ChangeRequest>(
-      `/projects/${projectId}/change-requests/${crId}/close`,
+      `/workspaces/${projectId}/change-requests/${crId}/close`,
       {},
     ),
   );
@@ -228,7 +228,7 @@ export async function closeChangeRequest(projectId: string, crId: string) {
 export async function reopenChangeRequest(projectId: string, crId: string) {
   return unwrap(
     await backendApi.post<ChangeRequest>(
-      `/projects/${projectId}/change-requests/${crId}/reopen`,
+      `/workspaces/${projectId}/change-requests/${crId}/reopen`,
       {},
     ),
   );
@@ -243,7 +243,7 @@ export async function requestChangesOnChangeRequest(
 ) {
   return unwrap(
     await backendApi.post<{ change_request: ChangeRequest; delivering: boolean }>(
-      `/projects/${projectId}/change-requests/${crId}/request-changes`,
+      `/workspaces/${projectId}/change-requests/${crId}/request-changes`,
       { feedback },
     ),
   );
@@ -273,7 +273,7 @@ export async function commitSessionChanges(
 ) {
   return unwrap(
     await backendApi.post<CommitSessionResult>(
-      `/projects/${projectId}/sessions/${sessionId}/commit-push`,
+      `/workspaces/${projectId}/sessions/${sessionId}/commit-push`,
       input ?? {},
     ),
   );
@@ -286,6 +286,6 @@ export async function updateChangeRequest(
   input: { title?: string; description?: string },
 ) {
   return unwrap(
-    await backendApi.patch<ChangeRequest>(`/projects/${projectId}/change-requests/${crId}`, input),
+    await backendApi.patch<ChangeRequest>(`/workspaces/${projectId}/change-requests/${crId}`, input),
   );
 }

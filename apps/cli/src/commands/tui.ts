@@ -39,9 +39,9 @@ Files, Review, Apps, Customize and Account screens — all in your terminal.
 \`kortix\`) is the one-keystroke door: bind it to a key in your terminal.
 
 A cloud engineering desk in one command:
-  kortixt --project <id> --new --terminal
-creates a session in that project (\`--agent <name>\` picks the agent; the
-project default otherwise) and opens it with the sandbox shell focused.
+  kortixt --workspace <id> --new --terminal
+creates a session in that workspace (\`--agent <name>\` picks the agent; the
+workspace default otherwise) and opens it with the sandbox shell focused.
 
 The TUI is a SEPARATE binary (\`kortix-tui\`, ~80 MB). \`kortix\` does not carry
 it. The first \`kortix tui\` asks to install the copy that matches this CLI's
@@ -56,11 +56,11 @@ instead of failing.
 
 Options:
   --host <name>     Use this configured host instead of the active one.
-  --project <id>    List this project's sessions (default: the host's default
-                    project, else its first project).
+  --workspace <id>  List this workspace's sessions (default: the host's default
+                    workspace, else its first workspace).
   --session <id>    Open this session at boot.
-  --new             Create a session in the project at boot and open it.
-  --agent <name>    Agent for the new session. Default: the project's default.
+  --new             Create a session in the workspace at boot and open it.
+  --agent <name>    Agent for the new session. Default: the workspace's default.
   --terminal        Open the sandbox terminal panel at boot (focused).
   --sidebar         Start with the sidebar shown, for this run.
   --no-sidebar      Start with the sidebar hidden, for this run. Without
@@ -106,7 +106,7 @@ Examples:
   kortix tui
   kortix tui --install
   kortix tui --host cloud
-  kortix tui --project <project-id> --session <session-id>
+  kortix tui --workspace <id> --session <session-id>
 
 Docs: ${DOCS_URL}
 `;
@@ -159,7 +159,7 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
     mouse: takeFlagBool(rest, ['--mouse']),
     noMouse: takeFlagBool(rest, ['--no-mouse']),
     host: takeFlagValue(rest, ['--host']),
-    project: takeFlagValue(rest, ['--project']),
+    project: takeFlagValue(rest, ['--project', '--workspace']),
     session: takeFlagValue(rest, ['--session']),
     agent: takeFlagValue(rest, ['--agent']),
   };
@@ -168,7 +168,7 @@ export function parseTuiFlags(argv: string[]): TuiFlags {
     throw new Error(
       left.startsWith('-')
         ? `unknown option "${left}"`
-        : `unexpected argument "${left}" — kortix tui takes options only (--project/--session)`,
+        : `unexpected argument "${left}" — kortix tui takes options only (--workspace/--session)`,
     );
   }
   return flags;
@@ -204,7 +204,9 @@ export function tuiChildEnv(
   return {
     ...base,
     ...(flags.host ? { KORTIX_TUI_HOST: flags.host } : {}),
-    ...(flags.project ? { KORTIX_PROJECT_ID: flags.project } : {}),
+    // Both names: the TUI reads KORTIX_WORKSPACE_ID first (the CLI and
+    // kortixd rule), so the flag must outrank an inherited one.
+    ...(flags.project ? { KORTIX_WORKSPACE_ID: flags.project, KORTIX_PROJECT_ID: flags.project } : {}),
     ...(flags.session ? { KORTIX_SESSION_ID: flags.session } : {}),
     ...(flags.newSession ? { KORTIX_TUI_NEW: '1' } : {}),
     ...(flags.agent ? { KORTIX_TUI_AGENT: flags.agent } : {}),

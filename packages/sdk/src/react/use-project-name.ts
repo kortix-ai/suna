@@ -19,20 +19,26 @@ import { useProjectRow } from './use-project-row';
  * not the detail, which reads the repository and can take seconds: the name in
  * the project shell must never wait on git.
  */
-export function useProjectName(projectId: string | undefined): string | undefined {
+export function useWorkspaceName(projectId: string | undefined): string | undefined {
   const { data } = useProjectRow(projectId);
   return data?.name;
 }
+
+/** @deprecated Use `useWorkspaceName`. Kept permanently. */
+export const useProjectName = useWorkspaceName;
 
 /**
  * The owning account id, read off the SAME bare project row
  * (`qk.project.summary(id)`, `GET /projects/:id`) `useProjectName` reads, so
  * it shares one cache entry instead of adding a fetch.
  */
-export function useProjectAccountId(projectId: string | undefined): string | undefined {
+export function useWorkspaceAccountId(projectId: string | undefined): string | undefined {
   const { data } = useProjectRow(projectId);
   return data?.account_id;
 }
+
+/** @deprecated Use `useWorkspaceAccountId`. Kept permanently. */
+export const useProjectAccountId = useWorkspaceAccountId;
 
 /**
  * A project's icon — the emoji XOR the named glyph — read off the SAME
@@ -51,10 +57,13 @@ export function useProjectAccountId(projectId: string | undefined): string | und
  * The returned object is a VALUE, not a stable reference — a fresh one per
  * render. Read its fields; do not put it in a dependency array.
  */
-export function useProjectIcon(
+export function useWorkspaceIcon(
   projectId: string | undefined,
 ): Pick<KortixProject, 'icon' | 'icon_glyph'> | undefined {
   const { data: project } = useProjectRow(projectId);
   if (!project) return undefined;
   return { icon: project.icon ?? null, icon_glyph: project.icon_glyph ?? null };
 }
+
+/** @deprecated Use `useWorkspaceIcon`. Kept permanently. */
+export const useProjectIcon = useWorkspaceIcon;

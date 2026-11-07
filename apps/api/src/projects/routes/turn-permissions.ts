@@ -13,6 +13,7 @@ import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { recordPendingPermission, takeApprovedCall } from '../lib/pending-permissions';
 import { askExpiresAt, liveWaitMsFor, surfaceSessionIdOf } from '../lib/session-asks';
 import { logger } from '../../lib/logger';
+import { workspaceIdParam } from '../../shared/route-params';
 
 // POST /v1/projects/:projectId/turn-permission
 // Sandbox-to-apps/api relay for a harness permission request
@@ -33,12 +34,12 @@ export function registerTurnPermissionsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/turn-permission',
+      path: '/{workspaceId}/turn-permission',
       tags: ['projects'],
       summary: 'Answer an agent permission request for a turn',
       ...auth,
       request: {
-        params: z.object({ projectId: z.string() }),
+        params: z.object({ workspaceId: z.string() }),
         // The daemon's body (`@kortix/api-contract/runtime-relay`). The handler
         // reads `session_id` and `request_id`; `permission` and `patterns` name
         // what waits for approval.
@@ -59,7 +60,7 @@ export function registerTurnPermissionsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
 
       // Sandbox credential ONLY. A user token could otherwise push "needs your
       // approval" to another member's devices at will. The daemon is the only
@@ -85,7 +86,7 @@ export function registerTurnPermissionsRoutes(): void {
         )
         .limit(1);
       if (!sandbox) {
-        return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+        return c.json({ error: 'sandbox token is not scoped to this workspace' }, 403);
       }
       // The session this credential is BOUND to.
       const callerSandboxSessionId = sandbox.sessionId ?? sandbox.sandboxId;

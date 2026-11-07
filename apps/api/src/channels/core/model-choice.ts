@@ -6,7 +6,7 @@
  * project shares: no one's personal key or ChatGPT subscription
  * (channels/model-access.ts).
  */
-import { projectSessions, projects } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { db } from '../../shared/db';
@@ -17,6 +17,7 @@ import {
   projectChannelModelScope,
 } from '../model-access';
 import { type ChannelSelection, type SettingsChannel, currentChannelSelection } from './settings';
+import { projectsView } from '../../workspaces/rows';
 
 type ChatProject = { projectId: string; accountId: string; metadata: unknown };
 
@@ -74,10 +75,10 @@ export async function chatTurnModel(settings: SettingsChannel, thread: { session
       createdBy: projectSessions.createdBy,
       agentName: projectSessions.agentName,
       metadata: projectSessions.metadata,
-      projectMetadata: projects.metadata,
+      projectMetadata: projectsView.metadata,
     })
     .from(projectSessions)
-    .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, projectSessions.projectId))
     .where(and(eq(projectSessions.sessionId, thread.sessionId), eq(projectSessions.projectId, thread.projectId)))
     .limit(1);
   if (!row) return null;
@@ -107,5 +108,5 @@ export async function chatTurnModel(settings: SettingsChannel, thread: { session
 export function statusModel(choice: string | null, pin: string | null): string {
   if (choice) return labelForModelRef(choice);
   if (pin) return `${labelForModelRef(pin)} (this session)`;
-  return 'project default';
+  return 'workspace default';
 }

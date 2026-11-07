@@ -244,13 +244,13 @@ describe('wait-for carries a failed turn out through the exit code', () => {
         const url = new URL(request.url);
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${sessionId}`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${sessionId}`
         ) {
           return Response.json(sessionRow());
         }
         if (
           request.method === 'POST' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${sessionId}/start`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${sessionId}/start`
         ) {
           return Response.json({
             stage: 'ready',
@@ -262,7 +262,7 @@ describe('wait-for carries a failed turn out through the exit code', () => {
         }
         if (
           request.method === 'GET' &&
-          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${sessionId}/turn`
+          url.pathname === `/v1/workspaces/${PROJECT_ID}/sessions/${sessionId}/turn`
         ) {
           return Response.json(turnStatus);
         }

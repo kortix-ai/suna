@@ -88,7 +88,7 @@ export function AgentPickerField({
         <SelectContent portalHost={OVERLAY_PORTAL_HOST} insets={contentInsets} className="w-64">
           {agents.length === 0 ? (
             <Text variant="muted" className="px-2 py-2">
-              No agents in this project
+              No agents in this workspace
             </Text>
           ) : (
             agents.map((agent) => (

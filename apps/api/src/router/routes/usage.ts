@@ -56,10 +56,10 @@ async function resolveSessionCostAccountId(
   const tokenAccountId = c.get('accountId');
   const tokenProjectId = c.get('tokenProjectId');
   if (tokenProjectId) {
-    if (!tokenAccountId) throw new HTTPException(403, { message: 'Project token has no account binding' });
+    if (!tokenAccountId) throw new HTTPException(403, { message: 'Workspace token has no workspace binding' });
     if (!projectId || projectId !== tokenProjectId || c.req.query('account_id')) {
       throw new HTTPException(403, {
-        message: 'Project-scoped token requires its own project_id and no account_id; grant project.usage.read in kortix_permissions',
+        message: 'A workspace-bound token requires its own project_id and no account_id; grant project.usage.read in kortix_permissions',
       });
     }
     await assertProjectCapability(
@@ -70,11 +70,11 @@ async function resolveSessionCostAccountId(
   if (projectId) {
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) {
-      throw new HTTPException(404, { message: 'Project not found' });
+      throw new HTTPException(404, { message: 'Workspace not found' });
     }
     const explicitAccountId = tokenAccountId ?? c.req.query('account_id');
     if (explicitAccountId && explicitAccountId !== loaded.row.accountId) {
-      throw new HTTPException(404, { message: 'Project not found' });
+      throw new HTTPException(404, { message: 'Workspace not found' });
     }
     await assertProjectCapability(
       c,
@@ -96,7 +96,7 @@ async function resolveSessionCostAccountId(
  */
 export async function resolveAccountWideUsageAccountId(c: Context<AppEnv>): Promise<string> {
   if (c.get('tokenProjectId')) {
-    throw new HTTPException(403, { message: 'Project-scoped tokens cannot read account-wide usage' });
+    throw new HTTPException(403, { message: 'Workspace-bound tokens cannot read usage across workspaces' });
   }
   const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
   await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_READ);
@@ -800,7 +800,7 @@ usageApp.openapi(
       const accountId = await resolveSessionCostAccountId(c, projectId);
       if (c.get('tokenProjectId') && c.req.query('session_id')) {
         throw new HTTPException(403, {
-          message: 'Project-scoped token cannot query an arbitrary session',
+          message: 'A workspace-bound token cannot query an arbitrary session',
         });
       }
       return c.json(

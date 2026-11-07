@@ -211,7 +211,7 @@ describe('kortix marketplace', () => {
   test('uninstall sends the selected folder, never catalog dependencies', async () => {
     let body: unknown;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toBe('https://api.test/v1/projects/project-test/skills/remove');
+      expect(String(input)).toBe('https://api.test/v1/workspaces/project-test/skills/remove');
       body = JSON.parse(String(init?.body));
       return new Response(JSON.stringify({ ok: true, commitSha: 'abc', removed: ['skills/pdf/SKILL.md'] }), { headers: JSON_HEADERS });
     }) as typeof fetch;

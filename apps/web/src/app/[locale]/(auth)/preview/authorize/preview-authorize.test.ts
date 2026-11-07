@@ -43,7 +43,7 @@ describe('isServablePreviewUrl', () => {
     expect(isServablePreviewUrl('https://dev-api.kortix.com/v1/p/sbx_a/8081/', TEMPLATE)).toBe(
       false,
     );
-    expect(isServablePreviewUrl('https://dev.kortix.com/projects', TEMPLATE)).toBe(false);
+    expect(isServablePreviewUrl('https://dev.kortix.com/workspaces', TEMPLATE)).toBe(false);
   });
 
   it('refuses a downgrade to http', () => {

@@ -6,13 +6,13 @@ kinds:
 | Kind | Names | Source |
 | --- | --- | --- |
 | Runtime tools | `bash`, `read`, `write`, `edit`, `glob`, `grep`, `question`, `agent` | pi (`../pi.md`). `codemode` is set by `agents.<name>.codemode`. |
-| Kortix tools | `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show` | Kortix. Always registered. `memory` is retired (2026-10-30): a kortix.yaml that names it gets a warning; an ejected `tools/memory.ts` stays a project tool. |
-| Project tools | Any snake_case name | A module in the repository, registered under `tools:`. |
+| Kortix tools | `web_search`, `image_search`, `image_gen`, `scrape_webpage`, `show` | Kortix. Always registered. `memory` is retired (2026-10-30): a kortix.yaml that names it gets a warning; an ejected `tools/memory.ts` stays a workspace tool. |
+| Workspace tools | Any snake_case name | A module in the repository, registered under `tools:`. |
 
 `kortix tools ls` lists the tools the current files give a session:
 `NAME`, `KIND` (`kortix`, `kortix (overridden)`, `project`), `SOURCE`.
 
-## Add a project tool
+## Add a workspace tool
 
 1. Write the module, for example `tools/lookup_order.ts` (below).
 2. Register it: `tools: { lookup_order: tools/lookup_order.ts }`.
@@ -31,7 +31,7 @@ kinds:
    and the web app's tool views depend on them.
 3. `kortix validate`, `kortix tools ls` (kind `kortix (overridden)`), CR.
 
-The copy is the project's. Kortix no longer updates it. Delete the entry and
+The copy is the workspace's. Kortix no longer updates it. Delete the entry and
 the file to return to the maintained tool.
 
 ## Remove a tool from an agent

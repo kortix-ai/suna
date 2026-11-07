@@ -8,14 +8,7 @@ import type {
 } from '@kortix/api-contract';
 import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
 import { normalizeDefaultReasoningEffort } from './effort-default';
-import {
-  type accountGithubInstallations,
-  type projectGitConnections,
-  type projectGitCredentials,
-  projectSecrets,
-  type projectSessions,
-  type projects,
-} from '@kortix/db';
+import { type accountGithubInstallations, type projectGitConnections, type projectGitCredentials, projectSecrets, type projectSessions } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { sessionInitiatorLabel } from './session-initiator';
 import { sessionRestoreUntil } from '../session-log-purge';
@@ -46,10 +39,11 @@ import { normalizeProjectIcon } from './project-icon';
 import { probeProjectSecret } from '../secrets/envelope';
 import { isDeprecatedProvider } from '../../platform/providers/deprecated';
 import { isPlatinumConfigured } from '../../shared/platinum';
+import { projectsView } from '../../workspaces/rows';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
-export type ProjectRow = typeof projects.$inferSelect;
+export type ProjectRow = typeof projectsView.$inferSelect;
 
 export type ProjectGitConnectionRow = typeof projectGitConnections.$inferSelect;
 
@@ -203,6 +197,8 @@ export function serializeSession(
     session_id: row.sessionId,
     account_id: row.accountId,
     project_id: row.projectId,
+    // The workspace id is the project id (design §0): every record that names a workspace carries it.
+    workspace_id: row.projectId,
     branch_name: row.branchName,
     base_ref: row.baseRef,
     // A legacy `e2b` row passes through as stored: E2B support is discontinued.
@@ -312,6 +308,8 @@ export function serializeProject(
 ): Project {
   return {
     project_id: row.projectId,
+    // The workspace id is the project id (design §0): one entity, one public id.
+    workspace_id: row.projectId,
     account_id: row.accountId,
     name: row.name,
     repo_url: row.repoUrl,
@@ -335,7 +333,7 @@ export function serializeProject(
     updated_at: row.updatedAt.toISOString(),
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
-    dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
+    dashboard_url: `${dashboardBaseUrl()}/workspaces/${row.projectId}`,
     // Feature flags (Settings → Feature flags) — `experimental` is the effective
     // on/off map; `experimental_features` is the self-describing catalog the UI
     // renders from. Both wire names are historical and STABLE; do not rename
@@ -619,6 +617,7 @@ export function buildSecretView(input: {
     identifier,
     name,
     project_id: (shared ?? personal)!.projectId,
+    workspace_id: (shared ?? personal)!.projectId,
     secret_id: shared?.secretId ?? null,
     created_by: shared?.createdBy ?? null,
     created_at: (shared?.createdAt ?? personal?.createdAt)?.toISOString() ?? null,

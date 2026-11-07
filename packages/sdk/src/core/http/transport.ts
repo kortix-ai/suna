@@ -13,7 +13,9 @@
  *     BEFORE the first send (a `Request` body is consumed by the first send).
  *     A caller that sets its own `Authorization` gets no replay: a fresh host
  *     token cannot change a header the caller owns;
- *   - the configured `fetch` (`configureKortix({ fetch })`).
+ *   - the configured `fetch` (`configureKortix({ fetch })`);
+ *   - the legacy route name on an API that predates `/v1/workspaces`
+ *     (`workspace-routes.ts`).
  *
  * It returns the `Response` for any HTTP status. It throws only when no
  * request was sent: `AuthError` without a token, `AbortError` on an abort.
@@ -36,6 +38,7 @@ import { abortable, createAbortError } from './abort';
 import { ApiError, AuthError } from './api/errors';
 import { platformConfig } from './config';
 import { impersonationHeaders } from './impersonation';
+import { withWorkspaceRouteFallback } from './workspace-routes';
 
 type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -215,7 +218,11 @@ export async function send(
   options: SendOptions = {},
 ): Promise<Response> {
   const { retryOnAuthError = true, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS } = options;
-  const fetchImpl: Fetch = options.fetch ?? platformConfig().fetch ?? fetch;
+  // A canonical workspace name reaches an older API too (`workspace-routes.ts`).
+  const fetchImpl: Fetch = withWorkspaceRouteFallback(
+    options.fetch ?? platformConfig().fetch ?? fetch,
+    platformConfig().backendUrl,
+  );
   const signal =
     timeoutMs === null
       ? ((input instanceof Request ? input.signal : init.signal) ?? undefined)

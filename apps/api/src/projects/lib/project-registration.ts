@@ -1,8 +1,4 @@
-import {
-  type accountGithubInstallations,
-  projectGitConnections,
-  projects,
-} from '@kortix/db';
+import { type accountGithubInstallations, projectGitConnections } from '@kortix/db';
 
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { grantProjectRole } from './access';
@@ -16,11 +12,27 @@ import {
 } from './project-git-write';
 import { type ProjectRow, clampProjectName, deriveProjectName } from './serializers';
 import { captureProductEvent } from '../../shared/product-analytics';
+import {
+  isWorkspaceOnePerAccountConflict,
+  workspaceHasProjectBody,
+  workspaceHasProjectDenial,
+  WorkspaceHasProjectError,
+} from '../../workspaces/one-project';
+import { insertProjectRow } from '../../workspaces/rows';
 
 type GitHubInstallation = typeof accountGithubInstallations.$inferSelect;
 
 type RegistrationAuth =
-  | { kind: 'github_app'; installation: GitHubInstallation }
+  | {
+      kind: 'github_app';
+      installation: GitHubInstallation;
+      /**
+       * The installation is linked to another account: the connection is a
+       * repository grant for this one repository (`project_grant: true`), the
+       * BYO new-workspace path (`../routes/byo-new-workspace.ts`).
+       */
+      projectGrant?: boolean;
+    }
   | { kind: 'project_credential'; token: string };
 
 type RegistrationInput = {
@@ -46,6 +58,7 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
         kind: 'github_app',
         installationId: githubApp.installationId,
         permissions: githubApp.permissions,
+        ...(input.auth.kind === 'github_app' && input.auth.projectGrant ? { projectGrant: true } : {}),
       }
     : { kind: 'project_credential' };
   const metadata = buildProjectGitMetadata(input.repo, auth, input.projectMetadata, {
@@ -54,21 +67,20 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
     githubInstallationId: true,
   });
 
+  // The route ran `enforceProjectQuota` (409 `workspace_has_project`) first. A
+  // concurrent create that won the race past it trips the 1:1 unique index
+  // here; that answers the same typed 409 instead of a 500.
   const row = await db.transaction(async (tx) => {
-    const [project] = await tx
-      .insert(projects)
-      .values({
-        accountId: input.accountId,
-        name: projectName,
-        repoUrl: input.repo.clone_url,
-        defaultBranch: input.defaultBranch,
-        manifestPath: input.manifestPath,
-        status: 'active',
-        metadata,
-        updatedAt: now,
-      })
-      .returning();
-    if (!project) throw new Error('Project registration did not return the inserted project');
+    const project = await insertProjectRow({
+      accountId: input.accountId,
+      name: projectName,
+      repoUrl: input.repo.clone_url,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath,
+      status: 'active',
+      metadata,
+      updatedAt: now,
+    }, tx);
 
     let credentialRef: string | null = null;
     if (input.auth.kind === 'project_credential') {
@@ -101,6 +113,10 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
       .returning();
 
     return project;
+  }).catch(async (error: unknown) => {
+    if (!isWorkspaceOnePerAccountConflict(error)) throw error;
+    const occupied = await workspaceHasProjectDenial(input.accountId);
+    throw new WorkspaceHasProjectError(occupied ?? workspaceHasProjectBody(input.accountId, null));
   });
 
   // The creator's Manager role, through the ONE write path.
@@ -157,12 +173,12 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
 }
 
 export function registerGitHubLinkedProject(
-  input: Omit<RegistrationInput, 'auth'> & { installation: GitHubInstallation },
+  input: Omit<RegistrationInput, 'auth'> & { installation: GitHubInstallation; projectGrant?: boolean },
 ): Promise<ProjectRow> {
-  const { installation, ...project } = input;
+  const { installation, projectGrant, ...project } = input;
   return registerLinkedProject({
     ...project,
-    auth: { kind: 'github_app', installation },
+    auth: { kind: 'github_app', installation, ...(projectGrant ? { projectGrant: true } : {}) },
   });
 }
 

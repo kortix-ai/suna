@@ -3,53 +3,21 @@
 import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
 
 /**
- * Every organization the signed-in user belongs to, each linking to that
- * account's own settings.
- *
- * **Why it lives on the Profile tab and not in its own rail row** (Jay,
- * 2026-08-17: "in the user settings also have all the accounts you're a part of
- * so you can easily go to the account settings as well from the user
- * settings"). The panel is a 896×660 dialog with three rail rows, and this list
- * is one row per account — a user in one account sees a single row, a user in
- * three sees three. A fourth rail row for that would be a tab you must find
- * before you can read two lines, and it would compete with "Connected accounts"
- * for the same word. Profile already opens by default (`DEFAULT_SETTINGS_TAB`)
- * and already answers "who am I" — email, display name, second factor. Which
- * organizations that identity is a member of is the same question, so it sits
- * with them, ABOVE Security and Danger zone: it is the row a person came here
- * to click, and Jay asked for "easily", which means no scrolling and no tab
- * hunt.
- *
- * **Why `/accounts/<id>` with no `?tab=`.** That page's `VALID_TABS` falls back
- * to `members` (`features/accounts/hub/account-hub-content.tsx:349`), which is the section a
- * reader arriving from "which organizations am I in" is asking about. Same
- * destination the workspace switcher's "Account settings" row and the Members
- * pane's "Organization account settings" row already use — one account link in
- * the product, one target.
- *
- * **Why no empty state and no error state.** A signed-in user always has at
- * least one account: `GET /accounts` bootstraps a personal one when the
- * membership query comes back empty (`api/src/accounts/core/accounts.ts:112`).
- * So "zero accounts" is not a state a user reaches — it only means the query
- * has not answered — and this renders nothing at all rather than asserting an
- * emptiness it cannot observe. A failed fetch takes the same path for the same
- * reason: this is a shortcut to a page reachable from the sidebar switcher too,
- * not the only door to it, so a red banner inside a profile pane would cost
- * more attention than the shortcut is worth.
+ * Every workspace the signed-in user belongs to: the Preferences rail lists
+ * them (`settings-rail.tsx`), each row closing the dialog on its way to that
+ * workspace's settings. A workspace is one account and its project (Workspaces
+ * ux.md); an account with no project is not listed. The Profile tab carried a
+ * second copy of this list until finding 37: one list, one behavior.
  */
 
-import { Button } from '@kortix/ui/button';
-import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
-import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
-import { Skeleton } from '@kortix/ui/skeleton';
-import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
-import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import { useWorkspaceDirectory } from '@kortix/ui/workspace/sidebar/use-workspace-directory';
 import { type KortixAccount } from '@kortix/sdk';
 
-import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
-
 /** Exactly the fields this list reads — nothing else from `KortixAccount`. */
-export type AccountMembership = Pick<KortixAccount, 'account_id' | 'name' | 'account_role'>;
+export type AccountMembership = Pick<KortixAccount, 'account_id' | 'name' | 'account_role'> & {
+  /** The workspace's id: the row links to its settings. Absent: the account hub link. */
+  workspace_id?: string;
+};
 
 export interface AccountMembershipsCopy {
   title: string;
@@ -62,9 +30,9 @@ export interface AccountMembershipsCopy {
 }
 
 export const DEFAULT_ACCOUNT_MEMBERSHIPS_COPY: AccountMembershipsCopy = {
-  title: 'Organizations',
-  description: "Members, billing, roles, and audit live in each organization's own settings.",
-  fallbackAccountName: 'Account',
+  title: 'Workspaces',
+  description: "Members, billing, roles, and audit live in each workspace's own settings.",
+  fallbackAccountName: 'Workspace',
   owner: 'Owner',
   admin: 'Admin',
   member: 'Member',
@@ -95,65 +63,22 @@ export function accountRoleLabel(
   }
 }
 
-export interface AccountMembershipsSectionProps {
-  accounts?: readonly AccountMembership[];
-  isLoading?: boolean;
-  copy?: AccountMembershipsCopy;
-}
 
 /**
- * Presentational only — no query, no router. Rendered directly by
- * `ProfileTabView`, which is itself hook-free so it renders under
- * `renderToStaticMarkup` (see `profile-tab.test.tsx`).
- */
-export function AccountMembershipsSection({
-  accounts = [],
-  isLoading = false,
-  copy = DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
-}: AccountMembershipsSectionProps) {
-  // Nothing, not a heading over an empty box — see this file's header.
-  if (!isLoading && accounts.length === 0) return null;
-
-  return (
-    <section className="space-y-3">
-      <SettingsSubsectionHeader title={copy.title} description={copy.description} />
-
-      <SettingsRowGroup>
-        {isLoading ? (
-          /* One shape-matched row, so the section does not grow by a row's
-             height the moment the list lands. `h-8` is the `size="sm"` button
-             each real row carries on the right. */
-          <div className="px-4 py-3">
-            <Skeleton className="h-8 w-full rounded-md" />
-          </div>
-        ) : (
-          accounts.map((account) => (
-            <SettingsRow
-              key={account.account_id}
-              label={workspaceAccountLabel(account.name, copy.fallbackAccountName, false)}
-              description={accountRoleLabel(account.account_role, copy)}
-            >
-              <Button asChild variant="outline" size="sm">
-                <HubLink to={hubTarget(account.account_id)}>{copy.manage}</HubLink>
-              </Button>
-            </SettingsRow>
-          ))
-        )}
-      </SettingsRowGroup>
-    </section>
-  );
-}
-
-/**
- * The accounts the user belongs to.
+ * The workspaces the user belongs to, one row each.
  *
- * Reads through `useAccountsList()`, the one definition of that query, so this
- * pane, `use-ensure-selected-account.ts` and `workspace-menu-section.tsx` all
- * share one user-scoped cache entry — opening this pane inside a project shell
- * costs no request at all, because `WorkspaceSwitcher` already primed that
- * entry on mount.
+ * Reads through `useWorkspaceDirectory()`, the switcher's and the chooser's
+ * list, so opening this pane costs no request once either has loaded.
  */
 export function useAccountMemberships(): { accounts: AccountMembership[]; isLoading: boolean } {
-  const query = useAccountsList();
-  return { accounts: query.data ?? [], isLoading: query.isLoading };
+  const directory = useWorkspaceDirectory();
+  return {
+    accounts: directory.openable.map((row) => ({
+      account_id: row.accountId,
+      name: row.project.name,
+      account_role: row.role,
+      workspace_id: row.workspaceId,
+    })),
+    isLoading: directory.loading,
+  };
 }

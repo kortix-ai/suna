@@ -27,7 +27,7 @@ const COPY = {
     icon: KeyIcon,
     action: 'Add secret',
     fallback: 'Enter credentials',
-    title: 'Add a project secret',
+    title: 'Add a workspace secret',
     blurb: 'Review where this secret will be used before saving.',
     /** Shown once the value has been submitted from this card. */
     doneStatus: 'Added',

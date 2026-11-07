@@ -25,14 +25,14 @@ beforeEach(() => {
       if (path.endsWith('/model-picker')) {
         return Response.json(catalogStatus === 200 ? { models } : { error: 'Unavailable' }, { status: catalogStatus });
       }
-      if (path === `/v1/projects/${project}/sessions/${session}`) {
+      if (path === `/v1/workspaces/${project}/sessions/${session}`) {
         return Response.json({ session_id: session, project_id: project, status: 'running', metadata: {} });
       }
-      if (path === `/v1/projects/${project}/sessions`) {
+      if (path === `/v1/workspaces/${project}/sessions`) {
         if (request.method === 'GET') return Response.json([]);
         return Response.json({ error: 'create reached' }, { status: 409 });
       }
-      if (path === `/v1/projects/${project}`) {
+      if (path === `/v1/workspaces/${project}`) {
         return Response.json({ project_id: project, metadata: { git: { managed: true } } });
       }
       return Response.json({ error: 'runtime reached' }, { status: 409 });
@@ -79,14 +79,14 @@ test('a connected model allows session creation even when hidden from the picker
   models = { 'synthetic/model': { enabled: false } };
   const result = await run(['new', '--prompt', 'Reply pong', '--json']);
   expect(result.stderr).toContain('create reached');
-  expect(requests).toContain(`POST /v1/projects/${project}/sessions`);
+  expect(requests).toContain(`POST /v1/workspaces/${project}/sessions`);
 });
 
 test('native-provider projects without the gateway keep session creation', async () => {
   catalogStatus = 404;
   const result = await run(['new', '--prompt', 'Reply pong', '--model', 'synthetic/model']);
   expect(result.stderr).toContain('create reached');
-  expect(requests).toContain(`POST /v1/projects/${project}/sessions`);
+  expect(requests).toContain(`POST /v1/workspaces/${project}/sessions`);
 });
 
 test('catalog failures are reported, not treated as native-provider projects', async () => {

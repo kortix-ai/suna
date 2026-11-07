@@ -141,7 +141,7 @@ test.describe('50 — a new project opens on the first chat, which runs the onbo
       });
       // showMobileAppPromo: true lets the promo open if the page allows it.
       // Onboarding owns the screen, so it must not (KRTX-2635).
-      await installBrowserSessionDirect(page, user.session, `/projects/${user.projectId}`, {
+      await installBrowserSessionDirect(page, user.session, `/workspaces/${user.projectId}`, {
         ...authOptions,
         showMobileAppPromo: true,
       });
@@ -159,7 +159,7 @@ test.describe('50 — a new project opens on the first chat, which runs the onbo
       // The promo opens right after hydration; give it the time it would take.
       await page.waitForTimeout(3_000);
       await expect(promoTitle(page)).toHaveCount(0);
-      expect(new URL(page.url()).pathname).toBe(`/projects/${user.projectId}`);
+      expect(new URL(page.url()).pathname).toBe(`/workspaces/${user.projectId}`);
       expect(stamps).toEqual([]);
     } finally {
       await cleanup(user);
@@ -183,9 +183,9 @@ test.describe('50 — a new project opens on the first chat, which runs the onbo
           response.request().postDataJSON()?.completed === true,
         { timeout: 120_000 },
       );
-      await installBrowserSessionDirect(page, user.session, `/projects/${user.projectId}`, authOptions);
+      await installBrowserSessionDirect(page, user.session, `/workspaces/${user.projectId}`, authOptions);
       expect((await stamp).status()).toBe(200);
-      await expect(page).toHaveURL(new RegExp(`/projects/${user.projectId}/sessions/`), {
+      await expect(page).toHaveURL(new RegExp(`/workspaces/${user.projectId}/sessions/`), {
         timeout: 60_000,
       });
       await expect(page.getByText('Onboard me').first()).toBeVisible({ timeout: 30_000 });
@@ -214,7 +214,7 @@ test.describe('50 — a new project opens on the first chat, which runs the onbo
           name: `Promo eligible ${Date.now().toString(36)}`,
         })
       ).id;
-      await installBrowserSessionDirect(page, user.session, `/projects/${secondProjectId}`, {
+      await installBrowserSessionDirect(page, user.session, `/workspaces/${secondProjectId}`, {
         ...authOptions,
         showMobileAppPromo: true,
       });

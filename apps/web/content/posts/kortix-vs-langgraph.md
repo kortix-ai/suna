@@ -22,7 +22,7 @@ None of that is small. A team that writes its agent as a graph knows what the co
 
 On Kortix the repository is the unit of work. An agent's definition, the instructions it follows, the memory it accumulates and the tools it may call all sit in that repo as plain text.
 
-A Kortix project is a git repo with `kortix.yaml` at its root. Behaviour lives in markdown agents, and the manifest states what each agent may reach:
+A Kortix workspace is backed by a git repo with `kortix.yaml` at its root. Behaviour lives in markdown agents, and the manifest states what each agent may reach:
 
 ```yaml
 kortix_version: 2
@@ -65,7 +65,7 @@ kortix sessions new --prompt "Summarize this week's commits and open a change re
 
 ## What the plan pays for
 
-Nobody buys a seat on Kortix. Members are unlimited and free, the account shares one credit wallet, and unused monthly credits roll over one month. The free plan is $0 with 500 credits a month, every feature and one project, running on your own provider keys or the ChatGPT subscription you already pay for.
+Nobody buys a seat on Kortix. Members are unlimited and free, the account shares one credit wallet, and unused monthly credits roll over one month. The free plan is $0 with 500 credits a month on your first workspace and every feature, running on your own provider keys or the ChatGPT subscription you already pay for.
 
 Paid is the Credits plan, where you choose the monthly amount. 5,000 credits costs $50, and every tier buys credits at 100 credits per dollar. Four things draw on that balance. Kortix-managed model calls cost the provider's base price plus a 5.5% platform fee. Calls on your own provider key are free for the first $1,000 of usage a month, then 5% of each request. Sandbox compute runs at about 11 credits an hour for the default 2 vCPU, 4 GB and 20 GB machine. Web search, image search and web scraping requests that go through Kortix are metered per call. The [pricing page](https://kortix.com/pricing) shows the arithmetic and the [credits page](https://kortix.com/docs/credits) lists each line.
 

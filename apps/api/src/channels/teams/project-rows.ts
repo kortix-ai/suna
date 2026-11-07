@@ -6,7 +6,7 @@ import type { ProjectRow } from './cards';
 export const MAX_PROJECT_ROWS = 8;
 
 export function projectWebUrl(projectId: string): string {
-  return `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${projectId}`;
+  return `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/workspaces/${projectId}`;
 }
 
 /** How long a card waits for a first preview check. Teams cards post asynchronously. */

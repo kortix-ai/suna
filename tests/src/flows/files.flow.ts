@@ -9,21 +9,21 @@ import { flow } from "../core/flow";
 
 flow(
   "FILE-1",
-  { domain: "files", tags: ["deployed", "smoke"], routes: ["GET /v1/projects/:projectId/files"] },
+  { domain: "files", tags: ["deployed", "smoke"], routes: ["GET /v1/workspaces/:projectId/files"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("OWNER lists repo tree → 200 array", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files", { params: { projectId: p.id } });
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/files", { params: { projectId: p.id } });
       r.status(200).body().exists("$");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/files", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/files", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/files", { params: { projectId: p.id } });
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/workspaces/:projectId/files", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -31,27 +31,27 @@ flow(
 
 flow(
   "FILE-2",
-  { domain: "files", routes: ["GET /v1/projects/:projectId/files/content"] },
+  { domain: "files", routes: ["GET /v1/workspaces/:projectId/files/content"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     // Discover a real file path from the tree so content fetch hits live data.
     const tree = await ctx.client
       .as(ctx.P.OWNER)
-      .get("/v1/projects/:projectId/files", { params: { projectId: p.id } });
+      .get("/v1/workspaces/:projectId/files", { params: { projectId: p.id } });
     const entries = tree.json<Array<{ path: string; type?: string }>>() ?? [];
     const firstFile = entries.find((e) => e && e.type !== "tree" && e.type !== "dir" && e.path);
 
     await ctx.step("absent path param → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/content", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/files/content", { params: { projectId: p.id } });
       r.status(400);
     });
     if (firstFile) {
       await ctx.step("known file path → 200 with content", async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .get("/v1/projects/:projectId/files/content", {
+          .get("/v1/workspaces/:projectId/files/content", {
             params: { projectId: p.id },
             query: { path: firstFile.path },
           });
@@ -59,26 +59,26 @@ flow(
       });
     }
     await ctx.step("a path the repository does not hold → 404 File not found, never a 500", async () => {
-      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path: "ke2e-no-such-file.txt" } }))
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/files/content", { params: { projectId: p.id }, query: { path: "ke2e-no-such-file.txt" } }))
         .status(404).body().has("$.error", "File not found");
     });
     await ctx.step("absolute, traversal and NUL-containing paths → 404 File not found", async () => {
       // No `../`: an edge WAF answers that itself (403) before the API sees it.
       for (const path of ["/workspace/AGENTS.md", "..", "ke2e/..", "\0", "\0a", "a\0b", "a\0"]) {
-        (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
+        (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
           .status(404).body().has("$.error", "File not found");
       }
     });
     await ctx.step("the repository root under any spelling → 404 File not found, never a 500 (KRTX-3403)", async () => {
       for (const path of [".", "./", "./.", ".//", "././"]) {
-        (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
+        (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
           .status(404).body().has("$.error", "File not found");
       }
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/files/content", {
+        .get("/v1/workspaces/:projectId/files/content", {
           params: { projectId: p.id },
           query: { path: "README.md" },
         });
@@ -89,19 +89,19 @@ flow(
 
 flow(
   "FILE-3",
-  { domain: "files", routes: ["GET /v1/projects/:projectId/files/search"] },
+  { domain: "files", routes: ["GET /v1/workspaces/:projectId/files/search"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("absent q param → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/search", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/files/search", { params: { projectId: p.id } });
       r.status(400);
     });
     await ctx.step("filename search → 200 with results array", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/search", {
+        .get("/v1/workspaces/:projectId/files/search", {
           params: { projectId: p.id },
           query: { q: "." },
         });
@@ -110,7 +110,7 @@ flow(
     await ctx.step("content grep (content=1) → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/search", {
+        .get("/v1/workspaces/:projectId/files/search", {
           params: { projectId: p.id },
           query: { q: "a", content: "1" },
         });
@@ -119,7 +119,7 @@ flow(
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/files/search", {
+        .get("/v1/workspaces/:projectId/files/search", {
           params: { projectId: p.id },
           query: { q: "x" },
         });
@@ -130,19 +130,19 @@ flow(
 
 flow(
   "FILE-4",
-  { domain: "files", routes: ["GET /v1/projects/:projectId/files/history"] },
+  { domain: "files", routes: ["GET /v1/workspaces/:projectId/files/history"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("absent path param → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/history", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/files/history", { params: { projectId: p.id } });
       r.status(400);
     });
     await ctx.step("history for a path → 200 (or 400 if path unknown to git)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/history", {
+        .get("/v1/workspaces/:projectId/files/history", {
           params: { projectId: p.id },
           query: { path: "README.md" },
         });
@@ -151,7 +151,7 @@ flow(
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/files/history", {
+        .get("/v1/workspaces/:projectId/files/history", {
           params: { projectId: p.id },
           query: { path: "README.md" },
         });
@@ -162,29 +162,29 @@ flow(
 
 flow(
   "FILE-5",
-  { domain: "files", routes: ["GET /v1/projects/:projectId/files/archive"] },
+  { domain: "files", routes: ["GET /v1/workspaces/:projectId/files/archive"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     await ctx.step("repo archive (no path) → 200 workspace.zip", async () => {
-      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id } }))
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/files/archive", { params: { projectId: p.id } }))
         .status(200)
         .headerEquals("content-type", "application/zip")
         .headerEquals("content-disposition", 'attachment; filename="workspace.zip"');
     });
     await ctx.step("an absolute archive path → 400 Invalid path", async () => {
-      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id }, query: { path: "/workspace" } }))
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/files/archive", { params: { projectId: p.id }, query: { path: "/workspace" } }))
         .status(400).body().has("$.error", "Invalid path");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/files/archive", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/files/archive", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -192,13 +192,13 @@ flow(
 
 flow(
   "FILE-6",
-  { domain: "files", tags: ["smoke"], routes: ["GET /v1/projects/:projectId/branches"] },
+  { domain: "files", tags: ["smoke"], routes: ["GET /v1/workspaces/:projectId/branches"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedSeededProject();
     await ctx.step("OWNER lists seeded default branch → 200 with remote tip", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/branches", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/branches", { params: { projectId: p.id } });
       const body = r.json<{ default_branch: string }>();
       r.status(200)
         .body()
@@ -210,13 +210,13 @@ flow(
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/branches", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/branches", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/branches", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/branches", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -228,9 +228,9 @@ flow(
     domain: "files",
     tags: ["smoke"],
     routes: [
-      "GET /v1/projects/:projectId/commits",
-      "GET /v1/projects/:projectId/commits/:sha",
-      "GET /v1/projects/:projectId/commits/:sha/diff",
+      "GET /v1/workspaces/:projectId/commits",
+      "GET /v1/workspaces/:projectId/commits/:sha",
+      "GET /v1/workspaces/:projectId/commits/:sha/diff",
     ],
   },
   async (ctx) => {
@@ -240,7 +240,7 @@ flow(
     await ctx.step("OWNER lists commits → 200 with commits[] (or 400 if the managed mirror has no readable history yet)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/commits", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/commits", { params: { projectId: p.id } });
       r.status([200, 400]);
       if (r.statusCode === 200) {
         r.body().exists("$.commits");
@@ -258,7 +258,7 @@ flow(
       }
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/commits/:sha", {
+        .get("/v1/workspaces/:projectId/commits/:sha", {
           params: { projectId: p.id, sha: headSha },
         });
       // Initial (parentless) commit may 400 when computing changed files.
@@ -269,7 +269,7 @@ flow(
     await ctx.step("commits/:sha bogus hash → 400/404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/commits/:sha", {
+        .get("/v1/workspaces/:projectId/commits/:sha", {
           params: { projectId: p.id, sha: "0000000000000000000000000000000000000000" },
         });
       r.status([400, 404]);
@@ -279,7 +279,7 @@ flow(
       if (!headSha) return;
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/commits/:sha/diff", {
+        .get("/v1/workspaces/:projectId/commits/:sha/diff", {
           params: { projectId: p.id, sha: headSha },
         });
       // A fresh repo's only commit is the initial (parentless) commit; diffing it
@@ -291,7 +291,7 @@ flow(
     await ctx.step("commits/:sha/diff bogus hash → 400/404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/commits/:sha/diff", {
+        .get("/v1/workspaces/:projectId/commits/:sha/diff", {
           params: { projectId: p.id, sha: "0000000000000000000000000000000000000000" },
         });
       r.status([400, 404]);
@@ -300,13 +300,13 @@ flow(
     await ctx.step("commits NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
-        .get("/v1/projects/:projectId/commits", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/commits", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
     await ctx.step("commits ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/commits", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/commits", { params: { projectId: p.id } });
       r.status(401);
     });
   },
@@ -316,7 +316,7 @@ flow(
   "FILE-11",
   {
     domain: "files",
-    routes: ["GET /v1/projects/:projectId/files", "GET /v1/projects/:projectId/files/content", "GET /v1/projects/:projectId/files/archive"],
+    routes: ["GET /v1/workspaces/:projectId/files", "GET /v1/workspaces/:projectId/files/content", "GET /v1/workspaces/:projectId/files/archive"],
   },
   async (ctx) => {
     if (ctx.env.target !== "local") return; // deployed pushes go through the git proxy; local pushes hit the bare repo
@@ -336,7 +336,7 @@ flow(
       const base = String(rows[0]?.default_branch || "main");
       const branch = `ke2e-fresh-${Date.now().toString(36)}`;
       await ctx.step("warm the mirror with a default-branch read", async () => {
-        (await owner.get("/v1/projects/:projectId/files", { params: { projectId: p.id } })).status(200);
+        (await owner.get("/v1/workspaces/:projectId/files", { params: { projectId: p.id } })).status(200);
       });
       await ctx.step("push a new branch straight to the repository, then read it at that ref at once → 200 + listed", async () => {
         const git = (...a: string[]) => execFileSync("git", a, { cwd: work, stdio: "pipe" });
@@ -348,27 +348,27 @@ flow(
         git("add", "-A");
         git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "fresh");
         git("push", "-q", "origin", `HEAD:refs/heads/${branch}`);
-        const read = await owner.get("/v1/projects/:projectId/files/content", {
+        const read = await owner.get("/v1/workspaces/:projectId/files/content", {
           params: { projectId: p.id },
           query: { path: "fresh.txt", ref: branch },
         });
         read.status(200).body().has("$.content", "pushed just now\n");
-        const list = await owner.get("/v1/projects/:projectId/files", { params: { projectId: p.id }, query: { ref: branch } });
+        const list = await owner.get("/v1/workspaces/:projectId/files", { params: { projectId: p.id }, query: { ref: branch } });
         list.status(200);
         if (!list.json<Array<{ path: string }>>().some((e) => e.path === "fresh.txt")) throw new Error("fresh.txt missing from the branch listing");
       });
       await ctx.step("list and archive a subtree at that ref → only its files; a zip named after the folder", async () => {
-        const list = await owner.get("/v1/projects/:projectId/files", { params: { projectId: p.id }, query: { ref: branch, path: "docs" } });
+        const list = await owner.get("/v1/workspaces/:projectId/files", { params: { projectId: p.id }, query: { ref: branch, path: "docs" } });
         list.status(200);
         const paths = list.json<Array<{ path: string }>>().map((e) => e.path);
         if (!paths.some((x) => x.endsWith("guide.md")) || paths.some((x) => x.endsWith("fresh.txt"))) throw new Error(`subtree listing: ${JSON.stringify(paths)}`);
-        (await owner.get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id }, query: { ref: branch, path: "docs" } }))
+        (await owner.get("/v1/workspaces/:projectId/files/archive", { params: { projectId: p.id }, query: { ref: branch, path: "docs" } }))
           .status(200)
           .headerEquals("content-type", "application/zip")
           .headerEquals("content-disposition", 'attachment; filename="docs.zip"');
       });
       await ctx.step("an unknown branch → 404", async () => {
-        const r = await owner.get("/v1/projects/:projectId/files/content", {
+        const r = await owner.get("/v1/workspaces/:projectId/files/content", {
           params: { projectId: p.id },
           query: { path: "fresh.txt", ref: "ke2e-no-such-branch" },
         });
@@ -383,33 +383,33 @@ flow(
 
 flow(
   "FILE-12",
-  { domain: "files", routes: ["GET /v1/projects/:projectId/files/raw"] },
+  { domain: "files", routes: ["GET /v1/workspaces/:projectId/files/raw"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
     const tree = await ctx.client
       .as(ctx.P.OWNER)
-      .get("/v1/projects/:projectId/files", { params: { projectId: p.id } });
+      .get("/v1/workspaces/:projectId/files", { params: { projectId: p.id } });
     const entries = tree.json<Array<{ path: string; type?: string }>>() ?? [];
     const firstFile = entries.find((e) => e && e.type !== "tree" && e.type !== "dir" && e.path);
 
     await ctx.step("absent path param → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/raw", { params: { projectId: p.id } });
+        .get("/v1/workspaces/:projectId/files/raw", { params: { projectId: p.id } });
       r.status(400);
     });
     if (firstFile) {
       await ctx.step("known file path → 200 whose bytes decode to the content read", async () => {
         const raw = await ctx.client
           .as(ctx.P.OWNER)
-          .get("/v1/projects/:projectId/files/raw", {
+          .get("/v1/workspaces/:projectId/files/raw", {
             params: { projectId: p.id },
             query: { path: firstFile.path },
           });
         raw.status(200);
         const text = await ctx.client
           .as(ctx.P.OWNER)
-          .get("/v1/projects/:projectId/files/content", {
+          .get("/v1/workspaces/:projectId/files/content", {
             params: { projectId: p.id },
             query: { path: firstFile.path },
           });
@@ -423,7 +423,7 @@ flow(
     await ctx.step("a missing path → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/raw", {
+        .get("/v1/workspaces/:projectId/files/raw", {
           params: { projectId: p.id },
           query: { path: "ke2e-no-such-file.bin" },
         });
@@ -431,14 +431,14 @@ flow(
     });
     await ctx.step("the repository root under any spelling → 404 File not found, never a 500 (KRTX-3403)", async () => {
       for (const path of [".", "./", "./.", ".//", "././"]) {
-        (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/raw", { params: { projectId: p.id }, query: { path } }))
+        (await ctx.client.as(ctx.P.OWNER).get("/v1/workspaces/:projectId/files/raw", { params: { projectId: p.id }, query: { path } }))
           .status(404).body().has("$.error", "File not found");
       }
     });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/files/raw", {
+        .get("/v1/workspaces/:projectId/files/raw", {
           params: { projectId: p.id },
           query: { path: "README.md" },
         });
@@ -460,9 +460,9 @@ flow(
     domain: "files",
     requires: ["database"],
     routes: [
-      "GET /v1/projects/:projectId/files",
-      "GET /v1/projects/:projectId/files/content",
-      "GET /v1/projects/:projectId/files/search",
+      "GET /v1/workspaces/:projectId/files",
+      "GET /v1/workspaces/:projectId/files/content",
+      "GET /v1/workspaces/:projectId/files/search",
     ],
   },
   async (ctx) => {
@@ -513,7 +513,7 @@ flow(
     });
 
     await ctx.step("depth=1 at the root lists every top-level folder and file", async () => {
-      const r = await owner.get("/v1/projects/:projectId/files", { params, query: { depth: "1" } });
+      const r = await owner.get("/v1/workspaces/:projectId/files", { params, query: { depth: "1" } });
       r.status(200).body().has("$.truncated", false);
       const entries = r.json<{ entries: Array<{ path: string; type: string }> }>().entries;
       const want = [{ path: "a", type: "directory" }, { path: "z", type: "directory" }, { path: "README.md", type: "file" }];
@@ -523,10 +523,10 @@ flow(
     });
 
     await ctx.step("depth=1 without limit or cursor lists a 1,200-file folder whole with next_cursor null, and the folder that sorts after it", async () => {
-      const a = await owner.get("/v1/projects/:projectId/files", { params, query: { path: "a", depth: "1" } });
+      const a = await owner.get("/v1/workspaces/:projectId/files", { params, query: { path: "a", depth: "1" } });
       a.status(200).body().has("$.truncated", false).has("$.next_cursor", null);
       if (a.json<{ entries: unknown[] }>().entries.length !== 1200) throw new Error("a/ is not complete");
-      const z = await owner.get("/v1/projects/:projectId/files", { params, query: { path: "z", depth: "1" } });
+      const z = await owner.get("/v1/workspaces/:projectId/files", { params, query: { path: "z", depth: "1" } });
       z.status(200).body().has("$.entries[0].path", "z/last.txt");
     });
 
@@ -537,7 +537,7 @@ flow(
       const names: string[] = [];
       let cursor: string | null = null;
       do {
-        const r = await owner.get("/v1/projects/:projectId/files", {
+        const r = await owner.get("/v1/workspaces/:projectId/files", {
           params,
           query: { path: "a", depth: "1", limit: "500", ...(cursor ? { cursor } : {}) },
         });
@@ -560,7 +560,7 @@ flow(
       // once (FILE-11), so the API sees the second commit before page 2.
       const branch = "file13-pages";
       await pushCommit(defaultBranch, branch, "the 1,200 files", async () => {});
-      const first = await owner.get("/v1/projects/:projectId/files", {
+      const first = await owner.get("/v1/workspaces/:projectId/files", {
         params,
         query: { path: "a", depth: "1", limit: "500", ref: branch },
       });
@@ -576,10 +576,10 @@ flow(
         await writeFile(join(work, "a", "f0600x.txt"), "x\n");
       });
       // The API reads the new commit: the added file reads back at the branch.
-      (await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: "a/f0600x.txt", ref: branch } })).status(200);
+      (await owner.get("/v1/workspaces/:projectId/files/content", { params, query: { path: "a/f0600x.txt", ref: branch } })).status(200);
 
       for (let pages = 1; cursor && pages < 10; pages++) {
-        const r = await owner.get("/v1/projects/:projectId/files", {
+        const r = await owner.get("/v1/workspaces/:projectId/files", {
           params,
           query: { path: "a", depth: "1", limit: "500", ref: branch, cursor },
         });
@@ -591,7 +591,7 @@ flow(
       if (names.join("\n") !== want.join("\n")) throw new Error("the pages after a push do not list the first page's commit exactly");
 
       // A new walk reads the new commit.
-      const fresh = await owner.get("/v1/projects/:projectId/files", { params, query: { path: "a", depth: "1", ref: branch } });
+      const fresh = await owner.get("/v1/workspaces/:projectId/files", { params, query: { path: "a", depth: "1", ref: branch } });
       fresh.status(200);
       const now = fresh.json<Page>().entries.map((e) => e.path);
       if (now.length !== 1201 || !now.includes("a/f0600x.txt") || now.includes("a/f0700.txt")) {
@@ -607,13 +607,13 @@ flow(
         { path: "z", depth: "1", cursor: firstCursor },
       ];
       for (const query of bad) {
-        const r = await owner.get("/v1/projects/:projectId/files", { params, query });
+        const r = await owner.get("/v1/workspaces/:projectId/files", { params, query });
         r.status(400);
       }
     });
 
     await ctx.step("content search reads back the path, line number and line text of a match", async () => {
-      const r = await owner.get("/v1/projects/:projectId/files/search", { params, query: { q: "last", content: "1" } });
+      const r = await owner.get("/v1/workspaces/:projectId/files/search", { params, query: { q: "last", content: "1" } });
       r.status(200).body().has("$.content_search", true);
       const results = r.json<{ results: Array<{ path: string; line_number?: number; line_text?: string }> }>().results;
       const match = results.find((m) => m.path === "z/last.txt");
@@ -623,46 +623,46 @@ flow(
     });
 
     await ctx.step("the recursive list is cut at 1,000 and says so", async () => {
-      const r = await owner.get("/v1/projects/:projectId/files", { params });
+      const r = await owner.get("/v1/workspaces/:projectId/files", { params });
       r.status(200);
       if (r.json<unknown[]>().length !== 1000) throw new Error(`recursive list returned ${r.json<unknown[]>().length}`);
       if (r.header("x-kortix-truncated") !== "1") throw new Error("the cut list carries no X-Kortix-Truncated");
     });
 
     await ctx.step("without depth, limit and cursor are ignored as before: limit=5000 and a garbage cursor → 200, 1,000 files", async () => {
-      const r = await owner.get("/v1/projects/:projectId/files", { params, query: { limit: "5000", cursor: "garbage" } });
+      const r = await owner.get("/v1/workspaces/:projectId/files", { params, query: { limit: "5000", cursor: "garbage" } });
       r.status(200);
       if (r.json<unknown[]>().length !== 1000) throw new Error(`recursive list returned ${r.json<unknown[]>().length}`);
     });
   },
 );
 
-flow('FILE-14', { domain: 'files', routes: ['GET /v1/projects/:projectId/files/content', 'PUT /v1/projects/:projectId/files/content'] }, async (ctx) => {
+flow('FILE-14', { domain: 'files', routes: ['GET /v1/workspaces/:projectId/files/content', 'PUT /v1/workspaces/:projectId/files/content'] }, async (ctx) => {
   const p = await ctx.fixtures.sharedProject();
   const params = { projectId: p.id };
   const owner = ctx.client.as(ctx.P.OWNER);
-  const read = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: 'README.md' } });
+  const read = await owner.get('/v1/workspaces/:projectId/files/content', { params, query: { path: 'README.md' } });
   read.status(200);
   const original = read.json<{ ref: string; content: string; revision: string }>();
   const body = { path: 'README.md', ref: original.ref, content: original.content + '\nowner file edit regression\n', expected_revision: original.revision };
   await ctx.step('owner commits a viewed file and reads the persisted edit', async () => {
-    (await owner.put('/v1/projects/:projectId/files/content', body, { params })).status(200).body().exists('$.commit_sha');
-    const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
+    (await owner.put('/v1/workspaces/:projectId/files/content', body, { params })).status(200).body().exists('$.commit_sha');
+    const after = await owner.get('/v1/workspaces/:projectId/files/content', { params, query: { path: body.path } });
     after.status(200).body().has('$.content', body.content);
   });
   await ctx.step('non-JSON writes return 400 instead of throwing', async () => {
-    (await owner.put('/v1/projects/:projectId/files/content', JSON.stringify(body), {
+    (await owner.put('/v1/workspaces/:projectId/files/content', JSON.stringify(body), {
       params, raw: true, headers: { 'Content-Type': 'text/plain' },
     })).status(400);
-    const after = await owner.get('/v1/projects/:projectId/files/content', { params, query: { path: body.path } });
+    const after = await owner.get('/v1/workspaces/:projectId/files/content', { params, query: { path: body.path } });
     after.status(200).body().has('$.content', body.content);
   });
   await ctx.step('stale revision cannot overwrite the committed edit', async () => {
-    (await owner.put('/v1/projects/:projectId/files/content', body, { params })).status(409);
+    (await owner.put('/v1/workspaces/:projectId/files/content', body, { params })).status(409);
   });
   await ctx.step('anonymous and unrelated users cannot commit', async () => {
-    (await ctx.client.as(ctx.P.ANON).put('/v1/projects/:projectId/files/content', body, { params })).status(401);
-    (await ctx.client.as(ctx.P.NONMEMBER).put('/v1/projects/:projectId/files/content', body, { params })).status([403, 404]);
+    (await ctx.client.as(ctx.P.ANON).put('/v1/workspaces/:projectId/files/content', body, { params })).status(401);
+    (await ctx.client.as(ctx.P.NONMEMBER).put('/v1/workspaces/:projectId/files/content', body, { params })).status([403, 404]);
   });
 });
 
@@ -679,12 +679,12 @@ flow(
     domain: "files",
     requires: ["database"],
     routes: [
-      "GET /v1/projects/:projectId/resource-grants",
-      "POST /v1/projects/:projectId/resource-grants",
-      "GET /v1/projects/:projectId/files/content",
-      "GET /v1/projects/:projectId/files/raw",
-      "GET /v1/projects/:projectId/files/history",
-      "GET /v1/projects/:projectId/files/archive",
+      "GET /v1/workspaces/:projectId/resource-grants",
+      "POST /v1/workspaces/:projectId/resource-grants",
+      "GET /v1/workspaces/:projectId/files/content",
+      "GET /v1/workspaces/:projectId/files/raw",
+      "GET /v1/workspaces/:projectId/files/history",
+      "GET /v1/workspaces/:projectId/files/archive",
     ],
   },
   async (ctx) => {
@@ -734,12 +734,12 @@ flow(
         git("add", "-A");
         git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "hidden agent");
         git("push", "-q", "origin", "HEAD");
-        const catalog = await owner.get("/v1/projects/:projectId/resource-grants", { params });
+        const catalog = await owner.get("/v1/workspaces/:projectId/resource-grants", { params });
         catalog.status(200);
         const agent = catalog.json<{ resources: { agents: Array<{ id: string }> } }>().resources.agents.find((a) => a.id === "ke2e-hidden-bot");
         if (!agent) throw new Error(`ke2e-hidden-bot is not grantable: ${catalog.text().slice(0, 400)}`);
         (await owner.post(
-          "/v1/projects/:projectId/resource-grants",
+          "/v1/workspaces/:projectId/resource-grants",
           { resource_type: "agent", resource_id: agent.id, principal_type: "member", principal_id: granted.userId },
           { params },
         )).status(201);
@@ -765,7 +765,7 @@ flow(
       await ctx.step("a glob, a pathspec-magic path or the agents/ folder: files/history gives the scoped-out member none of the hidden file's commits", async () => {
         const wrong: string[] = [];
         for (const path of ["agents/ke2e-hidden-bot.m*", "agents/ke2e-hidden-bot.m?", "*hidden-bot*", "agents/[k]e2e-hidden-bot.md", ":/agents/ke2e-hidden-bot.md", "agents", "agents/", "./agents"]) {
-          const r = await scopedOut.get("/v1/projects/:projectId/files/history", { params, query: { path } });
+          const r = await scopedOut.get("/v1/workspaces/:projectId/files/history", { params, query: { path } });
           const commits = r.statusCode === 200 ? r.json<{ commits?: unknown[] }>().commits ?? [] : [];
           if (![200, 404].includes(r.statusCode) || commits.length > 0) wrong.push(`history ${JSON.stringify(path)} → ${r.statusCode}, ${commits.length} commits`);
         }
@@ -775,7 +775,7 @@ flow(
       await ctx.step("the scoped-out member cannot archive the repository root or agents/ under any spelling → 403", async () => {
         const wrong: string[] = [];
         for (const path of [".", "./", ".//", "./.", "agents", "./agents", "agents/", "agents//", "./agents/."]) {
-          const r = await scopedOut.get("/v1/projects/:projectId/files/archive", { params, query: { path } });
+          const r = await scopedOut.get("/v1/workspaces/:projectId/files/archive", { params, query: { path } });
           if (r.statusCode !== 403) wrong.push(`archive ${JSON.stringify(path)} → ${r.statusCode}`);
         }
         failIfAny(wrong);
@@ -783,12 +783,12 @@ flow(
 
       await ctx.step("the granted member and the owner read the file under every spelling → 200, the same text", async () => {
         const wrong: string[] = [];
-        const granted200 = await ctx.client.as(granted).get("/v1/projects/:projectId/files/content", { params, query: { path: AGENT } });
+        const granted200 = await ctx.client.as(granted).get("/v1/workspaces/:projectId/files/content", { params, query: { path: AGENT } });
         if (granted200.statusCode !== 200 || granted200.json<{ content?: string }>().content !== BODY) wrong.push(`granted content → ${granted200.statusCode}`);
         for (const path of SPELLINGS) {
-          const text = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path } });
+          const text = await owner.get("/v1/workspaces/:projectId/files/content", { params, query: { path } });
           if (text.statusCode !== 200 || text.json<{ content?: string }>().content !== BODY) wrong.push(`owner content ${JSON.stringify(path)} → ${text.statusCode}`);
-          const raw = await owner.get("/v1/projects/:projectId/files/raw", { params, query: { path } });
+          const raw = await owner.get("/v1/workspaces/:projectId/files/raw", { params, query: { path } });
           if (raw.statusCode !== 200 || raw.text() !== BODY) wrong.push(`owner raw ${JSON.stringify(path)} → ${raw.statusCode}`);
         }
         failIfAny(wrong);
@@ -812,9 +812,9 @@ flow(
     domain: "files",
     requires: ["database"],
     routes: [
-      "GET /v1/projects/:projectId/files",
-      "GET /v1/projects/:projectId/files/content",
-      "GET /v1/projects/:projectId/version-diff",
+      "GET /v1/workspaces/:projectId/files",
+      "GET /v1/workspaces/:projectId/files/content",
+      "GET /v1/workspaces/:projectId/version-diff",
     ],
   },
   async (ctx) => {
@@ -848,7 +848,7 @@ flow(
       }
       type Entry = { path: string; type: string };
       const listing = async (ref?: string) => {
-        const r = await owner.get("/v1/projects/:projectId/files", { params, query: { depth: "1", ...(ref ? { ref } : {}) } });
+        const r = await owner.get("/v1/workspaces/:projectId/files", { params, query: { depth: "1", ...(ref ? { ref } : {}) } });
         r.status(200);
         return r.json<{ entries: Entry[] }>().entries;
       };
@@ -866,14 +866,14 @@ flow(
       });
 
       await ctx.step("its file reads the base's text, and the response names the ref asked for → 200", async () => {
-        const atBase = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: firstFile } });
+        const atBase = await owner.get("/v1/workspaces/:projectId/files/content", { params, query: { path: firstFile } });
         atBase.status(200);
-        const atSession = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: firstFile, ref: unpushed } });
+        const atSession = await owner.get("/v1/workspaces/:projectId/files/content", { params, query: { path: firstFile, ref: unpushed } });
         atSession.status(200).body().has("$.ref", unpushed).has("$.content", atBase.json<{ content: string }>().content);
       });
 
       await ctx.step("version-diff of the session against its base → 200, up to date", async () => {
-        const r = await owner.get("/v1/projects/:projectId/version-diff", { params, query: { from: unpushed, into: base } });
+        const r = await owner.get("/v1/workspaces/:projectId/version-diff", { params, query: { from: unpushed, into: base } });
         r.status(200).body().has("$.from", unpushed).has("$.is_up_to_date", true).has("$.files_changed", 0);
       });
 
@@ -884,13 +884,13 @@ flow(
         git("add", SESSION_FILE);
         git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "session work");
         git("push", "-q", "origin", `HEAD:refs/heads/${pushed}`);
-        const atSession = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: SESSION_FILE, ref: pushed } });
+        const atSession = await owner.get("/v1/workspaces/:projectId/files/content", { params, query: { path: SESSION_FILE, ref: pushed } });
         atSession.status(200).body().has("$.content", "pushed by the session\n");
-        (await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: SESSION_FILE } })).status(404);
+        (await owner.get("/v1/workspaces/:projectId/files/content", { params, query: { path: SESSION_FILE } })).status(404);
       });
 
       await ctx.step("a ref that names no session and no branch → 404 ref not found", async () => {
-        const r = await owner.get("/v1/projects/:projectId/files/content", { params, query: { path: firstFile, ref: randomUUID() } });
+        const r = await owner.get("/v1/workspaces/:projectId/files/content", { params, query: { path: firstFile, ref: randomUUID() } });
         r.status(404).body().has("$.error", "ref not found");
       });
     } finally {

@@ -6,10 +6,10 @@ import { configureKortix } from '../core/http/config';
 import { qk } from './query-keys';
 import {
   EMPTY_SESSION_PAGE_SCAN_LIMIT,
-  flattenProjectSessionPages,
-  projectSessionsPageParam,
+  flattenWorkspaceSessionPages,
+  workspaceSessionsPageParam,
   shouldScanPastEmptySessionPages,
-  useProjectSessions,
+  useWorkspaceSessions,
 } from './use-project-sessions';
 import type { ProjectSessionPage } from '../core/rest/projects-client/sessions';
 
@@ -34,7 +34,7 @@ describe('paged session-list query key', () => {
 describe('projectSessionsPageParam', () => {
   test('hands back the cursor the server issued', () => {
     const page: ProjectSessionPage = { items: [], next_cursor: 'NEXT1' };
-    expect(projectSessionsPageParam(page)).toBe('NEXT1');
+    expect(workspaceSessionsPageParam(page)).toBe('NEXT1');
   });
 
   test('returns undefined on the last page so react-query stops asking', () => {
@@ -42,7 +42,7 @@ describe('projectSessionsPageParam', () => {
     // hasNextPage stay true and the sidebar offer a Load-more that fetches
     // page one again, forever.
     const page: ProjectSessionPage = { items: [], next_cursor: null };
-    expect(projectSessionsPageParam(page)).toBeUndefined();
+    expect(workspaceSessionsPageParam(page)).toBeUndefined();
   });
 });
 
@@ -52,7 +52,7 @@ describe('flattenProjectSessionPages', () => {
       { items: [{ session_id: 'S1' }, { session_id: 'S2' }] as never, next_cursor: 'C1' },
       { items: [{ session_id: 'S3' }] as never, next_cursor: null },
     ];
-    expect(flattenProjectSessionPages({ pages, pageParams: [] }).map((s) => s.session_id)).toEqual([
+    expect(flattenWorkspaceSessionPages({ pages, pageParams: [] }).map((s) => s.session_id)).toEqual([
       'S1',
       'S2',
       'S3',
@@ -60,7 +60,7 @@ describe('flattenProjectSessionPages', () => {
   });
 
   test('is an empty list before the first page arrives', () => {
-    expect(flattenProjectSessionPages(undefined)).toEqual([]);
+    expect(flattenWorkspaceSessionPages(undefined)).toEqual([]);
   });
 
   test('drops a row a later page repeats', () => {
@@ -72,7 +72,7 @@ describe('flattenProjectSessionPages', () => {
       { items: [{ session_id: 'S1' }, { session_id: 'S2' }] as never, next_cursor: 'C1' },
       { items: [{ session_id: 'S2' }, { session_id: 'S3' }] as never, next_cursor: null },
     ];
-    expect(flattenProjectSessionPages({ pages, pageParams: [] }).map((s) => s.session_id)).toEqual([
+    expect(flattenWorkspaceSessionPages({ pages, pageParams: [] }).map((s) => s.session_id)).toEqual([
       'S1',
       'S2',
       'S3',
@@ -144,7 +144,7 @@ describe('useProjectSessions reads past empty pages (KRTX-1727)', () => {
   // A network that answers after React rendered the fetch (ms); 0 answers at once.
   let latency = 0;
   let root: ReturnType<typeof create> | undefined;
-  let list: ReturnType<typeof useProjectSessions>;
+  let list: ReturnType<typeof useWorkspaceSessions>;
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -172,7 +172,7 @@ describe('useProjectSessions reads past empty pages (KRTX-1727)', () => {
   async function mount() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     function Probe() {
-      list = useProjectSessions('P1', { scope: 'project', q: 'deploy', limit: 20 });
+      list = useWorkspaceSessions('P1', { scope: 'project', q: 'deploy', limit: 20 });
       return null;
     }
     await act(async () => {
@@ -227,9 +227,9 @@ describe('useProjectSessions spaceId', () => {
       return Response.json([{ session_id: 'S1', space_id: 'SPACE-1' }]);
     }) as unknown as typeof fetch;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    let list: ReturnType<typeof useProjectSessions> | undefined;
+    let list: ReturnType<typeof useWorkspaceSessions> | undefined;
     function Probe() {
-      list = useProjectSessions('P1', { parent: 'root', spaceId: 'SPACE-1' });
+      list = useWorkspaceSessions('P1', { parent: 'root', spaceId: 'SPACE-1' });
       return null;
     }
     let root: ReturnType<typeof create> | undefined;
@@ -259,7 +259,7 @@ describe('useProjectSessions thread filters', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const filters = { parent: 'root', spaceId: 'SPACE-1', createdBy: 'U1', agent: 'researcher', updatedAfter: '2026-10-18T00:00:00.000Z' } as const;
     function Probe() {
-      useProjectSessions('P1', filters);
+      useWorkspaceSessions('P1', filters);
       return null;
     }
     let root: ReturnType<typeof create> | undefined;
@@ -291,12 +291,12 @@ describe('useProjectSessions keepPreviousData', () => {
       return Response.json([{ session_id: agent ?? 'ALL', space_id: 'SPACE-1' }]);
     }) as unknown as typeof fetch;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    let list: ReturnType<typeof useProjectSessions> | undefined;
+    let list: ReturnType<typeof useWorkspaceSessions> | undefined;
     let setAgent: (agent: string | undefined) => void = () => {};
     function Probe() {
       const [agent, set] = React.useState<string | undefined>(undefined);
       setAgent = set;
-      list = useProjectSessions('P1', { spaceId: 'SPACE-1', agent, keepPreviousData: true });
+      list = useWorkspaceSessions('P1', { spaceId: 'SPACE-1', agent, keepPreviousData: true });
       return null;
     }
     let root: ReturnType<typeof create> | undefined;
@@ -326,7 +326,7 @@ describe('useProjectSessions pollFirstPageOnly', () => {
   let pages: Array<{ ids: string[]; next: string | null }> = [];
   const cursors: Array<string | null> = [];
   let root: ReturnType<typeof create> | undefined;
-  let list: ReturnType<typeof useProjectSessions>;
+  let list: ReturnType<typeof useWorkspaceSessions>;
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -366,7 +366,7 @@ describe('useProjectSessions pollFirstPageOnly', () => {
     ];
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     function Probe() {
-      list = useProjectSessions('P1', { spaceId: 'SPACE-1', parent: 'root', refetchInterval: 40, pollFirstPageOnly: true });
+      list = useWorkspaceSessions('P1', { spaceId: 'SPACE-1', parent: 'root', refetchInterval: 40, pollFirstPageOnly: true });
       return null;
     }
     await act(async () => {

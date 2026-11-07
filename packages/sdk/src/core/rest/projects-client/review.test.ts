@@ -21,7 +21,7 @@ configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }
 test('getReviewSummary reads the needs-you counts, not the list', async () => {
   nextBody = { needs_you_total: 3, needs_you_by_session: { s1: 2 } };
   const summary = await getReviewSummary('P1');
-  expect(urls).toEqual(['http://test.local/projects/P1/review/summary']);
+  expect(urls).toEqual(['http://test.local/workspaces/P1/review/summary']);
   expect(summary).toEqual({ needs_you_total: 3, needs_you_by_session: { s1: 2 } });
 });
 
@@ -35,7 +35,7 @@ test('listReviewItems sends the page query and returns next_cursor', async () =>
     cursor: 'c1',
   });
   expect(urls).toEqual([
-    'http://test.local/projects/P1/review/items?segment=done&kind=change&session_id=s1&limit=200&cursor=c1',
+    'http://test.local/workspaces/P1/review/items?segment=done&kind=change&session_id=s1&limit=200&cursor=c1',
   ]);
   expect(page.next_cursor).toBe('c2');
 });
@@ -43,7 +43,7 @@ test('listReviewItems sends the page query and returns next_cursor', async () =>
 test('listReviewItems with no params stays a bare GET', async () => {
   nextBody = { review_items: [] };
   await listReviewItems('P1');
-  expect(urls).toEqual(['http://test.local/projects/P1/review/items']);
+  expect(urls).toEqual(['http://test.local/workspaces/P1/review/items']);
 });
 
 test('bulkActReviewItems returns one typed result per id', async () => {
@@ -56,7 +56,7 @@ test('bulkActReviewItems returns one typed result per id', async () => {
     ],
   };
   const res = await bulkActReviewItems('P1', { ids: ['r1', 'call:e1'], verdict: 'approve' });
-  expect(urls).toEqual(['http://test.local/projects/P1/review/bulk']);
+  expect(urls).toEqual(['http://test.local/workspaces/P1/review/bulk']);
   // Typed: a renamed or dropped code fails tsc here.
   const code: 'expired' | 'already_resolved' | 'preview_unavailable' | 'forbidden' | 'not_found' | 'not_bulk_actionable' | undefined =
     res.results?.[1]?.code;

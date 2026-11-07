@@ -14,7 +14,7 @@ export function lintWiring(manifest: Table | null, root: string): ManifestIssue[
   const issues: ManifestIssue[] = [];
   const error = (path: string, message: string) => issues.push({ path, message, severity: 'error' });
   const exists = (path: unknown) => typeof path === 'string' && existsSync(resolve(root, path));
-  const missingFile = (path: string, file: unknown) => error(path, `"${String(file)}" does not exist in the project files.`);
+  const missingFile = (path: string, file: unknown) => error(path, `"${String(file)}" does not exist in the workspace files.`);
 
   lintRegistries(manifest, exists, missingFile, error, root);
 
@@ -70,7 +70,7 @@ function lintRegistries(
     if (typeof folder !== 'string') continue;
     const file = `${folder}/SKILL.md`;
     if (!exists(file)) {
-      error(`skills.${name}`, `"${file}" does not exist in the project files.`);
+      error(`skills.${name}`, `"${file}" does not exist in the workspace files.`);
       continue;
     }
     const declared = skillName(readFileSync(resolve(root, file), 'utf8'));

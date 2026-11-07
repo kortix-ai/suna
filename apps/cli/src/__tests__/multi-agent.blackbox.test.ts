@@ -134,7 +134,7 @@ describe('kortix sessions message', () => {
     expect(sends()).toEqual([
       {
         method: 'POST',
-        path: `/projects/${PROJECT}/sessions/${SELF}/peer-messages`,
+        path: `/workspaces/${PROJECT}/sessions/${SELF}/peer-messages`,
         body: { to: 'reviewer', message: 'The schema change landed.', summary: 'Schema landed', notify_when_idle: true },
       },
     ]);
@@ -151,7 +151,7 @@ describe('kortix sessions message', () => {
     route = (r) => (r.method === 'POST' ? json({ status: 'delivered', message: message(), to: agent(), note: '' }) : undefined);
     const sent = await runCli(['sessions', 'message', 'reviewer', 'hello', '--from', LEAD]);
     expect(sent.code).toBe(0);
-    expect(sends()[0]?.path).toBe(`/projects/${PROJECT}/sessions/${LEAD}/peer-messages`);
+    expect(sends()[0]?.path).toBe(`/workspaces/${PROJECT}/sessions/${LEAD}/peer-messages`);
   });
 
   test('the text comes from stdin when none is given', async () => {
@@ -215,7 +215,7 @@ describe('kortix sessions reachable', () => {
         : undefined;
     const result = await runCli(['sessions', 'reachable', '--scope', 'project'], IN_BOX);
     expect(result.code).toBe(0);
-    expect(seen.map((s) => s.path)).toEqual([`/projects/${PROJECT}/sessions/${SELF}/reachable?scope=project`]);
+    expect(seen.map((s) => s.path)).toEqual([`/workspaces/${PROJECT}/sessions/${SELF}/reachable?scope=project`]);
     expect(result.stdout).toContain('You are main (3f2a1b9c)');
     expect(result.stdout).toMatch(/reviewer\s+9a8b7c6d\s+child\s+working\s+accept/);
     expect(result.stdout).toMatch(/ops\s+cccc3333\s+session\s+working\s+can't receive/);
@@ -236,7 +236,7 @@ describe('kortix sessions inbound', () => {
     };
     const set = await runCli(['sessions', 'inbound', REVIEWER, 'hold']);
     expect(set.code).toBe(0);
-    expect(seen.at(-1)).toEqual({ method: 'PUT', path: `/projects/${PROJECT}/sessions/${REVIEWER}/inbound`, body: { inbound: 'hold' } });
+    expect(seen.at(-1)).toEqual({ method: 'PUT', path: `/workspaces/${PROJECT}/sessions/${REVIEWER}/inbound`, body: { inbound: 'hold' } });
     expect(set.stdout).toContain('holds each message for a person to approve');
 
     const current = await runCli(['sessions', 'inbound', REVIEWER, '--json']);
@@ -248,7 +248,7 @@ describe('kortix sessions inbound', () => {
 
     const approve = await runCli(['sessions', 'inbound', REVIEWER, 'approve', 'm_7Kq2']);
     expect(approve.code).toBe(0);
-    expect(seen.at(-1)?.path).toBe(`/projects/${PROJECT}/sessions/${REVIEWER}/peer-messages/m_7Kq2/approve`);
+    expect(seen.at(-1)?.path).toBe(`/workspaces/${PROJECT}/sessions/${REVIEWER}/peer-messages/m_7Kq2/approve`);
     expect(approve.stdout).toContain('Delivered the message from main');
 
     const bad = await runCli(['sessions', 'inbound', REVIEWER, 'maybe']);
@@ -268,7 +268,7 @@ describe('kortix tasks (flag agent_teams)', () => {
 
   test("inside a teammate the list is its lead's: add sends subject, owner and blocked_by", async () => {
     route = (r) => {
-      if (r.method === 'GET' && r.path === `/projects/${PROJECT}/sessions/${SELF}`) return json({ session_id: SELF, team_lead_session_id: LEAD, metadata: { team_lead: LEAD } });
+      if (r.method === 'GET' && r.path === `/workspaces/${PROJECT}/sessions/${SELF}`) return json({ session_id: SELF, team_lead_session_id: LEAD, metadata: { team_lead: LEAD } });
       if (r.method === 'POST' && r.path.endsWith('/tasks')) return json(task({ seq: 3, subject: 'Review the draft', owner_handle: 'reviewer', blocked_by: [1, 2], blocked: true }), 201);
       return undefined;
     };
@@ -276,7 +276,7 @@ describe('kortix tasks (flag agent_teams)', () => {
     expect(result.code).toBe(0);
     expect(seen.at(-1)).toEqual({
       method: 'POST',
-      path: `/projects/${PROJECT}/sessions/${LEAD}/tasks`,
+      path: `/workspaces/${PROJECT}/sessions/${LEAD}/tasks`,
       body: { subject: 'Review the draft', owner: 'reviewer', blocked_by: [1, 2] },
     });
     expect(result.stdout).toContain('Added #3 Review the draft @reviewer');
@@ -298,7 +298,7 @@ describe('kortix tasks (flag agent_teams)', () => {
     route = (r) => (r.method === 'PATCH' ? json({ error: true, code: 'task_taken', message: 'Task #2 was claimed by writer.' }, 409) : undefined);
     const result = await runCli(['tasks', LEAD, 'claim', '2'], TEAM);
     expect(result.code).toBe(3);
-    expect(seen.at(-1)).toEqual({ method: 'PATCH', path: `/projects/${PROJECT}/sessions/${LEAD}/tasks/2`, body: { claim: true } });
+    expect(seen.at(-1)).toEqual({ method: 'PATCH', path: `/workspaces/${PROJECT}/sessions/${LEAD}/tasks/2`, body: { claim: true } });
     expect(result.stderr).toContain('Task #2 was claimed by writer.');
   });
 
@@ -309,7 +309,7 @@ describe('kortix tasks (flag agent_teams)', () => {
     expect((await runCli(['tasks', LEAD, 'update', '1', '--release', '--status', 'pending', '--blocked-by', '4'], TEAM)).code).toBe(0);
     expect(seen.at(-1)?.body).toEqual({ status: 'pending', owner: null, add_blocked_by: [4] });
     expect((await runCli(['tasks', LEAD, 'rm', '1'], TEAM)).code).toBe(0);
-    expect(seen.at(-1)).toMatchObject({ method: 'DELETE', path: `/projects/${PROJECT}/sessions/${LEAD}/tasks/1` });
+    expect(seen.at(-1)).toMatchObject({ method: 'DELETE', path: `/workspaces/${PROJECT}/sessions/${LEAD}/tasks/1` });
   });
 
   test('outside a session the lead is required; a bad task number is a usage error', async () => {
@@ -338,7 +338,7 @@ describe('kortix sessions status --json', () => {
       ...extra,
     });
     route = (r) =>
-      r.path === `/projects/${PROJECT}/sessions`
+      r.path === `/workspaces/${PROJECT}/sessions`
         ? json([row(REVIEWER, { board_state: 'needs_input', attention: 'question', agent_handle: 'reviewer', team_lead_session_id: LEAD }), row(SELF, {})])
         : undefined;
     const result = await runCli(['sessions', 'status', '--json']);

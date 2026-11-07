@@ -104,7 +104,7 @@ describe('parseSetupLinkHref', () => {
 
   test('unrelated URLs are ignored', () => {
     expect(parseSetupLinkHref('https://kortix.com/docs')).toBeNull();
-    expect(parseSetupLinkHref('/projects/p1')).toBeNull();
+    expect(parseSetupLinkHref('/workspaces/p1')).toBeNull();
     expect(parseSetupLinkHref(undefined)).toBeNull();
   });
 });

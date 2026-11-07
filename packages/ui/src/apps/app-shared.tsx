@@ -208,8 +208,8 @@ export const ACCESS_COPY: Record<AppAccessMode, { label: string; desc: string }>
   // private App does not become unmanageable the moment its creator leaves the
   // account. A false promise about access, in the one dialog where people
   // reason about access, is worse than a longer label.
-  private: { label: 'Just you', desc: 'You, and anyone who can manage this project' },
-  project: { label: 'Whole team', desc: 'Every member of this project' },
+  private: { label: 'Just you', desc: 'You, and anyone who can manage this workspace' },
+  project: { label: 'Whole team', desc: 'Every member of this workspace' },
   restricted: { label: 'Select members', desc: 'Chosen members and groups' },
   // These two describe PUBLIC traffic only. Both are still team-visible: a
   // password protects the App's hostname from the internet, it never hides the

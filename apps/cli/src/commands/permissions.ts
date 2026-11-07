@@ -1,4 +1,4 @@
-import { splitHelp } from '../command-argv.ts';
+import { splitHelp, fromWorkspaceAlias, toWorkspaceAlias } from '../command-argv.ts';
 import {
   emitJson,
   resolveAccountContext,
@@ -28,21 +28,21 @@ whether it can be delegated. People, groups and service accounts get roles
 built from these leaves; agents get Kortix permissions in kortix.yaml.
 
 Subcommands:
-  ls [--scope account|project] [--json]   List the catalog.
-  show <action> [--json]                  Show one action in full.
+  ls [--scope account|workspace] [--json]  List the catalog.
+  show <action> [--json]                   Show one action in full.
 
 Options:
-  --scope <s>        account | project — only actions decided at that scope.
+  --scope <s>        account | workspace — only actions decided at that scope.
   --area <a>         Only actions in one area (e.g. customize, triggers).
                      Secret actions are in customize.
-  --account <id>     Operate on this account (default: the active account).
+  --workspace <id>   The workspace (default: KORTIX_WORKSPACE_ID, then KORTIX_PROJECT_ID, the linked workspace, the default workspace).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
 
 Examples:
   kortix permissions ls
-  kortix permissions ls --scope project
+  kortix permissions ls --scope workspace
   kortix permissions ls --area customize
   kortix permissions show project.secret.write
 `;
@@ -55,9 +55,10 @@ export async function runPermissions(argv: string[]): Promise<number> {
   const f: Record<string, string | undefined> = {};
   let json = false;
   try {
-    f.scope = takeFlagValue(rest, ['--scope']);
+    f.scope = fromWorkspaceAlias(takeFlagValue(rest, ['--scope']));
     f.area = takeFlagValue(rest, ['--area']);
     f.account = takeFlagValue(rest, ['--account']);
+    f.workspace = takeFlagValue(rest, ['--workspace', '--project']);
     f.host = takeFlagValue(rest, ['--host']);
     json = takeFlagBool(rest, ['--json']);
   } catch (err) {
@@ -69,7 +70,7 @@ export async function runPermissions(argv: string[]): Promise<number> {
     return fail(`--scope must be one of ${SCOPE_TYPES.join(', ')}`);
   }
 
-  const ctx = resolveAccountContext({ accountArg: f.account, hostArg: f.host });
+  const ctx = resolveAccountContext({ workspaceArg: f.workspace, accountArg: f.account, hostArg: f.host });
   if (!ctx) return 1;
 
   try {
@@ -132,7 +133,7 @@ export async function runPermissions(argv: string[]): Promise<number> {
         process.stdout.write('\n');
         process.stdout.write(`  ${C.bold}${hit.action}${C.reset}\n`);
         process.stdout.write(`  ${C.dim}${hit.description}${C.reset}\n\n`);
-        process.stdout.write(`  ${C.dim}scope${C.reset}      ${hit.scope_type}\n`);
+        process.stdout.write(`  ${C.dim}scope${C.reset}      ${toWorkspaceAlias(hit.scope_type)}\n`);
         process.stdout.write(`  ${C.dim}resource${C.reset}   ${hit.resource_type}\n`);
         process.stdout.write(`  ${C.dim}area${C.reset}       ${hit.area}\n`);
         process.stdout.write(`  ${C.dim}level${C.reset}      ${hit.level}\n`);

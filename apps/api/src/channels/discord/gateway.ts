@@ -23,7 +23,7 @@
  * sequence before the first unfinished one, so the next leader's resume
  * replays it.
  */
-import { chatInstalls, platformSettings, projects } from '@kortix/db';
+import { chatInstalls, platformSettings } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { readChannelAccess } from '../core/channel-access';
@@ -42,6 +42,7 @@ import {
   type DiscordMessageEventData,
   type DiscordStoredMessage,
 } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 /**
  * GUILDS, GUILD_MESSAGES, DIRECT_MESSAGES. Discord sends a message's text
@@ -250,7 +251,7 @@ function storedMessage(m: GatewayMessage): DiscordStoredMessage {
 
 /** The project's Discord allow-list holds the user. */
 async function projectAllows(projectId: string, userId: string): Promise<boolean> {
-  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [row] = await db.select({ metadata: projectsView.metadata }).from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return readChannelAccess(row?.metadata, 'discord').allowedUserIds.includes(userId);
 }
 
@@ -344,10 +345,10 @@ export async function intakeMessage(
     if (!place.addressed) return 'ignored';
     const text =
       route.kind === 'ambiguous'
-        ? `More than one Kortix project can answer ${guildId ? 'in this channel' : 'you here'}. Use /connect to pick one.`
+        ? `More than one Kortix workspace can answer ${guildId ? 'in this channel' : 'you here'}. Use /connect to pick one.`
         : guildId
-          ? 'This server is not connected to a Kortix project. A project admin connects it under Customize → Connectors → Channels → Discord.'
-          : `Kortix does not know your Discord account yet. Ask a Kortix project admin to allow your Discord user id ${authorId} under Customize → Connectors → Channels → Discord.`;
+          ? 'This server is not connected to a Kortix workspace. A workspace admin connects it under Customize → Connectors → Channels → Discord.'
+          : `Kortix does not know your Discord account yet. Ask a Kortix workspace admin to allow your Discord user id ${authorId} under Customize → Connectors → Channels → Discord.`;
     await noticeOnce(m.channel_id, m.id, text);
     return 'ignored';
   }
@@ -396,7 +397,7 @@ async function tellNotTaken(m: GatewayMessage, botUserId: string): Promise<void>
  */
 export async function reconcileGuilds(present: string[]): Promise<string[]> {
   try {
-    const installed = [...new Set((await db.select({ guildId: chatInstalls.workspaceId }).from(chatInstalls).where(eq(chatInstalls.platform, 'discord'))).map((r) => r.guildId))];
+    const installed = [...new Set((await db.select({ guildId: chatInstalls.platformTeamId }).from(chatInstalls).where(eq(chatInstalls.platform, 'discord'))).map((r) => r.guildId))];
     const missing = installed.filter((id) => !present.includes(id));
     if (!missing.length) return [];
     if (!present.length || missing.length > installed.length / 2) {
@@ -419,7 +420,7 @@ export async function leaveIfOrphan(guildId: string, joinedAt: string | null, no
     const [install] = await db
       .select({ id: chatInstalls.installId })
       .from(chatInstalls)
-      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.workspaceId, guildId)))
+      .where(and(eq(chatInstalls.platform, 'discord'), eq(chatInstalls.platformTeamId, guildId)))
       .limit(1);
     if (install) return false;
     await leaveDiscordGuild(guildId);
@@ -443,7 +444,7 @@ export function discordCommandDefinitions(): Array<Record<string, unknown>> {
       description: c.description.slice(0, 100),
       ...(arg[c.name] ? { options: [{ type: 3, name: arg[c.name]!.name, description: arg[c.name]!.description, required: false }] } : {}),
     })),
-    { name: 'connect', description: 'Pick the Kortix project this channel uses' },
+    { name: 'connect', description: 'Pick the Kortix workspace this channel uses' },
   ].map((c) => ({ ...c, type: 1, contexts: [0, 1], integration_types: [0] }));
 }
 

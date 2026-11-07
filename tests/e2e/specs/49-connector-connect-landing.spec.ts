@@ -110,7 +110,7 @@ test.describe("49 — Connector connect lands on the connector page", () => {
 
   /** Open a connector's page as the project owner. */
   async function openConnectorPage(page: Page, slug: string) {
-    const url = `/projects/${project.id}/customize/connectors/connected/${slug}`;
+    const url = `/workspaces/${project.id}/customize/connectors/connected/${slug}`;
     await installBrowserSessionDirect(page, session, url, authOptions);
     await selectAccountForUi(page, accountId);
     await page.goto(url, { waitUntil: "domcontentloaded" });
@@ -139,7 +139,7 @@ test.describe("49 — Connector connect lands on the connector page", () => {
 
   /** Open the custom connector form and fill an MCP server. */
   async function fillCustomMcp(page: Page, slug: string) {
-    const url = `/projects/${project.id}/customize/connectors`;
+    const url = `/workspaces/${project.id}/customize/connectors`;
     await installBrowserSessionDirect(page, session, url, authOptions);
     await selectAccountForUi(page, accountId);
     await page.goto(url, { waitUntil: "domcontentloaded" });

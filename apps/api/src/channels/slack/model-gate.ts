@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm';
-import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { accountRoleMap } from '../../iam/read-models';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type ChannelCtx, currentChannelSelection } from './selection';
+import { projectsView } from '../../workspaces/rows';
 
 // The account/tier context a channel's model setting resolves against. Kept out
 // of selection.ts (which is intentionally lightweight: just db + git) because it
@@ -28,9 +28,9 @@ export async function channelModelContext(ctx: ChannelCtx): Promise<ChannelModel
   const selection = await currentChannelSelection(ctx);
   if (!selection?.projectId) return null;
   const [project] = await db
-    .select({ accountId: projects.accountId, metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, selection.projectId))
+    .select({ accountId: projectsView.accountId, metadata: projectsView.metadata })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, selection.projectId))
     .limit(1);
   if (!project) return null;
   return projectModelContext({ projectId: selection.projectId, ...project });

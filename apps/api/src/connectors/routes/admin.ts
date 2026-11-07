@@ -41,6 +41,7 @@ import {
 import { rethrowDatabaseError } from '../../shared/database-errors';
 import { analyticsSource, isPersonSource } from '../../middleware/analytics-source';
 import { captureProductEvent } from '../../shared/product-analytics';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /** A product event for the person behind a connector route; agents and API keys send nothing. */
 function captureConnectorEvent(
@@ -108,7 +109,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'get',
-      path: '/projects/{projectId}/connectors',
+      path: '/projects/{workspaceId}/connectors',
       tags: ['connector'],
       summary: "List a project's connectors with status (dashboard)",
       ...auth,
@@ -119,7 +120,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       // Read-tier: plain members hold project.connector.read and the dashboard
       // sections that render this list are visible to them. The response carries
       // no credential values (only whether one is set).
@@ -150,7 +151,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors/mcp-sign-in-check',
+      path: '/projects/{workspaceId}/connectors/mcp-sign-in-check',
       tags: ['connector'],
       summary: 'Check whether an MCP server supports one-click OAuth sign-in',
       ...auth,
@@ -171,7 +172,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       },
     }),
     async (c) => {
-      const { projectId } = c.req.valid('param');
+      const { workspaceId: projectId } = c.req.valid('param');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       const { url } = c.req.valid('json');
@@ -200,7 +201,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors/auth-discovery',
+      path: '/projects/{workspaceId}/connectors/auth-discovery',
       tags: ['connector'],
       summary: 'Discover authentication advertised by a connector source',
       ...auth,
@@ -214,7 +215,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.discoverConnectorAuth)
@@ -245,7 +246,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'post',
-      path: '/projects/{projectId}/connectors',
+      path: '/projects/{workspaceId}/connectors',
       tags: ['connector'],
       summary: 'Create or update a connector in kortix.yaml',
       description:
@@ -277,7 +278,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
     // Manual parse kept: the connector draft is an opaque record validated
     // downstream; original returns `invalid_json` / `not supported` envelopes.
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.createConnector) return featureNotSupportedResponse(c, 'connector_create');
@@ -345,7 +346,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'delete',
-      path: '/projects/{projectId}/connectors/{slug}',
+      path: '/projects/{workspaceId}/connectors/{slug}',
       tags: ['connector'],
       summary: 'Delete a connector from kortix.yaml',
       ...auth,
@@ -356,7 +357,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -372,7 +373,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/credential',
+      path: '/projects/{workspaceId}/connectors/{slug}/credential',
       tags: ['connector'],
       summary: "Set a connector's credential value",
       ...auth,
@@ -392,7 +393,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
     // Manual parse kept: original returns `invalid_json` and a `value is
     // required` 400 (empty string rejected) before delegating.
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -436,7 +437,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/oauth2/connection',
+      path: '/projects/{workspaceId}/connectors/{slug}/oauth2/connection',
       tags: ['connector'],
       summary: 'Set OAuth2 client credentials on a connector\'s shared account',
       description:
@@ -452,7 +453,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       },
     }),
     async (c: Context) => {
-      const projectId = c.req.param('projectId')!;
+      const projectId = workspaceIdParam(c)!;
       const slug = c.req.param('slug')!;
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -490,7 +491,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'put',
-      path: '/projects/{projectId}/connectors/{slug}/secret-binding',
+      path: '/projects/{workspaceId}/connectors/{slug}/secret-binding',
       tags: ['connectors'],
       summary: "Bind a brokered project secret as a connector's credential",
       ...auth,
@@ -506,7 +507,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const admin = deps.resolveSecretBindingAdmin
         ? await deps.resolveSecretBindingAdmin(c, projectId)
@@ -540,7 +541,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
   app.openapi(
     createRoute({
       method: 'delete',
-      path: '/projects/{projectId}/connectors/{slug}/credential',
+      path: '/projects/{workspaceId}/connectors/{slug}/credential',
       tags: ['connector'],
       summary: 'Disconnect a connector (remove its credential)',
       ...auth,
@@ -551,7 +552,7 @@ export function registerConnectorAdminRoutes(app: OpenAPIHono, deps: ConnectorRo
       },
     }),
     async (c: any) => {
-      const projectId = c.req.param('projectId');
+      const projectId = workspaceIdParam(c);
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);

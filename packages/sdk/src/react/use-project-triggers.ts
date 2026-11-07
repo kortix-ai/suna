@@ -2,16 +2,16 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  createProjectTrigger,
-  deleteProjectTrigger,
-  fireProjectTrigger,
-  listProjectTriggerEventApps,
-  listProjectTriggerEventTypes,
-  listProjectTriggerRuns,
-  listProjectTriggers,
+  createWorkspaceTrigger,
+  deleteWorkspaceTrigger,
+  fireWorkspaceTrigger,
+  listWorkspaceTriggerEventApps,
+  listWorkspaceTriggerEventTypes,
+  listWorkspaceTriggerRuns,
+  listWorkspaceTriggers,
   listTriggerRuns,
   replayTriggerRun,
-  updateProjectTrigger,
+  updateWorkspaceTrigger,
   type ProjectTriggerRunList,
   type ProjectTriggerRunStatus,
   type ProjectTriggerEventApps,
@@ -25,8 +25,11 @@ import { qk } from './query-keys';
  *  `useProjectTriggers` populates. Delegates to `qk.project.triggers` — the
  *  SAME entry the Customize settings pause switch and the schedule/triggers
  *  view build directly via `qk.project.triggers(id)` too. */
-export const projectTriggersKey = (projectId: string | null | undefined) =>
+export const workspaceTriggersKey = (projectId: string | null | undefined) =>
   qk.project.triggers(projectId ?? '');
+
+/** @deprecated Use `workspaceTriggersKey`. Kept permanently. */
+export const projectTriggersKey = workspaceTriggersKey;
 
 /**
  * Project triggers (cron/webhook, file-defined in the repo manifest) — list +
@@ -34,13 +37,13 @@ export const projectTriggersKey = (projectId: string | null | undefined) =>
  * `projects-client/triggers.ts`; every mutation invalidates the listing so a
  * newly created/edited/fired trigger shows up without a manual refetch.
  */
-export function useProjectTriggers(projectId: string | null | undefined) {
+export function useWorkspaceTriggers(projectId: string | null | undefined) {
   const queryClient = useQueryClient();
-  const queryKey = projectTriggersKey(projectId);
+  const queryKey = workspaceTriggersKey(projectId);
 
   const query = useQuery<ProjectTriggerListing>({
     queryKey,
-    queryFn: () => listProjectTriggers(projectId as string),
+    queryFn: () => listWorkspaceTriggers(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
   });
@@ -48,19 +51,19 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
   const create = useMutation({
-    mutationFn: (input: Parameters<typeof createProjectTrigger>[1]) =>
-      createProjectTrigger(projectId as string, input),
+    mutationFn: (input: Parameters<typeof createWorkspaceTrigger>[1]) =>
+      createWorkspaceTrigger(projectId as string, input),
     onSuccess: invalidate,
   });
 
   const update = useMutation({
-    mutationFn: (args: { slug: string; input: Parameters<typeof updateProjectTrigger>[2] }) =>
-      updateProjectTrigger(projectId as string, args.slug, args.input),
+    mutationFn: (args: { slug: string; input: Parameters<typeof updateWorkspaceTrigger>[2] }) =>
+      updateWorkspaceTrigger(projectId as string, args.slug, args.input),
     onSuccess: invalidate,
   });
 
   const remove = useMutation({
-    mutationFn: (slug: string) => deleteProjectTrigger(projectId as string, slug),
+    mutationFn: (slug: string) => deleteWorkspaceTrigger(projectId as string, slug),
     onSuccess: invalidate,
   });
 
@@ -70,8 +73,8 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   const fire = useMutation({
     mutationFn: (args: string | { slug: string; payload?: Record<string, unknown> }) =>
       typeof args === 'string'
-        ? fireProjectTrigger(projectId as string, args, undefined)
-        : fireProjectTrigger(projectId as string, args.slug, { payload: args.payload }),
+        ? fireWorkspaceTrigger(projectId as string, args, undefined)
+        : fireWorkspaceTrigger(projectId as string, args.slug, { payload: args.payload }),
     onSuccess: invalidate,
   });
 
@@ -79,8 +82,8 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   const dryRun = useMutation({
     mutationFn: (args: string | { slug: string; payload?: Record<string, unknown> }) =>
       typeof args === 'string'
-        ? fireProjectTrigger(projectId as string, args, { dryRun: true })
-        : fireProjectTrigger(projectId as string, args.slug, { payload: args.payload, dryRun: true }),
+        ? fireWorkspaceTrigger(projectId as string, args, { dryRun: true })
+        : fireWorkspaceTrigger(projectId as string, args.slug, { payload: args.payload, dryRun: true }),
   });
 
   const replay = useMutation({
@@ -92,51 +95,69 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   return { ...query, create, update, remove, fire, dryRun, replay };
 }
 
+/** @deprecated Use `useWorkspaceTriggers`. Kept permanently. */
+export const useProjectTriggers = useWorkspaceTriggers;
+
 /** A connector slug, or an app with no connector. Slugs hold no `:`, so the two never share a key. */
 export type ProjectTriggerEventTarget = string | { app: string; source?: string };
 
 const targetKey = (target: ProjectTriggerEventTarget | null | undefined) =>
   typeof target === 'object' && target ? `app:${target.source ?? 'composio'}:${target.app}` : (target ?? '');
 
-export const projectTriggerEventTypesKey = (
+export const workspaceTriggerEventTypesKey = (
   projectId: string | null | undefined,
   target: ProjectTriggerEventTarget | null | undefined,
 ) => qk.project.triggerEventTypes(projectId ?? '', targetKey(target));
 
+/** @deprecated Use `workspaceTriggerEventTypesKey`. Kept permanently. */
+export const projectTriggerEventTypesKey = workspaceTriggerEventTypesKey;
+
 /** App events a connector, or an app with no connector (`{ app, source? }`), can trigger on. Idle until one is chosen. */
-export function useProjectTriggerEventTypes(
+export function useWorkspaceTriggerEventTypes(
   projectId: string | null | undefined,
   target: ProjectTriggerEventTarget | null | undefined,
 ) {
   const chosen = typeof target === 'object' && target ? target.app : target;
   return useQuery<ProjectTriggerEventTypes>({
-    queryKey: projectTriggerEventTypesKey(projectId, target),
-    queryFn: () => listProjectTriggerEventTypes(projectId as string, typeof target === 'object' ? (target as { app: string; source?: string }) : { connector: target as string }),
+    queryKey: workspaceTriggerEventTypesKey(projectId, target),
+    queryFn: () => listWorkspaceTriggerEventTypes(projectId as string, typeof target === 'object' ? (target as { app: string; source?: string }) : { connector: target as string }),
     enabled: !!projectId && !!chosen,
     ...contract('config'),
   });
 }
 
-export const projectTriggerEventAppsKey = (projectId: string | null | undefined) =>
+/** @deprecated Use `useWorkspaceTriggerEventTypes`. Kept permanently. */
+export const useProjectTriggerEventTypes = useWorkspaceTriggerEventTypes;
+
+export const workspaceTriggerEventAppsKey = (projectId: string | null | undefined) =>
   qk.project.triggerEventApps(projectId ?? '');
 
+/** @deprecated Use `workspaceTriggerEventAppsKey`. Kept permanently. */
+export const projectTriggerEventAppsKey = workspaceTriggerEventAppsKey;
+
 /** Apps that can trigger events, with this project's connector and connection state. */
-export function useProjectTriggerEventApps(projectId: string | null | undefined) {
+export function useWorkspaceTriggerEventApps(projectId: string | null | undefined) {
   return useQuery<ProjectTriggerEventApps>({
-    queryKey: projectTriggerEventAppsKey(projectId),
-    queryFn: () => listProjectTriggerEventApps(projectId as string),
+    queryKey: workspaceTriggerEventAppsKey(projectId),
+    queryFn: () => listWorkspaceTriggerEventApps(projectId as string),
     enabled: !!projectId,
     ...contract('config'),
   });
 }
 
+/** @deprecated Use `useWorkspaceTriggerEventApps`. Kept permanently. */
+export const useProjectTriggerEventApps = useWorkspaceTriggerEventApps;
+
 export const triggerRunsKey = (projectId: string | null | undefined, slug: string | null | undefined) =>
   qk.project.triggerRuns(projectId ?? '', slug ?? '');
 
-export const projectTriggerRunsKey = (
+export const workspaceTriggerRunsKey = (
   projectId: string | null | undefined,
   status?: ProjectTriggerRunStatus | null,
 ) => qk.project.projectTriggerRuns(projectId ?? '', status);
+
+/** @deprecated Use `workspaceTriggerRunsKey`. Kept permanently. */
+export const projectTriggerRunsKey = workspaceTriggerRunsKey;
 
 /** Query options of the run hooks. Pass `refetchInterval` to poll while a run is queued or running. */
 export interface TriggerRunsQueryOptions {
@@ -172,15 +193,15 @@ export function useTriggerRuns(
 }
 
 /** Every trigger run of the project, newest first, optionally one `status`. Same paging as {@link useTriggerRuns}. */
-export function useProjectTriggerRuns(
+export function useWorkspaceTriggerRuns(
   projectId: string | null | undefined,
   filter?: { status?: ProjectTriggerRunStatus | null },
   options?: TriggerRunsQueryOptions,
 ) {
   const status = filter?.status ?? undefined;
   return useInfiniteQuery({
-    queryKey: projectTriggerRunsKey(projectId, status),
-    queryFn: ({ pageParam }) => listProjectTriggerRuns(projectId as string, { status, cursor: pageParam }),
+    queryKey: workspaceTriggerRunsKey(projectId, status),
+    queryFn: ({ pageParam }) => listWorkspaceTriggerRuns(projectId as string, { status, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextRunsCursor,
     enabled: !!projectId && options?.enabled !== false,
@@ -188,3 +209,6 @@ export function useProjectTriggerRuns(
     refetchInterval: options?.refetchInterval ?? false,
   });
 }
+
+/** @deprecated Use `useWorkspaceTriggerRuns`. Kept permanently. */
+export const useProjectTriggerRuns = useWorkspaceTriggerRuns;

@@ -54,8 +54,8 @@ export const TEAMS_START_ERROR_COMMANDS: StartErrorCommands = {
 export const TELEGRAM_START_ERROR_COMMANDS: StartErrorCommands = {
   surface: 'chat',
   settings: '/status',
-  switchProject: 'Channels → Telegram in the Kortix project',
-  login: 'Channels → Telegram in the Kortix project',
+  switchProject: 'Channels → Telegram in the Kortix workspace',
+  login: 'Channels → Telegram in the Kortix workspace',
 };
 
 /** Discord renders Markdown: `/status` and `/connect` are slash commands; the login lives in Kortix. */
@@ -63,7 +63,7 @@ export const DISCORD_START_ERROR_COMMANDS: StartErrorCommands = {
   surface: 'conversation',
   settings: '`/status`',
   switchProject: '`/connect`',
-  login: 'Channels → Discord in the Kortix project',
+  login: 'Channels → Discord in the Kortix workspace',
 };
 
 export function startErrorMessage(
@@ -81,7 +81,7 @@ export function startErrorMessage(
   // Most specific: known error CODES from the create path.
   switch (code) {
     case 'UNKNOWN_SANDBOX_TEMPLATE':
-      return "I couldn't start a session — the sandbox template configured for this project no longer exists. Update it in the project's Kortix settings, then send your message again.";
+      return "I couldn't start a session — the sandbox template configured for this Kortix workspace no longer exists. Update it in the workspace's Kortix settings, then send your message again.";
     case 'KORTIX_URL_UNREACHABLE':
       return "I couldn't start a session — Kortix couldn't reach the sandbox runtime just now. This is usually a brief infrastructure hiccup; give it a moment and send your message again.";
     case 'WORKSPACE_MODE_UNAVAILABLE':
@@ -101,7 +101,7 @@ export function startErrorMessage(
     case 403:
       return "I couldn't start a session — this workspace doesn't have permission to run one here. Ask a Kortix workspace admin to grant access, then send your message again.";
     case 404:
-      return `I couldn't find this project to start a session — it may have been moved or deleted. Reconnect Kortix to this ${commands.surface} with ${commands.switchProject}, then try again.`;
+      return `I couldn't find this Kortix workspace to start a session — it may have been moved or deleted. Reconnect Kortix to this ${commands.surface} with ${commands.switchProject}, then try again.`;
     case 409:
       return `I couldn't find a Kortix account to run this session as. Connect your account with ${commands.login}, then send your message again.`;
     case 429:

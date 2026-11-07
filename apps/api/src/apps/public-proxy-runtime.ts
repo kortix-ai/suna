@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { appDeployments, appRuntimes, apps, projects } from '@kortix/db';
+import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
@@ -9,6 +9,7 @@ import { AppHostingProvider, instanceMachine } from './hosting';
 import { appWakeSupersededResponse } from './public-proxy-status';
 import { logger } from '../lib/logger';
 import { releaseConfigOf, servingGroups } from './release-config';
+import { projectsView } from '../workspaces/rows';
 import { transitionAppRuntime } from './runtime-status';
 
 const WAKE_LEASE_MS = 2 * 60_000;
@@ -29,10 +30,10 @@ export async function loadPublicAppState(routeKey: string, serviceName = 'http')
   const [loaded] = await db
     .select({ app: apps, active: appDeployments })
     .from(apps)
-    .innerJoin(projects, eq(projects.projectId, apps.projectId))
+    .innerJoin(projectsView, eq(projectsView.projectId, apps.projectId))
     .leftJoin(appDeployments, eq(appDeployments.deploymentId, apps.activeDeploymentId))
     // An App of a deleted workspace is not served (KRTX-1714).
-    .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt), eq(projects.status, 'active')))
+    .where(and(eq(apps.routeKey, routeKey), isNull(apps.deletedAt), eq(projectsView.status, 'active')))
     .limit(1);
   if (!loaded) return null;
   const app = loaded.app;

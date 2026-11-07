@@ -88,7 +88,7 @@ async function findSessionChat(sessionId: string): Promise<{ target: ChannelTarg
   const [row] = await db
     .select({
       platform: chatThreads.platform,
-      workspaceId: chatThreads.workspaceId,
+      workspaceId: chatThreads.platformTeamId,
       threadId: chatThreads.threadId,
       projectId: chatThreads.projectId,
     })
@@ -97,7 +97,7 @@ async function findSessionChat(sessionId: string): Promise<{ target: ChannelTarg
       chatInstalls,
       and(
         eq(chatInstalls.platform, chatThreads.platform),
-        eq(chatInstalls.workspaceId, chatThreads.workspaceId),
+        eq(chatInstalls.platformTeamId, chatThreads.platformTeamId),
         eq(chatInstalls.projectId, chatThreads.projectId),
       ),
     )

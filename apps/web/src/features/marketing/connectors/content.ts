@@ -56,7 +56,7 @@ export const connect = {
   eyebrow: 'Connect once',
   title: 'One connection.',
   titleMuted: 'Every agent, every session, every person.',
-  sub: 'A connector belongs to the project, not to a laptop or a login. Add it once and every session that project starts can reach it — with no second setup and no key passed around in a DM.',
+  sub: 'A connector belongs to the workspace, not to a laptop or a login. Add it once and every session that workspace starts can reach it — with no second setup and no key passed around in a DM.',
   /** Mirrors the real tabs on the Add-a-connector screen. */
   routes: [
     {
@@ -114,7 +114,7 @@ export const broker = {
   eyebrow: 'The credential never travels',
   title: 'The agent gets a token. It never gets the key.',
   titleMuted: 'The key stays on our side of the wall.',
-  sub: 'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the project, and every outbound call is assembled on our side of the wall.',
+  sub: 'A sandbox is a real Linux machine the model can run anything on. So we do not put your credentials in it. The sandbox carries exactly one Kortix token, scoped to the workspace, and every outbound call is assembled on our side of the wall.',
 
   /** The old shape, stated plainly so the new one has something to beat. */
   before: {
@@ -132,7 +132,7 @@ export const broker = {
     label: 'How Kortix does it',
     title: 'One scoped token, and nothing else',
     lines: ['KORTIX_TOKEN=kortix_pat_…'],
-    body: 'Scoped to one project and narrowed again by what that agent is allowed to touch. Turning a connector off takes effect on the next call. Nothing in the sandbox needs rotating, because nothing in the sandbox was ever a secret of yours.',
+    body: 'Scoped to one workspace and narrowed again by what that agent is allowed to touch. Turning a connector off takes effect on the next call. Nothing in the sandbox needs rotating, because nothing in the sandbox was ever a secret of yours.',
   },
 
   /** The diagram, left to right. */
@@ -168,7 +168,7 @@ export const broker = {
     {
       id: 'encrypted',
       title: 'Encrypted at rest',
-      body: 'Connector credentials are encrypted with a per-project key and stored apart from the values a sandbox is allowed to read.',
+      body: 'Connector credentials are encrypted with a per-workspace key and stored apart from the values a sandbox is allowed to read.',
     },
     {
       id: 'runtime',
@@ -196,8 +196,8 @@ export const scope = {
   layers: [
     {
       id: 'project',
-      label: 'Per project',
-      body: 'A connector lives in one project. Another project cannot see it, call it, or read its credential — a project is its own blast radius.',
+      label: 'Per workspace',
+      body: 'A connector lives in one workspace. Another workspace cannot see it, call it, or read its credential — a workspace is its own blast radius.',
     },
     {
       id: 'agent',
@@ -207,7 +207,7 @@ export const scope = {
     {
       id: 'person',
       label: 'Per person',
-      body: 'Choose who the connection belongs to: one project-managed account everyone shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all.',
+      body: 'Choose who the connection belongs to: one workspace-managed account everyone shares, or a personal authorization where each member acts as themselves and an automated principal cannot act at all.',
     },
   ],
   /** Real `kortix.yaml`. Keep it valid — people will copy it. */
@@ -273,7 +273,7 @@ export const policy = {
    * writes ask by default — they do not until somebody sets `risk`.
    */
   defaultState:
-    'A tool left on Default has no rule of its own and falls through to the project default. Until you set that default to risk — reads run, writes and destructive actions ask — an untouched project runs everything.',
+    'A tool left on Default has no rule of its own and falls through to the workspace default. Until you set that default to risk — reads run, writes and destructive actions ask — an untouched workspace runs everything.',
 
   /** Real product screenshot — the Permissions tab on a live connector. */
   shot: {
@@ -331,7 +331,7 @@ export const policy = {
     ] satisfies readonly { match: string; when: string; action: PolicyStateId }[],
   },
 
-  note: 'Project-wide rules are evaluated first and cannot be overridden by whoever adds a connector later.',
+  note: 'Workspace-wide rules are evaluated first and cannot be overridden by whoever adds a connector later.',
 } as const;
 
 /* ── 5 · audit ────────────────────────────────────────────────────────────── */

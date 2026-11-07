@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { workspaceIdFromEnv } from '@/lib/config/workspace-id'
 import type {
   KortixCardChange,
   KortixCardRow,
@@ -119,14 +120,14 @@ export function cliError(run: CliRun): KortixToolError {
   return { kind: 'failed', message }
 }
 
-/** The project the session belongs to. */
+/** The workspace (project) the session belongs to: KORTIX_WORKSPACE_ID, else KORTIX_PROJECT_ID. */
 export function projectId(env: PlatformToolContext['env']): string {
-  return env.KORTIX_PROJECT_ID?.trim() ?? ''
+  return workspaceIdFromEnv(env)
 }
 
 /** In-app path under the session's project. */
 export function projectHref(env: PlatformToolContext['env'], path = ''): string {
-  return `/projects/${projectId(env)}${path}`
+  return `/workspaces/${projectId(env)}${path}`
 }
 
 export function sessionHref(env: PlatformToolContext['env'], sessionId: string): string {
@@ -137,8 +138,21 @@ export function agentHref(env: PlatformToolContext['env'], agent: string): strin
   return projectHref(env, `/customize/agents/${encodeURIComponent(agent)}`)
 }
 
-export function adminHref(env: PlatformToolContext['env'], section: string): string {
+/**
+ * The Settings panel sections a tool card links to. The ids and the path are
+ * `@kortix/shared/workspace-settings` (`workspaceSettingsPath`); kortixd bundles
+ * no copy of it, so platform-tools.test.ts holds these equal to the registry.
+ */
+export type AdminSection = 'members' | 'connectors' | 'triggers' | 'models' | 'feature-flags' | 'secrets' | 'skills'
+
+/** A section of the workspace's one Settings panel (`/workspaces/<id>/admin/<section>`). */
+export function adminHref(env: PlatformToolContext['env'], section: AdminSection): string {
   return projectHref(env, `/admin/${section}`)
+}
+
+/** The workspace's Members section: where people, roles and invitations live. */
+export function membersHref(env: PlatformToolContext['env']): string {
+  return adminHref(env, 'members')
 }
 
 export function ok(tool: KortixPlatformToolName, action: string, card: Omit<KortixToolCard, 'status'> & { status?: KortixToolCard['status'] }, data?: unknown): KortixToolResult {
@@ -164,13 +178,13 @@ export async function fail(
     error.kind === 'denied'
       ? grantors.length > 0
         ? `${grantors.map((g) => g.name).join(', ')} can grant it.`
-        : 'A project manager can grant it.'
+        : 'A workspace manager can grant it.'
       : error.message
   return {
     ok: false,
     tool,
     action,
-    card: { title, subtitle, status, ...(error.kind === 'denied' ? { links: [{ label: 'Members', href: projectHref(context.env, '/members') }] } : {}) },
+    card: { title, subtitle, status, ...(error.kind === 'denied' ? { links: [{ label: 'Members', href: membersHref(context.env) }] } : {}) },
     error: withGrantors,
   }
 }
@@ -224,29 +238,43 @@ interface RosterMember {
   name?: string | null
   display_name?: string | null
   full_name?: string | null
+  /** The workspace role on servers that send it (owner, admin, manager, member). */
+  role?: string | null
   account_role?: string | null
   effective_project_role?: string | null
+}
+
+/** One workspace role on the owner > admin > manager > member ladder, or null for no access. */
+export function workspaceRole(member: RosterMember): string | null {
+  if (member.role) return member.role
+  if (member.account_role === 'owner' || member.account_role === 'admin') return member.account_role
+  return member.effective_project_role ?? null
+}
+
+/** True for a role that manages the workspace (owner, admin, manager). */
+export function managesWorkspace(role: string | null | undefined): boolean {
+  return role === 'owner' || role === 'admin' || role === 'manager'
 }
 
 export function memberName(member: RosterMember): string {
   return member.display_name || member.full_name || member.name || member.email || member.user_id || 'someone'
 }
 
-/** The project's members (`kortix access ls --json`), or null when the person may not read them. */
+/** The workspace's members (`kortix access ls --json`), or null when the person may not read them. */
 export async function projectRoster(context: PlatformToolContext): Promise<RosterMember[] | null> {
   const read = await cliJson<{ members?: RosterMember[] }>(['access', 'ls', '--json'], context)
   if ('error' in read) return null
   return Array.isArray(read.value.members) ? read.value.members : []
 }
 
-/** Who can grant a project permission: its managers (account owners and admins included). */
+/** Who can grant a workspace permission: its owners, admins and managers. */
 export async function projectManagers(context: PlatformToolContext): Promise<KortixGrantor[]> {
   const roster = await projectRoster(context)
   if (!roster) return []
   return roster
-    .filter((m) => m.effective_project_role === 'manager' || m.account_role === 'owner' || m.account_role === 'admin')
+    .filter((m) => managesWorkspace(workspaceRole(m)))
     .slice(0, 6)
-    .map((m) => ({ name: memberName(m), role: m.account_role === 'owner' || m.account_role === 'admin' ? m.account_role : 'project manager' }))
+    .map((m) => ({ name: memberName(m), role: workspaceRole(m) ?? 'manager' }))
 }
 
 /** A string list argument as the CLI's `a,b` form; `all` and `none` pass through. */

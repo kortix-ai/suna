@@ -32,6 +32,7 @@ let authorizeCalls: Array<{
 }> = [];
 
 mock.module('../shared/db', () => ({
+  withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
   db: {
     select: (fields?: Record<string, unknown>) => {
       const rows = fields?.agentGrant
@@ -366,7 +367,7 @@ describe('authorizeGitProxy — sandbox token', () => {
     expect(res).toMatchObject({
       ok: false,
       status: 403,
-      message: 'sandbox token is not scoped to this project',
+      message: 'sandbox token is not scoped to this workspace',
     });
   });
 });

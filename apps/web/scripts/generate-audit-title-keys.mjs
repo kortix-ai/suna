@@ -6,7 +6,10 @@
 // catalog (`@kortix/shared/audit-labels`: one per route and per event) and
 // the named-action and path-pattern titles still written in
 // audit-display-helpers.ts. A title enters the map only when English has its
-// key; a title without one renders in English.
+// key; a title without one renders in English. The key stays the hash of the
+// source title, and the English value may differ from it: copy edits change
+// the value and keep the key, like every other `i18nComplete` string
+// (2026-11-05: "project" became "workspace" in the values only).
 //
 //   node apps/web/scripts/generate-audit-title-keys.mjs
 //   node apps/web/scripts/generate-audit-title-keys.mjs --check
@@ -73,7 +76,7 @@ export function auditTitleTranslationKeys() {
     .hardcodedUi.i18nComplete;
   const entries = [...auditTitles()]
     .map((title) => [title, translationKey(title)])
-    .filter(([title, key]) => english[key] === title)
+    .filter(([, key]) => typeof english[key] === 'string')
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return Object.fromEntries(entries);
 }

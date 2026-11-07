@@ -47,7 +47,7 @@ async function slackWorld(ctx: FlowContext): Promise<SlackWorld> {
   const r = await ctx.client
     .as(ctx.P.OWNER)
     .post(
-      "/v1/projects/:projectId/secrets",
+      "/v1/workspaces/:projectId/secrets",
       { name: "SLACK_SIGNING_SECRET", value: world.secret, strategy: "broker", consumer: "connector" },
       { params: { projectId: p.id } },
     );
@@ -126,7 +126,7 @@ flow("CHN-32", { domain: "channels", requires: ["database"], routes: ROUTES }, a
       const before = await binding();
       for (const text of ["model default", "agent reviewer", "policy owner_only"]) {
         const reply = await slash(ctx, world, world.memberSlackId, text);
-        if (!reply.includes("Only a project manager")) throw new Error(`CHN-32: \`/kortix ${text}\` by a member was not refused: ${reply}`);
+        if (!reply.includes("Only a workspace manager")) throw new Error(`CHN-32: \`/kortix ${text}\` by a member was not refused: ${reply}`);
       }
       const after = await binding();
       if (JSON.stringify(after) !== JSON.stringify(before)) {
@@ -142,7 +142,7 @@ flow("CHN-32", { domain: "channels", requires: ["database"], routes: ROUTES }, a
 
     await ctx.step("the linked project manager resets the model and sets the policy; the binding records both", async () => {
       const reset = await slash(ctx, world, world.managerSlackId, "model default");
-      if (!reset.includes("reset to the project default")) throw new Error(`CHN-32: the manager could not reset the model: ${reset}`);
+      if (!reset.includes("reset to the workspace default")) throw new Error(`CHN-32: the manager could not reset the model: ${reset}`);
       const policy = await slash(ctx, world, world.managerSlackId, "policy owner_only");
       if (!policy.includes("policy set to")) throw new Error(`CHN-32: the manager could not set the policy: ${policy}`);
       const row = await binding();

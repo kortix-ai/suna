@@ -101,7 +101,7 @@ export async function notifyAdminsOfTeamsAccessRequest(input: {
     const email = (await lookupEmailsByUserIds([input.requesterUserId]).catch(() => null))?.get(input.requesterUserId);
     const notice = buildAccessRequestNoticeCard({
       requester: email ? `**${email}**` : 'A teammate',
-      reviewUrl: `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/projects/${input.projectId}/customize/members`,
+      reviewUrl: `${(config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '')}/workspaces/${input.projectId}/customize/members`,
     });
     for (const admin of admins) {
       const teamsId = await lookupChatUserForKortixUser('teams', input.tenantId, admin);

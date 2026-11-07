@@ -114,8 +114,8 @@ export function AuditView({
       if (!current.pending.canResolve) {
         return setNote(
           current.pending.resolvers === 'managers'
-            ? 'Only project managers can decide this action.'
-            : 'Only project managers and the session launcher can decide this action.',
+            ? 'Only people who manage this workspace can decide this action.'
+            : 'Only people who manage this workspace and the session launcher can decide this action.',
         );
       }
       setDecision(next);

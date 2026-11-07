@@ -26,6 +26,7 @@ import { createScopedKortix, forwardKortixRequest } from './scoped-client';
 import type { Kortix } from '../core/client/kortix';
 import type { AccountIdentity } from '../core/rest/projects-client/accounts';
 import { stripTrailingSlashes } from '../platform/strings';
+import { withWorkspaceRouteFallback } from '../core/http/workspace-routes';
 
 /** The subset of `fetch` the kit needs — assignable from any fetch-shaped function. */
 export type KortixFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -271,7 +272,8 @@ export function createKortixAuth(options: KortixAuthOptions): KortixAuth {
   const txnCookie = secure ? '__Host-kortix_oauth_txn' : 'kortix_oauth_txn';
   const scopes = options.scopes?.length ? options.scopes : DEFAULT_SCOPES;
   const sessionTtl = options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_S;
-  const fetchImpl: KortixFetch = options.fetch ?? ((input, init) => fetch(input, init));
+  // A canonical workspace name reaches an older API too (`workspace-routes.ts`).
+  const fetchImpl: KortixFetch = withWorkspaceRouteFallback(options.fetch ?? ((input, init) => fetch(input, init)));
   let now = options.now ?? (() => Date.now());
   const nowS = () => Math.floor(now() / 1000);
 
@@ -359,7 +361,7 @@ export function createKortixAuth(options: KortixAuthOptions): KortixAuth {
 
   async function identity(token: string): Promise<AccountIdentity | null> {
     try {
-      const res = await fetchImpl(`${backendUrl}/accounts/me`, {
+      const res = await fetchImpl(`${backendUrl}/me`, {
         headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
       });
       if (!res.ok) return null;

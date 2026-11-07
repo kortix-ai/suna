@@ -21,7 +21,7 @@ export function projectModelsWebUrl(
   projectId: string,
   returnTo?: string,
 ): string {
-  const url = `${frontendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}/admin/models`;
+  const url = `${frontendUrl.replace(/\/$/, '')}/workspaces/${encodeURIComponent(projectId)}/admin/models`;
   return returnTo ? `${url}?return_to=${encodeURIComponent(returnTo)}` : url;
 }
 

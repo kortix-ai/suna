@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 
 import { DesktopQuickEntry } from '@/components/desktop/desktop-quick-entry';
-import { AccountHubPanel } from '@/features/accounts/hub/account-hub-panel';
+import { AccountHubRouter } from '@/features/accounts/hub/account-hub-router';
 import { BillingReturnWatcher } from '@/features/billing/billing-return';
 import { ExtensionPanelIdentity } from '@/features/chrome/extension-panel-identity';
 import { MfaGate } from '@/features/auth/mfa-step-up';
@@ -13,7 +13,7 @@ import { ProjectSwitchWatcher } from '@/features/workspace/project-switch-watche
  * Its only job is to host behaviour that must not depend on WHICH app route the
  * user happens to be on. Returning from Stripe is the first such case: the
  * handling used to live in the projects list page, which forced every checkout
- * `success_url` to point at `/projects` — the one surface that is deliberately
+ * `success_url` to point at `/workspaces` — the one surface that is deliberately
  * never a destination. Ending a workspace switch is the second: the picker that
  * starts one closes immediately, and the route it navigates to is a different
  * one on either side, so only a shell above both can watch it land.
@@ -39,11 +39,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Desktop app only: starts a session from the Quick Entry bar the global
           shortcut opens over any app. */}
       <DesktopQuickEntry />
-      {/* Closed, this is one store subscription and a `popstate` listener. The
-          hub's own chunk is not fetched until the first open — or until
-          `preloadAccountHub()` warms it on pointer intent. */}
+      {/* Draws nothing: it routes an account hub place (`?accountId=`, or a
+          pane's `openAccountPanel`) to the matching Workspace settings
+          section. */}
       <Suspense fallback={null}>
-        <AccountHubPanel />
+        <AccountHubRouter />
       </Suspense>
       {/* The app is gated on the TOTP step-up: an aal1 session with a verified
           second factor gets the code prompt instead of these routes until the

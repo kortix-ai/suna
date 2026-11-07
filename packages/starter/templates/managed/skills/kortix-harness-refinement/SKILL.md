@@ -1,6 +1,6 @@
 ---
 name: kortix-harness-refinement
-description: The continual-harness refinement protocol — how an agent inspects its recent trajectory for failure signatures and improves its own harness (agent prompts, sub-agents, skills, memory) in place, mid-session, landing changes on the session branch immediately and promoting them to `main` only through a change request. Load this skill when a refinement prompt arrives mid-session, when a project's scheduled reflection agent runs, or whenever you decide your own scaffolding needs repair. The sub-agent fan-out in this skill is for a top-level reflection run only; if you loaded this as a subagent, do the four passes yourself and skip the fan-out.
+description: The continual-harness refinement protocol — how an agent inspects its recent trajectory for failure signatures and improves its own harness (agent prompts, sub-agents, skills, memory) in place, mid-session, landing changes on the session branch immediately and promoting them to `main` only through a change request. Load this skill when a refinement prompt arrives mid-session, when a workspace's scheduled reflection agent runs, or whenever you decide your own scaffolding needs repair. The sub-agent fan-out in this skill is for a top-level reflection run only; if you loaded this as a subagent, do the four passes yourself and skip the fan-out.
 ---
 
 <skill name="kortix-harness-refinement">
@@ -25,7 +25,7 @@ failed you, and fix the harness — not just the immediate task. A memory
 edit is readable on your next turn: memory is plain files. An edit to an
 agent prompt, skill, or tool reaches sessions once its change request
 merges; a running session loads it with `kortix sessions reload <session id>`.
-You do not restart, and the value compounds over the life of the project.
+You do not restart, and the value compounds over the life of the workspace.
 
 This protocol has two operating modes:
 
@@ -34,8 +34,8 @@ This protocol has two operating modes:
    run a checkpoint on long sessions: after every ~25 turns of work, pause
    and scan your recent turns before continuing. You refine based on YOUR
    OWN trajectory, then resume the task.
-2. **Project-level reflection (optional)** — a new project has no
-   reflection agent and no reflection trigger. A project may add one: an
+2. **Workspace-level reflection (optional)** — a new workspace has no
+   reflection agent and no reflection trigger. A workspace may add one: an
    agent (for example `agents/harness-reflector.md`) that a cron trigger in
    `kortix.yaml` runs. It fans out read-only reviewer subagents to work
    through every recent session's full history, aggregates their findings,
@@ -95,7 +95,7 @@ unregistered file reaches no agent.
 
 **Pass 4 — Memory (ΔM).** Follow the `kortix-memory` skill's rubric with
 the file tools on `memory/`: fill gaps the trajectory exposed, update stale
-entries, demote or delete entries about areas the project has moved past.
+entries, demote or delete entries about areas the workspace has moved past.
 Keep `MEMORY.md` in sync.
 
 Scope discipline: fix what the trajectory shows. Do not speculatively
@@ -108,7 +108,7 @@ This section applies only to a top-level reflection run. If you
 loaded this skill as a subagent, skip the fan-out and review the sessions
 yourself.
 
-For project-level reflection, do not skim a
+For workspace-level reflection, do not skim a
 digest and call it a review. Work through every session:
 
 1. **Enumerate** every session in the window:
@@ -163,7 +163,7 @@ CRs. Only the orchestrating reflection agent writes.
 4. Return to the task. A refinement interruption ends with you resuming
    what you were doing, with the improved harness in effect.
 
-**Project-level reflection:** all edits land only
+**Workspace-level reflection:** all edits land only
 via a CR against `main`. Nothing applies immediately; the merged CR is
 what future sessions inherit.
 </landing-rules>
@@ -172,7 +172,7 @@ what future sessions inherit.
 - **Never edit managed `kortix-*` skills.** Kortix serves them from
   `/opt/kortix/managed-skills` and replaces them on every update, and
   `skills:` refuses a `kortix-` name. To extend platform behavior, create
-  a project skill with a different name.
+  a workspace skill with a different name.
 - **Never merge your own harness CR.** A reviewer (human, or a reviewer
   agent with merge rights) does. The CR gate is what makes self-authored
   harness edits safe; self-authored + self-merged scaffolding is known to
@@ -196,7 +196,7 @@ what future sessions inherit.
 Nobody schedules in-session refinement for you — it is your discipline.
 Invoke this protocol the moment a failure signature costs you twice, and
 as a checkpoint on long sessions (roughly every 25 turns of work). A
-project's scheduled reflection run, when it has one, is the backstop,
+workspace's scheduled reflection run, when it has one, is the backstop,
 not the mechanism: it
 only sees what sessions left behind, while you can record the fix while the
 evidence is fresh: memory helps on your next turn, and prompt, skill, and

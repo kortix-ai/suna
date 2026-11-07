@@ -51,9 +51,9 @@ export async function pair(
 
 /**
  * A member's machines in both placements (KRTX-1722): one paired privately,
- * which lives in their personal account and reaches the project through their
- * private computer account, and one shared with the project, which joins the
- * team account. Sharing needs the project's manager role.
+ * which belongs to the member and reaches the project through their private
+ * computer account, and one shared with the project, which joins the team
+ * account. Sharing needs the project's manager role.
  */
 export async function pairBothPlacements(
   anon: Client,

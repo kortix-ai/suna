@@ -47,6 +47,7 @@ import {
   RelayRefusedError,
 } from './relay-client'
 import type { ShimBrokerRule } from '@kortix/api-contract/egress-shim-rules'
+import { kortixApiFetch } from '@/lib/kortix-api/workspace-routes'
 
 export interface EgressShimOptions {
   readonly ca: EphemeralCa
@@ -210,9 +211,9 @@ async function relayBuffered(
 
   const target = new URL(request.url)
   const url =
-    `${options.apiUrl.replace(/\/$/, '')}/projects/${options.projectId}` +
+    `${options.apiUrl.replace(/\/$/, '')}/workspaces/${options.projectId}` +
     `/secrets/${encodeURIComponent(rule.identifier)}/broker`
-  const response = await fetch(url, {
+  const response = await kortixApiFetch(url, {
     method: 'POST',
     headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/json' },
     body: JSON.stringify({

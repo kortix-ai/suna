@@ -26,6 +26,7 @@ import { GroupGrantSchema, projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { requireEntitlement } from '../../accounts/iam/http-helpers';
+import { workspaceIdParam } from '../../shared/route-params';
 
 /**
  * A group→project role grant. `kortix.project_group_grants` is a view over
@@ -67,12 +68,12 @@ export function registerGroupGrantsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/group-grants',
+      path: '/{workspaceId}/group-grants',
       tags: ['access'],
       summary: 'List group access grants of a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
         },
       responses: {
           200: json(z.array(GroupGrantSchema), 'Group grants'),
@@ -80,7 +81,7 @@ export function registerGroupGrantsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Manager-only, like the POST/PATCH/DELETE siblings in this file and the
@@ -169,12 +170,12 @@ export function registerGroupGrantsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/group-grants',
+      path: '/{workspaceId}/group-grants',
       tags: ['access'],
       summary: 'Grant a group access to a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string() }),
+          params: z.object({ workspaceId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               group_id: z.string().openapi({ description: 'Group id.' }),
               role: z.enum(['manager', 'member']).openapi({ description: 'Project role for the group.' }),
@@ -187,7 +188,7 @@ export function registerGroupGrantsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // assertProjectCapability (not bare assertAuthorized) so the acting token is
@@ -245,12 +246,12 @@ export function registerGroupGrantsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/group-grants/{groupId}',
+      path: '/{workspaceId}/group-grants/{groupId}',
       tags: ['access'],
       summary: 'Change a group\'s role on a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), groupId: z.string() }),
+          params: z.object({ workspaceId: z.string(), groupId: z.string() }),
           body: { content: { 'application/json': { schema: lenientBody({
               role: z.enum(['manager', 'member']).openapi({ description: 'Project role for the group.' }),
               expires_at: z.string().optional().openapi({ description: 'ISO-8601 expiry. null removes it.' }),
@@ -262,7 +263,7 @@ export function registerGroupGrantsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const groupId = c.req.param('groupId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -327,12 +328,12 @@ export function registerGroupGrantsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/group-grants/{groupId}',
+      path: '/{workspaceId}/group-grants/{groupId}',
       tags: ['access'],
       summary: 'Remove a group\'s access to a project',
       ...auth,
         request: {
-          params: z.object({ projectId: z.string(), groupId: z.string() }),
+          params: z.object({ workspaceId: z.string(), groupId: z.string() }),
         },
       responses: {
           200: json(z.any(), 'OK'),
@@ -340,7 +341,7 @@ export function registerGroupGrantsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const projectId = c.req.param('projectId');
+    const projectId = workspaceIdParam(c);
     const groupId = c.req.param('groupId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);

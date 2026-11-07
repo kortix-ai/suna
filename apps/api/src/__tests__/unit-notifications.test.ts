@@ -52,7 +52,7 @@ describe('notification emails', () => {
       const payload = sentPayload();
       expect(payload.HTML).toContain('Research &lt;team&gt;');
       expect(payload.HTML).not.toContain('Research <team>');
-      expect(payload.HTML).toContain('https://app.example.test/projects/synthetic-project');
+      expect(payload.HTML).toContain('https://app.example.test/workspaces/synthetic-project');
       expect(payload.Text).toContain('no invitation acceptance is required');
       expect(payload.Text).toContain('member@example.test');
     } finally {
@@ -106,7 +106,7 @@ describe('notification emails', () => {
 
     const payload = sentPayload();
     expect(payload.html).toContain('>Acme</span> invited you to join the');
-    expect(payload.text).toContain('Acme invited you to join the kaab-demo project on Kortix.');
+    expect(payload.text).toContain('Acme invited you to join the kaab-demo workspace on Kortix.');
     expect(payload.html).not.toContain("You've been invited");
   });
 
@@ -151,7 +151,7 @@ describe('notification emails', () => {
       email: 'manager@kortix.com',
       projectName: 'Slack <Auth>',
       requesterEmail: 'requester@example.test',
-      reviewUrl: 'https://app.example.test/projects/proj-1/customize/members',
+      reviewUrl: 'https://app.example.test/workspaces/proj-1/customize/members',
       message: 'Please approve <this account>.',
     });
 
@@ -161,7 +161,7 @@ describe('notification emails', () => {
     expect(payload.to).toEqual([{ email: 'manager@kortix.com' }]);
     expect(payload.subject).toBe('requester@example.test requested access to Slack <Auth>');
     expect(payload.category).toBe('project-access-request');
-    expect(payload.html).toContain('https://app.example.test/projects/proj-1/customize/members');
+    expect(payload.html).toContain('https://app.example.test/workspaces/proj-1/customize/members');
     expect(payload.html).toContain('Slack &lt;Auth&gt;');
     expect(payload.html).toContain('Please approve &lt;this account&gt;.');
   });

@@ -213,7 +213,7 @@ describe('<ConnectorSheet/> credential', () => {
 
     await key(view, 'return');
     await settle(view.flush, 150);
-    expect(writes()).toEqual([['PUT', '/v1/projects/p-1/connections/c-1/credential']]);
+    expect(writes()).toEqual([['PUT', '/v1/workspaces/p-1/connections/c-1/credential']]);
     expect(requests.filter((request) => request.method === 'PUT').map((request) => JSON.parse(request.body))).toEqual([
       { value: 'abcdef' },
     ]);
@@ -281,7 +281,7 @@ describe('<ConnectorSheet/> sign-in', () => {
       await key(view, 's');
       expect(view.captureCharFrame()).toContain('Connect Linear');
       expect(view.captureCharFrame()).toContain('Starting authorization…');
-      expect(writes()).toEqual([['POST', '/v1/projects/p-1/connections/c-1/oauth2/discover-resource']]);
+      expect(writes()).toEqual([['POST', '/v1/workspaces/p-1/connections/c-1/oauth2/discover-resource']]);
       await act(async () => {
         view.renderer.destroy();
       });
@@ -303,7 +303,7 @@ describe('<ConnectorSheet/> confirm', () => {
     expect(view.captureCharFrame()).toContain('y confirm · Esc cancel');
     await key(view, 'y');
     await settle(view.flush, 150);
-    expect(writes()).toEqual([['DELETE', '/v1/connectors/projects/p-1/connectors/linear-ab12cd']]);
+    expect(writes()).toEqual([['DELETE', '/v1/connectors/workspaces/p-1/connectors/linear-ab12cd']]);
     expect(view.log.refreshes).toBe(1);
     expect(view.log.toasts).toEqual([['Linear removed', undefined]]);
     expect(view.log.removed).toBe(1);
@@ -317,7 +317,7 @@ describe('<ConnectorSheet/> confirm', () => {
     expect(view.captureCharFrame()).toContain('Disconnect "Linear"?');
     await key(view, 'y');
     await settle(view.flush, 150);
-    expect(writes()).toEqual([['PUT', '/v1/projects/p-1/connections/c-1/revoke']]);
+    expect(writes()).toEqual([['PUT', '/v1/workspaces/p-1/connections/c-1/revoke']]);
     expect(view.log.toasts).toEqual([['Disconnected', undefined]]);
     expect(view.log.busy).toEqual([true, false]);
     view.renderer.destroy();
@@ -406,7 +406,7 @@ describe('<ConnectorSheet/> add account', () => {
     await settle(limited.flush);
     const frame = limited.captureCharFrame();
     expect(frame).toContain('● 1');
-    expect(frame).toContain("Sharing an account needs permission to manage the project's connections.");
+    expect(frame).toContain("Sharing an account needs permission to manage the workspace's connections.");
     limited.renderer.destroy();
   });
 

@@ -107,7 +107,7 @@ export function AskAgentSheet({
               <>
                 <Hint label={t('openSession')} side="bottom">
                   <Button size="icon-sm" variant="secondary" aria-label={t('openSession')} asChild>
-                    <Link href={`/projects/${projectId}/sessions/${sessionId}`}>
+                    <Link href={`/workspaces/${projectId}/sessions/${sessionId}`}>
                       <ArrowSquareOutIcon className="size-3.5" />
                     </Link>
                   </Button>

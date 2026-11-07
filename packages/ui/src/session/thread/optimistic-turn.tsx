@@ -324,7 +324,7 @@ export function HighlightMentions({
   const shallowNavigate = useUiShallowNavigate();
 
   const openSessionMention = (raw: string) => {
-    // `/projects/<id>/sessions/<id>`, not `/sessions/<id>`: the latter is not a
+    // `/workspaces/<id>/sessions/<id>`, not `/sessions/<id>`: the latter is not a
     // route, so the URL it wrote into history 404'd on reload or Back even
     // though the mounted tab looked fine. See `session-href.ts`.
     // Direct session ID (ses_...) — navigate without title lookup

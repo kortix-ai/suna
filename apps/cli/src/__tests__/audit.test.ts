@@ -140,7 +140,7 @@ describe('audit CLI process', () => {
     ]);
     expect(exitCode).toBe(0);
     expect(stderr).not.toContain('Unknown subcommand');
-    expect(stdout).toContain('project <project-id>');
+    expect(stdout).toContain('workspace <id>');
     expect(stdout).toContain('session <session-id>');
     expect(stdout).toContain('--cursor <c>');
     expect(stdout).toContain('--phase <p>');
@@ -336,7 +336,7 @@ describe('audit CLI process', () => {
 
       const accountRequests = requests.filter(
         (url) =>
-          url.pathname.endsWith('/accounts/account-1/audit') && !url.pathname.endsWith('/export'),
+          url.pathname.endsWith('/workspaces/project-1/audit') && !url.pathname.endsWith('/export'),
       );
       expect(accountRequests).toHaveLength(2);
       expect(accountRequests[0]!.searchParams.get('action')).toBe('session.');
@@ -357,7 +357,7 @@ describe('audit CLI process', () => {
         'project-cursor-2',
       ]);
       const sessionRequests = requests.filter((url) =>
-        url.pathname.endsWith(`/projects/project-1/sessions/${sessionId}/audit`),
+        url.pathname.endsWith(`/workspaces/project-1/sessions/${sessionId}/audit`),
       );
       expect(sessionRequests.map((url) => url.searchParams.get('cursor'))).toEqual([
         null,
@@ -445,7 +445,7 @@ describe('audit CLI process', () => {
       // `project` without an id refuses before any HTTP call.
       const noProject = await run(['audit', 'project']);
       expect(noProject.code).toBe(2);
-      expect(noProject.stderr).toContain('Missing a project id.');
+      expect(noProject.stderr).toContain('Missing a workspace id.');
       expect(requests).toHaveLength(1);
     } finally {
       server.stop(true);

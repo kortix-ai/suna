@@ -31,6 +31,8 @@
  * worker's system prompt.
  */
 
+import { withWorkspaceRouteFallback } from '@/lib/kortix-api/workspace-routes'
+
 /** `runtime_context` key: this session is a router (a front). */
 export const FRONT_CONTEXT_KEY = 'kortix.front'
 /** `runtime_context` key: this session is the worker of a router. */
@@ -268,7 +270,7 @@ export async function fetchFrontAgents(
   const trimmed = api.apiUrl.trim().replace(/\/+$/, '')
   const origin = trimmed.endsWith('/v1') ? trimmed.slice(0, -'/v1'.length) : trimmed
   try {
-    const res = await fetchImpl(`${origin}/v1/projects/${encodeURIComponent(api.projectId)}/detail`, {
+    const res = await withWorkspaceRouteFallback(fetchImpl)(`${origin}/v1/workspaces/${encodeURIComponent(api.projectId)}/detail`, {
       headers: { authorization: `Bearer ${api.token}` },
       signal: AbortSignal.timeout(timeoutMs),
     })

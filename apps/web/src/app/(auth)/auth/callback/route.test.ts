@@ -27,10 +27,10 @@ beforeEach(() => {
 });
 for (const type of ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email']) {
   test(`verifies ${type} token hash through identity-aware success`, async () => {
-    const response = await GET(request(`token_hash=synthetic&type=${type}&returnUrl=/projects/other`, `${AUTH_BOUNCE_COOKIE}=22222222-2222-4222-8222-222222222222:ignored`));
+    const response = await GET(request(`token_hash=synthetic&type=${type}&returnUrl=/workspaces/other`, `${AUTH_BOUNCE_COOKIE}=22222222-2222-4222-8222-222222222222:ignored`));
     expect(verifyOtp).toHaveBeenCalledWith({ token_hash: 'synthetic', type });
     expect(exchangeCodeForSession).not.toHaveBeenCalled();
-    expect(location(response).pathname).toBe('/projects/start');
+    expect(location(response).pathname).toBe('/workspaces/start');
     expect(location(response).searchParams.get('auth_event')).toBe('login');
     expect(response.headers.get('set-cookie')).toContain(`${AUTH_BOUNCE_COOKIE}=`);
   });

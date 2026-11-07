@@ -36,7 +36,7 @@ function startServer(sessions: unknown[]): string {
     fetch: (req) => {
       const url = new URL(req.url);
       paths.push(url.pathname);
-      if (url.pathname === `/v1/projects/${PROJECT}/sessions`) return Response.json(sessions);
+      if (url.pathname === `/v1/workspaces/${PROJECT}/sessions`) return Response.json(sessions);
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
@@ -116,7 +116,7 @@ describe('kortix sessions status', () => {
     );
     const r = await runCli(['sessions', 'status', '--all', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(paths).toEqual([`/v1/projects/${PROJECT}/sessions`]);
+    expect(paths).toEqual([`/v1/workspaces/${PROJECT}/sessions`]);
 
     const row = (name: string) => r.stdout.split('\n').find((line) => line.includes(` ${name} `)) ?? '';
     expect(row('fresh')).toMatch(/aaaa1111\s+fresh\s+.*just now$/);
@@ -136,7 +136,7 @@ describe('kortix sessions status', () => {
     expect(text.stdout).toContain('1 done');
     expect(text.stdout).toContain('1 running');
     expect(text.stdout).toContain('computer: running');
-    expect(paths).toEqual([`/v1/projects/${PROJECT}/sessions`]);
+    expect(paths).toEqual([`/v1/workspaces/${PROJECT}/sessions`]);
     expect(text.stdout.split('\n').find((line) => line.includes('idle  idle'))).toContain('○');
     paths = [];
     const result = await runCli(['sessions', 'status', '--json', '--project', PROJECT], config);
@@ -145,7 +145,7 @@ describe('kortix sessions status', () => {
     expect(output.find((s: { session_id: string }) => s.session_id === 'idle')).toMatchObject({
       status: 'running', display_status: 'done', working: rows[0]?.working, activity: { working: false, summary: 'idle' },
     });
-    expect(paths).toEqual([`/v1/projects/${PROJECT}/sessions`]);
+    expect(paths).toEqual([`/v1/workspaces/${PROJECT}/sessions`]);
   });
 
 });

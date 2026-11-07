@@ -40,13 +40,14 @@ import {
   setSessionGroup,
   type SessionGroupRow,
 } from '../lib/session-groups';
+import { workspaceIdParam } from '../../shared/route-params';
 
-const projectParams = z.object({ projectId: z.string() });
+const projectParams = z.object({ workspaceId: z.string() });
 const groupParams = projectParams.extend({ groupId: z.string() });
 const sessionParams = projectParams.extend({ sessionId: z.string().min(1).max(128) });
 
-const GROUP_NOT_FOUND = { error: 'No such session group in this project.', code: 'group_not_found' } as const;
-const NAME_TAKEN = { error: 'Another group in this project already has that name.', code: 'group_name_taken' } as const;
+const GROUP_NOT_FOUND = { error: 'No such session group in this workspace.', code: 'group_not_found' } as const;
+const NAME_TAKEN = { error: 'Another group in this workspace already has that name.', code: 'group_name_taken' } as const;
 
 function serializeGroup(row: SessionGroupRow): SessionGroup {
   return {
@@ -61,7 +62,7 @@ function serializeGroup(row: SessionGroupRow): SessionGroup {
 
 /** The project and the `session_groups` flag, at the access `need`: the gate of every route here. */
 async function loadGroupsProject(c: Context<AppEnv>, need: 'read' | 'session') {
-  const projectId = c.req.param('projectId')!;
+  const projectId = workspaceIdParam(c)!;
   const loaded = await loadProjectForUser(c, projectId, need);
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   if (need === 'read') {
@@ -77,7 +78,7 @@ export function registerSessionGroupsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get',
-      path: '/{projectId}/session-groups',
+      path: '/{workspaceId}/session-groups',
       tags: ['sessions'],
       summary: 'List the session groups of a project',
       description: 'Every member sees the same groups in the same order. List a group’s sessions with `GET /sessions?group=<group_id>`.',
@@ -96,7 +97,7 @@ export function registerSessionGroupsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post',
-      path: '/{projectId}/session-groups',
+      path: '/{workspaceId}/session-groups',
       tags: ['sessions'],
       summary: 'Create a session group',
       description: 'The new group goes last in the order. A name another group of the project has, in any case, is refused (409 `group_name_taken`); a project holds at most 50 groups (409 `group_limit`).',
@@ -129,7 +130,7 @@ export function registerSessionGroupsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/session-groups/order',
+      path: '/{workspaceId}/session-groups/order',
       tags: ['sessions'],
       summary: 'Reorder the session groups of a project',
       description: 'Send every group id of the project once, in the new order. A list that is out of date (a group missing, added or foreign) changes nothing and answers 409 `group_order_stale`: read the list again.',
@@ -154,7 +155,7 @@ export function registerSessionGroupsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'patch',
-      path: '/{projectId}/session-groups/{groupId}',
+      path: '/{workspaceId}/session-groups/{groupId}',
       tags: ['sessions'],
       summary: 'Rename a session group',
       ...auth,
@@ -178,7 +179,7 @@ export function registerSessionGroupsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'delete',
-      path: '/{projectId}/session-groups/{groupId}',
+      path: '/{workspaceId}/session-groups/{groupId}',
       tags: ['sessions'],
       summary: 'Delete a session group',
       description: 'Its sessions stay and are in no group; the groups after it move up one place.',
@@ -200,7 +201,7 @@ export function registerSessionGroupsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'put',
-      path: '/{projectId}/sessions/{sessionId}/group',
+      path: '/{workspaceId}/sessions/{sessionId}/group',
       tags: ['sessions'],
       summary: 'File a session into a session group',
       description: '`group_id` files the session into that group of its project; `null` takes it out of its group. The session keeps its `updated_at`, so it keeps its place in the list. A session another session started stays with its parent: 400 `group_child_session`.',

@@ -15,7 +15,7 @@ UI, including one that uses a Convex backend App for its data.
 
 Before building, inspect `package.json` and the lockfile. Run the declared
 `build` script with the repository's package manager. Do not assume `pnpm`
-when the project uses npm, Yarn, or Bun.
+when the repository uses npm, Yarn, or Bun.
 
 ```bash
 npm --prefix apps/storefront run build

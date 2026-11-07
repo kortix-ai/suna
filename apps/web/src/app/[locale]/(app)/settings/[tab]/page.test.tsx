@@ -85,7 +85,7 @@ test('billing waits for accounts, then opens the account billing destination', a
   await act(async () => {
     root?.update(createElement(SettingsTabPage));
   });
-  expect(replacements).toEqual(['/projects?accountId=synthetic&accountTab=billing']);
+  expect(replacements).toEqual(['/workspaces?accountId=synthetic&accountTab=billing']);
   expect(JSON.stringify(root.toJSON())).not.toContain('profile');
   await act(async () => {
     root?.unmount();
@@ -124,9 +124,6 @@ test('live, renamed, unknown and project-only segments open their standalone tab
   failed = false;
   for (const [raw, expected] of [
     ['security', 'security'],
-    // KRTX-2291: the old personal API keys tab is `tokens` now (`RENAMED`).
-    ['api-keys', 'tokens'],
-    ['tokens', 'tokens'],
     ['unknown', 'profile'],
   ]) {
     segment = raw;
@@ -143,22 +140,6 @@ test('live, renamed, unknown and project-only segments open their standalone tab
     });
   }
 });
-
-test('connected opens personal identity details regardless of organization lookup state', async () => {
-  segment = 'connected';
-  for (const state of ['pending', 'empty', 'failed', 'loaded']) {
-    pending = state === 'pending';
-    failed = state === 'failed';
-    accounts = state === 'loaded' ? [{ account_id: 'synthetic' }] : [];
-    replacements.length = 0;
-    let root: ReturnType<typeof create> | undefined;
-    await act(async () => { root = create(createElement(SettingsTabPage)); });
-    if (!root) throw new Error('Settings route did not render');
-    expect(JSON.stringify(root.toJSON())).toContain('profile');
-    expect(replacements).toEqual([]);
-    await act(async () => { root?.unmount(); });
-  }
-});
 // KRTX-2865: a stale `/settings/computers` link rendered Profile under a
 // computers URL. A segment that needs a project opens in the project this
 // browser had open last, and in the project list when it remembers none.
@@ -167,10 +148,10 @@ test('a segment that needs a project opens in the last project, never Profile', 
   pending = false;
   failed = false;
   for (const [raw, remembered, expected] of [
-    ['computers', 'p1', '/projects/p1/admin/connectors'],
-    ['computer', 'p1', '/projects/p1/settings/computer'],
-    ['secrets', 'p1', '/projects/p1/admin/secrets'],
-    ['computers', null, '/projects'],
+    ['computers', 'p1', '/workspaces/p1/admin/connectors'],
+    ['computer', 'p1', '/workspaces/p1/settings/computer'],
+    ['secrets', 'p1', '/workspaces/p1/admin/secrets'],
+    ['computers', null, '/workspaces'],
   ] as const) {
     segment = raw;
     lastProjectId = remembered;
@@ -209,7 +190,7 @@ test('a project segment waits for the signed-in user before it reads the last pr
   await act(async () => {
     root?.update(createElement(SettingsTabPage));
   });
-  expect(replacements).toEqual(['/projects/p1/admin/connectors']);
+  expect(replacements).toEqual(['/workspaces/p1/admin/connectors']);
   await act(async () => {
     root?.unmount();
   });

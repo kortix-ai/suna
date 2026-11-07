@@ -8,7 +8,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { eq } from 'drizzle-orm';
-import { accounts } from '@kortix/db';
 import { db } from '../../shared/db';
 import { accountMemberMfaRows, accountMfaEnrolledMemberRow, accountSuperAdminRow } from '../../iam/membership-read';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
@@ -17,12 +16,14 @@ import { invalidateIamCacheForAccount } from '../../iam/cache-invalidation';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
 import { readJsonObject } from '../../shared/http-body';
+import { accountIdParam } from '../../shared/route-params';
+import { accountsView, updateAccountRows } from '../../workspaces/rows';
 
 export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/mfa-required',
+      path: '/{workspaceId}/iam/mfa-required',
       tags: ['iam'],
       summary: 'Get account MFA-required status',
       ...auth,
@@ -33,13 +34,13 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
     const [row] = await db
-      .select({ mfaRequired: accounts.mfaRequired })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .select({ mfaRequired: accountsView.mfaRequired })
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!row) return c.json({ error: 'account not found' }, 404);
     return c.json({ enabled: row.mfaRequired });
@@ -54,7 +55,7 @@ export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'get',
-      path: '/{accountId}/iam/mfa-required/preview',
+      path: '/{workspaceId}/iam/mfa-required/preview',
       tags: ['iam'],
       summary: 'Preview who would be locked out by MFA enforcement',
       ...auth,
@@ -65,7 +66,7 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     // The same leaf as the toggle it previews: the list names every member
     // without MFA, which a plain member may not see.
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -123,7 +124,7 @@ export function registerIamMfaRoutes(): void {
   iamRouter.openapi(
     createRoute({
       method: 'patch',
-      path: '/{accountId}/iam/mfa-required',
+      path: '/{workspaceId}/iam/mfa-required',
       tags: ['iam'],
       summary: 'Enable or disable account MFA requirement',
       ...auth,
@@ -134,7 +135,7 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const accountId = c.req.param('accountId');
+    const accountId = accountIdParam(c);
     // Gate on account.write — same level as renaming the account or
     // flipping strict mode. Avoids inventing a new role action.
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -150,9 +151,9 @@ export function registerIamMfaRoutes(): void {
     const enabled = body.enabled;
 
     const [before] = await db
-      .select({ mfaRequired: accounts.mfaRequired })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
+      .select({ mfaRequired: accountsView.mfaRequired })
+      .from(accountsView)
+      .where(eq(accountsView.accountId, accountId))
       .limit(1);
     if (!before) return c.json({ error: 'account not found' }, 404);
     if (before.mfaRequired === enabled) {
@@ -186,10 +187,7 @@ export function registerIamMfaRoutes(): void {
       }
     }
 
-    await db
-      .update(accounts)
-      .set({ mfaRequired: enabled, updatedAt: new Date() })
-      .where(eq(accounts.accountId, accountId));
+    await updateAccountRows(eq(accountsView.accountId, accountId), { mfaRequired: enabled, updatedAt: new Date() });
 
     // resolveActorV2 memoizes accountMfaRequired per member for IAM_CACHE_TTL_MS
     // — without this, a flip stays invisible to every cached actor (denying an

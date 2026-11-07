@@ -22,8 +22,8 @@ export function projectConnections(projectId: string) {
     share: (...a: DropFirst<Parameters<typeof P.shareConnection>>) =>
       P.shareConnection(projectId, ...a),
     /** Add a machine the caller paired to this project as a `computer` account. */
-    addComputer: (...a: DropFirst<Parameters<typeof P.addComputerToProject>>) =>
-      P.addComputerToProject(projectId, ...a),
+    addComputer: (...a: DropFirst<Parameters<typeof P.addComputerToWorkspace>>) =>
+      P.addComputerToWorkspace(projectId, ...a),
     pipedreamConnect: (...a: DropFirst<Parameters<typeof P.pipedreamConnectConnection>>) =>
       P.pipedreamConnectConnection(projectId, ...a),
     pipedreamFinalize: (...a: DropFirst<Parameters<typeof P.pipedreamFinalizeConnection>>) =>

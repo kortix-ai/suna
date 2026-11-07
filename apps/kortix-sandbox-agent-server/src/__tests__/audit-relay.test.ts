@@ -871,7 +871,7 @@ describe('the runtime audit relay every harness runs (E12)', () => {
     relay.enqueue({ type: 'tool.execute.after', properties: { sessionID: 'ses_pi', callID: 'call_1', tool: 'bash' } });
     await relay.flush();
     expect(posted).toHaveLength(1);
-    expect(posted[0]!.url).toBe('https://api.kortix.test/v1/projects/proj-1/sessions/sess-1/audit/events');
+    expect(posted[0]!.url).toBe('https://api.kortix.test/v1/workspaces/proj-1/sessions/sess-1/audit/events');
     expect(posted[0]!.auth).toBe('Bearer sandbox-token');
     expect(posted[0]!.body).toMatchObject({ source: 'runtime', harness: 'pi' });
     expect(posted[0]!.body.events[0]).toMatchObject({ runtime_session_id: 'ses_pi', tool_call_id: 'call_1' });

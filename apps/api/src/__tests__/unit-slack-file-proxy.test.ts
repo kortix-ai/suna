@@ -92,7 +92,7 @@ describe('downloadSlackFile confinement', () => {
     expect(r).toEqual({
       ok: false,
       status: 403,
-      error: 'Slack file F0SYNTH01 belongs to another Kortix project. This project\'s Slack connector reads only its own conversations.',
+      error: 'Slack file F0SYNTH01 belongs to another Kortix workspace. This workspace\'s Slack connector reads only its own conversations.',
     });
     expect(fetches).toEqual(['https://slack.com/api/files.info']);
   });

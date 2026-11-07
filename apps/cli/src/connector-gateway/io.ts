@@ -63,7 +63,8 @@ export function parseExecArgs(argv: string[]): ExecArgs {
   for (let i = 1; i < argv.length; i += 1) {
     const a = argv[i]!;
     if (a.startsWith('--')) {
-      const key = a.slice(2);
+      // `--workspace` is the user-facing name of `--project` (Workspaces rename).
+      const key = a.slice(2) === 'workspace' ? 'project' : a.slice(2);
       const val = argv[i + 1] && !argv[i + 1]!.startsWith('--') ? argv[(i += 1)]! : true;
       flags[key] = val;
       (repeated[key] ??= []).push(val);

@@ -13,7 +13,8 @@ import type { AdminProjectsListQuery } from './projects-query';
 /** One page of `GET /api/accounts` plus the filtered total. Throws the driver error as-is. */
 export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
   const { db } = await import('../shared/db');
-  const { accounts, creditAccounts, enterpriseContracts } = await import('@kortix/db');
+  const { creditAccounts, enterpriseContracts } = await import('@kortix/db');
+  const { accountsView } = await import('../workspaces/rows');
   const { and, asc, desc, eq, gte, lte, inArray, notInArray, isNotNull, isNull, or, sql } =
     await import('drizzle-orm');
   const { UNPAID_TIERS } = await import('./accounts-query');
@@ -41,12 +42,12 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
   // id), then the earliest-joined owner. The old tiebreak was `au.email ASC`,
   // which let a support operator added as a second owner displace the real
   // customer whenever their address sorted first alphabetically.
-  const ownerEmail = accountPrimaryOwnerEmailSql(qualifiedColumn(accounts.accountId));
-  const memberCount = accountMemberCountSql(qualifiedColumn(accounts.accountId));
+  const ownerEmail = accountPrimaryOwnerEmailSql(qualifiedColumn(accountsView.accountId));
+  const memberCount = accountMemberCountSql(qualifiedColumn(accountsView.accountId));
 
   const conds: any[] = [];
   // Exact-id lookup — the sheet's live row, immune to the list's filters.
-  if (accountIdFilter) conds.push(eq(accounts.accountId, accountIdFilter));
+  if (accountIdFilter) conds.push(eq(accountsView.accountId, accountIdFilter));
   if (search) {
     // The search predicate is shared by the list and count queries; see
     // accounts-search.ts for why the email branch must stay users-first.
@@ -88,13 +89,13 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
   const where = conds.length ? and(...conds) : undefined;
 
   const sortCol =
-    sortBy === 'balance' ? creditAccounts.balance : sortBy === 'name' ? accounts.name : accounts.createdAt;
+    sortBy === 'balance' ? creditAccounts.balance : sortBy === 'name' ? accountsView.name : accountsView.createdAt;
 
   const rows = await db
     .select({
-      accountId: accounts.accountId,
-      name: accounts.name,
-      createdAt: accounts.createdAt,
+      accountId: accountsView.accountId,
+      name: accountsView.name,
+      createdAt: accountsView.createdAt,
       balance: creditAccounts.balance,
       expiringCredits: creditAccounts.expiringCredits,
       nonExpiringCredits: creditAccounts.nonExpiringCredits,
@@ -124,11 +125,11 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
       ownerEmail,
       memberCount,
     })
-    .from(accounts)
-    .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
+    .from(accountsView)
+    .leftJoin(creditAccounts, eq(creditAccounts.accountId, accountsView.accountId))
     .leftJoin(
       enterpriseContracts,
-      and(eq(enterpriseContracts.accountId, accounts.accountId), eq(enterpriseContracts.status, 'active')),
+      and(eq(enterpriseContracts.accountId, accountsView.accountId), eq(enterpriseContracts.status, 'active')),
     )
     .where(where)
     .orderBy(dir(sortCol))
@@ -137,8 +138,8 @@ export async function listAdminAccountsPage(query: AdminAccountsListQuery) {
 
   const [{ total }] = await db
     .select({ total: sql<number>`count(*)::int` })
-    .from(accounts)
-    .leftJoin(creditAccounts, eq(creditAccounts.accountId, accounts.accountId))
+    .from(accountsView)
+    .leftJoin(creditAccounts, eq(creditAccounts.accountId, accountsView.accountId))
     .where(where);
 
   return { rows, total };
@@ -155,43 +156,45 @@ export async function listAdminAccountMembers(accountId: string): Promise<unknow
 /** Every project one account owns, with session counts, newest update first. */
 export async function listAdminAccountProjects(accountId: string) {
   const { db } = await import('../shared/db');
-  const { projects, projectSessions } = await import('@kortix/db');
+  const { projectSessions } = await import('@kortix/db');
+  const { projectsView } = await import('../workspaces/rows');
   const { eq, desc, sql } = await import('drizzle-orm');
   const { ACTIVE_SESSION_STATUSES } = await import('../projects/surface');
 
   const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)})`;
   const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
+      WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)}
         AND ps.status IN (${sql.join(ACTIVE_SESSION_STATUSES.map((status) => sql`${status}`), sql`, `)}))`;
   const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
+      SELECT max(ps.updated_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)})`;
 
   return db
     .select({
-      projectId: projects.projectId,
-      name: projects.name,
-      status: projects.status,
-      repoUrl: projects.repoUrl,
-      defaultBranch: projects.defaultBranch,
-      createdAt: projects.createdAt,
-      updatedAt: projects.updatedAt,
-      lastOpenedAt: projects.lastOpenedAt,
+      projectId: projectsView.projectId,
+      name: projectsView.name,
+      status: projectsView.status,
+      repoUrl: projectsView.repoUrl,
+      defaultBranch: projectsView.defaultBranch,
+      createdAt: projectsView.createdAt,
+      updatedAt: projectsView.updatedAt,
+      lastOpenedAt: projectsView.lastOpenedAt,
       sessionCount,
       activeSessionCount,
       lastSessionAt,
     })
-    .from(projects)
-    .where(eq(projects.accountId, accountId))
-    .orderBy(desc(projects.updatedAt));
+    .from(projectsView)
+    .where(eq(projectsView.accountId, accountId))
+    .orderBy(desc(projectsView.updatedAt));
 }
 
 /** One page of `GET /api/projects` across every account, plus the filtered total. */
 export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
   const { adminProjectsSearchCondition } = await import('./projects-search');
   const { db } = await import('../shared/db');
-  const { accounts, projects, projectSessions } = await import('@kortix/db');
+  const { projectSessions } = await import('@kortix/db');
+  const { accountsView, projectsView } = await import('../workspaces/rows');
   const { and, eq, inArray, sql } = await import('drizzle-orm');
   const { ACTIVE_SESSION_STATUSES } = await import('../projects/lib/session-status');
   const { accountPrimaryOwnerEmailSql } = await import('../iam/membership-read');
@@ -204,9 +207,9 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
   // id), then the earliest-joined owner. The old tiebreak was `au.email ASC`,
   // which let a support operator added as a second owner displace the real
   // customer whenever their address sorted first alphabetically.
-  const ownerEmail = accountPrimaryOwnerEmailSql(qualifiedColumn(accounts.accountId));
+  const ownerEmail = accountPrimaryOwnerEmailSql(qualifiedColumn(accountsView.accountId));
   const sessionCount = sql<number>`(
-      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
+      SELECT count(*)::int FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)})`;
   // Bound one-parameter-per-status: a bare `IN ${array}` binds the whole array
   // as a single value and matches nothing.
   const activeStatuses = sql.join(
@@ -215,39 +218,39 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
   );
   const activeSessionCount = sql<number>`(
       SELECT count(*)::int FROM ${projectSessions} ps
-      WHERE ps.project_id = ${qualifiedColumn(projects.projectId)}
+      WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)}
         AND ps.status::text IN (${activeStatuses}))`;
   const lastSessionAt = sql<string | null>`(
-      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projects.projectId)})`;
+      SELECT max(ps.created_at) FROM ${projectSessions} ps WHERE ps.project_id = ${qualifiedColumn(projectsView.projectId)})`;
 
   const conds: any[] = [];
   if (search) conds.push(adminProjectsSearchCondition(search));
-  if (accountId) conds.push(eq(projects.accountId, accountId));
-  if (statusValues.length) conds.push(inArray(projects.status, statusValues));
+  if (accountId) conds.push(eq(projectsView.accountId, accountId));
+  if (statusValues.length) conds.push(inArray(projectsView.status, statusValues));
   const where = conds.length ? and(...conds) : undefined;
 
   const dirSql = sortDir === 'asc' ? sql`asc` : sql`desc`;
   const sortExpr =
-    sortBy === 'created' ? sql`${projects.createdAt}` : sortBy === 'sessions' ? sessionCount : lastSessionAt;
+    sortBy === 'created' ? sql`${projectsView.createdAt}` : sortBy === 'sessions' ? sessionCount : lastSessionAt;
   // `project_id` breaks ties so pagination cannot repeat or skip a row when
   // many projects share a sort value (e.g. sessionCount 0).
-  const orderBy = sql`${sortExpr} ${dirSql} nulls last, ${projects.projectId} desc`;
+  const orderBy = sql`${sortExpr} ${dirSql} nulls last, ${projectsView.projectId} desc`;
 
   const rows = await db
     .select({
-      projectId: projects.projectId,
-      name: projects.name,
-      status: projects.status,
-      accountId: projects.accountId,
-      accountName: accounts.name,
+      projectId: projectsView.projectId,
+      name: projectsView.name,
+      status: projectsView.status,
+      accountId: projectsView.accountId,
+      accountName: accountsView.name,
       ownerEmail,
-      createdAt: projects.createdAt,
+      createdAt: projectsView.createdAt,
       sessionCount,
       activeSessionCount,
       lastSessionAt,
     })
-    .from(projects)
-    .innerJoin(accounts, eq(accounts.accountId, projects.accountId))
+    .from(projectsView)
+    .innerJoin(accountsView, eq(accountsView.accountId, projectsView.accountId))
     .where(where)
     .orderBy(orderBy)
     .limit(limit)
@@ -255,8 +258,8 @@ export async function listAdminProjectsPage(query: AdminProjectsListQuery) {
 
   const [{ total }] = await db
     .select({ total: sql<number>`count(*)::int` })
-    .from(projects)
-    .innerJoin(accounts, eq(accounts.accountId, projects.accountId))
+    .from(projectsView)
+    .innerJoin(accountsView, eq(accountsView.accountId, projectsView.accountId))
     .where(where);
 
   return { rows, total };
@@ -350,9 +353,9 @@ export async function findProjectSession(sessionId: string) {
 /** One project row. */
 export async function findProject(projectId: string) {
   const { db } = await import('../shared/db');
-  const { projects } = await import('@kortix/db');
+  const { projectsView } = await import('../workspaces/rows');
   const { eq } = await import('drizzle-orm');
-  const [proj] = await db.select().from(projects).where(eq(projects.projectId, projectId)).limit(1);
+  const [proj] = await db.select().from(projectsView).where(eq(projectsView.projectId, projectId)).limit(1);
   return proj;
 }
 
@@ -377,12 +380,12 @@ export async function listProviderEventsSince(cutoff: Date) {
 /** One account's id and name, or undefined when it does not exist. */
 export async function findAccountName(accountId: string) {
   const { db } = await import('../shared/db');
-  const { accounts } = await import('@kortix/db');
+  const { accountsView } = await import('../workspaces/rows');
   const { eq } = await import('drizzle-orm');
   const [account] = await db
-    .select({ accountId: accounts.accountId, name: accounts.name })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
+    .select({ accountId: accountsView.accountId, name: accountsView.name })
+    .from(accountsView)
+    .where(eq(accountsView.accountId, accountId))
     .limit(1);
   return account;
 }
@@ -390,10 +393,10 @@ export async function findAccountName(accountId: string) {
 /** The id and name of each account in `accountIds`. */
 export async function listAccountNames(accountIds: string[]) {
   const { db } = await import('../shared/db');
-  const { accounts } = await import('@kortix/db');
+  const { accountsView } = await import('../workspaces/rows');
   const { inArray } = await import('drizzle-orm');
   return db
-    .select({ accountId: accounts.accountId, name: accounts.name })
-    .from(accounts)
-    .where(inArray(accounts.accountId, accountIds));
+    .select({ accountId: accountsView.accountId, name: accountsView.name })
+    .from(accountsView)
+    .where(inArray(accountsView.accountId, accountIds));
 }

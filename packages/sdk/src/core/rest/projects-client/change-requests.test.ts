@@ -22,7 +22,7 @@ test('updateChangeRequest PATCHes the title and description and returns the chan
   nextResponse = { status: 200, body: { cr_id: 'cr-1', title: 'New title', description: 'Body' } };
   const cr = await updateChangeRequest('P1', 'cr-1', { title: 'New title', description: 'Body' });
   expect(calls[0]).toEqual({
-    url: 'http://test.local/projects/P1/change-requests/cr-1',
+    url: 'http://test.local/workspaces/P1/change-requests/cr-1',
     method: 'PATCH',
     body: { title: 'New title', description: 'Body' },
   });
@@ -38,6 +38,6 @@ test('updateChangeRequest throws when the change request is not open', async () 
 test('listChangeRequests sends limit and cursor and returns next_cursor', async () => {
   nextResponse = { status: 200, body: { change_requests: [], next_cursor: '51' } };
   const page = await listChangeRequests('P1', 'all', { limit: 100, cursor: '101' });
-  expect(calls[0].url).toBe('http://test.local/projects/P1/change-requests?status=all&limit=100&cursor=101');
+  expect(calls[0].url).toBe('http://test.local/workspaces/P1/change-requests?status=all&limit=100&cursor=101');
   expect(page.next_cursor).toBe('51');
 });

@@ -7,7 +7,7 @@
  * their own queue through the unchanged `deliverEvents`, so a failed fire
  * retries without calling the vendor again.
  */
-import { connectors, projectTriggerRuntime, projects } from '@kortix/db';
+import { connectors, projectTriggerRuntime } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ExecutionRecord, GatewayDeps } from '../../connectors/gateway';
 import { logger } from '../../lib/logger';
@@ -50,6 +50,7 @@ import {
 } from './poll-store';
 import { reconcileEventSubscriptionsFromCatalog, resolveSource } from './subscriptions';
 import type { EventDelivery } from './types';
+import { projectsView } from '../../workspaces/rows';
 
 export const DELIVER_QUEUE = 'trigger-events.deliver';
 const DELIVER_MAX_ATTEMPTS = 5;
@@ -146,9 +147,9 @@ async function load(stream: PollStream, now: number): Promise<Loaded | null> {
     return null;
   }
   const [project] = await db
-    .select({ status: projects.status, metadata: projects.metadata, accountId: projects.accountId })
-    .from(projects)
-    .where(eq(projects.projectId, stream.projectId))
+    .select({ status: projectsView.status, metadata: projectsView.metadata, accountId: projectsView.accountId })
+    .from(projectsView)
+    .where(eq(projectsView.projectId, stream.projectId))
     .limit(1);
   // A flag turned off releases or reconciles the triggers, which deletes the stream; until then, no check.
   // Paused, or no trigger left that a check can serve: no check either. The first check after
