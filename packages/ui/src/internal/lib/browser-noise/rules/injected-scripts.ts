@@ -332,4 +332,19 @@ export const INJECTED_SCRIPT_RULES: readonly NoiseRule[] = [
       !frames.some((frame) => isFirstPartyResolvedSource(frame.filename)) &&
       frames.some((frame) => frame.filename === 'app:///tracking_script.js'),
   },
+  {
+    // KRTX-4423: a crawler's automation driver evaluates a string in the page
+    // and the CSP blocks it. Every script the page loads reports a URL (a
+    // bundle, a vendor, a `blob:` worker, the page for inline scripts); only
+    // injected code is `<anonymous>`. Require the exact CSP message and a
+    // stack of only `<anonymous>` frames; any other frame or no stack reports.
+    id: 'injected-csp-eval',
+    appliesTo: 'sentry',
+    match: ({ message, frames }) =>
+      /^Evaluating a string as JavaScript violates the following Content Security Policy directive because 'unsafe-eval' is not an allowed source of script/.test(
+        normalizeString(message),
+      ) &&
+      frames.length > 0 &&
+      frames.every((frame) => frame.filename === '<anonymous>'),
+  },
 ];
