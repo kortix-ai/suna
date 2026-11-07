@@ -86,25 +86,6 @@ export const STATUS_META: Record<KortixTaskStatus, StatusMeta> = {
   },
 };
 
-/** All statuses in pipeline order. */
-export const ALL_STATUSES: KortixTaskStatus[] = [
-  'todo',
-  'in_progress',
-  'input_needed',
-  'awaiting_review',
-  'completed',
-  'cancelled',
-];
-
-/** Linear-style short ID — KTX-XXXX from the trailing chars of the task id. */
-export function shortTaskId(id: string): string {
-  const tail = id
-    .replace(/[^a-z0-9]/gi, '')
-    .slice(-4)
-    .toUpperCase();
-  return `KTX-${tail || '0000'}`;
-}
-
 export { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 
 export function fullDate(t?: string | null): string {

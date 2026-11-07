@@ -22,22 +22,21 @@ import { cn } from '@kortix/ui';
 import { AVAILABLE_SERVICES, MAINTENANCE_LEVELS, MAINTENANCE_TONE_GLYPH } from './constants';
 import { DateTimePicker } from './date-time-picker';
 
+export interface MaintenanceDraft {
+  title: string;
+  message: string;
+  startDate: Date | undefined;
+  endDate: Date | undefined;
+  statusUrl: string;
+  services: string[];
+}
+
 interface MaintenanceConfigModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   level: MaintenanceLevel;
-  title: string;
-  setTitle: (title: string) => void;
-  message: string;
-  setMessage: (message: string) => void;
-  startDate: Date | undefined;
-  setStartDate: (date: Date | undefined) => void;
-  endDate: Date | undefined;
-  setEndDate: (date: Date | undefined) => void;
-  statusUrl: string;
-  setStatusUrl: (url: string) => void;
-  services: string[];
-  toggleService: (service: string) => void;
+  draft: MaintenanceDraft;
+  onChange: (changes: Partial<MaintenanceDraft>) => void;
   onSave: () => Promise<void>;
   isPending: boolean;
 }
@@ -54,18 +53,8 @@ export function MaintenanceConfigModal({
   open,
   onOpenChange,
   level,
-  title,
-  setTitle,
-  message,
-  setMessage,
-  startDate,
-  setStartDate,
-  endDate,
-  setEndDate,
-  statusUrl,
-  setStatusUrl,
-  services,
-  toggleService,
+  draft: { title, message, startDate, endDate, statusUrl, services },
+  onChange,
   onSave,
   isPending,
 }: MaintenanceConfigModalProps) {
@@ -109,7 +98,7 @@ export function MaintenanceConfigModal({
                   id="m-title"
                   placeholder={levelConfig?.label ?? 'Maintenance'}
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => onChange({ title: e.target.value })}
                 />
               </Field>
 
@@ -119,7 +108,7 @@ export function MaintenanceConfigModal({
                   id="m-message"
                   placeholder={tI18nComplete.raw('text94e0d14dbf98')}
                   value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                  onChange={(e) => onChange({ message: e.target.value })}
                   rows={3}
                 />
               </Field>
@@ -129,12 +118,12 @@ export function MaintenanceConfigModal({
                   <DateTimePicker
                     label={tI18nComplete.raw('textbabe9dda8503')}
                     date={startDate}
-                    setDate={setStartDate}
+                    setDate={(startDate) => onChange({ startDate })}
                   />
                   <DateTimePicker
                     label={tI18nComplete.raw('text2e46006a5eeb')}
                     date={endDate}
-                    setDate={setEndDate}
+                    setDate={(endDate) => onChange({ endDate })}
                   />
                 </div>
               )}
@@ -157,7 +146,11 @@ export function MaintenanceConfigModal({
                         >
                           <Checkbox
                             checked={isSelected}
-                            onCheckedChange={() => toggleService(service.label)}
+                            onCheckedChange={() => onChange({
+                              services: isSelected
+                                ? services.filter((s) => s !== service.label)
+                                : [...services, service.label],
+                            })}
                           />
                           <SvcIcon className="text-muted-foreground size-3.5 shrink-0" />
                           <span className="truncate">{service.label}</span>
@@ -176,7 +169,7 @@ export function MaintenanceConfigModal({
                   id="m-status-url"
                   placeholder="https://status.kortix.com"
                   value={statusUrl}
-                  onChange={(e) => setStatusUrl(e.target.value)}
+                  onChange={(e) => onChange({ statusUrl: e.target.value })}
                 />
               </Field>
             </FieldGroup>

@@ -33,24 +33,6 @@ function publicRequestOptions() {
   };
 }
 
-/** Client-side filter mirroring the public catalog query params. */
-export function filterPublicMarketplaceItems(
-  items: MarketplaceItem[],
-  params?: { query?: string; type?: string; source?: string },
-): MarketplaceItem[] {
-  const q = (params?.query ?? '').trim().toLowerCase();
-  const type = params?.type?.trim();
-  const source = params?.source?.trim();
-  return items.filter((it) => {
-    if (type && type !== 'all' && it.type !== type && it.type !== `registry:${type}`) return false;
-    if (source && source !== 'all' && it.marketplaceId !== source) return false;
-    if (!q) return true;
-    return `${it.name} ${it.title} ${it.description ?? ''} ${it.categories.join(' ')}`
-      .toLowerCase()
-      .includes(q);
-  });
-}
-
 export async function listPublicMarketplaceItems(params?: {
   query?: string;
   type?: string;

@@ -11,6 +11,7 @@ import {
   useMaintenanceAdmin,
   useUpdateMaintenanceConfig,
 } from '@/hooks/admin/use-maintenance-admin';
+import type { MaintenanceDraft } from './_components/maintenance-modal';
 import type { MaintenanceLevel } from '@/lib/maintenance-store';
 
 import { AdminPageShell } from '../_components/admin-page-shell';
@@ -41,23 +42,25 @@ export default function AdminUtilsPage() {
   const [selectedLevel, setSelectedLevel] = useState<MaintenanceLevel>('none');
 
   // Form state
-  const [title, setTitle] = useState('');
-  const [message, setMessage] = useState('');
-  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
-  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
-  const [statusUrl, setStatusUrl] = useState('');
-  const [services, setServices] = useState<string[]>([]);
+  const [draft, setDraft] = useState<MaintenanceDraft>({
+    title: '', message: '', startDate: undefined, endDate: undefined, statusUrl: '', services: [],
+  });
+  const { title, message, startDate, endDate, statusUrl, services } = draft;
+  const updateDraft = (changes: Partial<MaintenanceDraft>) =>
+    setDraft((prev) => ({ ...prev, ...changes }));
 
   // Sync form state when config loads or changes.
   useEffect(() => {
     if (!config) return;
     setSelectedLevel(config.level);
-    setTitle(config.title || '');
-    setMessage(config.message || '');
-    setStartDate(config.startTime ? new Date(config.startTime) : undefined);
-    setEndDate(config.endTime ? new Date(config.endTime) : undefined);
-    setStatusUrl(config.statusUrl || '');
-    setServices(config.affectedServices || []);
+    setDraft({
+      title: config.title || '',
+      message: config.message || '',
+      startDate: config.startTime ? new Date(config.startTime) : undefined,
+      endDate: config.endTime ? new Date(config.endTime) : undefined,
+      statusUrl: config.statusUrl || '',
+      services: config.affectedServices || [],
+    });
   }, [config]);
 
   const handleLevelClick = (level: MaintenanceLevel) => {
@@ -67,7 +70,7 @@ export default function AdminUtilsPage() {
     // level's default label.
     if (!title || title === MAINTENANCE_LEVELS.find((l) => l.value === config?.level)?.label) {
       const levelDef = MAINTENANCE_LEVELS.find((l) => l.value === level);
-      if (levelDef && level !== 'none') setTitle(levelDef.label);
+      if (levelDef && level !== 'none') updateDraft({ title: levelDef.label });
     }
 
     setDialogOpen(true);
@@ -107,14 +110,6 @@ export default function AdminUtilsPage() {
     } catch (err) {
       errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text54266bfe04ff'));
     }
-  };
-
-  const toggleService = (serviceLabel: string) => {
-    setServices((prev) =>
-      prev.includes(serviceLabel)
-        ? prev.filter((s) => s !== serviceLabel)
-        : [...prev, serviceLabel],
-    );
   };
 
   const currentLevel = config?.level ?? 'none';
@@ -201,18 +196,8 @@ export default function AdminUtilsPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         level={selectedLevel}
-        title={title}
-        setTitle={setTitle}
-        message={message}
-        setMessage={setMessage}
-        startDate={startDate}
-        setStartDate={setStartDate}
-        endDate={endDate}
-        setEndDate={setEndDate}
-        statusUrl={statusUrl}
-        setStatusUrl={setStatusUrl}
-        services={services}
-        toggleService={toggleService}
+        draft={draft}
+        onChange={updateDraft}
         onSave={handleSave}
         isPending={updateConfig.isPending}
       />

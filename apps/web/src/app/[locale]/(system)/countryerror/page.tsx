@@ -15,7 +15,7 @@ export default function CountryError() {
     <div className="relative min-h-[100dvh] w-full overflow-hidden">
       <div className="relative flex min-h-[100dvh] w-full flex-col items-center justify-center px-3 py-8 sm:px-6">
         {/* Animated background */}
-        <AnimatedBg variant="hero" />
+        <AnimatedBg />
 
         <div className="relative z-10 flex w-full max-w-[456px] flex-col items-center gap-5 sm:gap-8">
           {/* Logo */}

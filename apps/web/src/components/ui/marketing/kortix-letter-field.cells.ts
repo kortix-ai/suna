@@ -52,15 +52,15 @@ export interface GridLayout {
 // Per-cell geometry — mirrors the original HTML grid
 // (`repeat(cols, minmax(0, 1fr))` with the same min cell width so "k o r t i x"
 // never clips).
-export const CELL_HEIGHT_PX = 14;
-export const CELL_HEIGHT_PX_SM = 12;
-export const GAP_X = 4;
-export const GAP_Y = 2;
+const CELL_HEIGHT_PX = 14;
+const CELL_HEIGHT_PX_SM = 12;
+const GAP_X = 4;
+const GAP_Y = 2;
 export const PADDING = 24;
-export const PADDING_SM = 16;
-export const MIN_CELL_WIDTH_PX_SM = 76;
-export const MIN_CELL_WIDTH_PX_MD = 84;
-export const MIN_CELL_WIDTH_PX_LG = 92;
+const PADDING_SM = 16;
+const MIN_CELL_WIDTH_PX_SM = 76;
+const MIN_CELL_WIDTH_PX_MD = 84;
+const MIN_CELL_WIDTH_PX_LG = 92;
 
 export function computeGrid(width: number, height: number): GridLayout {
   const isSm = width < 640;
