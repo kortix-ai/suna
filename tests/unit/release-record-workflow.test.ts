@@ -21,10 +21,10 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { REPO_ROOT as root } from '../src/fixtures/repo';
+import { readRepoFile } from '../src/fixtures/repo';
 
 const workflowPath = '.github/workflows/deploy-prod.yml';
-const workflow = readFileSync(resolve(root, workflowPath), 'utf8');
+const workflow = readRepoFile(workflowPath);
 
 /** Every npm publish job in deploy-prod.yml. */
 const NPM_PUBLISH_JOBS = [

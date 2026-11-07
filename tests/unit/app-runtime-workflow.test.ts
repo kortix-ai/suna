@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readWorkflow } from '../src/fixtures/repo';
 
 const workflowPaths = [
   '../../.github/workflows/ci.yml',
@@ -16,10 +17,7 @@ describe('app runtime workflow coverage', () => {
   });
 
   it('forces every deployable service for a manual all-surface Dev recovery', () => {
-    const workflow = readFileSync(
-      resolve(import.meta.dirname, '../../.github/workflows/deploy-dev.yml'),
-      'utf8',
-    );
+    const workflow = readWorkflow('deploy-dev.yml');
     const normalize = workflow.slice(
       workflow.indexOf('      - name: Normalize outputs'),
       workflow.indexOf('      - name: Summary'),

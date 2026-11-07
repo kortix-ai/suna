@@ -3,13 +3,13 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT as ROOT } from '../src/fixtures/repo';
 
 // On 2026-10-04 a factory worker committed a 60 MB ELF core dump that held its
 // whole environment, secrets included. GitHub push protection skips binaries.
 // pre-commit and pre-push run scripts/check-binary-dumps.sh, which refuses a
 // core dump or any file over 20 MB.
 
-const ROOT = join(import.meta.dirname, '..', '..');
 const SCRIPT = join(ROOT, 'scripts', 'check-binary-dumps.sh');
 
 function elfCore(endian: 'le' | 'be'): Buffer {

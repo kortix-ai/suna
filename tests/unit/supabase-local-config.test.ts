@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'smol-toml';
 import { describe, expect, it } from 'vitest';
-import { REPO_ROOT as root } from '../src/fixtures/repo';
+import { REPO_ROOT as root, readRepoFile } from '../src/fixtures/repo';
 
 /**
  * `supabase start` decodes supabase/config.toml before it touches Docker, and
@@ -22,7 +22,7 @@ import { REPO_ROOT as root } from '../src/fixtures/repo';
  */
 describe('supabase/config.toml', () => {
   it('names the refresh-token rotation switch the way the current config spec does', () => {
-    const conf = parse(readFileSync(join(root, 'supabase/config.toml'), 'utf8')) as {
+    const conf = parse(readRepoFile('supabase/config.toml')) as {
       auth: Record<string, unknown>;
     };
     expect(conf.auth.enable_refresh_token_rotation).toBe(true);

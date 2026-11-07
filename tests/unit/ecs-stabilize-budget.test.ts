@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { REPO_ROOT as root } from '../src/fixtures/repo';
+import { REPO_ROOT as root, readWorkflow } from '../src/fixtures/repo';
 
 const script = resolve(root, 'infra/scripts/ecs-deploy.sh');
 
@@ -456,7 +456,7 @@ describe.concurrent('ECS rollout --wait-for serving', () => {
   });
 
   it('is used by every Deploy Dev roll except the worker, and by no staging or production roll', () => {
-    const workflow = (name: string) => readFileSync(resolve(root, '.github/workflows', name), 'utf8');
+    const workflow = readWorkflow;
     const devRolls = workflow('deploy-dev.yml')
       .split('\n')
       .filter((line) => line.includes('infra/scripts/ecs-deploy.sh') && !line.trim().startsWith('#') && !line.trim().startsWith('-'))

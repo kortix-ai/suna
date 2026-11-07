@@ -1,14 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT } from '../src/fixtures/repo';
 
 // Blume builds the docs site only inside `next build`, so `next dev` and the
 // local stack never parse docs frontmatter. #8567 shipped an unquoted
 // `description: … System: your agents …` and the dev frontend image failed to
 // build ("bad indentation of a mapping entry"). This parses every docs page's
 // frontmatter with Bun's YAML parser, the same strictness the build applies.
-
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 
 const PARSE_ALL = `
 const files = process.argv.slice(1);

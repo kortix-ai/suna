@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { REPO_ROOT, readRepoFile } from '../src/fixtures/repo';
 
 // @kortix/ui exports its module entries, its primitives and its stylesheets. A deep key
 // (`@kortix/ui/<module>/<path>`, no semver) exists only for a module file a workspace
@@ -10,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 // a new deep import must be added (or, better, imported from its entry), and a key nobody
 // imports any more must leave the list.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const UI = join(REPO_ROOT, 'packages/ui');
 const EXPORTS: Record<string, unknown> = JSON.parse(readFileSync(join(UI, 'package.json'), 'utf8')).exports;
 const DEEP: string[] = JSON.parse(readFileSync(join(UI, 'scripts/deep-exports.json'), 'utf8')).keys;
@@ -31,7 +31,7 @@ function importedSpecifiers(): Map<string, string[]> {
   for (const file of files) {
     let source: string;
     try {
-      source = readFileSync(join(REPO_ROOT, file), 'utf8');
+      source = readRepoFile(file);
     } catch {
       continue; // deleted in the working tree
     }

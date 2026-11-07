@@ -1,5 +1,4 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { RegisteredFlow } from '../src/core/flow';
@@ -10,6 +9,7 @@ import {
   planShard,
   SERIAL_WORKER_PENALTY,
 } from '../src/core/shard';
+import { readWorkflow } from '../src/fixtures/repo';
 
 function fakeFlow(
   id: string,
@@ -118,7 +118,7 @@ describe('planShard', () => {
 
   it('charges a serial flow the API worker count the release gate runs', () => {
     // KRTX-2667: the constant read 2 while the gate ran 4 workers.
-    const gate = readFileSync(resolve(import.meta.dirname, '../../.github/workflows/tests-release.yml'), 'utf8');
+    const gate = readWorkflow('tests-release.yml');
     const workers = Number(/KE2E_API_WORKERS:\s*'(\d+)'/.exec(gate)?.[1]);
     expect(workers).toBeGreaterThan(0);
     expect(SERIAL_WORKER_PENALTY).toBe(workers);

@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { REPO_ROOT as root } from '../src/fixtures/repo';
+import { readRepoFile } from '../src/fixtures/repo';
 
 /**
  * `pnpm dev` warms the heavy /projects/* routes in the background. Its
@@ -22,7 +22,7 @@ import { REPO_ROOT as root } from '../src/fixtures/repo';
  * old empty-array expansion aborted; it skips when the variable is unset.
  */
 function extractFunction(name: string): string {
-  const lines = readFileSync(join(root, 'scripts/dev-local.sh'), 'utf8').split('\n');
+  const lines = readRepoFile('scripts/dev-local.sh').split('\n');
   const start = lines.findIndex((line) => line.startsWith(`${name}() {`));
   if (start === -1) throw new Error(`scripts/dev-local.sh does not define ${name}()`);
   const end = lines.findIndex((line, i) => i > start && line === '}');

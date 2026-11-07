@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { REPO_ROOT as root } from '../src/fixtures/repo';
+import { REPO_ROOT as root, readRepoFile, readWorkflow } from '../src/fixtures/repo';
 
 function mergeEnvironment(
   current: Array<{ name: string; value: string }>,
@@ -59,7 +59,7 @@ describe('ECS task environment overrides', () => {
     expect(variables).toContain('PIPEDREAM_CLIENT_SECRET');
     expect(variables).toContain('PIPEDREAM_PROJECT_ID');
 
-    const module = readFileSync(resolve(root, 'infra/terraform/modules/ecs-api/main.tf'), 'utf8');
+    const module = readRepoFile('infra/terraform/modules/ecs-api/main.tf');
     expect(module).toContain('{ name = "KORTIX_ENV_JSON", valueFrom = var.secrets_blob_arn }');
   });
 
@@ -123,8 +123,8 @@ describe('ECS task environment overrides', () => {
   });
 
   it('carries no fast cold boot activation path', () => {
-    const workflow = readFileSync(resolve(root, '.github/workflows/deploy-dev.yml'), 'utf8');
-    const deployScript = readFileSync(resolve(root, 'infra/scripts/ecs-deploy.sh'), 'utf8');
+    const workflow = readWorkflow('deploy-dev.yml');
+    const deployScript = readRepoFile('infra/scripts/ecs-deploy.sh');
     const snapshotBuilder = readFileSync(
       resolve(root, 'apps/api/src/snapshots/builder.ts'),
       'utf8',

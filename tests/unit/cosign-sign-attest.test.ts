@@ -7,10 +7,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { REPO_ROOT as repoRoot } from "../src/fixtures/repo";
 
-const repoRoot = resolve(import.meta.dirname, "../..");
 const signer = join(repoRoot, "scripts/ci/cosign-sign-attest.sh");
 const workflow = join(repoRoot, ".github/workflows/deploy-dev.yml");
 const tempDirs: string[] = [];

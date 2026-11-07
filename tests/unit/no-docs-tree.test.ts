@@ -1,7 +1,6 @@
 import { gitOrEmpty } from '../src/fixtures/git-or-empty';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readRepoFile } from '../src/fixtures/repo';
 
 // The repository has no top-level documentation tree. #7672 deleted it, and 5
 // PRs re-added files within 2 days, because 322 lines still cited the deleted
@@ -9,7 +8,6 @@ import { describe, expect, it } from 'vitest';
 // lives in skills (`.agents/skills/*`), incident rules in the learnings ledger
 // (`.agents/skills/learnings/entries/`), and detail in the PR body.
 
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const TREE = 'docs';
 
 // Built, never written literally, so this file does not cite the tree itself.
@@ -55,7 +53,7 @@ describe('the top-level documentation tree', () => {
     // V8 checks the candidates without the slow second Git regex scan or unbounded grep output.
     const candidates = gitOrEmpty(['grep', '-l', '-F', `${TREE}/`, '--', ...scope]);
     const offenders = candidates.filter((path) =>
-      citation.test(readFileSync(join(REPO_ROOT, path), 'utf8')),
+      citation.test(readRepoFile(path)),
     );
     expect(offenders).toEqual([]);
     // The runner runs this lane concurrently with the DB lane's 192 throwaway
