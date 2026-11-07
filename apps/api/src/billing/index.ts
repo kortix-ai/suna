@@ -77,6 +77,7 @@ billingApp.openapi(
     method: 'post',
     path: '/cron/yearly-rotation',
     tags: ['billing'],
+    security: [{ bearerAuth: [] }],
     summary: 'Run the yearly credit rotation (cron)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Rotation result'),
@@ -101,6 +102,7 @@ billingApp.openapi(
     method: 'post',
     path: '/cron/free-tier-rotation',
     tags: ['billing'],
+    security: [{ bearerAuth: [] }],
     summary: 'Run the free-tier monthly credit rotation (cron)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Rotation result'),
@@ -127,6 +129,7 @@ billingApp.openapi(
     method: 'post',
     path: '/cron/trial-expiry',
     tags: ['billing'],
+    security: [{ bearerAuth: [] }],
     summary: 'Sweep Enterprise licenses: end and warn (cron)',
     responses: {
       200: json(z.record(z.string(), z.any()), 'Sweep result'),

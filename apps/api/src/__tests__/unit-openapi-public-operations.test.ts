@@ -35,6 +35,18 @@ describe('published OpenAPI public operations', () => {
     expect(document.paths['/v1/health']?.get?.security).toEqual([]);
     expect(document.paths['/v1/projects']?.get?.security).toEqual([{ bearerAuth: [] }]);
   });
+
+  test('host-key and cron-key guarded operations are never published as anonymous', async () => {
+    const document = await served();
+    for (const [path, method] of [
+      ['/v1/billing/cron/yearly-rotation', 'post'],
+      ['/v1/billing/cron/free-tier-rotation', 'post'],
+      ['/v1/billing/cron/trial-expiry', 'post'],
+      ['/v1/setup/bootstrap-owner', 'post'],
+    ] as const) {
+      expect(document.paths[path]?.[method]?.security, `${method} ${path}`).toEqual([{ bearerAuth: [] }]);
+    }
+  });
 });
 
 describe('markPublicOperations', () => {
