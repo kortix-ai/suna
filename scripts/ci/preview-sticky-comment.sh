@@ -19,6 +19,9 @@
 
 set -euo pipefail
 
+# shellcheck source=scripts/ci/lib/github-comment.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib/github-comment.sh"
+
 marker='<!-- preview-status -->'
 repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY required}"
 num="${NUM:?NUM required}"
@@ -80,13 +83,9 @@ body="$(printf '%s\n' "$marker" "$title" '' \
   "$result" '' \
   '_The preview owns PostgreSQL, Supabase, API, gateway, frontend, and Mailpit. OAuth initiation is the only explicit preview exclusion._')"
 
-id="$(gh api --paginate "repos/${repo}/issues/${num}/comments" 2>/dev/null \
-  | jq -rs --arg m "$marker" '[.[][] | select(.body | startswith($m))][0].id // empty' 2>/dev/null || true)"
-if [ -n "$id" ]; then
-  gh api -X PATCH "repos/${repo}/issues/comments/${id}" -f body="$body" >/dev/null \
-    || echo "::warning::could not edit the preview comment on #${num}"
-else
-  gh api -X POST "repos/${repo}/issues/${num}/comments" -f body="$body" >/dev/null \
-    || echo "::warning::could not post the preview comment on #${num}"
-fi
+upsert_sticky_comment "$repo" "$num" "$marker" "$body" && rc=0 || rc=$?
+case "$rc" in
+  3) echo "::warning::could not edit the preview comment on #${num}" ;;
+  4) echo "::warning::could not post the preview comment on #${num}" ;;
+esac
 echo "preview comment: ${title#\#\# }"

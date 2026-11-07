@@ -172,6 +172,7 @@ jobs:
                 - 'apps/cli/**'          # baked into the API image (sandbox kortix CLI)
                 - 'packages/**'
                 - 'scripts/ci/cosign-sign-attest.sh'
+                - 'scripts/ci/lib/cosign-retry.sh'
                 - 'infra/scripts/ecs-deploy.sh'
                 - '.github/workflows/deploy-dev.yml'
                 - 'scripts/ci/deploy-dev-changes.sh'
@@ -194,6 +195,7 @@ jobs:
                 - 'infra/scripts/carry-web-static.sh'
                 - 'infra/scripts/render-web-env.mjs'
                 - 'infra/scripts/sync-web-env.sh'
+                - 'infra/scripts/lib/aws-secret.sh'
                 - 'infra/scripts/sync-web-dns.mjs'
                 - 'infra/terraform/environments/dev-us-east-2/**'
                 - 'infra/terraform/environments/dev-web-us-east-2/**'
